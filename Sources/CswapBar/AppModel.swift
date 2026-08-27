@@ -65,8 +65,18 @@ final class AppModel: ObservableObject {
         case .event(let event):
             eventLog.append(event.summary)
             if eventLog.count > 100 { eventLog.removeFirst(eventLog.count - 100) }
-            if event.kind == "switch" {
+            switch event.kind {
+            case "switch":
+                Notifier.post(title: "claude-swap", body: event.summary)
                 Task { await refreshSnapshot() }
+            case "session-resumed":
+                Notifier.post(title: "claude-swap", body: event.summary)
+            case "account-unquarantined":
+                Notifier.post(title: "claude-swap", body: "account back in rotation")
+            case "all-exhausted":
+                Notifier.post(title: "claude-swap", body: "every account is at its limit")
+            default:
+                break
             }
         case .schemaMismatch(let version):
             engineState = .schemaMismatch(version)

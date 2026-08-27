@@ -4,11 +4,16 @@ import CswapCore
 
 @main
 struct CswapBarApp: App {
-    @StateObject private var model = AppModel()
+    @StateObject private var model: AppModel
+    @StateObject private var settingsModel: SettingsModel
+    @StateObject private var reliabilityModel = ResumeReliabilityModel()
 
     init() {
         // Menu bar app: no Dock icon, no main window.
         NSApplication.shared.setActivationPolicy(.accessory)
+        let model = AppModel()
+        _model = StateObject(wrappedValue: model)
+        _settingsModel = StateObject(wrappedValue: SettingsModel(cli: model.cli))
     }
 
     var body: some Scene {
@@ -20,6 +25,16 @@ struct CswapBarApp: App {
                 }
         }
         .menuBarExtraStyle(.window)
+
+        Settings {
+            TabView {
+                SettingsPane(model: settingsModel)
+                    .tabItem { Label("cswap", systemImage: "gearshape") }
+                ResumeReliabilityPane(model: reliabilityModel)
+                    .tabItem { Label("Resume reliability", systemImage: "arrow.clockwise") }
+            }
+            .frame(width: 520, height: 480)
+        }
     }
 }
 

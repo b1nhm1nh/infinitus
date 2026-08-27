@@ -1,0 +1,137 @@
+import SwiftUI
+import CswapCore
+
+/// The cswap settings pane, rendered from the SettingSpec metadata that
+/// `cswap config list --json` exports (spec §3.1). No per-key widgets: a new
+/// SettingSpec in Python appears here with no Swift change.
+@MainActor
+final class SettingsModel: ObservableObject {
+    @Published var entries: [SettingEntry] = []
+    @Published var drafts: [String: String] = [:]
+    @Published var errors: [String: String] = [:]
+    @Published var loadError: String?
+
+    let cli: CswapCLI?
+    init(cli: CswapCLI?) { self.cli = cli }
+
+    func load() async {
+        guard let cli else { return }
+        do {
+            let cfg = try await cli.configList()
+            entries = cfg.settings
+            drafts = Dictionary(uniqueKeysWithValues: cfg.settings.map {
+                ($0.key, $0.isSet ? $0.value.editableText : "")
+            })
+            loadError = nil
+        } catch { loadError = "\(error)" }
+    }
+
+    func commit(_ entry: SettingEntry) {
+        guard let cli else { return }
+        let draft = drafts[entry.key] ?? ""
+        switch SettingDraft.validate(draft, for: entry) {
+        case .invalid(let why):
+            errors[entry.key] = why
+        case .valid(let value):
+            errors[entry.key] = nil
+            Task {
+                do {
+                    _ = try await cli.run(["config", "set", entry.key, value])
+                    await load()
+                } catch { errors[entry.key] = "\(error)" }
+            }
+        case .unset:
+            errors[entry.key] = nil
+            Task {
+                do {
+                    _ = try await cli.run(["config", "unset", entry.key])
+                    await load()
+                } catch { errors[entry.key] = "\(error)" }
+            }
+        }
+    }
+}
+
+struct SettingsPane: View {
+    @ObservedObject var model: SettingsModel
+
+    var body: some View {
+        Form {
+            ForEach(model.entries, id: \.key) { entry in
+                row(entry)
+            }
+            if let err = model.loadError {
+                Text(err).foregroundStyle(.red).font(.caption)
+            }
+        }
+        .formStyle(.grouped)
+        .task { await model.load() }
+    }
+
+    @ViewBuilder private func row(_ entry: SettingEntry) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            switch entry.kind {
+            case "bool":
+                Toggle(entry.key, isOn: boolBinding(entry))
+            case "choice":
+                Picker(entry.key, selection: draftBinding(entry)) {
+                    Text("(default)").tag("")
+                    ForEach(entry.choices ?? [], id: \.self) { Text($0).tag($0) }
+                }
+                .onChange(of: model.drafts[entry.key]) { model.commit(entry) }
+            default:
+                HStack {
+                    Text(entry.key)
+                    Spacer()
+                    TextField(placeholder(entry), text: draftBinding(entry))
+                        .frame(maxWidth: 140)
+                        .multilineTextAlignment(.trailing)
+                        .onSubmit { model.commit(entry) }
+                }
+            }
+            Text(entry.help).font(.caption).foregroundStyle(.secondary)
+            if let err = model.errors[entry.key] {
+                Text(err).font(.caption).foregroundStyle(.red)
+            }
+        }
+    }
+
+    private func placeholder(_ entry: SettingEntry) -> String {
+        var hint = "default: \(entry.defaultValue.editableText)"
+        if let lo = entry.lo, let hi = entry.hi { hint += "  (\(Int(lo))–\(hi))" }
+        return hint
+    }
+
+    private func draftBinding(_ entry: SettingEntry) -> Binding<String> {
+        Binding(
+            get: { model.drafts[entry.key] ?? "" },
+            set: { model.drafts[entry.key] = $0 }
+        )
+    }
+
+    private func boolBinding(_ entry: SettingEntry) -> Binding<Bool> {
+        Binding(
+            get: {
+                if case .bool(let b) = entry.value { return b }
+                return false
+            },
+            set: { newValue in
+                model.drafts[entry.key] = newValue ? "true" : "false"
+                model.commit(entry)
+            }
+        )
+    }
+}
+
+extension JSONValue {
+    /// The text a user would type to reproduce this value.
+    var editableText: String {
+        switch self {
+        case .null: return ""
+        case .bool(let b): return b ? "true" : "false"
+        case .number(let n): return n == n.rounded() ? String(Int(n)) : String(n)
+        case .string(let s): return s
+        case .array, .object: return ""
+        }
+    }
+}
