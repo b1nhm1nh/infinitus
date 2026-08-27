@@ -1,0 +1,67 @@
+import Foundation
+
+/// Where the `cswap` binary lives. Checked in order; first hit wins.
+public enum CswapLocator {
+    public static func defaultCandidates(home: String = NSHomeDirectory()) -> [String] {
+        [
+            "\(home)/.local/bin/cswap",
+            "/opt/homebrew/bin/cswap",
+            "/usr/local/bin/cswap",
+        ]
+    }
+
+    public static func locate(
+        candidates: [String]? = nil,
+        exists: (String) -> Bool = { FileManager.default.isExecutableFile(atPath: $0) }
+    ) -> String? {
+        (candidates ?? defaultCandidates()).first(where: exists)
+    }
+}
+
+public struct CLIError: Error, Sendable {
+    public let message: String
+}
+
+/// Thin async wrapper over Process for one-shot cswap commands.
+/// The supervised `cswap auto` child is EngineSupervisor's job, not this.
+public struct CswapCLI: Sendable {
+    public let binaryPath: String
+
+    public init(binaryPath: String) { self.binaryPath = binaryPath }
+
+    public func run(_ arguments: [String]) async throws -> Data {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: binaryPath)
+        process.arguments = arguments
+        let out = Pipe()
+        process.standardOutput = out
+        process.standardError = Pipe()
+        try process.run()
+        // Drain BEFORE waiting: a payload larger than the pipe buffer would
+        // otherwise deadlock the child against an unread pipe.
+        let data = out.fileHandleForReading.readDataToEndOfFile()
+        process.waitUntilExit()
+        guard process.terminationStatus == 0 else {
+            throw CLIError(message: "cswap \(arguments.joined(separator: " ")) exited \(process.terminationStatus)")
+        }
+        return data
+    }
+
+    public func accountList() async throws -> AccountList {
+        try JSONDecoder().decode(AccountList.self, from: await run(["list", "--json"]))
+    }
+
+    public func configList() async throws -> ConfigList {
+        try JSONDecoder().decode(ConfigList.self, from: await run(["config", "list", "--json"]))
+    }
+
+    @discardableResult
+    public func switchTo(_ number: Int) async throws -> Data {
+        try await run(["switch", String(number), "--json"])
+    }
+
+    @discardableResult
+    public func rotate() async throws -> Data {
+        try await run(["switch", "--json"])
+    }
+}
