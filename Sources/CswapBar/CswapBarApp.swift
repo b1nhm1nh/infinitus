@@ -14,15 +14,14 @@ struct CswapBarApp: App {
         let model = AppModel()
         _model = StateObject(wrappedValue: model)
         _settingsModel = StateObject(wrappedValue: SettingsModel(cli: model.cli))
+        model.startFeeds()
+        Task { await model.refreshSnapshot() }
     }
 
     var body: some Scene {
         MenuBarExtra(model.title) {
             MenuContent(model: model)
-                .task {
-                    model.startFeeds()
-                    await model.refreshSnapshot()
-                }
+                .task { await model.refreshSnapshot() }
         }
         .menuBarExtraStyle(.window)
 

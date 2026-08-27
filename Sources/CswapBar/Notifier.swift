@@ -1,4 +1,5 @@
 import Foundation
+import CswapCore
 
 /// User notifications for switch / quota-restored / session-resumed
 /// (backlog item 5, v1 scope).
@@ -8,8 +9,8 @@ import Foundation
 /// one. Swap this for the real framework when M5 packages a proper .app.
 enum Notifier {
     static func post(title: String, body: String) {
-        let escape = { (s: String) in s.replacingOccurrences(of: "\"", with: "\\\"") }
-        let script = "display notification \"\(escape(body))\" with title \"\(escape(title))\""
+        let script = "display notification \"\(AppleScriptEscaping.literal(body))\""
+            + " with title \"\(AppleScriptEscaping.literal(title))\""
         let p = Process()
         p.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
         p.arguments = ["-e", script]

@@ -35,8 +35,11 @@ final class AppModel: ObservableObject {
         }
     }
 
+    /// Idempotent: called from app init so the supervised engine starts at
+    /// LAUNCH — a window-style MenuBarExtra may not build its content view
+    /// until the first click, and rumps started its engine immediately.
     func startFeeds() {
-        guard let cli else { return }
+        guard let cli, supervisor == nil else { return }
         startEngine(binary: cli.binaryPath)
         refreshTask = Task { [weak self] in
             while !Task.isCancelled {
