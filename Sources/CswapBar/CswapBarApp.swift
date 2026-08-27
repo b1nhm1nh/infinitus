@@ -31,6 +31,8 @@ struct CswapBarApp: App {
                     .tabItem { Label("cswap", systemImage: "gearshape") }
                 ResumeReliabilityPane(model: reliabilityModel)
                     .tabItem { Label("Resume reliability", systemImage: "arrow.clockwise") }
+                DisplayPane(model: model)
+                    .tabItem { Label("Display", systemImage: "menubar.rectangle") }
             }
             .frame(width: 520, height: 480)
         }
@@ -59,6 +61,8 @@ struct MenuContent: View {
                     Text(line).font(.caption).foregroundStyle(.secondary)
                 }
             }
+            Divider()
+            SwitchHistoryView()
             Divider()
             Button("Quit") { NSApplication.shared.terminate(nil) }
         }
@@ -89,14 +93,23 @@ struct AccountGrid: View {
                 GridRow {
                     Text("\(account.number)")
                         .fontWeight(account.active ? .bold : .regular)
-                    Button(account.alias ?? account.email) {
-                        model.switchTo(account.number)
+                    let disabled = account.disabled ?? false
+                    Button(disabled ? "\(account.alias ?? account.email)  (disabled)"
+                                    : (account.alias ?? account.email)) {
+                        model.switchTo(account.number)   // disabled rows stay clickable, like rumps
                     }
                     .buttonStyle(.plain)
                     .fontWeight(account.active ? .bold : .regular)
-                    windowCell(account.usage?.fiveHour, label: "5h")
-                    windowCell(account.usage?.sevenDay, label: "7d")
-                    scopedCells(account)
+                    .foregroundStyle(disabled ? .secondary : .primary)
+                    if let note = SentinelNotes.note(for: account.usageStatus) {
+                        Text(note)
+                            .foregroundStyle(.secondary)
+                            .gridCellColumns(3)   // spans the usage columns
+                    } else {
+                        windowCell(account.usage?.fiveHour, label: "5h")
+                        windowCell(account.usage?.sevenDay, label: "7d")
+                        scopedCells(account)
+                    }
                 }
             }
         }

@@ -17,16 +17,30 @@ final class AppModel: ObservableObject {
     private var supervisor: EngineSupervisor?
     private var refreshTask: Task<Void, Never>?
 
+    // Display prefs, persisted to UserDefaults under the same names and
+    // defaults as the rumps MenuBarSettings. @Published (not @AppStorage):
+    // @AppStorage inside an ObservableObject never fires objectWillChange,
+    // so the MenuBarExtra title would go stale.
+    @Published var showAccountName: Bool { didSet { defaults.set(showAccountName, forKey: "show_account_name") } }
+    @Published var titlePct: String { didSet { defaults.set(titlePct, forKey: "title_pct") } }
+    @Published var titleScoped: Bool { didSet { defaults.set(titleScoped, forKey: "title_scoped") } }
+    @Published var refreshInterval: Int { didSet { defaults.set(refreshInterval, forKey: "refresh_interval") } }
+    private let defaults = UserDefaults.standard
+
     var title: String {
-        guard let active = accounts.first(where: { $0.active }) else { return "⌥" }
-        let name = active.alias ?? String(active.email.prefix(while: { $0 != "@" }))
-        var parts = ["⌥ \(name)"]
-        if let pct = active.usage?.fiveHour?.pct { parts.append("\(Int(pct))%") }
-        if let pct = active.usage?.sevenDay?.pct { parts.append("\(Int(pct))%") }
-        return parts.joined(separator: " ")
+        TitleFormatter.format(
+            account: accounts.first(where: { $0.active }),
+            prefs: TitlePrefs(showAccountName: showAccountName,
+                              titlePct: titlePct, titleScoped: titleScoped))
     }
 
     init() {
+        showAccountName = defaults.object(forKey: "show_account_name") as? Bool ?? true
+        let pct = defaults.string(forKey: "title_pct") ?? "both"
+        titlePct = TitlePrefs.pctChoices.contains(pct) ? pct : "both"
+        titleScoped = defaults.object(forKey: "title_scoped") as? Bool ?? false
+        let interval = defaults.object(forKey: "refresh_interval") as? Int ?? 60
+        refreshInterval = TitlePrefs.refreshChoices.contains(interval) ? interval : 60
         if let path = CswapLocator.locate() {
             cli = CswapCLI(binaryPath: path)
         } else {
@@ -44,7 +58,10 @@ final class AppModel: ObservableObject {
         refreshTask = Task { [weak self] in
             while !Task.isCancelled {
                 await self?.refreshSnapshot()
-                try? await Task.sleep(nanoseconds: 60 * 1_000_000_000)
+                // Read the pref each pass so an interval change applies on
+                // the next tick without restarting the task.
+                let seconds = await MainActor.run { self?.refreshInterval ?? 60 }
+                try? await Task.sleep(nanoseconds: UInt64(seconds) * 1_000_000_000)
             }
         }
     }
