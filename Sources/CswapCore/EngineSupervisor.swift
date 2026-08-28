@@ -75,6 +75,13 @@ public actor EngineSupervisor {
         let p = Process()
         p.executableURL = URL(fileURLWithPath: binaryPath)
         p.arguments = ["auto", "--json"]
+        // The supervised-engine contract: the child watches its stdin pipe
+        // and exits on EOF, but only under this flag (never in tests, cron
+        // pipes, or an interactive terminal).
+        var env = ProcessInfo.processInfo.environment
+        env["CSWAP_SUPERVISED"] = "1"
+        p.environment = env
+        p.standardInput = Pipe()   // held open for the child's lifetime
         let pipe = Pipe()
         p.standardOutput = pipe
         p.standardError = Pipe()
@@ -109,9 +116,17 @@ public actor EngineSupervisor {
         process = nil
         guard !stopping else { return }
         if refused {
-            // Instant exit by design; retrying hot would spin. The user
-            // resolves it (quit the TUI / stray auto) and hits Start.
+            // Instant exit by design — but not terminal. The other holder
+            // (TUI, stray `cswap auto`, an orphan from a killed app) can go
+            // away, and the 2026-08-28 orphan did exactly that: the fresh
+            // app sat refused forever while nobody held a live engine. A
+            // slow paced retry (60s) self-heals without spinning on the
+            // instant refusal.
             onState(.refused)
+            Task { [weak self] in
+                try? await Task.sleep(nanoseconds: 60 * 1_000_000_000)
+                await self?.spawn()
+            }
             return
         }
         backoff.noteExit(afterCleanSeconds: cleanSeconds)

@@ -85,7 +85,7 @@ struct MenuContent: View {
             Divider()
             SwitchHistoryView()
             Divider()
-            Button("Quit") { NSApplication.shared.terminate(nil) }
+            Button("Quit") { model.shutdown() }   // engine stops first
         }
         .padding(12)
         .frame(minWidth: 560)

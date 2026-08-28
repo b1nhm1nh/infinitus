@@ -1,5 +1,6 @@
 import Foundation
 import SwiftUI
+import AppKit
 import CswapCore
 
 /// Main-actor state the MenuBarExtra renders. Feeds per spec §2:
@@ -168,6 +169,17 @@ final class AppModel: ObservableObject {
     /// Apply a drag-reorder: `order` is the account numbers in their new
     /// top-to-bottom sequence. Optimistically re-sorts the local rows so the
     /// row lands where it was dropped, then lets the snapshot confirm.
+    /// Quit path: stop the supervised engine BEFORE the process dies, so
+    /// the child never outlives the app holding the mutex (the engine also
+    /// watches its stdin pipe for EOF as the backstop against a hard kill).
+    func shutdown() {
+        let supervisor = supervisor
+        Task {
+            await supervisor?.stop()
+            await MainActor.run { NSApplication.shared.terminate(nil) }
+        }
+    }
+
     func reorder(_ order: [Int]) {
         guard let cli else { return }
         let index = Dictionary(uniqueKeysWithValues: order.enumerated().map { ($1, $0) })
