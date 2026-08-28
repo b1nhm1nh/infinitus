@@ -15,6 +15,7 @@ struct CswapBarApp: App {
         _model = StateObject(wrappedValue: model)
         _settingsModel = StateObject(wrappedValue: SettingsModel(cli: model.cli))
         model.startFeeds()
+        Notifier.requestAuthorization()
         Task { await model.refreshSnapshot() }
     }
 
@@ -49,6 +50,9 @@ struct MenuContent: View {
             HStack {
                 Button("Rotate to next") { model.rotate() }
                 Button("Refresh") { Task { await model.refreshSnapshot() } }
+                Button("Test notification") {
+                    Notifier.post(title: "claude-swap", body: "test — notifications reach you")
+                }
                 Spacer()
                 engineBadge
             }

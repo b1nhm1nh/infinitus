@@ -16,6 +16,7 @@ final class AppModel: ObservableObject {
     let cli: CswapCLI?
     private var supervisor: EngineSupervisor?
     private var refreshTask: Task<Void, Never>?
+    private var lastNotifiedActive: Int?
 
     // Display prefs, persisted to UserDefaults under the same names and
     // defaults as the rumps MenuBarSettings. @Published (not @AppStorage):
@@ -87,8 +88,7 @@ final class AppModel: ObservableObject {
             if eventLog.count > 100 { eventLog.removeFirst(eventLog.count - 100) }
             switch event.kind {
             case "switch":
-                Notifier.post(title: "claude-swap", body: event.summary)
-                Task { await refreshSnapshot() }
+                Task { await refreshSnapshot() }  // the snapshot diff posts the notification
             case "session-resumed":
                 Notifier.post(title: "claude-swap", body: event.summary)
             case "account-unquarantined":
@@ -109,9 +109,24 @@ final class AppModel: ObservableObject {
         guard let cli else { return }
         do {
             let list = try await cli.accountList()
+            let previous = activeNumber
             accounts = list.accounts
             activeNumber = list.activeAccountNumber
             lastError = nil
+            // Switch notifications come from this DISPLAY-feed diff, not the
+            // engine's `switch` events: our engine is parked whenever another
+            // host (rumps, cswap watch, cswap auto) holds the mutex, and a
+            // parked engine sees no events — the 2026-08-28 silent-switch
+            // bug. The diff sees every switch regardless of who executed it,
+            // manual ones included.
+            if let current = list.activeAccountNumber,
+               let previous, previous != current, lastNotifiedActive != current {
+                lastNotifiedActive = current
+                let name = accounts.first(where: { $0.number == current })
+                    .map { $0.alias ?? String($0.email.prefix(while: { $0 != "@" })) } ?? "#\(current)"
+                Notifier.post(title: "claude-swap",
+                              body: "switched to account \(current) (\(name))")
+            }
         } catch {
             // Keep the last good snapshot rather than blanking the menu —
             // same policy as the rumps menubar's _worker.
