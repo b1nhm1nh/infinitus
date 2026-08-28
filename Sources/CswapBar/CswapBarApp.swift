@@ -7,6 +7,7 @@ struct CswapBarApp: App {
     @StateObject private var model: AppModel
     @StateObject private var settingsModel: SettingsModel
     @StateObject private var reliabilityModel = ResumeReliabilityModel()
+    @StateObject private var notifyModel: NotifyModel
 
     init() {
         // Menu bar app: no Dock icon, no main window.
@@ -14,6 +15,7 @@ struct CswapBarApp: App {
         let model = AppModel()
         _model = StateObject(wrappedValue: model)
         _settingsModel = StateObject(wrappedValue: SettingsModel(cli: model.cli))
+        _notifyModel = StateObject(wrappedValue: NotifyModel(cli: model.cli))
         model.startFeeds()
         // Deferred past didFinishLaunching: requesting in App.init — before
         // the app is registered with Notification Center — fails with
@@ -39,6 +41,8 @@ struct CswapBarApp: App {
                     .tabItem { Label("Resume reliability", systemImage: "arrow.clockwise") }
                 DisplayPane(model: model)
                     .tabItem { Label("Display", systemImage: "menubar.rectangle") }
+                NotifyPane(model: notifyModel)
+                    .tabItem { Label("Away push", systemImage: "antenna.radiowaves.left.and.right") }
             }
             .frame(width: 520, height: 480)
         }
@@ -119,6 +123,10 @@ struct AccountGrid: View {
                     .buttonStyle(.plain)
                     .fontWeight(account.active ? .bold : .regular)
                     .foregroundStyle(disabled ? .secondary : .primary)
+                    .lineLimit(1)
+                    // The one deliberately flexible column: emails truncate,
+                    // usage numbers and reset times never do.
+                    .frame(maxWidth: 230, alignment: .leading)
                     .activeBand(account.active)
                     if let note = SentinelNotes.note(for: account.usageStatus) {
                         Text(note)
@@ -141,21 +149,31 @@ struct AccountGrid: View {
         Group {
             if let w {
                 HStack(spacing: 3) {
+                    if active && label == "5h" {
+                        // The token-burn flame: only the live account is
+                        // spending tokens right now.
+                        Image(systemName: "flame.fill")
+                            .foregroundStyle(.orange)
+                            .symbolEffect(.variableColor.iterative.reversing,
+                                          options: .repeating)
+                    }
                     Text(label).foregroundStyle(.secondary)
                     Text("\(Int(w.pct))%")
                         .foregroundStyle(w.pct >= 100 ? .red : .primary)
                         .monospacedDigit()
+                        .contentTransition(.numericText(value: w.pct))
                     if let when = resetLabel(w) {
-                        // fixedSize: the reset time is the row's payload —
-                        // grow the popup rather than truncate it to "3d 10…".
                         Text(when).font(.caption).foregroundStyle(.secondary)
-                            .fixedSize()
                     }
                 }
             } else {
                 Text("—").foregroundStyle(.tertiary)
             }
         }
+        // fixedSize: usage is the row's payload — grow the popup rather than
+        // truncate a percentage to "2…" or a reset time to "3d 10…". The
+        // email column is the one flexible (truncating) column left.
+        .fixedSize()
         .activeBand(active)
     }
 
@@ -170,7 +188,9 @@ struct AccountGrid: View {
                 Text("\(Int(w.pct))%")
                     .foregroundStyle(w.pct >= 100 ? .red : .primary)
                     .monospacedDigit()
+                    .contentTransition(.numericText(value: w.pct))
             }
+            .fixedSize()
             .activeBand(account.active)
         }
     }

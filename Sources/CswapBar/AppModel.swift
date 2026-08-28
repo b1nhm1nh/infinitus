@@ -112,8 +112,13 @@ final class AppModel: ObservableObject {
         do {
             let list = try await cli.accountList()
             let previous = activeNumber
-            accounts = list.accounts
-            activeNumber = list.activeAccountNumber
+            // withAnimation: the pct texts carry .contentTransition(.numericText)
+            // so a fresh snapshot rolls the digits (the token-burn feel)
+            // instead of snapping them.
+            withAnimation(.easeInOut(duration: 0.6)) {
+                accounts = list.accounts
+                activeNumber = list.activeAccountNumber
+            }
             lastError = nil
             // Switch notifications come from this DISPLAY-feed diff, not the
             // engine's `switch` events: our engine is parked whenever another
