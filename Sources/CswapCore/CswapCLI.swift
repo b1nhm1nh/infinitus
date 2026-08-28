@@ -82,6 +82,14 @@ public struct CswapCLI: Sendable {
     public func notifyStatus() async throws -> NotifyStatus {
         try JSONDecoder().decode(NotifyStatus.self, from: await run(["notify", "--json"]))
     }
+
+    /// Multi-second call (streams ~GBs of transcripts) — callers refresh
+    /// on demand, never on a timer.
+    public func usageReport(days: Int) async throws -> UsageReport {
+        try JSONDecoder().decode(
+            UsageReport.self,
+            from: await run(["usage", "--days", String(days), "--json"]))
+    }
 }
 
 /// Masked away-push channel status from `cswap notify --json`. The fields

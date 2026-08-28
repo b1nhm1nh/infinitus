@@ -8,6 +8,7 @@ struct CswapBarApp: App {
     @StateObject private var settingsModel: SettingsModel
     @StateObject private var reliabilityModel = ResumeReliabilityModel()
     @StateObject private var notifyModel: NotifyModel
+    @StateObject private var usageModel: UsageModel
 
     init() {
         // Menu bar app: no Dock icon, no main window.
@@ -16,6 +17,7 @@ struct CswapBarApp: App {
         _model = StateObject(wrappedValue: model)
         _settingsModel = StateObject(wrappedValue: SettingsModel(cli: model.cli))
         _notifyModel = StateObject(wrappedValue: NotifyModel(cli: model.cli))
+        _usageModel = StateObject(wrappedValue: UsageModel(cli: model.cli))
         model.startFeeds()
         // Deferred past didFinishLaunching: requesting in App.init — before
         // the app is registered with Notification Center — fails with
@@ -43,6 +45,8 @@ struct CswapBarApp: App {
                     .tabItem { Label("Display", systemImage: "menubar.rectangle") }
                 NotifyPane(model: notifyModel)
                     .tabItem { Label("Away push", systemImage: "antenna.radiowaves.left.and.right") }
+                UsagePane(model: usageModel)
+                    .tabItem { Label("Usage", systemImage: "chart.bar") }
             }
             .frame(width: 520, height: 480)
         }

@@ -113,3 +113,52 @@ public enum JSONValue: Decodable, Equatable, Sendable {
         else { self = .object(try c.decode([String: JSONValue].self)) }
     }
 }
+
+/// `cswap usage --json` — estimated per-account token spend. The dollar
+/// figures are API-list-price estimates (the report's caveats say so);
+/// render them as estimates, never as a bill.
+public struct UsageReport: Decodable, Sendable {
+    public let schemaVersion: Int
+    public let days: Int
+    public let estimatedTotalUSD: Double
+    public let priceTable: PriceTable
+    public let accounts: [UsageBucket]
+    public let unattributed: UsageBucket?
+    public let unpricedTokens: Int?
+    public let caveats: [String]
+
+    public struct PriceTable: Decodable, Sendable {
+        public let source: String
+        public let date: String
+    }
+
+    public struct UsageBucket: Decodable, Sendable {
+        public let number: Int?
+        public let email: String?
+        public let alias: String?
+        public let estimatedUSD: Double
+        public let messages: Int
+        public let input: Int
+        public let output: Int
+        public let cacheRead: Int
+        public let cacheWrite: Int
+        public let models: [ModelSlice]
+    }
+
+    public struct ModelSlice: Decodable, Sendable {
+        public let model: String
+        public let estimatedUSD: Double
+        public let messages: Int
+    }
+}
+
+public enum TokenFormat {
+    /// Compact token count: 950, 12.3k, 4.5M, 1.2B.
+    public static func compact(_ n: Int) -> String {
+        let units: [(Double, String)] = [(1e9, "B"), (1e6, "M"), (1e3, "k")]
+        for (div, suffix) in units where Double(n) >= div {
+            return String(format: "%.1f%@", Double(n) / div, suffix)
+        }
+        return String(n)
+    }
+}
