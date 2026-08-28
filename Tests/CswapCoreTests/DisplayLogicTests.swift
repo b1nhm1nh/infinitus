@@ -87,3 +87,41 @@ final class SentinelNotesTests: XCTestCase {
         XCTAssertEqual(SentinelNotes.note(for: "brand_new_state"), "brand new state")
     }
 }
+
+final class ResetLabelTests: XCTestCase {
+    private func window(_ json: String) throws -> UsageWindow {
+        try JSONDecoder().decode(UsageWindow.self, from: Data(json.utf8))
+    }
+    private var utc: Calendar {
+        var c = Calendar(identifier: .gregorian)
+        c.timeZone = TimeZone(identifier: "UTC")!
+        return c
+    }
+
+    func testSameDayCountdownAndClock() throws {
+        let w = try window(#"{"pct": 10, "resetsAt": "2026-01-01T14:30:00Z"}"#)
+        let now = WeeklyRoll.parse("2026-01-01T12:15:00Z")!
+        XCTAssertEqual(ResetLabel.label(w, now: now, calendar: utc), "2h 15m (14:30)")
+    }
+
+    func testCrossDayShowsDate() throws {
+        let w = try window(#"{"pct": 10, "resetsAt": "2026-01-03T08:00:00Z"}"#)
+        let now = WeeklyRoll.parse("2026-01-01T08:00:00Z")!
+        XCTAssertEqual(ResetLabel.label(w, now: now, calendar: utc), "2d 0h (Jan 3 08:00)")
+    }
+
+    func testMinutesOnly() throws {
+        let w = try window(#"{"pct": 10, "resetsAt": "2026-01-01T12:59:30Z"}"#)
+        let now = WeeklyRoll.parse("2026-01-01T12:15:00Z")!
+        XCTAssertEqual(ResetLabel.label(w, now: now, calendar: utc), "44m (12:59)")
+    }
+
+    func testFallsBackToFeedStrings() throws {
+        let w = try window(#"{"pct": 10, "countdown": "3h 2m", "clock": "15:30"}"#)
+        XCTAssertEqual(ResetLabel.label(w), "3h 2m (15:30)")
+    }
+
+    func testNilWindowNil() {
+        XCTAssertNil(ResetLabel.label(nil))
+    }
+}

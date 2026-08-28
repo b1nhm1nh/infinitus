@@ -126,3 +126,39 @@ public enum SentinelNotes {
         return notes[usageStatus] ?? usageStatus.replacingOccurrences(of: "_", with: " ")
     }
 }
+
+/// "2h 15m (11:19)" — countdown plus wall clock, port of oauth.format_reset /
+/// reset_clock_string. Recomputed from `resetsAt` at render time (cached feed
+/// strings drift as the measurement ages); falls back to the fetch-time
+/// strings when the window carries no parseable reset.
+public enum ResetLabel {
+    public static func label(_ window: UsageWindow?, now: Date = Date(),
+                             calendar: Calendar = .current) -> String? {
+        guard let window else { return nil }
+        guard let reset = WeeklyRoll.parse(window.resetsAt) else {
+            guard let clock = window.clock else { return window.countdown }
+            return "\(window.countdown ?? "?") (\(clock))"
+        }
+        let total = max(0, Int(reset.timeIntervalSince(now)))
+        let days = total / 86400
+        let hours = (total % 86400) / 3600
+        let minutes = (total % 3600) / 60
+        let countdown: String
+        if days > 0 { countdown = "\(days)d \(hours)h" }
+        else if hours > 0 { countdown = "\(hours)h \(minutes)m" }
+        else { countdown = "\(minutes)m" }
+        return "\(countdown) (\(clockString(reset, now: now, calendar: calendar)))"
+    }
+
+    static func clockString(_ reset: Date, now: Date, calendar: Calendar) -> String {
+        let f = DateFormatter()
+        f.calendar = calendar
+        f.timeZone = calendar.timeZone
+        if calendar.isDate(reset, inSameDayAs: now) {
+            f.dateFormat = "HH:mm"
+        } else {
+            f.dateFormat = "MMM d HH:mm"
+        }
+        return f.string(from: reset)
+    }
+}

@@ -126,13 +126,17 @@ struct AccountGrid: View {
                 Text("\(Int(w.pct))%")
                     .foregroundStyle(w.pct >= 100 ? .red : .primary)
                     .monospacedDigit()
-                if let countdown = w.countdown {
-                    Text(countdown).font(.caption).foregroundStyle(.secondary)
+                if let when = resetLabel(w) {
+                    Text(when).font(.caption).foregroundStyle(.secondary)
                 }
             }
         } else {
             Text("—").foregroundStyle(.tertiary)
         }
+    }
+
+    private func resetLabel(_ w: UsageWindow) -> String? {
+        ResetLabel.label(w)
     }
 
     @ViewBuilder private func scopedCells(_ account: Account) -> some View {
