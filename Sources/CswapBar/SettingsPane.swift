@@ -10,12 +10,19 @@ final class SettingsModel: ObservableObject {
     @Published var drafts: [String: String] = [:]
     @Published var errors: [String: String] = [:]
     @Published var loadError: String?
+    // True while load() repopulates drafts: that mutation fires the choice
+    // pickers' .onChange, which without this guard auto-committed a
+    // `cswap config set` for every choice key each time the pane opened
+    // (observed as a spurious settings.json write on 2026-08-28).
+    private(set) var loading = false
 
     let cli: CswapCLI?
     init(cli: CswapCLI?) { self.cli = cli }
 
     func load() async {
         guard let cli else { return }
+        loading = true
+        defer { loading = false }
         do {
             let cfg = try await cli.configList()
             entries = cfg.settings
@@ -27,7 +34,7 @@ final class SettingsModel: ObservableObject {
     }
 
     func commit(_ entry: SettingEntry) {
-        guard let cli else { return }
+        guard let cli, !loading else { return }
         let draft = drafts[entry.key] ?? ""
         switch SettingDraft.validate(draft, for: entry) {
         case .invalid(let why):
