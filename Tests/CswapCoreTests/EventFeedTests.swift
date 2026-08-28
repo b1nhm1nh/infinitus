@@ -29,6 +29,12 @@ final class EventFeedTests: XCTestCase {
         XCTAssertEqual(v, 2)
     }
 
+    func testAwayNotifiedSummaryNamesTheChannels() {
+        let line = #"{"schemaVersion": 1, "event": "away-notified", "channels": ["slack", "telegram"]}"#
+        guard case .event(let e) = EventFeed.decode(line: line) else { return XCTFail() }
+        XCTAssertEqual(e.summary, "pushed switch notice to slack, telegram")
+    }
+
     func testGarbageLineIsSkippedNotFatal() {
         guard case .garbage = EventFeed.decode(line: "not json at all") else { return XCTFail() }
         // A blank line is noise, not garbage worth logging.

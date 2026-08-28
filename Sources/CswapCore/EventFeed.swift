@@ -22,6 +22,15 @@ public struct EngineEvent: Sendable {
             return "resumed \(str("sessionId"))"
         case "remote-control-rearmed":
             return "re-armed /rc on \(str("count")) session(s)"
+        case "away-notified":
+            if case .array(let items)? = raw["channels"] {
+                let names = items.compactMap { item -> String? in
+                    if case .string(let s) = item { return s }
+                    return nil
+                }
+                if !names.isEmpty { return "pushed switch notice to \(names.joined(separator: ", "))" }
+            }
+            return "pushed switch notice"
         default:
             return kind
         }
