@@ -34,6 +34,9 @@ enum Notifier {
                     DispatchQueue.main.async {
                         lastAuthError = "notifications denied in System Settings; using osascript"
                     }
+                    NSLog("CswapBar: UN auth not granted")
+                } else {
+                    NSLog("CswapBar: UN auth granted — native notifications active")
                 }
             }
     }
