@@ -27,5 +27,10 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
 </dict>
 </plist>
 PLIST
-codesign --force --sign - "$APP"
+# Prefer a real Apple Development identity: Notification Center refuses
+# ad-hoc-signed apps ("Notifications are not allowed for this application"),
+# and an ad-hoc grant would not survive rebuilds anyway.
+IDENTITY=$(security find-identity -v -p codesigning 2>/dev/null \
+    | awk -F'"' '/Apple Development/ {print $2; exit}')
+codesign --force --sign "${IDENTITY:--}" "$APP"
 echo "Built $PWD/$APP — launch with: open $APP"

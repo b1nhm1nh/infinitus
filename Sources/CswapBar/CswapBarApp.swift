@@ -15,7 +15,12 @@ struct CswapBarApp: App {
         _model = StateObject(wrappedValue: model)
         _settingsModel = StateObject(wrappedValue: SettingsModel(cli: model.cli))
         model.startFeeds()
-        Notifier.requestAuthorization()
+        // Deferred past didFinishLaunching: requesting in App.init — before
+        // the app is registered with Notification Center — fails with
+        // "Notifications are not allowed for this application".
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+            Notifier.requestAuthorization()
+        }
         Task { await model.refreshSnapshot() }
     }
 
@@ -58,6 +63,9 @@ struct MenuContent: View {
             }
             if let err = model.lastError {
                 Text(err).font(.caption).foregroundStyle(.red).lineLimit(2)
+            }
+            if let notifyErr = Notifier.lastAuthError {
+                Text(notifyErr).font(.caption).foregroundStyle(.orange).lineLimit(2)
             }
             if !model.eventLog.isEmpty {
                 Divider()
