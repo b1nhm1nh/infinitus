@@ -5,6 +5,7 @@ import CswapCore
 /// items (menubar.py `MenuBarSettings`), same choices and defaults.
 struct DisplayPane: View {
     @ObservedObject var model: AppModel
+    @StateObject private var login = LoginItemModel()
 
     private let pctLabels = ["off": "None", "5h": "Session (5h)",
                              "7d": "Weekly (7d)", "both": "Both (5h · 7d)"]
@@ -25,6 +26,14 @@ struct DisplayPane: View {
                 ForEach(TitlePrefs.refreshChoices, id: \.self) {
                     Text(intervalLabels[$0] ?? "\($0)s").tag($0)
                 }
+            }
+            Toggle("Start at login",
+                   isOn: Binding(get: { login.enabled }, set: { login.set($0) }))
+                .help("Registers the app at its current path; moving the "
+                      + "checkout breaks the login item until re-toggled.")
+                .onAppear { login.refresh() }
+            if let note = login.note {
+                Text(note).font(.caption).foregroundStyle(.orange)
             }
             Section("Account order") {
                 Text("Drag to rearrange. Slot numbers stay put; the accounts "
