@@ -24,6 +24,36 @@ struct DisplayPane: View {
                     Text(intervalLabels[$0] ?? "\($0)s").tag($0)
                 }
             }
+            Section("Account order") {
+                Text("Drag to rearrange. Slot numbers stay put; the accounts "
+                     + "shift through them (aliases, backups, and history "
+                     + "move with each account).")
+                    .font(.caption).foregroundStyle(.secondary)
+                List {
+                    ForEach(model.accounts, id: \.number) { account in
+                        HStack {
+                            Image(systemName: "line.3.horizontal")
+                                .foregroundStyle(.tertiary)
+                            Text("\(account.number)").monospacedDigit()
+                                .foregroundStyle(.secondary)
+                            Text(account.alias ?? account.email).lineLimit(1)
+                            if account.active {
+                                Text("active").font(.caption)
+                                    .foregroundStyle(Color.accentColor)
+                            }
+                        }
+                    }
+                    .onMove { from, to in
+                        var order = model.accounts.map(\.number)
+                        order.move(fromOffsets: from, toOffset: to)
+                        model.reorder(order)
+                    }
+                }
+                .frame(minHeight: CGFloat(model.accounts.count) * 28 + 16)
+                if let err = model.reorderError {
+                    Text(err).font(.caption).foregroundStyle(.red)
+                }
+            }
         }
         .formStyle(.grouped)
     }

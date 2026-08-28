@@ -74,6 +74,11 @@ public struct CswapCLI: Sendable {
         try await run(["switch", "--json"])
     }
 
+    @discardableResult
+    public func reorder(_ numbers: [Int]) async throws -> Data {
+        try await run(["reorder"] + numbers.map(String.init) + ["--json"])
+    }
+
     public func notifyStatus() async throws -> NotifyStatus {
         try JSONDecoder().decode(NotifyStatus.self, from: await run(["notify", "--json"]))
     }

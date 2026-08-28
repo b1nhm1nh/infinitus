@@ -160,4 +160,22 @@ final class AppModel: ObservableObject {
             } catch { lastError = "\(error)" }
         }
     }
+
+    @Published var reorderError: String?
+
+    /// Apply a drag-reorder: `order` is the account numbers in their new
+    /// top-to-bottom sequence. Optimistically re-sorts the local rows so the
+    /// row lands where it was dropped, then lets the snapshot confirm.
+    func reorder(_ order: [Int]) {
+        guard let cli else { return }
+        let index = Dictionary(uniqueKeysWithValues: order.enumerated().map { ($1, $0) })
+        accounts.sort { (index[$0.number] ?? 0) < (index[$1.number] ?? 0) }
+        Task {
+            do {
+                _ = try await cli.reorder(order)
+                reorderError = nil
+            } catch { reorderError = "\(error)" }
+            await refreshSnapshot()
+        }
+    }
 }
