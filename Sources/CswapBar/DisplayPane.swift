@@ -19,6 +19,8 @@ struct DisplayPane: View {
                 }
             }
             Toggle("Show model limits in title", isOn: $model.titleScoped)
+            Toggle("Gamified mode (RPG gauges in the account list)",
+                   isOn: $model.gamifiedRows)
             Picker("Refresh interval", selection: $model.refreshInterval) {
                 ForEach(TitlePrefs.refreshChoices, id: \.self) {
                     Text(intervalLabels[$0] ?? "\($0)s").tag($0)

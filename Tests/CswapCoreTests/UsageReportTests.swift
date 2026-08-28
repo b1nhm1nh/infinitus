@@ -27,3 +27,21 @@ final class UsageReportTests: XCTestCase {
         XCTAssertEqual(TokenFormat.compact(1_200_000_000), "1.2B")
     }
 }
+
+final class GaugeMathTests: XCTestCase {
+    func testFilledCells() {
+        XCTAssertEqual(GaugeMath.filled(0), 0)
+        XCTAssertEqual(GaugeMath.filled(100), 8)
+        XCTAssertEqual(GaugeMath.filled(50), 4)
+        XCTAssertEqual(GaugeMath.filled(6), 0)     // rounds to nearest cell
+        XCTAssertEqual(GaugeMath.filled(7), 1)
+        XCTAssertEqual(GaugeMath.filled(150), 8)   // clamped
+        XCTAssertEqual(GaugeMath.filled(-5), 0)
+    }
+
+    func testRemainingIsHPSemantics() {
+        XCTAssertEqual(GaugeMath.remaining(usedPct: 30), 70)
+        XCTAssertEqual(GaugeMath.remaining(usedPct: 120), 0)  // over-limit floors
+        XCTAssertEqual(GaugeMath.remaining(usedPct: -1), 100)
+    }
+}

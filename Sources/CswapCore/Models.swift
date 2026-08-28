@@ -162,3 +162,23 @@ public enum TokenFormat {
         return String(n)
     }
 }
+
+/// Gauge math for the gamified account rows (backlog item 8) — the WoW
+/// statusline's 8-cell bar, recomputed here because the app renders it in
+/// SwiftUI rather than ANSI. Pure so it can be tested without a view.
+public enum GaugeMath {
+    public static let cells = 8
+
+    /// How many of the 8 cells are filled for a remaining-percentage,
+    /// rounded to nearest (the statusline's `(pct*W + 50)/100`).
+    public static func filled(_ pct: Double) -> Int {
+        let clamped = Int(max(0, min(100, pct)))
+        return (clamped * cells + 50) / 100
+    }
+
+    /// Remaining percentage from a used percentage — HP/MP semantics:
+    /// a fresh account shows a full bar.
+    public static func remaining(usedPct: Double) -> Double {
+        max(0, min(100, 100 - usedPct))
+    }
+}

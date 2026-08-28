@@ -26,6 +26,7 @@ final class AppModel: ObservableObject {
     @Published var titlePct: String { didSet { defaults.set(titlePct, forKey: "title_pct") } }
     @Published var titleScoped: Bool { didSet { defaults.set(titleScoped, forKey: "title_scoped") } }
     @Published var refreshInterval: Int { didSet { defaults.set(refreshInterval, forKey: "refresh_interval") } }
+    @Published var gamifiedRows: Bool { didSet { defaults.set(gamifiedRows, forKey: "gamified_rows") } }
     private let defaults = UserDefaults.standard
 
     var title: String {
@@ -42,6 +43,7 @@ final class AppModel: ObservableObject {
         titleScoped = defaults.object(forKey: "title_scoped") as? Bool ?? false
         let interval = defaults.object(forKey: "refresh_interval") as? Int ?? 60
         refreshInterval = TitlePrefs.refreshChoices.contains(interval) ? interval : 60
+        gamifiedRows = defaults.object(forKey: "gamified_rows") as? Bool ?? false
         if let path = CswapLocator.locate() {
             cli = CswapCLI(binaryPath: path)
         } else {

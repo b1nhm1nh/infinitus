@@ -30,7 +30,7 @@ struct CswapBarApp: App {
 
     var body: some Scene {
         MenuBarExtra(model.title) {
-            MenuContent(model: model)
+            MenuContent(model: model, usage: usageModel)
                 .task { await model.refreshSnapshot() }
         }
         .menuBarExtraStyle(.window)
@@ -55,10 +55,11 @@ struct CswapBarApp: App {
 
 struct MenuContent: View {
     @ObservedObject var model: AppModel
+    @ObservedObject var usage: UsageModel
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            AccountGrid(model: model)
+            AccountGrid(model: model, usage: usage)
             Divider()
             HStack {
                 Button("Rotate to next") { model.rotate() }
@@ -110,9 +111,11 @@ struct MenuContent: View {
 /// color's alpha and show as darker stripes).
 struct AccountGrid: View {
     @ObservedObject var model: AppModel
+    @ObservedObject var usage: UsageModel
 
     var body: some View {
         Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 8) {
+            // (gold warms lazily below — the scan is multi-second)
             ForEach(model.accounts, id: \.number) { account in
                 GridRow {
                     Text("\(account.number)")
@@ -142,10 +145,15 @@ struct AccountGrid: View {
                         windowCell(account.usage?.fiveHour, label: "5h", active: account.active)
                         windowCell(account.usage?.sevenDay, label: "7d", active: account.active)
                         scopedCells(account)
+                        goldCell(account)
                     }
                 }
             }
         }
+        // Warm the gold figures when the popup opens in gamified mode: a
+        // background `cswap usage` run, cached in the shared UsageModel —
+        // rows fill in when it lands, instantly on later opens.
+        .onAppear { if model.gamifiedRows { usage.loadIfNeeded() } }
     }
 
     @ViewBuilder private func windowCell(
@@ -163,11 +171,26 @@ struct AccountGrid: View {
                             .foregroundStyle(.orange)
                             .help("Burning faster than the window elapses")
                     }
-                    Text(label).foregroundStyle(.secondary)
-                    Text("\(Int(w.pct))%")
-                        .foregroundStyle(w.pct >= 100 ? .red : .primary)
-                        .monospacedDigit()
-                        .contentTransition(.numericText(value: w.pct))
+                    if model.gamifiedRows {
+                        // HP/MP semantics: the gauge shows what's LEFT.
+                        // MP (blue) = the 5h session window, HP (red) = the
+                        // weekly window — the statusline's vocabulary.
+                        Text(label == "5h" ? "MP" : "HP")
+                            .font(.caption).bold()
+                            .foregroundStyle(label == "5h" ? Color.blue : Color.red)
+                            .help(label == "5h" ? "Session mana (5h window left)"
+                                                : "Weekly health (7d window left)")
+                        GaugeBar(
+                            remaining: GaugeMath.remaining(usedPct: w.pct),
+                            color: label == "5h" ? .blue : .red
+                        )
+                    } else {
+                        Text(label).foregroundStyle(.secondary)
+                        Text("\(Int(w.pct))%")
+                            .foregroundStyle(w.pct >= 100 ? .red : .primary)
+                            .monospacedDigit()
+                            .contentTransition(.numericText(value: w.pct))
+                    }
                     if let when = resetLabel(w) {
                         Text(when).font(.caption).foregroundStyle(.secondary)
                     }
@@ -181,6 +204,19 @@ struct AccountGrid: View {
         // email column is the one flexible (truncating) column left.
         .fixedSize()
         .activeBand(active)
+    }
+
+    /// The account's estimated 7-day spend as RPG gold, from the Usage
+    /// tab's cached report — never triggers the multi-second scan itself.
+    @ViewBuilder private func goldCell(_ account: Account) -> some View {
+        if model.gamifiedRows,
+           let row = usage.report?.accounts.first(where: { $0.number == account.number }) {
+            Text("💰\(Int(row.estimatedUSD))")
+                .font(.caption).foregroundStyle(.yellow)
+                .help("Estimated API-price spend, last \(usage.report?.days ?? 7) days — not a bill")
+                .fixedSize()
+                .activeBand(account.active)
+        }
     }
 
     private func resetLabel(_ w: UsageWindow) -> String? {
