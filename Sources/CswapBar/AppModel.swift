@@ -91,6 +91,8 @@ final class AppModel: ObservableObject {
                 Task { await refreshSnapshot() }  // the snapshot diff posts the notification
             case "session-resumed":
                 Notifier.post(title: "claude-swap", body: event.summary)
+            case "remote-control-rearmed":
+                Notifier.post(title: "claude-swap", body: event.summary)
             case "account-unquarantined":
                 Notifier.post(title: "claude-swap", body: "account back in rotation")
             case "all-exhausted":

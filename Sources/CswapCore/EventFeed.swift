@@ -20,6 +20,8 @@ public struct EngineEvent: Sendable {
             return "no switch: \(str("reason"))"
         case "session-resumed":
             return "resumed \(str("sessionId"))"
+        case "remote-control-rearmed":
+            return "re-armed /rc on \(str("count")) session(s)"
         default:
             return kind
         }
