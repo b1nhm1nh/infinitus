@@ -79,7 +79,7 @@ struct MenuContent: View {
             Button("Quit") { NSApplication.shared.terminate(nil) }
         }
         .padding(12)
-        .frame(minWidth: 440)
+        .frame(minWidth: 560)
     }
 
     @ViewBuilder private var engineBadge: some View {
@@ -95,16 +95,22 @@ struct MenuContent: View {
 }
 
 /// The account rows as a real Grid — the alignment the rumps menubar had to
-/// fake with monospaced padding (spec §4).
+/// fake with monospaced padding (spec §4). The active row gets a contiguous
+/// highlight band: Grid offers no per-row background, so each cell paints one
+/// and extends it exactly half the row's spacing in every direction — the
+/// segments meet edge-to-edge (an overlap would double the translucent
+/// color's alpha and show as darker stripes).
 struct AccountGrid: View {
     @ObservedObject var model: AppModel
 
     var body: some View {
-        Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 4) {
+        Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 8) {
             ForEach(model.accounts, id: \.number) { account in
                 GridRow {
                     Text("\(account.number)")
                         .fontWeight(account.active ? .bold : .regular)
+                        .foregroundStyle(account.active ? Color.accentColor : Color.primary)
+                        .activeBand(account.active)
                     let disabled = account.disabled ?? false
                     Button(disabled ? "\(account.alias ?? account.email)  (disabled)"
                                     : (account.alias ?? account.email)) {
@@ -113,13 +119,15 @@ struct AccountGrid: View {
                     .buttonStyle(.plain)
                     .fontWeight(account.active ? .bold : .regular)
                     .foregroundStyle(disabled ? .secondary : .primary)
+                    .activeBand(account.active)
                     if let note = SentinelNotes.note(for: account.usageStatus) {
                         Text(note)
                             .foregroundStyle(.secondary)
                             .gridCellColumns(3)   // spans the usage columns
+                            .activeBand(account.active)
                     } else {
-                        windowCell(account.usage?.fiveHour, label: "5h")
-                        windowCell(account.usage?.sevenDay, label: "7d")
+                        windowCell(account.usage?.fiveHour, label: "5h", active: account.active)
+                        windowCell(account.usage?.sevenDay, label: "7d", active: account.active)
                         scopedCells(account)
                     }
                 }
@@ -127,20 +135,28 @@ struct AccountGrid: View {
         }
     }
 
-    @ViewBuilder private func windowCell(_ w: UsageWindow?, label: String) -> some View {
-        if let w {
-            HStack(spacing: 3) {
-                Text(label).foregroundStyle(.secondary)
-                Text("\(Int(w.pct))%")
-                    .foregroundStyle(w.pct >= 100 ? .red : .primary)
-                    .monospacedDigit()
-                if let when = resetLabel(w) {
-                    Text(when).font(.caption).foregroundStyle(.secondary)
+    @ViewBuilder private func windowCell(
+        _ w: UsageWindow?, label: String, active: Bool
+    ) -> some View {
+        Group {
+            if let w {
+                HStack(spacing: 3) {
+                    Text(label).foregroundStyle(.secondary)
+                    Text("\(Int(w.pct))%")
+                        .foregroundStyle(w.pct >= 100 ? .red : .primary)
+                        .monospacedDigit()
+                    if let when = resetLabel(w) {
+                        // fixedSize: the reset time is the row's payload —
+                        // grow the popup rather than truncate it to "3d 10…".
+                        Text(when).font(.caption).foregroundStyle(.secondary)
+                            .fixedSize()
+                    }
                 }
+            } else {
+                Text("—").foregroundStyle(.tertiary)
             }
-        } else {
-            Text("—").foregroundStyle(.tertiary)
         }
+        .activeBand(active)
     }
 
     private func resetLabel(_ w: UsageWindow) -> String? {
@@ -155,6 +171,26 @@ struct AccountGrid: View {
                     .foregroundStyle(w.pct >= 100 ? .red : .primary)
                     .monospacedDigit()
             }
+            .activeBand(account.active)
         }
     }
+}
+
+private struct ActiveBand: ViewModifier {
+    let active: Bool
+
+    func body(content: Content) -> some View {
+        content.background {
+            if active {
+                Rectangle()
+                    .fill(Color.accentColor.opacity(0.22))
+                    .padding(.vertical, -4)     // half the Grid's verticalSpacing
+                    .padding(.horizontal, -6)   // half the horizontalSpacing
+            }
+        }
+    }
+}
+
+private extension View {
+    func activeBand(_ on: Bool) -> some View { modifier(ActiveBand(active: on)) }
 }
