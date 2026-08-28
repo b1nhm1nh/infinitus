@@ -149,13 +149,14 @@ struct AccountGrid: View {
         Group {
             if let w {
                 HStack(spacing: 3) {
-                    if active && label == "5h" {
-                        // The token-burn flame: only the live account is
-                        // spending tokens right now.
+                    if w.aheadOfPace == true {
+                        // Token-burn flame: usage is meaningfully ahead of the
+                        // window's elapsed time (the feed's pace verdict —
+                        // weekly windows only, with its noise threshold).
+                        // Static on purpose; a flicker overstated it.
                         Image(systemName: "flame.fill")
                             .foregroundStyle(.orange)
-                            .symbolEffect(.variableColor.iterative.reversing,
-                                          options: .repeating)
+                            .help("Burning faster than the window elapses")
                     }
                     Text(label).foregroundStyle(.secondary)
                     Text("\(Int(w.pct))%")
@@ -184,6 +185,11 @@ struct AccountGrid: View {
     @ViewBuilder private func scopedCells(_ account: Account) -> some View {
         ForEach(account.usage?.scoped ?? [], id: \.name) { w in
             HStack(spacing: 3) {
+                if w.aheadOfPace == true {
+                    Image(systemName: "flame.fill")
+                        .foregroundStyle(.orange)
+                        .help("Burning faster than the window elapses")
+                }
                 Text(w.name ?? "?").foregroundStyle(.secondary)
                 Text("\(Int(w.pct))%")
                     .foregroundStyle(w.pct >= 100 ? .red : .primary)
