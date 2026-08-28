@@ -23,6 +23,8 @@ public struct Account: Decodable, Sendable {
     public let usageStatus: String
     public let usage: Usage?
     public let alias: String?
+    /// One-emoji display icon (`cswap icon`); additive field, may be absent.
+    public let icon: String?
     public let disabled: Bool?
     public let usageFetchedAt: String?
     public let usageAgeSeconds: Double?

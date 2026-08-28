@@ -116,8 +116,9 @@ struct AccountGrid: View {
                         .foregroundStyle(account.active ? Color.accentColor : Color.primary)
                         .activeBand(account.active)
                     let disabled = account.disabled ?? false
-                    Button(disabled ? "\(account.alias ?? account.email)  (disabled)"
-                                    : (account.alias ?? account.email)) {
+                    let name = [account.icon, account.alias ?? account.email]
+                        .compactMap { $0 }.joined(separator: " ")
+                    Button(disabled ? "\(name)  (disabled)" : name) {
                         model.switchTo(account.number)   // disabled rows stay clickable, like rumps
                     }
                     .buttonStyle(.plain)
