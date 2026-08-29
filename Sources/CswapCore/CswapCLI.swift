@@ -33,27 +33,44 @@ public struct CswapCLI: Sendable {
     /// secrets travel on (`cswap notify slack -`), so they never appear in an
     /// argv another process could read out of `ps`.
     public func run(_ arguments: [String], stdin: String? = nil) async throws -> Data {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: binaryPath)
-        process.arguments = arguments
-        let out = Pipe()
-        process.standardOutput = out
-        process.standardError = Pipe()
-        if let stdin {
-            let input = Pipe()
-            process.standardInput = input
-            input.fileHandleForWriting.write(Data((stdin + "\n").utf8))
-            input.fileHandleForWriting.closeFile()
+        // The blocking Process dance lives on a GCD thread, bridged by a
+        // continuation. Running it inline in this async function blocked
+        // whatever executor served it — on macOS 26 the body silently never
+        // ran to completion (verified live 2026-08-29: "run() entered" then
+        // nothing, no thread anywhere in the process holding the frames).
+        let binaryPath = self.binaryPath
+        return try await withCheckedThrowingContinuation { cont in
+            DispatchQueue.global(qos: .userInitiated).async {
+                let process = Process()
+                process.executableURL = URL(fileURLWithPath: binaryPath)
+                process.arguments = arguments
+                let out = Pipe()
+                process.standardOutput = out
+                process.standardError = Pipe()
+                if let stdin {
+                    let input = Pipe()
+                    process.standardInput = input
+                    input.fileHandleForWriting.write(Data((stdin + "\n").utf8))
+                    input.fileHandleForWriting.closeFile()
+                }
+                do {
+                    try process.run()
+                } catch {
+                    cont.resume(throwing: error)
+                    return
+                }
+                // Drain BEFORE waiting: a payload larger than the pipe buffer
+                // would otherwise deadlock the child against an unread pipe.
+                let data = out.fileHandleForReading.readDataToEndOfFile()
+                process.waitUntilExit()
+                guard process.terminationStatus == 0 else {
+                    cont.resume(throwing: CLIError(
+                        message: "cswap \(arguments.joined(separator: " ")) exited \(process.terminationStatus)"))
+                    return
+                }
+                cont.resume(returning: data)
+            }
         }
-        try process.run()
-        // Drain BEFORE waiting: a payload larger than the pipe buffer would
-        // otherwise deadlock the child against an unread pipe.
-        let data = out.fileHandleForReading.readDataToEndOfFile()
-        process.waitUntilExit()
-        guard process.terminationStatus == 0 else {
-            throw CLIError(message: "cswap \(arguments.joined(separator: " ")) exited \(process.terminationStatus)")
-        }
-        return data
     }
 
     public func accountList() async throws -> AccountList {

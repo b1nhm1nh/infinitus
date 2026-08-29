@@ -6,6 +6,7 @@ private func account(_ json: String) throws -> Account {
 }
 
 private let base = #""number": 1, "email": "dev@example.com", "organizationName": "o", "organizationUuid": "u", "isOrganization": true, "active": true"#
+private let base2 = #""number": 4, "email": "dontsuckmyemail@gmail.com", "organizationName": "o", "organizationUuid": "u", "isOrganization": true, "active": true"#
 
 final class TitleFormatterTests: XCTestCase {
     func testNoAccountIsBareIcon() {
@@ -14,7 +15,15 @@ final class TitleFormatterTests: XCTestCase {
 
     func testBothPctsWithLocalPart() throws {
         let a = try account(#"{\#(base), "usageStatus": "ok", "usage": {"fiveHour": {"pct": 12.4}, "sevenDay": {"pct": 88.6, "resetsAt": "2999-01-01T00:00:00Z"}}}"#)
-        XCTAssertEqual(TitleFormatter.format(account: a, prefs: TitlePrefs()), "⇄ dev · 12% · 89%")
+        XCTAssertEqual(TitleFormatter.format(account: a, prefs: TitlePrefs()), "⇄ dev · 12·89%")
+    }
+
+    func testLongNamesAreCapped() throws {
+        // The menu bar EVICTS items that stop fitting (and persists the
+        // eviction), so the title must never grow past a compact width.
+        let a = try account(#"{\#(base2), "usageStatus": "ok", "usage": {"fiveHour": {"pct": 5}, "sevenDay": {"pct": 49, "resetsAt": "2999-01-01T00:00:00Z"}}}"#)
+        XCTAssertEqual(TitleFormatter.format(account: a, prefs: TitlePrefs()),
+                       "⇄ dontsuckm… · 5·49%")
     }
 
     func testAliasWinsAndModesFilter() throws {

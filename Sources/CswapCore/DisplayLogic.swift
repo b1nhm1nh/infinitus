@@ -59,22 +59,33 @@ public enum WeeklyRoll {
 public enum TitleFormatter {
     public static let icon = "⇄"
 
+    /// The menu bar drops (and persists as user-removed!) any status item
+    /// that no longer fits — verified live 2026-08-29 on a crowded notched
+    /// bar: a 12-char title was evicted, a 1-char title survived. The title
+    /// therefore stays SHORT: names cap at 10 chars, percentages join with
+    /// a bare dot.
+    static let maxNameLength = 10
+
     public static func format(account: Account?, prefs: TitlePrefs,
                               now: Date = Date()) -> String {
         guard let account else { return icon }
         var segments: [String] = []
         if prefs.showAccountName {
-            segments.append(account.alias ?? String(account.email.prefix(while: { $0 != "@" })))
+            let name = account.alias ?? String(account.email.prefix(while: { $0 != "@" }))
+            segments.append(name.count > maxNameLength
+                            ? name.prefix(maxNameLength - 1) + "…" : name)
         }
         let usage = account.usage
+        var pcts: [String] = []
         if prefs.titlePct == "5h" || prefs.titlePct == "both",
            let pct = usage?.fiveHour?.pct {
-            segments.append("\(Int(pct.rounded()))%")
+            pcts.append("\(Int(pct.rounded()))")
         }
         if prefs.titlePct == "7d" || prefs.titlePct == "both",
            let pct = WeeklyRoll.displayPct(usage?.sevenDay, now: now) {
-            segments.append("\(Int(pct.rounded()))%")
+            pcts.append("\(Int(pct.rounded()))")
         }
+        if !pcts.isEmpty { segments.append(pcts.joined(separator: "·") + "%") }
         if prefs.titleScoped {
             for window in usage?.scoped ?? [] {
                 guard let name = window.name,

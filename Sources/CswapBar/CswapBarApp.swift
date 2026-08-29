@@ -2,6 +2,35 @@ import SwiftUI
 import AppKit
 import CswapCore
 
+/// The one AppKit knob that lets a popover-only accessory app live with no
+/// open windows: without it, SwiftUI terminates the process as soon as the
+/// last window closes (verified live — the app died the moment the keepalive
+/// window was closed OR ordered out).
+final class AppDelegate: NSObject, NSApplicationDelegate {
+    // Injected by CswapBarApp.init; the status item is created HERE, in
+    // applicationDidFinishLaunching — creating an NSStatusItem before the
+    // app finishes launching fails silently (no item, no error).
+    var makeStatusItem: (() -> Void)?
+    var statusHolder: StatusItemHolder?
+
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        makeStatusItem?()
+    }
+
+    func applicationShouldTerminateAfterLastWindowClosed(_ app: NSApplication) -> Bool {
+        false
+    }
+
+    /// `open CswapBar.app` on an already-running instance lands here: show
+    /// the pinned window. This is the guaranteed way into the UI when the
+    /// menu bar is too full to display the status item at all.
+    func applicationShouldHandleReopen(_ app: NSApplication,
+                                       hasVisibleWindows: Bool) -> Bool {
+        statusHolder?.controller.showPinnedWindow()
+        return false
+    }
+}
+
 @main
 struct CswapBarApp: App {
     @StateObject private var model: AppModel
@@ -9,6 +38,7 @@ struct CswapBarApp: App {
     @StateObject private var reliabilityModel = ResumeReliabilityModel()
     @StateObject private var notifyModel: NotifyModel
     @StateObject private var usageModel: UsageModel
+    @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
 
     init() {
         // Menu bar app: no Dock icon, no main window.
@@ -22,6 +52,9 @@ struct CswapBarApp: App {
         // Warm the multi-second transcript scan at launch so the Usage tab
         // and the gamified gold column open onto data, not a spinner.
         usage.loadIfNeeded()
+        appDelegate.makeStatusItem = { [weak appDelegate] in
+            appDelegate?.statusHolder = StatusItemHolder(model: model, usage: usage)
+        }
         model.startFeeds()
         // Deferred past didFinishLaunching: requesting in App.init — before
         // the app is registered with Notification Center — fails with
@@ -33,21 +66,9 @@ struct CswapBarApp: App {
     }
 
     var body: some Scene {
-        MenuBarExtra(model.title, isInserted: $model.menuBarIconShown) {
-            MenuContent(model: model, usage: usageModel)
-                .task { await model.refreshSnapshot() }
-        }
-        .menuBarExtraStyle(.window)
-
-        // The "sticky" surface: the same content in a real window that stays
-        // open while you work (the MenuBarExtra popup closes on any outside
-        // click — that dismissal is AppKit's, not ours to disable).
-        Window("CswapBar", id: "pinned") {
-            MenuContent(model: model, usage: usageModel)
-                .task { await model.refreshSnapshot() }
-        }
-        .windowResizability(.contentMinSize)
-        .defaultSize(width: 720, height: 480)
+        // No MenuBarExtra scene: the status item is a raw NSStatusItem owned
+        // by StatusItemController (see its header for why). Keep-alive with
+        // zero windows comes from KeepAliveDelegate.
 
         Settings {
             TabView {
@@ -62,20 +83,14 @@ struct CswapBarApp: App {
                 UsagePane(model: usageModel)
                     .tabItem { Label("Usage", systemImage: "chart.bar") }
             }
-            .frame(minWidth: 600, minHeight: 520)
+            .frame(width: 600, height: 520)  // SPIN-BISECT: fixed again
         }
-        .windowResizability(.contentMinSize)
     }
 }
 
 struct MenuContent: View {
     @ObservedObject var model: AppModel
     @ObservedObject var usage: UsageModel
-    // The one way into the Settings window: an accessory app has no app
-    // menu or Dock, so without this button ⌘, on a focused popup was the
-    // only (undiscoverable) path to every settings pane.
-    @Environment(\.openSettings) private var openSettings
-    @Environment(\.openWindow) private var openWindow
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -107,14 +122,14 @@ struct MenuContent: View {
             Divider()
             HStack {
                 Button("Settings…") {
-                    // Activate first: an accessory app's new window would
-                    // otherwise open behind whatever has focus.
+                    // The selector path works from ANY host (popover or
+                    // window); the openSettings environment action only
+                    // exists inside the scene graph.
                     NSApp.activate(ignoringOtherApps: true)
-                    openSettings()
+                    NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
                 }
                 Button {
-                    NSApp.activate(ignoringOtherApps: true)
-                    openWindow(id: "pinned")
+                    model.showPinned?()
                 } label: {
                     Label("Pin", systemImage: "pin")
                 }

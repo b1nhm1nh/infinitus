@@ -15,6 +15,9 @@ final class AppModel: ObservableObject {
     @Published var lastError: String?
 
     let cli: CswapCLI?
+    /// Set by StatusItemHolder — opens the pinned window from any host
+    /// (the popover copy of MenuContent has no openWindow environment).
+    var showPinned: (() -> Void)?
     private var supervisor: EngineSupervisor?
     private var refreshTask: Task<Void, Never>?
     private var lastNotifiedActive: Int?
