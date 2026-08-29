@@ -25,6 +25,8 @@ public struct Account: Decodable, Sendable {
     public let alias: String?
     /// One-emoji display icon (`cswap icon`); additive field, may be absent.
     public let icon: String?
+    /// Claude subscription tier ("Max 20x", "Pro"); additive, may be absent.
+    public let plan: String?
     public let disabled: Bool?
     public let usageFetchedAt: String?
     public let usageAgeSeconds: Double?

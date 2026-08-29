@@ -163,9 +163,6 @@ struct MenuContent: View {
             if let err = model.lastError {
                 Text(err).font(.caption).foregroundStyle(.red).lineLimit(2)
             }
-            if let notifyErr = Notifier.lastAuthError {
-                Text(notifyErr).font(.caption).foregroundStyle(.orange).lineLimit(2)
-            }
             if !model.compactRows {
                 if !model.eventLog.isEmpty {
                     Divider()
@@ -277,6 +274,11 @@ struct AccountGrid: View {
                     // more width than the popup has.
                     .frame(minWidth: 110, maxWidth: 230, alignment: .leading)
                     .activeBand(account.active)
+                    Text(account.plan ?? "")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize()
+                        .activeBand(account.active)
                     if let note = SentinelNotes.note(for: account.usageStatus) {
                         Text(note)
                             .foregroundStyle(.secondary)
@@ -303,13 +305,17 @@ struct AccountGrid: View {
         Group {
             if let w {
                 HStack(spacing: 3) {
-                    if w.aheadOfPace == true {
+                    if label != "5h" {
                         // Token-burn flame: usage is meaningfully ahead of the
                         // window's elapsed time (the feed's pace verdict —
                         // weekly windows only, with its noise threshold).
-                        // Static on purpose; a flicker overstated it.
+                        // Static on purpose; a flicker overstated it. ALWAYS
+                        // in the layout, invisible when pace is fine: a
+                        // conditional flame shifted flame-rows right and
+                        // broke the column alignment.
                         Image(systemName: "flame.fill")
                             .foregroundStyle(.orange)
+                            .opacity(w.aheadOfPace == true ? 1 : 0)
                             .help("Burning faster than the window elapses")
                     }
                     if model.gamifiedRows {
@@ -373,16 +379,26 @@ struct AccountGrid: View {
     @ViewBuilder private func scopedCells(_ account: Account) -> some View {
         ForEach(account.usage?.scoped ?? [], id: \.name) { w in
             HStack(spacing: 3) {
-                if w.aheadOfPace == true {
-                    Image(systemName: "flame.fill")
-                        .foregroundStyle(.orange)
-                        .help("Burning faster than the window elapses")
+                Image(systemName: "flame.fill")
+                    .foregroundStyle(.orange)
+                    .opacity(w.aheadOfPace == true ? 1 : 0)
+                    .help("Burning faster than the window elapses")
+                if model.gamifiedRows {
+                    // Same RPG treatment as HP/MP: the per-model weekly
+                    // limit as a purple gauge of what's LEFT.
+                    Text(w.name ?? "?")
+                        .font(.caption).bold()
+                        .foregroundStyle(Color.purple)
+                        .help("Model weekly limit left")
+                    GaugeBar(remaining: GaugeMath.remaining(usedPct: w.pct),
+                             color: .purple)
+                } else {
+                    Text(w.name ?? "?").foregroundStyle(.secondary)
+                    Text("\(Int(w.pct))%")
+                        .foregroundStyle(w.pct >= 100 ? .red : .primary)
+                        .monospacedDigit()
+                        .contentTransition(.numericText(value: w.pct))
                 }
-                Text(w.name ?? "?").foregroundStyle(.secondary)
-                Text("\(Int(w.pct))%")
-                    .foregroundStyle(w.pct >= 100 ? .red : .primary)
-                    .monospacedDigit()
-                    .contentTransition(.numericText(value: w.pct))
             }
             .fixedSize()
             .activeBand(account.active)

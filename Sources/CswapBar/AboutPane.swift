@@ -127,11 +127,13 @@ final class UpdateModel: ObservableObject {
     }
 }
 
-/// About + updates. The update path touches the PYTHON tool only —
-/// CswapBar.app itself has no distribution channel; it rebuilds from the
-/// repo (make-app.sh).
+/// About + updates, CodexBar-style: hero card (icon, version, build,
+/// tagline), an Updates group, full-row link rows with leading icons and a
+/// trailing arrow, and a license footer. The update path still touches the
+/// PYTHON tool only — CswapBar.app itself rebuilds from the repo.
 struct AboutPane: View {
     @ObservedObject var model: UpdateModel
+    @Environment(\.openURL) private var openURL
 
     private var appVersion: String {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString")
@@ -140,46 +142,59 @@ struct AboutPane: View {
     private var appBuild: String? {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String
     }
+    /// Stamped nowhere in Info.plist, so read the truth: the executable's
+    /// modification time IS the build time.
+    private var buildDate: String? {
+        guard let url = Bundle.main.executableURL,
+              let date = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?
+                  .contentModificationDate
+        else { return nil }
+        return date.formatted(date: .abbreviated, time: .shortened)
+    }
 
     var body: some View {
         Form {
             Section {
-                LabeledContent("CswapBar") {
-                    Text(appBuild.map { "\(appVersion) (\($0))" } ?? appVersion)
-                        .monospacedDigit()
+                VStack(spacing: 5) {
+                    appMark
+                        .padding(.bottom, 6)
+                    Text("CswapBar").font(.title2).bold()
+                    Text(appBuild.map { "Version \(appVersion) (\($0))" }
+                         ?? "Version \(appVersion)")
+                        .foregroundStyle(.secondary)
+                    if let buildDate {
+                        Text("Built \(buildDate)")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                    Text("Five accounts, one menu bar — swap before you stall.")
+                        .font(.caption).foregroundStyle(.secondary)
+                        .padding(.top, 2)
                 }
-                LabeledContent("cswap engine") {
-                    Text(model.current ?? "—").monospacedDigit()
-                }
-                LabeledContent("Author") {
-                    Link("deathemperor", destination:
-                        URL(string: "https://github.com/deathemperor")!)
-                }
-                LabeledContent("Project") {
-                    Link("deathemperor/claude-swap", destination:
-                        URL(string: "https://github.com/deathemperor/claude-swap")!)
-                }
-                LabeledContent("Changelog") {
-                    Link("release notes", destination: changelogURL)
-                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 10)
             }
+
             Section("Updates") {
-                Text("Updates apply to the cswap engine (from PyPI). "
-                     + "The app itself rebuilds from the repo.")
-                    .font(.caption).foregroundStyle(.secondary)
-                HStack {
-                    Button(model.busy ? "Checking…" : "Check for updates") {
-                        Task { await model.check() }
+                Toggle("Check for updates automatically", isOn: $model.autoCheck)
+                Toggle("Install updates automatically", isOn: $model.autoInstall)
+                    .help("When a newer version appears, run `cswap upgrade` "
+                          + "unattended and restart the engine. Off: notify only.")
+                LabeledContent {
+                    HStack {
+                        if model.updateAvailable {
+                            Button("Update Now") { Task { await model.upgrade() } }
+                                .disabled(model.busy)
+                                .buttonStyle(.borderedProminent)
+                        }
+                        Button(model.busy ? "Checking…" : "Check for Updates…") {
+                            Task { await model.check() }
+                        }
+                        .disabled(model.busy)
                     }
-                    .disabled(model.busy)
-                    if model.updateAvailable {
-                        Button("Update now") { Task { await model.upgrade() } }
-                            .disabled(model.busy)
-                            .buttonStyle(.borderedProminent)
-                    }
-                    Spacer()
+                } label: {
+                    Text("cswap engine \(model.current ?? "—")")
                     if let latest = model.latest {
-                        Text("latest: \(latest)")
+                        Text("latest on PyPI: \(latest)")
                             .font(.caption).foregroundStyle(.secondary)
                     }
                 }
@@ -188,10 +203,6 @@ struct AboutPane: View {
                         .font(.caption)
                         .foregroundStyle(model.updateAvailable ? Color.orange : .secondary)
                 }
-                Toggle("Check automatically (daily)", isOn: $model.autoCheck)
-                Toggle("Install updates automatically", isOn: $model.autoInstall)
-                    .help("When a newer version appears, run `cswap upgrade` "
-                          + "unattended and restart the engine. Off: notify only.")
                 if let output = model.upgradeOutput, !output.isEmpty {
                     DisclosureGroup("upgrade output") {
                         ScrollView {
@@ -203,10 +214,81 @@ struct AboutPane: View {
                         .frame(maxHeight: 160)
                     }
                 }
+                Text("Updates apply to the cswap engine (from PyPI). "
+                     + "The app itself rebuilds from the repo.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+
+            Section("Notifications") {
+                LabeledContent("Delivery") {
+                    Text(Notifier.lastAuthError == nil
+                         ? "Notification Center" : "osascript fallback")
+                }
+                if let why = Notifier.lastAuthError {
+                    Text(why).font(.caption).foregroundStyle(.secondary)
+                    Text("Notification Center refuses builds signed with a "
+                         + "bare Apple Development certificate (no provisioning "
+                         + "profile). Alerts still arrive via osascript. For "
+                         + "native banners the app needs a Developer ID "
+                         + "signature, or one Xcode run with automatic signing "
+                         + "to mint a Mac provisioning profile.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+            }
+
+            Section("Links") {
+                linkRow("chevron.left.forwardslash.chevron.right", "GitHub",
+                        "https://github.com/deathemperor")
+                linkRow("globe", "Website", "https://huuloc.com")
+                linkRow("shippingbox", "Project — claude-swap",
+                        "https://github.com/deathemperor/claude-swap")
+                linkRow("doc.text", "Release notes", changelogURL.absoluteString)
+            }
+
+            Section {
+                Text("CswapBar by deathemperor · MIT License")
+                    .font(.caption).foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity)
             }
         }
         .formStyle(.grouped)
         .onAppear { if model.current == nil { Task { await model.check() } } }
+    }
+
+    /// The menu bar glyph as an app icon: ⇄ on a dark rounded tile.
+    private var appMark: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 14)
+                .fill(LinearGradient(colors: [Color(white: 0.22), Color(white: 0.08)],
+                                     startPoint: .top, endPoint: .bottom))
+                .frame(width: 64, height: 64)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 14)
+                        .strokeBorder(Color.white.opacity(0.15))
+                )
+                .shadow(color: .black.opacity(0.35), radius: 4, y: 2)
+            Text("⇄")
+                .font(.system(size: 34, weight: .semibold))
+                .foregroundStyle(.white)
+        }
+    }
+
+    private func linkRow(_ symbol: String, _ title: String, _ url: String) -> some View {
+        Button {
+            if let u = URL(string: url) { openURL(u) }
+        } label: {
+            HStack {
+                Image(systemName: symbol)
+                    .frame(width: 20)
+                    .foregroundStyle(.secondary)
+                Text(title)
+                Spacer()
+                Image(systemName: "arrow.up.right")
+                    .font(.caption).foregroundStyle(.tertiary)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 
     private var changelogURL: URL {

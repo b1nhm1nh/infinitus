@@ -20,9 +20,12 @@ struct DisplayPane: View {
                 }
             }
             Toggle("Show model limits in title", isOn: $model.titleScoped)
-            Picker("Gamification", selection: $model.gamification) {
+            Section("Gamification") {
                 ForEach(GamificationStyle.allCases, id: \.rawValue) { style in
-                    Text(style.displayName).tag(style.rawValue)
+                    GamificationCard(
+                        style: style,
+                        selected: model.gamification == style.rawValue
+                    ) { model.gamification = style.rawValue }
                 }
             }
             Toggle("Compact popup (hide actions, event log, and history)",
@@ -65,6 +68,13 @@ struct DisplayPane: View {
                             RenameField(model: model, account: account)
                             Text(account.email).lineLimit(1)
                                 .font(.caption).foregroundStyle(.secondary)
+                            if let plan = account.plan {
+                                Text(plan)
+                                    .font(.caption2)
+                                    .padding(.horizontal, 5).padding(.vertical, 1)
+                                    .background(Capsule().fill(Color.secondary.opacity(0.15)))
+                                    .foregroundStyle(.secondary)
+                            }
                             if account.active {
                                 Text("active").font(.caption)
                                     .foregroundStyle(Color.accentColor)
@@ -112,5 +122,91 @@ private struct RenameField: View {
         let trimmed = draft.trimmingCharacters(in: .whitespaces)
         guard trimmed != (account.alias ?? "") else { return }
         model.rename(account.number, to: trimmed)
+    }
+}
+
+
+/// One selectable gamification style, previewed as the REAL popup row —
+/// same columns, fonts, and numbers as the live active-account row, so the
+/// choice is what-you-see-is-what-you-get.
+private struct GamificationCard: View {
+    let style: GamificationStyle
+    let selected: Bool
+    let choose: () -> Void
+
+    var body: some View {
+        Button(action: choose) {
+            VStack(alignment: .leading, spacing: 8) {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    preview.fixedSize()
+                }
+                HStack {
+                    Image(systemName: selected ? "checkmark.circle.fill" : "circle")
+                        .foregroundStyle(selected ? Color.accentColor : Color.secondary)
+                    Text(style.displayName).font(.caption)
+                }
+            }
+            .padding(10)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(Color.secondary.opacity(0.08))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 8)
+                    .strokeBorder(selected ? Color.accentColor : Color.secondary.opacity(0.3),
+                                  lineWidth: selected ? 2 : 1)
+            )
+        }
+        .buttonStyle(.plain)
+    }
+
+    // Mirrors AccountGrid's cells with the numbers from a real row:
+    // session 21% used (79% left, resets 4h 8m), weekly 68% used (32%
+    // left, ahead of pace), Fable 74%, $1,131 spent.
+    @ViewBuilder private var preview: some View {
+        HStack(spacing: 12) {
+            Text("4").fontWeight(.bold).foregroundStyle(Color.accentColor)
+            Text("papaya").fontWeight(.bold)
+            switch style {
+            case .off:
+                HStack(spacing: 3) {
+                    Text("5h").foregroundStyle(.secondary)
+                    Text("21%").monospacedDigit()
+                    Text("4h 8m (22:09)").font(.caption).foregroundStyle(.secondary)
+                }
+                HStack(spacing: 3) {
+                    Image(systemName: "flame.fill").foregroundStyle(.orange)
+                    Text("7d").foregroundStyle(.secondary)
+                    Text("68%").monospacedDigit()
+                    Text("5d 9h (Sep 4 03:59)").font(.caption).foregroundStyle(.secondary)
+                }
+            case .rpg:
+                HStack(spacing: 3) {
+                    Text("MP").font(.caption).bold().foregroundStyle(Color.blue)
+                    GaugeBar(remaining: 79, color: .blue)
+                    Text("4h 8m (22:09)").font(.caption).foregroundStyle(.secondary)
+                }
+                HStack(spacing: 3) {
+                    Image(systemName: "flame.fill").foregroundStyle(.orange)
+                    Text("HP").font(.caption).bold().foregroundStyle(Color.red)
+                    GaugeBar(remaining: 32, color: .red)
+                    Text("5d 9h (Sep 4 03:59)").font(.caption).foregroundStyle(.secondary)
+                }
+            }
+            HStack(spacing: 3) {
+                Image(systemName: "flame.fill").foregroundStyle(.orange)
+                if style == .rpg {
+                    Text("Fable").font(.caption).bold().foregroundStyle(Color.purple)
+                    GaugeBar(remaining: 26, color: .purple)
+                } else {
+                    Text("Fable").foregroundStyle(.secondary)
+                    Text("74%").monospacedDigit()
+                }
+            }
+            if style == .rpg {
+                Text(verbatim: "💰1,131").font(.caption).foregroundStyle(.yellow)
+            }
+        }
     }
 }
