@@ -56,6 +56,10 @@ struct CswapBarApp: App {
 struct MenuContent: View {
     @ObservedObject var model: AppModel
     @ObservedObject var usage: UsageModel
+    // The one way into the Settings window: an accessory app has no app
+    // menu or Dock, so without this button ⌘, on a focused popup was the
+    // only (undiscoverable) path to every settings pane.
+    @Environment(\.openSettings) private var openSettings
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -85,7 +89,16 @@ struct MenuContent: View {
             Divider()
             SwitchHistoryView()
             Divider()
-            Button("Quit") { model.shutdown() }   // engine stops first
+            HStack {
+                Button("Settings…") {
+                    // Activate first: an accessory app's new window would
+                    // otherwise open behind whatever has focus.
+                    NSApp.activate(ignoringOtherApps: true)
+                    openSettings()
+                }
+                Spacer()
+                Button("Quit") { model.shutdown() }   // engine stops first
+            }
         }
         .padding(12)
         .frame(minWidth: 560)
