@@ -20,8 +20,21 @@ struct DisplayPane: View {
                 }
             }
             Toggle("Show model limits in title", isOn: $model.titleScoped)
-            Toggle("Gamified mode (RPG gauges in the account list)",
-                   isOn: $model.gamifiedRows)
+            Picker("Gamification", selection: $model.gamification) {
+                ForEach(GamificationStyle.allCases, id: \.rawValue) { style in
+                    Text(style.displayName).tag(style.rawValue)
+                }
+            }
+            Toggle("Compact rows (drop reset times in the popup)",
+                   isOn: $model.compactRows)
+            Toggle("Show menu bar icon", isOn: $model.menuBarIconShown)
+                .help("Hide lasts until quit — it always returns on the next "
+                      + "launch, so the app can never strand itself with no UI.")
+            if !model.menuBarIconShown {
+                Text("Icon hidden. The engine keeps running; get back here "
+                     + "via this window or the pinned window.")
+                    .font(.caption).foregroundStyle(.orange)
+            }
             Picker("Refresh interval", selection: $model.refreshInterval) {
                 ForEach(TitlePrefs.refreshChoices, id: \.self) {
                     Text(intervalLabels[$0] ?? "\($0)s").tag($0)
@@ -38,7 +51,9 @@ struct DisplayPane: View {
             Section("Account order") {
                 Text("Drag to rearrange. Slot numbers stay put; the accounts "
                      + "shift through them (aliases, backups, and history "
-                     + "move with each account).")
+                     + "move with each account). Type in the Name field to "
+                     + "rename an account (sets its cswap alias, shown "
+                     + "everywhere); clear it to go back to the email.")
                     .font(.caption).foregroundStyle(.secondary)
                 List {
                     ForEach(model.accounts, id: \.number) { account in
@@ -47,7 +62,9 @@ struct DisplayPane: View {
                                 .foregroundStyle(.tertiary)
                             Text("\(account.number)").monospacedDigit()
                                 .foregroundStyle(.secondary)
-                            Text(account.alias ?? account.email).lineLimit(1)
+                            RenameField(model: model, account: account)
+                            Text(account.email).lineLimit(1)
+                                .font(.caption).foregroundStyle(.secondary)
                             if account.active {
                                 Text("active").font(.caption)
                                     .foregroundStyle(Color.accentColor)
@@ -67,5 +84,33 @@ struct DisplayPane: View {
             }
         }
         .formStyle(.grouped)
+    }
+}
+
+
+/// One account's editable display name. Local draft, committed on Enter or
+/// focus loss — never on every keystroke (each commit is a `cswap alias`
+/// subprocess + snapshot refresh).
+private struct RenameField: View {
+    @ObservedObject var model: AppModel
+    let account: Account
+    @State private var draft = ""
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        TextField("Name", text: $draft)
+            .textFieldStyle(.roundedBorder)
+            .frame(width: 150)
+            .focused($focused)
+            .onAppear { draft = account.alias ?? "" }
+            .onChange(of: account.alias) { draft = account.alias ?? "" }
+            .onSubmit { commit() }
+            .onChange(of: focused) { if !focused { commit() } }
+    }
+
+    private func commit() {
+        let trimmed = draft.trimmingCharacters(in: .whitespaces)
+        guard trimmed != (account.alias ?? "") else { return }
+        model.rename(account.number, to: trimmed)
     }
 }

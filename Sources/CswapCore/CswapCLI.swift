@@ -79,6 +79,15 @@ public struct CswapCLI: Sendable {
         try await run(["reorder"] + numbers.map(String.init) + ["--json"])
     }
 
+    /// Set (non-empty) or remove (empty) an account's display alias.
+    @discardableResult
+    public func setAlias(_ number: Int, _ name: String) async throws -> Data {
+        let trimmed = name.trimmingCharacters(in: .whitespaces)
+        return trimmed.isEmpty
+            ? try await run(["alias", String(number), "--unset"])
+            : try await run(["alias", String(number), trimmed])
+    }
+
     public func notifyStatus() async throws -> NotifyStatus {
         try JSONDecoder().decode(NotifyStatus.self, from: await run(["notify", "--json"]))
     }

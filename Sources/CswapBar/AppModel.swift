@@ -27,8 +27,15 @@ final class AppModel: ObservableObject {
     @Published var titlePct: String { didSet { defaults.set(titlePct, forKey: "title_pct") } }
     @Published var titleScoped: Bool { didSet { defaults.set(titleScoped, forKey: "title_scoped") } }
     @Published var refreshInterval: Int { didSet { defaults.set(refreshInterval, forKey: "refresh_interval") } }
-    @Published var gamifiedRows: Bool { didSet { defaults.set(gamifiedRows, forKey: "gamified_rows") } }
+    @Published var gamification: String { didSet { defaults.set(gamification, forKey: "gamification_style") } }
+    @Published var compactRows: Bool { didSet { defaults.set(compactRows, forKey: "compact_rows") } }
+    // Deliberately NOT persisted: if a hidden icon survived a relaunch there
+    // would be no UI left to unhide it from (the Settings window is only
+    // reachable through the popup). Hiding lasts until quit.
+    @Published var menuBarIconShown = true
     private let defaults = UserDefaults.standard
+
+    var gamifiedRows: Bool { gamification == GamificationStyle.rpg.rawValue }
 
     var title: String {
         TitleFormatter.format(
@@ -44,7 +51,10 @@ final class AppModel: ObservableObject {
         titleScoped = defaults.object(forKey: "title_scoped") as? Bool ?? false
         let interval = defaults.object(forKey: "refresh_interval") as? Int ?? 60
         refreshInterval = TitlePrefs.refreshChoices.contains(interval) ? interval : 60
-        gamifiedRows = defaults.object(forKey: "gamified_rows") as? Bool ?? false
+        let style = defaults.string(forKey: "gamification_style")
+            ?? ((defaults.object(forKey: "gamified_rows") as? Bool ?? false) ? "rpg" : "off")
+        gamification = GamificationStyle(rawValue: style) != nil ? style : "off"
+        compactRows = defaults.object(forKey: "compact_rows") as? Bool ?? false
         if let path = CswapLocator.locate() {
             cli = CswapCLI(binaryPath: path)
         } else {
@@ -180,6 +190,19 @@ final class AppModel: ObservableObject {
         }
     }
 
+    /// Rename = set/clear the account's cswap alias, so every frontend
+    /// (TUI, CLI, popup) shows the same name.
+    func rename(_ number: Int, to name: String) {
+        guard let cli else { return }
+        Task {
+            do {
+                try await cli.setAlias(number, name)
+                reorderError = nil
+            } catch { reorderError = "\(error)" }
+            await refreshSnapshot()
+        }
+    }
+
     func reorder(_ order: [Int]) {
         guard let cli else { return }
         let index = Dictionary(uniqueKeysWithValues: order.enumerated().map { ($1, $0) })
@@ -190,6 +213,20 @@ final class AppModel: ObservableObject {
                 reorderError = nil
             } catch { reorderError = "\(error)" }
             await refreshSnapshot()
+        }
+    }
+}
+
+/// The gamification styles the popup can render. New styles: add a case
+/// here and a branch in AccountGrid — the Display pane picker follows.
+enum GamificationStyle: String, CaseIterable {
+    case off
+    case rpg
+
+    var displayName: String {
+        switch self {
+        case .off: return "Off"
+        case .rpg: return "RPG — HP/MP gauges + gold"
         }
     }
 }

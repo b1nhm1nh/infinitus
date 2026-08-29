@@ -17,7 +17,11 @@ struct CswapBarApp: App {
         _model = StateObject(wrappedValue: model)
         _settingsModel = StateObject(wrappedValue: SettingsModel(cli: model.cli))
         _notifyModel = StateObject(wrappedValue: NotifyModel(cli: model.cli))
-        _usageModel = StateObject(wrappedValue: UsageModel(cli: model.cli))
+        let usage = UsageModel(cli: model.cli)
+        _usageModel = StateObject(wrappedValue: usage)
+        // Warm the multi-second transcript scan at launch so the Usage tab
+        // and the gamified gold column open onto data, not a spinner.
+        usage.loadIfNeeded()
         model.startFeeds()
         // Deferred past didFinishLaunching: requesting in App.init — before
         // the app is registered with Notification Center — fails with
@@ -29,11 +33,21 @@ struct CswapBarApp: App {
     }
 
     var body: some Scene {
-        MenuBarExtra(model.title) {
+        MenuBarExtra(model.title, isInserted: $model.menuBarIconShown) {
             MenuContent(model: model, usage: usageModel)
                 .task { await model.refreshSnapshot() }
         }
         .menuBarExtraStyle(.window)
+
+        // The "sticky" surface: the same content in a real window that stays
+        // open while you work (the MenuBarExtra popup closes on any outside
+        // click — that dismissal is AppKit's, not ours to disable).
+        Window("CswapBar", id: "pinned") {
+            MenuContent(model: model, usage: usageModel)
+                .task { await model.refreshSnapshot() }
+        }
+        .windowResizability(.contentMinSize)
+        .defaultSize(width: 720, height: 480)
 
         Settings {
             TabView {
@@ -48,8 +62,9 @@ struct CswapBarApp: App {
                 UsagePane(model: usageModel)
                     .tabItem { Label("Usage", systemImage: "chart.bar") }
             }
-            .frame(width: 520, height: 480)
+            .frame(minWidth: 600, minHeight: 520)
         }
+        .windowResizability(.contentMinSize)
     }
 }
 
@@ -60,6 +75,7 @@ struct MenuContent: View {
     // menu or Dock, so without this button ⌘, on a focused popup was the
     // only (undiscoverable) path to every settings pane.
     @Environment(\.openSettings) private var openSettings
+    @Environment(\.openWindow) private var openWindow
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -96,6 +112,14 @@ struct MenuContent: View {
                     NSApp.activate(ignoringOtherApps: true)
                     openSettings()
                 }
+                Button {
+                    NSApp.activate(ignoringOtherApps: true)
+                    openWindow(id: "pinned")
+                } label: {
+                    Label("Pin", systemImage: "pin")
+                }
+                .help("Open this as a window that stays put — the popup "
+                      + "always closes when you click elsewhere.")
                 Spacer()
                 Button("Quit") { model.shutdown() }   // engine stops first
             }
@@ -146,8 +170,10 @@ struct AccountGrid: View {
                     .foregroundStyle(disabled ? .secondary : .primary)
                     .lineLimit(1)
                     // The one deliberately flexible column: emails truncate,
-                    // usage numbers and reset times never do.
-                    .frame(maxWidth: 230, alignment: .leading)
+                    // usage numbers and reset times never do. minWidth keeps
+                    // the name from collapsing to zero when gauge cells want
+                    // more width than the popup has.
+                    .frame(minWidth: 110, maxWidth: 230, alignment: .leading)
                     .activeBand(account.active)
                     if let note = SentinelNotes.note(for: account.usageStatus) {
                         Text(note)
@@ -204,7 +230,9 @@ struct AccountGrid: View {
                             .monospacedDigit()
                             .contentTransition(.numericText(value: w.pct))
                     }
-                    if let when = resetLabel(w) {
+                    if !model.compactRows,
+                       let when = model.gamifiedRows
+                           ? ResetLabel.short(w) : ResetLabel.label(w) {
                         Text(when).font(.caption).foregroundStyle(.secondary)
                     }
                 }
@@ -230,10 +258,6 @@ struct AccountGrid: View {
                 .fixedSize()
                 .activeBand(account.active)
         }
-    }
-
-    private func resetLabel(_ w: UsageWindow) -> String? {
-        ResetLabel.label(w)
     }
 
     @ViewBuilder private func scopedCells(_ account: Account) -> some View {

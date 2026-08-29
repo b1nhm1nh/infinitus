@@ -64,8 +64,14 @@ struct SettingsPane: View {
 
     var body: some View {
         Form {
-            ForEach(model.entries, id: \.key) { entry in
-                row(entry)
+            // One section per key prefix ("autoswitch.threshold" → Auto-switch),
+            // in the order the CLI emits the keys.
+            ForEach(sections, id: \.title) { section in
+                Section(section.title) {
+                    ForEach(section.entries, id: \.key) { entry in
+                        row(entry)
+                    }
+                }
             }
             if let err = model.loadError {
                 Text(err).foregroundStyle(.red).font(.caption)
@@ -75,20 +81,58 @@ struct SettingsPane: View {
         .task { await model.load() }
     }
 
+    private struct PaneSection { let title: String; let entries: [SettingEntry] }
+
+    private var sections: [PaneSection] {
+        var order: [String] = []
+        var grouped: [String: [SettingEntry]] = [:]
+        for entry in model.entries {
+            let prefix = String(entry.key.split(separator: ".").first ?? "")
+            if grouped[prefix] == nil { order.append(prefix) }
+            grouped[prefix, default: []].append(entry)
+        }
+        return order.map {
+            PaneSection(title: Self.sectionTitle($0), entries: grouped[$0] ?? [])
+        }
+    }
+
+    static func sectionTitle(_ prefix: String) -> String {
+        switch prefix {
+        case "autoswitch": return "Auto-switch"
+        case "ui": return "Interface"
+        default: return prefix.prefix(1).uppercased() + prefix.dropFirst()
+        }
+    }
+
+    /// "limitScanIntervalSeconds" → "Limit scan interval seconds". The raw
+    /// key stays reachable as the control's tooltip.
+    static func humanLabel(_ key: String) -> String {
+        let tail = key.split(separator: ".").dropFirst().joined(separator: " ")
+        guard !tail.isEmpty else { return key }
+        var words = ""
+        for ch in tail {
+            if ch.isUppercase { words.append(" "); words.append(Character(ch.lowercased())) }
+            else { words.append(ch) }
+        }
+        return words.prefix(1).uppercased() + words.dropFirst()
+    }
+
     @ViewBuilder private func row(_ entry: SettingEntry) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             switch entry.kind {
             case "bool":
-                Toggle(entry.key, isOn: boolBinding(entry))
+                Toggle(Self.humanLabel(entry.key), isOn: boolBinding(entry))
+                    .help(entry.key)
             case "choice":
-                Picker(entry.key, selection: draftBinding(entry)) {
+                Picker(Self.humanLabel(entry.key), selection: draftBinding(entry)) {
                     Text("(default)").tag("")
                     ForEach(entry.choices ?? [], id: \.self) { Text($0).tag($0) }
                 }
                 .onChange(of: model.drafts[entry.key]) { model.commit(entry) }
+                .help(entry.key)
             default:
                 HStack {
-                    Text(entry.key)
+                    Text(Self.humanLabel(entry.key)).help(entry.key)
                     Spacer()
                     TextField(placeholder(entry), text: draftBinding(entry))
                         .frame(maxWidth: 140)

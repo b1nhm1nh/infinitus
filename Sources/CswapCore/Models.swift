@@ -126,6 +126,9 @@ public struct UsageReport: Decodable, Sendable {
     public let unattributed: UsageBucket?
     public let unpricedTokens: Int?
     public let caveats: [String]
+    /// Per-day, per-account spend rows for the charts. Optional: an older
+    /// installed CLI simply yields no charts, never a decode failure.
+    public let daily: [DailySlice]?
 
     public struct PriceTable: Decodable, Sendable {
         public let source: String
@@ -143,6 +146,13 @@ public struct UsageReport: Decodable, Sendable {
         public let cacheRead: Int
         public let cacheWrite: Int
         public let models: [ModelSlice]
+    }
+
+    public struct DailySlice: Decodable, Sendable {
+        public let date: String        // "YYYY-MM-DD", local time
+        public let account: Int?       // nil = unattributed
+        public let estimatedUSD: Double
+        public let messages: Int
     }
 
     public struct ModelSlice: Decodable, Sendable {

@@ -150,6 +150,16 @@ public enum ResetLabel {
         return "\(countdown) (\(clockString(reset, now: now, calendar: calendar)))"
     }
 
+    /// The countdown alone, no wall clock — for rows that must stay narrow
+    /// (gamified gauges already spend the width the clock used to have).
+    public static func short(_ window: UsageWindow?, now: Date = Date(),
+                             calendar: Calendar = .current) -> String? {
+        guard let full = label(window, now: now, calendar: calendar) else { return nil }
+        guard let paren = full.firstIndex(of: "(") else { return full }
+        let trimmed = full[..<paren].trimmingCharacters(in: .whitespaces)
+        return trimmed.isEmpty ? full : trimmed
+    }
+
     static func clockString(_ reset: Date, now: Date, calendar: Calendar) -> String {
         let f = DateFormatter()
         f.calendar = calendar

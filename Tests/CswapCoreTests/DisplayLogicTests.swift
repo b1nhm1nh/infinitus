@@ -121,6 +121,18 @@ final class ResetLabelTests: XCTestCase {
         XCTAssertEqual(ResetLabel.label(w), "3h 2m (15:30)")
     }
 
+    func testShortDropsTheWallClock() throws {
+        let w = try window(#"{"pct": 10, "resetsAt": "2026-01-01T14:30:00Z"}"#)
+        let now = WeeklyRoll.parse("2026-01-01T12:15:00Z")!
+        XCTAssertEqual(ResetLabel.short(w, now: now, calendar: utc), "2h 15m")
+    }
+
+    func testShortKeepsCountdownOnlyFeeds() throws {
+        let w = try window(#"{"pct": 10, "countdown": "3h 2m"}"#)
+        XCTAssertEqual(ResetLabel.short(w), "3h 2m")
+        XCTAssertNil(ResetLabel.short(nil))
+    }
+
     func testNilWindowNil() {
         XCTAssertNil(ResetLabel.label(nil))
     }

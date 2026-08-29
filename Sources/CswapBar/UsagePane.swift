@@ -1,4 +1,5 @@
 import SwiftUI
+import Charts
 import CswapCore
 
 /// Estimated spend dashboard (backlog item 4). The scan streams gigabytes
@@ -57,6 +58,34 @@ struct UsagePane: View {
                 Text(err).font(.caption).foregroundStyle(.red)
             }
             if let report = model.report {
+                if let daily = report.daily, daily.count > 1 {
+                    Section("Daily estimated spend") {
+                        Chart(dayPoints(report)) { point in
+                            BarMark(
+                                x: .value("Day", point.day),
+                                y: .value("USD", point.usd)
+                            )
+                            .foregroundStyle(by: .value("Account", point.name))
+                        }
+                        .chartLegend(.visible)
+                        .frame(height: 170)
+                        .padding(.vertical, 4)
+                    }
+                }
+                let models = modelPoints(report)
+                if models.count > 1 {
+                    Section("By model") {
+                        Chart(models) { point in
+                            BarMark(
+                                x: .value("USD", point.usd),
+                                y: .value("Model", point.name)
+                            )
+                            .foregroundStyle(Color.accentColor)
+                        }
+                        .frame(height: CGFloat(models.count) * 26 + 24)
+                        .padding(.vertical, 4)
+                    }
+                }
                 Section {
                     ForEach(Array(report.accounts.enumerated()), id: \.offset) { _, row in
                         bucketRow(row)
@@ -109,5 +138,49 @@ struct UsagePane: View {
 
     private func usd(_ v: Double) -> String {
         String(format: "$%.2f", v)
+    }
+
+    private struct ChartPoint: Identifiable {
+        let id: String
+        let day: String
+        let name: String
+        let usd: Double
+    }
+
+    /// Daily rows keyed to short day labels, one series per account. The
+    /// account's display name comes from the report's own buckets so the
+    /// chart legend matches the rows below it.
+    private func dayPoints(_ report: UsageReport) -> [ChartPoint] {
+        var names: [Int: String] = [:]
+        for row in report.accounts {
+            if let n = row.number {
+                names[n] = row.alias
+                    ?? row.email.map { String($0.prefix(while: { $0 != "@" })) }
+                    ?? "#\(n)"
+            }
+        }
+        return (report.daily ?? []).map { slice in
+            let name = slice.account.map { names[$0] ?? "#\($0)" } ?? "unattributed"
+            return ChartPoint(
+                id: "\(slice.date)/\(slice.account.map(String.init) ?? "-")",
+                day: String(slice.date.suffix(5)),   // "MM-DD"
+                name: name,
+                usd: slice.estimatedUSD
+            )
+        }
+    }
+
+    private func modelPoints(_ report: UsageReport) -> [ChartPoint] {
+        var byModel: [String: Double] = [:]
+        var buckets = report.accounts
+        if let extra = report.unattributed { buckets.append(extra) }
+        for bucket in buckets {
+            for slice in bucket.models {
+                byModel[slice.model, default: 0] += slice.estimatedUSD
+            }
+        }
+        return byModel.sorted { $0.value > $1.value }.map {
+            ChartPoint(id: $0.key, day: "", name: $0.key, usd: $0.value)
+        }
     }
 }
