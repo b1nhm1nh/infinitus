@@ -10,6 +10,21 @@
 - ~~Dev loop~~ → `UNBUNDLED=1 ./dev.sh` relaunches through
   run-unbundled.sh; relaunches debounced to one per 10s.
 
+- ~~Switch celebration "looks broken"~~ → two causes, both fixed:
+  Grid layout attached the sweep to the number cell only (now an
+  anchor-preference overlay sweeping the whole row), and the sweep
+  gradient carried the theme color at opacity 0 (pure white band for
+  every theme) — shoulders now tinted + a themed wash glow.
+- ~~Glass chrome~~ → NSVisualEffectView `.menu` material, behind-window,
+  on the popover content and the (now non-opaque) pop-out window.
+  Liquid Glass (`glassEffect`, macOS 26 API) is the possible upgrade
+  once the look can be judged by eye.
+- ~~iCloud sync setting home~~ → own "Sync" pane (SyncPane.swift).
+- ~~Theme requests~~ → builtins `agent` ("AI Agentic — tokens & context")
+  and `swe` ("Classic SWE — hand-written, no AI").
+- ~~About pane icon~~ → real app icon when bundled; unbundled draws the
+  menu bar glyph on the gradient card (the retired ∞ is gone).
+
 ## Deferred by design
 - Bundle id → something like `com.huuloc.limitless` as ONE intentional
   step (re-grant notifications + login item afterwards). The App Support
@@ -28,21 +43,5 @@
   Xcode automatic-signing run (provisioning profile).
 
 ## Open
-- Switch celebration / data-change glow reported "looks broken" when
-  test-fired (2026-08-30, debug Animations pane) — not reproducible
-  headless; needs a description of which surface/layout and what it
-  looks like before touching Animations.swift.
-- Popup/pop-out chrome: adopt macOS glass (NSVisualEffectView /
-  Liquid Glass material) for the popover and pinned window backgrounds
-  (2026-08-30).
-- "Sync settings via iCloud Drive" lives in the Display pane — wrong
-  home; move to its own Sync/General settings pane (2026-08-30).
-- Theme requests (2026-08-30): "AI agentic coding" and "classical
-  software engineering (not using AI to code)" — new builtin RowThemes
-  (labels for busy/dead/ready/credit etc. in each voice).
-- About pane shows the wrong icon (correct everywhere else,
-  2026-08-30) — likely the same no-AppIcon-when-unbundled fallback the
-  header got; give AboutPane the same bundled/glyph logic.
-- Themify the animations (2026-08-30): sweep/glow already tint from
-  RowTheme.flashColor — go further, e.g. per-theme celebration styles
-  (rpg level-up burst, movie marquee, hades, mgs alert).
+- (nothing — visual verification of the 2026-08-30 batch pending:
+  glass look, whole-row themed sweep, About icon, new themes.)

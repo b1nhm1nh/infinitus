@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 import CswapCore
 
 /// Update state: engine version vs the latest claude-swap on PyPI.
@@ -257,24 +258,37 @@ struct AboutPane: View {
         .onAppear { if model.current == nil { Task { await model.check() } } }
     }
 
-    /// The app icon in miniature: ∞ on the midnight→violet gradient
-    /// (make-icon.swift is the 1024px source of truth).
-    private var appMark: some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: 14)
-                .fill(LinearGradient(
-                    colors: [Color(red: 0.42, green: 0.20, blue: 0.95),
-                             Color(red: 0.07, green: 0.05, blue: 0.20)],
-                    startPoint: .topLeading, endPoint: .bottom))
+    /// The real app icon when running from a bundle; unbundled runs
+    /// (run-unbundled.sh) have none, so draw the menu bar glyph on the
+    /// icon's midnight→violet gradient card instead of the retired ∞
+    /// (user report 2026-08-30 — About showed the old mark).
+    @ViewBuilder private var appMark: some View {
+        if Bundle.main.bundlePath.hasSuffix(".app"),
+           let appIcon = NSApp.applicationIconImage {
+            Image(nsImage: appIcon)
+                .resizable()
                 .frame(width: 64, height: 64)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 14)
-                        .strokeBorder(Color.white.opacity(0.15))
-                )
                 .shadow(color: .black.opacity(0.35), radius: 4, y: 2)
-            Text("∞")
-                .font(.system(size: 40, weight: .bold))
-                .foregroundStyle(.white)
+        } else {
+            ZStack {
+                RoundedRectangle(cornerRadius: 14)
+                    .fill(LinearGradient(
+                        colors: [Color(red: 0.42, green: 0.20, blue: 0.95),
+                                 Color(red: 0.07, green: 0.05, blue: 0.20)],
+                        startPoint: .topLeading, endPoint: .bottom))
+                    .frame(width: 64, height: 64)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 14)
+                            .strokeBorder(Color.white.opacity(0.15))
+                    )
+                    .shadow(color: .black.opacity(0.35), radius: 4, y: 2)
+                Image(nsImage: MenuBarGlyph.image)
+                    .renderingMode(.template)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 38, height: 38)
+                    .foregroundStyle(.white)
+            }
         }
     }
 

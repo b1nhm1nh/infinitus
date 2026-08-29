@@ -71,7 +71,8 @@ final class StatusItemController {
 
         popover.behavior = .transient            // click-outside closes, like MenuBarExtra
         let host = NSHostingController(
-            rootView: MenuContent(model: model, usage: usage))
+            rootView: MenuContent(model: model, usage: usage)
+                .background { GlassBackground().ignoresSafeArea() })
         // NSPopover observes its content controller's preferredContentSize;
         // without this the popover keeps the width of the FIRST layout (no
         // reset times yet) and clips both edges once the grid grows.
@@ -148,7 +149,8 @@ final class StatusItemController {
         if pinned == nil {
             let host = NSHostingController(rootView: PinnedRoot(
                 model: model, usage: usage,
-                onSize: { [weak self] size in self?.fitPinned(to: size) }))
+                onSize: { [weak self] size in self?.fitPinned(to: size) })
+                .background { GlassBackground().ignoresSafeArea() })
             // NO hosting-driven window sizing: with .standardBounds or
             // .preferredContentSize, NSHostingView.updateAnimatedWindowSize
             // pushed the content's unbounded ideal width (2.4e196) into
@@ -179,6 +181,10 @@ final class StatusItemController {
             w.level = .floating
             w.isMovableByWindowBackground = true
             w.isReleasedWhenClosed = false
+            // Let the GlassBackground's behind-window material actually
+            // see behind the window.
+            w.isOpaque = false
+            w.backgroundColor = .clear
             pinned = w
             fitPinned(to: pinnedIdeal)
         }

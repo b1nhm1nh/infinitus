@@ -16,11 +16,15 @@ struct SwitchFlash: ViewModifier {
                     let width = geo.size.width
                     Rectangle()
                         .fill(
+                            // The shoulders carry the THEME color — with
+                            // them at opacity 0 the band was pure white
+                            // and every theme celebrated identically
+                            // (user report 2026-08-30).
                             LinearGradient(
                                 colors: [.clear,
-                                         color.opacity(0.0),
+                                         color.opacity(0.30),
                                          Color.white.opacity(0.35),
-                                         color.opacity(0.0),
+                                         color.opacity(0.30),
                                          .clear],
                                 startPoint: .leading, endPoint: .trailing)
                         )
@@ -41,7 +45,12 @@ struct SwitchFlash: ViewModifier {
                 .clipped()
             }
             .keyframeAnimator(initialValue: 0.0, trigger: trigger) { view, glow in
-                view.shadow(color: color.opacity(glow),
+                // A translucent wash, not just a shadow: the Grid layout
+                // hosts this on a CLEAR overlay rect, and a shadow of
+                // transparent content is invisible.
+                view
+                    .overlay { color.opacity(glow * 0.15).allowsHitTesting(false) }
+                    .shadow(color: color.opacity(glow),
                             radius: 8 * glow)
             } keyframes: { _ in
                 KeyframeTrack {

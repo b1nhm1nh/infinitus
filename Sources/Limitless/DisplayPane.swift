@@ -5,7 +5,6 @@ import CswapCore
 /// items (menubar.py `MenuBarSettings`), same choices and defaults.
 struct DisplayPane: View {
     @ObservedObject var model: AppModel
-    @ObservedObject var sync: SettingsSyncModel
     @StateObject private var login = LoginItemModel()
 
     private let pctLabels = ["off": "None", "5h": "Session (5h)",
@@ -83,16 +82,6 @@ struct DisplayPane: View {
                 .help("Holds a power assertion (caffeinate -i, in-process) "
                       + "whenever any Claude Code session is mid-turn. The "
                       + "display may still sleep; the machine won't.")
-            Section("iCloud") {
-                Toggle("Sync settings via iCloud Drive", isOn: $sync.enabled)
-                    .help("Display prefs, custom themes, and set cswap "
-                          + "engine settings travel through one JSON file "
-                          + "in iCloud Drive/Limitless. Never credentials "
-                          + "or push secrets. Last writer wins.")
-                if let status = sync.status {
-                    Text(status).font(.caption).foregroundStyle(.secondary)
-                }
-            }
             Section("Account order") {
                 Text("Drag to rearrange. Slot numbers stay put; the accounts "
                      + "shift through them (aliases, backups, and history "

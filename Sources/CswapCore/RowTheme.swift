@@ -141,7 +141,27 @@ public struct RowTheme: Codable, Equatable, Sendable, Identifiable {
         deadMarker: "☠", revivePrefix: "💊 ", deadVerb: "MIA",
         readyLabel: "all clear", flashColor: "green")
 
-    public static let builtins: [RowTheme] = [off, rpg, movie, hades, mgs]
+    public static let agent = RowTheme(
+        id: "agent", name: "AI Agentic — tokens & context",
+        sessionLabel: "CTX", sessionColor: "cyan",
+        weeklyLabel: "TOK", weeklyColor: "purple",
+        scopedPrefix: "🤖 ", scopedColor: "mint",
+        creditLabel: "⚡", creditColor: "orange",
+        cashIcon: "🪙", aheadIcon: "sf:sparkles",
+        deadMarker: "🔌", revivePrefix: "🔁 ", deadVerb: "rate-limited",
+        readyLabel: "ready to ship", flashColor: "cyan")
+
+    public static let swe = RowTheme(
+        id: "swe", name: "Classic SWE — hand-written, no AI",
+        sessionLabel: "☕", sessionColor: "orange",
+        weeklyLabel: "🗓", weeklyColor: "blue",
+        scopedPrefix: "📐 ", scopedColor: "teal",
+        creditLabel: "LOC", creditColor: "green",
+        cashIcon: "💾", aheadIcon: "sf:cup.and.saucer.fill",
+        deadMarker: "🐛", revivePrefix: "hotfix ", deadVerb: "segfaulted",
+        readyLabel: "compiles clean", flashColor: "blue")
+
+    public static let builtins: [RowTheme] = [off, rpg, movie, hades, mgs, agent, swe]
 
     // MARK: custom themes
 
