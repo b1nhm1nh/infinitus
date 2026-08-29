@@ -15,13 +15,20 @@ import CswapCore
 ///      snapshot ever completed. A raw NSStatusItem doesn't fight.
 /// StateObject-compatible owner so the App struct (a value type that gets
 /// recreated) keeps exactly one controller alive.
+/// One settings pane: toolbar label + SF Symbol + content.
+struct SettingsTab {
+    let title: String
+    let symbol: String
+    let view: AnyView
+}
+
 @MainActor
 final class StatusItemHolder: ObservableObject {
     let controller: StatusItemController
     init(model: AppModel, usage: UsageModel,
-         settingsView: @escaping () -> AnyView) {
+         settingsTabs: @escaping () -> [SettingsTab]) {
         controller = StatusItemController(model: model, usage: usage,
-                                          settingsView: settingsView)
+                                          settingsTabs: settingsTabs)
         model.showPinned = { [weak controller] in controller?.showPinnedWindow() }
         model.showSettings = { [weak controller] in controller?.showSettingsWindow() }
     }
@@ -35,14 +42,14 @@ final class StatusItemController {
     private var settings: NSWindow?
     private let model: AppModel
     private let usage: UsageModel
-    private let settingsView: () -> AnyView
+    private let settingsTabs: () -> [SettingsTab]
     private var sink: AnyCancellable?
 
     init(model: AppModel, usage: UsageModel,
-         settingsView: @escaping () -> AnyView) {
+         settingsTabs: @escaping () -> [SettingsTab]) {
         self.model = model
         self.usage = usage
-        self.settingsView = settingsView
+        self.settingsTabs = settingsTabs
         item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         item.behavior = []                       // not user-removable
         item.button?.title = model.title
@@ -100,10 +107,27 @@ final class StatusItemController {
     /// graph. Owning the window outright works from any host.
     func showSettingsWindow() {
         if settings == nil {
-            let host = NSHostingController(rootView: settingsView())
-            let w = NSWindow(contentViewController: host)
+            // NSTabViewController(.toolbar) is the REAL Settings chrome —
+            // icon tabs in the titlebar. The SwiftUI Settings scene gets it
+            // implicitly; no public TabViewStyle reproduces it.
+            let tabs = NSTabViewController()
+            tabs.tabStyle = .toolbar
+            for tab in settingsTabs() {
+                let host = NSHostingController(rootView: tab.view)
+                host.preferredContentSize = NSSize(width: 600, height: 520)
+                // The toolbar tab style propagates the selected child's
+                // title into the window title ("Untitled" when unset).
+                host.title = tab.title
+                let item = NSTabViewItem(viewController: host)
+                item.label = tab.title
+                item.image = NSImage(systemSymbolName: tab.symbol,
+                                     accessibilityDescription: tab.title)
+                tabs.addTabViewItem(item)
+            }
+            let w = NSWindow(contentViewController: tabs)
             w.title = "CswapBar Settings"
             w.styleMask = [.titled, .closable, .resizable]
+            w.toolbarStyle = .preference
             w.isReleasedWhenClosed = false
             settings = w
         }

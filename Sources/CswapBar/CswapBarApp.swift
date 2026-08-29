@@ -38,6 +38,7 @@ struct CswapBarApp: App {
     @StateObject private var reliabilityModel: ResumeReliabilityModel
     @StateObject private var notifyModel: NotifyModel
     @StateObject private var usageModel: UsageModel
+    @StateObject private var updateModel: UpdateModel
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
 
     init() {
@@ -51,6 +52,10 @@ struct CswapBarApp: App {
         _notifyModel = StateObject(wrappedValue: notifyModel)
         let usage = UsageModel(cli: model.cli)
         _usageModel = StateObject(wrappedValue: usage)
+        let update = UpdateModel(cli: model.cli)
+        _updateModel = StateObject(wrappedValue: update)
+        update.restartEngine = { [weak model] in model?.restartEngine() }
+        update.startAutoCheck()
         let reliabilityModel = ResumeReliabilityModel()
         _reliabilityModel = StateObject(wrappedValue: reliabilityModel)
         // Warm the multi-second transcript scan at launch so the Usage tab
@@ -59,11 +64,12 @@ struct CswapBarApp: App {
         appDelegate.makeStatusItem = { [weak appDelegate] in
             appDelegate?.statusHolder = StatusItemHolder(
                 model: model, usage: usage,
-                settingsView: {
-                    AnyView(SettingsRoot(
+                settingsTabs: {
+                    settingsTabs(
                         model: model, settingsModel: settingsModel,
                         reliabilityModel: reliabilityModel,
-                        notifyModel: notifyModel, usageModel: usage))
+                        notifyModel: notifyModel, usageModel: usage,
+                        updateModel: update)
                 })
         }
         model.startFeeds()
@@ -82,35 +88,51 @@ struct CswapBarApp: App {
         // zero windows comes from KeepAliveDelegate.
 
         Settings {
-            SettingsRoot(model: model, settingsModel: settingsModel,
-                         reliabilityModel: reliabilityModel,
-                         notifyModel: notifyModel, usageModel: usageModel)
+            SettingsRoot(tabs: settingsTabs(
+                model: model, settingsModel: settingsModel,
+                reliabilityModel: reliabilityModel,
+                notifyModel: notifyModel, usageModel: usageModel,
+                updateModel: updateModel))
         }
     }
 }
 
-/// The five settings panes. Shared by the Settings scene (the standard
-/// app-menu path, unreachable for an accessory app with no app menu) and
-/// the controller-owned window the popup's Settings… button opens.
+/// The settings panes, declared once. The Settings scene (the standard
+/// app-menu path, unreachable for an accessory app with no app menu)
+/// renders them as a SwiftUI TabView; the controller-owned window the
+/// popup's Settings… button opens renders them as an AppKit
+/// NSTabViewController(tabStyle: .toolbar) — the REAL icon-toolbar
+/// Settings look, which no public SwiftUI TabViewStyle reproduces.
+func settingsTabs(
+    model: AppModel, settingsModel: SettingsModel,
+    reliabilityModel: ResumeReliabilityModel,
+    notifyModel: NotifyModel, usageModel: UsageModel,
+    updateModel: UpdateModel
+) -> [SettingsTab] {
+    [
+        SettingsTab(title: "cswap", symbol: "gearshape",
+                    view: AnyView(SettingsPane(model: settingsModel))),
+        SettingsTab(title: "Resume reliability", symbol: "arrow.clockwise",
+                    view: AnyView(ResumeReliabilityPane(model: reliabilityModel))),
+        SettingsTab(title: "Display", symbol: "menubar.rectangle",
+                    view: AnyView(DisplayPane(model: model))),
+        SettingsTab(title: "Away push", symbol: "antenna.radiowaves.left.and.right",
+                    view: AnyView(NotifyPane(model: notifyModel))),
+        SettingsTab(title: "Usage", symbol: "chart.bar",
+                    view: AnyView(UsagePane(model: usageModel))),
+        SettingsTab(title: "About", symbol: "info.circle",
+                    view: AnyView(AboutPane(model: updateModel))),
+    ]
+}
+
 struct SettingsRoot: View {
-    @ObservedObject var model: AppModel
-    @ObservedObject var settingsModel: SettingsModel
-    @ObservedObject var reliabilityModel: ResumeReliabilityModel
-    @ObservedObject var notifyModel: NotifyModel
-    @ObservedObject var usageModel: UsageModel
+    let tabs: [SettingsTab]
 
     var body: some View {
         TabView {
-            SettingsPane(model: settingsModel)
-                .tabItem { Label("cswap", systemImage: "gearshape") }
-            ResumeReliabilityPane(model: reliabilityModel)
-                .tabItem { Label("Resume reliability", systemImage: "arrow.clockwise") }
-            DisplayPane(model: model)
-                .tabItem { Label("Display", systemImage: "menubar.rectangle") }
-            NotifyPane(model: notifyModel)
-                .tabItem { Label("Away push", systemImage: "antenna.radiowaves.left.and.right") }
-            UsagePane(model: usageModel)
-                .tabItem { Label("Usage", systemImage: "chart.bar") }
+            ForEach(tabs, id: \.title) { tab in
+                tab.view.tabItem { Label(tab.title, systemImage: tab.symbol) }
+            }
         }
         .frame(minWidth: 600, minHeight: 520)
     }

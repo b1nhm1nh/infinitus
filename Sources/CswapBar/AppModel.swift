@@ -160,6 +160,18 @@ final class AppModel: ObservableObject {
         }
     }
 
+    /// Bounce the supervised engine — after a cswap upgrade the child is
+    /// still the OLD binary until respawned.
+    func restartEngine() {
+        guard let cli else { return }
+        let old = supervisor
+        supervisor = nil
+        Task {
+            await old?.stop()
+            await MainActor.run { self.startEngine(binary: cli.binaryPath) }
+        }
+    }
+
     func switchTo(_ number: Int) {
         guard let cli else { return }
         Task {

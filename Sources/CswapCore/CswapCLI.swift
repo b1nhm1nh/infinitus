@@ -111,6 +111,43 @@ public struct CswapCLI: Sendable {
 
     /// Multi-second call (streams ~GBs of transcripts) — callers refresh
     /// on demand, never on a timer.
+    /// "cswap 0.26.0b1\n" -> "0.26.0b1".
+    public func version() async throws -> String {
+        let out = String(decoding: try await run(["--version"]), as: UTF8.self)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return out.split(separator: " ").last.map(String.init) ?? out
+    }
+
+    /// `cswap upgrade` with stdout and stderr MERGED into one transcript,
+    /// exit status included — the caller displays the outcome rather than
+    /// interpreting it (uv/pipx behavior for a --from <path> install isn't
+    /// ours to guess). Never throws on a non-zero exit.
+    public func upgrade() async throws -> (status: Int32, output: String) {
+        let binaryPath = self.binaryPath
+        return try await withCheckedThrowingContinuation { cont in
+            DispatchQueue.global(qos: .userInitiated).async {
+                let process = Process()
+                process.executableURL = URL(fileURLWithPath: binaryPath)
+                process.arguments = ["upgrade"]
+                let out = Pipe()
+                process.standardOutput = out
+                process.standardError = out   // one reader, both streams
+                do {
+                    try process.run()
+                } catch {
+                    cont.resume(throwing: error)
+                    return
+                }
+                let data = out.fileHandleForReading.readDataToEndOfFile()
+                process.waitUntilExit()
+                cont.resume(returning: (
+                    process.terminationStatus,
+                    String(decoding: data, as: UTF8.self)
+                ))
+            }
+        }
+    }
+
     public func usageReport(days: Int) async throws -> UsageReport {
         try JSONDecoder().decode(
             UsageReport.self,
