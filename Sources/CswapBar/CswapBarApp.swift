@@ -110,39 +110,84 @@ func settingsTabs(
     updateModel: UpdateModel
 ) -> [SettingsTab] {
     [
-        SettingsTab(title: "cswap", symbol: "gearshape",
+        SettingsTab(title: "cswap", symbol: "gearshape", tint: .gray,
+                    keywords: ["engine", "auto switch", "interval", "config",
+                               "threshold", "rotate"],
                     view: AnyView(SettingsPane(model: settingsModel))),
-        SettingsTab(title: "Resume reliability", symbol: "arrow.clockwise",
+        SettingsTab(title: "Resume reliability", symbol: "arrow.clockwise", tint: .blue,
+                    keywords: ["session", "nudge", "wake", "stop"],
                     view: AnyView(ResumeReliabilityPane(model: reliabilityModel))),
-        SettingsTab(title: "Display", symbol: "menubar.rectangle",
+        SettingsTab(title: "Display", symbol: "menubar.rectangle", tint: .purple,
+                    keywords: ["theme", "layout", "popup", "size", "compact",
+                               "menu bar", "icon", "order", "alias"],
                     view: AnyView(DisplayPane(model: model))),
-        SettingsTab(title: "Activity", symbol: "clock.arrow.circlepath",
+        SettingsTab(title: "Activity", symbol: "clock.arrow.circlepath", tint: .teal,
+                    keywords: ["history", "switches", "log", "events"],
                     view: AnyView(ActivityPane(model: model))),
     ]
     + (model.debugMenu
-       ? [SettingsTab(title: "Animations", symbol: "sparkles",
+       ? [SettingsTab(title: "Animations", symbol: "sparkles", tint: .pink,
+                      keywords: ["debug", "test"],
                       view: AnyView(AnimationsDebugPane(model: model)))]
        : [])
     + [
         SettingsTab(title: "Away push", symbol: "antenna.radiowaves.left.and.right",
+                    tint: .red,
+                    keywords: ["slack", "telegram", "webhook", "notification"],
                     view: AnyView(NotifyPane(model: notifyModel))),
-        SettingsTab(title: "Usage", symbol: "chart.bar",
+        SettingsTab(title: "Usage", symbol: "chart.bar", tint: .green,
+                    keywords: ["spend", "cost", "tokens", "estimate"],
                     view: AnyView(UsagePane(model: usageModel))),
-        SettingsTab(title: "About", symbol: "info.circle",
+        SettingsTab(title: "About", symbol: "info.circle", tint: .indigo,
+                    keywords: ["update", "version", "license", "links"],
                     view: AnyView(AboutPane(model: updateModel))),
     ]
 }
 
+/// CodexBar-style settings shell: a searchable sidebar of icon-tile rows
+/// on the left, the selected pane on the right.
 struct SettingsRoot: View {
     let tabs: [SettingsTab]
+    @State private var selection: String?
+    @State private var query = ""
+
+    private var filtered: [SettingsTab] {
+        let q = query.trimmingCharacters(in: .whitespaces)
+        guard !q.isEmpty else { return tabs }
+        return tabs.filter { tab in
+            tab.title.localizedCaseInsensitiveContains(q)
+                || tab.keywords.contains { $0.localizedCaseInsensitiveContains(q) }
+        }
+    }
+    private var current: SettingsTab? {
+        tabs.first { $0.title == selection } ?? tabs.first
+    }
 
     var body: some View {
-        TabView {
-            ForEach(tabs, id: \.title) { tab in
-                tab.view.tabItem { Label(tab.title, systemImage: tab.symbol) }
+        NavigationSplitView {
+            List(selection: $selection) {
+                ForEach(filtered, id: \.title) { tab in
+                    HStack(spacing: 8) {
+                        Image(systemName: tab.symbol)
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(.white)
+                            .frame(width: 22, height: 22)
+                            .background(RoundedRectangle(cornerRadius: 6)
+                                .fill(tab.tint.gradient))
+                        Text(tab.title)
+                    }
+                    .tag(tab.title)
+                }
+            }
+            .searchable(text: $query, placement: .sidebar, prompt: "Search settings")
+            .navigationSplitViewColumnWidth(min: 190, ideal: 210, max: 260)
+        } detail: {
+            if let tab = current {
+                tab.view.navigationTitle(tab.title)
             }
         }
-        .frame(minWidth: 600, minHeight: 520)
+        .frame(minWidth: 700, minHeight: 480)
+        .onAppear { if selection == nil { selection = tabs.first?.title } }
     }
 }
 
@@ -255,6 +300,24 @@ struct MenuContent: View {
         // grow both the pixels AND the popover's fitting size.
         .modifier(PopupScale(scale: model.popupScale))
         .onAppear { status.refreshIfStale() }
+        // Click-to-switch asks first (user request): rows only STAGE the
+        // target; this alert commits it.
+        .alert(
+            "Switch account?",
+            isPresented: Binding(
+                get: { model.pendingSwitch != nil },
+                set: { if !$0 { model.pendingSwitch = nil } })
+        ) {
+            Button("Switch") {
+                if let n = model.pendingSwitch { model.switchTo(n) }
+                model.pendingSwitch = nil
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Every Claude Code session on this machine rides the "
+                 + "active account. Switch to account "
+                 + "\(model.pendingSwitch.map(String.init) ?? "?")?")
+        }
     }
 
     /// Ten-plus accounts scroll instead of growing an off-screen popup.
@@ -328,15 +391,35 @@ struct MenuContent: View {
     /// something is actually working.
     @ViewBuilder private var agentChip: some View {
         if let live = model.liveSessions, !model.compactRows || live.busy > 0 {
-            HStack(spacing: 3) {
-                Image(systemName: "brain")
-                    .font(.caption)
-                    .foregroundStyle(live.busy > 0 ? Color.orange : Color.secondary)
-                Text(model.compactRows ? "\(live.busy)"
-                     : live.busy > 0 ? "\(live.busy) working · \(live.total)"
-                                     : "\(live.total)")
-                    .font(.caption).monospacedDigit()
-                    .foregroundStyle(live.busy > 0 ? Color.orange : Color.secondary)
+            Group {
+                if model.compactRows {
+                    // The icon rail's cells are 20pt: side-by-side text
+                    // clips there (user screenshot), so compact wears the
+                    // count as a badge on the brain instead.
+                    Image(systemName: "brain")
+                        .font(.caption)
+                        .foregroundStyle(Color.orange)
+                        .overlay(alignment: .topTrailing) {
+                            Text("\(live.busy)")
+                                .font(.system(size: 8, weight: .bold))
+                                .monospacedDigit()
+                                .foregroundStyle(.white)
+                                .padding(.horizontal, 3)
+                                .padding(.vertical, 1)
+                                .background(Capsule().fill(Color.orange))
+                                .offset(x: 8, y: -7)
+                        }
+                } else {
+                    HStack(spacing: 3) {
+                        Image(systemName: "brain")
+                            .font(.caption)
+                            .foregroundStyle(live.busy > 0 ? Color.orange : Color.secondary)
+                        Text(live.busy > 0 ? "\(live.busy) working · \(live.total)"
+                                           : "\(live.total)")
+                            .font(.caption).monospacedDigit()
+                            .foregroundStyle(live.busy > 0 ? Color.orange : Color.secondary)
+                    }
+                }
             }
             .help("\(live.busy) session(s) mid-turn of \(live.total) live "
                   + "Claude Code sessions — all ride the active account")
@@ -350,7 +433,7 @@ struct MenuContent: View {
         } label: {
             Image(systemName: "rectangle.on.rectangle")
         }
-        .help("Pop out into a window you can move anywhere")
+        .help("Pop out into a window you can move anywhere — click again to close it")
     }
 
     /// Claude service status — a colored dot; click opens the status page.
@@ -408,6 +491,12 @@ private struct PopupScale: ViewModifier {
             content
         } else {
             content
+                // fixedSize: measure the IDEAL, never the proposal. Without
+                // it the outer frame (measured × scale) proposed itself
+                // back into flexible content, which grew to fit, got
+                // re-measured, and ran away by ×scale per pass — in the
+                // pop-out window that reached 2.7e11pt and AppKit aborted.
+                .fixedSize()
                 .onGeometryChange(for: CGSize.self) { proxy in
                     proxy.size
                 } action: { measured = $0 }
@@ -652,7 +741,7 @@ struct AccountCells {
                 // fixedSize: usage is the row's payload — grow the popup
                 // rather than truncate; the name column stays flexible.
                 .fixedSize()
-                .glowOnChange(of: w.pct)
+                .glowOnChange(of: w.pct, color: ThemeColor.flash(theme))
             } else if w == nil, !model.compactRows {
                 Text("—").foregroundStyle(.tertiary)
             } else if !model.compactRows {
@@ -700,7 +789,7 @@ struct AccountCells {
             .help(String(format: "usage credit: %.2f of %.0f %@",
                          spend.used, spend.limit, spend.currency))
             .fixedSize()
-            .glowOnChange(of: spend.pct)
+            .glowOnChange(of: spend.pct, color: ThemeColor.flash(theme))
             .activeBand(banded && account.active)
         } else if !model.compactRows {
             // Text, not Color.clear: a zero-size cell renders the active
@@ -745,7 +834,7 @@ struct AccountCells {
                 }
             }
             .fixedSize()
-            .glowOnChange(of: w.pct)
+            .glowOnChange(of: w.pct, color: ThemeColor.flash(theme))
             .activeBand(banded && account.active)
         }
     }
@@ -769,6 +858,11 @@ struct AccountCells {
 
 /// Maps a theme color string — named or "#rrggbb" — to a SwiftUI Color.
 enum ThemeColor {
+    /// Animation accent for a theme — the app accent when unset.
+    static func flash(_ theme: RowTheme) -> Color {
+        theme.flashColor.isEmpty ? .accentColor : resolve(theme.flashColor)
+    }
+
     static func resolve(_ name: String) -> Color {
         switch name {
         case "red": return .red
@@ -828,9 +922,12 @@ struct AccountGrid: View {
                             .foregroundStyle(account.active ? Color.accentColor : Color.primary)
                     }
                     .activeBand(account.active)
-                    .switchFlash(account.active ? model.switchFlashTick : 0)
+                    .switchFlash(account.active ? model.switchFlashTick : 0,
+                             color: ThemeColor.flash(model.rowTheme))
                     Button(cells.displayName) {
-                        model.switchTo(account.number)   // disabled rows stay clickable, like rumps
+                        // disabled rows stay clickable, like rumps; the
+                        // popup-level alert asks before committing
+                        if !account.active { model.pendingSwitch = account.number }
                     }
                     .buttonStyle(.plain)
                     .fontWeight(account.active ? .bold : .regular)
@@ -915,7 +1012,9 @@ struct AccountStack: View {
                         Text("\(account.number)")
                             .fontWeight(.bold)
                             .foregroundStyle(account.active ? Color.accentColor : Color.secondary)
-                        Button(cells.displayName) { model.switchTo(account.number) }
+                        Button(cells.displayName) {
+                            if !account.active { model.pendingSwitch = account.number }
+                        }
                             .buttonStyle(.plain)
                             .fontWeight(account.active ? .bold : .regular)
                             .foregroundStyle((account.disabled ?? false) || cells.dead
@@ -953,7 +1052,8 @@ struct AccountStack: View {
                                 .strokeBorder(Color.accentColor.opacity(0.7)))
                     }
                 }
-                .switchFlash(account.active ? model.switchFlashTick : 0)
+                .switchFlash(account.active ? model.switchFlashTick : 0,
+                             color: ThemeColor.flash(model.rowTheme))
             }
         }
     }

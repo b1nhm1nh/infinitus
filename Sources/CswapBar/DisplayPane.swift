@@ -38,6 +38,7 @@ struct DisplayPane: View {
                     Text("Add your own skins — JSON, reloaded when this pane opens.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
+                CommunityThemesSection(model: model)
             }
             Picker("Popup layout", selection: Binding(
                 get: { model.popupLayout },

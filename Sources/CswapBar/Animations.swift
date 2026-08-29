@@ -5,6 +5,7 @@ import SwiftUI
 /// `trigger` changes (AppModel bumps it on every observed switch).
 struct SwitchFlash: ViewModifier {
     let trigger: Int
+    var color: Color = .accentColor
 
     func body(content: Content) -> some View {
         content
@@ -17,9 +18,9 @@ struct SwitchFlash: ViewModifier {
                         .fill(
                             LinearGradient(
                                 colors: [.clear,
-                                         Color.accentColor.opacity(0.0),
+                                         color.opacity(0.0),
                                          Color.white.opacity(0.35),
-                                         Color.accentColor.opacity(0.0),
+                                         color.opacity(0.0),
                                          .clear],
                                 startPoint: .leading, endPoint: .trailing)
                         )
@@ -40,7 +41,7 @@ struct SwitchFlash: ViewModifier {
                 .clipped()
             }
             .keyframeAnimator(initialValue: 0.0, trigger: trigger) { view, glow in
-                view.shadow(color: Color.accentColor.opacity(glow),
+                view.shadow(color: color.opacity(glow),
                             radius: 8 * glow)
             } keyframes: { _ in
                 KeyframeTrack {
@@ -56,6 +57,7 @@ struct SwitchFlash: ViewModifier {
 /// the number is. Attach to any cell showing live data.
 struct ValueChangedGlow<V: Equatable>: ViewModifier {
     let value: V
+    var color: Color = .accentColor
     @State private var tick = 0
 
     func body(content: Content) -> some View {
@@ -63,7 +65,7 @@ struct ValueChangedGlow<V: Equatable>: ViewModifier {
             .onChange(of: value) { tick += 1 }
             .keyframeAnimator(initialValue: 0.0, trigger: tick) { view, glow in
                 view
-                    .shadow(color: Color.accentColor.opacity(glow), radius: 6 * glow)
+                    .shadow(color: color.opacity(glow), radius: 6 * glow)
                     .brightness(glow * 0.25)
             } keyframes: { _ in
                 KeyframeTrack {
@@ -76,12 +78,13 @@ struct ValueChangedGlow<V: Equatable>: ViewModifier {
 }
 
 extension View {
-    func switchFlash(_ trigger: Int) -> some View {
-        modifier(SwitchFlash(trigger: trigger))
+    /// Theme-tinted celebration sweep (color from RowTheme.flashColor).
+    func switchFlash(_ trigger: Int, color: Color = .accentColor) -> some View {
+        modifier(SwitchFlash(trigger: trigger, color: color))
     }
 
     /// Glow in place whenever `value` changes.
-    func glowOnChange<V: Equatable>(of value: V) -> some View {
-        modifier(ValueChangedGlow(value: value))
+    func glowOnChange<V: Equatable>(of value: V, color: Color = .accentColor) -> some View {
+        modifier(ValueChangedGlow(value: value, color: color))
     }
 }

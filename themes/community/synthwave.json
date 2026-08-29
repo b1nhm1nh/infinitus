@@ -1,0 +1,11 @@
+{
+  "id": "synthwave",
+  "name": "Synthwave — neon grid",
+  "sessionLabel": "SUN", "sessionColor": "#ff2d95",
+  "weeklyLabel": "GRID", "weeklyColor": "#00e5ff",
+  "scopedPrefix": "◆ ", "scopedColor": "#c77dff",
+  "creditLabel": "CR", "creditColor": "#39ff14",
+  "cashIcon": "🕶", "aheadIcon": "⚡",
+  "deadMarker": "✖", "revivePrefix": "↻ ",
+  "flashColor": "#ff2d95"
+}

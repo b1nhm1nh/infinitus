@@ -16,6 +16,9 @@ final class AppModel: ObservableObject {
     // the (new) active row; dataPulseTick ripples the sync dot whenever a
     // snapshot actually changed something visible.
     @Published var switchFlashTick = 0
+    /// Click-to-switch staging: the row sets this, the popup's
+    /// confirmation alert commits or clears it.
+    @Published var pendingSwitch: Int?
     @Published var dataPulseTick = 0
     /// Debug-only (defaults write … debug_menu -bool true): adds the
     /// Animations tab so every effect can be fired by hand.

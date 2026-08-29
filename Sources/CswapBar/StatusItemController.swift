@@ -19,6 +19,10 @@ import CswapCore
 struct SettingsTab {
     let title: String
     let symbol: String
+    /// Sidebar icon tile color (CodexBar-style settings list).
+    var tint: Color = .accentColor
+    /// Extra search terms beyond the title.
+    var keywords: [String] = []
     let view: AnyView
 }
 
@@ -40,6 +44,9 @@ final class StatusItemController {
     private let item: NSStatusItem
     private let popover = NSPopover()
     private var pinned: NSWindow?
+    /// Last content size PinnedRoot reported — it fires during
+    /// NSWindow(contentViewController:) itself, before `pinned` is set.
+    private var pinnedIdeal: CGSize = .zero
     private var settings: NSWindow?
     private let model: AppModel
     private let usage: UsageModel
@@ -86,7 +93,13 @@ final class StatusItemController {
     }
 
     /// The pop-out action: close the popover, open the floating window.
+    /// Toggles — with the traffic lights hidden, the same button is how
+    /// the window goes away again (Cmd+W works too).
     func popOut() {
+        if let pinned, pinned.isVisible {
+            pinned.orderOut(nil)
+            return
+        }
         if popover.isShown { popover.performClose(nil) }
         showPinnedWindow()
     }
@@ -105,6 +118,13 @@ final class StatusItemController {
     }
 
     @objc private func togglePopover() {
+        // A visible pop-out owns the content: the menu bar item focuses it
+        // instead of opening a second copy as a popover (user request).
+        if let pinned, pinned.isVisible {
+            NSApp.activate(ignoringOtherApps: true)
+            pinned.makeKeyAndOrderFront(nil)
+            return
+        }
         if popover.isShown {
             popover.performClose(nil)
         } else if let button = item.button {
@@ -120,20 +140,56 @@ final class StatusItemController {
     /// status item is hidden or the bar refuses it.
     func showPinnedWindow() {
         if pinned == nil {
-            let host = NSHostingController(rootView: MenuContent(model: model, usage: usage))
+            let host = NSHostingController(rootView: PinnedRoot(
+                model: model, usage: usage,
+                onSize: { [weak self] size in self?.fitPinned(to: size) }))
+            // NO hosting-driven window sizing: with .standardBounds or
+            // .preferredContentSize, NSHostingView.updateAnimatedWindowSize
+            // pushed the content's unbounded ideal width (2.4e196) into
+            // setFrame and AppKit threw NSInternalInconsistencyException —
+            // the app died on every pop-out (crash reports 22:33–23:08).
+            // PinnedRoot measures its own fixedSize() geometry and reports
+            // it through onSize; that number is the popover's exact width.
+            host.sizingOptions = []
             let w = NSWindow(contentViewController: host)
             w.title = "Limitless"
-            // No .miniaturizable and no zoom: minimizing or full-screening
-            // a status-item companion window strands it (user: don't allow
-            // the traffic-light zoom here).
-            w.styleMask = [.titled, .closable, .resizable]
-            w.standardWindowButton(.zoomButton)?.isEnabled = false
+            // Full-size content + hidden system title: the centered
+            // "Limitless" header is drawn by PinnedRoot instead (the
+            // system title sits leading-aligned next to where the traffic
+            // lights were; user wants it centered).
+            w.styleMask = [.titled, .closable, .resizable, .fullSizeContentView]
+            w.titleVisibility = .hidden
+            w.titlebarAppearsTransparent = true
+            // No traffic lights at all (user request): the pop-out button
+            // toggles the window away, and Cmd+W still closes (.closable
+            // stays in the mask for exactly that).
+            for button in [NSWindow.ButtonType.closeButton,
+                           .miniaturizeButton, .zoomButton] {
+                w.standardWindowButton(button)?.isHidden = true
+            }
+            // The whole point of popping out is staying visible while you
+            // work elsewhere — float above normal windows like the pinned
+            // popover does.
+            w.level = .floating
+            w.isMovableByWindowBackground = true
             w.isReleasedWhenClosed = false
-            w.setContentSize(NSSize(width: 720, height: 480))
             pinned = w
+            fitPinned(to: pinnedIdeal)
         }
         NSApp.activate(ignoringOtherApps: true)
         pinned?.makeKeyAndOrderFront(nil)
+    }
+
+    /// Track the content's measured ideal size (layout, theme, compact,
+    /// popup-size changes) — the popover's re-measure, done by hand.
+    private func fitPinned(to size: CGSize) {
+        pinnedIdeal = size
+        guard let pinned, size.width > 1, size.height > 1,
+              size.width < 20_000, size.height < 20_000 else { return }
+        let current = pinned.contentRect(forFrameRect: pinned.frame).size
+        if abs(current.width - size.width) > 0.5 || abs(current.height - size.height) > 0.5 {
+            pinned.setContentSize(NSSize(width: size.width, height: size.height))
+        }
     }
 
     /// Controller-owned Settings window. NOT the SwiftUI Settings scene:
@@ -141,40 +197,50 @@ final class StatusItemController {
     /// (verified live — synthetic click on the button, no window), and the
     /// openSettings environment action doesn't exist outside the scene
     /// graph. Owning the window outright works from any host.
+    /// CodexBar-style chrome: searchable icon sidebar + detail pane
+    /// (SettingsRoot), replacing the old toolbar-tab NSTabViewController.
     func showSettingsWindow() {
         if settings == nil {
-            // NSTabViewController(.toolbar) is the REAL Settings chrome —
-            // icon tabs in the titlebar. The SwiftUI Settings scene gets it
-            // implicitly; no public TabViewStyle reproduces it.
-            let tabs = NSTabViewController()
-            tabs.tabStyle = .toolbar
-            for tab in settingsTabs() {
-                let host = NSHostingController(rootView: tab.view)
-                // No sizing input from the children AT ALL: .standardBounds
-                // constraints pin the window to SwiftUI's ideal size, and a
-                // preferredContentSize makes NSTabViewController re-assert
-                // that size — either one beats the .resizable style bit.
-                // The window is sized once, below, and the user owns it
-                // from there.
-                host.sizingOptions = []
-                // The toolbar tab style propagates the selected child's
-                // title into the window title ("Untitled" when unset).
-                host.title = tab.title
-                let item = NSTabViewItem(viewController: host)
-                item.label = tab.title
-                item.image = NSImage(systemSymbolName: tab.symbol,
-                                     accessibilityDescription: tab.title)
-                tabs.addTabViewItem(item)
-            }
-            let w = NSWindow(contentViewController: tabs)
-            w.title = "Limitless Settings"
+            let host = NSHostingController(rootView: SettingsRoot(tabs: settingsTabs()))
+            // No sizing input from the content: .standardBounds constraints
+            // pin the window to SwiftUI's ideal size and beat the
+            // .resizable style bit. Sized once, below; the user owns it
+            // from there.
+            host.sizingOptions = []
+            let w = NSWindow(contentViewController: host)
+            w.title = "Limitless"
             w.styleMask = [.titled, .closable, .resizable]
-            w.toolbarStyle = .preference
+            w.toolbarStyle = .unified
             w.isReleasedWhenClosed = false
-            w.setContentSize(NSSize(width: 600, height: 520))
+            w.setContentSize(NSSize(width: 780, height: 540))
             settings = w
         }
         NSApp.activate(ignoringOtherApps: true)
         settings?.makeKeyAndOrderFront(nil)
+    }
+}
+
+/// The pop-out window's content: the shared popup body under a centered
+/// title header (which doubles as the drag strip where the titlebar was).
+private struct PinnedRoot: View {
+    @ObservedObject var model: AppModel
+    @ObservedObject var usage: UsageModel
+    let onSize: (CGSize) -> Void
+
+    var body: some View {
+        VStack(spacing: 0) {
+            Text("Limitless")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity)
+                .frame(height: 30)
+            MenuContent(model: model, usage: usage)
+        }
+        // fixedSize = the content's ideal, independent of the window; the
+        // window then follows THAT (fitPinned) instead of the other way
+        // round, so wide rows never compress into wrapped lines.
+        .fixedSize()
+        .onGeometryChange(for: CGSize.self) { $0.size } action: { onSize($0) }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 }

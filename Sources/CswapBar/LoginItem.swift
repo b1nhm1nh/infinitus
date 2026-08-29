@@ -14,7 +14,7 @@ final class LoginItemModel: ObservableObject {
         let status = SMAppService.mainApp.status
         enabled = status == .enabled
         note = status == .requiresApproval
-            ? "Waiting for approval — allow CswapBar under System Settings → General → Login Items."
+            ? "Waiting for approval — allow Limitless under System Settings → General → Login Items."
             : nil
     }
 
@@ -22,7 +22,7 @@ final class LoginItemModel: ObservableObject {
         // `swift run CswapBar` has no .app bundle; SMAppService would
         // register the bare executable and the item would never launch.
         guard Bundle.main.bundleURL.pathExtension == "app" else {
-            note = "Not running from CswapBar.app — build it first (make-app.sh), then toggle here."
+            note = "Not running from the app bundle — build it first (make-app.sh), then toggle here."
             enabled = false
             return
         }

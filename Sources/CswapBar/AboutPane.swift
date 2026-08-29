@@ -246,7 +246,7 @@ struct AboutPane: View {
             }
 
             Section {
-                Text("Limitless (CswapBar) by deathemperor · MIT License")
+                Text("Limitless by deathemperor · MIT License")
                     .font(.caption).foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity)
             }
@@ -255,20 +255,23 @@ struct AboutPane: View {
         .onAppear { if model.current == nil { Task { await model.check() } } }
     }
 
-    /// The menu bar glyph as an app icon: ⇄ on a dark rounded tile.
+    /// The app icon in miniature: ∞ on the midnight→violet gradient
+    /// (make-icon.swift is the 1024px source of truth).
     private var appMark: some View {
         ZStack {
             RoundedRectangle(cornerRadius: 14)
-                .fill(LinearGradient(colors: [Color(white: 0.22), Color(white: 0.08)],
-                                     startPoint: .top, endPoint: .bottom))
+                .fill(LinearGradient(
+                    colors: [Color(red: 0.42, green: 0.20, blue: 0.95),
+                             Color(red: 0.07, green: 0.05, blue: 0.20)],
+                    startPoint: .topLeading, endPoint: .bottom))
                 .frame(width: 64, height: 64)
                 .overlay(
                     RoundedRectangle(cornerRadius: 14)
                         .strokeBorder(Color.white.opacity(0.15))
                 )
                 .shadow(color: .black.opacity(0.35), radius: 4, y: 2)
-            Text("⇄")
-                .font(.system(size: 34, weight: .semibold))
+            Text("∞")
+                .font(.system(size: 40, weight: .bold))
                 .foregroundStyle(.white)
         }
     }

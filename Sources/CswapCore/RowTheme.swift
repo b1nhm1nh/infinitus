@@ -32,6 +32,9 @@ public struct RowTheme: Codable, Equatable, Sendable, Identifiable {
     /// Verb for a dead limit: "MP down", "🎬 sold out", "LIFE MIA". The
     /// tooltip always carries the plain-English explanation.
     public var deadVerb: String
+    /// Tint for the switch celebration and data-change glow; "" means the
+    /// app accent color.
+    public var flashColor: String
 
     public init(
         id: String, name: String, plain: Bool = false,
@@ -41,7 +44,7 @@ public struct RowTheme: Codable, Equatable, Sendable, Identifiable {
         creditLabel: String = "$", creditColor: String = "green",
         cashIcon: String = "💰", aheadIcon: String = "sf:flame.fill",
         deadMarker: String = "💀", revivePrefix: String = "",
-        deadVerb: String = "out"
+        deadVerb: String = "out", flashColor: String = ""
     ) {
         self.id = id
         self.name = name
@@ -59,6 +62,7 @@ public struct RowTheme: Codable, Equatable, Sendable, Identifiable {
         self.deadMarker = deadMarker
         self.revivePrefix = revivePrefix
         self.deadVerb = deadVerb
+        self.flashColor = flashColor
     }
 
     public init(from decoder: Decoder) throws {
@@ -80,7 +84,8 @@ public struct RowTheme: Codable, Equatable, Sendable, Identifiable {
             aheadIcon: try c.decodeIfPresent(String.self, forKey: .aheadIcon) ?? base.aheadIcon,
             deadMarker: try c.decodeIfPresent(String.self, forKey: .deadMarker) ?? base.deadMarker,
             revivePrefix: try c.decodeIfPresent(String.self, forKey: .revivePrefix) ?? base.revivePrefix,
-            deadVerb: try c.decodeIfPresent(String.self, forKey: .deadVerb) ?? base.deadVerb
+            deadVerb: try c.decodeIfPresent(String.self, forKey: .deadVerb) ?? base.deadVerb,
+            flashColor: try c.decodeIfPresent(String.self, forKey: .flashColor) ?? base.flashColor
         )
     }
 
@@ -98,7 +103,7 @@ public struct RowTheme: Codable, Equatable, Sendable, Identifiable {
         scopedPrefix: "", scopedColor: "purple",
         creditLabel: "$", creditColor: "green",
         cashIcon: "💰", aheadIcon: "sf:flame.circle.fill",
-        deadMarker: "💀", revivePrefix: "🧪 ", deadVerb: "down")
+        deadMarker: "💀", revivePrefix: "🧪 ", deadVerb: "down", flashColor: "yellow")
 
     public static let movie = RowTheme(
         id: "movie", name: "Movie — reels & box office",
@@ -107,7 +112,7 @@ public struct RowTheme: Codable, Equatable, Sendable, Identifiable {
         scopedPrefix: "★ ", scopedColor: "orange",
         creditLabel: "🎟", creditColor: "green",
         cashIcon: "💵", aheadIcon: "sf:popcorn.fill",
-        deadMarker: "🔚", revivePrefix: "re-release ", deadVerb: "sold out")
+        deadMarker: "🔚", revivePrefix: "re-release ", deadVerb: "sold out", flashColor: "orange")
 
     public static let hades = RowTheme(
         id: "hades", name: "Hades — blades & darkness",
@@ -116,7 +121,7 @@ public struct RowTheme: Codable, Equatable, Sendable, Identifiable {
         scopedPrefix: "🏛 ", scopedColor: "teal",
         creditLabel: "🪙", creditColor: "yellow",
         cashIcon: "💠", aheadIcon: "🔥",
-        deadMarker: "☠", revivePrefix: "🩸 ", deadVerb: "fallen")
+        deadMarker: "☠", revivePrefix: "🩸 ", deadVerb: "fallen", flashColor: "red")
 
     public static let mgs = RowTheme(
         id: "mgs", name: "Metal Gear — tactical espionage",
@@ -125,7 +130,7 @@ public struct RowTheme: Codable, Equatable, Sendable, Identifiable {
         scopedPrefix: "⚠ ", scopedColor: "yellow",
         creditLabel: "📦", creditColor: "green",
         cashIcon: "GMP ", aheadIcon: "❗",
-        deadMarker: "☠", revivePrefix: "💊 ", deadVerb: "MIA")
+        deadMarker: "☠", revivePrefix: "💊 ", deadVerb: "MIA", flashColor: "green")
 
     public static let builtins: [RowTheme] = [off, rpg, movie, hades, mgs]
 
@@ -145,6 +150,17 @@ public struct RowTheme: Codable, Equatable, Sendable, Identifiable {
     public static func loadCustom(from url: URL = customThemesURL()) -> [RowTheme] {
         guard let data = try? Data(contentsOf: url) else { return [] }
         return (try? JSONDecoder().decode([RowTheme].self, from: data)) ?? []
+    }
+
+    /// Persist the custom-theme list (community installs write through
+    /// this); creates the directory on first use.
+    public static func saveCustom(_ themes: [RowTheme],
+                                  to url: URL = customThemesURL()) throws {
+        try FileManager.default.createDirectory(
+            at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        let enc = JSONEncoder()
+        enc.outputFormatting = [.prettyPrinted, .sortedKeys]
+        try enc.encode(themes).write(to: url)
     }
 
     /// A starter file for "Open themes file" when none exists yet.
