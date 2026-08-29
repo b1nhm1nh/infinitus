@@ -25,7 +25,7 @@ struct DisplayPane: View {
                     Text(style.displayName).tag(style.rawValue)
                 }
             }
-            Toggle("Compact rows (drop reset times in the popup)",
+            Toggle("Compact popup (hide actions, event log, and history)",
                    isOn: $model.compactRows)
             Toggle("Show menu bar icon", isOn: $model.menuBarIconShown)
                 .help("Hide lasts until quit — it always returns on the next "

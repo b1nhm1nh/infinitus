@@ -145,15 +145,20 @@ struct MenuContent: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             AccountGrid(model: model, usage: usage)
-            Divider()
-            HStack {
-                Button("Rotate to next") { model.rotate() }
-                Button("Refresh") { Task { await model.refreshSnapshot() } }
-                Button("Test notification") {
-                    Notifier.post(title: "claude-swap", body: "test — notifications reach you")
+            // Compact mode hides the MIDDLE of the popup (actions, event
+            // log, history) — never the reset times: those are account
+            // data, the middle is chrome. Errors always show.
+            if !model.compactRows {
+                Divider()
+                HStack {
+                    Button("Rotate to next") { model.rotate() }
+                    Button("Refresh") { Task { await model.refreshSnapshot() } }
+                    Button("Test notification") {
+                        Notifier.post(title: "claude-swap", body: "test — notifications reach you")
+                    }
+                    Spacer()
+                    engineBadge
                 }
-                Spacer()
-                engineBadge
             }
             if let err = model.lastError {
                 Text(err).font(.caption).foregroundStyle(.red).lineLimit(2)
@@ -161,30 +166,56 @@ struct MenuContent: View {
             if let notifyErr = Notifier.lastAuthError {
                 Text(notifyErr).font(.caption).foregroundStyle(.orange).lineLimit(2)
             }
-            if !model.eventLog.isEmpty {
-                Divider()
-                ForEach(model.eventLog.suffix(3), id: \.self) { line in
-                    Text(line).font(.caption).foregroundStyle(.secondary)
+            if !model.compactRows {
+                if !model.eventLog.isEmpty {
+                    Divider()
+                    ForEach(model.eventLog.suffix(3), id: \.self) { line in
+                        Text(line).font(.caption).foregroundStyle(.secondary)
+                    }
                 }
+                Divider()
+                SwitchHistoryView()
             }
             Divider()
-            SwitchHistoryView()
-            Divider()
             HStack {
-                Button("Settings…") { model.showSettings?() }
+                Button {
+                    model.showSettings?()
+                } label: {
+                    Label("Settings…", systemImage: "gearshape")
+                        .labelStyle(bottomRowStyle)
+                }
+                .help("Settings")
                 Button {
                     model.showPinned?()
                 } label: {
                     Label("Pin", systemImage: "pin")
+                        .labelStyle(bottomRowStyle)
                 }
                 .help("Open this as a window that stays put — the popup "
                       + "always closes when you click elsewhere.")
                 Spacer()
-                Button("Quit") { model.shutdown() }   // engine stops first
+                if model.compactRows {
+                    // The badge's home row is hidden in compact mode; the
+                    // engine state is too important to vanish with it.
+                    engineBadge
+                    Spacer()
+                }
+                Button {
+                    model.shutdown()   // engine stops first
+                } label: {
+                    Label("Quit", systemImage: "power")
+                        .labelStyle(bottomRowStyle)
+                }
+                .help("Quit")
             }
         }
         .padding(12)
         .frame(minWidth: 560)
+    }
+
+    /// Compact popup: icon-only bottom buttons; full popup keeps labels.
+    private var bottomRowStyle: AnyLabelStyle {
+        model.compactRows ? AnyLabelStyle(.iconOnly) : AnyLabelStyle(.titleAndIcon)
     }
 
     @ViewBuilder private var engineBadge: some View {
@@ -289,8 +320,7 @@ struct AccountGrid: View {
                             .monospacedDigit()
                             .contentTransition(.numericText(value: w.pct))
                     }
-                    if !model.compactRows,
-                       let when = model.gamifiedRows
+                    if let when = model.gamifiedRows
                            ? ResetLabel.short(w) : ResetLabel.label(w) {
                         Text(when).font(.caption).foregroundStyle(.secondary)
                     }
@@ -356,4 +386,16 @@ private struct ActiveBand: ViewModifier {
 
 private extension View {
     func activeBand(_ on: Bool) -> some View { modifier(ActiveBand(active: on)) }
+}
+
+/// Type-erased LabelStyle so one Label can flip icon-only <-> titled at
+/// runtime (the ternary needs a single concrete type).
+struct AnyLabelStyle: LabelStyle {
+    private let make: (Configuration) -> AnyView
+    init(_ style: some LabelStyle) {
+        make = { AnyView(style.makeBody(configuration: $0)) }
+    }
+    func makeBody(configuration: Configuration) -> some View {
+        make(configuration)
+    }
 }

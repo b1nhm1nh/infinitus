@@ -57,8 +57,13 @@ final class StatusItemController {
         item.button?.action = #selector(togglePopover)
 
         popover.behavior = .transient            // click-outside closes, like MenuBarExtra
-        popover.contentViewController = NSHostingController(
+        let host = NSHostingController(
             rootView: MenuContent(model: model, usage: usage))
+        // NSPopover observes its content controller's preferredContentSize;
+        // without this the popover keeps the width of the FIRST layout (no
+        // reset times yet) and clips both edges once the grid grows.
+        host.sizingOptions = .preferredContentSize
+        popover.contentViewController = host
 
         // The title and visibility follow the model; receive AFTER the
         // change lands (objectWillChange fires before mutation).
