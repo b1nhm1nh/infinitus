@@ -136,7 +136,7 @@ final class StatusItemController {
 
     /// Same content in a real window. No popup button opens this any more
     /// (Pin now holds the popover itself); it remains the guaranteed way in
-    /// via `open CswapBar.app` -> applicationShouldHandleReopen when the
+    /// via `open Limitless.app` -> applicationShouldHandleReopen when the
     /// status item is hidden or the bar refuses it.
     func showPinnedWindow() {
         if pinned == nil {

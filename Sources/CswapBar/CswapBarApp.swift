@@ -21,7 +21,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         false
     }
 
-    /// `open CswapBar.app` on an already-running instance lands here: show
+    /// `open Limitless.app` on an already-running instance lands here: show
     /// the pinned window. This is the guaranteed way into the UI when the
     /// menu bar is too full to display the status item at all.
     func applicationShouldHandleReopen(_ app: NSApplication,

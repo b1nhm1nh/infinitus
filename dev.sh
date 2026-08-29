@@ -10,5 +10,5 @@ while :; do
     # -d: exit when a NEW file appears so the outer loop re-lists;
     # -n: no TTY (runs fine in the background).
     find Sources -name '*.swift' | entr -n -d sh -c \
-        './make-app.sh && { pkill -x CswapBar; open CswapBar.app; } && echo "== relaunched $(date +%H:%M:%S)"'
+        './make-app.sh && { pkill -x Limitless; open Limitless.app; } && echo "== relaunched $(date +%H:%M:%S)"'
 done

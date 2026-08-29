@@ -2,7 +2,7 @@ import SwiftUI
 import ServiceManagement
 
 /// "Start at login" via SMAppService.mainApp. Registration binds to the app
-/// bundle's CURRENT path (swift/CswapBar/CswapBar.app in this checkout) —
+/// bundle's CURRENT path (swift/CswapBar/Limitless.app in this checkout) —
 /// rebuilding in place keeps it working, moving the repo silently breaks the
 /// login item until the toggle is flipped off and on again.
 @MainActor

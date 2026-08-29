@@ -130,7 +130,7 @@ final class UpdateModel: ObservableObject {
 /// About + updates, CodexBar-style: hero card (icon, version, build,
 /// tagline), an Updates group, full-row link rows with leading icons and a
 /// trailing arrow, and a license footer. The update path still touches the
-/// PYTHON tool only — CswapBar.app itself rebuilds from the repo.
+/// PYTHON tool only — Limitless.app itself rebuilds from the repo.
 struct AboutPane: View {
     @ObservedObject var model: UpdateModel
     @Environment(\.openURL) private var openURL

@@ -1,5 +1,5 @@
 #!/bin/sh
-# Assemble CswapBar.app from the release build (parity checklist: proper
+# Assemble Limitless.app from the release build (parity checklist: proper
 # notification identity). LSUIElement keeps it out of the Dock; the bundle
 # identifier is what lets UNUserNotificationCenter work (Notifier.swift).
 set -eu
@@ -7,14 +7,14 @@ cd "$(dirname "$0")"
 
 swift build -c release
 BIN="$(swift build -c release --show-bin-path)/CswapBar"
-APP=CswapBar.app
+APP=Limitless.app
 
 VERSION="$(sed -n 's/^version = "\(.*\)"/\1/p' ../../pyproject.toml)"
 SHA="$(git rev-parse --short HEAD 2>/dev/null || echo dev)"
 
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
-cp "$BIN" "$APP/Contents/MacOS/CswapBar"
+cp "$BIN" "$APP/Contents/MacOS/Limitless"
 [ -f AppIcon.icns ] || ./make-icon.sh
 cp AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
 cat > "$APP/Contents/Info.plist" <<PLIST
@@ -22,7 +22,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-    <key>CFBundleExecutable</key><string>CswapBar</string>
+    <key>CFBundleExecutable</key><string>Limitless</string>
     <!-- ".g2": macOS 26's ControlCenter holds a persistent per-bundle-id
          ban against io.github.claude-swap.CswapBar (acquired during the
          2026-08-29 MenuBarExtra insert/evict war): its status item gets a
