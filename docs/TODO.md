@@ -40,3 +40,9 @@
 - Theme requests (2026-08-30): "AI agentic coding" and "classical
   software engineering (not using AI to code)" — new builtin RowThemes
   (labels for busy/dead/ready/credit etc. in each voice).
+- About pane shows the wrong icon (correct everywhere else,
+  2026-08-30) — likely the same no-AppIcon-when-unbundled fallback the
+  header got; give AboutPane the same bundled/glyph logic.
+- Themify the animations (2026-08-30): sweep/glow already tint from
+  RowTheme.flashColor — go further, e.g. per-theme celebration styles
+  (rpg level-up burst, movie marquee, hades, mgs alert).
