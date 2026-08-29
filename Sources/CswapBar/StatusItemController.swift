@@ -30,6 +30,7 @@ final class StatusItemHolder: ObservableObject {
         controller = StatusItemController(model: model, usage: usage,
                                           settingsTabs: settingsTabs)
         model.showSettings = { [weak controller] in controller?.showSettingsWindow() }
+        model.reopenPopover = { [weak controller] in controller?.reopenPopover() }
     }
 }
 
@@ -81,6 +82,19 @@ final class StatusItemController {
         // Pinned = survives click-outside; the status item still toggles
         // it closed, so a pinned popover can never strand.
         popover.behavior = model.popoverPinned ? .applicationDefined : .transient
+    }
+
+    /// Bounce an open popover so it re-measures a wholesale content-shape
+    /// change (layout toggle). No-op when closed.
+    func reopenPopover() {
+        guard popover.isShown else { return }
+        popover.performClose(nil)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) { [weak self] in
+            guard let self, let button = self.item.button else { return }
+            self.popover.behavior = self.model.popoverPinned ? .applicationDefined : .transient
+            NSApp.activate(ignoringOtherApps: true)
+            self.popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+        }
     }
 
     @objc private func togglePopover() {

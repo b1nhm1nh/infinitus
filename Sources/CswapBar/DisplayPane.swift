@@ -33,7 +33,11 @@ struct DisplayPane: View {
                         .font(.caption).foregroundStyle(.secondary)
                 }
             }
-            Picker("Popup layout", selection: $model.popupLayout) {
+            Picker("Popup layout", selection: Binding(
+                get: { model.popupLayout },
+                set: { value in
+                    withAnimation(.easeInOut(duration: 0.3)) { model.popupLayout = value }
+                })) {
                 Text("Wide rows").tag("wide")
                 Text("Stacked cards").tag("stacked")
             }

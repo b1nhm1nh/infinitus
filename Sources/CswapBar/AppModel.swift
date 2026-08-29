@@ -27,6 +27,12 @@ final class AppModel: ObservableObject {
     /// Set by StatusItemHolder — opens the controller-owned Settings window
     /// (the SwiftUI Settings scene is unreachable from popover hosts).
     var showSettings: (() -> Void)?
+    /// Set by StatusItemHolder — closes and re-shows an open popover.
+    /// NSPopover keeps a stale fitting size when the content swaps shape
+    /// wholesale (wide<->stacked left it clipped or oversized until a
+    /// manual reopen, user-verified); a programmatic bounce is that same
+    /// fix without the user doing it.
+    var reopenPopover: (() -> Void)?
     // The bundle on disk was rebuilt since this instance launched (the
     // dev loop, or a manual make-app.sh) — surfaced as "restart to update".
     @Published var appUpdatePending = false

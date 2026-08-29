@@ -297,7 +297,9 @@ struct MenuContent: View {
     /// pane's "Popup layout" picker.
     private var layoutToggleIcon: some View {
         Button {
-            model.popupLayout = model.popupLayout == "stacked" ? "wide" : "stacked"
+            withAnimation(.easeInOut(duration: 0.3)) {
+                model.popupLayout = model.popupLayout == "stacked" ? "wide" : "stacked"
+            }
         } label: {
             Image(systemName: model.popupLayout == "stacked"
                   ? "rectangle.split.2x1" : "rectangle.split.1x2")
@@ -389,10 +391,13 @@ struct AccountRows: View {
         Group {
             if model.popupLayout == "stacked" {
                 AccountStack(model: model, usage: usage)
+                    .transition(.opacity.combined(with: .scale(scale: 0.98, anchor: .top)))
             } else {
                 AccountGrid(model: model, usage: usage)
+                    .transition(.opacity.combined(with: .scale(scale: 0.98, anchor: .top)))
             }
         }
+        .animation(.easeInOut(duration: 0.3), value: model.popupLayout)
         // Warm the cash figures when the popup opens in a themed mode: a
         // background `cswap usage` run, cached in the shared UsageModel.
         .onAppear { if !model.rowTheme.plain { usage.loadIfNeeded() } }
