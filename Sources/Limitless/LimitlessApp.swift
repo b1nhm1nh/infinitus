@@ -199,14 +199,29 @@ struct LimitlessHeader: View {
 
     var body: some View {
         HStack(spacing: 5) {
-            Image(nsImage: NSApp.applicationIconImage ?? NSImage())
-                .resizable()
+            icon
                 .frame(width: 16, height: 16)
             Text("Limitless")
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(tint)
         }
         .frame(maxWidth: .infinity)
+    }
+
+    /// Unbundled runs (run-unbundled.sh) have no AppIcon, so
+    /// applicationIconImage is the generic document icon — use the
+    /// menu bar glyph, tinted like the title, instead.
+    @ViewBuilder private var icon: some View {
+        if Bundle.main.bundlePath.hasSuffix(".app"),
+           let appIcon = NSApp.applicationIconImage {
+            Image(nsImage: appIcon).resizable()
+        } else {
+            Image(nsImage: MenuBarGlyph.image)
+                .renderingMode(.template)
+                .resizable()
+                .scaledToFit()
+                .foregroundStyle(tint)
+        }
     }
 
     private var tint: Color {
@@ -947,6 +962,15 @@ struct AccountGrid: View {
         3 + (model.accounts.map { ($0.usage?.scoped ?? []).count }.max() ?? 0)
     }
 
+    /// The active row's number-cell bounds — the sweep overlay's y anchor.
+    private struct ActiveRowAnchor: PreferenceKey {
+        static let defaultValue: Anchor<CGRect>? = nil
+        static func reduce(value: inout Anchor<CGRect>?,
+                           nextValue: () -> Anchor<CGRect>?) {
+            if let next = nextValue() { value = next }
+        }
+    }
+
     var body: some View {
         Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 8) {
             ForEach(model.accounts, id: \.number) { account in
@@ -965,8 +989,13 @@ struct AccountGrid: View {
                             .foregroundStyle(account.active ? Color.accentColor : Color.primary)
                     }
                     .activeBand(account.active)
-                    .switchFlash(account.active ? model.switchFlashTick : 0,
-                             color: ThemeColor.flash(model.rowTheme))
+                    // Grid has no per-row view, so the celebration can't
+                    // attach here (it would sweep only this cell — user
+                    // report 2026-08-30). The cell reports its bounds and
+                    // the Grid runs the sweep full-width at that y.
+                    .anchorPreference(key: ActiveRowAnchor.self, value: .bounds) {
+                        account.active ? $0 : nil
+                    }
                     Button(cells.displayName) {
                         // disabled rows stay clickable, like rumps; the
                         // popup-level alert asks before committing
@@ -1031,6 +1060,21 @@ struct AccountGrid: View {
                         cells.scopedCells
                         cells.cashCell
                     }
+                }
+            }
+        }
+        .overlayPreferenceValue(ActiveRowAnchor.self) { anchor in
+            GeometryReader { geo in
+                if let anchor {
+                    let row = geo[anchor]
+                    // Full grid width, band-height (± half the 8pt
+                    // verticalSpacing, matching activeBand's extension).
+                    Color.clear
+                        .frame(width: geo.size.width, height: row.height + 8)
+                        .switchFlash(model.switchFlashTick,
+                                     color: ThemeColor.flash(model.rowTheme))
+                        .offset(y: row.minY - 4)
+                        .allowsHitTesting(false)
                 }
             }
         }

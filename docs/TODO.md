@@ -37,3 +37,6 @@
   (2026-08-30).
 - "Sync settings via iCloud Drive" lives in the Display pane — wrong
   home; move to its own Sync/General settings pane (2026-08-30).
+- Theme requests (2026-08-30): "AI agentic coding" and "classical
+  software engineering (not using AI to code)" — new builtin RowThemes
+  (labels for busy/dead/ready/credit etc. in each voice).
