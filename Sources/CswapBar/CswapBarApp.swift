@@ -148,51 +148,36 @@ struct MenuContent: View {
     var body: some View {
         Group {
             if model.compactRows {
-                // Compact: controls live in a left rail so the accounts sit
-                // as high and tight as the bar allows.
-                HStack(alignment: .top, spacing: 10) {
-                    // Borderless + tight spacing: the rail must never be
-                    // taller than the account rows (it drives the popup
-                    // height otherwise), and it must never be greedy — a
-                    // maxHeight:.infinity here broke the popover's fitting
-                    // size so badly nothing rendered at all.
-                    VStack(spacing: 9) {
-                        Button { model.showSettings?() } label: {
-                            Image(systemName: "gearshape")
-                        }
-                        .help("Settings")
-                        Button { model.popoverPinned.toggle() } label: {
-                            Image(systemName: model.popoverPinned ? "pin.fill" : "pin")
-                        }
-                        .help("Pin keeps this popup open when you click elsewhere")
-                        Button { model.compactRows.toggle() } label: {
-                            Image(systemName: "rectangle.expand.vertical")
-                        }
-                        .help("Show actions and the full footer")
-                        layoutToggleIcon
-                        serviceDot
-                        if model.appUpdatePending {
-                            Button { model.relaunchApp() } label: {
-                                Image(systemName: "arrow.triangle.2.circlepath")
-                                    .foregroundStyle(.orange)
-                            }
-                            .help("A newer build is on disk — restart to update")
-                        }
-                        engineBadgeIcon
-                        Button { model.shutdown() } label: {
-                            Image(systemName: "power")
-                        }
-                        .help("Quit")
-                    }
-                    .buttonStyle(.borderless)
+                // Compact adapts to the fleet size: a couple of accounts
+                // get a horizontal icon strip under the rows (a vertical
+                // rail would dwarf them); more get a two-column icon rail
+                // (seven stacked icons out-grew five rows and left dead
+                // space below — the rail must never drive the height).
+                if model.accounts.count <= 3 {
                     VStack(alignment: .leading, spacing: 8) {
-                        AccountRows(model: model, usage: usage)
+                        accountArea
                         errorLines
+                        HStack(spacing: 12) { compactControls }
+                            .buttonStyle(.borderless)
+                    }
+                } else {
+                    HStack(alignment: .top, spacing: 8) {
+                        LazyVGrid(columns: [GridItem(.fixed(20), spacing: 10),
+                                            GridItem(.fixed(20))],
+                                  spacing: 10) {
+                            compactControls
+                        }
+                        .frame(width: 52)
+                        .buttonStyle(.borderless)
+                        VStack(alignment: .leading, spacing: 8) {
+                            accountArea
+                            errorLines
+                        }
                     }
                 }
             } else {
                 VStack(alignment: .leading, spacing: 8) {
-                    AccountRows(model: model, usage: usage)
+                    accountArea
                     Divider()
                     HStack {
                         Button("Rotate to next") { model.rotate() }
@@ -248,13 +233,56 @@ struct MenuContent: View {
                 }
             }
         }
-        .padding(12)
-        .frame(minWidth: model.compactRows ? 360 : 560)
+        .padding(10)
+        .frame(minWidth: model.compactRows ? 280 : 560)
         // Real scaling, not dynamicTypeSize: macOS ignores Dynamic Type,
         // so the popup renders at 1x and scaleEffect + a matching frame
         // grow both the pixels AND the popover's fitting size.
         .modifier(PopupScale(scale: model.popupScale))
         .onAppear { status.refreshIfStale() }
+    }
+
+    /// Ten-plus accounts scroll instead of growing an off-screen popup.
+    @ViewBuilder private var accountArea: some View {
+        if model.accounts.count > 10 {
+            ScrollView(showsIndicators: false) {
+                AccountRows(model: model, usage: usage)
+            }
+            .frame(maxHeight: 560)
+        } else {
+            AccountRows(model: model, usage: usage)
+        }
+    }
+
+    /// The compact-mode controls, container-agnostic: the caller decides
+    /// rail grid vs horizontal strip.
+    @ViewBuilder private var compactControls: some View {
+        Button { model.showSettings?() } label: {
+            Image(systemName: "gearshape")
+        }
+        .help("Settings")
+        Button { model.popoverPinned.toggle() } label: {
+            Image(systemName: model.popoverPinned ? "pin.fill" : "pin")
+        }
+        .help("Pin keeps this popup open when you click elsewhere")
+        Button { model.compactRows.toggle() } label: {
+            Image(systemName: "rectangle.expand.vertical")
+        }
+        .help("Show actions and the full footer")
+        layoutToggleIcon
+        serviceDot
+        if model.appUpdatePending {
+            Button { model.relaunchApp() } label: {
+                Image(systemName: "arrow.triangle.2.circlepath")
+                    .foregroundStyle(.orange)
+            }
+            .help("A newer build is on disk — restart to update")
+        }
+        engineBadgeIcon
+        Button { model.shutdown() } label: {
+            Image(systemName: "power")
+        }
+        .help("Quit")
     }
 
     /// Quick wide-rows <-> stacked-cards flip, mirroring the Display
