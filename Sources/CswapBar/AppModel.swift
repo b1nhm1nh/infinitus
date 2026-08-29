@@ -15,9 +15,6 @@ final class AppModel: ObservableObject {
     @Published var lastError: String?
 
     let cli: CswapCLI?
-    /// Set by StatusItemHolder — opens the pinned window from any host
-    /// (the popover copy of MenuContent has no openWindow environment).
-    var showPinned: (() -> Void)?
     /// Set by StatusItemHolder — opens the controller-owned Settings window
     /// (the SwiftUI Settings scene is unreachable from popover hosts).
     var showSettings: (() -> Void)?
@@ -39,6 +36,9 @@ final class AppModel: ObservableObject {
     // would be no UI left to unhide it from (the Settings window is only
     // reachable through the popup). Hiding lasts until quit.
     @Published var menuBarIconShown = true
+    // Session-only, like menuBarIconShown: Pin holds the popover open
+    // (click-outside stops closing it) until unpinned or relaunch.
+    @Published var popoverPinned = false
     private let defaults = UserDefaults.standard
 
     var gamifiedRows: Bool { gamification == GamificationStyle.rpg.rawValue }

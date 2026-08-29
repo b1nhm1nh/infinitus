@@ -29,7 +29,6 @@ final class StatusItemHolder: ObservableObject {
          settingsTabs: @escaping () -> [SettingsTab]) {
         controller = StatusItemController(model: model, usage: usage,
                                           settingsTabs: settingsTabs)
-        model.showPinned = { [weak controller] in controller?.showPinnedWindow() }
         model.showSettings = { [weak controller] in controller?.showSettingsWindow() }
     }
 }
@@ -79,18 +78,25 @@ final class StatusItemController {
         if item.isVisible != model.menuBarIconShown {
             item.isVisible = model.menuBarIconShown
         }
+        // Pinned = survives click-outside; the status item still toggles
+        // it closed, so a pinned popover can never strand.
+        popover.behavior = model.popoverPinned ? .applicationDefined : .transient
     }
 
     @objc private func togglePopover() {
         if popover.isShown {
             popover.performClose(nil)
         } else if let button = item.button {
+            popover.behavior = model.popoverPinned ? .applicationDefined : .transient
             NSApp.activate(ignoringOtherApps: true)
             popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
         }
     }
 
-    /// The "sticky" surface: same content in a real window that stays put.
+    /// Same content in a real window. No popup button opens this any more
+    /// (Pin now holds the popover itself); it remains the guaranteed way in
+    /// via `open CswapBar.app` -> applicationShouldHandleReopen when the
+    /// status item is hidden or the bar refuses it.
     func showPinnedWindow() {
         if pinned == nil {
             let host = NSHostingController(rootView: MenuContent(model: model, usage: usage))
@@ -131,7 +137,7 @@ final class StatusItemController {
             }
             let w = NSWindow(contentViewController: tabs)
             w.title = "CswapBar Settings"
-            w.styleMask = [.titled, .closable, .resizable]
+            w.styleMask = [.titled, .closable]   // fixed size, like real Settings
             w.toolbarStyle = .preference
             w.isReleasedWhenClosed = false
             settings = w

@@ -186,13 +186,25 @@ struct MenuContent: View {
                 }
                 .help("Settings")
                 Button {
-                    model.showPinned?()
+                    model.popoverPinned.toggle()
                 } label: {
-                    Label("Pin", systemImage: "pin")
+                    Label(model.popoverPinned ? "Unpin" : "Pin",
+                          systemImage: model.popoverPinned ? "pin.fill" : "pin")
                         .labelStyle(bottomRowStyle)
                 }
-                .help("Open this as a window that stays put — the popup "
-                      + "always closes when you click elsewhere.")
+                .help("Pin keeps this popup open when you click elsewhere; "
+                      + "the menu bar icon still closes it.")
+                Button {
+                    model.compactRows.toggle()
+                } label: {
+                    Label(model.compactRows ? "Expand" : "Compact",
+                          systemImage: model.compactRows
+                              ? "rectangle.expand.vertical"
+                              : "rectangle.compress.vertical")
+                        .labelStyle(bottomRowStyle)
+                }
+                .help(model.compactRows ? "Show actions, event log, and history"
+                                        : "Hide actions, event log, and history")
                 Spacer()
                 if model.compactRows {
                     // The badge's home row is hidden in compact mode; the
@@ -341,7 +353,13 @@ struct AccountGrid: View {
     @ViewBuilder private func goldCell(_ account: Account) -> some View {
         if model.gamifiedRows,
            let row = usage.report?.accounts.first(where: { $0.number == account.number }) {
-            Text("💰\(Int(row.estimatedUSD))")
+            let usd = Int(row.estimatedUSD)
+            // Compact popup: "1,077" -> "1k" (rounded); full popup keeps
+            // the exact figure. Text(verbatim:) so the compact string is
+            // not re-formatted by LocalizedStringKey interpolation.
+            Text(verbatim: model.compactRows && usd >= 1000
+                 ? "💰\(Int((Double(usd) / 1000).rounded()))k"
+                 : "💰\(usd.formatted())")
                 .font(.caption).foregroundStyle(.yellow)
                 .help("Estimated API-price spend, last \(usage.report?.days ?? 7) days — not a bill")
                 .fixedSize()
