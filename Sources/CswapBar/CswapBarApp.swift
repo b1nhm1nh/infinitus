@@ -332,8 +332,11 @@ struct AccountGrid: View {
                             .monospacedDigit()
                             .contentTransition(.numericText(value: w.pct))
                     }
-                    if let when = model.gamifiedRows
-                           ? ResetLabel.short(w) : ResetLabel.label(w) {
+                    // Full label in every mode — countdown plus the exact
+                    // wall-clock reset ("3h 4m (21:07)"). The popover sizes
+                    // to content now, so gamified rows no longer need the
+                    // narrow countdown-only variant.
+                    if let when = ResetLabel.label(w) {
                         Text(when).font(.caption).foregroundStyle(.secondary)
                     }
                 }

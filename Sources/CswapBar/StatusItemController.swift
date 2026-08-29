@@ -137,7 +137,7 @@ final class StatusItemController {
             }
             let w = NSWindow(contentViewController: tabs)
             w.title = "CswapBar Settings"
-            w.styleMask = [.titled, .closable]   // fixed size, like real Settings
+            w.styleMask = [.titled, .closable, .resizable]
             w.toolbarStyle = .preference
             w.isReleasedWhenClosed = false
             settings = w
