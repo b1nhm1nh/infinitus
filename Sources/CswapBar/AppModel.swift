@@ -10,6 +10,7 @@ import CswapCore
 final class AppModel: ObservableObject {
     @Published var accounts: [Account] = []
     @Published var activeNumber: Int?
+    @Published var nextCandidate: Int?
     @Published var engineState: EngineSupervisor.State = .stopped
     @Published var eventLog: [String] = []
     @Published var lastError: String?
@@ -36,12 +37,13 @@ final class AppModel: ObservableObject {
     // would be no UI left to unhide it from (the Settings window is only
     // reachable through the popup). Hiding lasts until quit.
     @Published var menuBarIconShown = true
-    // Session-only, like menuBarIconShown: Pin holds the popover open
-    // (click-outside stops closing it) until unpinned or relaunch.
-    @Published var popoverPinned = false
+    // Pin holds the popover open (click-outside stops closing it).
+    // Persisted by request — a pinned popup stays pinned across relaunches.
+    @Published var popoverPinned: Bool { didSet { defaults.set(popoverPinned, forKey: "popover_pinned") } }
     private let defaults = UserDefaults.standard
 
-    var gamifiedRows: Bool { gamification == GamificationStyle.rpg.rawValue }
+    var rowTheme: GamificationStyle { GamificationStyle(rawValue: gamification) ?? .off }
+    var gamifiedRows: Bool { rowTheme == .rpg }
 
     var title: String {
         TitleFormatter.format(
@@ -61,6 +63,7 @@ final class AppModel: ObservableObject {
             ?? ((defaults.object(forKey: "gamified_rows") as? Bool ?? false) ? "rpg" : "off")
         gamification = GamificationStyle(rawValue: style) != nil ? style : "off"
         compactRows = defaults.object(forKey: "compact_rows") as? Bool ?? false
+        popoverPinned = defaults.object(forKey: "popover_pinned") as? Bool ?? false
         if let path = CswapLocator.locate() {
             cli = CswapCLI(binaryPath: path)
         } else {
@@ -137,6 +140,7 @@ final class AppModel: ObservableObject {
             withAnimation(.easeInOut(duration: 0.6)) {
                 accounts = list.accounts
                 activeNumber = list.activeAccountNumber
+                nextCandidate = list.nextCandidate
             }
             lastError = nil
             // Switch notifications come from this DISPLAY-feed diff, not the
@@ -240,11 +244,13 @@ final class AppModel: ObservableObject {
 enum GamificationStyle: String, CaseIterable {
     case off
     case rpg
+    case movie
 
     var displayName: String {
         switch self {
-        case .off: return "Off"
+        case .off: return "Off — plain numbers"
         case .rpg: return "RPG — HP/MP gauges + gold"
+        case .movie: return "Movie — reels & box office"
         }
     }
 }

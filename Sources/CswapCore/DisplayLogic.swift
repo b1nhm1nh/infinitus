@@ -165,3 +165,18 @@ public enum ResetLabel {
         return f.string(from: reset)
     }
 }
+
+/// "Dead" = out of ANY limit right now: session (5h), weekly (7d), a
+/// per-model weekly window, or the usage-credit spend cap. Display-only
+/// verdict — autoswitch has its own decision logic.
+public enum AccountVitals {
+    public static func isDead(_ usage: Usage?) -> Bool {
+        guard let usage else { return false }
+        var pcts: [Double] = []
+        if let p = usage.fiveHour?.pct { pcts.append(p) }
+        if let p = usage.sevenDay?.pct { pcts.append(p) }
+        for w in usage.scoped ?? [] { pcts.append(w.pct) }
+        if let p = usage.spend?.pct { pcts.append(p) }
+        return pcts.contains { $0 >= 100 }
+    }
+}

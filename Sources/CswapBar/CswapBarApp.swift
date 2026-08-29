@@ -254,19 +254,32 @@ struct AccountGrid: View {
             // (gold warms lazily below — the scan is multi-second)
             ForEach(model.accounts, id: \.number) { account in
                 GridRow {
-                    Text("\(account.number)")
-                        .fontWeight(account.active ? .bold : .regular)
-                        .foregroundStyle(account.active ? Color.accentColor : Color.primary)
-                        .activeBand(account.active)
+                    HStack(spacing: 2) {
+                        // Advisory: who the auto-switcher would pick next.
+                        // Always in the layout so numbers stay aligned.
+                        Image(systemName: "arrowtriangle.right.fill")
+                            .font(.caption2)
+                            .foregroundStyle(.green)
+                            .opacity(model.nextCandidate == account.number ? 1 : 0)
+                            .help("Next auto-switch target")
+                        Text("\(account.number)")
+                            .fontWeight(account.active ? .bold : .regular)
+                            .foregroundStyle(account.active ? Color.accentColor : Color.primary)
+                    }
+                    .activeBand(account.active)
                     let disabled = account.disabled ?? false
-                    let name = [account.icon, account.alias ?? account.email]
+                    let dead = AccountVitals.isDead(account.usage)
+                    let name = [dead ? (model.rowTheme == .movie ? "🔚" : "💀") : nil,
+                                account.icon, account.alias ?? account.email]
                         .compactMap { $0 }.joined(separator: " ")
                     Button(disabled ? "\(name)  (disabled)" : name) {
                         model.switchTo(account.number)   // disabled rows stay clickable, like rumps
                     }
                     .buttonStyle(.plain)
                     .fontWeight(account.active ? .bold : .regular)
-                    .foregroundStyle(disabled ? .secondary : .primary)
+                    .foregroundStyle(disabled || dead ? .secondary : .primary)
+                    .help(dead ? "Out of at least one limit — unusable until it resets"
+                               : "Switch to this account")
                     .lineLimit(1)
                     // The one deliberately flexible column: emails truncate,
                     // usage numbers and reset times never do. minWidth keeps
@@ -287,6 +300,7 @@ struct AccountGrid: View {
                     } else {
                         windowCell(account.usage?.fiveHour, label: "5h", active: account.active)
                         windowCell(account.usage?.sevenDay, label: "7d", active: account.active)
+                        spendCell(account)
                         scopedCells(account)
                         goldCell(account)
                     }
@@ -296,7 +310,7 @@ struct AccountGrid: View {
         // Warm the gold figures when the popup opens in gamified mode: a
         // background `cswap usage` run, cached in the shared UsageModel —
         // rows fill in when it lands, instantly on later opens.
-        .onAppear { if model.gamifiedRows { usage.loadIfNeeded() } }
+        .onAppear { if model.rowTheme != .off { usage.loadIfNeeded() } }
     }
 
     @ViewBuilder private func windowCell(
@@ -306,19 +320,19 @@ struct AccountGrid: View {
             if let w {
                 HStack(spacing: 3) {
                     if label != "5h" {
-                        // Token-burn flame: usage is meaningfully ahead of the
-                        // window's elapsed time (the feed's pace verdict —
+                        // Ahead-of-pace marker (the feed's pace verdict —
                         // weekly windows only, with its noise threshold).
                         // Static on purpose; a flicker overstated it. ALWAYS
                         // in the layout, invisible when pace is fine: a
-                        // conditional flame shifted flame-rows right and
-                        // broke the column alignment.
-                        Image(systemName: "flame.fill")
-                            .foregroundStyle(.orange)
+                        // conditional icon shifted marked rows right and
+                        // broke the column alignment. Per theme: plain
+                        // flame / flame badge / popcorn.
+                        aheadIcon
                             .opacity(w.aheadOfPace == true ? 1 : 0)
                             .help("Burning faster than the window elapses")
                     }
-                    if model.gamifiedRows {
+                    switch model.rowTheme {
+                    case .rpg:
                         // HP/MP semantics: the gauge shows what's LEFT.
                         // MP (blue) = the 5h session window, HP (red) = the
                         // weekly window — the statusline's vocabulary.
@@ -331,7 +345,17 @@ struct AccountGrid: View {
                             remaining: GaugeMath.remaining(usedPct: w.pct),
                             color: label == "5h" ? .blue : .red
                         )
-                    } else {
+                    case .movie:
+                        // Cinema semantics: 🎬 session reel, 🎞 weekly stock.
+                        Text(label == "5h" ? "🎬" : "🎞")
+                            .font(.caption)
+                            .help(label == "5h" ? "Session reel (5h left)"
+                                                : "Weekly film stock (7d left)")
+                        GaugeBar(
+                            remaining: GaugeMath.remaining(usedPct: w.pct),
+                            color: label == "5h" ? .yellow : .indigo
+                        )
+                    case .off:
                         Text(label).foregroundStyle(.secondary)
                         Text("\(Int(w.pct))%")
                             .foregroundStyle(w.pct >= 100 ? .red : .primary)
@@ -339,11 +363,11 @@ struct AccountGrid: View {
                             .contentTransition(.numericText(value: w.pct))
                     }
                     // Full label in every mode — countdown plus the exact
-                    // wall-clock reset ("3h 4m (21:07)"). The popover sizes
-                    // to content now, so gamified rows no longer need the
-                    // narrow countdown-only variant.
+                    // wall-clock reset ("3h 4m (21:07)"). Exhausted windows
+                    // get themed flavor: RPG revives, Movie re-releases.
                     if let when = ResetLabel.label(w) {
-                        Text(when).font(.caption).foregroundStyle(.secondary)
+                        Text(resetPrefix(w) + when)
+                            .font(.caption).foregroundStyle(.secondary)
                     }
                 }
             } else {
@@ -357,21 +381,81 @@ struct AccountGrid: View {
         .activeBand(active)
     }
 
+    /// The per-theme ahead-of-pace marker; always laid out, hidden by
+    /// opacity at the call sites so columns never shift.
+    @ViewBuilder private var aheadIcon: some View {
+        switch model.rowTheme {
+        case .rpg:
+            Image(systemName: "flame.circle.fill")
+                .symbolRenderingMode(.palette)
+                .foregroundStyle(.white, .orange)
+        case .movie:
+            Image(systemName: "popcorn.fill").foregroundStyle(.orange)
+        case .off:
+            Image(systemName: "flame.fill").foregroundStyle(.orange)
+        }
+    }
+
+    /// Themed flavor on an exhausted window's reset label.
+    private func resetPrefix(_ w: UsageWindow) -> String {
+        guard w.pct >= 100 else { return "" }
+        switch model.rowTheme {
+        case .rpg: return "revives "
+        case .movie: return "re-release "
+        case .off: return ""
+        }
+    }
+
     /// The account's estimated 7-day spend as RPG gold, from the Usage
     /// tab's cached report — never triggers the multi-second scan itself.
     @ViewBuilder private func goldCell(_ account: Account) -> some View {
-        if model.gamifiedRows,
+        if model.rowTheme != .off,
            let row = usage.report?.accounts.first(where: { $0.number == account.number }) {
             let usd = Int(row.estimatedUSD)
+            let coin = model.rowTheme == .movie ? "💵" : "💰"
             // Compact popup: "1,077" -> "1k" (rounded); full popup keeps
             // the exact figure. Text(verbatim:) so the compact string is
             // not re-formatted by LocalizedStringKey interpolation.
             Text(verbatim: model.compactRows && usd >= 1000
-                 ? "💰\(Int((Double(usd) / 1000).rounded()))k"
-                 : "💰\(usd.formatted())")
+                 ? "\(coin)\(Int((Double(usd) / 1000).rounded()))k"
+                 : "\(coin)\(usd.formatted())")
                 .font(.caption).foregroundStyle(.yellow)
-                .help("Estimated API-price spend, last \(usage.report?.days ?? 7) days — not a bill")
+                .help((model.rowTheme == .movie ? "Box office: " : "")
+                      + "estimated API-price spend, last \(usage.report?.days ?? 7) days — not a bill")
                 .fixedSize()
+                .activeBand(account.active)
+        }
+    }
+
+    /// Usage-credit spend cap ("extra usage"): $ label + used% (normal) or
+    /// a green remaining-gauge (RPG). Rows without a spend cap emit an
+    /// empty cell so later columns stay aligned.
+    @ViewBuilder private func spendCell(_ account: Account) -> some View {
+        if let spend = account.usage?.spend {
+            HStack(spacing: 3) {
+                Text(model.rowTheme == .movie ? "🎟" : "$")
+                    .font(model.rowTheme == .off ? .body : .caption.bold())
+                    .foregroundStyle(model.rowTheme == .off
+                                     ? Color.secondary : Color.green)
+                if model.rowTheme == .off {
+                    Text("\(Int(spend.pct))%")
+                        .foregroundStyle(spend.pct >= 100 ? .red : .primary)
+                        .monospacedDigit()
+                        .contentTransition(.numericText(value: spend.pct))
+                } else {
+                    GaugeBar(remaining: GaugeMath.remaining(usedPct: spend.pct),
+                             color: .green)
+                }
+            }
+            .help(String(format: "usage credit: %.2f of %.0f %@",
+                         spend.used, spend.limit, spend.currency))
+            .fixedSize()
+            .activeBand(account.active)
+        } else {
+            // Text, not Color.clear: a zero-size cell renders the active
+            // band as a stray 8pt blob; an empty Text has line height, so
+            // the band fills the row like every other cell.
+            Text(verbatim: "")
                 .activeBand(account.active)
         }
     }
@@ -379,11 +463,11 @@ struct AccountGrid: View {
     @ViewBuilder private func scopedCells(_ account: Account) -> some View {
         ForEach(account.usage?.scoped ?? [], id: \.name) { w in
             HStack(spacing: 3) {
-                Image(systemName: "flame.fill")
-                    .foregroundStyle(.orange)
+                aheadIcon
                     .opacity(w.aheadOfPace == true ? 1 : 0)
                     .help("Burning faster than the window elapses")
-                if model.gamifiedRows {
+                switch model.rowTheme {
+                case .rpg:
                     // Same RPG treatment as HP/MP: the per-model weekly
                     // limit as a purple gauge of what's LEFT.
                     Text(w.name ?? "?")
@@ -392,7 +476,14 @@ struct AccountGrid: View {
                         .help("Model weekly limit left")
                     GaugeBar(remaining: GaugeMath.remaining(usedPct: w.pct),
                              color: .purple)
-                } else {
+                case .movie:
+                    Text("★ \(w.name ?? "?")")
+                        .font(.caption).bold()
+                        .foregroundStyle(Color.orange)
+                        .help("Model weekly limit left")
+                    GaugeBar(remaining: GaugeMath.remaining(usedPct: w.pct),
+                             color: .orange)
+                case .off:
                     Text(w.name ?? "?").foregroundStyle(.secondary)
                     Text("\(Int(w.pct))%")
                         .foregroundStyle(w.pct >= 100 ? .red : .primary)

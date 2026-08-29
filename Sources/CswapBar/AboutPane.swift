@@ -166,7 +166,7 @@ struct AboutPane: View {
                         Text("Built \(buildDate)")
                             .font(.caption).foregroundStyle(.secondary)
                     }
-                    Text("Five accounts, one menu bar — swap before you stall.")
+                    Text("Every Claude account in one menu bar — swap before you stall.")
                         .font(.caption).foregroundStyle(.secondary)
                         .padding(.top, 2)
                 }

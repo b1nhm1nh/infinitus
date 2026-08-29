@@ -20,7 +20,7 @@ struct DisplayPane: View {
                 }
             }
             Toggle("Show model limits in title", isOn: $model.titleScoped)
-            Section("Gamification") {
+            Section("Row theme") {
                 ForEach(GamificationStyle.allCases, id: \.rawValue) { style in
                     GamificationCard(
                         style: style,
@@ -181,6 +181,10 @@ private struct GamificationCard: View {
                     Text("68%").monospacedDigit()
                     Text("5d 9h (Sep 4 03:59)").font(.caption).foregroundStyle(.secondary)
                 }
+                HStack(spacing: 3) {
+                    Text("$").foregroundStyle(.secondary)
+                    Text("74%").monospacedDigit()
+                }
             case .rpg:
                 HStack(spacing: 3) {
                     Text("MP").font(.caption).bold().foregroundStyle(Color.blue)
@@ -188,24 +192,56 @@ private struct GamificationCard: View {
                     Text("4h 8m (22:09)").font(.caption).foregroundStyle(.secondary)
                 }
                 HStack(spacing: 3) {
-                    Image(systemName: "flame.fill").foregroundStyle(.orange)
+                    Image(systemName: "flame.circle.fill")
+                        .symbolRenderingMode(.palette)
+                        .foregroundStyle(.white, .orange)
                     Text("HP").font(.caption).bold().foregroundStyle(Color.red)
                     GaugeBar(remaining: 32, color: .red)
                     Text("5d 9h (Sep 4 03:59)").font(.caption).foregroundStyle(.secondary)
                 }
+                HStack(spacing: 3) {
+                    Text("$").font(.caption).bold().foregroundStyle(Color.green)
+                    GaugeBar(remaining: 26, color: .green)
+                }
+            case .movie:
+                HStack(spacing: 3) {
+                    Text("🎬").font(.caption)
+                    GaugeBar(remaining: 79, color: .yellow)
+                    Text("4h 8m (22:09)").font(.caption).foregroundStyle(.secondary)
+                }
+                HStack(spacing: 3) {
+                    Image(systemName: "popcorn.fill").foregroundStyle(.orange)
+                    Text("🎞").font(.caption)
+                    GaugeBar(remaining: 32, color: .indigo)
+                    Text("5d 9h (Sep 4 03:59)").font(.caption).foregroundStyle(.secondary)
+                }
+                HStack(spacing: 3) {
+                    Text("🎟").font(.caption).bold().foregroundStyle(Color.green)
+                    GaugeBar(remaining: 26, color: .green)
+                }
             }
             HStack(spacing: 3) {
-                Image(systemName: "flame.fill").foregroundStyle(.orange)
-                if style == .rpg {
+                switch style {
+                case .rpg:
+                    Image(systemName: "flame.circle.fill")
+                        .symbolRenderingMode(.palette)
+                        .foregroundStyle(.white, .orange)
                     Text("Fable").font(.caption).bold().foregroundStyle(Color.purple)
                     GaugeBar(remaining: 26, color: .purple)
-                } else {
+                case .movie:
+                    Image(systemName: "popcorn.fill").foregroundStyle(.orange)
+                    Text("★ Fable").font(.caption).bold().foregroundStyle(Color.orange)
+                    GaugeBar(remaining: 26, color: .orange)
+                case .off:
+                    Image(systemName: "flame.fill").foregroundStyle(.orange)
                     Text("Fable").foregroundStyle(.secondary)
                     Text("74%").monospacedDigit()
                 }
             }
             if style == .rpg {
                 Text(verbatim: "💰1,131").font(.caption).foregroundStyle(.yellow)
+            } else if style == .movie {
+                Text(verbatim: "💵1,131").font(.caption).foregroundStyle(.yellow)
             }
         }
     }

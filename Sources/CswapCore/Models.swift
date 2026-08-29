@@ -11,6 +11,8 @@ public struct AccountList: Decodable, Sendable {
     public let schemaVersion: Int
     public let activeAccountNumber: Int?
     public let accounts: [Account]
+    /// Advisory: the account the auto-switcher would likely pick next.
+    public let nextCandidate: Int?
 }
 
 public struct Account: Decodable, Sendable {
