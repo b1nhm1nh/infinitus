@@ -7,7 +7,7 @@ import CswapCore
 /// last window closes (verified live — the app died the moment the keepalive
 /// window was closed OR ordered out).
 final class AppDelegate: NSObject, NSApplicationDelegate {
-    // Injected by CswapBarApp.init; the status item is created HERE, in
+    // Injected by LimitlessApp.init; the status item is created HERE, in
     // applicationDidFinishLaunching — creating an NSStatusItem before the
     // app finishes launching fails silently (no item, no error).
     var makeStatusItem: (() -> Void)?
@@ -32,7 +32,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 }
 
 @main
-struct CswapBarApp: App {
+struct LimitlessApp: App {
     @StateObject private var model: AppModel
     @StateObject private var settingsModel: SettingsModel
     @StateObject private var reliabilityModel: ResumeReliabilityModel
@@ -120,7 +120,7 @@ func settingsTabs(
         SettingsTab(title: "Display", symbol: "menubar.rectangle", tint: .purple,
                     keywords: ["theme", "layout", "popup", "size", "compact",
                                "menu bar", "icon", "order", "alias"],
-                    view: AnyView(DisplayPane(model: model))),
+                    view: AnyView(DisplayPane(model: model, sync: model.sync))),
         SettingsTab(title: "Activity", symbol: "clock.arrow.circlepath", tint: .teal,
                     keywords: ["history", "switches", "log", "events"],
                     view: AnyView(ActivityPane(model: model))),
@@ -134,7 +134,7 @@ func settingsTabs(
         SettingsTab(title: "Away push", symbol: "antenna.radiowaves.left.and.right",
                     tint: .red,
                     keywords: ["slack", "telegram", "webhook", "notification"],
-                    view: AnyView(NotifyPane(model: notifyModel))),
+                    view: AnyView(NotifyPane(model: notifyModel, app: model))),
         SettingsTab(title: "Usage", symbol: "chart.bar", tint: .green,
                     keywords: ["spend", "cost", "tokens", "estimate"],
                     view: AnyView(UsagePane(model: usageModel))),
@@ -191,9 +191,38 @@ struct SettingsRoot: View {
     }
 }
 
+/// The "Limitless" strip: app icon + name, tinted by the active theme
+/// (user request 2026-08-30). The pop-out wears it as its drag-strip
+/// title; the full popover shows it above the rows.
+struct LimitlessHeader: View {
+    @ObservedObject var model: AppModel
+
+    var body: some View {
+        HStack(spacing: 5) {
+            Image(nsImage: NSApp.applicationIconImage ?? NSImage())
+                .resizable()
+                .frame(width: 16, height: 16)
+            Text("Limitless")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(tint)
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    private var tint: Color {
+        let theme = model.rowTheme
+        if theme.plain || theme.id == "off" { return .secondary }
+        return theme.flashColor.isEmpty ? .accentColor
+                                        : ThemeColor.resolve(theme.flashColor)
+    }
+}
+
 struct MenuContent: View {
     @ObservedObject var model: AppModel
     @ObservedObject var usage: UsageModel
+    /// False in the pop-out: PinnedRoot already wears the header as its
+    /// drag strip, and two of them would stack.
+    var showHeader = true
     @ObservedObject private var status = ServiceStatusModel.shared
 
     var body: some View {
@@ -228,6 +257,9 @@ struct MenuContent: View {
                 }
             } else {
                 VStack(alignment: .leading, spacing: 8) {
+                    // Compact mode stays headerless on purpose — it exists
+                    // to be tiny.
+                    if showHeader { LimitlessHeader(model: model) }
                     accountArea
                     Divider()
                     HStack {
@@ -421,8 +453,7 @@ struct MenuContent: View {
                     }
                 }
             }
-            .help("\(live.busy) session(s) mid-turn of \(live.total) live "
-                  + "Claude Code sessions — all ride the active account")
+            .help(SessionSummary.tooltip(live))
         }
     }
 
@@ -620,17 +651,29 @@ struct AccountCells {
         if let p = u.fiveHour?.pct { pcts.append(p) }
         if let p = u.sevenDay?.pct { pcts.append(p) }
         for w in u.scoped ?? [] { pcts.append(w.pct) }
-        if let p = u.spend?.pct { pcts.append(p) }
+        // Spend is deliberately absent: a spent credit cap left account 1
+        // (0%/0%) rendering as anything but ready (user report 2026-08-30);
+        // like AccountVitals, only the plan windows carry the verdict —
+        // the ready cell wears the spent credit as a footnote.
         return !pcts.isEmpty && pcts.allSatisfy { $0 <= 0 }
     }
 
     @ViewBuilder var readyCell: some View {
+        let spent = (account.usage?.spend?.pct ?? 0) >= 100
         HStack(spacing: 3) {
             Image(systemName: "checkmark.circle.fill")
                 .font(.caption).foregroundStyle(.green)
-            Text("ready").font(.caption).foregroundStyle(.secondary)
+            Text(theme.plain ? "ready" : theme.readyLabel)
+                .font(.caption).foregroundStyle(.secondary)
+            if spent {
+                Text("·").font(.caption).foregroundStyle(.tertiary)
+                Text("\(theme.creditLabel) spent")
+                    .font(.caption).foregroundStyle(.tertiary)
+            }
         }
-        .help("All limits untouched")
+        .help(spent
+              ? "All plan limits untouched — usage credit spent (footnote only; the account is fully usable)"
+              : "All plan limits untouched")
         .fixedSize()
         .activeBand(banded && account.active)
     }

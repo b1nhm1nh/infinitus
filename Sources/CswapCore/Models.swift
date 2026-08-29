@@ -21,6 +21,13 @@ public struct AccountList: Decodable, Sendable {
 public struct LiveSessions: Decodable, Sendable {
     public let busy: Int
     public let total: Int
+    /// Additive breakdown (an older engine omits them; the chip tooltip
+    /// falls back to busy/total): "unknown" is a record with no status —
+    /// e.g. sdk-cli sessions. busy+idle+waiting+shell+unknown == total.
+    public let idle: Int?
+    public let waiting: Int?
+    public let shell: Int?
+    public let unknown: Int?
 }
 
 public struct Account: Decodable, Sendable {
@@ -107,7 +114,7 @@ public struct SettingEntry: Decodable, Sendable {
 
 /// Settings values are heterogeneous (bool / number / string), so they land
 /// in a closed enum instead of Any.
-public enum JSONValue: Decodable, Equatable, Sendable {
+public enum JSONValue: Codable, Equatable, Sendable {
     case null
     case bool(Bool)
     case number(Double)
@@ -123,6 +130,18 @@ public enum JSONValue: Decodable, Equatable, Sendable {
         else if let s = try? c.decode(String.self) { self = .string(s) }
         else if let a = try? c.decode([JSONValue].self) { self = .array(a) }
         else { self = .object(try c.decode([String: JSONValue].self)) }
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.singleValueContainer()
+        switch self {
+        case .null: try c.encodeNil()
+        case .bool(let b): try c.encode(b)
+        case .number(let n): try c.encode(n)
+        case .string(let s): try c.encode(s)
+        case .array(let a): try c.encode(a)
+        case .object(let o): try c.encode(o)
+        }
     }
 }
 

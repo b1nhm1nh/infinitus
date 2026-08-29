@@ -67,6 +67,20 @@ final class AppModel: ObservableObject {
     // Pin holds the popover open (click-outside stops closing it).
     // Persisted by request — a pinned popup stays pinned across relaunches.
     @Published var popoverPinned: Bool { didSet { defaults.set(popoverPinned, forKey: "popover_pinned") } }
+    /// Hold a power assertion while any session is mid-turn (KeepAwake).
+    @Published var keepAwake: Bool {
+        didSet {
+            defaults.set(keepAwake, forKey: "keep_awake")
+            awake.update(wanted: keepAwake, busyCount: liveSessions?.busy ?? 0)
+        }
+    }
+    // Away-push triggers beyond switches (PushTriggers has the rules).
+    @Published var pushSessionsDone: Bool { didSet { defaults.set(pushSessionsDone, forKey: "push_sessions_done") } }
+    @Published var pushAllDead: Bool { didSet { defaults.set(pushAllDead, forKey: "push_all_dead") } }
+    @Published var pushLastAlive: Bool { didSet { defaults.set(pushLastAlive, forKey: "push_last_alive") } }
+    let sync = SettingsSyncModel()
+    private let awake = KeepAwake()
+    private var pushTriggers = PushTriggers()
     private let defaults = UserDefaults.standard
 
     /// Custom skins from themes.json, loaded at launch and on demand
@@ -93,7 +107,8 @@ final class AppModel: ObservableObject {
         TitleFormatter.format(
             account: accounts.first(where: { $0.active }),
             prefs: TitlePrefs(showAccountName: showAccountName,
-                              titlePct: titlePct, titleScoped: titleScoped))
+                              titlePct: titlePct, titleScoped: titleScoped),
+            icon: "")  // the status button wears MenuBarGlyph instead
     }
 
     init() {
@@ -111,12 +126,38 @@ final class AppModel: ObservableObject {
         popoverPinned = defaults.object(forKey: "popover_pinned") as? Bool ?? false
         popupLayout = defaults.string(forKey: "popup_layout") ?? "wide"
         popupTextSize = defaults.string(forKey: "popup_text_size") ?? "default"
+        keepAwake = defaults.object(forKey: "keep_awake") as? Bool ?? false
+        // Push triggers default ON — they exist because they were asked for.
+        pushSessionsDone = defaults.object(forKey: "push_sessions_done") as? Bool ?? true
+        pushAllDead = defaults.object(forKey: "push_all_dead") as? Bool ?? true
+        pushLastAlive = defaults.object(forKey: "push_last_alive") as? Bool ?? true
         if let path = CswapLocator.locate() {
             cli = CswapCLI(binaryPath: path)
         } else {
             cli = nil
             lastError = "cswap not found — install it (uv tool install claude-swap)"
         }
+        sync.attach(model: self)
+    }
+
+    /// Re-read the persisted display prefs after an iCloud sync pull — the
+    /// @Published values were initialized once at launch and would
+    /// otherwise never see the imported defaults.
+    func reloadPrefs() {
+        showAccountName = defaults.object(forKey: "show_account_name") as? Bool ?? true
+        let pct = defaults.string(forKey: "title_pct") ?? "both"
+        titlePct = TitlePrefs.pctChoices.contains(pct) ? pct : "both"
+        titleScoped = defaults.object(forKey: "title_scoped") as? Bool ?? false
+        let interval = defaults.object(forKey: "refresh_interval") as? Int ?? 60
+        refreshInterval = TitlePrefs.refreshChoices.contains(interval) ? interval : 60
+        gamification = defaults.string(forKey: "gamification_style") ?? "off"
+        compactRows = defaults.object(forKey: "compact_rows") as? Bool ?? false
+        popupLayout = defaults.string(forKey: "popup_layout") ?? "wide"
+        popupTextSize = defaults.string(forKey: "popup_text_size") ?? "default"
+        keepAwake = defaults.object(forKey: "keep_awake") as? Bool ?? false
+        pushSessionsDone = defaults.object(forKey: "push_sessions_done") as? Bool ?? true
+        pushAllDead = defaults.object(forKey: "push_all_dead") as? Bool ?? true
+        pushLastAlive = defaults.object(forKey: "push_last_alive") as? Bool ?? true
     }
 
     /// Idempotent: called from app init so the supervised engine starts at
@@ -240,6 +281,29 @@ final class AppModel: ObservableObject {
                 Notifier.post(title: "claude-swap",
                               body: "switched to account \(current) (\(name))")
             }
+            awake.update(wanted: keepAwake,
+                         busyCount: list.liveSessions?.busy ?? 0)
+            // Same display-feed vantage as the switch diff above: these
+            // triggers fire even while the supervised engine is parked.
+            let health = list.accounts
+                .filter { !($0.disabled ?? false) && $0.usage != nil }
+                .map { a in PushTriggers.Account(
+                    number: a.number,
+                    name: a.alias ?? String(a.email.prefix(while: { $0 != "@" })),
+                    dead: AccountVitals.isDead(a.usage),
+                    worstPct: PushTriggers.worstPlanPct(a.usage)) }
+            let pushes = pushTriggers.tick(
+                busy: list.liveSessions?.busy, total: list.liveSessions?.total,
+                accounts: health,
+                flags: .init(sessionsDone: pushSessionsDone,
+                             allDead: pushAllDead, lastAlive: pushLastAlive))
+            for msg in pushes {
+                Notifier.post(title: "claude-swap", body: msg)
+                // Text over stdin, matching the channel-setup commands;
+                // no channels configured is a quiet no-op (try?).
+                Task { _ = try? await cli.run(["notify", "push", "-"], stdin: msg) }
+            }
+            await sync.tick()
         } catch {
             // Keep the last good snapshot rather than blanking the menu —
             // same policy as the rumps menubar's _worker.

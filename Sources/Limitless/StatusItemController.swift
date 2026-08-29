@@ -61,6 +61,11 @@ final class StatusItemController {
         item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         item.behavior = []                       // not user-removable
         item.button?.title = model.title
+        // The Limitless glyph rides as a template image so the bar can
+        // tint it; the title is text-only percentages now (MenuBarGlyph
+        // replaced the "⇄" text prefix, user request 2026-08-30).
+        item.button?.image = MenuBarGlyph.image
+        item.button?.imagePosition = model.title.isEmpty ? .imageOnly : .imageLeading
         item.button?.target = self
         item.button?.action = #selector(togglePopover)
 
@@ -84,6 +89,7 @@ final class StatusItemController {
 
     private func apply() {
         item.button?.title = model.title
+        item.button?.imagePosition = model.title.isEmpty ? .imageOnly : .imageLeading
         if item.isVisible != model.menuBarIconShown {
             item.isVisible = model.menuBarIconShown
         }
@@ -212,14 +218,27 @@ final class StatusItemController {
             w.styleMask = [.titled, .closable, .resizable]
             w.toolbarStyle = .unified
             w.isReleasedWhenClosed = false
-            // Same level as the pop-out, or Settings opened FROM the
-            // pop-out lands behind it.
+            // Float only while KEY: opened from the floating pop-out it
+            // must land in front of it, but a backgrounded Settings window
+            // has no business sitting over other apps (the "always on
+            // top" bug, 2026-08-30). The level follows key status.
             w.level = .floating
+            NotificationCenter.default.addObserver(
+                self, selector: #selector(settingsKeyChanged),
+                name: NSWindow.didBecomeKeyNotification, object: w)
+            NotificationCenter.default.addObserver(
+                self, selector: #selector(settingsKeyChanged),
+                name: NSWindow.didResignKeyNotification, object: w)
             w.setContentSize(NSSize(width: 780, height: 540))
             settings = w
         }
         NSApp.activate(ignoringOtherApps: true)
         settings?.makeKeyAndOrderFront(nil)
+    }
+
+    @objc private func settingsKeyChanged() {
+        guard let w = settings else { return }
+        w.level = w.isKeyWindow ? .floating : .normal
     }
 }
 
@@ -232,12 +251,9 @@ private struct PinnedRoot: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            Text("Limitless")
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(.secondary)
-                .frame(maxWidth: .infinity)
+            LimitlessHeader(model: model)
                 .frame(height: 30)
-            MenuContent(model: model, usage: usage)
+            MenuContent(model: model, usage: usage, showHeader: false)
         }
         // fixedSize = the content's ideal, independent of the window; the
         // window then follows THAT (fitPinned) instead of the other way
@@ -245,5 +261,9 @@ private struct PinnedRoot: View {
         .fixedSize()
         .onGeometryChange(for: CGSize.self) { $0.size } action: { onSize($0) }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        // fullSizeContentView hands the hosting view a titlebar-high top
+        // safe-area inset, which rendered as a dead strip above the header
+        // (user screenshot 2026-08-30); the header IS the titlebar here.
+        .ignoresSafeArea(.container, edges: .top)
     }
 }

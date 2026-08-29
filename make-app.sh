@@ -6,7 +6,7 @@ set -eu
 cd "$(dirname "$0")"
 
 swift build -c release
-BIN="$(swift build -c release --show-bin-path)/CswapBar"
+BIN="$(swift build -c release --show-bin-path)/Limitless"
 APP=Limitless.app
 
 VERSION="$(cat VERSION 2>/dev/null | tr -d '[:space:]')"

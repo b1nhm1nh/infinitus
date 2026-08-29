@@ -32,6 +32,8 @@ public struct RowTheme: Codable, Equatable, Sendable, Identifiable {
     /// Verb for a dead limit: "MP down", "🎬 sold out", "LIFE MIA". The
     /// tooltip always carries the plain-English explanation.
     public var deadVerb: String
+    /// The all-fresh row's word ("✓ ready"); plain themes keep "ready".
+    public var readyLabel: String
     /// Tint for the switch celebration and data-change glow; "" means the
     /// app accent color.
     public var flashColor: String
@@ -44,7 +46,8 @@ public struct RowTheme: Codable, Equatable, Sendable, Identifiable {
         creditLabel: String = "$", creditColor: String = "green",
         cashIcon: String = "💰", aheadIcon: String = "sf:flame.fill",
         deadMarker: String = "💀", revivePrefix: String = "",
-        deadVerb: String = "out", flashColor: String = ""
+        deadVerb: String = "out", readyLabel: String = "ready",
+        flashColor: String = ""
     ) {
         self.id = id
         self.name = name
@@ -62,6 +65,7 @@ public struct RowTheme: Codable, Equatable, Sendable, Identifiable {
         self.deadMarker = deadMarker
         self.revivePrefix = revivePrefix
         self.deadVerb = deadVerb
+        self.readyLabel = readyLabel
         self.flashColor = flashColor
     }
 
@@ -85,6 +89,7 @@ public struct RowTheme: Codable, Equatable, Sendable, Identifiable {
             deadMarker: try c.decodeIfPresent(String.self, forKey: .deadMarker) ?? base.deadMarker,
             revivePrefix: try c.decodeIfPresent(String.self, forKey: .revivePrefix) ?? base.revivePrefix,
             deadVerb: try c.decodeIfPresent(String.self, forKey: .deadVerb) ?? base.deadVerb,
+            readyLabel: try c.decodeIfPresent(String.self, forKey: .readyLabel) ?? base.readyLabel,
             flashColor: try c.decodeIfPresent(String.self, forKey: .flashColor) ?? base.flashColor
         )
     }
@@ -103,7 +108,8 @@ public struct RowTheme: Codable, Equatable, Sendable, Identifiable {
         scopedPrefix: "", scopedColor: "purple",
         creditLabel: "$", creditColor: "green",
         cashIcon: "💰", aheadIcon: "sf:flame.circle.fill",
-        deadMarker: "💀", revivePrefix: "🧪 ", deadVerb: "down", flashColor: "yellow")
+        deadMarker: "💀", revivePrefix: "🧪 ", deadVerb: "down",
+        readyLabel: "full HP", flashColor: "yellow")
 
     public static let movie = RowTheme(
         id: "movie", name: "Movie — reels & box office",
@@ -112,7 +118,8 @@ public struct RowTheme: Codable, Equatable, Sendable, Identifiable {
         scopedPrefix: "★ ", scopedColor: "orange",
         creditLabel: "🎟", creditColor: "green",
         cashIcon: "💵", aheadIcon: "sf:popcorn.fill",
-        deadMarker: "🔚", revivePrefix: "re-release ", deadVerb: "sold out", flashColor: "orange")
+        deadMarker: "🔚", revivePrefix: "re-release ", deadVerb: "sold out",
+        readyLabel: "now showing", flashColor: "orange")
 
     public static let hades = RowTheme(
         id: "hades", name: "Hades — blades & darkness",
@@ -121,7 +128,8 @@ public struct RowTheme: Codable, Equatable, Sendable, Identifiable {
         scopedPrefix: "🏛 ", scopedColor: "teal",
         creditLabel: "🪙", creditColor: "yellow",
         cashIcon: "💠", aheadIcon: "🔥",
-        deadMarker: "☠", revivePrefix: "🩸 ", deadVerb: "fallen", flashColor: "red")
+        deadMarker: "☠", revivePrefix: "🩸 ", deadVerb: "fallen",
+        readyLabel: "unscathed", flashColor: "red")
 
     public static let mgs = RowTheme(
         id: "mgs", name: "Metal Gear — tactical espionage",
@@ -130,13 +138,16 @@ public struct RowTheme: Codable, Equatable, Sendable, Identifiable {
         scopedPrefix: "⚠ ", scopedColor: "yellow",
         creditLabel: "📦", creditColor: "green",
         cashIcon: "GMP ", aheadIcon: "❗",
-        deadMarker: "☠", revivePrefix: "💊 ", deadVerb: "MIA", flashColor: "green")
+        deadMarker: "☠", revivePrefix: "💊 ", deadVerb: "MIA",
+        readyLabel: "all clear", flashColor: "green")
 
     public static let builtins: [RowTheme] = [off, rpg, movie, hades, mgs]
 
     // MARK: custom themes
 
-    /// `~/Library/Application Support/CswapBar/themes.json` — a JSON array
+    /// `~/Library/Application Support/CswapBar/themes.json` — the legacy
+    /// dir name is deliberate (CLAUDE.md: the App Support path moves only
+    /// as part of the one intentional bundle-id step). A JSON array
     /// of RowTheme objects; only `id` and `name` are required.
     public static func customThemesURL(
         appSupport: URL = FileManager.default.urls(
@@ -174,7 +185,8 @@ public struct RowTheme: Codable, Equatable, Sendable, Identifiable {
         "scopedPrefix": "◆ ", "scopedColor": "#c77dff",
         "creditLabel": "CR", "creditColor": "#39ff14",
         "cashIcon": "🕶", "aheadIcon": "⚡",
-        "deadMarker": "✖", "revivePrefix": "↻ "
+        "deadMarker": "✖", "revivePrefix": "↻ ",
+        "readyLabel": "ONLINE"
       }
     ]
     """

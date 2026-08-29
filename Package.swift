@@ -2,16 +2,16 @@
 import PackageDescription
 
 let package = Package(
-    name: "CswapBar",
+    name: "Limitless",
     platforms: [.macOS(.v14)],
     targets: [
         // Pure layer: models, feed decoding, supervisor state machine.
         // No AppKit import — everything here runs under `swift test`.
         .target(name: "CswapCore", path: "Sources/CswapCore"),
         .executableTarget(
-            name: "CswapBar",
+            name: "Limitless",
             dependencies: ["CswapCore"],
-            path: "Sources/CswapBar"
+            path: "Sources/Limitless"
         ),
         .testTarget(
             name: "CswapCoreTests",

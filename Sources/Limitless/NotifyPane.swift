@@ -94,6 +94,7 @@ final class NotifyModel: ObservableObject {
 
 struct NotifyPane: View {
     @ObservedObject var model: NotifyModel
+    @ObservedObject var app: AppModel
 
     var body: some View {
         Form {
@@ -102,6 +103,17 @@ struct NotifyPane: View {
                      + "alias to each channel below. Secrets are stored in "
                      + "notify.json (owner-only) and shown masked.")
                     .font(.caption).foregroundStyle(.secondary)
+            }
+            Section("Also push when") {
+                Toggle("All sessions finish working", isOn: $app.pushSessionsDone)
+                    .help("Fires once when every live Claude Code session "
+                          + "has been idle for two refresh passes — turn "
+                          + "gaps don't count.")
+                Toggle("All accounts are exhausted", isOn: $app.pushAllDead)
+                Toggle("The last alive account nears its limit",
+                       isOn: $app.pushLastAlive)
+                    .help("Warns once when only one account still has "
+                          + "quota and it crosses \(Int(PushTriggers.warnPct))%.")
             }
             Section("Slack") {
                 LabeledContent("Configured", value: model.slackStatus ?? "no")

@@ -21,6 +21,9 @@ final class ModelsTests: XCTestCase {
         XCTAssertEqual(first.usage?.sevenDay?.pct, 100.0)
         XCTAssertEqual(first.usage?.scoped?.first?.name, "Fable")
         XCTAssertNotNil(first.usage?.sevenDay?.countdown)
+        XCTAssertEqual(list.liveSessions?.busy, 4)
+        XCTAssertEqual(list.liveSessions?.idle, 7)
+        XCTAssertEqual(list.liveSessions?.unknown, 2)
     }
 
     func testSentinelAccountHasNilUsageNotADecodeError() throws {
