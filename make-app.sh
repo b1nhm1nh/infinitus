@@ -9,7 +9,7 @@ swift build -c release
 BIN="$(swift build -c release --show-bin-path)/CswapBar"
 APP=Limitless.app
 
-VERSION="$(sed -n 's/^version = "\(.*\)"/\1/p' ../../pyproject.toml)"
+VERSION="$(cat VERSION 2>/dev/null | tr -d '[:space:]')"
 SHA="$(git rev-parse --short HEAD 2>/dev/null || echo dev)"
 
 rm -rf "$APP"

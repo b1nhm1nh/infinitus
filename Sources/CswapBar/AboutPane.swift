@@ -240,7 +240,9 @@ struct AboutPane: View {
                 linkRow("chevron.left.forwardslash.chevron.right", "GitHub",
                         "https://github.com/deathemperor")
                 linkRow("globe", "Website", "https://huuloc.com")
-                linkRow("shippingbox", "Project — claude-swap",
+                linkRow("shippingbox", "Project — Limitless",
+                        "https://github.com/deathemperor/limitless")
+                linkRow("gearshape.2", "Engine — claude-swap",
                         "https://github.com/deathemperor/claude-swap")
                 linkRow("doc.text", "Release notes", changelogURL.absoluteString)
             }
