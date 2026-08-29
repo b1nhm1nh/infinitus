@@ -134,7 +134,7 @@ func settingsTabs(
                       view: AnyView(AnimationsDebugPane(model: model)))]
        : [])
     + [
-        SettingsTab(title: "Away push", symbol: "antenna.radiowaves.left.and.right",
+        SettingsTab(title: "Push", symbol: "antenna.radiowaves.left.and.right",
                     tint: .red,
                     keywords: ["slack", "telegram", "webhook", "notification"],
                     view: AnyView(NotifyPane(model: notifyModel, app: model))),
@@ -1123,14 +1123,12 @@ struct AccountStack: View {
                     } else if cells.allFresh {
                         cells.readyCell
                     } else {
-                        HStack(spacing: 12) {
-                            cells.windowCell(account.usage?.fiveHour, session: true)
-                            cells.windowCell(account.usage?.sevenDay, session: false)
-                        }
-                        HStack(spacing: 12) {
-                            cells.spendCell
-                            cells.scopedCells
-                        }
+                        // One attribute per line — the whole point of the
+                        // stacked layout (user request 2026-08-30).
+                        cells.windowCell(account.usage?.fiveHour, session: true)
+                        cells.windowCell(account.usage?.sevenDay, session: false)
+                        cells.spendCell
+                        cells.scopedCells
                     }
                 }
                 .padding(6)

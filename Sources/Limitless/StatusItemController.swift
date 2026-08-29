@@ -72,7 +72,7 @@ final class StatusItemController {
         popover.behavior = .transient            // click-outside closes, like MenuBarExtra
         let host = NSHostingController(
             rootView: MenuContent(model: model, usage: usage)
-                .glassChrome())
+                .glassChrome(model: model))
         // NSPopover observes its content controller's preferredContentSize;
         // without this the popover keeps the width of the FIRST layout (no
         // reset times yet) and clips both edges once the grid grows.
@@ -150,7 +150,7 @@ final class StatusItemController {
             let host = NSHostingController(rootView: PinnedRoot(
                 model: model, usage: usage,
                 onSize: { [weak self] size in self?.fitPinned(to: size) })
-                .glassChrome())
+                .glassChrome(model: model))
             // NO hosting-driven window sizing: with .standardBounds or
             // .preferredContentSize, NSHostingView.updateAnimatedWindowSize
             // pushed the content's unbounded ideal width (2.4e196) into

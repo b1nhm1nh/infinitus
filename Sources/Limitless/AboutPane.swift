@@ -15,7 +15,13 @@ final class UpdateModel: ObservableObject {
     @Published var upgradeOutput: String?
     @Published var busy = false
     @Published var autoCheck: Bool { didSet { defaults.set(autoCheck, forKey: "update_auto_check") } }
-    @Published var autoInstall: Bool { didSet { defaults.set(autoInstall, forKey: "update_auto_install") } }
+    @Published var autoInstall: Bool { didSet {
+        defaults.set(autoInstall, forKey: "update_auto_install")
+        // Flipping install ON with an update already found must act now,
+        // not at tomorrow's scheduled check ("still no engine auto
+        // update?" — user, 2026-08-30).
+        if autoInstall, updateAvailable { Task { await upgrade() } }
+    } }
 
     private let cli: CswapCLI?
     /// Set at wiring: bounces the supervised engine after a real upgrade
@@ -85,6 +91,11 @@ final class UpdateModel: ObservableObject {
                     // version is already marked attempted).
                     await performUpgrade()
                 }
+            } else if a > b {
+                // The dev case on this machine: a uv tool install --from
+                // the local checkout outruns PyPI — auto-update is idle
+                // because there is genuinely nothing newer to install.
+                status = "up to date — local \(cur) is ahead of PyPI \(fetched)"
             } else {
                 status = "up to date"
             }
@@ -176,10 +187,15 @@ struct AboutPane: View {
             }
 
             Section("Updates") {
-                Toggle("Check for updates automatically", isOn: $model.autoCheck)
-                Toggle("Install updates automatically", isOn: $model.autoInstall)
-                    .help("When a newer version appears, run `cswap upgrade` "
-                          + "unattended and restart the engine. Off: notify only.")
+                // One switch for the whole pipeline (user request
+                // 2026-08-30); the two prefs stay separate underneath so
+                // sync/rollback keep their meaning.
+                Toggle("Update automatically", isOn: Binding(
+                    get: { model.autoCheck && model.autoInstall },
+                    set: { model.autoCheck = $0; model.autoInstall = $0 }))
+                    .help("Watch PyPI daily; when a newer claude-swap "
+                          + "appears, run `cswap upgrade` unattended and "
+                          + "restart the engine.")
                 LabeledContent {
                     HStack {
                         if model.updateAvailable {
