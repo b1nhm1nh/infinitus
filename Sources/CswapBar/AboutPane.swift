@@ -78,7 +78,11 @@ final class UpdateModel: ObservableObject {
                 if autoInstall,
                    defaults.string(forKey: "update_attempted_version") != fetched {
                     defaults.set(fetched, forKey: "update_attempted_version")
-                    await upgrade()
+                    // performUpgrade, not upgrade(): check() still holds
+                    // `busy`, and upgrade()'s guard would silently bail —
+                    // the unattended path would be a permanent no-op (the
+                    // version is already marked attempted).
+                    await performUpgrade()
                 }
             } else {
                 status = "up to date"
@@ -89,9 +93,14 @@ final class UpdateModel: ObservableObject {
     }
 
     func upgrade() async {
-        guard let cli, !busy else { return }
+        guard !busy else { return }
         busy = true
         defer { busy = false }
+        await performUpgrade()
+    }
+
+    private func performUpgrade() async {
+        guard let cli else { return }
         status = "running cswap upgrade…"
         let before = current
         do {
