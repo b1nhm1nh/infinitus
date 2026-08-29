@@ -20,7 +20,13 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
 <plist version="1.0">
 <dict>
     <key>CFBundleExecutable</key><string>CswapBar</string>
-    <key>CFBundleIdentifier</key><string>io.github.claude-swap.CswapBar</string>
+    <!-- ".g2": macOS 26's ControlCenter holds a persistent per-bundle-id
+         ban against io.github.claude-swap.CswapBar (acquired during the
+         2026-08-29 MenuBarExtra insert/evict war): its status item gets a
+         phantom frame and never renders, even with a roomy bar, a fresh
+         prefs domain, and a ControlCenter restart — while the SAME binary
+         under any other id renders instantly. The id is the fix. -->
+    <key>CFBundleIdentifier</key><string>io.github.claude-swap.CswapBar.g2</string>
     <key>CFBundleName</key><string>CswapBar</string>
     <key>CFBundlePackageType</key><string>APPL</string>
     <key>CFBundleShortVersionString</key><string>0.1.0</string>
