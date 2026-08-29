@@ -35,7 +35,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 struct CswapBarApp: App {
     @StateObject private var model: AppModel
     @StateObject private var settingsModel: SettingsModel
-    @StateObject private var reliabilityModel = ResumeReliabilityModel()
+    @StateObject private var reliabilityModel: ResumeReliabilityModel
     @StateObject private var notifyModel: NotifyModel
     @StateObject private var usageModel: UsageModel
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
@@ -45,15 +45,26 @@ struct CswapBarApp: App {
         NSApplication.shared.setActivationPolicy(.accessory)
         let model = AppModel()
         _model = StateObject(wrappedValue: model)
-        _settingsModel = StateObject(wrappedValue: SettingsModel(cli: model.cli))
-        _notifyModel = StateObject(wrappedValue: NotifyModel(cli: model.cli))
+        let settingsModel = SettingsModel(cli: model.cli)
+        _settingsModel = StateObject(wrappedValue: settingsModel)
+        let notifyModel = NotifyModel(cli: model.cli)
+        _notifyModel = StateObject(wrappedValue: notifyModel)
         let usage = UsageModel(cli: model.cli)
         _usageModel = StateObject(wrappedValue: usage)
+        let reliabilityModel = ResumeReliabilityModel()
+        _reliabilityModel = StateObject(wrappedValue: reliabilityModel)
         // Warm the multi-second transcript scan at launch so the Usage tab
         // and the gamified gold column open onto data, not a spinner.
         usage.loadIfNeeded()
         appDelegate.makeStatusItem = { [weak appDelegate] in
-            appDelegate?.statusHolder = StatusItemHolder(model: model, usage: usage)
+            appDelegate?.statusHolder = StatusItemHolder(
+                model: model, usage: usage,
+                settingsView: {
+                    AnyView(SettingsRoot(
+                        model: model, settingsModel: settingsModel,
+                        reliabilityModel: reliabilityModel,
+                        notifyModel: notifyModel, usageModel: usage))
+                })
         }
         model.startFeeds()
         // Deferred past didFinishLaunching: requesting in App.init — before
@@ -71,20 +82,37 @@ struct CswapBarApp: App {
         // zero windows comes from KeepAliveDelegate.
 
         Settings {
-            TabView {
-                SettingsPane(model: settingsModel)
-                    .tabItem { Label("cswap", systemImage: "gearshape") }
-                ResumeReliabilityPane(model: reliabilityModel)
-                    .tabItem { Label("Resume reliability", systemImage: "arrow.clockwise") }
-                DisplayPane(model: model)
-                    .tabItem { Label("Display", systemImage: "menubar.rectangle") }
-                NotifyPane(model: notifyModel)
-                    .tabItem { Label("Away push", systemImage: "antenna.radiowaves.left.and.right") }
-                UsagePane(model: usageModel)
-                    .tabItem { Label("Usage", systemImage: "chart.bar") }
-            }
-            .frame(width: 600, height: 520)  // SPIN-BISECT: fixed again
+            SettingsRoot(model: model, settingsModel: settingsModel,
+                         reliabilityModel: reliabilityModel,
+                         notifyModel: notifyModel, usageModel: usageModel)
         }
+    }
+}
+
+/// The five settings panes. Shared by the Settings scene (the standard
+/// app-menu path, unreachable for an accessory app with no app menu) and
+/// the controller-owned window the popup's Settings… button opens.
+struct SettingsRoot: View {
+    @ObservedObject var model: AppModel
+    @ObservedObject var settingsModel: SettingsModel
+    @ObservedObject var reliabilityModel: ResumeReliabilityModel
+    @ObservedObject var notifyModel: NotifyModel
+    @ObservedObject var usageModel: UsageModel
+
+    var body: some View {
+        TabView {
+            SettingsPane(model: settingsModel)
+                .tabItem { Label("cswap", systemImage: "gearshape") }
+            ResumeReliabilityPane(model: reliabilityModel)
+                .tabItem { Label("Resume reliability", systemImage: "arrow.clockwise") }
+            DisplayPane(model: model)
+                .tabItem { Label("Display", systemImage: "menubar.rectangle") }
+            NotifyPane(model: notifyModel)
+                .tabItem { Label("Away push", systemImage: "antenna.radiowaves.left.and.right") }
+            UsagePane(model: usageModel)
+                .tabItem { Label("Usage", systemImage: "chart.bar") }
+        }
+        .frame(minWidth: 600, minHeight: 520)
     }
 }
 
@@ -121,13 +149,7 @@ struct MenuContent: View {
             SwitchHistoryView()
             Divider()
             HStack {
-                Button("Settings…") {
-                    // The selector path works from ANY host (popover or
-                    // window); the openSettings environment action only
-                    // exists inside the scene graph.
-                    NSApp.activate(ignoringOtherApps: true)
-                    NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
-                }
+                Button("Settings…") { model.showSettings?() }
                 Button {
                     model.showPinned?()
                 } label: {

@@ -18,9 +18,12 @@ import CswapCore
 @MainActor
 final class StatusItemHolder: ObservableObject {
     let controller: StatusItemController
-    init(model: AppModel, usage: UsageModel) {
-        controller = StatusItemController(model: model, usage: usage)
+    init(model: AppModel, usage: UsageModel,
+         settingsView: @escaping () -> AnyView) {
+        controller = StatusItemController(model: model, usage: usage,
+                                          settingsView: settingsView)
         model.showPinned = { [weak controller] in controller?.showPinnedWindow() }
+        model.showSettings = { [weak controller] in controller?.showSettingsWindow() }
     }
 }
 
@@ -29,13 +32,17 @@ final class StatusItemController {
     private let item: NSStatusItem
     private let popover = NSPopover()
     private var pinned: NSWindow?
+    private var settings: NSWindow?
     private let model: AppModel
     private let usage: UsageModel
+    private let settingsView: () -> AnyView
     private var sink: AnyCancellable?
 
-    init(model: AppModel, usage: UsageModel) {
+    init(model: AppModel, usage: UsageModel,
+         settingsView: @escaping () -> AnyView) {
         self.model = model
         self.usage = usage
+        self.settingsView = settingsView
         item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         item.behavior = []                       // not user-removable
         item.button?.title = model.title
@@ -84,5 +91,23 @@ final class StatusItemController {
         }
         NSApp.activate(ignoringOtherApps: true)
         pinned?.makeKeyAndOrderFront(nil)
+    }
+
+    /// Controller-owned Settings window. NOT the SwiftUI Settings scene:
+    /// `NSApp.sendAction(showSettingsWindow:)` does nothing on macOS 26
+    /// (verified live — synthetic click on the button, no window), and the
+    /// openSettings environment action doesn't exist outside the scene
+    /// graph. Owning the window outright works from any host.
+    func showSettingsWindow() {
+        if settings == nil {
+            let host = NSHostingController(rootView: settingsView())
+            let w = NSWindow(contentViewController: host)
+            w.title = "CswapBar Settings"
+            w.styleMask = [.titled, .closable, .resizable]
+            w.isReleasedWhenClosed = false
+            settings = w
+        }
+        NSApp.activate(ignoringOtherApps: true)
+        settings?.makeKeyAndOrderFront(nil)
     }
 }

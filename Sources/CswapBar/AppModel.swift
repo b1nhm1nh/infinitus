@@ -18,6 +18,9 @@ final class AppModel: ObservableObject {
     /// Set by StatusItemHolder — opens the pinned window from any host
     /// (the popover copy of MenuContent has no openWindow environment).
     var showPinned: (() -> Void)?
+    /// Set by StatusItemHolder — opens the controller-owned Settings window
+    /// (the SwiftUI Settings scene is unreachable from popover hosts).
+    var showSettings: (() -> Void)?
     private var supervisor: EngineSupervisor?
     private var refreshTask: Task<Void, Never>?
     private var lastNotifiedActive: Int?
