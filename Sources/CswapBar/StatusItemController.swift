@@ -212,6 +212,9 @@ final class StatusItemController {
             w.styleMask = [.titled, .closable, .resizable]
             w.toolbarStyle = .unified
             w.isReleasedWhenClosed = false
+            // Same level as the pop-out, or Settings opened FROM the
+            // pop-out lands behind it.
+            w.level = .floating
             w.setContentSize(NSSize(width: 780, height: 540))
             settings = w
         }
