@@ -125,7 +125,13 @@ final class StatusItemController {
             tabs.tabStyle = .toolbar
             for tab in settingsTabs() {
                 let host = NSHostingController(rootView: tab.view)
-                host.preferredContentSize = NSSize(width: 600, height: 520)
+                // No sizing input from the children AT ALL: .standardBounds
+                // constraints pin the window to SwiftUI's ideal size, and a
+                // preferredContentSize makes NSTabViewController re-assert
+                // that size — either one beats the .resizable style bit.
+                // The window is sized once, below, and the user owns it
+                // from there.
+                host.sizingOptions = []
                 // The toolbar tab style propagates the selected child's
                 // title into the window title ("Untitled" when unset).
                 host.title = tab.title
@@ -140,6 +146,7 @@ final class StatusItemController {
             w.styleMask = [.titled, .closable, .resizable]
             w.toolbarStyle = .preference
             w.isReleasedWhenClosed = false
+            w.setContentSize(NSSize(width: 600, height: 520))
             settings = w
         }
         NSApp.activate(ignoringOtherApps: true)
