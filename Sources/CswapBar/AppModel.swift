@@ -57,14 +57,14 @@ final class AppModel: ObservableObject {
     }
     func reloadCustomThemes() { customThemes = RowTheme.loadCustom() }
 
-    /// Popup scale: SwiftUI dynamic type does the font math; GaugeBar
-    /// rides along via @ScaledMetric.
-    var popupDynamicTypeSize: DynamicTypeSize {
+    /// Popup scale factor — applied as a measured scaleEffect (macOS has
+    /// no Dynamic Type; see PopupScale).
+    var popupScale: CGFloat {
         switch popupTextSize {
-        case "large": return .xLarge
-        case "xlarge": return .xxLarge
-        case "huge": return .xxxLarge
-        default: return .large
+        case "large": return 1.15
+        case "xlarge": return 1.3
+        case "huge": return 1.5
+        default: return 1
         }
     }
 

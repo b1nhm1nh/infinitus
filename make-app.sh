@@ -30,7 +30,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
          prefs domain, and a ControlCenter restart — while the SAME binary
          under any other id renders instantly. The id is the fix. -->
     <key>CFBundleIdentifier</key><string>io.github.claude-swap.CswapBar.g2</string>
-    <key>CFBundleName</key><string>CswapBar</string>
+    <key>CFBundleName</key><string>Limitless</string>
     <key>CFBundlePackageType</key><string>APPL</string>
     <key>CFBundleShortVersionString</key><string>${VERSION:-0.0.0}</string>
     <key>CFBundleVersion</key><string>${SHA}</string>

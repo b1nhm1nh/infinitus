@@ -168,8 +168,15 @@ public enum ResetLabel {
     public static func compact(_ window: UsageWindow?, now: Date = Date(),
                                calendar: Calendar = .current) -> String? {
         guard let window else { return nil }
-        guard let reset = WeeklyRoll.parse(window.resetsAt) else {
-            guard let countdown = window.countdown else { return nil }
+        return compact(resetsAt: window.resetsAt, countdown: window.countdown,
+                       now: now, calendar: calendar)
+    }
+
+    public static func compact(resetsAt: String?, countdown: String?,
+                               now: Date = Date(),
+                               calendar: Calendar = .current) -> String? {
+        guard let reset = WeeklyRoll.parse(resetsAt) else {
+            guard let countdown else { return nil }
             return countdown.replacingOccurrences(of: " ", with: "")
         }
         let total = max(0, Int(reset.timeIntervalSince(now)))

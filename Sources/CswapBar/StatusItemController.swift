@@ -101,7 +101,7 @@ final class StatusItemController {
         if pinned == nil {
             let host = NSHostingController(rootView: MenuContent(model: model, usage: usage))
             let w = NSWindow(contentViewController: host)
-            w.title = "CswapBar"
+            w.title = "Limitless"
             w.styleMask = [.titled, .closable, .resizable]
             w.isReleasedWhenClosed = false
             w.setContentSize(NSSize(width: 720, height: 480))
@@ -142,7 +142,7 @@ final class StatusItemController {
                 tabs.addTabViewItem(item)
             }
             let w = NSWindow(contentViewController: tabs)
-            w.title = "CswapBar Settings"
+            w.title = "Limitless Settings"
             w.styleMask = [.titled, .closable, .resizable]
             w.toolbarStyle = .preference
             w.isReleasedWhenClosed = false

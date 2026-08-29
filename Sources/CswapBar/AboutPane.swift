@@ -158,7 +158,7 @@ struct AboutPane: View {
                 VStack(spacing: 5) {
                     appMark
                         .padding(.bottom, 6)
-                    Text("CswapBar").font(.title2).bold()
+                    Text("Limitless").font(.title2).bold()
                     Text(appBuild.map { "Version \(appVersion) (\($0))" }
                          ?? "Version \(appVersion)")
                         .foregroundStyle(.secondary)
@@ -246,7 +246,7 @@ struct AboutPane: View {
             }
 
             Section {
-                Text("CswapBar by deathemperor · MIT License")
+                Text("Limitless (CswapBar) by deathemperor · MIT License")
                     .font(.caption).foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity)
             }

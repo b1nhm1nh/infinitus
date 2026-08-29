@@ -151,7 +151,12 @@ struct MenuContent: View {
                 // Compact: controls live in a left rail so the accounts sit
                 // as high and tight as the bar allows.
                 HStack(alignment: .top, spacing: 10) {
-                    VStack(spacing: 10) {
+                    // Borderless + tight spacing: the rail must never be
+                    // taller than the account rows (it drives the popup
+                    // height otherwise), and it must never be greedy — a
+                    // maxHeight:.infinity here broke the popover's fitting
+                    // size so badly nothing rendered at all.
+                    VStack(spacing: 9) {
                         Button { model.showSettings?() } label: {
                             Image(systemName: "gearshape")
                         }
@@ -164,6 +169,7 @@ struct MenuContent: View {
                             Image(systemName: "rectangle.expand.vertical")
                         }
                         .help("Show actions and the full footer")
+                        layoutToggleIcon
                         serviceDot
                         if model.appUpdatePending {
                             Button { model.relaunchApp() } label: {
@@ -173,12 +179,12 @@ struct MenuContent: View {
                             .help("A newer build is on disk — restart to update")
                         }
                         engineBadgeIcon
-                        Spacer(minLength: 0)
                         Button { model.shutdown() } label: {
                             Image(systemName: "power")
                         }
                         .help("Quit")
                     }
+                    .buttonStyle(.borderless)
                     VStack(alignment: .leading, spacing: 8) {
                         AccountRows(model: model, usage: usage)
                         errorLines
@@ -219,6 +225,7 @@ struct MenuContent: View {
                             Label("Compact", systemImage: "rectangle.compress.vertical")
                         }
                         .help("Hide actions, event log, and history")
+                        layoutToggleIcon
                         serviceChip
                         Spacer()
                         if model.appUpdatePending {
@@ -243,8 +250,24 @@ struct MenuContent: View {
         }
         .padding(12)
         .frame(minWidth: model.compactRows ? 360 : 560)
-        .dynamicTypeSize(model.popupDynamicTypeSize)
+        // Real scaling, not dynamicTypeSize: macOS ignores Dynamic Type,
+        // so the popup renders at 1x and scaleEffect + a matching frame
+        // grow both the pixels AND the popover's fitting size.
+        .modifier(PopupScale(scale: model.popupScale))
         .onAppear { status.refreshIfStale() }
+    }
+
+    /// Quick wide-rows <-> stacked-cards flip, mirroring the Display
+    /// pane's "Popup layout" picker.
+    private var layoutToggleIcon: some View {
+        Button {
+            model.popupLayout = model.popupLayout == "stacked" ? "wide" : "stacked"
+        } label: {
+            Image(systemName: model.popupLayout == "stacked"
+                  ? "rectangle.split.2x1" : "rectangle.split.1x2")
+        }
+        .help(model.popupLayout == "stacked"
+              ? "Switch to wide rows" : "Switch to stacked cards")
     }
 
     @ViewBuilder private var errorLines: some View {
@@ -291,6 +314,31 @@ struct MenuContent: View {
         case .backingOff(let s): Image(systemName: "clock").help("engine retrying in \(Int(s))s")
         case .schemaMismatch: Image(systemName: "arrow.down.circle").help("update the app")
         case .stopped: Image(systemName: "pause").help("engine off")
+        }
+    }
+}
+
+/// Scales the popup by rendering at 1x, measuring, then applying
+/// scaleEffect with a frame sized to the scaled bounds — the only route
+/// that works on macOS (Dynamic Type and @ScaledMetric are iOS-only
+/// no-ops there, verified live: the size setting did nothing).
+private struct PopupScale: ViewModifier {
+    let scale: CGFloat
+    @State private var measured: CGSize = .zero
+
+    func body(content: Content) -> some View {
+        if scale == 1 {
+            content
+        } else {
+            content
+                .onGeometryChange(for: CGSize.self) { proxy in
+                    proxy.size
+                } action: { measured = $0 }
+                .scaleEffect(scale, anchor: .topLeading)
+                .frame(
+                    width: measured == .zero ? nil : measured.width * scale,
+                    height: measured == .zero ? nil : measured.height * scale,
+                    alignment: .topLeading)
         }
     }
 }
@@ -395,6 +443,29 @@ struct AccountCells {
 
     var deadCause: AccountVitals.DeadCause? { AccountVitals.cause(account.usage) }
 
+    /// Every present window untouched — in compact mode all its cells are
+    /// hidden, so the row needs SOMETHING or it reads as broken.
+    var allFresh: Bool {
+        guard let u = account.usage else { return false }
+        var pcts: [Double] = []
+        if let p = u.fiveHour?.pct { pcts.append(p) }
+        if let p = u.sevenDay?.pct { pcts.append(p) }
+        for w in u.scoped ?? [] { pcts.append(w.pct) }
+        if let p = u.spend?.pct { pcts.append(p) }
+        return !pcts.isEmpty && pcts.allSatisfy { $0 <= 0 }
+    }
+
+    @ViewBuilder var readyCell: some View {
+        HStack(spacing: 3) {
+            Image(systemName: "checkmark.circle.fill")
+                .font(.caption).foregroundStyle(.green)
+            Text("ready").font(.caption).foregroundStyle(.secondary)
+        }
+        .help("All limits untouched")
+        .fixedSize()
+        .activeBand(banded && account.active)
+    }
+
     /// One line replacing every usage cell on a dead row: the themed name
     /// of the blocking limit plus its revival time. The healthy windows
     /// carry no signal on an unusable account.
@@ -408,11 +479,18 @@ struct AccountCells {
                     Text(theme.revivePrefix.trimmingCharacters(in: .whitespaces))
                         .font(.caption).foregroundStyle(.secondary)
                 }
-                resetLabelView(
-                    resetsAt: cause.resetsAt,
-                    staticText: ResetLabel.label(
+                if let text = model.compactRows
+                    ? ResetLabel.compact(resetsAt: cause.resetsAt,
+                                         countdown: cause.countdown)
+                    : ResetLabel.label(
                         resetsAt: cause.resetsAt, countdown: cause.countdown,
-                        clock: cause.clock))
+                        clock: cause.clock) {
+                    resetLabelView(resetsAt: cause.resetsAt, staticText: text)
+                } else {
+                    // No reset on record (a spent credit cap): say so
+                    // instead of trailing off after the revive icon.
+                    Text("spent").font(.caption).foregroundStyle(.secondary)
+                }
             }
             .help("Out of this limit — the account is unusable until it resets")
             .fixedSize()
@@ -648,6 +726,10 @@ struct AccountGrid: View {
                         cells.deadCell
                             .gridCellColumns(3)
                         cells.cashCell
+                    } else if model.compactRows && cells.allFresh {
+                        cells.readyCell
+                            .gridCellColumns(3)
+                        cells.cashCell
                     } else {
                         cells.windowCell(account.usage?.fiveHour, session: true)
                         cells.windowCell(account.usage?.sevenDay, session: false)
@@ -695,6 +777,8 @@ struct AccountStack: View {
                         Text(note).font(.caption).foregroundStyle(.secondary)
                     } else if cells.dead {
                         cells.deadCell
+                    } else if model.compactRows && cells.allFresh {
+                        cells.readyCell
                     } else {
                         HStack(spacing: 12) {
                             cells.windowCell(account.usage?.fiveHour, session: true)
