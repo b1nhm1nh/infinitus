@@ -32,3 +32,8 @@
   test-fired (2026-08-30, debug Animations pane) — not reproducible
   headless; needs a description of which surface/layout and what it
   looks like before touching Animations.swift.
+- Popup/pop-out chrome: adopt macOS glass (NSVisualEffectView /
+  Liquid Glass material) for the popover and pinned window backgrounds
+  (2026-08-30).
+- "Sync settings via iCloud Drive" lives in the Display pane — wrong
+  home; move to its own Sync/General settings pane (2026-08-30).
