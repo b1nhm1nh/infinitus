@@ -118,7 +118,7 @@ public struct RowTheme: Codable, Equatable, Sendable, Identifiable {
         weeklyLabel: "PSY", weeklyColor: "cyan",
         scopedPrefix: "⚠ ", scopedColor: "yellow",
         creditLabel: "📦", creditColor: "green",
-        cashIcon: "💴", aheadIcon: "❗",
+        cashIcon: "GMP ", aheadIcon: "❗",
         deadMarker: "☠", revivePrefix: "💊 ")
 
     public static let builtins: [RowTheme] = [off, rpg, movie, hades, mgs]

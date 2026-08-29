@@ -494,29 +494,26 @@ struct AccountCells {
         .activeBand(banded && account.active)
     }
 
-    /// One line replacing every usage cell on a dead row: the themed name
-    /// of the blocking limit plus its revival time. The healthy windows
-    /// carry no signal on an unusable account.
+    /// One line replacing every usage cell on a dead row. Plain words, not
+    /// themed icon soup — "📦 💊 spent" read as a riddle (user-verified);
+    /// only the color and the dead marker carry the theme here.
     @ViewBuilder var deadCell: some View {
         if let cause = deadCause {
             HStack(spacing: 4) {
-                Text(causeLabel(cause))
+                Text("\(causeWord(cause)) out")
                     .font(.caption).bold()
                     .foregroundStyle(ThemeColor.resolve(causeColor(cause)))
-                if !theme.revivePrefix.isEmpty {
-                    Text(theme.revivePrefix.trimmingCharacters(in: .whitespaces))
-                        .font(.caption).foregroundStyle(.secondary)
-                }
+                Text("·").font(.caption).foregroundStyle(.tertiary)
                 if let text = model.compactRows
                     ? ResetLabel.compact(resetsAt: cause.resetsAt,
                                          countdown: cause.countdown)
                     : ResetLabel.label(
                         resetsAt: cause.resetsAt, countdown: cause.countdown,
                         clock: cause.clock) {
+                    Text("back").font(.caption).foregroundStyle(.secondary)
                     resetLabelView(resetsAt: cause.resetsAt, staticText: text)
                 } else {
-                    // No reset on record (a spent credit cap): say so
-                    // instead of trailing off after the revive icon.
+                    // No reset on record (a spent credit cap).
                     Text("spent").font(.caption).foregroundStyle(.secondary)
                 }
             }
@@ -526,12 +523,12 @@ struct AccountCells {
         }
     }
 
-    private func causeLabel(_ cause: AccountVitals.DeadCause) -> String {
+    private func causeWord(_ cause: AccountVitals.DeadCause) -> String {
         switch cause.kind {
-        case .session: return theme.sessionLabel
-        case .weekly: return theme.weeklyLabel
-        case .scoped: return theme.scopedPrefix + (cause.name ?? "?")
-        case .credit: return theme.creditLabel
+        case .session: return "session"
+        case .weekly: return "weekly"
+        case .scoped: return cause.name ?? "model"
+        case .credit: return "credit"
         }
     }
 
