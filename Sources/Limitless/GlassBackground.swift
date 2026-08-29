@@ -16,3 +16,24 @@ struct GlassBackground: NSViewRepresentable {
 
     func updateNSView(_ view: NSVisualEffectView, context: Context) {}
 }
+
+extension View {
+    /// The popover / pop-out chrome: behind-window blur always (that's
+    /// what lets the desktop through), plus the Liquid Glass material on
+    /// macOS 26 riding on it for the refractive look ("do all",
+    /// 2026-08-30). Compiled against the 26 SDK; guarded for the 14
+    /// deployment target.
+    @ViewBuilder func glassChrome() -> some View {
+        if #available(macOS 26.0, *) {
+            background {
+                ZStack {
+                    GlassBackground()
+                    Color.clear.glassEffect(.regular, in: .rect)
+                }
+                .ignoresSafeArea()
+            }
+        } else {
+            background { GlassBackground().ignoresSafeArea() }
+        }
+    }
+}

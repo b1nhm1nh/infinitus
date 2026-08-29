@@ -2,10 +2,11 @@ import AppKit
 
 /// The status-item glyph: a rounded "L" whose foot sweeps up into a
 /// return loop capped with an arrowhead — Limitless identity plus
-/// "rotates accounts" motion. Deliberately NOT the app icon's plain ∞:
-/// at menu bar size ∞ wasn't recognizable (user-verified; concept picked
-/// 2026-08-30). Template image, so the bar tints it for menu bar
-/// light/dark and the pressed state.
+/// "rotates accounts" motion. Replaced the ∞, which wasn't recognizable
+/// at menu bar size (user-verified; concept picked 2026-08-30). This
+/// path is the identity's source of truth — make-icon.swift scales the
+/// same coordinates up for AppIcon.icns. Template image, so the bar
+/// tints it for menu bar light/dark and the pressed state.
 enum MenuBarGlyph {
     static let image: NSImage = {
         let img = NSImage(size: NSSize(width: 17, height: 16), flipped: false) { _ in

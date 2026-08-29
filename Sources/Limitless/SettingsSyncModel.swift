@@ -60,6 +60,10 @@ final class SettingsSyncModel: ObservableObject {
         }
         let url = dir.appendingPathComponent("settings-sync.json")
         let local = await localSnapshot()
+        // Re-check after the await: disabling mid-tick cleared the status,
+        // and a stale in-flight tick must not push anyway (observed as
+        // "pushed 00:23" under an off toggle, 2026-08-30).
+        guard enabled else { return }
         let remote = (try? Data(contentsOf: url)).flatMap(SyncSnapshot.decode)
         if let remote, remote != lastSeen, remote != local {
             // Remote moved (another Mac wrote, or first tick over an

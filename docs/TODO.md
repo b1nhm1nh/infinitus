@@ -16,9 +16,9 @@
   gradient carried the theme color at opacity 0 (pure white band for
   every theme) — shoulders now tinted + a themed wash glow.
 - ~~Glass chrome~~ → NSVisualEffectView `.menu` material, behind-window,
-  on the popover content and the (now non-opaque) pop-out window.
-  Liquid Glass (`glassEffect`, macOS 26 API) is the possible upgrade
-  once the look can be judged by eye.
+  on the popover content and the (now non-opaque) pop-out window; on
+  macOS 26 a Liquid Glass layer (`glassEffect(.regular, in: .rect)`)
+  rides on the blur (glassChrome()). Drop one layer if it looks doubled.
 - ~~iCloud sync setting home~~ → own "Sync" pane (SyncPane.swift).
 - ~~Theme requests~~ → builtins `agent` ("AI Agentic — tokens & context")
   and `swe` ("Classic SWE — hand-written, no AI").
@@ -41,6 +41,11 @@
   a router backend would be a second engine behind the same boundary.
 - Real Notification Center delivery needs a Developer ID signature or one
   Xcode automatic-signing run (provisioning profile).
+
+- ~~AppIcon ∞~~ → make-icon.swift now scales the MenuBarGlyph path
+  (identity source of truth) onto the gradient squircle; icns rebuilt.
+- ~~Sync "pushed" under an off toggle~~ → disable-mid-tick race; tick()
+  re-checks `enabled` after its await before any write.
 
 ## Open
 - (nothing — visual verification of the 2026-08-30 batch pending:
