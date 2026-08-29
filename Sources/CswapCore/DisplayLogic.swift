@@ -98,24 +98,6 @@ public enum TitleFormatter {
     }
 }
 
-/// Port of menubar.py `parse_switch_history`: "Switched from account X to Y"
-/// lines paired with their timestamp trimmed to the minute, most-recent
-/// first, unparseable lines skipped.
-public enum SwitchHistory {
-    public static let limit = 10
-
-    public static func parse(_ logText: String, limit: Int = SwitchHistory.limit) -> [String] {
-        let re = #/Switched from account (\d+) to (\d+)/#
-        var out: [String] = []
-        for line in logText.split(separator: "\n", omittingEmptySubsequences: false) {
-            guard let m = line.firstMatch(of: re) else { continue }
-            let stamp = String(line.split(separator: " - ", maxSplits: 1)[0]
-                .trimmingCharacters(in: .whitespaces).prefix(16))
-            out.append("\(m.1) → \(m.2)   \(stamp)")
-        }
-        return out.suffix(limit).reversed()
-    }
-}
 
 /// Human notes for non-"ok" `usageStatus` values. Strings are word-for-word
 /// `SENTINEL_NOTES` from claude_swap/switcher.py — the codebase's stated

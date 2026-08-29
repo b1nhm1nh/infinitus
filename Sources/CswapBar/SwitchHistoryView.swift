@@ -2,16 +2,14 @@ import SwiftUI
 import AppKit
 import CswapCore
 
-/// Recent account switches, parsed from the switcher's log — same source and
-/// format as the rumps "Switch history" submenu. The path mirrors
-/// `switcher.backup_dir` (also home to the engine mutex).
+/// Recent account switches via `cswap history --json` — the engine parses
+/// its own log; this view never touches engine-internal files (the log
+/// path for the "open" button comes from the same JSON).
 struct SwitchHistoryView: View {
+    let cli: CswapCLI?
     @State private var entries: [String] = []
+    @State private var logPath: String?
     @State private var expanded = false
-
-    private static let logPath = FileManager.default
-        .homeDirectoryForCurrentUser
-        .appendingPathComponent(".claude-swap-backup/claude-swap.log")
 
     var body: some View {
         DisclosureGroup("Switch history", isExpanded: $expanded) {
@@ -21,17 +19,22 @@ struct SwitchHistoryView: View {
                 } else {
                     ForEach(entries, id: \.self) { Text($0).monospacedDigit() }
                 }
-                Button("Open full log…") {
-                    NSWorkspace.shared.open(Self.logPath)
+                if let logPath {
+                    Button("Open full log…") {
+                        NSWorkspace.shared.open(URL(fileURLWithPath: logPath))
+                    }
+                    .font(.caption)
                 }
-                .font(.caption)
             }
             .font(.caption)
         }
         .onChange(of: expanded) {
-            guard expanded else { return }
-            let text = (try? String(contentsOf: Self.logPath, encoding: .utf8)) ?? ""
-            entries = SwitchHistory.parse(text)
+            guard expanded, let cli else { return }
+            Task {
+                guard let list = try? await cli.history() else { return }
+                entries = list.switches.map { "\($0.from) → \($0.to)   \($0.at)" }
+                logPath = list.logPath
+            }
         }
     }
 }

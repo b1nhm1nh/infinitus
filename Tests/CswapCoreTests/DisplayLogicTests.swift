@@ -66,20 +66,12 @@ final class WeeklyRollTests: XCTestCase {
 }
 
 final class SwitchHistoryTests: XCTestCase {
-    func testParsesAndReversesTrimmedStamps() {
-        let log = """
-        2026-06-27 02:06:11,123 - INFO - Switched from account 3 to 1
-        junk line
-        2026-06-27 03:00:00,456 - INFO - Switched from account 1 to 2
-        """
-        XCTAssertEqual(SwitchHistory.parse(log),
-                       ["1 → 2   2026-06-27 03:00", "3 → 1   2026-06-27 02:06"])
-    }
-
-    func testLimitKeepsMostRecent() {
-        let log = (1...15).map { "2026-06-27 0\($0 % 10):00:00 - Switched from account 1 to 2" }
-            .joined(separator: "\n")
-        XCTAssertEqual(SwitchHistory.parse(log).count, 10)
+    func testDecodesHistoryJSON() throws {
+        let json = #"{"schemaVersion":1,"switches":[{"from":3,"to":1,"at":"2026-06-27 02:06"}],"logPath":"/tmp/x.log"}"#
+        let list = try JSONDecoder().decode(SwitchHistoryList.self, from: Data(json.utf8))
+        XCTAssertEqual(list.switches.first?.from, 3)
+        XCTAssertEqual(list.switches.first?.at, "2026-06-27 02:06")
+        XCTAssertEqual(list.logPath, "/tmp/x.log")
     }
 }
 

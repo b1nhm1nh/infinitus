@@ -105,6 +105,12 @@ public struct CswapCLI: Sendable {
             : try await run(["alias", String(number), trimmed])
     }
 
+    public func history(limit: Int = 10) async throws -> SwitchHistoryList {
+        try JSONDecoder().decode(
+            SwitchHistoryList.self,
+            from: await run(["history", "--json", "--limit", String(limit)]))
+    }
+
     public func notifyStatus() async throws -> NotifyStatus {
         try JSONDecoder().decode(NotifyStatus.self, from: await run(["notify", "--json"]))
     }

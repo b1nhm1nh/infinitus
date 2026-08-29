@@ -171,7 +171,7 @@ struct MenuContent: View {
                     }
                 }
                 Divider()
-                SwitchHistoryView()
+                SwitchHistoryView(cli: model.cli)
             }
             Divider()
             HStack {

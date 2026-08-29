@@ -194,3 +194,16 @@ public enum GaugeMath {
         max(0, min(100, 100 - usedPct))
     }
 }
+
+/// `cswap history --json` — recent account switches, newest first. The
+/// engine parses its own log; frontends never scrape the file.
+public struct SwitchHistoryList: Decodable, Sendable {
+    public struct Switch: Decodable, Sendable {
+        public let from: Int
+        public let to: Int
+        public let at: String
+    }
+    public let schemaVersion: Int
+    public let switches: [Switch]
+    public let logPath: String
+}
