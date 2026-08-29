@@ -16,11 +16,10 @@ struct AnimationsDebugPane: View {
                 Button("Flash the active row (switch celebration)") {
                     model.switchFlashTick += 1
                 }
-                Button("Ripple the data-changed dot") {
-                    model.dataPulseTick += 1
-                }
-                Text("Open the popup first — these trigger the real "
-                     + "animations in it.")
+                Text("Open the popup first — this triggers the real "
+                     + "animation in it. Data-change glows fire on the "
+                     + "exact cells whose numbers move (Refresh after "
+                     + "some usage to see them).")
                     .font(.caption).foregroundStyle(.secondary)
             }
             Section("Inline samples") {
@@ -34,8 +33,10 @@ struct AnimationsDebugPane: View {
                 .switchFlash(sampleFlash)
                 Button("Replay switch sweep") { sampleFlash += 1 }
                 HStack(spacing: 10) {
-                    DataPulseDot(trigger: samplePulse)
-                    Button("Replay data ripple") { samplePulse += 1 }
+                    Text("LIFE 84%").font(.caption).bold()
+                        .foregroundStyle(.green)
+                        .glowOnChange(of: samplePulse)
+                    Button("Replay data-change glow") { samplePulse += 1 }
                 }
                 HStack(spacing: 10) {
                     Text("Countdown / resetting pulse:")

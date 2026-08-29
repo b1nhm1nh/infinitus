@@ -211,14 +211,17 @@ struct MenuContent: View {
                         .help("Pin keeps this popup open when you click elsewhere; "
                               + "the menu bar icon still closes it.")
                         Button {
-                            model.compactRows.toggle()
+                            withAnimation(.easeInOut(duration: 0.3)) {
+                                model.compactRows.toggle()
+                            }
                         } label: {
                             Label("Compact", systemImage: "rectangle.compress.vertical")
                         }
                         .help("Hide actions, event log, and history")
                         layoutToggleIcon
+                        popOutIcon
                         serviceChip
-                        DataPulseDot(trigger: model.dataPulseTick)
+                        agentChip
                         Spacer()
                         if model.appUpdatePending {
                             Button {
@@ -240,8 +243,13 @@ struct MenuContent: View {
                 }
             }
         }
-        .padding(10)
-        .frame(minWidth: model.compactRows ? 280 : 560)
+        .padding(model.compactRows ? 8 : 10)
+        // No minWidth in compact: full mode's 560 floor was sticking
+        // through the switch and padding the popup out sideways
+        // (user-reported overflow after full->compact).
+        .frame(minWidth: model.compactRows ? nil : 560)
+        .animation(.easeInOut(duration: 0.3), value: model.compactRows)
+        .animation(.easeInOut(duration: 0.3), value: model.gamification)
         // Real scaling, not dynamicTypeSize: macOS ignores Dynamic Type,
         // so the popup renders at 1x and scaleEffect + a matching frame
         // grow both the pixels AND the popover's fitting size.
@@ -277,8 +285,9 @@ struct MenuContent: View {
         }
         .help("Show actions and the full footer")
         layoutToggleIcon
+        popOutIcon
         serviceDot
-        DataPulseDot(trigger: model.dataPulseTick)
+        agentChip
         if model.appUpdatePending {
             Button { model.relaunchApp() } label: {
                 Image(systemName: "arrow.triangle.2.circlepath")
@@ -312,6 +321,36 @@ struct MenuContent: View {
         if let err = model.lastError {
             Text(err).font(.caption).foregroundStyle(.red).lineLimit(2)
         }
+    }
+
+    /// Live Claude Code sessions on this machine — they all ride the
+    /// active account's credential. Compact shows the brain only when
+    /// something is actually working.
+    @ViewBuilder private var agentChip: some View {
+        if let live = model.liveSessions, !model.compactRows || live.busy > 0 {
+            HStack(spacing: 3) {
+                Image(systemName: "brain")
+                    .font(.caption)
+                    .foregroundStyle(live.busy > 0 ? Color.orange : Color.secondary)
+                Text(model.compactRows ? "\(live.busy)"
+                     : live.busy > 0 ? "\(live.busy) working · \(live.total)"
+                                     : "\(live.total)")
+                    .font(.caption).monospacedDigit()
+                    .foregroundStyle(live.busy > 0 ? Color.orange : Color.secondary)
+            }
+            .help("\(live.busy) session(s) mid-turn of \(live.total) live "
+                  + "Claude Code sessions — all ride the active account")
+        }
+    }
+
+    /// Detach into a free-floating window (not glued to the menu bar).
+    private var popOutIcon: some View {
+        Button {
+            model.popOut?()
+        } label: {
+            Image(systemName: "rectangle.on.rectangle")
+        }
+        .help("Pop out into a window you can move anywhere")
     }
 
     /// Claude service status — a colored dot; click opens the status page.
@@ -610,15 +649,23 @@ struct AccountCells {
                     }
                     resetLabelView(resetsAt: w.resetsAt, staticText: resetText(w))
                 }
+                // fixedSize: usage is the row's payload — grow the popup
+                // rather than truncate; the name column stays flexible.
+                .fixedSize()
+                .glowOnChange(of: w.pct)
             } else if w == nil, !model.compactRows {
                 Text("—").foregroundStyle(.tertiary)
             } else if !model.compactRows {
-                Text(verbatim: "")   // grid placeholder; compact packs cells
+                // Placeholder stretches to its COLUMN width: a zero-width
+                // cell left a hole in the active row's highlight band.
+                // gridCellUnsizedAxes: fill the column WITHOUT driving its
+                // size — a bare infinity frame inflated the grid's measured
+                // width past the popover (user: overflow both edges).
+                Text(verbatim: "")
+                    .frame(maxWidth: .infinity)
+                    .gridCellUnsizedAxes(.horizontal)
             }
         }
-        // fixedSize: usage is the row's payload — grow the popup rather
-        // than truncate. The name column is the one flexible column.
-        .fixedSize()
         .activeBand(banded && account.active)
     }
 
@@ -653,11 +700,15 @@ struct AccountCells {
             .help(String(format: "usage credit: %.2f of %.0f %@",
                          spend.used, spend.limit, spend.currency))
             .fixedSize()
+            .glowOnChange(of: spend.pct)
             .activeBand(banded && account.active)
         } else if !model.compactRows {
             // Text, not Color.clear: a zero-size cell renders the active
-            // band as a stray blob; an empty Text has line height.
+            // band as a stray blob; an empty Text has line height. Stretch
+            // so the band fills the column other rows widened.
             Text(verbatim: "")
+                .frame(maxWidth: .infinity)
+                .gridCellUnsizedAxes(.horizontal)
                 .activeBand(banded && account.active)
         }
     }
@@ -666,7 +717,11 @@ struct AccountCells {
         ForEach(account.usage?.scoped ?? [], id: \.name) { w in
             Group {
                 if hiddenInCompact(w.pct) {
-                    if !model.compactRows { Text(verbatim: "") }
+                    if !model.compactRows {
+                        Text(verbatim: "")
+                            .frame(maxWidth: .infinity)
+                            .gridCellUnsizedAxes(.horizontal)
+                    }
                 } else {
                     HStack(spacing: 3) {
                         aheadIcon
@@ -690,6 +745,7 @@ struct AccountCells {
                 }
             }
             .fixedSize()
+            .glowOnChange(of: w.pct)
             .activeBand(banded && account.active)
         }
     }
@@ -747,6 +803,13 @@ struct AccountGrid: View {
     @ObservedObject var model: AppModel
     @ObservedObject var usage: UsageModel
 
+    /// Usage-column count of the WIDEST row: 5h + 7d + spend + each
+    /// scoped window. Rows that span (dead/ready/sentinel) must cover
+    /// exactly this many columns or the cash column shifts left.
+    private var usageColumns: Int {
+        3 + (model.accounts.map { ($0.usage?.scoped ?? []).count }.max() ?? 0)
+    }
+
     var body: some View {
         Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 8) {
             ForEach(model.accounts, id: \.number) { account in
@@ -791,13 +854,19 @@ struct AccountGrid: View {
                     if let note = SentinelNotes.note(for: account.usageStatus) {
                         Text(note)
                             .foregroundStyle(.secondary)
-                            .gridCellColumns(3)   // spans the usage columns
+                            .gridCellColumns(usageColumns)
                             .activeBand(account.active)
                     } else if cells.dead {
                         // A dead row shows ONLY what blocks it — a full MP
                         // gauge on an unusable account reads as usable.
                         cells.deadCell
-                            .gridCellColumns(3)
+                            .gridCellColumns(usageColumns)
+                        cells.cashCell
+                    } else if cells.allFresh {
+                        // A fully-available account carries no signal worth
+                        // five gauges — one "ready" line in every mode.
+                        cells.readyCell
+                            .gridCellColumns(usageColumns)
                         cells.cashCell
                     } else if model.compactRows {
                         // Compact hides empty/exhausted cells, which makes
@@ -805,21 +874,15 @@ struct AccountGrid: View {
                         // cell vanished would show its 7d gauge floating in
                         // the wrong column. Pack the visible cells tight in
                         // ONE cell; only number/name/plan/cash stay columns.
-                        Group {
-                            if cells.allFresh {
-                                cells.readyCell
-                            } else {
-                                HStack(spacing: 12) {
-                                    cells.windowCell(account.usage?.fiveHour, session: true)
-                                    cells.windowCell(account.usage?.sevenDay, session: false)
-                                    cells.spendCell
-                                    cells.scopedCells
-                                }
-                                .fixedSize()
-                                .activeBand(account.active)
-                            }
+                        HStack(spacing: 12) {
+                            cells.windowCell(account.usage?.fiveHour, session: true)
+                            cells.windowCell(account.usage?.sevenDay, session: false)
+                            cells.spendCell
+                            cells.scopedCells
                         }
-                        .gridCellColumns(3)
+                        .fixedSize()
+                        .activeBand(account.active)
+                        .gridCellColumns(usageColumns)
                         cells.cashCell
                     } else {
                         cells.windowCell(account.usage?.fiveHour, session: true)
@@ -868,7 +931,7 @@ struct AccountStack: View {
                         Text(note).font(.caption).foregroundStyle(.secondary)
                     } else if cells.dead {
                         cells.deadCell
-                    } else if model.compactRows && cells.allFresh {
+                    } else if cells.allFresh {
                         cells.readyCell
                     } else {
                         HStack(spacing: 12) {

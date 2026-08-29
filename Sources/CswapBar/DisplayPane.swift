@@ -24,7 +24,13 @@ struct DisplayPane: View {
                 ForEach(model.availableThemes) { theme in
                     ThemeCard(theme: theme,
                               selected: model.gamification == theme.id) {
-                        model.gamification = theme.id
+                        // withAnimation: an open popover re-measures through
+                        // the same animated path as the layout toggle —
+                        // otherwise a theme with wider/narrower cells left
+                        // the popup overflowing or padded (user-reported).
+                        withAnimation(.easeInOut(duration: 0.3)) {
+                            model.gamification = theme.id
+                        }
                     }
                 }
                 HStack {

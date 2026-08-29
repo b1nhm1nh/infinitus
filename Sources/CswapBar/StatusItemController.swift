@@ -31,6 +31,7 @@ final class StatusItemHolder: ObservableObject {
                                           settingsTabs: settingsTabs)
         model.showSettings = { [weak controller] in controller?.showSettingsWindow() }
         model.reopenPopover = { [weak controller] in controller?.reopenPopover() }
+        model.popOut = { [weak controller] in controller?.popOut() }
     }
 }
 
@@ -84,6 +85,12 @@ final class StatusItemController {
         popover.behavior = model.popoverPinned ? .applicationDefined : .transient
     }
 
+    /// The pop-out action: close the popover, open the floating window.
+    func popOut() {
+        if popover.isShown { popover.performClose(nil) }
+        showPinnedWindow()
+    }
+
     /// Bounce an open popover so it re-measures a wholesale content-shape
     /// change (layout toggle). No-op when closed.
     func reopenPopover() {
@@ -116,7 +123,11 @@ final class StatusItemController {
             let host = NSHostingController(rootView: MenuContent(model: model, usage: usage))
             let w = NSWindow(contentViewController: host)
             w.title = "Limitless"
+            // No .miniaturizable and no zoom: minimizing or full-screening
+            // a status-item companion window strands it (user: don't allow
+            // the traffic-light zoom here).
             w.styleMask = [.titled, .closable, .resizable]
+            w.standardWindowButton(.zoomButton)?.isEnabled = false
             w.isReleasedWhenClosed = false
             w.setContentSize(NSSize(width: 720, height: 480))
             pinned = w

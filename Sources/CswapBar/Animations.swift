@@ -51,44 +51,37 @@ struct SwitchFlash: ViewModifier {
     }
 }
 
-/// The data-changed ripple: a small dot that blooms a ring outward every
-/// time `trigger` bumps — quiet proof the numbers on screen just moved.
-struct DataPulseDot: View {
-    let trigger: Int
+/// Highlights the EXACT data point that changed: when `value` moves, the
+/// view flashes a soft accent glow + brief brightness lift, right where
+/// the number is. Attach to any cell showing live data.
+struct ValueChangedGlow<V: Equatable>: ViewModifier {
+    let value: V
+    @State private var tick = 0
 
-    var body: some View {
-        Circle()
-            .fill(Color.accentColor)
-            .frame(width: 6, height: 6)
-            .background {
-                Circle()
-                    .stroke(Color.accentColor, lineWidth: 1.5)
-                    .keyframeAnimator(initialValue: RingState(),
-                                      trigger: trigger) { view, state in
-                        view.scaleEffect(state.scale)
-                            .opacity(state.opacity)
-                    } keyframes: { _ in
-                        KeyframeTrack(\.scale) {
-                            CubicKeyframe(1.0, duration: 0.001)
-                            CubicKeyframe(3.2, duration: 0.8)
-                        }
-                        KeyframeTrack(\.opacity) {
-                            CubicKeyframe(0.9, duration: 0.001)
-                            CubicKeyframe(0.0, duration: 0.8)
-                        }
-                    }
+    func body(content: Content) -> some View {
+        content
+            .onChange(of: value) { tick += 1 }
+            .keyframeAnimator(initialValue: 0.0, trigger: tick) { view, glow in
+                view
+                    .shadow(color: Color.accentColor.opacity(glow), radius: 6 * glow)
+                    .brightness(glow * 0.25)
+            } keyframes: { _ in
+                KeyframeTrack {
+                    CubicKeyframe(0.001, duration: 0.001)
+                    CubicKeyframe(0.9, duration: 0.2)
+                    CubicKeyframe(0.0, duration: 1.0)
+                }
             }
-            .help("Blinks when the popup's data changes")
-    }
-
-    struct RingState {
-        var scale = 1.0
-        var opacity = 0.0
     }
 }
 
 extension View {
     func switchFlash(_ trigger: Int) -> some View {
         modifier(SwitchFlash(trigger: trigger))
+    }
+
+    /// Glow in place whenever `value` changes.
+    func glowOnChange<V: Equatable>(of value: V) -> some View {
+        modifier(ValueChangedGlow(value: value))
     }
 }

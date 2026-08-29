@@ -13,6 +13,14 @@ public struct AccountList: Decodable, Sendable {
     public let accounts: [Account]
     /// Advisory: the account the auto-switcher would likely pick next.
     public let nextCandidate: Int?
+    /// Live Claude Code sessions on this machine (they all ride the
+    /// active account's credential). busy = mid-turn right now.
+    public let liveSessions: LiveSessions?
+}
+
+public struct LiveSessions: Decodable, Sendable {
+    public let busy: Int
+    public let total: Int
 }
 
 public struct Account: Decodable, Sendable {
