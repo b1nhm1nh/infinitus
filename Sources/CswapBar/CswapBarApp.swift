@@ -118,6 +118,12 @@ func settingsTabs(
                     view: AnyView(DisplayPane(model: model))),
         SettingsTab(title: "Activity", symbol: "clock.arrow.circlepath",
                     view: AnyView(ActivityPane(model: model))),
+    ]
+    + (model.debugMenu
+       ? [SettingsTab(title: "Animations", symbol: "sparkles",
+                      view: AnyView(AnimationsDebugPane(model: model)))]
+       : [])
+    + [
         SettingsTab(title: "Away push", symbol: "antenna.radiowaves.left.and.right",
                     view: AnyView(NotifyPane(model: notifyModel))),
         SettingsTab(title: "Usage", symbol: "chart.bar",
@@ -212,6 +218,7 @@ struct MenuContent: View {
                         .help("Hide actions, event log, and history")
                         layoutToggleIcon
                         serviceChip
+                        DataPulseDot(trigger: model.dataPulseTick)
                         Spacer()
                         if model.appUpdatePending {
                             Button {
@@ -271,6 +278,7 @@ struct MenuContent: View {
         .help("Show actions and the full footer")
         layoutToggleIcon
         serviceDot
+        DataPulseDot(trigger: model.dataPulseTick)
         if model.appUpdatePending {
             Button { model.relaunchApp() } label: {
                 Image(systemName: "arrow.triangle.2.circlepath")
@@ -500,7 +508,12 @@ struct AccountCells {
     @ViewBuilder var deadCell: some View {
         if let cause = deadCause {
             HStack(spacing: 4) {
-                Text("\(causeWord(cause)) out")
+                // Themed label + themed verb ("MP down", "🎬 sold out");
+                // the plain theme keeps plain words. The tooltip carries
+                // the plain-English translation either way.
+                Text(theme.plain
+                     ? "\(causeWord(cause)) out"
+                     : "\(causeLabel(cause)) \(theme.deadVerb)")
                     .font(.caption).bold()
                     .foregroundStyle(ThemeColor.resolve(causeColor(cause)))
                 Text("·").font(.caption).foregroundStyle(.tertiary)
@@ -517,9 +530,28 @@ struct AccountCells {
                     Text("spent").font(.caption).foregroundStyle(.secondary)
                 }
             }
-            .help("Out of this limit — the account is unusable until it resets")
+            .help("\(plainCause(cause)) is exhausted (100%) — the account "
+                  + "is unusable until it resets")
             .fixedSize()
             .activeBand(banded && account.active)
+        }
+    }
+
+    private func causeLabel(_ cause: AccountVitals.DeadCause) -> String {
+        switch cause.kind {
+        case .session: return theme.sessionLabel
+        case .weekly: return theme.weeklyLabel
+        case .scoped: return theme.scopedPrefix + (cause.name ?? "?")
+        case .credit: return theme.creditLabel
+        }
+    }
+
+    private func plainCause(_ cause: AccountVitals.DeadCause) -> String {
+        switch cause.kind {
+        case .session: return "The 5-hour session limit"
+        case .weekly: return "The weekly limit"
+        case .scoped: return "The \(cause.name ?? "model") weekly limit"
+        case .credit: return "The usage-credit spend cap"
         }
     }
 
@@ -575,8 +607,8 @@ struct AccountCells {
                 }
             } else if w == nil, !model.compactRows {
                 Text("—").foregroundStyle(.tertiary)
-            } else {
-                Text(verbatim: "")
+            } else if !model.compactRows {
+                Text(verbatim: "")   // grid placeholder; compact packs cells
             }
         }
         // fixedSize: usage is the row's payload — grow the popup rather
@@ -586,7 +618,17 @@ struct AccountCells {
     }
 
     @ViewBuilder var spendCell: some View {
-        if let spend = account.usage?.spend, !hiddenInCompact(spend.pct) {
+        if let spend = account.usage?.spend, spend.pct >= 100 {
+            // Spent credit is a footnote, not a death: the overflow buffer
+            // is gone, the subscription windows still rule the row.
+            Text("\(theme.creditLabel) spent")
+                .font(.caption).foregroundStyle(.tertiary)
+                .help(String(format: "usage credit exhausted: %.2f of %.0f %@ — "
+                             + "account still usable on its plan limits",
+                             spend.used, spend.limit, spend.currency))
+                .fixedSize()
+                .activeBand(banded && account.active)
+        } else if let spend = account.usage?.spend, !hiddenInCompact(spend.pct) {
             HStack(spacing: 3) {
                 Text(theme.creditLabel)
                     .font(theme.plain ? .body : .caption.bold())
@@ -607,7 +649,7 @@ struct AccountCells {
                          spend.used, spend.limit, spend.currency))
             .fixedSize()
             .activeBand(banded && account.active)
-        } else {
+        } else if !model.compactRows {
             // Text, not Color.clear: a zero-size cell renders the active
             // band as a stray blob; an empty Text has line height.
             Text(verbatim: "")
@@ -619,7 +661,7 @@ struct AccountCells {
         ForEach(account.usage?.scoped ?? [], id: \.name) { w in
             Group {
                 if hiddenInCompact(w.pct) {
-                    Text(verbatim: "")
+                    if !model.compactRows { Text(verbatim: "") }
                 } else {
                     HStack(spacing: 3) {
                         aheadIcon
@@ -718,6 +760,7 @@ struct AccountGrid: View {
                             .foregroundStyle(account.active ? Color.accentColor : Color.primary)
                     }
                     .activeBand(account.active)
+                    .switchFlash(account.active ? model.switchFlashTick : 0)
                     Button(cells.displayName) {
                         model.switchTo(account.number)   // disabled rows stay clickable, like rumps
                     }
@@ -751,9 +794,27 @@ struct AccountGrid: View {
                         cells.deadCell
                             .gridCellColumns(3)
                         cells.cashCell
-                    } else if model.compactRows && cells.allFresh {
-                        cells.readyCell
-                            .gridCellColumns(3)
+                    } else if model.compactRows {
+                        // Compact hides empty/exhausted cells, which makes
+                        // per-cell grid columns meaningless — a row whose 5h
+                        // cell vanished would show its 7d gauge floating in
+                        // the wrong column. Pack the visible cells tight in
+                        // ONE cell; only number/name/plan/cash stay columns.
+                        Group {
+                            if cells.allFresh {
+                                cells.readyCell
+                            } else {
+                                HStack(spacing: 12) {
+                                    cells.windowCell(account.usage?.fiveHour, session: true)
+                                    cells.windowCell(account.usage?.sevenDay, session: false)
+                                    cells.spendCell
+                                    cells.scopedCells
+                                }
+                                .fixedSize()
+                                .activeBand(account.active)
+                            }
+                        }
+                        .gridCellColumns(3)
                         cells.cashCell
                     } else {
                         cells.windowCell(account.usage?.fiveHour, session: true)
@@ -824,6 +885,7 @@ struct AccountStack: View {
                                 .strokeBorder(Color.accentColor.opacity(0.7)))
                     }
                 }
+                .switchFlash(account.active ? model.switchFlashTick : 0)
             }
         }
     }

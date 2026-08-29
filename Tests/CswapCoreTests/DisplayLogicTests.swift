@@ -157,10 +157,13 @@ final class AccountVitalsTests: XCTestCase {
             try usage(#"{"scoped":[{"pct":100,"name":"Fable"}]}"#)))
     }
 
-    func testSpendCapCountsToo() throws {
+    func testSpentCreditAloneIsAlive() throws {
+        // Spent usage credit = no overflow buffer; the subscription
+        // windows still have headroom, so the account is NOT dead.
         let u = try usage(
             #"{"sevenDay":{"pct":10},"spend":{"used":200.29,"limit":200,"pct":100,"currency":"USD"}}"#)
-        XCTAssertTrue(AccountVitals.isDead(u))
+        XCTAssertFalse(AccountVitals.isDead(u))
+        XCTAssertNil(AccountVitals.cause(u))
     }
 }
 

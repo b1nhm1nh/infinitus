@@ -242,11 +242,10 @@ public enum AccountVitals {
                                    countdown: w.countdown, clock: w.clock),
                          WeeklyRoll.parse(w.resetsAt)))
         }
-        if let sp = usage.spend, sp.pct >= 100 {
-            dead.append((DeadCause(kind: .credit, name: nil, resetsAt: sp.resetsAt,
-                                   countdown: sp.countdown, clock: sp.clock),
-                         WeeklyRoll.parse(sp.resetsAt)))
-        }
+        // The spend cap is deliberately NOT here: spent usage credit only
+        // means the overflow buffer is gone — the account stays usable on
+        // its subscription windows (user-verified: papaya at 0%/0% with a
+        // spent cap was marked dead and is perfectly alive).
         return dead.max {
             ($0.1 ?? .distantFuture) < ($1.1 ?? .distantFuture)
         }?.0
@@ -258,7 +257,6 @@ public enum AccountVitals {
         if let p = usage.fiveHour?.pct { pcts.append(p) }
         if let p = usage.sevenDay?.pct { pcts.append(p) }
         for w in usage.scoped ?? [] { pcts.append(w.pct) }
-        if let p = usage.spend?.pct { pcts.append(p) }
         return pcts.contains { $0 >= 100 }
     }
 }

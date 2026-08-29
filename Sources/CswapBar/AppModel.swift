@@ -11,6 +11,14 @@ final class AppModel: ObservableObject {
     @Published var accounts: [Account] = []
     @Published var activeNumber: Int?
     @Published var nextCandidate: Int?
+    // Animation triggers. switchFlashTick fires the celebration sweep on
+    // the (new) active row; dataPulseTick ripples the sync dot whenever a
+    // snapshot actually changed something visible.
+    @Published var switchFlashTick = 0
+    @Published var dataPulseTick = 0
+    /// Debug-only (defaults write … debug_menu -bool true): adds the
+    /// Animations tab so every effect can be fired by hand.
+    let debugMenu = UserDefaults.standard.bool(forKey: "debug_menu")
     @Published var engineState: EngineSupervisor.State = .stopped
     @Published var eventLog: [String] = []
     @Published var lastError: String?
@@ -185,11 +193,18 @@ final class AppModel: ObservableObject {
             // withAnimation: the pct texts carry .contentTransition(.numericText)
             // so a fresh snapshot rolls the digits (the token-burn feel)
             // instead of snapping them.
+            let changed = !accountsVisuallyEqual(accounts, list.accounts)
+            let previousActive = activeNumber
             withAnimation(.easeInOut(duration: 0.6)) {
                 accounts = list.accounts
                 activeNumber = list.activeAccountNumber
                 nextCandidate = list.nextCandidate
             }
+            if let now = list.activeAccountNumber, let previousActive,
+               previousActive != now {
+                switchFlashTick += 1
+            }
+            if changed { dataPulseTick += 1 }
             lastError = nil
             // Piggyback on the refresh tick: one cheap stat per pass.
             if !appUpdatePending, let launched = launchExecutableDate,
@@ -216,6 +231,23 @@ final class AppModel: ObservableObject {
             // same policy as the rumps menubar's _worker.
             lastError = "\(error)"
         }
+    }
+
+    /// "Did anything the popup RENDERS change?" — cheap positional
+    /// comparison of the fields the rows show.
+    private func accountsVisuallyEqual(_ a: [Account], _ b: [Account]) -> Bool {
+        guard a.count == b.count else { return false }
+        for (x, y) in zip(a, b) {
+            if x.number != y.number || x.active != y.active
+                || x.alias != y.alias || x.disabled != y.disabled
+                || x.usage?.fiveHour?.pct != y.usage?.fiveHour?.pct
+                || x.usage?.sevenDay?.pct != y.usage?.sevenDay?.pct
+                || x.usage?.spend?.pct != y.usage?.spend?.pct
+                || (x.usage?.scoped ?? []).map(\.pct) != (y.usage?.scoped ?? []).map(\.pct) {
+                return false
+            }
+        }
+        return true
     }
 
     /// Bounce the supervised engine — after a cswap upgrade the child is

@@ -29,6 +29,9 @@ public struct RowTheme: Codable, Equatable, Sendable, Identifiable {
     public var deadMarker: String
     /// Prepended to an exhausted window's reset label ("🧪 29m (21:00)").
     public var revivePrefix: String
+    /// Verb for a dead limit: "MP down", "🎬 sold out", "LIFE MIA". The
+    /// tooltip always carries the plain-English explanation.
+    public var deadVerb: String
 
     public init(
         id: String, name: String, plain: Bool = false,
@@ -37,7 +40,8 @@ public struct RowTheme: Codable, Equatable, Sendable, Identifiable {
         scopedPrefix: String = "", scopedColor: String = "purple",
         creditLabel: String = "$", creditColor: String = "green",
         cashIcon: String = "💰", aheadIcon: String = "sf:flame.fill",
-        deadMarker: String = "💀", revivePrefix: String = ""
+        deadMarker: String = "💀", revivePrefix: String = "",
+        deadVerb: String = "out"
     ) {
         self.id = id
         self.name = name
@@ -54,6 +58,7 @@ public struct RowTheme: Codable, Equatable, Sendable, Identifiable {
         self.aheadIcon = aheadIcon
         self.deadMarker = deadMarker
         self.revivePrefix = revivePrefix
+        self.deadVerb = deadVerb
     }
 
     public init(from decoder: Decoder) throws {
@@ -74,7 +79,8 @@ public struct RowTheme: Codable, Equatable, Sendable, Identifiable {
             cashIcon: try c.decodeIfPresent(String.self, forKey: .cashIcon) ?? base.cashIcon,
             aheadIcon: try c.decodeIfPresent(String.self, forKey: .aheadIcon) ?? base.aheadIcon,
             deadMarker: try c.decodeIfPresent(String.self, forKey: .deadMarker) ?? base.deadMarker,
-            revivePrefix: try c.decodeIfPresent(String.self, forKey: .revivePrefix) ?? base.revivePrefix
+            revivePrefix: try c.decodeIfPresent(String.self, forKey: .revivePrefix) ?? base.revivePrefix,
+            deadVerb: try c.decodeIfPresent(String.self, forKey: .deadVerb) ?? base.deadVerb
         )
     }
 
@@ -92,7 +98,7 @@ public struct RowTheme: Codable, Equatable, Sendable, Identifiable {
         scopedPrefix: "", scopedColor: "purple",
         creditLabel: "$", creditColor: "green",
         cashIcon: "💰", aheadIcon: "sf:flame.circle.fill",
-        deadMarker: "💀", revivePrefix: "🧪 ")
+        deadMarker: "💀", revivePrefix: "🧪 ", deadVerb: "down")
 
     public static let movie = RowTheme(
         id: "movie", name: "Movie — reels & box office",
@@ -101,7 +107,7 @@ public struct RowTheme: Codable, Equatable, Sendable, Identifiable {
         scopedPrefix: "★ ", scopedColor: "orange",
         creditLabel: "🎟", creditColor: "green",
         cashIcon: "💵", aheadIcon: "sf:popcorn.fill",
-        deadMarker: "🔚", revivePrefix: "re-release ")
+        deadMarker: "🔚", revivePrefix: "re-release ", deadVerb: "sold out")
 
     public static let hades = RowTheme(
         id: "hades", name: "Hades — blades & darkness",
@@ -110,7 +116,7 @@ public struct RowTheme: Codable, Equatable, Sendable, Identifiable {
         scopedPrefix: "🏛 ", scopedColor: "teal",
         creditLabel: "🪙", creditColor: "yellow",
         cashIcon: "💠", aheadIcon: "🔥",
-        deadMarker: "☠", revivePrefix: "🩸 ")
+        deadMarker: "☠", revivePrefix: "🩸 ", deadVerb: "fallen")
 
     public static let mgs = RowTheme(
         id: "mgs", name: "Metal Gear — tactical espionage",
@@ -119,7 +125,7 @@ public struct RowTheme: Codable, Equatable, Sendable, Identifiable {
         scopedPrefix: "⚠ ", scopedColor: "yellow",
         creditLabel: "📦", creditColor: "green",
         cashIcon: "GMP ", aheadIcon: "❗",
-        deadMarker: "☠", revivePrefix: "💊 ")
+        deadMarker: "☠", revivePrefix: "💊 ", deadVerb: "MIA")
 
     public static let builtins: [RowTheme] = [off, rpg, movie, hades, mgs]
 
