@@ -191,7 +191,10 @@ final class RowThemeTests: XCTestCase {
 
 final class ResetLabelCompactTests: XCTestCase {
     func testCompactSameDayAndCrossDay() throws {
-        let now = Date()
+        // Pinned mid-day instant: with Date() this flaked inside the 90
+        // minutes before UTC midnight, when now+90m honestly crosses the
+        // day and the label rightly grows a date (seen 2026-08-30).
+        let now = ISO8601DateFormatter().date(from: "2026-01-10T10:00:00Z")!
         var cal = Calendar(identifier: .gregorian)
         cal.timeZone = TimeZone(identifier: "UTC")!
         let f = ISO8601DateFormatter()

@@ -12,7 +12,7 @@
 # toggle is disabled. Log out/in once and go back to `open Limitless.app`.
 set -eu
 cd "$(dirname "$0")"
-OUT="$HOME/Library/Application Support/CswapBar/Limitless-unbundled"
+OUT="$HOME/Library/Application Support/Limitless/Limitless-unbundled"
 mkdir -p "$(dirname "$OUT")"
 pkill -x Limitless 2>/dev/null || true
 pkill -x Limitless-unbundled 2>/dev/null || true
@@ -20,7 +20,8 @@ sleep 0.5
 cp Limitless.app/Contents/MacOS/Limitless "$OUT"
 codesign --force --sign - "$OUT" 2>/dev/null
 if ! defaults read Limitless-unbundled >/dev/null 2>&1; then
-    defaults export io.github.claude-swap.CswapBar.g2 - 2>/dev/null \
+    { defaults export com.huuloc.limitless - 2>/dev/null \
+      || defaults export io.github.claude-swap.CswapBar.g2 - 2>/dev/null; } \
         | defaults import Limitless-unbundled - 2>/dev/null || true
 fi
 nohup "$OUT" >/dev/null 2>&1 &

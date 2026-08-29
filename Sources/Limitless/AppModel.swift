@@ -111,7 +111,23 @@ final class AppModel: ObservableObject {
             icon: "")  // the status button wears MenuBarGlyph instead
     }
 
+    /// One-time prefs adoption from the pre-2026-08-30 bundle id
+    /// (io.github.claude-swap.CswapBar.g2). Bundled runs only — the
+    /// unbundled domain is per-executable name and unaffected. Copies,
+    /// never moves: the old domain stays for rollback. Locally-set keys win.
+    private static func migrateLegacyDefaults() {
+        let std = UserDefaults.standard
+        guard !std.bool(forKey: "migrated_from_g2"),
+              let legacy = std.persistentDomain(
+                forName: "io.github.claude-swap.CswapBar.g2") else { return }
+        for (key, value) in legacy where std.object(forKey: key) == nil {
+            std.set(value, forKey: key)
+        }
+        std.set(true, forKey: "migrated_from_g2")
+    }
+
     init() {
+        Self.migrateLegacyDefaults()
         showAccountName = defaults.object(forKey: "show_account_name") as? Bool ?? true
         let pct = defaults.string(forKey: "title_pct") ?? "both"
         titlePct = TitlePrefs.pctChoices.contains(pct) ? pct : "both"

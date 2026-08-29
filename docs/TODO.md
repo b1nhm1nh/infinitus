@@ -25,10 +25,12 @@
 - ~~About pane icon~~ → real app icon when bundled; unbundled draws the
   menu bar glyph on the gradient card (the retired ∞ is gone).
 
+- ~~Bundle id~~ → `com.huuloc.limitless`, done 2026-08-30 as the one
+  intentional step: prefs copy-migrate from the g2 domain on first
+  launch, themes.json copy-migrates from `CswapBar/`; re-grant
+  notifications + login item once under the new id.
+
 ## Deferred by design
-- Bundle id → something like `com.huuloc.limitless` as ONE intentional
-  step (re-grant notifications + login item afterwards). The App Support
-  path `CswapBar/` moves in the same step.
 - Community theme gallery URLs point at `deathemperor/limitless` — 404s
   until the repo is pushed.
 - Codex backend support: landscape researched (codex-rotate, codex-switcher,

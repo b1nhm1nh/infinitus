@@ -8,10 +8,12 @@ Native macOS menu bar app for the claude-swap engine. Split out of
   touchpoint is a `cswap … --json` subprocess (CswapCore/CswapCLI.swift).
   Never read engine internals (`~/.claude-swap-backup/*`). Reading
   `~/.claude/settings.json` (Claude Code's file) is fine.
-- **Bundle id stays `io.github.claude-swap.CswapBar.g2`** until the id
-  change is done as one deliberate step (Notification Center and login-item
-  grants key on it; the last casual change cost a day of ControlCenter-ban
-  debugging). Same for the App Support path `CswapBar/`.
+- **Bundle id is `com.huuloc.limitless`** — the one deliberate change,
+  done 2026-08-30 (user-approved). App Support moved to `Limitless/`
+  (copy-migration from `CswapBar/`; legacy dir left for rollback).
+  Notification Center and login-item grants key on the id and must be
+  re-granted once under it. Never change the id casually again — the
+  2026-08-29 casual change cost a day of ControlCenter-ban debugging.
 - **Push nothing to any remote** unless explicitly asked. Commit locally.
 - Secrets (webhook URLs, bot tokens) travel over stdin, never argv; shown
   masked only. Usage-cost figures are estimates, never billing truth.

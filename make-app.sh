@@ -23,13 +23,13 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 <plist version="1.0">
 <dict>
     <key>CFBundleExecutable</key><string>Limitless</string>
-    <!-- ".g2": macOS 26's ControlCenter holds a persistent per-bundle-id
-         ban against io.github.claude-swap.CswapBar (acquired during the
-         2026-08-29 MenuBarExtra insert/evict war): its status item gets a
-         phantom frame and never renders, even with a roomy bar, a fresh
-         prefs domain, and a ControlCenter restart — while the SAME binary
-         under any other id renders instantly. The id is the fix. -->
-    <key>CFBundleIdentifier</key><string>io.github.claude-swap.CswapBar.g2</string>
+    <!-- com.huuloc.limitless: the ONE deliberate id change (2026-08-30,
+         user-approved). Notification and login-item grants key on the id —
+         re-grant both after this. Prefs migrate in-app from the old
+         domain (io.github.claude-swap.CswapBar.g2 — itself a rename away
+         from a persistent macOS 26 ControlCenter per-id ban acquired in
+         the 2026-08-29 MenuBarExtra insert/evict war). -->
+    <key>CFBundleIdentifier</key><string>com.huuloc.limitless</string>
     <key>CFBundleName</key><string>Limitless</string>
     <key>CFBundlePackageType</key><string>APPL</string>
     <key>CFBundleShortVersionString</key><string>${VERSION:-0.0.0}</string>

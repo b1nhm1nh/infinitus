@@ -33,7 +33,7 @@ disk.
 ## Themes
 
 Built-in row themes live in `Sources/CswapCore/RowTheme.swift`; add your
-own in `~/Library/Application Support/CswapBar/themes.json`, or share one
+own in `~/Library/Application Support/Limitless/themes.json`, or share one
 through [`themes/`](themes/README.md) with a pull request.
 
 ## License

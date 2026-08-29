@@ -165,20 +165,32 @@ public struct RowTheme: Codable, Equatable, Sendable, Identifiable {
 
     // MARK: custom themes
 
-    /// `~/Library/Application Support/CswapBar/themes.json` — the legacy
-    /// dir name is deliberate (CLAUDE.md: the App Support path moves only
-    /// as part of the one intentional bundle-id step). A JSON array
-    /// of RowTheme objects; only `id` and `name` are required.
+    /// `~/Library/Application Support/Limitless/themes.json` — moved from
+    /// the legacy `CswapBar/` dir as part of the one intentional
+    /// bundle-id step (2026-08-30). A JSON array of RowTheme objects;
+    /// only `id` and `name` are required.
     public static func customThemesURL(
         appSupport: URL = FileManager.default.urls(
             for: .applicationSupportDirectory, in: .userDomainMask)[0]
     ) -> URL {
-        appSupport.appendingPathComponent("CswapBar/themes.json")
+        appSupport.appendingPathComponent("Limitless/themes.json")
     }
 
     /// Best-effort load; a broken file yields [] rather than a crash —
-    /// the popup must render with whatever themes are valid.
+    /// the popup must render with whatever themes are valid. Adopts the
+    /// legacy CswapBar/themes.json once, by copy (the old file stays put
+    /// so a rollback still finds it).
     public static func loadCustom(from url: URL = customThemesURL()) -> [RowTheme] {
+        let fm = FileManager.default
+        if !fm.fileExists(atPath: url.path) {
+            let legacy = url.deletingLastPathComponent().deletingLastPathComponent()
+                .appendingPathComponent("CswapBar/themes.json")
+            if fm.fileExists(atPath: legacy.path) {
+                try? fm.createDirectory(at: url.deletingLastPathComponent(),
+                                        withIntermediateDirectories: true)
+                try? fm.copyItem(at: legacy, to: url)
+            }
+        }
         guard let data = try? Data(contentsOf: url) else { return [] }
         return (try? JSONDecoder().decode([RowTheme].self, from: data)) ?? []
     }
