@@ -7,6 +7,7 @@ import CswapCore
 /// path for the "open" button comes from the same JSON).
 struct SwitchHistoryView: View {
     let cli: CswapCLI?
+    var startExpanded = false
     @State private var entries: [String] = []
     @State private var logPath: String?
     @State private var expanded = false
@@ -28,13 +29,21 @@ struct SwitchHistoryView: View {
             }
             .font(.caption)
         }
-        .onChange(of: expanded) {
-            guard expanded, let cli else { return }
-            Task {
-                guard let list = try? await cli.history() else { return }
-                entries = list.switches.map { "\($0.from) → \($0.to)   \($0.at)" }
-                logPath = list.logPath
+        .onChange(of: expanded) { load() }
+        .onAppear {
+            if startExpanded {
+                expanded = true
+                load()
             }
+        }
+    }
+
+    private func load() {
+        guard expanded, let cli else { return }
+        Task {
+            guard let list = try? await cli.history() else { return }
+            entries = list.switches.map { "\($0.from) → \($0.to)   \($0.at)" }
+            logPath = list.logPath
         }
     }
 }

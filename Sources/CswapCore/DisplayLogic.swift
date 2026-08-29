@@ -128,9 +128,18 @@ public enum ResetLabel {
     public static func label(_ window: UsageWindow?, now: Date = Date(),
                              calendar: Calendar = .current) -> String? {
         guard let window else { return nil }
-        guard let reset = WeeklyRoll.parse(window.resetsAt) else {
-            guard let clock = window.clock else { return window.countdown }
-            return "\(window.countdown ?? "?") (\(clock))"
+        return label(resetsAt: window.resetsAt, countdown: window.countdown,
+                     clock: window.clock, now: now, calendar: calendar)
+    }
+
+    /// Raw-field variant so non-UsageWindow carriers (the spend cap) can
+    /// render the same label.
+    public static func label(resetsAt: String?, countdown: String?,
+                             clock: String?, now: Date = Date(),
+                             calendar: Calendar = .current) -> String? {
+        guard let reset = WeeklyRoll.parse(resetsAt) else {
+            guard let clock else { return countdown }
+            return "\(countdown ?? "?") (\(clock))"
         }
         let total = max(0, Int(reset.timeIntervalSince(now)))
         let days = total / 86400
@@ -153,6 +162,31 @@ public enum ResetLabel {
         return trimmed.isEmpty ? full : trimmed
     }
 
+    /// Dense variant for the compact popup: "1h44m·22:10", "5d7h·Sep 4"
+    /// (countdown de-spaced, wall clock without parens, date-only when the
+    /// reset lands on another day).
+    public static func compact(_ window: UsageWindow?, now: Date = Date(),
+                               calendar: Calendar = .current) -> String? {
+        guard let window else { return nil }
+        guard let reset = WeeklyRoll.parse(window.resetsAt) else {
+            guard let countdown = window.countdown else { return nil }
+            return countdown.replacingOccurrences(of: " ", with: "")
+        }
+        let total = max(0, Int(reset.timeIntervalSince(now)))
+        let days = total / 86400
+        let hours = (total % 86400) / 3600
+        let minutes = (total % 3600) / 60
+        let countdown: String
+        if days > 0 { countdown = "\(days)d\(hours)h" }
+        else if hours > 0 { countdown = "\(hours)h\(minutes)m" }
+        else { countdown = "\(minutes)m" }
+        let f = DateFormatter()
+        f.calendar = calendar
+        f.timeZone = calendar.timeZone
+        f.dateFormat = calendar.isDate(reset, inSameDayAs: now) ? "HH:mm" : "MMM d"
+        return "\(countdown)·\(f.string(from: reset))"
+    }
+
     static func clockString(_ reset: Date, now: Date, calendar: Calendar) -> String {
         let f = DateFormatter()
         f.calendar = calendar
@@ -170,6 +204,47 @@ public enum ResetLabel {
 /// per-model weekly window, or the usage-credit spend cap. Display-only
 /// verdict — autoswitch has its own decision logic.
 public enum AccountVitals {
+    /// The window that blocks a dead account, with its reset fields. When
+    /// several limits are exhausted the LATEST reset governs (the account
+    /// is only usable once all of them roll); a dead cap with no reset at
+    /// all (spend credit) blocks indefinitely and wins outright.
+    public struct DeadCause: Equatable, Sendable {
+        public let kind: Kind
+        public let name: String?          // model name for .scoped
+        public let resetsAt: String?
+        public let countdown: String?
+        public let clock: String?
+        public enum Kind: Equatable, Sendable { case session, weekly, scoped, credit }
+    }
+
+    public static func cause(_ usage: Usage?) -> DeadCause? {
+        guard let usage else { return nil }
+        var dead: [(DeadCause, Date?)] = []
+        if let w = usage.fiveHour, w.pct >= 100 {
+            dead.append((DeadCause(kind: .session, name: nil, resetsAt: w.resetsAt,
+                                   countdown: w.countdown, clock: w.clock),
+                         WeeklyRoll.parse(w.resetsAt)))
+        }
+        if let w = usage.sevenDay, w.pct >= 100 {
+            dead.append((DeadCause(kind: .weekly, name: nil, resetsAt: w.resetsAt,
+                                   countdown: w.countdown, clock: w.clock),
+                         WeeklyRoll.parse(w.resetsAt)))
+        }
+        for w in usage.scoped ?? [] where w.pct >= 100 {
+            dead.append((DeadCause(kind: .scoped, name: w.name, resetsAt: w.resetsAt,
+                                   countdown: w.countdown, clock: w.clock),
+                         WeeklyRoll.parse(w.resetsAt)))
+        }
+        if let sp = usage.spend, sp.pct >= 100 {
+            dead.append((DeadCause(kind: .credit, name: nil, resetsAt: sp.resetsAt,
+                                   countdown: sp.countdown, clock: sp.clock),
+                         WeeklyRoll.parse(sp.resetsAt)))
+        }
+        return dead.max {
+            ($0.1 ?? .distantFuture) < ($1.1 ?? .distantFuture)
+        }?.0
+    }
+
     public static func isDead(_ usage: Usage?) -> Bool {
         guard let usage else { return false }
         var pcts: [Double] = []

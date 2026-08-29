@@ -7,6 +7,10 @@ import CswapCore
 struct GaugeBar: View {
     let remaining: Double
     let color: Color
+    // Scaled so the popup-size setting (dynamic type) grows the gauges
+    // along with the text.
+    @ScaledMetric(relativeTo: .caption) private var cellWidth = 5.0
+    @ScaledMetric(relativeTo: .caption) private var cellHeight = 9.0
 
     var body: some View {
         let filled = GaugeMath.filled(remaining)
@@ -14,7 +18,7 @@ struct GaugeBar: View {
             ForEach(0..<GaugeMath.cells, id: \.self) { i in
                 RoundedRectangle(cornerRadius: 1)
                     .fill(i < filled ? color : Color.secondary.opacity(0.25))
-                    .frame(width: 5, height: 9)
+                    .frame(width: cellWidth, height: cellHeight)
             }
             Text("\(Int(remaining))%")
                 .font(.caption).monospacedDigit()

@@ -116,6 +116,8 @@ func settingsTabs(
                     view: AnyView(ResumeReliabilityPane(model: reliabilityModel))),
         SettingsTab(title: "Display", symbol: "menubar.rectangle",
                     view: AnyView(DisplayPane(model: model))),
+        SettingsTab(title: "Activity", symbol: "clock.arrow.circlepath",
+                    view: AnyView(ActivityPane(model: model))),
         SettingsTab(title: "Away push", symbol: "antenna.radiowaves.left.and.right",
                     view: AnyView(NotifyPane(model: notifyModel))),
         SettingsTab(title: "Usage", symbol: "chart.bar",
@@ -141,90 +143,133 @@ struct SettingsRoot: View {
 struct MenuContent: View {
     @ObservedObject var model: AppModel
     @ObservedObject var usage: UsageModel
+    @ObservedObject private var status = ServiceStatusModel.shared
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            AccountGrid(model: model, usage: usage)
-            // Compact mode hides the MIDDLE of the popup (actions, event
-            // log, history) — never the reset times: those are account
-            // data, the middle is chrome. Errors always show.
-            if !model.compactRows {
-                Divider()
-                HStack {
-                    Button("Rotate to next") { model.rotate() }
-                    Button("Refresh") { Task { await model.refreshSnapshot() } }
-                    Button("Test notification") {
-                        Notifier.post(title: "claude-swap", body: "test — notifications reach you")
+        Group {
+            if model.compactRows {
+                // Compact: controls live in a left rail so the accounts sit
+                // as high and tight as the bar allows.
+                HStack(alignment: .top, spacing: 10) {
+                    VStack(spacing: 10) {
+                        Button { model.showSettings?() } label: {
+                            Image(systemName: "gearshape")
+                        }
+                        .help("Settings")
+                        Button { model.popoverPinned.toggle() } label: {
+                            Image(systemName: model.popoverPinned ? "pin.fill" : "pin")
+                        }
+                        .help("Pin keeps this popup open when you click elsewhere")
+                        Button { model.compactRows.toggle() } label: {
+                            Image(systemName: "rectangle.expand.vertical")
+                        }
+                        .help("Show actions and the full footer")
+                        serviceDot
+                        if model.appUpdatePending {
+                            Button { model.relaunchApp() } label: {
+                                Image(systemName: "arrow.triangle.2.circlepath")
+                                    .foregroundStyle(.orange)
+                            }
+                            .help("A newer build is on disk — restart to update")
+                        }
+                        engineBadgeIcon
+                        Spacer(minLength: 0)
+                        Button { model.shutdown() } label: {
+                            Image(systemName: "power")
+                        }
+                        .help("Quit")
                     }
-                    Spacer()
-                    engineBadge
+                    VStack(alignment: .leading, spacing: 8) {
+                        AccountRows(model: model, usage: usage)
+                        errorLines
+                    }
                 }
-            }
-            if let err = model.lastError {
-                Text(err).font(.caption).foregroundStyle(.red).lineLimit(2)
-            }
-            if !model.compactRows {
-                if !model.eventLog.isEmpty {
+            } else {
+                VStack(alignment: .leading, spacing: 8) {
+                    AccountRows(model: model, usage: usage)
                     Divider()
-                    ForEach(model.eventLog.suffix(3), id: \.self) { line in
-                        Text(line).font(.caption).foregroundStyle(.secondary)
+                    HStack {
+                        Button("Rotate to next") { model.rotate() }
+                        Button("Refresh") { Task { await model.refreshSnapshot() } }
+                        Button("Test notification") {
+                            Notifier.post(title: "claude-swap", body: "test — notifications reach you")
+                        }
+                        Spacer()
+                        engineBadge
+                    }
+                    errorLines
+                    Divider()
+                    HStack {
+                        Button {
+                            model.showSettings?()
+                        } label: {
+                            Label("Settings…", systemImage: "gearshape")
+                        }
+                        Button {
+                            model.popoverPinned.toggle()
+                        } label: {
+                            Label(model.popoverPinned ? "Unpin" : "Pin",
+                                  systemImage: model.popoverPinned ? "pin.fill" : "pin")
+                        }
+                        .help("Pin keeps this popup open when you click elsewhere; "
+                              + "the menu bar icon still closes it.")
+                        Button {
+                            model.compactRows.toggle()
+                        } label: {
+                            Label("Compact", systemImage: "rectangle.compress.vertical")
+                        }
+                        .help("Hide actions, event log, and history")
+                        serviceChip
+                        Spacer()
+                        if model.appUpdatePending {
+                            Button {
+                                model.relaunchApp()
+                            } label: {
+                                Label("Restart to update",
+                                      systemImage: "arrow.triangle.2.circlepath")
+                                    .foregroundStyle(.orange)
+                            }
+                            .help("A newer build is on disk")
+                        }
+                        Button {
+                            model.shutdown()   // engine stops first
+                        } label: {
+                            Label("Quit", systemImage: "power")
+                        }
+                        .help("Quit")
                     }
                 }
-                Divider()
-                SwitchHistoryView(cli: model.cli)
-            }
-            Divider()
-            HStack {
-                Button {
-                    model.showSettings?()
-                } label: {
-                    Label("Settings…", systemImage: "gearshape")
-                        .labelStyle(bottomRowStyle)
-                }
-                .help("Settings")
-                Button {
-                    model.popoverPinned.toggle()
-                } label: {
-                    Label(model.popoverPinned ? "Unpin" : "Pin",
-                          systemImage: model.popoverPinned ? "pin.fill" : "pin")
-                        .labelStyle(bottomRowStyle)
-                }
-                .help("Pin keeps this popup open when you click elsewhere; "
-                      + "the menu bar icon still closes it.")
-                Button {
-                    model.compactRows.toggle()
-                } label: {
-                    Label(model.compactRows ? "Expand" : "Compact",
-                          systemImage: model.compactRows
-                              ? "rectangle.expand.vertical"
-                              : "rectangle.compress.vertical")
-                        .labelStyle(bottomRowStyle)
-                }
-                .help(model.compactRows ? "Show actions, event log, and history"
-                                        : "Hide actions, event log, and history")
-                Spacer()
-                if model.compactRows {
-                    // The badge's home row is hidden in compact mode; the
-                    // engine state is too important to vanish with it.
-                    engineBadge
-                    Spacer()
-                }
-                Button {
-                    model.shutdown()   // engine stops first
-                } label: {
-                    Label("Quit", systemImage: "power")
-                        .labelStyle(bottomRowStyle)
-                }
-                .help("Quit")
             }
         }
         .padding(12)
-        .frame(minWidth: 560)
+        .frame(minWidth: model.compactRows ? 360 : 560)
+        .dynamicTypeSize(model.popupDynamicTypeSize)
+        .onAppear { status.refreshIfStale() }
     }
 
-    /// Compact popup: icon-only bottom buttons; full popup keeps labels.
-    private var bottomRowStyle: AnyLabelStyle {
-        model.compactRows ? AnyLabelStyle(.iconOnly) : AnyLabelStyle(.titleAndIcon)
+    @ViewBuilder private var errorLines: some View {
+        if let err = model.lastError {
+            Text(err).font(.caption).foregroundStyle(.red).lineLimit(2)
+        }
+    }
+
+    /// Claude service status — a colored dot; click opens the status page.
+    private var serviceDot: some View {
+        Button { status.openPage() } label: {
+            Circle().fill(status.color).frame(width: 8, height: 8)
+        }
+        .help(status.helpText)
+    }
+
+    private var serviceChip: some View {
+        Button { status.openPage() } label: {
+            HStack(spacing: 4) {
+                Circle().fill(status.color).frame(width: 7, height: 7)
+                Text(status.shortText).font(.caption).foregroundStyle(.secondary)
+            }
+        }
+        .buttonStyle(.plain)
+        .help(status.helpText)
     }
 
     @ViewBuilder private var engineBadge: some View {
@@ -235,6 +280,309 @@ struct MenuContent: View {
         case .backingOff(let s): Label("retry \(Int(s))s", systemImage: "clock")
         case .schemaMismatch: Label("update app", systemImage: "arrow.down.circle")
         case .stopped: Label("off", systemImage: "pause")
+        }
+    }
+
+    @ViewBuilder private var engineBadgeIcon: some View {
+        switch model.engineState {
+        case .running: Image(systemName: "bolt.fill").foregroundStyle(.green).help("auto-switch running")
+        case .refused: Image(systemName: "exclamationmark.triangle")
+            .help("Another auto-switch engine (TUI or cswap auto) holds the mutex.")
+        case .backingOff(let s): Image(systemName: "clock").help("engine retrying in \(Int(s))s")
+        case .schemaMismatch: Image(systemName: "arrow.down.circle").help("update the app")
+        case .stopped: Image(systemName: "pause").help("engine off")
+        }
+    }
+}
+
+/// Layout chooser: wide grid rows (the classic) or stacked per-account
+/// cards (narrow popup, e.g. on an ultrawide where the bar sits far away).
+struct AccountRows: View {
+    @ObservedObject var model: AppModel
+    @ObservedObject var usage: UsageModel
+
+    var body: some View {
+        Group {
+            if model.popupLayout == "stacked" {
+                AccountStack(model: model, usage: usage)
+            } else {
+                AccountGrid(model: model, usage: usage)
+            }
+        }
+        // Warm the cash figures when the popup opens in a themed mode: a
+        // background `cswap usage` run, cached in the shared UsageModel.
+        .onAppear { if !model.rowTheme.plain { usage.loadIfNeeded() } }
+    }
+}
+
+/// Shared cell builders for both layouts — one vocabulary (RowTheme),
+/// one set of rendering rules (compact hides untouched/exhausted cells,
+/// themed gauges show what's LEFT, plain shows used %).
+@MainActor
+struct AccountCells {
+    let model: AppModel
+    let usage: UsageModel
+    let account: Account
+    /// Wide grid rows paint the active band per cell; stacked cards paint
+    /// one rounded background instead.
+    var banded = true
+
+    var theme: RowTheme { model.rowTheme }
+    var dead: Bool { AccountVitals.isDead(account.usage) }
+
+    /// "Max 20x" -> "20x" in compact mode; "Enterprise" -> "Ent".
+    var planText: String? {
+        guard let plan = account.plan else { return nil }
+        guard model.compactRows else { return plan }
+        return plan.replacingOccurrences(of: "Max ", with: "")
+            .replacingOccurrences(of: "Enterprise", with: "Ent")
+    }
+
+    var displayName: String {
+        let name = [dead ? theme.deadMarker : nil,
+                    account.icon, account.alias ?? account.email]
+            .compactMap { $0 }.joined(separator: " ")
+        return (account.disabled ?? false) ? "\(name)  (disabled)" : name
+    }
+
+    /// Compact mode drops cells that carry no signal: untouched (0%) and
+    /// exhausted (100% — the dead marker already says it).
+    func hiddenInCompact(_ pct: Double) -> Bool {
+        model.compactRows && (pct <= 0 || pct >= 100)
+    }
+
+    @ViewBuilder var aheadIcon: some View {
+        if theme.aheadIcon.hasPrefix("sf:") {
+            let symbol = String(theme.aheadIcon.dropFirst(3))
+            Image(systemName: symbol)
+                .symbolRenderingMode(symbol == "flame.circle.fill" ? .palette : .monochrome)
+                .foregroundStyle(.white, .orange)
+        } else {
+            Text(theme.aheadIcon).font(.caption)
+        }
+    }
+
+    func resetText(_ w: UsageWindow) -> String? {
+        guard let when = model.compactRows
+            ? ResetLabel.compact(w) : ResetLabel.label(w) else { return nil }
+        return (w.pct >= 100 ? theme.revivePrefix : "") + when
+    }
+
+    /// Reset label that goes LIVE under ten minutes: a per-second m:ss
+    /// countdown, then a pulsing "resetting…" until the next snapshot
+    /// replaces the data.
+    @ViewBuilder func resetLabelView(resetsAt: String?, staticText: String?) -> some View {
+        if let date = WeeklyRoll.parse(resetsAt),
+           date.timeIntervalSinceNow < 600 {
+            TimelineView(.periodic(from: .now, by: 1)) { ctx in
+                let left = date.timeIntervalSince(ctx.date)
+                if left <= 0 {
+                    Text("resetting…")
+                        .font(.caption).bold().foregroundStyle(.green)
+                        .opacity(0.35 + 0.65 * abs(sin(
+                            ctx.date.timeIntervalSinceReferenceDate * 2.5)))
+                } else {
+                    Text(String(format: "%d:%02d", Int(left) / 60, Int(left) % 60))
+                        .font(.caption).bold().monospacedDigit()
+                        .foregroundStyle(.orange)
+                        .contentTransition(.numericText(countsDown: true))
+                }
+            }
+        } else if let staticText {
+            Text(staticText).font(.caption).foregroundStyle(.secondary)
+        }
+    }
+
+    var deadCause: AccountVitals.DeadCause? { AccountVitals.cause(account.usage) }
+
+    /// One line replacing every usage cell on a dead row: the themed name
+    /// of the blocking limit plus its revival time. The healthy windows
+    /// carry no signal on an unusable account.
+    @ViewBuilder var deadCell: some View {
+        if let cause = deadCause {
+            HStack(spacing: 4) {
+                Text(causeLabel(cause))
+                    .font(.caption).bold()
+                    .foregroundStyle(ThemeColor.resolve(causeColor(cause)))
+                if !theme.revivePrefix.isEmpty {
+                    Text(theme.revivePrefix.trimmingCharacters(in: .whitespaces))
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                resetLabelView(
+                    resetsAt: cause.resetsAt,
+                    staticText: ResetLabel.label(
+                        resetsAt: cause.resetsAt, countdown: cause.countdown,
+                        clock: cause.clock))
+            }
+            .help("Out of this limit — the account is unusable until it resets")
+            .fixedSize()
+            .activeBand(banded && account.active)
+        }
+    }
+
+    private func causeLabel(_ cause: AccountVitals.DeadCause) -> String {
+        switch cause.kind {
+        case .session: return theme.sessionLabel
+        case .weekly: return theme.weeklyLabel
+        case .scoped: return theme.scopedPrefix + (cause.name ?? "?")
+        case .credit: return theme.creditLabel
+        }
+    }
+
+    private func causeColor(_ cause: AccountVitals.DeadCause) -> String {
+        switch cause.kind {
+        case .session: return theme.sessionColor
+        case .weekly: return theme.weeklyColor
+        case .scoped: return theme.scopedColor
+        case .credit: return theme.creditColor
+        }
+    }
+
+    @ViewBuilder func windowCell(_ w: UsageWindow?, session: Bool) -> some View {
+        Group {
+            if let w, !hiddenInCompact(w.pct) {
+                HStack(spacing: 3) {
+                    if !session {
+                        // Ahead-of-pace marker — ALWAYS in the layout,
+                        // invisible when pace is fine, so columns never
+                        // shift (a conditional icon broke alignment).
+                        aheadIcon
+                            .opacity(w.aheadOfPace == true ? 1 : 0)
+                            .help("Burning faster than the window elapses")
+                    }
+                    if theme.plain {
+                        Text(session ? theme.sessionLabel : theme.weeklyLabel)
+                            .foregroundStyle(.secondary)
+                        Text("\(Int(w.pct))%")
+                            .foregroundStyle(w.pct >= 100 ? .red : .primary)
+                            .monospacedDigit()
+                            .contentTransition(.numericText(value: w.pct))
+                    } else {
+                        Text(session ? theme.sessionLabel : theme.weeklyLabel)
+                            .font(.caption).bold()
+                            .foregroundStyle(ThemeColor.resolve(
+                                session ? theme.sessionColor : theme.weeklyColor))
+                            .help(session ? "Session window left" : "Weekly window left")
+                        GaugeBar(
+                            remaining: GaugeMath.remaining(usedPct: w.pct),
+                            color: ThemeColor.resolve(
+                                session ? theme.sessionColor : theme.weeklyColor))
+                    }
+                    resetLabelView(resetsAt: w.resetsAt, staticText: resetText(w))
+                }
+            } else if w == nil, !model.compactRows {
+                Text("—").foregroundStyle(.tertiary)
+            } else {
+                Text(verbatim: "")
+            }
+        }
+        // fixedSize: usage is the row's payload — grow the popup rather
+        // than truncate. The name column is the one flexible column.
+        .fixedSize()
+        .activeBand(banded && account.active)
+    }
+
+    @ViewBuilder var spendCell: some View {
+        if let spend = account.usage?.spend, !hiddenInCompact(spend.pct) {
+            HStack(spacing: 3) {
+                Text(theme.creditLabel)
+                    .font(theme.plain ? .body : .caption.bold())
+                    .foregroundStyle(theme.plain
+                                     ? Color.secondary
+                                     : ThemeColor.resolve(theme.creditColor))
+                if theme.plain {
+                    Text("\(Int(spend.pct))%")
+                        .foregroundStyle(spend.pct >= 100 ? .red : .primary)
+                        .monospacedDigit()
+                        .contentTransition(.numericText(value: spend.pct))
+                } else {
+                    GaugeBar(remaining: GaugeMath.remaining(usedPct: spend.pct),
+                             color: ThemeColor.resolve(theme.creditColor))
+                }
+            }
+            .help(String(format: "usage credit: %.2f of %.0f %@",
+                         spend.used, spend.limit, spend.currency))
+            .fixedSize()
+            .activeBand(banded && account.active)
+        } else {
+            // Text, not Color.clear: a zero-size cell renders the active
+            // band as a stray blob; an empty Text has line height.
+            Text(verbatim: "")
+                .activeBand(banded && account.active)
+        }
+    }
+
+    @ViewBuilder var scopedCells: some View {
+        ForEach(account.usage?.scoped ?? [], id: \.name) { w in
+            Group {
+                if hiddenInCompact(w.pct) {
+                    Text(verbatim: "")
+                } else {
+                    HStack(spacing: 3) {
+                        aheadIcon
+                            .opacity(w.aheadOfPace == true ? 1 : 0)
+                            .help("Burning faster than the window elapses")
+                        if theme.plain {
+                            Text(w.name ?? "?").foregroundStyle(.secondary)
+                            Text("\(Int(w.pct))%")
+                                .foregroundStyle(w.pct >= 100 ? .red : .primary)
+                                .monospacedDigit()
+                                .contentTransition(.numericText(value: w.pct))
+                        } else {
+                            Text(theme.scopedPrefix + (w.name ?? "?"))
+                                .font(.caption).bold()
+                                .foregroundStyle(ThemeColor.resolve(theme.scopedColor))
+                                .help("Model weekly limit left")
+                            GaugeBar(remaining: GaugeMath.remaining(usedPct: w.pct),
+                                     color: ThemeColor.resolve(theme.scopedColor))
+                        }
+                    }
+                }
+            }
+            .fixedSize()
+            .activeBand(banded && account.active)
+        }
+    }
+
+    /// Estimated 7-day API-price spend from the Usage tab's cached
+    /// report — never triggers the multi-second scan itself.
+    @ViewBuilder var cashCell: some View {
+        if !theme.plain,
+           let row = usage.report?.accounts.first(where: { $0.number == account.number }) {
+            let usd = Int(row.estimatedUSD)
+            Text(verbatim: model.compactRows && usd >= 1000
+                 ? "\(theme.cashIcon)\(Int((Double(usd) / 1000).rounded()))k"
+                 : "\(theme.cashIcon)\(usd.formatted())")
+                .font(.caption).foregroundStyle(.yellow)
+                .help("Estimated API-price spend, last \(usage.report?.days ?? 7) days — not a bill")
+                .fixedSize()
+                .activeBand(banded && account.active)
+        }
+    }
+}
+
+/// Maps a theme color string — named or "#rrggbb" — to a SwiftUI Color.
+enum ThemeColor {
+    static func resolve(_ name: String) -> Color {
+        switch name {
+        case "red": return .red
+        case "blue": return .blue
+        case "green": return .green
+        case "yellow": return .yellow
+        case "orange": return .orange
+        case "purple": return .purple
+        case "indigo": return .indigo
+        case "cyan": return .cyan
+        case "teal": return .teal
+        case "pink": return .pink
+        case "mint": return .mint
+        case "gray", "secondary": return .secondary
+        default:
+            guard name.hasPrefix("#"), name.count == 7,
+                  let v = UInt32(name.dropFirst(), radix: 16) else { return .primary }
+            return Color(red: Double((v >> 16) & 0xff) / 255,
+                         green: Double((v >> 8) & 0xff) / 255,
+                         blue: Double(v & 0xff) / 255)
         }
     }
 }
@@ -251,8 +599,8 @@ struct AccountGrid: View {
 
     var body: some View {
         Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 8) {
-            // (gold warms lazily below — the scan is multi-second)
             ForEach(model.accounts, id: \.number) { account in
+                let cells = AccountCells(model: model, usage: usage, account: account)
                 GridRow {
                     HStack(spacing: 2) {
                         // Advisory: who the auto-switcher would pick next.
@@ -267,27 +615,24 @@ struct AccountGrid: View {
                             .foregroundStyle(account.active ? Color.accentColor : Color.primary)
                     }
                     .activeBand(account.active)
-                    let disabled = account.disabled ?? false
-                    let dead = AccountVitals.isDead(account.usage)
-                    let name = [dead ? (model.rowTheme == .movie ? "🔚" : "💀") : nil,
-                                account.icon, account.alias ?? account.email]
-                        .compactMap { $0 }.joined(separator: " ")
-                    Button(disabled ? "\(name)  (disabled)" : name) {
+                    Button(cells.displayName) {
                         model.switchTo(account.number)   // disabled rows stay clickable, like rumps
                     }
                     .buttonStyle(.plain)
                     .fontWeight(account.active ? .bold : .regular)
-                    .foregroundStyle(disabled || dead ? .secondary : .primary)
-                    .help(dead ? "Out of at least one limit — unusable until it resets"
-                               : "Switch to this account")
+                    .foregroundStyle((account.disabled ?? false) || cells.dead
+                                     ? AnyShapeStyle(.secondary)
+                                     : account.active
+                                     ? AnyShapeStyle(Color.accentColor)
+                                     : AnyShapeStyle(.primary))
+                    .help(cells.dead ? "Out of at least one limit — unusable until it resets"
+                                     : "Switch to this account")
                     .lineLimit(1)
                     // The one deliberately flexible column: emails truncate,
-                    // usage numbers and reset times never do. minWidth keeps
-                    // the name from collapsing to zero when gauge cells want
-                    // more width than the popup has.
+                    // usage numbers and reset times never do.
                     .frame(minWidth: 110, maxWidth: 230, alignment: .leading)
                     .activeBand(account.active)
-                    Text(account.plan ?? "")
+                    Text(cells.planText ?? "")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .fixedSize()
@@ -297,202 +642,80 @@ struct AccountGrid: View {
                             .foregroundStyle(.secondary)
                             .gridCellColumns(3)   // spans the usage columns
                             .activeBand(account.active)
+                    } else if cells.dead {
+                        // A dead row shows ONLY what blocks it — a full MP
+                        // gauge on an unusable account reads as usable.
+                        cells.deadCell
+                            .gridCellColumns(3)
+                        cells.cashCell
                     } else {
-                        windowCell(account.usage?.fiveHour, label: "5h", active: account.active)
-                        windowCell(account.usage?.sevenDay, label: "7d", active: account.active)
-                        spendCell(account)
-                        scopedCells(account)
-                        goldCell(account)
+                        cells.windowCell(account.usage?.fiveHour, session: true)
+                        cells.windowCell(account.usage?.sevenDay, session: false)
+                        cells.spendCell
+                        cells.scopedCells
+                        cells.cashCell
                     }
                 }
             }
         }
-        // Warm the gold figures when the popup opens in gamified mode: a
-        // background `cswap usage` run, cached in the shared UsageModel —
-        // rows fill in when it lands, instantly on later opens.
-        .onAppear { if model.rowTheme != .off { usage.loadIfNeeded() } }
     }
+}
 
-    @ViewBuilder private func windowCell(
-        _ w: UsageWindow?, label: String, active: Bool
-    ) -> some View {
-        Group {
-            if let w {
-                HStack(spacing: 3) {
-                    if label != "5h" {
-                        // Ahead-of-pace marker (the feed's pace verdict —
-                        // weekly windows only, with its noise threshold).
-                        // Static on purpose; a flicker overstated it. ALWAYS
-                        // in the layout, invisible when pace is fine: a
-                        // conditional icon shifted marked rows right and
-                        // broke the column alignment. Per theme: plain
-                        // flame / flame badge / popcorn.
-                        aheadIcon
-                            .opacity(w.aheadOfPace == true ? 1 : 0)
-                            .help("Burning faster than the window elapses")
+/// Stacked layout: one card per account — narrow and tall instead of wide.
+struct AccountStack: View {
+    @ObservedObject var model: AppModel
+    @ObservedObject var usage: UsageModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            ForEach(model.accounts, id: \.number) { account in
+                let cells = AccountCells(model: model, usage: usage, account: account, banded: false)
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "arrowtriangle.right.fill")
+                            .font(.caption2).foregroundStyle(.green)
+                            .opacity(model.nextCandidate == account.number ? 1 : 0)
+                            .help("Next auto-switch target")
+                        Text("\(account.number)")
+                            .fontWeight(.bold)
+                            .foregroundStyle(account.active ? Color.accentColor : Color.secondary)
+                        Button(cells.displayName) { model.switchTo(account.number) }
+                            .buttonStyle(.plain)
+                            .fontWeight(account.active ? .bold : .regular)
+                            .foregroundStyle((account.disabled ?? false) || cells.dead
+                                             ? .secondary : .primary)
+                            .lineLimit(1)
+                        if let plan = cells.planText {
+                            Text(plan).font(.caption).foregroundStyle(.secondary)
+                        }
+                        Spacer(minLength: 0)
+                        cells.cashCell
                     }
-                    switch model.rowTheme {
-                    case .rpg:
-                        // HP/MP semantics: the gauge shows what's LEFT.
-                        // MP (blue) = the 5h session window, HP (red) = the
-                        // weekly window — the statusline's vocabulary.
-                        Text(label == "5h" ? "MP" : "HP")
-                            .font(.caption).bold()
-                            .foregroundStyle(label == "5h" ? Color.blue : Color.red)
-                            .help(label == "5h" ? "Session mana (5h window left)"
-                                                : "Weekly health (7d window left)")
-                        GaugeBar(
-                            remaining: GaugeMath.remaining(usedPct: w.pct),
-                            color: label == "5h" ? .blue : .red
-                        )
-                    case .movie:
-                        // Cinema semantics: 🎬 session reel, 🎞 weekly stock.
-                        Text(label == "5h" ? "🎬" : "🎞")
-                            .font(.caption)
-                            .help(label == "5h" ? "Session reel (5h left)"
-                                                : "Weekly film stock (7d left)")
-                        GaugeBar(
-                            remaining: GaugeMath.remaining(usedPct: w.pct),
-                            color: label == "5h" ? .yellow : .indigo
-                        )
-                    case .off:
-                        Text(label).foregroundStyle(.secondary)
-                        Text("\(Int(w.pct))%")
-                            .foregroundStyle(w.pct >= 100 ? .red : .primary)
-                            .monospacedDigit()
-                            .contentTransition(.numericText(value: w.pct))
-                    }
-                    // Full label in every mode — countdown plus the exact
-                    // wall-clock reset ("3h 4m (21:07)"). Exhausted windows
-                    // get themed flavor: RPG revives, Movie re-releases.
-                    if let when = ResetLabel.label(w) {
-                        Text(resetPrefix(w) + when)
-                            .font(.caption).foregroundStyle(.secondary)
+                    if let note = SentinelNotes.note(for: account.usageStatus) {
+                        Text(note).font(.caption).foregroundStyle(.secondary)
+                    } else if cells.dead {
+                        cells.deadCell
+                    } else {
+                        HStack(spacing: 12) {
+                            cells.windowCell(account.usage?.fiveHour, session: true)
+                            cells.windowCell(account.usage?.sevenDay, session: false)
+                        }
+                        HStack(spacing: 12) {
+                            cells.spendCell
+                            cells.scopedCells
+                        }
                     }
                 }
-            } else {
-                Text("—").foregroundStyle(.tertiary)
-            }
-        }
-        // fixedSize: usage is the row's payload — grow the popup rather than
-        // truncate a percentage to "2…" or a reset time to "3d 10…". The
-        // email column is the one flexible (truncating) column left.
-        .fixedSize()
-        .activeBand(active)
-    }
-
-    /// The per-theme ahead-of-pace marker; always laid out, hidden by
-    /// opacity at the call sites so columns never shift.
-    @ViewBuilder private var aheadIcon: some View {
-        switch model.rowTheme {
-        case .rpg:
-            Image(systemName: "flame.circle.fill")
-                .symbolRenderingMode(.palette)
-                .foregroundStyle(.white, .orange)
-        case .movie:
-            Image(systemName: "popcorn.fill").foregroundStyle(.orange)
-        case .off:
-            Image(systemName: "flame.fill").foregroundStyle(.orange)
-        }
-    }
-
-    /// Themed flavor on an exhausted window's reset label.
-    private func resetPrefix(_ w: UsageWindow) -> String {
-        guard w.pct >= 100 else { return "" }
-        switch model.rowTheme {
-        case .rpg: return "revives "
-        case .movie: return "re-release "
-        case .off: return ""
-        }
-    }
-
-    /// The account's estimated 7-day spend as RPG gold, from the Usage
-    /// tab's cached report — never triggers the multi-second scan itself.
-    @ViewBuilder private func goldCell(_ account: Account) -> some View {
-        if model.rowTheme != .off,
-           let row = usage.report?.accounts.first(where: { $0.number == account.number }) {
-            let usd = Int(row.estimatedUSD)
-            let coin = model.rowTheme == .movie ? "💵" : "💰"
-            // Compact popup: "1,077" -> "1k" (rounded); full popup keeps
-            // the exact figure. Text(verbatim:) so the compact string is
-            // not re-formatted by LocalizedStringKey interpolation.
-            Text(verbatim: model.compactRows && usd >= 1000
-                 ? "\(coin)\(Int((Double(usd) / 1000).rounded()))k"
-                 : "\(coin)\(usd.formatted())")
-                .font(.caption).foregroundStyle(.yellow)
-                .help((model.rowTheme == .movie ? "Box office: " : "")
-                      + "estimated API-price spend, last \(usage.report?.days ?? 7) days — not a bill")
-                .fixedSize()
-                .activeBand(account.active)
-        }
-    }
-
-    /// Usage-credit spend cap ("extra usage"): $ label + used% (normal) or
-    /// a green remaining-gauge (RPG). Rows without a spend cap emit an
-    /// empty cell so later columns stay aligned.
-    @ViewBuilder private func spendCell(_ account: Account) -> some View {
-        if let spend = account.usage?.spend {
-            HStack(spacing: 3) {
-                Text(model.rowTheme == .movie ? "🎟" : "$")
-                    .font(model.rowTheme == .off ? .body : .caption.bold())
-                    .foregroundStyle(model.rowTheme == .off
-                                     ? Color.secondary : Color.green)
-                if model.rowTheme == .off {
-                    Text("\(Int(spend.pct))%")
-                        .foregroundStyle(spend.pct >= 100 ? .red : .primary)
-                        .monospacedDigit()
-                        .contentTransition(.numericText(value: spend.pct))
-                } else {
-                    GaugeBar(remaining: GaugeMath.remaining(usedPct: spend.pct),
-                             color: .green)
+                .padding(6)
+                .background {
+                    if account.active {
+                        RoundedRectangle(cornerRadius: 6)
+                            .fill(Color.accentColor.opacity(0.26))
+                            .overlay(RoundedRectangle(cornerRadius: 6)
+                                .strokeBorder(Color.accentColor.opacity(0.7)))
+                    }
                 }
             }
-            .help(String(format: "usage credit: %.2f of %.0f %@",
-                         spend.used, spend.limit, spend.currency))
-            .fixedSize()
-            .activeBand(account.active)
-        } else {
-            // Text, not Color.clear: a zero-size cell renders the active
-            // band as a stray 8pt blob; an empty Text has line height, so
-            // the band fills the row like every other cell.
-            Text(verbatim: "")
-                .activeBand(account.active)
-        }
-    }
-
-    @ViewBuilder private func scopedCells(_ account: Account) -> some View {
-        ForEach(account.usage?.scoped ?? [], id: \.name) { w in
-            HStack(spacing: 3) {
-                aheadIcon
-                    .opacity(w.aheadOfPace == true ? 1 : 0)
-                    .help("Burning faster than the window elapses")
-                switch model.rowTheme {
-                case .rpg:
-                    // Same RPG treatment as HP/MP: the per-model weekly
-                    // limit as a purple gauge of what's LEFT.
-                    Text(w.name ?? "?")
-                        .font(.caption).bold()
-                        .foregroundStyle(Color.purple)
-                        .help("Model weekly limit left")
-                    GaugeBar(remaining: GaugeMath.remaining(usedPct: w.pct),
-                             color: .purple)
-                case .movie:
-                    Text("★ \(w.name ?? "?")")
-                        .font(.caption).bold()
-                        .foregroundStyle(Color.orange)
-                        .help("Model weekly limit left")
-                    GaugeBar(remaining: GaugeMath.remaining(usedPct: w.pct),
-                             color: .orange)
-                case .off:
-                    Text(w.name ?? "?").foregroundStyle(.secondary)
-                    Text("\(Int(w.pct))%")
-                        .foregroundStyle(w.pct >= 100 ? .red : .primary)
-                        .monospacedDigit()
-                        .contentTransition(.numericText(value: w.pct))
-                }
-            }
-            .fixedSize()
-            .activeBand(account.active)
         }
     }
 }
@@ -504,7 +727,7 @@ private struct ActiveBand: ViewModifier {
         content.background {
             if active {
                 Rectangle()
-                    .fill(Color.accentColor.opacity(0.22))
+                    .fill(Color.accentColor.opacity(0.30))
                     .padding(.vertical, -4)     // half the Grid's verticalSpacing
                     .padding(.horizontal, -6)   // half the horizontalSpacing
             }

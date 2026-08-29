@@ -19,6 +19,10 @@ final class AppModel: ObservableObject {
     /// Set by StatusItemHolder — opens the controller-owned Settings window
     /// (the SwiftUI Settings scene is unreachable from popover hosts).
     var showSettings: (() -> Void)?
+    // The bundle on disk was rebuilt since this instance launched (the
+    // dev loop, or a manual make-app.sh) — surfaced as "restart to update".
+    @Published var appUpdatePending = false
+    private let launchExecutableDate = AppModel.executableDate()
     private var supervisor: EngineSupervisor?
     private var refreshTask: Task<Void, Never>?
     private var lastNotifiedActive: Int?
@@ -33,6 +37,8 @@ final class AppModel: ObservableObject {
     @Published var refreshInterval: Int { didSet { defaults.set(refreshInterval, forKey: "refresh_interval") } }
     @Published var gamification: String { didSet { defaults.set(gamification, forKey: "gamification_style") } }
     @Published var compactRows: Bool { didSet { defaults.set(compactRows, forKey: "compact_rows") } }
+    @Published var popupLayout: String { didSet { defaults.set(popupLayout, forKey: "popup_layout") } }
+    @Published var popupTextSize: String { didSet { defaults.set(popupTextSize, forKey: "popup_text_size") } }
     // Deliberately NOT persisted: if a hidden icon survived a relaunch there
     // would be no UI left to unhide it from (the Settings window is only
     // reachable through the popup). Hiding lasts until quit.
@@ -42,8 +48,25 @@ final class AppModel: ObservableObject {
     @Published var popoverPinned: Bool { didSet { defaults.set(popoverPinned, forKey: "popover_pinned") } }
     private let defaults = UserDefaults.standard
 
-    var rowTheme: GamificationStyle { GamificationStyle(rawValue: gamification) ?? .off }
-    var gamifiedRows: Bool { rowTheme == .rpg }
+    /// Custom skins from themes.json, loaded at launch and on demand
+    /// (the Display pane reloads when it appears).
+    @Published var customThemes: [RowTheme] = RowTheme.loadCustom()
+    var availableThemes: [RowTheme] { RowTheme.builtins + customThemes }
+    var rowTheme: RowTheme {
+        availableThemes.first { $0.id == gamification } ?? .off
+    }
+    func reloadCustomThemes() { customThemes = RowTheme.loadCustom() }
+
+    /// Popup scale: SwiftUI dynamic type does the font math; GaugeBar
+    /// rides along via @ScaledMetric.
+    var popupDynamicTypeSize: DynamicTypeSize {
+        switch popupTextSize {
+        case "large": return .xLarge
+        case "xlarge": return .xxLarge
+        case "huge": return .xxxLarge
+        default: return .large
+        }
+    }
 
     var title: String {
         TitleFormatter.format(
@@ -59,11 +82,14 @@ final class AppModel: ObservableObject {
         titleScoped = defaults.object(forKey: "title_scoped") as? Bool ?? false
         let interval = defaults.object(forKey: "refresh_interval") as? Int ?? 60
         refreshInterval = TitlePrefs.refreshChoices.contains(interval) ? interval : 60
-        let style = defaults.string(forKey: "gamification_style")
+        // Any string is allowed — resolution falls back to the plain theme
+        // when the id names neither a built-in nor a custom theme.
+        gamification = defaults.string(forKey: "gamification_style")
             ?? ((defaults.object(forKey: "gamified_rows") as? Bool ?? false) ? "rpg" : "off")
-        gamification = GamificationStyle(rawValue: style) != nil ? style : "off"
         compactRows = defaults.object(forKey: "compact_rows") as? Bool ?? false
         popoverPinned = defaults.object(forKey: "popover_pinned") as? Bool ?? false
+        popupLayout = defaults.string(forKey: "popup_layout") ?? "wide"
+        popupTextSize = defaults.string(forKey: "popup_text_size") ?? "default"
         if let path = CswapLocator.locate() {
             cli = CswapCLI(binaryPath: path)
         } else {
@@ -129,6 +155,28 @@ final class AppModel: ObservableObject {
         }
     }
 
+    private static func executableDate() -> Date? {
+        guard let url = Bundle.main.executableURL else { return nil }
+        return (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?
+            .contentModificationDate
+    }
+
+    /// Stop the engine cleanly, then relaunch this app from its bundle —
+    /// the "restart to update" action after an on-disk rebuild.
+    func relaunchApp() {
+        let bundle = Bundle.main.bundleURL.path
+        let old = supervisor
+        supervisor = nil
+        Task {
+            await old?.stop()
+            let p = Process()
+            p.executableURL = URL(fileURLWithPath: "/bin/sh")
+            p.arguments = ["-c", "sleep 0.8; /usr/bin/open \"\(bundle)\""]
+            try? p.run()
+            await MainActor.run { NSApplication.shared.terminate(nil) }
+        }
+    }
+
     func refreshSnapshot() async {
         guard let cli else { return }
         do {
@@ -143,6 +191,12 @@ final class AppModel: ObservableObject {
                 nextCandidate = list.nextCandidate
             }
             lastError = nil
+            // Piggyback on the refresh tick: one cheap stat per pass.
+            if !appUpdatePending, let launched = launchExecutableDate,
+               let now = Self.executableDate(),
+               now > launched.addingTimeInterval(1) {
+                appUpdatePending = true
+            }
             // Switch notifications come from this DISPLAY-feed diff, not the
             // engine's `switch` events: our engine is parked whenever another
             // host (rumps, cswap watch, cswap auto) holds the mutex, and a
@@ -239,18 +293,3 @@ final class AppModel: ObservableObject {
     }
 }
 
-/// The gamification styles the popup can render. New styles: add a case
-/// here and a branch in AccountGrid — the Display pane picker follows.
-enum GamificationStyle: String, CaseIterable {
-    case off
-    case rpg
-    case movie
-
-    var displayName: String {
-        switch self {
-        case .off: return "Off — plain numbers"
-        case .rpg: return "RPG — HP/MP gauges + gold"
-        case .movie: return "Movie — reels & box office"
-        }
-    }
-}

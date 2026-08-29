@@ -138,3 +138,72 @@ final class ResetLabelTests: XCTestCase {
         XCTAssertNil(ResetLabel.label(nil))
     }
 }
+
+final class AccountVitalsTests: XCTestCase {
+    private func usage(_ json: String) throws -> Usage {
+        try JSONDecoder().decode(Usage.self, from: Data(json.utf8))
+    }
+
+    func testNilAndHealthyAreAlive() throws {
+        XCTAssertFalse(AccountVitals.isDead(nil))
+        let u = try usage(#"{"fiveHour":{"pct":99.9},"sevenDay":{"pct":50}}"#)
+        XCTAssertFalse(AccountVitals.isDead(u))
+    }
+
+    func testAnyExhaustedWindowIsDead() throws {
+        XCTAssertTrue(AccountVitals.isDead(try usage(#"{"fiveHour":{"pct":100}}"#)))
+        XCTAssertTrue(AccountVitals.isDead(try usage(#"{"sevenDay":{"pct":100.0}}"#)))
+        XCTAssertTrue(AccountVitals.isDead(
+            try usage(#"{"scoped":[{"pct":100,"name":"Fable"}]}"#)))
+    }
+
+    func testSpendCapCountsToo() throws {
+        let u = try usage(
+            #"{"sevenDay":{"pct":10},"spend":{"used":200.29,"limit":200,"pct":100,"currency":"USD"}}"#)
+        XCTAssertTrue(AccountVitals.isDead(u))
+    }
+}
+
+final class RowThemeTests: XCTestCase {
+    func testMinimalCustomThemeDecodesWithDefaults() throws {
+        let json = #"[{"id":"x","name":"X"}]"#
+        let themes = try JSONDecoder().decode([RowTheme].self, from: Data(json.utf8))
+        XCTAssertEqual(themes.first?.sessionLabel, "5h")
+        XCTAssertEqual(themes.first?.deadMarker, "💀")
+        XCTAssertFalse(themes.first?.plain ?? true)
+    }
+
+    func testTemplateJSONParses() throws {
+        let themes = try JSONDecoder().decode(
+            [RowTheme].self, from: Data(RowTheme.templateJSON.utf8))
+        XCTAssertEqual(themes.first?.id, "synthwave")
+        XCTAssertEqual(themes.first?.sessionColor, "#ff2d95")
+    }
+
+    func testBrokenFileYieldsEmpty() {
+        XCTAssertEqual(RowTheme.loadCustom(
+            from: URL(fileURLWithPath: "/nonexistent/themes.json")), [])
+    }
+}
+
+final class ResetLabelCompactTests: XCTestCase {
+    func testCompactSameDayAndCrossDay() throws {
+        let now = Date()
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = TimeZone(identifier: "UTC")!
+        let f = ISO8601DateFormatter()
+        let sameDay = now.addingTimeInterval(90 * 60)
+        let w1 = try JSONDecoder().decode(UsageWindow.self, from: Data(
+            #"{"pct": 40, "resetsAt": "\#(f.string(from: sameDay))"}"#.utf8))
+        let s1 = ResetLabel.compact(w1, now: now, calendar: cal)
+        XCTAssertNotNil(s1)
+        XCTAssertTrue(s1!.hasPrefix("1h"), s1!)
+        XCTAssertFalse(s1!.contains(" "), s1!)
+        let farDay = now.addingTimeInterval(5 * 86400 + 7 * 3600)
+        let w2 = try JSONDecoder().decode(UsageWindow.self, from: Data(
+            #"{"pct": 40, "resetsAt": "\#(f.string(from: farDay))"}"#.utf8))
+        let s2 = ResetLabel.compact(w2, now: now, calendar: cal)
+        XCTAssertTrue(s2!.hasPrefix("5d"), s2!)
+        XCTAssertTrue(s2!.contains("·"), s2!)
+    }
+}

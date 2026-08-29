@@ -21,12 +21,27 @@ struct DisplayPane: View {
             }
             Toggle("Show model limits in title", isOn: $model.titleScoped)
             Section("Row theme") {
-                ForEach(GamificationStyle.allCases, id: \.rawValue) { style in
-                    GamificationCard(
-                        style: style,
-                        selected: model.gamification == style.rawValue
-                    ) { model.gamification = style.rawValue }
+                ForEach(model.availableThemes) { theme in
+                    ThemeCard(theme: theme,
+                              selected: model.gamification == theme.id) {
+                        model.gamification = theme.id
+                    }
                 }
+                HStack {
+                    Button("Open themes file…") { openThemesFile() }
+                    Text("Add your own skins — JSON, reloaded when this pane opens.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+            }
+            Picker("Popup layout", selection: $model.popupLayout) {
+                Text("Wide rows").tag("wide")
+                Text("Stacked cards").tag("stacked")
+            }
+            Picker("Popup size", selection: $model.popupTextSize) {
+                Text("Default").tag("default")
+                Text("Large").tag("large")
+                Text("Extra large").tag("xlarge")
+                Text("Huge").tag("huge")
             }
             Toggle("Compact popup (hide actions, event log, and history)",
                    isOn: $model.compactRows)
@@ -94,6 +109,20 @@ struct DisplayPane: View {
             }
         }
         .formStyle(.grouped)
+        .onAppear { model.reloadCustomThemes() }
+    }
+
+    /// Opens themes.json in the default editor, writing the starter
+    /// template first if the file doesn't exist yet.
+    private func openThemesFile() {
+        let url = RowTheme.customThemesURL()
+        if !FileManager.default.fileExists(atPath: url.path) {
+            try? FileManager.default.createDirectory(
+                at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try? RowTheme.templateJSON.write(to: url, atomically: true, encoding: .utf8)
+        }
+        NSWorkspace.shared.open(url)
+        model.reloadCustomThemes()
     }
 }
 
@@ -126,11 +155,10 @@ private struct RenameField: View {
 }
 
 
-/// One selectable gamification style, previewed as the REAL popup row —
-/// same columns, fonts, and numbers as the live active-account row, so the
-/// choice is what-you-see-is-what-you-get.
-private struct GamificationCard: View {
-    let style: GamificationStyle
+/// One selectable row theme, previewed as the real popup row it produces —
+/// generic over RowTheme, so custom themes from themes.json preview too.
+private struct ThemeCard: View {
+    let theme: RowTheme
     let selected: Bool
     let choose: () -> Void
 
@@ -143,7 +171,7 @@ private struct GamificationCard: View {
                 HStack {
                     Image(systemName: selected ? "checkmark.circle.fill" : "circle")
                         .foregroundStyle(selected ? Color.accentColor : Color.secondary)
-                    Text(style.displayName).font(.caption)
+                    Text(theme.name).font(.caption)
                 }
             }
             .padding(10)
@@ -161,87 +189,65 @@ private struct GamificationCard: View {
         .buttonStyle(.plain)
     }
 
-    // Mirrors AccountGrid's cells with the numbers from a real row:
-    // session 21% used (79% left, resets 4h 8m), weekly 68% used (32%
-    // left, ahead of pace), Fable 74%, $1,131 spent.
+    @ViewBuilder private var aheadIcon: some View {
+        if theme.aheadIcon.hasPrefix("sf:") {
+            let symbol = String(theme.aheadIcon.dropFirst(3))
+            Image(systemName: symbol)
+                .symbolRenderingMode(symbol == "flame.circle.fill" ? .palette : .monochrome)
+                .foregroundStyle(.white, .orange)
+        } else {
+            Text(theme.aheadIcon).font(.caption)
+        }
+    }
+
+    // Same fake numbers for every theme so the cards compare like-for-like:
+    // session 21% used, weekly 68% used (ahead of pace), credit 74%, $1,131.
     @ViewBuilder private var preview: some View {
-        HStack(spacing: 12) {
-            Text("4").fontWeight(.bold).foregroundStyle(Color.accentColor)
-            Text("papaya").fontWeight(.bold)
-            switch style {
-            case .off:
+        VStack(alignment: .leading, spacing: 4) {
+            if theme.plain {
                 HStack(spacing: 3) {
-                    Text("5h").foregroundStyle(.secondary)
+                    Text(theme.sessionLabel).foregroundStyle(.secondary)
                     Text("21%").monospacedDigit()
                     Text("4h 8m (22:09)").font(.caption).foregroundStyle(.secondary)
                 }
                 HStack(spacing: 3) {
-                    Image(systemName: "flame.fill").foregroundStyle(.orange)
-                    Text("7d").foregroundStyle(.secondary)
+                    aheadIcon
+                    Text(theme.weeklyLabel).foregroundStyle(.secondary)
                     Text("68%").monospacedDigit()
                     Text("5d 9h (Sep 4 03:59)").font(.caption).foregroundStyle(.secondary)
                 }
                 HStack(spacing: 3) {
-                    Text("$").foregroundStyle(.secondary)
+                    Text(theme.creditLabel).foregroundStyle(.secondary)
+                    Text("74%").monospacedDigit()
+                    Text("·").foregroundStyle(.tertiary)
+                    Text(theme.scopedPrefix + "Fable").foregroundStyle(.secondary)
                     Text("74%").monospacedDigit()
                 }
-            case .rpg:
+            } else {
                 HStack(spacing: 3) {
-                    Text("MP").font(.caption).bold().foregroundStyle(Color.blue)
-                    GaugeBar(remaining: 79, color: .blue)
+                    Text(theme.sessionLabel).font(.caption).bold()
+                        .foregroundStyle(ThemeColor.resolve(theme.sessionColor))
+                    GaugeBar(remaining: 79, color: ThemeColor.resolve(theme.sessionColor))
                     Text("4h 8m (22:09)").font(.caption).foregroundStyle(.secondary)
                 }
                 HStack(spacing: 3) {
-                    Image(systemName: "flame.circle.fill")
-                        .symbolRenderingMode(.palette)
-                        .foregroundStyle(.white, .orange)
-                    Text("HP").font(.caption).bold().foregroundStyle(Color.red)
-                    GaugeBar(remaining: 32, color: .red)
-                    Text("5d 9h (Sep 4 03:59)").font(.caption).foregroundStyle(.secondary)
+                    aheadIcon
+                    Text(theme.weeklyLabel).font(.caption).bold()
+                        .foregroundStyle(ThemeColor.resolve(theme.weeklyColor))
+                    GaugeBar(remaining: 32, color: ThemeColor.resolve(theme.weeklyColor))
+                    Text(theme.revivePrefix + "5d 9h (Sep 4 03:59)")
+                        .font(.caption).foregroundStyle(.secondary)
                 }
                 HStack(spacing: 3) {
-                    Text("$").font(.caption).bold().foregroundStyle(Color.green)
-                    GaugeBar(remaining: 26, color: .green)
+                    Text(theme.creditLabel).font(.caption).bold()
+                        .foregroundStyle(ThemeColor.resolve(theme.creditColor))
+                    GaugeBar(remaining: 26, color: ThemeColor.resolve(theme.creditColor))
+                    Text(theme.scopedPrefix + "Fable").font(.caption).bold()
+                        .foregroundStyle(ThemeColor.resolve(theme.scopedColor))
+                    GaugeBar(remaining: 26, color: ThemeColor.resolve(theme.scopedColor))
+                    Text(verbatim: "\(theme.cashIcon)1,131")
+                        .font(.caption).foregroundStyle(.yellow)
                 }
-            case .movie:
-                HStack(spacing: 3) {
-                    Text("🎬").font(.caption)
-                    GaugeBar(remaining: 79, color: .yellow)
-                    Text("4h 8m (22:09)").font(.caption).foregroundStyle(.secondary)
-                }
-                HStack(spacing: 3) {
-                    Image(systemName: "popcorn.fill").foregroundStyle(.orange)
-                    Text("🎞").font(.caption)
-                    GaugeBar(remaining: 32, color: .indigo)
-                    Text("5d 9h (Sep 4 03:59)").font(.caption).foregroundStyle(.secondary)
-                }
-                HStack(spacing: 3) {
-                    Text("🎟").font(.caption).bold().foregroundStyle(Color.green)
-                    GaugeBar(remaining: 26, color: .green)
-                }
-            }
-            HStack(spacing: 3) {
-                switch style {
-                case .rpg:
-                    Image(systemName: "flame.circle.fill")
-                        .symbolRenderingMode(.palette)
-                        .foregroundStyle(.white, .orange)
-                    Text("Fable").font(.caption).bold().foregroundStyle(Color.purple)
-                    GaugeBar(remaining: 26, color: .purple)
-                case .movie:
-                    Image(systemName: "popcorn.fill").foregroundStyle(.orange)
-                    Text("★ Fable").font(.caption).bold().foregroundStyle(Color.orange)
-                    GaugeBar(remaining: 26, color: .orange)
-                case .off:
-                    Image(systemName: "flame.fill").foregroundStyle(.orange)
-                    Text("Fable").foregroundStyle(.secondary)
-                    Text("74%").monospacedDigit()
-                }
-            }
-            if style == .rpg {
-                Text(verbatim: "💰1,131").font(.caption).foregroundStyle(.yellow)
-            } else if style == .movie {
-                Text(verbatim: "💵1,131").font(.caption).foregroundStyle(.yellow)
             }
         }
     }
