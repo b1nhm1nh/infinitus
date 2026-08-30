@@ -1123,7 +1123,12 @@ struct AccountCells {
                     // (user screenshot 2026-08-30).
                     aheadIcon
                         .opacity(w.aheadOfPace == true ? 1 : 0)
-                        .help("Burning faster than the window elapses")
+                        // Instant, not .help — the slow system tooltip
+                        // read as "no tooltip" (todo 2026-08-30). The
+                        // invisible alignment copy must not answer hover.
+                        .instantTip("Burning faster than time passes — "
+                                    + "on pace to run out before the reset")
+                        .allowsHitTesting(w.aheadOfPace == true)
                     if theme.plain {
                         Text(session ? theme.sessionLabel : theme.weeklyLabel)
                             .foregroundStyle(.secondary)
@@ -1235,7 +1240,9 @@ struct AccountCells {
                     HStack(spacing: 3) {
                         aheadIcon
                             .opacity(w.aheadOfPace == true ? 1 : 0)
-                            .help("Burning faster than the window elapses")
+                            .instantTip("Burning faster than time passes — "
+                                        + "on pace to run out before the reset")
+                            .allowsHitTesting(w.aheadOfPace == true)
                         if theme.plain {
                             Text(w.name ?? "?").foregroundStyle(.secondary)
                             Text("\(Int(w.pct))%")
