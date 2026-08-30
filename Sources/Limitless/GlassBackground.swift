@@ -8,7 +8,7 @@ import AppKit
 /// hud is the most translucent standard material.
 struct GlassBackground: NSViewRepresentable {
     func makeNSView(context: Context) -> NSVisualEffectView {
-        let view = NSVisualEffectView()
+        let view = PopoverGlassView()
         view.material = .hudWindow
         view.blendingMode = .behindWindow
         view.state = .active
@@ -16,6 +16,30 @@ struct GlassBackground: NSViewRepresentable {
     }
 
     func updateNSView(_ view: NSVisualEffectView, context: Context) {}
+}
+
+/// The reason the popup "still doesn't look glassy" (user, 2026-08-30,
+/// third report): inside an NSPopover our effect view sits ON TOP of the
+/// popover's own frame, which draws the near-opaque system `.popover`
+/// material underneath — whatever we stack above it, the backdrop stays
+/// solid. The fix is to retarget that frame's OWN effect view to the
+/// translucent hud material when we land in the popover window.
+private final class PopoverGlassView: NSVisualEffectView {
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        guard let frameView = window?.contentView?.superview else { return }
+        retune(frameView)
+    }
+
+    private func retune(_ view: NSView) {
+        for sub in view.subviews {
+            if let effect = sub as? NSVisualEffectView, effect !== self {
+                effect.material = .hudWindow
+                effect.state = .active
+            }
+            retune(sub)
+        }
+    }
 }
 
 /// The popup container's full chrome: behind-window blur, a theme-tinted

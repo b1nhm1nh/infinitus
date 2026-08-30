@@ -491,7 +491,7 @@ struct MenuContent: View {
                             .offset(x: 8, y: -7)
                     }
                 }
-                .help(SessionSummary.tooltip(live))
+                .instantTip(SessionSummary.tooltip(live))
         }
     }
 
@@ -606,7 +606,7 @@ struct MenuContent: View {
         Button { status.openPage() } label: {
             Circle().fill(status.color).frame(width: 8, height: 8)
         }
-        .help(status.helpText)
+        .instantTip(status.helpText)
     }
 
     private var serviceChip: some View {
@@ -633,12 +633,16 @@ struct MenuContent: View {
 
     @ViewBuilder private var engineBadgeIcon: some View {
         switch model.engineState {
-        case .running: Image(systemName: "bolt.fill").foregroundStyle(.green).help("auto-switch running")
+        case .running: Image(systemName: "bolt.fill").foregroundStyle(.green)
+            .instantTip("auto-switch running")
         case .refused: Image(systemName: "exclamationmark.triangle")
-            .help("Another auto-switch engine (TUI or cswap auto) holds the mutex.")
-        case .backingOff(let s): Image(systemName: "clock").help("engine retrying in \(Int(s))s")
-        case .schemaMismatch: Image(systemName: "arrow.down.circle").help("update the app")
-        case .stopped: Image(systemName: "pause").help("engine off")
+            .instantTip("Another auto-switch engine (TUI or cswap auto) holds the mutex.")
+        case .backingOff(let s): Image(systemName: "clock")
+            .instantTip("engine retrying in \(Int(s))s")
+        case .schemaMismatch: Image(systemName: "arrow.down.circle")
+            .instantTip("update the app")
+        case .stopped: Image(systemName: "pause")
+            .instantTip("engine off")
         }
     }
 }
@@ -836,6 +840,7 @@ struct AccountCells {
     @ViewBuilder var readyCell: some View {
         let spent = (account.usage?.spend?.pct ?? 0) >= 100
         HStack(spacing: 3) {
+            aheadIcon.opacity(0)   // column alignment with gauge lines
             Image(systemName: "checkmark.circle.fill")
                 .font(.caption).foregroundStyle(.green)
             Text(theme.plain ? "ready" : theme.readyLabel)
@@ -859,6 +864,10 @@ struct AccountCells {
     @ViewBuilder var deadCell: some View {
         if let cause = deadCause {
             HStack(spacing: 4) {
+                // Invisible pace slot: keeps "HP down" starting where the
+                // gauge lines start (column alignment, user screenshot
+                // 2026-08-30).
+                aheadIcon.opacity(0)
                 // Themed label + themed verb ("MP down", "🎬 sold out");
                 // the plain theme keeps plain words. The tooltip carries
                 // the plain-English translation either way.
@@ -874,7 +883,16 @@ struct AccountCells {
                     : ResetLabel.label(
                         resetsAt: cause.resetsAt, countdown: cause.countdown,
                         clock: cause.clock) {
-                    Text("back").font(.caption).foregroundStyle(.secondary)
+                    // Themed revival word ("🩸", "re-release", "💊") in the
+                    // cause's color; plain keeps "back" ("themify all
+                    // info", user 2026-08-30).
+                    let revive = theme.revivePrefix
+                        .trimmingCharacters(in: .whitespaces)
+                    Text(theme.plain || revive.isEmpty ? "back" : revive)
+                        .font(.caption)
+                        .foregroundStyle(theme.plain || revive.isEmpty
+                                         ? AnyShapeStyle(.secondary)
+                                         : AnyShapeStyle(ThemeColor.resolve(causeColor(cause)).opacity(0.8)))
                     resetLabelView(resetsAt: cause.resetsAt, staticText: text)
                 } else {
                     // No reset on record (a spent credit cap).
@@ -1422,7 +1440,11 @@ private struct InstantTip: ViewModifier {
                             RoundedRectangle(cornerRadius: 5)
                                 .fill(.regularMaterial)
                                 .shadow(radius: 2, y: 1))
-                        .fixedSize()
+                        // Wrap long status texts (session summary) into a
+                        // capped-width chip instead of running past the
+                        // popup's right edge.
+                        .frame(maxWidth: 260, alignment: .leading)
+                        .fixedSize(horizontal: false, vertical: true)
                         .offset(x: 24)
                         .allowsHitTesting(false)
                         .transition(.opacity)

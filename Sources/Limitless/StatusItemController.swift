@@ -101,6 +101,7 @@ final class StatusItemController {
                 self.popover.behavior = .applicationDefined
                 self.popover.show(relativeTo: button.bounds, of: button,
                                   preferredEdge: .minY)
+                self.healPopoverSize()
             }
         }
     }
@@ -126,6 +127,11 @@ final class StatusItemController {
     private func healPopoverSize() {
         guard popover.isShown,
               let view = popover.contentViewController?.view else { return }
+        // A shown popover rides NSPopUpMenuWindowLevel — above the
+        // system's own menu bar popovers (Wi-Fi, battery, Control
+        // Center), so a pinned popup BLOCKED them (user 2026-08-30).
+        // Floating keeps it over normal windows but under menu popups.
+        if let w = view.window, w.level > .floating { w.level = .floating }
         let fit = view.fittingSize
         guard fit.width > 1, fit.height > 1,
               fit.width < 20_000, fit.height < 20_000 else { return }
@@ -174,6 +180,7 @@ final class StatusItemController {
             popover.behavior = model.popoverPinned ? .applicationDefined : .transient
             NSApp.activate(ignoringOtherApps: true)
             popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+            healPopoverSize()
         }
     }
 
