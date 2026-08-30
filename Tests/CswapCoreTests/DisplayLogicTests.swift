@@ -98,6 +98,16 @@ final class SentinelNotesTests: XCTestCase {
     func testUnknownStatusHumanized() {
         XCTAssertEqual(SentinelNotes.note(for: "brand_new_state"), "brand new state")
     }
+
+    func testShortFormsStayOneLine() {
+        XCTAssertEqual(SentinelNotes.short(for: "relogin_required"), "re-login needed")
+        XCTAssertEqual(SentinelNotes.short(for: "token_expired"), "token expired — retrying")
+        // Already-short notes fall through to the full text.
+        XCTAssertEqual(SentinelNotes.short(for: "api_key"), "API key (no quota)")
+        XCTAssertEqual(SentinelNotes.short(for: "no_credentials"), "no credentials")
+        XCTAssertNil(SentinelNotes.short(for: "ok"))
+        XCTAssertEqual(SentinelNotes.short(for: "brand_new_state"), "brand new state")
+    }
 }
 
 final class ResetLabelTests: XCTestCase {

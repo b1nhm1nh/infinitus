@@ -151,6 +151,22 @@ public enum SentinelNotes {
         if usageStatus == "ok" { return nil }
         return notes[usageStatus] ?? usageStatus.replacingOccurrences(of: "_", with: " ")
     }
+
+    /// One-line row form — a wrapping sentence breaks the account grid
+    /// (relogin_required ran three lines, user screenshot 2026-08-31).
+    /// The full note rides the row's tooltip; statuses already short
+    /// fall through unchanged.
+    static let shortNotes: [String: String] = [
+        "token_expired": "token expired — retrying",
+        "foreign_credential": "foreign credential",
+        "keychain_unavailable": "keychain locked",
+        "relogin_required": "re-login needed",
+    ]
+
+    public static func short(for usageStatus: String) -> String? {
+        guard let full = note(for: usageStatus) else { return nil }
+        return shortNotes[usageStatus] ?? full
+    }
 }
 
 /// "2h 15m (11:19)" — countdown plus wall clock, port of oauth.format_reset /

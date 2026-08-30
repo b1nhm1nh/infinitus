@@ -1557,8 +1557,15 @@ struct AccountGrid: View {
                         .instantTip("Subscription: \(account.plan ?? "?")")
                         .activeBand(account.active)
                     if let note = SentinelNotes.note(for: account.usageStatus) {
-                        Text(note)
+                        // Short one-liner like deadCell — the full note
+                        // wraps to three rows inside one grid column;
+                        // fixedSize overflows across the filler cells
+                        // instead, tooltip keeps the whole sentence.
+                        Text(SentinelNotes.short(for: account.usageStatus) ?? note)
+                            .font(.caption)
                             .foregroundStyle(.secondary)
+                            .fixedSize()
+                            .instantTip(note)
                             .gridCellUnsizedAxes(anyGauged ? .horizontal : [])
                             .activeBand(account.active)
                         oneLineFillers
@@ -1758,7 +1765,9 @@ struct AccountStack: View {
                         cells.cashCell
                     }
                     if let note = SentinelNotes.note(for: account.usageStatus) {
-                        Text(note).font(.caption).foregroundStyle(.secondary)
+                        Text(SentinelNotes.short(for: account.usageStatus) ?? note)
+                            .font(.caption).foregroundStyle(.secondary)
+                            .lineLimit(1).instantTip(note)
                     } else if cells.dead {
                         cells.deadCell
                     } else if cells.allFresh {
