@@ -110,12 +110,17 @@ func settingsTabs(
     updateModel: UpdateModel
 ) -> [SettingsTab] {
     [
-        SettingsTab(title: "Engines", symbol: "engine.combustion", tint: .gray,
+        // Providers sit directly in the sidebar (CodexBar-style, user
+        // 2026-08-30) — one row per engine, About at the bottom.
+        SettingsTab(title: "Claude", symbol: "asterisk", tint: .orange,
                     keywords: ["engine", "auto switch", "interval", "config",
-                               "threshold", "rotate", "cswap", "codex",
-                               "openai", "accounts"],
-                    view: AnyView(EnginesPane(model: model,
-                                              settings: settingsModel))),
+                               "threshold", "rotate", "cswap", "provider"],
+                    view: AnyView(ClaudeEnginePane(model: model,
+                                                   settings: settingsModel))),
+        SettingsTab(title: "Codex", symbol: "circle.hexagongrid", tint: .mint,
+                    keywords: ["openai", "codex", "provider", "slots",
+                               "accounts", "engine"],
+                    view: AnyView(CodexEnginePane())),
         SettingsTab(title: "Resume reliability", symbol: "arrow.clockwise", tint: .blue,
                     keywords: ["session", "nudge", "wake", "stop"],
                     view: AnyView(ResumeReliabilityPane(model: reliabilityModel))),
@@ -727,19 +732,28 @@ struct NextMarker: View {
     let number: Int
 
     var body: some View {
+        let theme = model.rowTheme
         if model.nextCandidate == number {
-            Image(systemName: "arrowtriangle.right.fill")
-                .font(.caption2)
-                .foregroundStyle(.green)
-                .help("Next auto-switch target")
+            Group {
+                if theme.plain || theme.nextIcon.isEmpty {
+                    Image(systemName: "arrowtriangle.right.fill")
+                        .font(.caption2).foregroundStyle(.green)
+                } else {
+                    // Themed marker ("🎬" = next showing, "🎲" = next in
+                    // the party) — user request 2026-08-30.
+                    Text(theme.nextIcon).font(.caption2)
+                }
+            }
+            .instantTip("Next auto-switch target — the engine would "
+                        + "rotate to this account first")
         } else if model.nextCandidate == nil,
                   let recovery = model.nextRecovery,
                   recovery.number == number {
             Image(systemName: "arrowtriangle.right")
                 .font(.caption2)
                 .foregroundStyle(.secondary)
-                .help("All accounts are at a limit — this one recovers "
-                      + "first\(Self.eta(recovery.at))")
+                .instantTip("All accounts are at a limit — this one "
+                            + "recovers first\(Self.eta(recovery.at))")
         } else {
             Image(systemName: "arrowtriangle.right.fill")
                 .font(.caption2)
@@ -1150,7 +1164,9 @@ struct AccountCells {
                  ? "\(theme.cashIcon)\(Int((Double(usd) / 1000).rounded()))k"
                  : "\(theme.cashIcon)\(usd.formatted())")
                 .font(.caption).foregroundStyle(.yellow)
-                .help("Estimated API-price spend, last \(usage.report?.days ?? 7) days — not a bill")
+                .instantTip("Estimated API-price spend, last "
+                            + "\(usage.report?.days ?? 7) days — an estimate, "
+                            + "never a bill")
                 .fixedSize()
                 .activeBand(banded && account.active)
         }

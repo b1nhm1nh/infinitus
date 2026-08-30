@@ -1,36 +1,65 @@
 import SwiftUI
 import CswapCore
 
-/// The revamped engine settings (user, 2026-08-30): one pane for every
-/// account engine Limitless drives. Claude (the cswap engine) is primary;
-/// Codex is the first sibling — file-mode slot switching handled by the
-/// app itself (CodexEngineModel), no cswap involvement.
-struct EnginesPane: View {
+/// Claude provider pane: auto-switch control + the spec-driven cswap
+/// settings. A top-level sidebar row, CodexBar-style (user 2026-08-30 —
+/// providers sit IN the settings sidebar, not behind a nested split).
+struct ClaudeEnginePane: View {
     @ObservedObject var model: AppModel
     @ObservedObject var settings: SettingsModel
+
+    var body: some View {
+        Form {
+            Section("Claude — cswap engine") {
+                LabeledContent("Auto-switch") {
+                    HStack {
+                        stateText
+                        Button(toggleTitle) { model.toggleEngine() }
+                            .disabled(!togglable)
+                    }
+                }
+                Text("Rotates Claude accounts before limits stall a session.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            SettingsFormBody(model: settings)
+        }
+        .formStyle(.grouped)
+        .task { await settings.load() }
+    }
+
+    private var stateText: some View {
+        Group {
+            switch model.engineState {
+            case .running: Text("running").foregroundStyle(.green)
+            case .stopped: Text("stopped").foregroundStyle(.secondary)
+            case .refused: Text("held elsewhere").foregroundStyle(.orange)
+            case .backingOff(let s): Text("retrying in \(Int(s))s")
+            case .schemaMismatch: Text("update the app")
+            }
+        }.font(.caption)
+    }
+
+    private var toggleTitle: String {
+        if case .running = model.engineState { return "Stop" }
+        if case .backingOff = model.engineState { return "Stop" }
+        return "Start"
+    }
+
+    private var togglable: Bool {
+        switch model.engineState {
+        case .running, .stopped, .backingOff: return true
+        case .refused, .schemaMismatch: return false
+        }
+    }
+}
+
+/// Codex provider pane: the app-native auth.json slot switcher.
+struct CodexEnginePane: View {
     @StateObject private var codex = CodexEngineModel()
 
     var body: some View {
         Form {
-            Section {
-                LabeledContent("Auto-switch") {
-                    HStack {
-                        engineStateText
-                        Button(engineToggleTitle) { model.toggleEngine() }
-                            .disabled(!engineTogglable)
-                    }
-                }
-                Text("Rotates Claude accounts before limits stall a session. "
-                     + "Every knob below is a cswap engine setting.")
-                    .font(.caption).foregroundStyle(.secondary)
-            } header: {
-                Label("Claude — cswap engine", systemImage: "bolt.fill")
-            }
-
-            // The spec-driven cswap settings, unchanged underneath.
-            SettingsFormBody(model: settings)
-
-            Section {
+            Section("Codex — OpenAI account slots") {
                 if !codex.authPresent && codex.slots.isEmpty {
                     Text("No Codex CLI login found (\(CodexEngineModel.codexHome.path)/auth.json). "
                          + "Log in with `codex login`, then save it as a slot here.")
@@ -69,45 +98,14 @@ struct EnginesPane: View {
                      + "saves the live login back first. Manual only — no "
                      + "usage tracking or auto-switch for Codex yet.")
                     .font(.caption).foregroundStyle(.secondary)
-            } header: {
-                Label("Codex — OpenAI", systemImage: "circle.hexagongrid")
             }
-
-            Section {
-                Text("Gemini CLI and opencode use the same file-swap shape — "
-                     + "planned, not built.")
+            Section("Planned providers") {
+                Text("Gemini, OpenCode, Cursor, Copilot — same file-swap "
+                     + "shape, not built yet.")
                     .font(.caption).foregroundStyle(.tertiary)
-            } header: {
-                Label("More engines", systemImage: "ellipsis.circle")
             }
         }
         .formStyle(.grouped)
-        .task { await settings.load() }
         .onAppear { codex.reload() }
-    }
-
-    private var engineStateText: some View {
-        Group {
-            switch model.engineState {
-            case .running: Text("running").foregroundStyle(.green)
-            case .stopped: Text("stopped").foregroundStyle(.secondary)
-            case .refused: Text("held elsewhere").foregroundStyle(.orange)
-            case .backingOff(let s): Text("retrying in \(Int(s))s")
-            case .schemaMismatch: Text("update the app")
-            }
-        }.font(.caption)
-    }
-
-    private var engineToggleTitle: String {
-        if case .running = model.engineState { return "Stop" }
-        if case .backingOff = model.engineState { return "Stop" }
-        return "Start"
-    }
-
-    private var engineTogglable: Bool {
-        switch model.engineState {
-        case .running, .stopped, .backingOff: return true
-        case .refused, .schemaMismatch: return false
-        }
     }
 }

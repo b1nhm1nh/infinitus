@@ -51,13 +51,15 @@ struct ThemedGlassChrome: View {
 
     var body: some View {
         ZStack {
+            // The hud layer is ALWAYS underneath (2026-08-30, round 5):
+            // 1) its PopoverGlassView retunes the popover frame's own
+            //    near-opaque material — without it the ANCHORED popup has
+            //    no glass at all (only the pop-out window did);
+            // 2) NSGlassEffectView goes inactive with the window — the
+            //    hud (state .active) keeps the unfocused pop-out glassy.
+            GlassBackground()
             if #available(macOS 26.0, *) {
-                // The REAL Liquid Glass alone — stacking the hud blur
-                // under it re-opacified the backdrop ("a bit more
-                // transparent", user 2026-08-30). Pre-26 keeps the hud.
                 GlassEffectLayer()
-            } else {
-                GlassBackground()
             }
             let theme = model.rowTheme
             if !theme.plain, !theme.flashColor.isEmpty {

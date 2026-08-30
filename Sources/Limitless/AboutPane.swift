@@ -139,12 +139,55 @@ final class UpdateModel: ObservableObject {
     }
 }
 
+/// The app's own release channel (user "make it so", 2026-08-30):
+/// GitHub releases on deathemperor/limitless. Until the repo is pushed
+/// and a release exists the check reports "no releases yet" — the
+/// machinery is live, the feed is what's pending. Developers keep
+/// building from source; releases are the distribution path.
+@MainActor
+final class AppReleaseModel: ObservableObject {
+    @Published var latest: String?
+    @Published var status: String?
+    private static let api = URL(
+        string: "https://api.github.com/repos/deathemperor/limitless/releases/latest")!
+
+    func check(currentVersion: String) async {
+        status = "checking…"
+        struct Release: Decodable {
+            let tag_name: String
+            let html_url: String
+        }
+        do {
+            var req = URLRequest(url: Self.api)
+            req.setValue("application/vnd.github+json",
+                         forHTTPHeaderField: "Accept")
+            let (data, resp) = try await URLSession.shared.data(for: req)
+            if (resp as? HTTPURLResponse)?.statusCode == 404 {
+                status = "no releases published yet — this build came from source"
+                return
+            }
+            let release = try JSONDecoder().decode(Release.self, from: data)
+            latest = release.tag_name
+            let tag = release.tag_name.hasPrefix("v")
+                ? String(release.tag_name.dropFirst()) : release.tag_name
+            if let a = PackageVersion(currentVersion), let b = PackageVersion(tag),
+               a < b {
+                status = "\(release.tag_name) is available on GitHub"
+            } else {
+                status = "up to date (latest release: \(release.tag_name))"
+            }
+        } catch {
+            status = "release check failed: \(error.localizedDescription)"
+        }
+    }
+}
+
 /// About + updates, CodexBar-style: hero card (icon, version, build,
 /// tagline), an Updates group, full-row link rows with leading icons and a
-/// trailing arrow, and a license footer. The update path still touches the
-/// PYTHON tool only — Limitless.app itself rebuilds from the repo.
+/// trailing arrow, and a license footer.
 struct AboutPane: View {
     @ObservedObject var model: UpdateModel
+    @StateObject private var appRelease = AppReleaseModel()
     @Environment(\.openURL) private var openURL
 
     private var appVersion: String {
@@ -231,8 +274,21 @@ struct AboutPane: View {
                         .frame(maxHeight: 160)
                     }
                 }
-                Text("Updates apply to the cswap engine (from PyPI). "
-                     + "The app itself rebuilds from the repo.")
+                Divider()
+                LabeledContent {
+                    Button(appRelease.status == nil ? "Check GitHub Releases"
+                           : "Recheck") {
+                        Task { await appRelease.check(currentVersion: appVersion) }
+                    }
+                } label: {
+                    Text("Limitless.app \(appVersion)")
+                    if let s = appRelease.status {
+                        Text(s).font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+                Text("Engine updates come from PyPI; app releases come "
+                     + "from GitHub (deathemperor/limitless). Building "
+                     + "from source is the developer path.")
                     .font(.caption).foregroundStyle(.secondary)
             }
 
@@ -274,14 +330,14 @@ struct AboutPane: View {
         .onAppear { if model.current == nil { Task { await model.check() } } }
     }
 
-    /// The real app icon when running from a bundle; unbundled runs
-    /// (run-unbundled.sh) have none, so draw the menu bar glyph on the
-    /// icon's midnight→violet gradient card instead of the retired ∞
-    /// (user report 2026-08-30 — About showed the old mark).
+    /// The real Limitless icon EVERYWHERE (user 2026-08-30): bundled runs
+    /// have it as the app icon; unbundled runs (run-unbundled.sh) pull it
+    /// from the built Limitless.app on disk (bundle id lookup, then the
+    /// repo's known path). The glyph-on-gradient card remains only as the
+    /// final fallback when no built bundle exists at all.
     @ViewBuilder private var appMark: some View {
-        if Bundle.main.bundlePath.hasSuffix(".app"),
-           let appIcon = NSApp.applicationIconImage {
-            Image(nsImage: appIcon)
+        if let icon = Self.limitlessIcon {
+            Image(nsImage: icon)
                 .resizable()
                 .frame(width: 64, height: 64)
                 .shadow(color: .black.opacity(0.35), radius: 4, y: 2)
@@ -306,6 +362,25 @@ struct AboutPane: View {
                     .foregroundStyle(.white)
             }
         }
+    }
+
+    static var limitlessIcon: NSImage? {
+        if Bundle.main.bundlePath.hasSuffix(".app"),
+           let icon = NSApp.applicationIconImage {
+            return icon
+        }
+        var candidates = [FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("death/limitless/Limitless.app").path]
+        if let url = NSWorkspace.shared.urlForApplication(
+            withBundleIdentifier: "com.huuloc.limitless") {
+            candidates.insert(url.path, at: 0)
+        }
+        for path in candidates where FileManager.default.fileExists(atPath: path) {
+            let icon = NSWorkspace.shared.icon(forFile: path)
+            icon.size = NSSize(width: 64, height: 64)
+            return icon
+        }
+        return nil
     }
 
     private func linkRow(_ symbol: String, _ title: String, _ url: String) -> some View {
