@@ -13,6 +13,9 @@ final class AppModel: ObservableObject {
     @Published var nextCandidate: Int?
     @Published var nextRecovery: NextRecovery?
     @Published var liveSessions: LiveSessions?
+    /// Session-list popover (brain chip click) — popup-wide state so the
+    /// wide chip and the rail badge share one popover.
+    @Published var sessionsShown = false
     // Animation triggers. switchFlashTick fires the celebration sweep on
     // the (new) active row; dataPulseTick ripples the sync dot whenever a
     // snapshot actually changed something visible.
@@ -344,6 +347,24 @@ final class AppModel: ObservableObject {
             }
         }
         return true
+    }
+
+    /// The badge click: running -> stop, stopped -> start ("auto switch
+    /// status is clickable to toggle", user 2026-08-30). Deliberate states
+    /// only — refused/backing-off/mismatch stay informational.
+    func toggleEngine() {
+        switch engineState {
+        case .running, .backingOff:
+            let supervisor = supervisor
+            self.supervisor = nil
+            engineState = .stopped
+            Task { await supervisor?.stop() }
+        case .stopped:
+            guard let cli else { return }
+            startEngine(binary: cli.binaryPath)
+        case .refused, .schemaMismatch:
+            break
+        }
     }
 
     /// Bounce the supervised engine — after a cswap upgrade the child is

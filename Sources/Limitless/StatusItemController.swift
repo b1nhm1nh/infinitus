@@ -132,7 +132,11 @@ final class StatusItemController {
         // Center), so a pinned popup BLOCKED them (user 2026-08-30).
         // Floating keeps it over normal windows but under menu popups.
         if let w = view.window, w.level > .floating { w.level = .floating }
-        let fit = view.fittingSize
+        // preferredContentSize, not fittingSize: an NSHostingView's
+        // auto-layout fitting size can lag SwiftUI's real ideal — the
+        // stale-width overflow kept coming back (user, 3rd report).
+        var fit = popover.contentViewController?.preferredContentSize ?? .zero
+        if fit.width <= 1 || fit.height <= 1 { fit = view.fittingSize }
         guard fit.width > 1, fit.height > 1,
               fit.width < 20_000, fit.height < 20_000 else { return }
         let current = popover.contentSize

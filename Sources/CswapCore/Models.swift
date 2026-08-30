@@ -37,6 +37,16 @@ public struct LiveSessions: Decodable, Sendable {
     public let waiting: Int?
     public let shell: Int?
     public let unknown: Int?
+    /// Additive per-session detail (busy first, capped engine-side).
+    public let sessions: [SessionDetail]?
+}
+
+public struct SessionDetail: Decodable, Sendable, Hashable {
+    public let pid: Int
+    public let cwd: String
+    public let status: String
+    public let kind: String
+    public let startedAt: Double   // epoch milliseconds
 }
 
 public struct Account: Decodable, Sendable {

@@ -10,8 +10,12 @@ final class ServiceStatusModel: ObservableObject {
 
     @Published var indicator: String?      // none | minor | major | critical
     @Published var descriptionText: String?
+    /// Per-product rows for the hover card (name, status), top-level
+    /// components only — the Statuspage groups' children are noise here.
+    @Published var components: [(String, String)] = []
     private var fetchedAt: Date?
     private static let api = URL(string: "https://status.anthropic.com/api/v2/status.json")!
+    private static let componentsAPI = URL(string: "https://status.anthropic.com/api/v2/components.json")!
     private static let page = URL(string: "https://status.anthropic.com")!
 
     func refreshIfStale() {
@@ -27,6 +31,23 @@ final class ServiceStatusModel: ObservableObject {
             indicator = payload.status.indicator
             descriptionText = payload.status.description
             fetchedAt = Date()
+        }
+        Task {
+            struct Payload: Decodable {
+                struct Component: Decodable {
+                    let name: String
+                    let status: String
+                    let group: Bool?
+                    let group_id: String?
+                }
+                let components: [Component]
+            }
+            guard let (data, _) = try? await URLSession.shared.data(from: Self.componentsAPI),
+                  let payload = try? JSONDecoder().decode(Payload.self, from: data)
+            else { return }
+            components = payload.components
+                .filter { $0.group != true && $0.group_id == nil }
+                .map { ($0.name, $0.status) }
         }
     }
 

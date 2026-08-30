@@ -318,7 +318,11 @@ struct MenuContent: View {
                     // icon-only buttons: the titled row out-widened the
                     // narrow cards and the footer drove the popup width
                     // (cards stretched to fill, 2026-08-30 screenshot).
-                    HStack {
+                    // Grouped, not a flat run of mismatched pills
+                    // ("rearrange this properly", user 2026-08-30):
+                    // titled actions · icon view-toggles · status chips ·
+                    // app controls at the trailing edge.
+                    HStack(spacing: 6) {
                         Button {
                             model.rotate()
                         } label: {
@@ -331,33 +335,31 @@ struct MenuContent: View {
                             Label("Refresh", systemImage: "arrow.clockwise")
                         }
                         .help("Refresh account usage now")
-                        Button {
-                            model.showSettings?()
-                        } label: {
-                            Label("Settings", systemImage: "gearshape")
-                        }
+                        Spacer().frame(width: 6)
                         Button {
                             model.popoverPinned.toggle()
                         } label: {
-                            Label(model.popoverPinned ? "Unpin" : "Pin",
-                                  systemImage: model.popoverPinned ? "pin.fill" : "pin")
+                            Image(systemName: model.popoverPinned ? "pin.fill" : "pin")
                         }
-                        .help("Pin keeps this popup open when you click elsewhere; "
-                              + "the menu bar icon still closes it.")
+                        .instantTip(model.popoverPinned ? "Unpin popup" : "Pin popup open")
                         Button {
                             withAnimation(.easeInOut(duration: 0.3)) {
                                 model.compactRows.toggle()
                             }
                         } label: {
-                            Label("Compact", systemImage: "rectangle.compress.vertical")
+                            Image(systemName: "rectangle.compress.vertical")
                         }
-                        .help("Hide actions, event log, and history")
+                        .instantTip("Compact mode")
                         layoutToggleIcon
+                            .instantTip(model.popupLayout == "stacked"
+                                        ? "Switch to wide rows" : "Switch to stacked cards")
                         popOutIcon
+                            .instantTip("Pop out into a window")
                         Spacer()
                         serviceChip
                         agentChip
                         engineBadge
+                        Spacer().frame(width: 6)
                         if model.appUpdatePending {
                             Button {
                                 model.relaunchApp()
@@ -369,11 +371,17 @@ struct MenuContent: View {
                             .help("A newer build is on disk")
                         }
                         Button {
+                            model.showSettings?()
+                        } label: {
+                            Image(systemName: "gearshape")
+                        }
+                        .instantTip("Settings")
+                        Button {
                             model.shutdown()   // engine stops first
                         } label: {
-                            Label("Quit", systemImage: "power")
+                            Image(systemName: "power")
                         }
-                        .help("Quit")
+                        .instantTip("Quit")
                     }
                 }
             }
@@ -491,6 +499,11 @@ struct MenuContent: View {
                             .offset(x: 8, y: -7)
                     }
                 }
+                .contentShape(Rectangle())
+                .onTapGesture { model.sessionsShown.toggle() }
+                .popover(isPresented: $model.sessionsShown, arrowEdge: .trailing) {
+                    SessionListCard(live: live)
+                }
                 .instantTip(SessionSummary.tooltip(live))
         }
     }
@@ -587,7 +600,12 @@ struct MenuContent: View {
                     }
                 }
             }
-            .help(SessionSummary.tooltip(live))
+            .contentShape(Rectangle())
+            .onTapGesture { model.sessionsShown.toggle() }
+            .popover(isPresented: $model.sessionsShown, arrowEdge: .bottom) {
+                SessionListCard(live: live)
+            }
+            .instantTip(SessionSummary.tooltip(live))
         }
     }
 
@@ -606,7 +624,7 @@ struct MenuContent: View {
         Button { status.openPage() } label: {
             Circle().fill(status.color).frame(width: 8, height: 8)
         }
-        .instantTip(status.helpText)
+        .modifier(StatusHoverCard(status: status))
     }
 
     private var serviceChip: some View {
@@ -617,33 +635,47 @@ struct MenuContent: View {
             }
         }
         .buttonStyle(.plain)
-        .help(status.helpText)
+        .modifier(StatusHoverCard(status: status))
     }
 
+    /// Clickable: running <-> stopped ("auto switch status is clickable
+    /// to toggle", user 2026-08-30). Other states stay informational.
     @ViewBuilder private var engineBadge: some View {
+        Button { model.toggleEngine() } label: {
+            switch model.engineState {
+            case .running: Label("auto", systemImage: "bolt.fill").foregroundStyle(.green)
+            case .refused: Label("engine elsewhere", systemImage: "exclamationmark.triangle")
+            case .backingOff(let s): Label("retry \(Int(s))s", systemImage: "clock")
+            case .schemaMismatch: Label("update app", systemImage: "arrow.down.circle")
+            case .stopped: Label("off", systemImage: "pause").foregroundStyle(.secondary)
+            }
+        }
+        .buttonStyle(.plain)
+        .instantTip(engineTip)
+    }
+
+    private var engineTip: String {
         switch model.engineState {
-        case .running: Label("auto", systemImage: "bolt.fill").foregroundStyle(.green)
-        case .refused: Label("engine elsewhere", systemImage: "exclamationmark.triangle")
-            .help("Another auto-switch engine (TUI or cswap auto) holds the mutex.")
-        case .backingOff(let s): Label("retry \(Int(s))s", systemImage: "clock")
-        case .schemaMismatch: Label("update app", systemImage: "arrow.down.circle")
-        case .stopped: Label("off", systemImage: "pause")
+        case .running: return "auto-switch running — click to stop"
+        case .refused: return "Another auto-switch engine (TUI or cswap auto) holds the mutex."
+        case .backingOff(let s): return "engine retrying in \(Int(s))s — click to stop"
+        case .schemaMismatch: return "update the app"
+        case .stopped: return "auto-switch off — click to start"
         }
     }
 
     @ViewBuilder private var engineBadgeIcon: some View {
-        switch model.engineState {
-        case .running: Image(systemName: "bolt.fill").foregroundStyle(.green)
-            .instantTip("auto-switch running")
-        case .refused: Image(systemName: "exclamationmark.triangle")
-            .instantTip("Another auto-switch engine (TUI or cswap auto) holds the mutex.")
-        case .backingOff(let s): Image(systemName: "clock")
-            .instantTip("engine retrying in \(Int(s))s")
-        case .schemaMismatch: Image(systemName: "arrow.down.circle")
-            .instantTip("update the app")
-        case .stopped: Image(systemName: "pause")
-            .instantTip("engine off")
+        Button { model.toggleEngine() } label: {
+            switch model.engineState {
+            case .running: Image(systemName: "bolt.fill").foregroundStyle(.green)
+            case .refused: Image(systemName: "exclamationmark.triangle")
+            case .backingOff: Image(systemName: "clock")
+            case .schemaMismatch: Image(systemName: "arrow.down.circle")
+            case .stopped: Image(systemName: "pause").foregroundStyle(.secondary)
+            }
         }
+        .buttonStyle(.plain)
+        .instantTip(engineTip)
     }
 }
 
@@ -971,10 +1003,12 @@ struct AccountCells {
                         GaugeBar(
                             remaining: GaugeMath.remaining(usedPct: w.pct),
                             color: ThemeColor.resolve(
-                                session ? theme.sessionColor : theme.weeklyColor))
+                                session ? theme.sessionColor : theme.weeklyColor),
+                            paceRemaining: w.expectedPct.map { 100 - $0 })
                     }
                     resetLabelView(resetsAt: w.resetsAt, staticText: resetText(w))
                 }
+                .instantTip(WindowSummary.line(w, kind: session ? "Session" : "Weekly"))
                 // fixedSize: usage is the row's payload — grow the popup
                 // rather than truncate; the name column stays flexible.
                 .fixedSize()
@@ -1029,8 +1063,8 @@ struct AccountCells {
                              color: ThemeColor.resolve(theme.creditColor))
                 }
             }
-            .help(String(format: "usage credit: %.2f of %.0f %@",
-                         spend.used, spend.limit, spend.currency))
+            .instantTip(String(format: "usage credit: %.2f of %.0f %@",
+                               spend.used, spend.limit, spend.currency))
             .fixedSize()
             .glowOnChange(of: spend.pct, color: ThemeColor.flash(theme))
             .activeBand(banded && account.active)
@@ -1073,9 +1107,11 @@ struct AccountCells {
                                 .foregroundStyle(ThemeColor.resolve(theme.scopedColor))
                                 .help("Model weekly limit left")
                             GaugeBar(remaining: GaugeMath.remaining(usedPct: w.pct),
-                                     color: ThemeColor.resolve(theme.scopedColor))
+                                     color: ThemeColor.resolve(theme.scopedColor),
+                                     paceRemaining: w.expectedPct.map { 100 - $0 })
                         }
                     }
+                    .instantTip(WindowSummary.line(w, kind: "\(w.name ?? "Model") only"))
                 }
             }
             .fixedSize()
@@ -1432,7 +1468,12 @@ private struct InstantTip: ViewModifier {
             .onHover { hovering = $0 }
             .overlay(alignment: .leading) {
                 if hovering {
-                    Text(text)
+                    // fixedSize, never frame(maxWidth:): an overlay is
+                    // proposed its ANCHOR's size (a 20pt icon), so a max
+                    // frame clamps to that and wraps one character per
+                    // line — the vertical strip in the 2026-08-30
+                    // screenshot. Long texts are trimmed instead.
+                    Text(Self.trimmed(text))
                         .font(.caption)
                         .padding(.horizontal, 7)
                         .padding(.vertical, 3)
@@ -1440,11 +1481,7 @@ private struct InstantTip: ViewModifier {
                             RoundedRectangle(cornerRadius: 5)
                                 .fill(.regularMaterial)
                                 .shadow(radius: 2, y: 1))
-                        // Wrap long status texts (session summary) into a
-                        // capped-width chip instead of running past the
-                        // popup's right edge.
-                        .frame(maxWidth: 260, alignment: .leading)
-                        .fixedSize(horizontal: false, vertical: true)
+                        .fixedSize()
                         .offset(x: 24)
                         .allowsHitTesting(false)
                         .transition(.opacity)
@@ -1452,6 +1489,12 @@ private struct InstantTip: ViewModifier {
             }
             .zIndex(hovering ? 1 : 0)
             .animation(.easeOut(duration: 0.12), value: hovering)
+    }
+}
+
+extension InstantTip {
+    static func trimmed(_ s: String) -> String {
+        s.count > 56 ? String(s.prefix(55)) + "…" : s
     }
 }
 
