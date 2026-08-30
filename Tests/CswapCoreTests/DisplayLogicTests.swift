@@ -26,6 +26,17 @@ final class TitleFormatterTests: XCTestCase {
                        "⇄ dontsuckm… · 5·49%")
     }
 
+    func testRemainingFlipsEveryWindowKind() throws {
+        // titleRemaining counts what's LEFT; the flip covers 5h, 7d,
+        // and scoped windows alike (menu-bar setting, 2026-08-30).
+        let a = try account(#"{\#(base), "usageStatus": "ok", "usage": {"fiveHour": {"pct": 12.4}, "sevenDay": {"pct": 88.6, "resetsAt": "2999-01-01T00:00:00Z"}, "scoped": [{"pct": 30, "name": "Opus", "resetsAt": "2999-01-01T00:00:00Z"}]}}"#)
+        XCTAssertEqual(
+            TitleFormatter.format(account: a,
+                                  prefs: TitlePrefs(titleScoped: true,
+                                                    titleRemaining: true)),
+            "⇄ dev · 88·11% · Opus 70%")
+    }
+
     func testAliasWinsAndModesFilter() throws {
         let a = try account(#"{\#(base), "alias": "work", "usageStatus": "ok", "usage": {"fiveHour": {"pct": 50}, "sevenDay": {"pct": 70, "resetsAt": "2999-01-01T00:00:00Z"}}}"#)
         XCTAssertEqual(TitleFormatter.format(account: a, prefs: TitlePrefs(titlePct: "5h")), "⇄ work · 50%")

@@ -378,6 +378,10 @@ struct MenuContent: View {
                     HStack(spacing: 6) {
                         // Intro: the two ends of the control row enter
                         // from their own sides (user launch script).
+                        // footerActionsHidden strips the buttons but the
+                        // status chips stay — their actions all live in
+                        // the status item's right-click menu.
+                        if !model.footerActionsHidden {
                         HStack(spacing: 6) {
                             Button {
                                 model.rotate()
@@ -415,6 +419,7 @@ struct MenuContent: View {
                                 .instantTip("Pop out into a window", edge: .above)
                         }
                         .introSlide(model, fromLeft: true)
+                        }
                         Spacer()
                         HStack(spacing: 6) {
                             serviceChip
@@ -431,24 +436,26 @@ struct MenuContent: View {
                                 }
                                 .help("A newer build is on disk")
                             }
-                            Button {
-                                model.showSettings?()
-                            } label: {
-                                Image(systemName: "gearshape")
+                            if !model.footerActionsHidden {
+                                Button {
+                                    model.showSettings?()
+                                } label: {
+                                    Image(systemName: "gearshape")
+                                }
+                                .instantTip("Settings", edge: .above)
+                                Button {
+                                    model.relaunchApp()
+                                } label: {
+                                    Image(systemName: "arrow.trianglehead.clockwise")
+                                }
+                                .instantTip("Restart app", edge: .above)
+                                Button {
+                                    model.shutdown()   // engine stops first
+                                } label: {
+                                    Image(systemName: "power")
+                                }
+                                .instantTip("Quit", edge: .above)
                             }
-                            .instantTip("Settings", edge: .above)
-                            Button {
-                                model.relaunchApp()
-                            } label: {
-                                Image(systemName: "arrow.trianglehead.clockwise")
-                            }
-                            .instantTip("Restart app", edge: .above)
-                            Button {
-                                model.shutdown()   // engine stops first
-                            } label: {
-                                Image(systemName: "power")
-                            }
-                            .instantTip("Quit", edge: .above)
                         }
                         .introSlide(model, fromLeft: false)
                     }
@@ -509,6 +516,7 @@ struct MenuContent: View {
     /// icon column beside the cards. Unlike compactControls it keeps
     /// Rotate/Refresh and the Compact (compress) toggle.
     @ViewBuilder private var stackedRail: some View {
+        if !model.footerActionsHidden {
         Button { model.rotate() } label: {
             Image(systemName: "arrow.2.circlepath")
         }
@@ -538,6 +546,7 @@ struct MenuContent: View {
                         ? "Switch to wide rows" : "Switch to stacked cards")
         popOutIcon
             .instantTip("Pop out into a window")
+        }
         serviceDot
         brainBadge
         if model.appUpdatePending {
@@ -548,6 +557,7 @@ struct MenuContent: View {
             .instantTip("Restart to update")
         }
         engineBadgeIcon
+        if !model.footerActionsHidden {
         Button { model.relaunchApp() } label: {
             Image(systemName: "arrow.trianglehead.clockwise")
         }
@@ -556,6 +566,7 @@ struct MenuContent: View {
             Image(systemName: "power")
         }
         .instantTip("Quit")
+        }
     }
 
     /// Rail-width session chip: the brain with the busy count as a badge
@@ -589,6 +600,7 @@ struct MenuContent: View {
     /// The compact-mode controls, container-agnostic: the caller decides
     /// rail grid vs horizontal strip.
     @ViewBuilder private var compactControls: some View {
+        if !model.footerActionsHidden {
         Button { model.showSettings?() } label: {
             Image(systemName: "gearshape")
         }
@@ -606,6 +618,7 @@ struct MenuContent: View {
                         ? "Switch to wide rows" : "Switch to stacked cards")
         popOutIcon
             .instantTip("Pop out into a window")
+        }
         serviceDot
         agentChip
         if model.appUpdatePending {
@@ -616,6 +629,7 @@ struct MenuContent: View {
             .instantTip("Restart to update")
         }
         engineBadgeIcon
+        if !model.footerActionsHidden {
         Button { model.relaunchApp() } label: {
             Image(systemName: "arrow.trianglehead.clockwise")
         }
@@ -624,6 +638,7 @@ struct MenuContent: View {
             Image(systemName: "power")
         }
         .instantTip("Quit")
+        }
     }
 
     /// Quick wide-rows <-> stacked-cards flip, mirroring the Display

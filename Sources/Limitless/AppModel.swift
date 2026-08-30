@@ -59,9 +59,17 @@ final class AppModel: ObservableObject {
     @Published var showAccountName: Bool { didSet { defaults.set(showAccountName, forKey: "show_account_name") } }
     @Published var titlePct: String { didSet { defaults.set(titlePct, forKey: "title_pct") } }
     @Published var titleScoped: Bool { didSet { defaults.set(titleScoped, forKey: "title_scoped") } }
+    // Menu bar percentages count remaining instead of used (todo
+    // 2026-08-30). Menu-bar-only: the popup gauges stay HP-style.
+    @Published var titleRemaining: Bool { didSet { defaults.set(titleRemaining, forKey: "title_remaining") } }
     @Published var refreshInterval: Int { didSet { defaults.set(refreshInterval, forKey: "refresh_interval") } }
     @Published var gamification: String { didSet { defaults.set(gamification, forKey: "gamification_style") } }
     @Published var compactRows: Bool { didSet { defaults.set(compactRows, forKey: "compact_rows") } }
+    // Hide the popup's action controls but keep the status chips (claude
+    // status, working sessions, engine badge) — todo 2026-08-30. Safe to
+    // persist: every hidden action lives in the status item's right-click
+    // menu, so Settings/Quit can never strand.
+    @Published var footerActionsHidden: Bool { didSet { defaults.set(footerActionsHidden, forKey: "footer_actions_hidden") } }
     @Published var popupLayout: String { didSet { defaults.set(popupLayout, forKey: "popup_layout") } }
     @Published var popupTextSize: String { didSet { defaults.set(popupTextSize, forKey: "popup_text_size") } }
     // Popup transparency, 0 (full frost) … 1 (clearest). ONE dial for
@@ -146,7 +154,8 @@ final class AppModel: ObservableObject {
         TitleFormatter.format(
             account: accounts.first(where: { $0.active }),
             prefs: TitlePrefs(showAccountName: showAccountName,
-                              titlePct: titlePct, titleScoped: titleScoped),
+                              titlePct: titlePct, titleScoped: titleScoped,
+                              titleRemaining: titleRemaining),
             icon: "")  // the status button wears MenuBarGlyph instead
     }
 
@@ -178,6 +187,8 @@ final class AppModel: ObservableObject {
         gamification = defaults.string(forKey: "gamification_style")
             ?? ((defaults.object(forKey: "gamified_rows") as? Bool ?? false) ? "rpg" : "off")
         compactRows = defaults.object(forKey: "compact_rows") as? Bool ?? false
+        footerActionsHidden = defaults.object(forKey: "footer_actions_hidden") as? Bool ?? false
+        titleRemaining = defaults.object(forKey: "title_remaining") as? Bool ?? false
         popoverPinned = defaults.object(forKey: "popover_pinned") as? Bool ?? false
         popupLayout = defaults.string(forKey: "popup_layout") ?? "wide"
         popupTextSize = defaults.string(forKey: "popup_text_size") ?? "default"
@@ -242,6 +253,8 @@ final class AppModel: ObservableObject {
         refreshInterval = TitlePrefs.refreshChoices.contains(interval) ? interval : 60
         gamification = defaults.string(forKey: "gamification_style") ?? "off"
         compactRows = defaults.object(forKey: "compact_rows") as? Bool ?? false
+        footerActionsHidden = defaults.object(forKey: "footer_actions_hidden") as? Bool ?? false
+        titleRemaining = defaults.object(forKey: "title_remaining") as? Bool ?? false
         popupLayout = defaults.string(forKey: "popup_layout") ?? "wide"
         popupTextSize = defaults.string(forKey: "popup_text_size") ?? "default"
         glassFocused = defaults.object(forKey: "glass_focused") as? Double ?? 0.7

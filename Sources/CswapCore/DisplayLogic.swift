@@ -10,15 +10,19 @@ public struct TitlePrefs: Sendable, Equatable {
     public var showAccountName: Bool
     public var titlePct: String   // "off" | "5h" | "7d" | "both"
     public var titleScoped: Bool
+    /// Percentages count what's LEFT instead of what's used
+    /// (menu-bar-only setting, 2026-08-30).
+    public var titleRemaining: Bool
 
     public static let pctChoices = ["off", "5h", "7d", "both"]
     public static let refreshChoices = [30, 60, 300]
 
     public init(showAccountName: Bool = true, titlePct: String = "both",
-                titleScoped: Bool = false) {
+                titleScoped: Bool = false, titleRemaining: Bool = false) {
         self.showAccountName = showAccountName
         self.titlePct = titlePct
         self.titleScoped = titleScoped
+        self.titleRemaining = titleRemaining
     }
 }
 
@@ -80,21 +84,26 @@ public enum TitleFormatter {
                             ? name.prefix(maxNameLength - 1) + "…" : name)
         }
         let usage = account.usage
+        // The remaining flip happens at display time so every window kind
+        // (5h, 7d, scoped) counts the same direction.
+        let shown: (Double) -> Double = {
+            prefs.titleRemaining ? max(0, 100 - $0) : $0
+        }
         var pcts: [String] = []
         if prefs.titlePct == "5h" || prefs.titlePct == "both",
            let pct = usage?.fiveHour?.pct {
-            pcts.append("\(Int(pct.rounded()))")
+            pcts.append("\(Int(shown(pct).rounded()))")
         }
         if prefs.titlePct == "7d" || prefs.titlePct == "both",
            let pct = WeeklyRoll.displayPct(usage?.sevenDay, now: now) {
-            pcts.append("\(Int(pct.rounded()))")
+            pcts.append("\(Int(shown(pct).rounded()))")
         }
         if !pcts.isEmpty { segments.append(pcts.joined(separator: "·") + "%") }
         if prefs.titleScoped {
             for window in usage?.scoped ?? [] {
                 guard let name = window.name,
                       let pct = WeeklyRoll.displayPct(window, now: now) else { continue }
-                segments.append("\(name) \(Int(pct.rounded()))%")
+                segments.append("\(name) \(Int(shown(pct).rounded()))%")
             }
         }
         if segments.isEmpty { return icon }

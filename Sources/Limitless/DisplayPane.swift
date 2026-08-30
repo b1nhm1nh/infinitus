@@ -20,6 +20,10 @@ struct DisplayPane: View {
                 }
             }
             Toggle("Show model limits in title", isOn: $model.titleScoped)
+            Toggle("Menu bar counts remaining, not used",
+                   isOn: $model.titleRemaining)
+                .help("Flips the menu bar percentages to what's left. "
+                      + "The popup gauges already count remaining.")
             Section("Row theme") {
                 ForEach(model.availableThemes) { theme in
                     ThemeCard(theme: theme,
@@ -64,6 +68,10 @@ struct DisplayPane: View {
             }
             Toggle("Compact popup (one-line accounts, icon controls)",
                    isOn: $model.compactRows)
+            Toggle("Hide popup actions (status chips stay)",
+                   isOn: $model.footerActionsHidden)
+                .help("Removes the buttons from the popup. Everything they "
+                      + "did is in the menu bar icon's right-click menu.")
             Toggle("Show menu bar icon", isOn: $model.menuBarIconShown)
                 .help("Hide lasts until quit — it always returns on the next "
                       + "launch, so the app can never strand itself with no UI.")
