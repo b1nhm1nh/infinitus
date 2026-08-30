@@ -110,49 +110,65 @@ struct DisplayPane: View {
                 .help("Holds a power assertion (caffeinate -i, in-process) "
                       + "whenever any Claude Code session is mid-turn. The "
                       + "display may still sleep; the machine won't.")
-            Section("Account order") {
-                Text("Drag to rearrange. Slot numbers stay put; the accounts "
-                     + "shift through them (aliases, backups, and history "
-                     + "move with each account). Type in the Name field to "
-                     + "rename an account (sets its cswap alias, shown "
-                     + "everywhere); clear it to go back to the email.")
-                    .font(.caption).foregroundStyle(.secondary)
-                List {
-                    ForEach(model.accounts, id: \.number) { account in
-                        HStack {
-                            Image(systemName: "line.3.horizontal")
-                                .foregroundStyle(.tertiary)
-                            Text("\(account.number)").monospacedDigit()
-                                .foregroundStyle(.secondary)
-                            RenameField(model: model, account: account)
-                            Text(account.email).lineLimit(1)
-                                .font(.caption).foregroundStyle(.secondary)
-                            if let plan = account.plan {
-                                Text(plan)
-                                    .font(.caption2)
-                                    .padding(.horizontal, 5).padding(.vertical, 1)
-                                    .background(Capsule().fill(Color.secondary.opacity(0.15)))
-                                    .foregroundStyle(.secondary)
-                            }
-                            if account.active {
-                                Text("active").font(.caption)
-                                    .foregroundStyle(Color.accentColor)
-                            }
-                        }
-                    }
-                    .onMove { from, to in
-                        var order = model.accounts.map(\.number)
-                        order.move(fromOffsets: from, toOffset: to)
-                        model.reorder(order)
-                    }
-                }
-                .frame(minHeight: CGFloat(model.accounts.count) * 28 + 16)
-                if let err = model.reorderError {
-                    Text(err).font(.caption).foregroundStyle(.red)
-                }
-            }
+            accountOrderSection
         }
         .formStyle(.grouped)
+    }
+
+    private let autoOrderHelp = "After every refresh, the fleet is reordered most headroom first (unknown, then out-of-limit by who recovers first, then disabled last). Slot numbers shift with it. Small differences don't move a row, so neighbours never flip-flop."
+
+    private var accountOrderSection: some View {
+        Section("Account order") {
+            Toggle("Keep accounts sorted by headroom", isOn: $model.autoOrder)
+                .help(autoOrderHelp)
+            Text(orderCaption)
+                .font(.caption).foregroundStyle(.secondary)
+            List {
+                ForEach(model.accounts, id: \.number) { account in
+                    HStack {
+                        Image(systemName: "line.3.horizontal")
+                            .foregroundStyle(.tertiary)
+                        Text("\(account.number)").monospacedDigit()
+                            .foregroundStyle(.secondary)
+                        RenameField(model: model, account: account)
+                        Text(account.email).lineLimit(1)
+                            .font(.caption).foregroundStyle(.secondary)
+                        if let plan = account.plan {
+                            Text(plan)
+                                .font(.caption2)
+                                .padding(.horizontal, 5).padding(.vertical, 1)
+                                .background(Capsule().fill(Color.secondary.opacity(0.15)))
+                                .foregroundStyle(.secondary)
+                        }
+                        if account.active {
+                            Text("active").font(.caption)
+                                .foregroundStyle(Color.accentColor)
+                        }
+                    }
+                    .moveDisabled(model.autoOrder)
+                }
+                .onMove { from, to in
+                    var order = model.accounts.map(\.number)
+                    order.move(fromOffsets: from, toOffset: to)
+                    model.reorder(order)
+                }
+            }
+            .frame(minHeight: CGFloat(model.accounts.count) * 28 + 16)
+            if let err = model.reorderError {
+                Text(err).font(.caption).foregroundStyle(.red)
+            }
+        }
+    }
+
+    private var orderCaption: String {
+        let rename = "Type in the Name field to rename an account (sets its "
+            + "cswap alias, shown everywhere); clear it to go back to the email."
+        if model.autoOrder {
+            return "Sorted automatically — drag is off while this is on. " + rename
+        }
+        return "Drag to rearrange. Slot numbers stay put; the accounts shift "
+            + "through them (aliases, backups, and history move with each "
+            + "account). " + rename
     }
 
     private func setLayout(_ value: String) {

@@ -131,6 +131,14 @@ final class AppModel: ObservableObject {
     // Persisted by request — a pinned popup stays pinned across relaunches.
     @Published var popoverPinned: Bool { didSet { defaults.set(popoverPinned, forKey: "popover_pinned") } }
     /// Hold a power assertion while any session is mid-turn (KeepAwake).
+    /// Keep the fleet sorted (most headroom first) through `cswap reorder`
+    /// after every snapshot — see CswapCore.AutoOrder for the policy.
+    @Published var autoOrder: Bool {
+        didSet {
+            defaults.set(autoOrder, forKey: "auto_order")
+            if autoOrder { applyAutoOrder() }
+        }
+    }
     @Published var keepAwake: Bool {
         didSet {
             defaults.set(keepAwake, forKey: "keep_awake")
@@ -215,6 +223,7 @@ final class AppModel: ObservableObject {
         introSpeed = defaults.object(forKey: "intro_speed") as? Double ?? 1.0
         introTitle = defaults.string(forKey: "intro_title") ?? "zoom"
         keepAwake = defaults.object(forKey: "keep_awake") as? Bool ?? false
+        autoOrder = defaults.object(forKey: "auto_order") as? Bool ?? false
         // Push triggers default ON — they exist because they were asked for.
         pushSessionsDone = defaults.object(forKey: "push_sessions_done") as? Bool ?? true
         pushAllDead = defaults.object(forKey: "push_all_dead") as? Bool ?? true
@@ -278,6 +287,7 @@ final class AppModel: ObservableObject {
         popupTextSize = defaults.string(forKey: "popup_text_size") ?? "default"
         glassFocused = defaults.object(forKey: "glass_focused") as? Double ?? 0.7
         keepAwake = defaults.object(forKey: "keep_awake") as? Bool ?? false
+        autoOrder = defaults.object(forKey: "auto_order") as? Bool ?? false
         pushSessionsDone = defaults.object(forKey: "push_sessions_done") as? Bool ?? true
         pushAllDead = defaults.object(forKey: "push_all_dead") as? Bool ?? true
         pushLastAlive = defaults.object(forKey: "push_last_alive") as? Bool ?? true
@@ -496,6 +506,7 @@ final class AppModel: ObservableObject {
             }
             awake.update(wanted: keepAwake,
                          busyCount: list.liveSessions?.busy ?? 0)
+            applyAutoOrder()
             // Same display-feed vantage as the switch diff above: these
             // triggers fire even while the supervised engine is parked.
             let health = list.accounts
@@ -620,7 +631,24 @@ final class AppModel: ObservableObject {
         }
     }
 
-    func reorder(_ order: [Int]) {
+    /// One auto-order write at a time: reorder() refreshes the snapshot,
+    /// which lands back here — a no-op once the engine confirms the order.
+    private var autoOrderInFlight = false
+
+    /// Ask the engine for the policy's order when it differs from what the
+    /// snapshot shows. Skipped while a switch confirmation is up: reorder
+    /// renumbers occupants, and the pending number would point at a
+    /// different account by the time the user hits Switch.
+    func applyAutoOrder() {
+        guard autoOrder, cli != nil, !autoOrderInFlight,
+              pendingSwitch == nil, !accounts.isEmpty else { return }
+        let desired = AutoOrder.order(accounts)
+        guard desired != accounts.map(\.number) else { return }
+        autoOrderInFlight = true
+        reorder(desired) { [weak self] in self?.autoOrderInFlight = false }
+    }
+
+    func reorder(_ order: [Int], done: (() -> Void)? = nil) {
         guard let cli else { return }
         let index = Dictionary(uniqueKeysWithValues: order.enumerated().map { ($1, $0) })
         accounts.sort { (index[$0.number] ?? 0) < (index[$1.number] ?? 0) }
@@ -630,6 +658,7 @@ final class AppModel: ObservableObject {
                 reorderError = nil
             } catch { reorderError = "\(error)" }
             await refreshSnapshot()
+            done?()
         }
     }
 }
