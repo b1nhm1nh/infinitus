@@ -88,6 +88,37 @@ final class SettingsSyncModel: ObservableObject {
         }
     }
 
+    /// Manual export/import of the same snapshot the sync file carries
+    /// (user request 2026-08-30) — the sharing path for machines that
+    /// don't share an iCloud account. Same scope rules: never
+    /// credentials or push secrets.
+    func export(to url: URL) async {
+        do {
+            try await localSnapshot().encoded().write(to: url)
+            status = "exported \(Self.stamp())"
+        } catch {
+            status = "export failed: \(error.localizedDescription)"
+        }
+    }
+
+    func importConfig(from url: URL) async {
+        guard let snap = (try? Data(contentsOf: url)).flatMap(SyncSnapshot.decode)
+        else {
+            status = "import failed: not a Limitless settings file"
+            return
+        }
+        await apply(snap)
+        // The imported state is now the local truth. Mark the sync file's
+        // CURRENT content as seen: the next tick then reads remote as
+        // unchanged and pushes the import, instead of treating the old
+        // remote as news and pulling it back over the import.
+        if let dir = Self.containerDir() {
+            let syncURL = dir.appendingPathComponent("settings-sync.json")
+            lastSeen = (try? Data(contentsOf: syncURL)).flatMap(SyncSnapshot.decode)
+        }
+        status = "imported \(Self.stamp())"
+    }
+
     private static func stamp() -> String {
         let f = DateFormatter()
         f.dateFormat = "HH:mm"

@@ -26,6 +26,23 @@ final class ModelsTests: XCTestCase {
         XCTAssertEqual(list.liveSessions?.unknown, 2)
     }
 
+    func testNextRecoveryDecodesAndIsOptional() throws {
+        let json = """
+        {"schemaVersion": 1, "activeAccountNumber": 3, "accounts": [],
+         "nextRecovery": {"number": 2, "at": "2026-08-30T09:00:00+00:00"}}
+        """
+        let list = try JSONDecoder().decode(AccountList.self, from: Data(json.utf8))
+        XCTAssertNil(list.nextCandidate)
+        XCTAssertEqual(list.nextRecovery?.number, 2)
+        XCTAssertEqual(list.nextRecovery?.at, "2026-08-30T09:00:00+00:00")
+        // Older engines omit the key entirely.
+        let bare = """
+        {"schemaVersion": 1, "activeAccountNumber": null, "accounts": []}
+        """
+        XCTAssertNil(try JSONDecoder()
+            .decode(AccountList.self, from: Data(bare.utf8)).nextRecovery)
+    }
+
     func testSentinelAccountHasNilUsageNotADecodeError() throws {
         let json = """
         {"schemaVersion": 1, "activeAccountNumber": null, "accounts": [

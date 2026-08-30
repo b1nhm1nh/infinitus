@@ -11,6 +11,7 @@ final class AppModel: ObservableObject {
     @Published var accounts: [Account] = []
     @Published var activeNumber: Int?
     @Published var nextCandidate: Int?
+    @Published var nextRecovery: NextRecovery?
     @Published var liveSessions: LiveSessions?
     // Animation triggers. switchFlashTick fires the celebration sweep on
     // the (new) active row; dataPulseTick ripples the sync dot whenever a
@@ -269,6 +270,7 @@ final class AppModel: ObservableObject {
                 accounts = list.accounts
                 activeNumber = list.activeAccountNumber
                 nextCandidate = list.nextCandidate
+                nextRecovery = list.nextRecovery
                 liveSessions = list.liveSessions
             }
             if let now = list.activeAccountNumber, let previousActive,

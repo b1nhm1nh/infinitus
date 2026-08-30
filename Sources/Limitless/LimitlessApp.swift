@@ -279,23 +279,29 @@ struct MenuContent: View {
                     // to be tiny.
                     if showHeader { LimitlessHeader(model: model) }
                     accountArea
-                    Divider()
-                    HStack {
-                        Button("Rotate to next") { model.rotate() }
-                        Button("Refresh") { Task { await model.refreshSnapshot() } }
-                        Button("Test notification") {
-                            Notifier.post(title: "claude-swap", body: "test — notifications reach you")
-                        }
-                        Spacer()
-                        engineBadge
-                    }
                     errorLines
                     Divider()
+                    // One footer row (user request 2026-08-30, was two):
+                    // actions leading, app chrome after, status chips
+                    // trailing. "Test notification" retired — the Push
+                    // pane keeps its own test button.
                     HStack {
+                        Button {
+                            model.rotate()
+                        } label: {
+                            Label("Rotate", systemImage: "arrow.2.circlepath")
+                        }
+                        .help("Switch to the next account in rotation")
+                        Button {
+                            Task { await model.refreshSnapshot() }
+                        } label: {
+                            Label("Refresh", systemImage: "arrow.clockwise")
+                        }
+                        .help("Refresh account usage now")
                         Button {
                             model.showSettings?()
                         } label: {
-                            Label("Settings…", systemImage: "gearshape")
+                            Label("Settings", systemImage: "gearshape")
                         }
                         Button {
                             model.popoverPinned.toggle()
@@ -315,9 +321,10 @@ struct MenuContent: View {
                         .help("Hide actions, event log, and history")
                         layoutToggleIcon
                         popOutIcon
+                        Spacer()
                         serviceChip
                         agentChip
-                        Spacer()
+                        engineBadge
                         if model.appUpdatePending {
                             Button {
                                 model.relaunchApp()
@@ -560,6 +567,43 @@ private struct PopupScale: ViewModifier {
 
 /// Layout chooser: wide grid rows (the classic) or stacked per-account
 /// cards (narrow popup, e.g. on an ultrawide where the bar sits far away).
+/// The advisory marker beside an account number, both layouts.
+/// Green solid triangle: the auto-switcher's likely next target.
+/// Gray hollow triangle: EVERY account is at a limit and this one
+/// recovers first — visibly distinct from "no candidate shown", which
+/// used to be indistinguishable from broken (user report 2026-08-30).
+/// Always in the layout so numbers stay aligned.
+struct NextMarker: View {
+    @ObservedObject var model: AppModel
+    let number: Int
+
+    var body: some View {
+        if model.nextCandidate == number {
+            Image(systemName: "arrowtriangle.right.fill")
+                .font(.caption2)
+                .foregroundStyle(.green)
+                .help("Next auto-switch target")
+        } else if model.nextCandidate == nil,
+                  let recovery = model.nextRecovery,
+                  recovery.number == number {
+            Image(systemName: "arrowtriangle.right")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .help("All accounts are at a limit — this one recovers "
+                      + "first\(Self.eta(recovery.at))")
+        } else {
+            Image(systemName: "arrowtriangle.right.fill")
+                .font(.caption2)
+                .opacity(0)
+        }
+    }
+
+    private static func eta(_ iso: String) -> String {
+        guard let date = WeeklyRoll.parse(iso) else { return "" }
+        return " (" + date.formatted(date: .abbreviated, time: .shortened) + ")"
+    }
+}
+
 struct AccountRows: View {
     @ObservedObject var model: AppModel
     @ObservedObject var usage: UsageModel
@@ -980,13 +1024,7 @@ struct AccountGrid: View {
                 let cells = AccountCells(model: model, usage: usage, account: account)
                 GridRow {
                     HStack(spacing: 2) {
-                        // Advisory: who the auto-switcher would pick next.
-                        // Always in the layout so numbers stay aligned.
-                        Image(systemName: "arrowtriangle.right.fill")
-                            .font(.caption2)
-                            .foregroundStyle(.green)
-                            .opacity(model.nextCandidate == account.number ? 1 : 0)
-                            .help("Next auto-switch target")
+                        NextMarker(model: model, number: account.number)
                         Text("\(account.number)")
                             .fontWeight(account.active ? .bold : .regular)
                             .foregroundStyle(account.active ? Color.accentColor : Color.primary)
@@ -1095,10 +1133,7 @@ struct AccountStack: View {
                 let cells = AccountCells(model: model, usage: usage, account: account, banded: false)
                 VStack(alignment: .leading, spacing: 4) {
                     HStack(spacing: 4) {
-                        Image(systemName: "arrowtriangle.right.fill")
-                            .font(.caption2).foregroundStyle(.green)
-                            .opacity(model.nextCandidate == account.number ? 1 : 0)
-                            .help("Next auto-switch target")
+                        NextMarker(model: model, number: account.number)
                         Text("\(account.number)")
                             .fontWeight(.bold)
                             .foregroundStyle(account.active ? Color.accentColor : Color.secondary)

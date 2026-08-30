@@ -13,9 +13,18 @@ public struct AccountList: Decodable, Sendable {
     public let accounts: [Account]
     /// Advisory: the account the auto-switcher would likely pick next.
     public let nextCandidate: Int?
+    /// Advisory, only when nextCandidate is absent: every account is at
+    /// a limit — this one's last maxed window resets soonest.
+    public let nextRecovery: NextRecovery?
     /// Live Claude Code sessions on this machine (they all ride the
     /// active account's credential). busy = mid-turn right now.
     public let liveSessions: LiveSessions?
+}
+
+public struct NextRecovery: Decodable, Sendable {
+    public let number: Int
+    /// ISO-8601 instant the account is fully usable again.
+    public let at: String
 }
 
 public struct LiveSessions: Decodable, Sendable {

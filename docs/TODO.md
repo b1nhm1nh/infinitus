@@ -55,17 +55,19 @@
   >=100 "dead" rule, but spend is an estimate and the real ranking
   (oauth.account_headroom) never consults it — a rested account (5h 0%,
   7d 1%) went advisory-dead on spend 100%. Spend dropped from the
-  advisory; regression tests. Still open as UX polish: when ALL windows
-  are truly at-limit, "no candidate" is indistinguishable from broken
-  (hollow/gray triangle + "recovers soonest" would fix).
-- Sync settings: export and import config (user, 2026-08-30) — SyncPane
-  gains Export…/Import… of the app's settings (the synced key set) as a
-  JSON file; import applies via the existing merge path.
-- Popup footer (user, 2026-08-30): unify the two button rows into one,
-  remove the "Test notification" button, add the missing icons —
-  row 1 (Rotate to next / Refresh / engine badge, LimitlessApp.swift
-  ~:283) is icon-less text buttons; row 2 (Settings/Pin/Compact/…)
-  already has Labels. Merge into one row of Label buttons.
-- Drop the "…" from the "Settings…" button text (user, 2026-08-30).
-- Visual verification of the 2026-08-30 batch pending: glass look,
-  whole-row themed sweep, About icon, new themes.
+  advisory; regression tests.
+- ~~All-limited looks broken~~ → engine emits `nextRecovery {number, at}`
+  when no candidate is viable (last maxed window resetting soonest);
+  the app's shared NextMarker renders it as a hollow gray triangle with
+  a "recovers first (date)" tooltip, distinct from the green candidate.
+- ~~Sync export/import~~ → SyncPane "File" section: Export…/Import… of
+  the same SyncSnapshot the iCloud file carries (never credentials or
+  push secrets); import marks the current remote as seen so the next
+  tick pushes the import instead of pulling the old remote back.
+- ~~Popup footer~~ → one row of Label buttons (Rotate/Refresh/Settings/
+  Pin/Compact/layout/pop-out, then chips + engine badge + Quit trailing);
+  "Test notification" retired (the Push pane keeps its own test);
+  "Settings…" → "Settings".
+- Visual verification pending: glass look, whole-row themed sweep,
+  About icon, new themes, unified footer, sync export/import, hollow
+  recovery triangle (needs an all-limited fleet to show).
