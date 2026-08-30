@@ -38,6 +38,8 @@ final class AppModel: ObservableObject {
         let text: String
     }
     @Published var eventLog: [EventEntry] = []
+    /// App-side resume nudges + /rc re-arm (ResumeService.swift).
+    let resume = ResumeService()
     @Published var lastError: String?
 
     let cli: CswapCLI?
@@ -297,6 +299,11 @@ final class AppModel: ObservableObject {
     /// LAUNCH — a window-style MenuBarExtra may not build its content view
     /// until the first click, and rumps started its engine immediately.
     func startFeeds() {
+        resume.log = { [weak self] icon, text in
+            guard let self else { return }
+            self.eventLog.append(EventEntry(icon: icon, text: text))
+            if self.eventLog.count > 100 { self.eventLog.removeFirst(self.eventLog.count - 100) }
+        }
         guard let cli, supervisor == nil else { return }
         startEngine(binary: cli.binaryPath)
         refreshTask = Task { [weak self] in
@@ -507,6 +514,12 @@ final class AppModel: ObservableObject {
             awake.update(wanted: keepAwake,
                          busyCount: list.liveSessions?.busy ?? 0)
             applyAutoOrder()
+            // Same display-feed vantage: a switch (manual or parked-engine)
+            // re-arms /rc; an active account that can work resumes stopped
+            // sessions. Detached, single-flight — never awaited here.
+            let active = list.accounts.first { $0.number == list.activeAccountNumber }
+            resume.tick(switched: previous != nil && previous != list.activeAccountNumber,
+                        activeAlive: active.map { !AccountVitals.isDead($0.usage) } ?? false)
             // Same display-feed vantage as the switch diff above: these
             // triggers fire even while the supervised engine is parked.
             let health = list.accounts

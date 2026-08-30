@@ -50,20 +50,28 @@
   re-checks `enabled` after its await before any write.
 
 ## Open
-- Auto-order of accounts (user 2026-08-30: "setting to enable auto
-  order of account, build auto order mechanism"): a toggle, and a
-  mechanism that keeps the fleet sorted (headroom-first? soonest-reset
-  last?) via `cswap reorder` — engine command exists, policy TBD.
+- ~~Auto-order of accounts~~ → Display pane toggle; AutoOrder.swift
+  ranks alive (binding pct, 5-point incumbent margin) < unknown < dead
+  (soonest recovery) < disabled and calls `cswap reorder` only when the
+  order differs; drag disabled while on; synced key `auto_order`.
 - ~~Rename: "Limitless" collides with limitless.ai~~ → Infinitus
   (user pick 2026-08-30). Twin-loop mark; repo, casks (cask_renames
   migration), workflows, App Support copy-migration; bundle id kept.
-- Resume/rc delivery beyond cmux (engine-side, ~/death/claude-swap):
-  the PTY channel is cmux-only; herdr (`herdr agent prompt` /
-  `pane process-info` maps pane → claude pid — verified) and tmux
-  (`send-keys` + `#{pane_pid}` descendant walk) are feasible mirrors
-  of cmux_control.py; Ghostty has no injection API (socket only).
-  `/rc` re-arm has NO fallback outside cmux. Peer-socket resume
-  verified 2026-08-30 into Ghostty and tmux test sessions.
+- ~~Resume/rc delivery beyond cmux~~ → the whole nudge mechanism now
+  lives in the APP (user 2026-08-30: "move all the nudge mechanism to
+  Infinitus" — upstream never merged the engine's copy, PR #250):
+  CswapCore ClaudeSessions/Transcript/PeerSocket/PtyHosts/PtyNudge/
+  SessionResume + ResumeService (Engines pane "Resume nudges —
+  Infinitus side", off by default, per-machine). Terminals cmux, tmux
+  (`send-keys -l`, pane_pid ancestry match), herdr (`pane send-text` +
+  `send-keys enter`, process-info pid match); peer socket fallback;
+  `/rc` sweep with self-lineage skip + idle filter + confirm/Esc.
+  Live-verified 2026-08-31: typed nudges into the tmux and herdr test
+  sessions, both replied. Ghostty stays socket-only (no injection API).
+  Left engine-side on purpose: LimitStopScanner (autoswitch evidence)
+  and capture_limit_screens (writes the engine's backup dir).
+  A local fork engine with `autoswitch.resumeStoppedSessions` /
+  `rearmRemoteControl` on nudges TWICE — turn those off.
 - Linux is untested: the claude-swap formula + PKGBUILD only ran on
   macOS (README says so).
 - ~~Next-candidate indicator "seems missing"~~ → real bug, engine-side:
@@ -136,11 +144,9 @@
 - ~~Row 1 "P1" slot prefix missing~~ → not a bug: the themed
   next-candidate icon REPLACES the slot text by design (slotDisplay,
   the user's emphatic 2026-08-30 ask). Misread during verification.
-- Pop-out in COMPACT mode: the header strip overlaps the first row
-  (seen 2026-08-30 restoring a compact pop-out at launch, window 158pt
-  vs ~166 ideal). Check whether a manually opened compact pop-out does
-  the same — suspect the measured fixedSize vs the ignored top safe
-  area, not the new restore path.
+- ~~Pop-out in COMPACT mode header overlap~~ → not reproducing after
+  the 2026-08-30 Grid overflow fix (compact pop-out captured at 169pt,
+  no overlap). Reopen with a screenshot if it comes back.
 - Visual verification pending: About icon, sync export/import, hollow
   recovery triangle (needs an all-limited fleet to show). Glass,
   themed sweep, footer, new themes: verified 2026-08-30.
@@ -150,11 +156,7 @@
 - ~~Menu bar remaining vs used~~ → "Menu bar counts remaining, not
   used" toggle; TitlePrefs.titleRemaining flips 5h/7d/scoped at
   display time. Popup gauges stay HP-style (already remaining).
-- Dead-transition animation (user, 2026-08-30): when an account flips
-  alive -> dead in a snapshot, play a death animation on its row (the
-  themed dead marker landing — a drop/flicker/desaturate beat), the
-  mirror of the refill celebration. Belongs in the Animations pane
-  examples too.
+- ~~Dead-transition animation~~ (duplicate of the struck entry above).
 - ~~Hide control center, keep chips~~ → "Hide popup actions (status
   chips stay)" Display toggle; wide footer, stacked rail, and compact
   strip all hide their buttons, chips + restart-to-update stay.

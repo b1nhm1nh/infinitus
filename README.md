@@ -97,6 +97,10 @@ Arch users can build from [`packaging/aur/PKGBUILD`](packaging/aur/) —
   hides the popup's buttons but keeps the status chips.
 - **Sessions & status chips** — live Claude Code session counter
   (busy/idle breakdown), engine status, auto-mode indicator.
+- **Resume nudges** (opt-in) — when the account you're on can work
+  again, sessions a usage limit stopped get a short "continue" message
+  typed into their terminal (cmux, tmux, herdr) or sent over Claude
+  Code's peer socket; optional `/rc` re-arm after every switch.
 - **Cost estimates** — 7-day per-account API-list-price estimates
   (estimates, never billing truth).
 - **iCloud settings sync** + file export/import (never credentials).
@@ -108,7 +112,9 @@ Arch users can build from [`packaging/aur/PKGBUILD`](packaging/aur/) —
 ## Privacy
 
 Everything stays on your machine. The app talks to the engine through
-`cswap … --json` subprocesses and never reads its files; usage-cost
+`cswap … --json` subprocesses and never reads its files (resume nudges
+read Claude Code's own session records and transcripts, nothing of the
+engine's); usage-cost
 figures are estimates, never billing truth; push-notification secrets
 travel over stdin and render masked.
 

@@ -1,0 +1,139 @@
+import Foundation
+
+/// Typing into the terminal that hosts a stopped session — the channel
+/// that works when the peer socket does not (older Claude Code builds, a
+/// session that never bound one) and that can clear the limit menu the
+/// socket is powerless against.
+public enum PtyNudge {
+    /// The "You've hit your limit" menu in Claude Code ≥ 2.1.x and the
+    /// `/rc` panel both capture keyboard input: a typed nudge would land as
+    /// a menu keystroke, not a prompt. One Esc dismisses either.
+    static let menuMarkers = ["Wait for limit to reset", "Adjust monthly spend limit", "Usage credit balance:"]
+    static let remoteControlMarkers = ["Remote Control", "Esc to continue"]
+    /// The status line Claude Code shows while a turn runs.
+    static let runningMarker = "esc to interrupt"
+    static let settle: TimeInterval = 1.0
+    static let screenLines = 40
+    static let sessionURL = try! NSRegularExpression(pattern: "https://claude\\.ai/code/session_[A-Za-z0-9]+")
+
+    public enum Status: Equatable, Sendable {
+        /// Typed and the prompt line shows it (or the screen moved on).
+        case delivered
+        /// Typed, but the screen could not be re-read — assume it landed.
+        case typedUnverified
+        /// A menu still owns the keyboard after one Esc; nothing typed.
+        case capturedInput
+        /// A turn is running; nothing typed.
+        case running
+        /// No surface hosts this pid.
+        case noSurface
+    }
+
+    /// Screen text with runs of whitespace collapsed — markers straddle
+    /// wrapped lines and padded columns.
+    static func flat(_ screen: String) -> String {
+        screen.split(whereSeparator: { $0.isWhitespace }).joined(separator: " ")
+    }
+
+    static func inputCaptured(_ flat: String) -> Bool {
+        if menuMarkers.contains(where: { flat.contains($0) }) { return true }
+        return remoteControlMarkers.allSatisfy { flat.contains($0) }
+    }
+
+    static func isRunning(_ flat: String) -> Bool { flat.contains(runningMarker) }
+
+    static func locate(_ host: any PtyHost, pid: Int32, tty: String?, ancestors: [Int32]) -> PtySurface? {
+        ((try? host.surfaces()) ?? []).surface(for: pid, tty: tty, ancestors: ancestors)
+    }
+
+    /// Deliver `text` to the session's terminal. The state machine:
+    /// running → leave it alone; menu → exactly one Esc, re-read, still a
+    /// menu → capturedInput; else type. Never more than one Esc: a second
+    /// one lands in a freed prompt as an interrupt.
+    public static func nudge(host: any PtyHost, pid: Int32, text: String, tty: String?,
+                             ancestors: [Int32], sleep: (TimeInterval) -> Void) -> Status {
+        guard let surface = locate(host, pid: pid, tty: tty, ancestors: ancestors) else { return .noSurface }
+        var screen = flat((try? host.readScreen(surface.ref, lines: screenLines)) ?? "")
+        if isRunning(screen) { return .running }
+        if inputCaptured(screen) {
+            try? host.sendEsc(surface.ref)
+            sleep(settle)
+            screen = flat((try? host.readScreen(surface.ref, lines: screenLines)) ?? "")
+            if inputCaptured(screen) { return .capturedInput }
+            if isRunning(screen) { return .running }
+        }
+        do { try host.sendLine(surface.ref, text) } catch { return .noSurface }
+        sleep(settle)
+        guard let after = try? host.readScreen(surface.ref, lines: screenLines) else { return .typedUnverified }
+        let seen = flat(after)
+        // The prompt echoes the text (possibly wrapped) or it was consumed.
+        return seen.contains(flat(String(text.prefix(40)))) || seen != screen ? .delivered : .typedUnverified
+    }
+
+    // MARK: - /rc re-arm
+
+    public struct SweepResult: Equatable, Sendable {
+        public var sent: [String] = []          // "host:ref" per surface typed into
+        public var skippedSelf = 0
+        public var skippedIdle = 0
+        public var noSurface = 0
+        public var confirmed: [String] = []
+        public var urls: [String] = []
+        public init() {}
+        public var isEmpty: Bool { sent.isEmpty && noSurface == 0 && skippedIdle == 0 && skippedSelf == 0 }
+    }
+
+    /// Type `/rc` into every terminal hosting a live interactive session,
+    /// so Remote Control re-arms on the account just switched to. Sessions
+    /// in this process's own ancestry are skipped (the app may have been
+    /// launched from inside one); idle ones beyond `activeWithin` are left
+    /// alone. With `confirm`, each screen is re-read after a moment for the
+    /// session URL, then the panel is dismissed with one Esc.
+    public static func rearmRemoteControl(
+        hosts: [any PtyHost], sessions: [ClaudeSessionRecord], selfPids: Set<Int32>,
+        activeWithin: TimeInterval, confirm: Bool,
+        ttyOfPid: (Int32) -> String? = ProcessFacts.tty(of:),
+        ancestorsOf: (Int32) -> [Int32] = ProcessFacts.ancestors(of:),
+        idleSeconds: (String) -> TimeInterval? = { ProcessFacts.idleSeconds(tty: $0) },
+        sleep: (TimeInterval) -> Void = { Thread.sleep(forTimeInterval: $0) }
+    ) -> SweepResult {
+        var result = SweepResult()
+        var typed: [(host: any PtyHost, ref: String)] = []
+        var seen = Set<String>()
+        let surfaces = hosts.map { ($0, (try? $0.surfaces()) ?? []) }
+        for session in sessions where session.kind == "interactive" || session.kind.isEmpty {
+            if selfPids.contains(session.pid) { result.skippedSelf += 1; continue }
+            let tty = ttyOfPid(session.pid)
+            if activeWithin > 0, let tty, let idle = idleSeconds(tty), idle > activeWithin {
+                result.skippedIdle += 1
+                continue
+            }
+            let ancestors = ancestorsOf(session.pid)
+            var hit: (any PtyHost, PtySurface)?
+            for (host, list) in surfaces {
+                if let s = list.surface(for: session.pid, tty: tty, ancestors: ancestors) { hit = (host, s); break }
+            }
+            guard let (host, surface) = hit else { result.noSurface += 1; continue }
+            let key = "\(host.name):\(surface.ref)"
+            guard seen.insert(key).inserted else { continue }
+            guard (try? host.sendLine(surface.ref, "/rc")) != nil else { result.noSurface += 1; continue }
+            result.sent.append(key)
+            typed.append((host, surface.ref))
+        }
+        guard confirm, !typed.isEmpty else { return result }
+        sleep(3)
+        for (host, ref) in typed {
+            guard let screen = try? host.readScreen(ref, lines: screenLines) else { continue }
+            let range = NSRange(screen.startIndex..., in: screen)
+            let urls = sessionURL.matches(in: screen, range: range).compactMap {
+                Range($0.range, in: screen).map { String(screen[$0]) }
+            }
+            if !urls.isEmpty || remoteControlMarkers.allSatisfy({ flat(screen).contains($0) }) {
+                result.confirmed.append("\(host.name):\(ref)")
+                result.urls.append(contentsOf: urls)
+                try? host.sendEsc(ref)
+            }
+        }
+        return result
+    }
+}
