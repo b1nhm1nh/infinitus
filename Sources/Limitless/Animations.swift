@@ -98,6 +98,51 @@ extension View {
     }
 }
 
+/// The death beat — the switch celebration's grim mirror (user
+/// 2026-08-30: "play dead animation too when account goes alive ->
+/// dead"). A red hit that flickers while the row drains gray, then a
+/// small slump that settles. On the wide Grid this wraps a clear
+/// overlay band (saturation is a no-op there; the row's own
+/// dead-restyle does the draining) — stacked cards wrap real content
+/// and get the full drain.
+struct DeathFlash: ViewModifier {
+    let trigger: Int
+    var color: Color = .red
+
+    func body(content: Content) -> some View {
+        content
+            .keyframeAnimator(initialValue: 0.0, trigger: trigger) { view, f in
+                view
+                    .saturation(1 - f)
+                    .overlay { color.opacity(f * 0.22).allowsHitTesting(false) }
+            } keyframes: { _ in
+                KeyframeTrack {
+                    CubicKeyframe(0.001, duration: 0.001)
+                    CubicKeyframe(0.9, duration: 0.15)   // the hit
+                    CubicKeyframe(0.35, duration: 0.15)  // flicker
+                    CubicKeyframe(1.0, duration: 0.15)
+                    CubicKeyframe(0.0, duration: 0.9)    // settle into gray
+                }
+            }
+            .keyframeAnimator(initialValue: 0.0, trigger: trigger) { view, y in
+                view.offset(y: y)
+            } keyframes: { _ in
+                KeyframeTrack {
+                    CubicKeyframe(0.001, duration: 0.001)
+                    CubicKeyframe(4, duration: 0.25)     // slump
+                    SpringKeyframe(0, duration: 0.6, spring: .bouncy)
+                }
+            }
+    }
+}
+
+extension View {
+    /// Death beat; fires when `trigger` changes (0 = never armed).
+    func deathFlash(_ trigger: Int, color: Color = .red) -> some View {
+        modifier(DeathFlash(trigger: trigger, color: color))
+    }
+}
+
 /// The "resetting…" pulse as a reusable modifier (debug pane demo).
 private struct PulseOpacity: ViewModifier {
     func body(content: Content) -> some View {

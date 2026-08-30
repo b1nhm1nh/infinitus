@@ -50,6 +50,11 @@ struct AnimationsDebugPane: View {
                 Button("Flash the active row (switch celebration)") {
                     model.switchFlashTick += 1
                 }
+                Button("Play the death beat (first row)") {
+                    if let n = model.accounts.first?.number {
+                        model.deathTicks[n, default: 0] += 1
+                    }
+                }
                 Text("Open the popup first — this triggers the real "
                      + "animation in it. Data-change glows fire on the "
                      + "exact cells whose numbers move (Refresh after "

@@ -1366,6 +1366,11 @@ struct AccountGrid: View {
                             .instantTip(cells.slotTip)
                     }
                     .activeBand(account.active)
+                    // One cell per row reports its bounds for the death
+                    // band — threading a number through every activeBand
+                    // site would touch 13 call sites for the same union.
+                    .anchorPreference(key: DeadRowBounds.self,
+                                      value: .bounds) { [account.number: [$0]] }
                     Button(cells.displayName) {
                         // disabled rows stay clickable, like rumps; the
                         // popup-level alert asks before committing
@@ -1456,6 +1461,23 @@ struct AccountGrid: View {
                                      color: ThemeColor.flash(model.rowTheme))
                         .offset(y: row.minY - 4)
                         .allowsHitTesting(false)
+                }
+            }
+        }
+        // Death beats: a red band over each row whose account just went
+        // dead (the slot cell reported its bounds; full grid width).
+        .overlayPreferenceValue(DeadRowBounds.self) { dict in
+            GeometryReader { geo in
+                ForEach(Array(dict.keys), id: \.self) { n in
+                    if let a = dict[n]?.first,
+                       let tick = model.deathTicks[n], tick > 0 {
+                        let r = geo[a]
+                        Color.clear
+                            .frame(width: geo.size.width, height: r.height + 10)
+                            .deathFlash(tick)
+                            .offset(y: r.minY - 5)
+                            .allowsHitTesting(false)
+                    }
                 }
             }
         }
@@ -1602,6 +1624,7 @@ struct AccountStack: View {
                 }
                 .switchFlash(account.active ? model.switchFlashTick : 0,
                              color: ThemeColor.flash(model.rowTheme))
+                .deathFlash(model.deathTicks[account.number] ?? 0)
             }
         }
     }
@@ -1611,6 +1634,17 @@ struct AccountStack: View {
 /// full-width band over their union. Per-cell backgrounds sized to each
 /// cell's own height read as mismatched patches with seams — gauge cells
 /// are taller than text cells (user screenshot 2026-08-30).
+/// One anchor per row, keyed by account number — the death band's
+/// geometry feed (the beat needs to know WHICH row, unlike the single
+/// active band).
+struct DeadRowBounds: PreferenceKey {
+    static let defaultValue: [Int: [Anchor<CGRect>]] = [:]
+    static func reduce(value: inout [Int: [Anchor<CGRect>]],
+                       nextValue: () -> [Int: [Anchor<CGRect>]]) {
+        value.merge(nextValue(), uniquingKeysWith: +)
+    }
+}
+
 struct ActiveCellBounds: PreferenceKey {
     static let defaultValue: [Anchor<CGRect>] = []
     static func reduce(value: inout [Anchor<CGRect>],

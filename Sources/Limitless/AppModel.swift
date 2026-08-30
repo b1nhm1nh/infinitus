@@ -20,6 +20,9 @@ final class AppModel: ObservableObject {
     // the (new) active row; dataPulseTick ripples the sync dot whenever a
     // snapshot actually changed something visible.
     @Published var switchFlashTick = 0
+    /// Per-account death beats: bumped when a row flips alive -> dead
+    /// in a snapshot (the celebration's mirror, user 2026-08-30).
+    @Published var deathTicks: [Int: Int] = [:]
     /// Click-to-switch staging: the row sets this, the popup's
     /// confirmation alert commits or clears it.
     @Published var pendingSwitch: Int?
@@ -364,6 +367,13 @@ final class AppModel: ObservableObject {
             let changed = !accountsVisuallyEqual(accounts, list.accounts)
             let previousActive = activeNumber
             let firstLoad = accounts.isEmpty && !list.accounts.isEmpty
+            // alive -> dead diff BEFORE the state swap. First load has no
+            // previous state, so nothing fires on launch by construction.
+            let wasAlive = Set(accounts.filter {
+                !AccountVitals.isDead($0.usage) }.map(\.number))
+            let newlyDead = list.accounts.filter {
+                AccountVitals.isDead($0.usage) && wasAlive.contains($0.number)
+            }.map(\.number)
             withAnimation(.easeInOut(duration: 0.6)) {
                 accounts = list.accounts
                 activeNumber = list.activeAccountNumber
@@ -375,6 +385,7 @@ final class AppModel: ObservableObject {
                previousActive != now {
                 switchFlashTick += 1
             }
+            for n in newlyDead { deathTicks[n, default: 0] += 1 }
             // Launch greeting: once the first snapshot renders, the
             // active row plays its sweep alongside the bars' fill-up
             // (user 2026-08-30). Delayed so the popup has drawn.

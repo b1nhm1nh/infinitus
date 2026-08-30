@@ -159,11 +159,11 @@ public struct RowTheme: Codable, Equatable, Sendable, Identifiable {
 
     public static let movie = RowTheme(
         id: "movie", name: "Movie — reels & box office",
-        sessionLabel: "🎬", sessionColor: "yellow",
+        sessionLabel: "🎥", sessionColor: "yellow",
         weeklyLabel: "🎞", weeklyColor: "indigo",
         scopedPrefix: "★ ", scopedColor: "orange",
         creditLabel: "🎟", creditColor: "green",
-        cashIcon: "💵", aheadIcon: "sf:popcorn.fill",
+        cashIcon: "💵", aheadIcon: "sf:speedometer",
         deadMarker: "🔚", revivePrefix: "re-release ", deadVerb: "sold out",
         readyLabel: "now showing", flashColor: "orange",
         modelAlias: ["Fable": "Epic", "Opus": "Blockbuster",
@@ -181,7 +181,7 @@ public struct RowTheme: Codable, Equatable, Sendable, Identifiable {
         readyLabel: "unscathed", flashColor: "red",
         modelAlias: ["Fable": "Hydra", "Opus": "Cerberus",
                      "Sonnet": "Fury", "Haiku": "Shade"],
-        planPrefix: "Heat ", slotPrefix: "†", resetWord: "raising the dead…", nextIcon: "🔥")
+        planPrefix: "Heat ", slotPrefix: "†", resetWord: "raising the dead…", nextIcon: "🕯")
 
     public static let mgs = RowTheme(
         id: "mgs", name: "Metal Gear — tactical espionage",
@@ -215,7 +215,7 @@ public struct RowTheme: Codable, Equatable, Sendable, Identifiable {
         weeklyLabel: "🗓", weeklyColor: "blue",
         scopedPrefix: "📐 ", scopedColor: "teal",
         creditLabel: "LOC", creditColor: "green",
-        cashIcon: "💾", aheadIcon: "sf:cup.and.saucer.fill",
+        cashIcon: "💾", aheadIcon: "sf:flame.fill",
         deadMarker: "🐛", revivePrefix: "hotfix ", deadVerb: "segfaulted",
         readyLabel: "compiles clean", flashColor: "blue",
         modelAlias: ["Fable": "mainframe", "Opus": "kernel",
