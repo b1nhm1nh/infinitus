@@ -332,6 +332,66 @@ final class AppModel: ObservableObject {
 
     /// Stop the engine cleanly, then relaunch this app from its bundle —
     /// the "restart to update" action after an on-disk rebuild.
+    // MARK: onboarding — engine install (todo 2026-08-30)
+
+    /// True when no cswap binary was found at launch; the popup swaps
+    /// its rows for the onboarding card.
+    var engineMissing: Bool { cli == nil }
+    @Published var installingEngine = false
+    @Published var installMessage: String?
+
+    /// Button-triggered only — never auto-installs. Runs
+    /// `uv tool install claude-swap`, then relaunches so init re-runs
+    /// the locator (cli stays a let; the restart IS the re-detect).
+    func installEngine() {
+        guard !installingEngine else { return }
+        let uv = CswapLocator.locate(candidates: [
+            "\(NSHomeDirectory())/.local/bin/uv",
+            "/opt/homebrew/bin/uv",
+            "/usr/local/bin/uv",
+        ])
+        guard let uv else {
+            installMessage = "uv not found — get it first: brew install uv"
+            return
+        }
+        installingEngine = true
+        installMessage = "Installing claude-swap…"
+        Task.detached {
+            let p = Process()
+            p.executableURL = URL(fileURLWithPath: uv)
+            p.arguments = ["tool", "install", "claude-swap"]
+            let pipe = Pipe()
+            p.standardOutput = pipe
+            p.standardError = pipe
+            do {
+                try p.run()
+                p.waitUntilExit()
+                let out = String(decoding:
+                    pipe.fileHandleForReading.readDataToEndOfFile(),
+                    as: UTF8.self)
+                let ok = p.terminationStatus == 0
+                await MainActor.run { [weak self] in
+                    guard let self else { return }
+                    self.installingEngine = false
+                    if ok {
+                        self.installMessage = "Installed — restarting…"
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
+                            self.relaunchApp()
+                        }
+                    } else {
+                        self.installMessage = "Install failed: "
+                            + out.suffix(200)
+                    }
+                }
+            } catch {
+                await MainActor.run { [weak self] in
+                    self?.installingEngine = false
+                    self?.installMessage = "Couldn't run uv: \(error.localizedDescription)"
+                }
+            }
+        }
+    }
+
     func relaunchApp() {
         let bundle = Bundle.main.bundleURL.path
         let old = supervisor

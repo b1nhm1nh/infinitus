@@ -466,10 +466,22 @@ final class StatusItemController {
                 self, selector: #selector(settingsKeyChanged),
                 name: NSWindow.didResignKeyNotification, object: w)
             w.setContentSize(NSSize(width: 780, height: 540))
+            NotificationCenter.default.addObserver(
+                self, selector: #selector(settingsClosed),
+                name: NSWindow.willCloseNotification, object: w)
             settings = w
         }
+        // An accessory app has no Cmd+Tab entry, so an open Settings
+        // window was unreachable once buried (user bug 2026-08-30).
+        // Become a regular app while it's open — Dock icon and Cmd+Tab
+        // appear — and drop back to accessory when it closes.
+        NSApp.setActivationPolicy(.regular)
         NSApp.activate(ignoringOtherApps: true)
         settings?.makeKeyAndOrderFront(nil)
+    }
+
+    @objc private func settingsClosed() {
+        NSApp.setActivationPolicy(.accessory)
     }
 
     @objc private func settingsKeyChanged() {

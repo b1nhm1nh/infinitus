@@ -179,7 +179,13 @@ struct IntroSlideIn: ViewModifier {
         content
             .opacity(on ? 1 : 0)
             .offset(x: on ? 0 : (fromLeft ? -70 : 70))
-            .onAppear { model.accounts.isEmpty ? (on = false) : play() }
+            // Hold hidden only while data is COMING. With no engine
+            // installed nothing ever arrives — the onboarding card must
+            // show, not an empty sliver (found live 2026-08-30).
+            .onAppear {
+                model.accounts.isEmpty && !model.engineMissing
+                    ? (on = false) : play()
+            }
             .onChange(of: model.introTick) { _, _ in play() }
     }
 
@@ -205,7 +211,13 @@ struct IntroContentReveal: ViewModifier {
         content
             .opacity(on ? 1 : 0)
             .offset(y: on ? 0 : dy)
-            .onAppear { model.accounts.isEmpty ? (on = false) : play() }
+            // Hold hidden only while data is COMING. With no engine
+            // installed nothing ever arrives — the onboarding card must
+            // show, not an empty sliver (found live 2026-08-30).
+            .onAppear {
+                model.accounts.isEmpty && !model.engineMissing
+                    ? (on = false) : play()
+            }
             .onChange(of: model.introTick) { _, _ in play() }
             .onChange(of: model.introStyle) { _, _ in play() }
     }
@@ -234,7 +246,13 @@ struct IntroTitleFlourish: ViewModifier {
             .rotationEffect(.degrees(on ? 0 : startRotation))
             .opacity(on ? 1 : 0)
             .brightness(glow)
-            .onAppear { model.accounts.isEmpty ? (on = false) : play() }
+            // Hold hidden only while data is COMING. With no engine
+            // installed nothing ever arrives — the onboarding card must
+            // show, not an empty sliver (found live 2026-08-30).
+            .onAppear {
+                model.accounts.isEmpty && !model.engineMissing
+                    ? (on = false) : play()
+            }
             .onChange(of: model.introTick) { _, _ in play() }
             .onChange(of: model.introTitle) { _, _ in play() }
     }

@@ -503,7 +503,9 @@ struct MenuContent: View {
     /// Ten-plus accounts scroll instead of growing an off-screen popup.
     @ViewBuilder private var accountArea: some View {
         Group {
-            if model.accounts.count > 10 {
+            if model.engineMissing {
+                OnboardingCard(model: model)
+            } else if model.accounts.count > 10 {
                 ScrollView(showsIndicators: false) {
                     AccountRows(model: model, usage: usage)
                 }
@@ -1787,5 +1789,54 @@ struct AnyLabelStyle: LabelStyle {
     }
     func makeBody(configuration: Configuration) -> some View {
         make(configuration)
+    }
+}
+
+
+/// First-run card when no cswap binary exists (todo 2026-08-30):
+/// explains the engine, offers a one-click install (uv), never
+/// auto-installs. The rest of the popup chrome stays functional.
+struct OnboardingCard: View {
+    @ObservedObject var model: AppModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Welcome to Limitless")
+                .font(.headline)
+            Text("The claude-swap engine isn't installed — it does the "
+                 + "account switching and usage reading. Limitless is "
+                 + "the cockpit; cswap is the engine.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: 300, alignment: .leading)
+                .fixedSize(horizontal: false, vertical: true)
+            HStack(spacing: 8) {
+                Button {
+                    model.installEngine()
+                } label: {
+                    if model.installingEngine {
+                        HStack(spacing: 5) {
+                            ProgressView().controlSize(.small)
+                            Text("Installing…")
+                        }
+                    } else {
+                        Label("Install engine", systemImage: "arrow.down.circle")
+                    }
+                }
+                .disabled(model.installingEngine)
+                Text("or run: uv tool install claude-swap")
+                    .font(.caption).monospaced()
+                    .foregroundStyle(.tertiary)
+                    .textSelection(.enabled)
+            }
+            if let msg = model.installMessage {
+                Text(msg).font(.caption).foregroundStyle(.secondary)
+            }
+            Text("Then add your first account:  cswap add")
+                .font(.caption).monospaced()
+                .foregroundStyle(.tertiary)
+                .textSelection(.enabled)
+        }
+        .padding(6)
     }
 }
