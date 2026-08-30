@@ -94,6 +94,10 @@ final class StatusItemController {
         item.button?.imagePosition = model.title.isEmpty ? .imageOnly : .imageLeading
         item.button?.target = self
         item.button?.action = #selector(togglePopover)
+        // Right-click = context menu (todo 2026-08-30). NEVER assign
+        // item.menu permanently — that hijacks left-click too; the menu
+        // is attached just-in-time inside togglePopover instead.
+        item.button?.sendAction(on: [.leftMouseUp, .rightMouseUp])
 
         // The title and visibility follow the model; receive AFTER the
         // change lands (objectWillChange fires before mutation).
@@ -275,6 +279,13 @@ final class StatusItemController {
     }
 
     @objc private func togglePopover() {
+        // Right-click gets the context menu; every action it carries is
+        // reachable even when the popup footer's controls are hidden
+        // (the footer-hide setting leans on this menu existing).
+        if NSApp.currentEvent?.type == .rightMouseUp {
+            showContextMenu()
+            return
+        }
         // A visible pop-out owns the content: the menu bar item focuses it
         // instead of opening a second copy as a popover (user request).
         if let pinned, pinned.isVisible {
@@ -290,6 +301,67 @@ final class StatusItemController {
             showAnchored()
         }
     }
+
+    /// Right-click menu on the status item (todo 2026-08-30): themes,
+    /// the control-center actions, app chrome. Built fresh each time so
+    /// checkmarks and toggle titles are current; attached only for the
+    /// duration of the click (performClick tracks synchronously).
+    private func showContextMenu() {
+        let menu = NSMenu()
+
+        let themes = NSMenu()
+        for theme in model.availableThemes {
+            let row = NSMenuItem(title: theme.name,
+                                 action: #selector(pickTheme(_:)),
+                                 keyEquivalent: "")
+            row.target = self
+            row.representedObject = theme.id
+            row.state = model.gamification == theme.id ? .on : .off
+            themes.addItem(row)
+        }
+        let themesItem = NSMenuItem(title: "Theme", action: nil, keyEquivalent: "")
+        themesItem.submenu = themes
+        menu.addItem(themesItem)
+
+        menu.addItem(.separator())
+        menu.addItem(menuItem("Rotate to Next Account", #selector(menuRotate)))
+        menu.addItem(menuItem("Refresh Usage", #selector(menuRefresh)))
+        menu.addItem(.separator())
+        let pin = menuItem("Pin Popup Open", #selector(menuPin))
+        pin.state = model.popoverPinned ? .on : .off
+        menu.addItem(pin)
+        menu.addItem(menuItem(pinned?.isVisible == true
+                              ? "Pop Back Into Menu Bar" : "Pop Out Into a Window",
+                              #selector(menuPopOut)))
+        menu.addItem(.separator())
+        menu.addItem(menuItem("Settings…", #selector(menuSettings)))
+        menu.addItem(menuItem("Restart Limitless", #selector(menuRestart)))
+        menu.addItem(menuItem("Quit Limitless", #selector(menuQuit)))
+
+        item.menu = menu
+        item.button?.performClick(nil)
+        item.menu = nil
+    }
+
+    private func menuItem(_ title: String, _ action: Selector) -> NSMenuItem {
+        let row = NSMenuItem(title: title, action: action, keyEquivalent: "")
+        row.target = self
+        return row
+    }
+
+    @objc private func pickTheme(_ sender: NSMenuItem) {
+        guard let id = sender.representedObject as? String else { return }
+        model.gamification = id
+    }
+    @objc private func menuRotate() { model.rotate() }
+    @objc private func menuRefresh() {
+        Task { await model.refreshSnapshot() }
+    }
+    @objc private func menuPin() { model.popoverPinned.toggle() }
+    @objc private func menuPopOut() { popOut() }
+    @objc private func menuSettings() { showSettingsWindow() }
+    @objc private func menuRestart() { model.relaunchApp() }
+    @objc private func menuQuit() { model.shutdown() }
 
     /// Same content in a real window. No popup button opens this any more
     /// (Pin now holds the popover itself); it remains the guaranteed way in
