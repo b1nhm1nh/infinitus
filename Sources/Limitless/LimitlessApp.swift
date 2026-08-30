@@ -109,28 +109,18 @@ struct LimitlessApp: App {
     notifyModel: NotifyModel, usageModel: UsageModel,
     updateModel: UpdateModel
 ) -> [SettingsTab] {
+    // Ordered by how often each pane is reached for (user 2026-08-30:
+    // "reorder the settings"): everyday looks first, plumbing after,
+    // About last; engines keep their own trailing section.
     [
-
-        SettingsTab(title: "Resume reliability", symbol: "arrow.clockwise", tint: .blue,
-                    keywords: ["session", "nudge", "wake", "stop"],
-                    view: AnyView(ResumeReliabilityPane(model: reliabilityModel))),
         SettingsTab(title: "Display", symbol: "menubar.rectangle", tint: .purple,
-                    keywords: ["theme", "layout", "popup", "size", "compact",
+                    keywords: ["layout", "popup", "size", "compact",
                                "menu bar", "icon", "order", "alias"],
                     view: AnyView(DisplayPane(model: model))),
-        SettingsTab(title: "Sync", symbol: "icloud", tint: .cyan,
-                    keywords: ["icloud", "sync", "settings", "drive", "devices"],
-                    view: AnyView(SyncPane(sync: model.sync))),
-        SettingsTab(title: "Activity", symbol: "clock.arrow.circlepath", tint: .teal,
-                    keywords: ["history", "switches", "log", "events"],
-                    view: AnyView(ActivityPane(model: model))),
-    ]
-    + (model.debugMenu
-       ? [SettingsTab(title: "Animations", symbol: "sparkles", tint: .pink,
-                      keywords: ["debug", "test"],
-                      view: AnyView(AnimationsDebugPane(model: model)))]
-       : [])
-    + [
+        SettingsTab(title: "Themes", symbol: "paintpalette", tint: .orange,
+                    keywords: ["theme", "skin", "gallery", "community",
+                               "rpg", "row", "gamification"],
+                    view: AnyView(ThemesPane(model: model))),
         SettingsTab(title: "Push", symbol: "antenna.radiowaves.left.and.right",
                     tint: .red,
                     keywords: ["slack", "telegram", "webhook", "notification"],
@@ -138,6 +128,22 @@ struct LimitlessApp: App {
         SettingsTab(title: "Usage", symbol: "chart.bar", tint: .green,
                     keywords: ["spend", "cost", "tokens", "estimate"],
                     view: AnyView(UsagePane(model: usageModel))),
+        SettingsTab(title: "Activity", symbol: "clock.arrow.circlepath", tint: .teal,
+                    keywords: ["history", "switches", "log", "events"],
+                    view: AnyView(ActivityPane(model: model))),
+        SettingsTab(title: "Sync", symbol: "icloud", tint: .cyan,
+                    keywords: ["icloud", "sync", "settings", "drive", "devices"],
+                    view: AnyView(SyncPane(sync: model.sync))),
+        SettingsTab(title: "Resume reliability", symbol: "arrow.clockwise", tint: .blue,
+                    keywords: ["session", "nudge", "wake", "stop"],
+                    view: AnyView(ResumeReliabilityPane(model: reliabilityModel))),
+    ]
+    + (model.debugMenu
+       ? [SettingsTab(title: "Animations", symbol: "sparkles", tint: .pink,
+                      keywords: ["debug", "test"],
+                      view: AnyView(AnimationsDebugPane(model: model)))]
+       : [])
+    + [
         SettingsTab(title: "About", symbol: "info.circle", tint: .indigo,
                     keywords: ["update", "version", "license", "links"],
                     image: AboutPane.limitlessIcon,
@@ -1326,6 +1332,7 @@ enum ThemeColor {
         case "teal": return .teal
         case "pink": return .pink
         case "mint": return .mint
+        case "brown": return .brown
         case "gray", "secondary": return .secondary
         default:
             guard name.hasPrefix("#"), name.count == 7,

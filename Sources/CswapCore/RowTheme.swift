@@ -142,7 +142,8 @@ public struct RowTheme: Codable, Equatable, Sendable, Identifiable {
     public static let off = RowTheme(
         id: "off", name: "Off — plain numbers", plain: true,
         sessionLabel: "5h", sessionColor: "secondary",
-        weeklyLabel: "7d", weeklyColor: "secondary")
+        weeklyLabel: "7d", weeklyColor: "secondary",
+        deadMarker: "\u{2715}")   // plain ✕ — the 💀 belongs to the skins (user 2026-08-30)
 
     public static let rpg = RowTheme(
         id: "rpg", name: "RPG — HP/MP gauges + gold",
@@ -222,7 +223,60 @@ public struct RowTheme: Codable, Equatable, Sendable, Identifiable {
                      "Sonnet": "daemon", "Haiku": "script"],
         planPrefix: "v", slotPrefix: "#", resetWord: "recompiling…", nextIcon: "⏭")
 
-    public static let builtins: [RowTheme] = [off, rpg, movie, hades, mgs, agent, swe]
+    public static let scifi = RowTheme(
+        id: "scifi", name: "Sci-Fi — warp cores & shields",
+        sessionLabel: "PWR", sessionColor: "blue",
+        weeklyLabel: "SHLD", weeklyColor: "teal",
+        scopedPrefix: "🛸 ", scopedColor: "mint",
+        creditLabel: "🔋", creditColor: "green",
+        cashIcon: "🪐", aheadIcon: "☄",
+        deadMarker: "💥", revivePrefix: "🔧 ", deadVerb: "offline",
+        readyLabel: "all systems go", flashColor: "cyan",
+        modelAlias: ["Fable": "Mothership", "Opus": "Cruiser",
+                     "Sonnet": "Fighter", "Haiku": "Probe"],
+        planPrefix: "Class ", slotPrefix: "🚀", resetWord: "recharging…", nextIcon: "📡")
+
+    public static let west = RowTheme(
+        id: "west", name: "Wild West — six-guns & gold rush",
+        sessionLabel: "🔫", sessionColor: "orange",
+        weeklyLabel: "🐴", weeklyColor: "brown",
+        scopedPrefix: "🤠 ", scopedColor: "yellow",
+        creditLabel: "🏦", creditColor: "green",
+        cashIcon: "🥇", aheadIcon: "💨",
+        deadMarker: "🪦", revivePrefix: "🌅 ", deadVerb: "six feet under",
+        readyLabel: "saddled up", flashColor: "orange",
+        modelAlias: ["Fable": "Outlaw", "Opus": "Sheriff",
+                     "Sonnet": "Deputy", "Haiku": "Tumbleweed"],
+        planPrefix: "Bounty ", slotPrefix: "⭐", resetWord: "sun's rising…", nextIcon: "🌵")
+
+    public static let cyber = RowTheme(
+        id: "cyber", name: "Cyberpunk — chrome & neon",
+        sessionLabel: "RAM", sessionColor: "#ff2d95",
+        weeklyLabel: "NET", weeklyColor: "yellow",
+        scopedPrefix: "🦾 ", scopedColor: "cyan",
+        creditLabel: "💳", creditColor: "green",
+        cashIcon: "💴", aheadIcon: "🧨",
+        deadMarker: "💀", revivePrefix: "🧬 ", deadVerb: "flatlined",
+        readyLabel: "jacked in", flashColor: "#ff2d95",
+        modelAlias: ["Fable": "Netrunner", "Opus": "Militech",
+                     "Sonnet": "Ripperdoc", "Haiku": "Gonk"],
+        planPrefix: "Cred ", slotPrefix: "◢", resetWord: "rebooting…", nextIcon: "🕶")
+
+    public static let gothic = RowTheme(
+        id: "gothic", name: "Gothic — candles & cathedrals",
+        sessionLabel: "🦇", sessionColor: "purple",
+        weeklyLabel: "🌙", weeklyColor: "indigo",
+        scopedPrefix: "⛪ ", scopedColor: "gray",
+        creditLabel: "🗝", creditColor: "yellow",
+        cashIcon: "⚱", aheadIcon: "🔮",
+        deadMarker: "⚰️", revivePrefix: "🌒 ", deadVerb: "entombed",
+        readyLabel: "immortal", flashColor: "purple",
+        modelAlias: ["Fable": "Vampire Lord", "Opus": "Gargoyle",
+                     "Sonnet": "Wraith", "Haiku": "Ghoul"],
+        planPrefix: "Crypt ", slotPrefix: "✟", resetWord: "tolling midnight…", nextIcon: "🌹")
+
+    public static let builtins: [RowTheme] = [
+        off, rpg, movie, hades, mgs, agent, swe, scifi, west, cyber, gothic]
 
     // MARK: custom themes
 
@@ -267,7 +321,9 @@ public struct RowTheme: Codable, Equatable, Sendable, Identifiable {
         try enc.encode(themes).write(to: url)
     }
 
-    /// A starter file for "Open themes file" when none exists yet.
+    /// A starter file for "Open themes file" when none exists yet —
+    /// every themeable field shown so custom skins see the whole
+    /// vocabulary (reconciled with the current struct, 2026-08-30).
     public static let templateJSON = """
     [
       {
@@ -279,7 +335,12 @@ public struct RowTheme: Codable, Equatable, Sendable, Identifiable {
         "creditLabel": "CR", "creditColor": "#39ff14",
         "cashIcon": "🕶", "aheadIcon": "⚡",
         "deadMarker": "✖", "revivePrefix": "↻ ",
-        "readyLabel": "ONLINE"
+        "deadVerb": "offline", "readyLabel": "ONLINE",
+        "flashColor": "#ff2d95",
+        "modelAlias": {"Fable": "MAINFRAME", "Opus": "SERVER",
+                       "Sonnet": "TERMINAL", "Haiku": "CHIP"},
+        "planPrefix": "MHz ", "slotPrefix": "▸",
+        "resetWord": "rebooting the grid…", "nextIcon": "⏭"
       }
     ]
     """

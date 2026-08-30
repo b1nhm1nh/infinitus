@@ -16,8 +16,9 @@ A native macOS menu bar app (Swift/SwiftUI) over the
   a celebration sweep on every switch (and a death beat when an
   account runs out).
 - **Themes** — RPG (HP/MP + gold), Movie, Hades, Metal Gear, AI
-  Agentic, Classic SWE, or plain numbers; community skins via
-  `themes.json`.
+  Agentic, Classic SWE, Sci-Fi, Wild West, Cyberpunk, Gothic, or plain
+  numbers; a Themes settings pane with card grid, your own skins via
+  `themes.json`, and a community gallery.
 - **Glass popup** — real backdrop blur in every focus state, with a
   transparency dial; a launch intro (slides, bar fill-up, title
   flourish — all tunable in the debug pane).

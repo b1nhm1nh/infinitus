@@ -47,7 +47,13 @@ everything in `index.json` and installs a copy into the user's local
 | `deadMarker` | prefix on a dead account's name |
 | `revivePrefix` | prepended to an exhausted window's reset label |
 | `deadVerb` | verb for a dead limit ("out", "MIA", "sold out") |
+| `readyLabel` | the all-fresh row's word ("ready", "full HP") |
 | `flashColor` | tint for switch/data-change animations ("" = accent) |
+| `modelAlias` | per-model rename map ({"Fable": "Dragon"}) |
+| `planPrefix` | replaces "Max " in plan strings ("Lv " → "Lv 20x") |
+| `slotPrefix` | prepended to the account number ("P" → "P1") |
+| `resetWord` | the live "resetting…" word ("respawning…") |
+| `nextIcon` | next-candidate marker ("" = green triangle) |
 | `plain` | `true` renders text percentages instead of gauges |
 
 Colors are SwiftUI names (`red`, `cyan`, …) or `#rrggbb`.
