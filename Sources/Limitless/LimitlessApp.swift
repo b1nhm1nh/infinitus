@@ -793,12 +793,21 @@ struct AccountCells {
     /// smaller even", user 2026-08-30) — both use the short vocabulary.
     var compactText: Bool { model.compactRows || !banded }
 
-    /// "Max 20x" -> "20x" in compact mode; "Enterprise" -> "Ent".
+    /// Themed plan ("Max 20x" -> "Lv 20x" in RPG); compact keeps it short.
     var planText: String? {
         guard let plan = account.plan else { return nil }
-        guard compactText else { return plan }
-        return plan.replacingOccurrences(of: "Max ", with: "")
-            .replacingOccurrences(of: "Enterprise", with: "Ent")
+        return theme.plain ? (compactText
+            ? plan.replacingOccurrences(of: "Max ", with: "")
+                .replacingOccurrences(of: "Enterprise", with: "Ent")
+            : plan)
+            : theme.planLabel(plan, compact: compactText)
+    }
+
+    /// Themed account number ("P1", "S3"); the raw number stays in
+    /// tooltips and identifies the row for switching.
+    var slotText: String {
+        theme.plain ? "\(account.number)"
+                    : theme.slotPrefix + "\(account.number)"
     }
 
     var displayName: String {
@@ -840,7 +849,8 @@ struct AccountCells {
             TimelineView(.periodic(from: .now, by: 1)) { ctx in
                 let left = date.timeIntervalSince(ctx.date)
                 if left <= 0 {
-                    Text("resetting…")
+                    Text(theme.plain || theme.resetWord.isEmpty
+                         ? "resetting…" : theme.resetWord)
                         .font(.caption).bold().foregroundStyle(.green)
                         .opacity(0.35 + 0.65 * abs(sin(
                             ctx.date.timeIntervalSinceReferenceDate * 2.5)))
@@ -935,8 +945,9 @@ struct AccountCells {
                     Text("spent").font(.caption).foregroundStyle(.secondary)
                 }
             }
-            .help("\(plainCause(cause)) is exhausted (100%) — the account "
-                  + "is unusable until it resets")
+            .instantTip("\(plainCause(cause)) is used up (100%) — the "
+                        + "account can't serve requests until it resets"
+                        + (cause.countdown.map { " in \($0)" } ?? ""))
             .fixedSize()
             .activeBand(banded && account.active)
         }
@@ -946,7 +957,7 @@ struct AccountCells {
         switch cause.kind {
         case .session: return theme.sessionLabel
         case .weekly: return theme.weeklyLabel
-        case .scoped: return theme.scopedPrefix + (cause.name ?? "?")
+        case .scoped: return theme.scopedPrefix + theme.modelName(cause.name)
         case .credit: return theme.creditLabel
         }
     }
@@ -1008,11 +1019,15 @@ struct AccountCells {
                             remaining: GaugeMath.remaining(usedPct: w.pct),
                             color: ThemeColor.resolve(
                                 session ? theme.sessionColor : theme.weeklyColor),
-                            paceRemaining: w.expectedPct.map { 100 - $0 })
+                            paceRemaining: w.expectedPct.map { 100 - $0 },
+                            dividers: session
+                                ? (1..<5).map { Double($0) * 20 }
+                                : (1..<7).map { Double($0) * 100 / 7 })
                     }
                     resetLabelView(resetsAt: w.resetsAt, staticText: resetText(w))
                 }
-                .instantTip(WindowSummary.line(w, kind: session ? "Session" : "Weekly"))
+                .instantTip(WindowSummary.line(
+                    w, kind: session ? "Session (5h)" : "Weekly (7d)"))
                 // fixedSize: usage is the row's payload — grow the popup
                 // rather than truncate; the name column stays flexible.
                 .fixedSize()
@@ -1106,16 +1121,17 @@ struct AccountCells {
                                 .monospacedDigit()
                                 .contentTransition(.numericText(value: w.pct))
                         } else {
-                            Text(theme.scopedPrefix + (w.name ?? "?"))
+                            Text(theme.scopedPrefix + theme.modelName(w.name))
                                 .font(.caption).bold()
                                 .foregroundStyle(ThemeColor.resolve(theme.scopedColor))
-                                .help("Model weekly limit left")
                             GaugeBar(remaining: GaugeMath.remaining(usedPct: w.pct),
                                      color: ThemeColor.resolve(theme.scopedColor),
-                                     paceRemaining: w.expectedPct.map { 100 - $0 })
+                                     paceRemaining: w.expectedPct.map { 100 - $0 },
+                                     dividers: (1..<7).map { Double($0) * 100 / 7 })
                         }
                     }
-                    .instantTip(WindowSummary.line(w, kind: "\(w.name ?? "Model") only"))
+                    .instantTip(WindowSummary.line(
+                        w, kind: "\(w.name ?? "Model") weekly"))
                 }
             }
             .fixedSize()
@@ -1200,9 +1216,11 @@ struct AccountGrid: View {
                 GridRow {
                     HStack(spacing: 2) {
                         NextMarker(model: model, number: account.number)
-                        Text("\(account.number)")
+                        Text(cells.slotText)
                             .fontWeight(account.active ? .bold : .regular)
                             .foregroundStyle(account.active ? Color.accentColor : Color.primary)
+                            .instantTip("Account \(account.number)"
+                                        + (account.active ? " — active" : ""))
                     }
                     .activeBand(account.active)
                     Button(cells.displayName) {
@@ -1228,6 +1246,7 @@ struct AccountGrid: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .fixedSize()
+                        .instantTip("Subscription: \(account.plan ?? "?")")
                         .activeBand(account.active)
                     if let note = SentinelNotes.note(for: account.usageStatus) {
                         Text(note)
@@ -1326,7 +1345,7 @@ struct AccountStack: View {
         let cells = AccountCells(model: model, usage: usage, account: account, banded: false)
         HStack(spacing: 4) {
             NextMarker(model: model, number: account.number)
-            Text("\(account.number)")
+            Text(cells.slotText)
                 .fontWeight(.bold)
                 .foregroundStyle(account.active ? Color.accentColor : Color.secondary)
             Button(cells.displayName) {
@@ -1385,9 +1404,11 @@ struct AccountStack: View {
                 VStack(alignment: .leading, spacing: 4) {
                     HStack(spacing: 4) {
                         NextMarker(model: model, number: account.number)
-                        Text("\(account.number)")
+                        Text(cells.slotText)
                             .fontWeight(.bold)
                             .foregroundStyle(account.active ? Color.accentColor : Color.secondary)
+                            .instantTip("Account \(account.number)"
+                                        + (account.active ? " — active" : ""))
                         Button(cells.displayName) {
                             if !account.active { model.pendingSwitch = account.number }
                         }
@@ -1398,6 +1419,7 @@ struct AccountStack: View {
                             .lineLimit(1)
                         if let plan = cells.planText {
                             Text(plan).font(.caption).foregroundStyle(.secondary)
+                                .instantTip("Subscription: \(account.plan ?? "?")")
                         }
                         Spacer(minLength: 0)
                         cells.cashCell

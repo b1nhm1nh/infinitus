@@ -97,3 +97,17 @@ extension View {
         modifier(ValueChangedGlow(value: value, color: color))
     }
 }
+
+/// The "resetting…" pulse as a reusable modifier (debug pane demo).
+private struct PulseOpacity: ViewModifier {
+    func body(content: Content) -> some View {
+        TimelineView(.periodic(from: .now, by: 0.05)) { ctx in
+            content.opacity(0.35 + 0.65 * abs(sin(
+                ctx.date.timeIntervalSinceReferenceDate * 2.5)))
+        }
+    }
+}
+
+extension View {
+    func pulseOpacity() -> some View { modifier(PulseOpacity()) }
+}

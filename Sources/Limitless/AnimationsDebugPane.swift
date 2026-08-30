@@ -9,6 +9,7 @@ struct AnimationsDebugPane: View {
     @State private var sampleFlash = 0
     @State private var samplePulse = 0
     @State private var resetDemo = Date().addingTimeInterval(605)
+    @State private var refillDemo: Double = 100
 
     var body: some View {
         Form {
@@ -21,6 +22,39 @@ struct AnimationsDebugPane: View {
                      + "exact cells whose numbers move (Refresh after "
                      + "some usage to see them).")
                     .font(.caption).foregroundStyle(.secondary)
+            }
+            Section("Window reset (refill)") {
+                // The real bar: a jump up of 25+ points replays the
+                // spring refill — exactly what a 5h/7d reset does live.
+                HStack(spacing: 10) {
+                    GaugeBar(remaining: refillDemo, color: .blue,
+                             paceRemaining: 55,
+                             dividers: (1..<5).map { Double($0) * 20 })
+                    Button("Replay 5h reset") {
+                        refillDemo = 8
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                            refillDemo = 100
+                        }
+                    }
+                    Button("Replay 7d reset") {
+                        refillDemo = 22
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                            refillDemo = 100
+                        }
+                    }
+                }
+                Text("Green stripe = pace reserve; red tick near empty is "
+                     + "the warning mark; segment ticks are hours (5h bar) "
+                     + "or days (7d bar).")
+                    .font(.caption).foregroundStyle(.secondary)
+                HStack(spacing: 10) {
+                    Text("Themed reset word:")
+                        .font(.caption).foregroundStyle(.secondary)
+                    Text(model.rowTheme.plain || model.rowTheme.resetWord.isEmpty
+                         ? "resetting…" : model.rowTheme.resetWord)
+                        .font(.caption).bold().foregroundStyle(.green)
+                        .pulseOpacity()
+                }
             }
             Section("Inline samples") {
                 HStack(spacing: 12) {

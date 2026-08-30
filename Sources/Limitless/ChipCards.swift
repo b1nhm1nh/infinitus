@@ -26,6 +26,13 @@ enum WindowSummary {
         if let reset = w.countdown ?? w.clock {
             parts.append("resets \(reset)")
         }
+        // CodexBar's quota math: how many 5h session windows fit in the
+        // time left on a weekly bar.
+        if kind.hasPrefix("Weekly"), let reset = WeeklyRoll.parse(w.resetsAt) {
+            let hoursLeft = max(0, reset.timeIntervalSinceNow / 3600)
+            parts.append(String(format: "%.0f session windows until reset",
+                                (hoursLeft / 5).rounded()))
+        }
         return parts.joined(separator: " · ")
     }
 }

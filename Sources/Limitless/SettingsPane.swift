@@ -65,6 +65,7 @@ struct SettingsPane: View {
     var body: some View {
         Form { SettingsFormBody(model: model) }
             .formStyle(.grouped)
+            .task { await model.load() }
     }
 }
 
@@ -89,7 +90,10 @@ struct SettingsFormBody: View {
                 Text(err).foregroundStyle(.red).font(.caption)
             }
         }
-        .task { await model.load() }
+        // NO .task here: a modifier on a Group applies to its CHILDREN,
+        // and before the first load the Group is EMPTY — the task never
+        // fired and the settings never appeared ("cannot control any of
+        // cswap config", 2026-08-30). Hosts own the load.
     }
 
     private struct PaneSection { let title: String; let entries: [SettingEntry] }

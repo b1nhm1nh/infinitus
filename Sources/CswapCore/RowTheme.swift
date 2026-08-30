@@ -37,6 +37,17 @@ public struct RowTheme: Codable, Equatable, Sendable, Identifiable {
     /// Tint for the switch celebration and data-change glow; "" means the
     /// app accent color.
     public var flashColor: String
+    /// Per-model rename ("Fable" -> "Dragon"); unmapped models keep their
+    /// real name. Tooltips always carry the real name.
+    public var modelAlias: [String: String]
+    /// Replaces the "Max " in plan strings ("Max 20x" -> "Lv 20x").
+    /// "" keeps the plan verbatim.
+    public var planPrefix: String
+    /// Prepended to the account number ("P" -> "P1").
+    public var slotPrefix: String
+    /// The live "resetting…" word while a window rolls over
+    /// ("respawning…", "recompiling…"); "" keeps "resetting…".
+    public var resetWord: String
 
     public init(
         id: String, name: String, plain: Bool = false,
@@ -47,7 +58,11 @@ public struct RowTheme: Codable, Equatable, Sendable, Identifiable {
         cashIcon: String = "💰", aheadIcon: String = "sf:flame.fill",
         deadMarker: String = "💀", revivePrefix: String = "",
         deadVerb: String = "out", readyLabel: String = "ready",
-        flashColor: String = ""
+        flashColor: String = "",
+        modelAlias: [String: String] = [:],
+        planPrefix: String = "",
+        slotPrefix: String = "",
+        resetWord: String = ""
     ) {
         self.id = id
         self.name = name
@@ -67,6 +82,24 @@ public struct RowTheme: Codable, Equatable, Sendable, Identifiable {
         self.deadVerb = deadVerb
         self.readyLabel = readyLabel
         self.flashColor = flashColor
+        self.modelAlias = modelAlias
+        self.planPrefix = planPrefix
+        self.slotPrefix = slotPrefix
+        self.resetWord = resetWord
+    }
+
+    /// Theme name for a model ("Fable" -> "Dragon"); real name otherwise.
+    public func modelName(_ name: String?) -> String {
+        guard let name else { return "?" }
+        return modelAlias[name] ?? name
+    }
+
+    /// Themed plan text: "Max 20x" -> planPrefix + "20x".
+    public func planLabel(_ plan: String, compact: Bool) -> String {
+        let tier = plan.replacingOccurrences(of: "Max ", with: "")
+            .replacingOccurrences(of: "Enterprise", with: compact ? "Ent" : "Enterprise")
+        if planPrefix.isEmpty { return compact ? tier : plan }
+        return planPrefix + tier
     }
 
     public init(from decoder: Decoder) throws {
@@ -90,7 +123,11 @@ public struct RowTheme: Codable, Equatable, Sendable, Identifiable {
             revivePrefix: try c.decodeIfPresent(String.self, forKey: .revivePrefix) ?? base.revivePrefix,
             deadVerb: try c.decodeIfPresent(String.self, forKey: .deadVerb) ?? base.deadVerb,
             readyLabel: try c.decodeIfPresent(String.self, forKey: .readyLabel) ?? base.readyLabel,
-            flashColor: try c.decodeIfPresent(String.self, forKey: .flashColor) ?? base.flashColor
+            flashColor: try c.decodeIfPresent(String.self, forKey: .flashColor) ?? base.flashColor,
+            modelAlias: try c.decodeIfPresent([String: String].self, forKey: .modelAlias) ?? base.modelAlias,
+            planPrefix: try c.decodeIfPresent(String.self, forKey: .planPrefix) ?? base.planPrefix,
+            slotPrefix: try c.decodeIfPresent(String.self, forKey: .slotPrefix) ?? base.slotPrefix,
+            resetWord: try c.decodeIfPresent(String.self, forKey: .resetWord) ?? base.resetWord
         )
     }
 
@@ -109,7 +146,10 @@ public struct RowTheme: Codable, Equatable, Sendable, Identifiable {
         creditLabel: "$", creditColor: "green",
         cashIcon: "💰", aheadIcon: "sf:flame.circle.fill",
         deadMarker: "💀", revivePrefix: "🧪 ", deadVerb: "down",
-        readyLabel: "full HP", flashColor: "yellow")
+        readyLabel: "full HP", flashColor: "yellow",
+        modelAlias: ["Fable": "Dragon", "Opus": "Golem",
+                     "Sonnet": "Bard", "Haiku": "Imp"],
+        planPrefix: "Lv ", slotPrefix: "P", resetWord: "respawning…")
 
     public static let movie = RowTheme(
         id: "movie", name: "Movie — reels & box office",
@@ -119,7 +159,10 @@ public struct RowTheme: Codable, Equatable, Sendable, Identifiable {
         creditLabel: "🎟", creditColor: "green",
         cashIcon: "💵", aheadIcon: "sf:popcorn.fill",
         deadMarker: "🔚", revivePrefix: "re-release ", deadVerb: "sold out",
-        readyLabel: "now showing", flashColor: "orange")
+        readyLabel: "now showing", flashColor: "orange",
+        modelAlias: ["Fable": "Epic", "Opus": "Blockbuster",
+                     "Sonnet": "Indie", "Haiku": "Short"],
+        planPrefix: "Studio ", slotPrefix: "🎬", resetWord: "premiering…")
 
     public static let hades = RowTheme(
         id: "hades", name: "Hades — blades & darkness",
@@ -129,7 +172,10 @@ public struct RowTheme: Codable, Equatable, Sendable, Identifiable {
         creditLabel: "🪙", creditColor: "yellow",
         cashIcon: "💠", aheadIcon: "🔥",
         deadMarker: "☠", revivePrefix: "🩸 ", deadVerb: "fallen",
-        readyLabel: "unscathed", flashColor: "red")
+        readyLabel: "unscathed", flashColor: "red",
+        modelAlias: ["Fable": "Hydra", "Opus": "Cerberus",
+                     "Sonnet": "Fury", "Haiku": "Shade"],
+        planPrefix: "Heat ", slotPrefix: "†", resetWord: "raising the dead…")
 
     public static let mgs = RowTheme(
         id: "mgs", name: "Metal Gear — tactical espionage",
@@ -139,7 +185,10 @@ public struct RowTheme: Codable, Equatable, Sendable, Identifiable {
         creditLabel: "📦", creditColor: "green",
         cashIcon: "GMP ", aheadIcon: "❗",
         deadMarker: "☠", revivePrefix: "💊 ", deadVerb: "MIA",
-        readyLabel: "all clear", flashColor: "green")
+        readyLabel: "all clear", flashColor: "green",
+        modelAlias: ["Fable": "FOXHOUND", "Opus": "REX",
+                     "Sonnet": "RAY", "Haiku": "Mk.II"],
+        planPrefix: "Rank ", slotPrefix: "S", resetWord: "extraction inbound…")
 
     public static let agent = RowTheme(
         id: "agent", name: "AI Agentic — tokens & context",
@@ -149,7 +198,10 @@ public struct RowTheme: Codable, Equatable, Sendable, Identifiable {
         creditLabel: "⚡", creditColor: "orange",
         cashIcon: "🪙", aheadIcon: "sf:sparkles",
         deadMarker: "🔌", revivePrefix: "🔁 ", deadVerb: "rate-limited",
-        readyLabel: "ready to ship", flashColor: "cyan")
+        readyLabel: "ready to ship", flashColor: "cyan",
+        modelAlias: ["Fable": "frontier", "Opus": "opus-4",
+                     "Sonnet": "sonnet-4", "Haiku": "haiku-4"],
+        planPrefix: "tier-", slotPrefix: "agent-", resetWord: "rate limit lifting…")
 
     public static let swe = RowTheme(
         id: "swe", name: "Classic SWE — hand-written, no AI",
@@ -159,7 +211,10 @@ public struct RowTheme: Codable, Equatable, Sendable, Identifiable {
         creditLabel: "LOC", creditColor: "green",
         cashIcon: "💾", aheadIcon: "sf:cup.and.saucer.fill",
         deadMarker: "🐛", revivePrefix: "hotfix ", deadVerb: "segfaulted",
-        readyLabel: "compiles clean", flashColor: "blue")
+        readyLabel: "compiles clean", flashColor: "blue",
+        modelAlias: ["Fable": "mainframe", "Opus": "kernel",
+                     "Sonnet": "daemon", "Haiku": "script"],
+        planPrefix: "v", slotPrefix: "#", resetWord: "recompiling…")
 
     public static let builtins: [RowTheme] = [off, rpg, movie, hades, mgs, agent, swe]
 

@@ -82,6 +82,7 @@ struct EnginesPane: View {
             }
         }
         .formStyle(.grouped)
+        .task { await settings.load() }
         .onAppear { codex.reload() }
     }
 
