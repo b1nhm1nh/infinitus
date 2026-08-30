@@ -105,7 +105,7 @@ public struct RowTheme: Codable, Equatable, Sendable, Identifiable {
         id: "rpg", name: "RPG — HP/MP gauges + gold",
         sessionLabel: "MP", sessionColor: "blue",
         weeklyLabel: "HP", weeklyColor: "red",
-        scopedPrefix: "", scopedColor: "purple",
+        scopedPrefix: "⚔ ", scopedColor: "purple",
         creditLabel: "$", creditColor: "green",
         cashIcon: "💰", aheadIcon: "sf:flame.circle.fill",
         deadMarker: "💀", revivePrefix: "🧪 ", deadVerb: "down",

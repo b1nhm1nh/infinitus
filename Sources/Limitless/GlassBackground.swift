@@ -51,20 +51,26 @@ struct ThemedGlassChrome: View {
 
     var body: some View {
         ZStack {
-            GlassBackground()
+            if #available(macOS 26.0, *) {
+                // The REAL Liquid Glass alone — stacking the hud blur
+                // under it re-opacified the backdrop ("a bit more
+                // transparent", user 2026-08-30). Pre-26 keeps the hud.
+                GlassEffectLayer()
+            } else {
+                GlassBackground()
+            }
             let theme = model.rowTheme
             if !theme.plain, !theme.flashColor.isEmpty {
+                // Container themification: a visible top-down wash plus a
+                // tinted edge glow ("not seeing as too themified", user
+                // 2026-08-30 — 0.16 read as nothing over the blur).
+                let tint = ThemeColor.resolve(theme.flashColor)
                 LinearGradient(
-                    colors: [ThemeColor.resolve(theme.flashColor).opacity(0.16),
-                             ThemeColor.resolve(theme.flashColor).opacity(0.03)],
+                    colors: [tint.opacity(0.30), tint.opacity(0.06)],
                     startPoint: .top, endPoint: .bottom)
-            }
-            if #available(macOS 26.0, *) {
-                // The REAL Liquid Glass ("try the glass view", user
-                // 2026-08-30): NSGlassEffectView is the AppKit material
-                // itself — the SwiftUI glassEffect on a clear color only
-                // shimmered. Behind the tint so themes still read.
-                GlassEffectLayer()
+                RoundedRectangle(cornerRadius: 10)
+                    .strokeBorder(tint.opacity(0.35), lineWidth: 1.5)
+                    .padding(1)
             }
         }
         .ignoresSafeArea()

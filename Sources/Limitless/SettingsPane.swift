@@ -63,7 +63,19 @@ struct SettingsPane: View {
     @ObservedObject var model: SettingsModel
 
     var body: some View {
-        Form {
+        Form { SettingsFormBody(model: model) }
+            .formStyle(.grouped)
+    }
+}
+
+/// The spec-driven cswap settings sections, embeddable in any Form —
+/// SettingsPane wraps them alone; EnginesPane hosts them under the
+/// Claude engine header (engines revamp, 2026-08-30).
+struct SettingsFormBody: View {
+    @ObservedObject var model: SettingsModel
+
+    var body: some View {
+        Group {
             // One section per key prefix ("autoswitch.threshold" → Auto-switch),
             // in the order the CLI emits the keys.
             ForEach(sections, id: \.title) { section in
@@ -77,7 +89,6 @@ struct SettingsPane: View {
                 Text(err).foregroundStyle(.red).font(.caption)
             }
         }
-        .formStyle(.grouped)
         .task { await model.load() }
     }
 

@@ -110,10 +110,12 @@ func settingsTabs(
     updateModel: UpdateModel
 ) -> [SettingsTab] {
     [
-        SettingsTab(title: "cswap", symbol: "gearshape", tint: .gray,
+        SettingsTab(title: "Engines", symbol: "engine.combustion", tint: .gray,
                     keywords: ["engine", "auto switch", "interval", "config",
-                               "threshold", "rotate"],
-                    view: AnyView(SettingsPane(model: settingsModel))),
+                               "threshold", "rotate", "cswap", "codex",
+                               "openai", "accounts"],
+                    view: AnyView(EnginesPane(model: model,
+                                              settings: settingsModel))),
         SettingsTab(title: "Resume reliability", symbol: "arrow.clockwise", tint: .blue,
                     keywords: ["session", "nudge", "wake", "stop"],
                     view: AnyView(ResumeReliabilityPane(model: reliabilityModel))),
@@ -341,7 +343,8 @@ struct MenuContent: View {
                         } label: {
                             Image(systemName: model.popoverPinned ? "pin.fill" : "pin")
                         }
-                        .instantTip(model.popoverPinned ? "Unpin popup" : "Pin popup open")
+                        .instantTip(model.popoverPinned ? "Unpin popup" : "Pin popup open",
+                                    edge: .above)
                         Button {
                             withAnimation(.easeInOut(duration: 0.3)) {
                                 model.compactRows.toggle()
@@ -349,12 +352,13 @@ struct MenuContent: View {
                         } label: {
                             Image(systemName: "rectangle.compress.vertical")
                         }
-                        .instantTip("Compact mode")
+                        .instantTip("Compact mode", edge: .above)
                         layoutToggleIcon
                             .instantTip(model.popupLayout == "stacked"
-                                        ? "Switch to wide rows" : "Switch to stacked cards")
+                                        ? "Switch to wide rows" : "Switch to stacked cards",
+                                        edge: .above)
                         popOutIcon
-                            .instantTip("Pop out into a window")
+                            .instantTip("Pop out into a window", edge: .above)
                         Spacer()
                         serviceChip
                         agentChip
@@ -375,13 +379,13 @@ struct MenuContent: View {
                         } label: {
                             Image(systemName: "gearshape")
                         }
-                        .instantTip("Settings")
+                        .instantTip("Settings", edge: .above)
                         Button {
                             model.shutdown()   // engine stops first
                         } label: {
                             Image(systemName: "power")
                         }
-                        .instantTip("Quit")
+                        .instantTip("Quit", edge: .above)
                     }
                 }
             }
@@ -605,7 +609,7 @@ struct MenuContent: View {
             .popover(isPresented: $model.sessionsShown, arrowEdge: .bottom) {
                 SessionListCard(live: live)
             }
-            .instantTip(SessionSummary.tooltip(live))
+            .instantTip(SessionSummary.tooltip(live), edge: .above)
         }
     }
 
@@ -651,7 +655,7 @@ struct MenuContent: View {
             }
         }
         .buttonStyle(.plain)
-        .instantTip(engineTip)
+        .instantTip(engineTip, edge: .above)
     }
 
     private var engineTip: String {
@@ -1356,12 +1360,21 @@ struct AccountStack: View {
     }
 
     /// The window closest to its limit — the one that will bind first.
+    /// Labels come from the theme ("themify all info", 2026-08-30).
     private func bindingWindow(_ account: Account) -> (String, Double)? {
         guard let u = account.usage else { return nil }
+        let theme = model.rowTheme
         var all: [(String, Double)] = []
-        if let w = u.fiveHour { all.append(("5h", w.pct)) }
-        if let w = u.sevenDay { all.append(("7d", w.pct)) }
-        for w in u.scoped ?? [] { all.append((w.name ?? "?", w.pct)) }
+        if let w = u.fiveHour {
+            all.append((theme.plain ? "5h" : theme.sessionLabel, w.pct))
+        }
+        if let w = u.sevenDay {
+            all.append((theme.plain ? "7d" : theme.weeklyLabel, w.pct))
+        }
+        for w in u.scoped ?? [] {
+            let name = w.name ?? "?"
+            all.append((theme.plain ? name : theme.scopedPrefix + name, w.pct))
+        }
         return all.max { $0.1 < $1.1 }
     }
 
@@ -1459,47 +1472,66 @@ private extension View {
 /// user 2026-08-30): .help() waits on the system tooltip delay, too slow
 /// to learn a rail of bare icons from. Rides to the RIGHT of the icon —
 /// the rail hugs the popup's left edge, so right always has room.
+/// Which side of the anchor the tip lands on. Trailing tips overflowed
+/// the popup at the right edge and even inside gauge cells (user
+/// screenshots 2026-08-30) — below/above hug the popup's vertical axis.
+enum TipEdge { case trailing, below, above }
+
 private struct InstantTip: ViewModifier {
     let text: String
+    var edge: TipEdge = .below
     @State private var hovering = false
 
     func body(content: Content) -> some View {
         content
             .onHover { hovering = $0 }
-            .overlay(alignment: .leading) {
+            .overlay(alignment: alignment) {
                 if hovering {
-                    // fixedSize, never frame(maxWidth:): an overlay is
-                    // proposed its ANCHOR's size (a 20pt icon), so a max
-                    // frame clamps to that and wraps one character per
-                    // line — the vertical strip in the 2026-08-30
-                    // screenshot. Long texts are trimmed instead.
-                    Text(Self.trimmed(text))
-                        .font(.caption)
-                        .padding(.horizontal, 7)
-                        .padding(.vertical, 3)
-                        .background(
-                            RoundedRectangle(cornerRadius: 5)
-                                .fill(.regularMaterial)
-                                .shadow(radius: 2, y: 1))
-                        .fixedSize()
-                        .offset(x: 24)
+                    tipBody
+                        .offset(x: edge == .trailing ? 24 : 0,
+                                y: edge == .below ? 22 : edge == .above ? -22 : 0)
                         .allowsHitTesting(false)
                         .transition(.opacity)
                 }
             }
-            .zIndex(hovering ? 1 : 0)
+            .zIndex(hovering ? 3 : 0)
             .animation(.easeOut(duration: 0.12), value: hovering)
     }
-}
 
-extension InstantTip {
-    static func trimmed(_ s: String) -> String {
-        s.count > 56 ? String(s.prefix(55)) + "…" : s
+    private var alignment: Alignment {
+        switch edge {
+        case .trailing: return .leading
+        case .below: return .topLeading
+        case .above: return .bottomLeading
+        }
+    }
+
+    @ViewBuilder private var tipBody: some View {
+        // Short tips get their ideal width (fixedSize — an overlay is
+        // proposed its ANCHOR's size, so frame(maxWidth:) clamps to a
+        // 20pt icon and wraps one char per line, the 'vertical strip'
+        // bug). Long tips get a FIXED width, which is also honored.
+        let chip = Text(text)
+            .font(.caption)
+            .padding(.horizontal, 7)
+            .padding(.vertical, 3)
+            .background(
+                RoundedRectangle(cornerRadius: 5)
+                    .fill(.regularMaterial)
+                    .shadow(radius: 2, y: 1))
+        if text.count > 42 {
+            chip.frame(width: 240, alignment: .leading)
+                .fixedSize(horizontal: false, vertical: true)
+        } else {
+            chip.fixedSize()
+        }
     }
 }
 
 private extension View {
-    func instantTip(_ text: String) -> some View { modifier(InstantTip(text: text)) }
+    func instantTip(_ text: String, edge: TipEdge = .below) -> some View {
+        modifier(InstantTip(text: text, edge: edge))
+    }
 }
 
 /// Type-erased LabelStyle so one Label can flip icon-only <-> titled at
