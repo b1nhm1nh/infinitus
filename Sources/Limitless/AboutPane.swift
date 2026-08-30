@@ -197,6 +197,8 @@ final class AppReleaseModel: ObservableObject {
                 latest = release.tag_name
                 // Rolling tag — no version to compare; show what's current.
                 status = "latest: \(release.name ?? "nightly") — reinstall to update"
+                defaults.set(Date().timeIntervalSince1970, forKey: "app_update_last_check")
+                onUpdate?(nil)
                 return
             }
             let tag: String
