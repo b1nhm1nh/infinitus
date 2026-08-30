@@ -31,6 +31,9 @@ Native macOS menu bar app for the claude-swap engine. Split out of
 - macOS 26 ControlCenter can stop adopting new bundled apps' status items
   after rapid relaunch churn — only a logout clears it; `run-unbundled.sh`
   is the workaround. Don't run the dev loop's kill/reopen cycle for hours.
+- NSGlassEffectView does NOT deactivate when its window resigns key —
+  the "goes solid unfocused" repro was the probe window being occluded.
+  Never reintroduce a focus-swap around it; glass runs in all states.
 - usernoted refuses dev-cert builds without a provisioning profile;
   notifications fall back to osascript (working mode, not an error).
 - SwiftUI Grid: spanning cells span the widest row's real column count;
