@@ -1486,6 +1486,24 @@ struct AccountGrid: View {
         3 + (model.accounts.map { ($0.usage?.scoped ?? []).count }.max() ?? 0)
     }
 
+    /// Does any row lay out per-column gauges? If so, the one-line rows
+    /// (dead/ready/sentinel) must not size their column — they start in the
+    /// 5h column and run across the empty cells beside them. Spanning with
+    /// gridCellColumns instead rendered the grid ~(span-1)*spacing wider
+    /// than fixedSize measured, so the popup clipped both edges whenever a
+    /// themed account was dead (2026-08-30, dev shim fleet).
+    private var anyGauged: Bool {
+        model.compactRows ? false : model.accounts.contains { a in
+            let c = AccountCells(model: model, usage: usage, account: a)
+            return SentinelNotes.note(for: a.usageStatus) == nil && !c.dead && !c.allFresh
+        }
+    }
+
+    /// Empty cells that keep a one-line row on the shared column grid.
+    @ViewBuilder private var oneLineFillers: some View {
+        ForEach(1..<usageColumns, id: \.self) { _ in Text(verbatim: "") }
+    }
+
     private static func union(_ rects: [CGRect]) -> CGRect? {
         rects.dropFirst().reduce(rects.first) { $0?.union($1) }
     }
@@ -1541,19 +1559,22 @@ struct AccountGrid: View {
                     if let note = SentinelNotes.note(for: account.usageStatus) {
                         Text(note)
                             .foregroundStyle(.secondary)
-                            .gridCellColumns(usageColumns)
+                            .gridCellUnsizedAxes(anyGauged ? .horizontal : [])
                             .activeBand(account.active)
+                        oneLineFillers
                     } else if cells.dead {
                         // A dead row shows ONLY what blocks it — a full MP
                         // gauge on an unusable account reads as usable.
                         cells.deadCell
-                            .gridCellColumns(usageColumns)
+                            .gridCellUnsizedAxes(anyGauged ? .horizontal : [])
+                        oneLineFillers
                         cells.cashCell
                     } else if cells.allFresh {
                         // A fully-available account carries no signal worth
                         // five gauges — one "ready" line in every mode.
                         cells.readyCell
-                            .gridCellColumns(usageColumns)
+                            .gridCellUnsizedAxes(anyGauged ? .horizontal : [])
+                        oneLineFillers
                         cells.cashCell
                     } else if model.compactRows {
                         // Compact hides empty/exhausted cells, which makes
