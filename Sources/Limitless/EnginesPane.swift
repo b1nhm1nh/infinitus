@@ -8,6 +8,7 @@ struct ClaudeEnginePane: View {
     @ObservedObject var model: AppModel
     @ObservedObject var settings: SettingsModel
     @ObservedObject var update: UpdateModel
+    @ObservedObject var reliability: ResumeReliabilityModel
 
     var body: some View {
         Form {
@@ -22,6 +23,7 @@ struct ClaudeEnginePane: View {
                 Text("Rotates Claude accounts before limits stall a session.")
                     .font(.caption).foregroundStyle(.secondary)
             }
+            ResumeReliabilitySection(model: reliability)
             // Engine updates live WITH the engine (user 2026-08-30:
             // "move all of updates of engine to its engine setting");
             // About keeps the app's own release channel.

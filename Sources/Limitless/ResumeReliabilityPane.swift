@@ -58,43 +58,82 @@ final class ResumeReliabilityModel: ObservableObject {
     }
 }
 
-struct ResumeReliabilityPane: View {
+/// The nudge-reliability rows, embedded in the cswap engine pane (user
+/// 2026-08-30: the settings gating cswap's resume nudges belong with the
+/// engine that sends them). Status-first rendering: a green check when a
+/// row already matches the recommendation, an amber warning plus the
+/// one-click fix when it doesn't.
+struct ResumeReliabilitySection: View {
     @ObservedObject var model: ResumeReliabilityModel
 
+    private var readyCount: Int {
+        model.rows.filter { matches($0) }.count
+    }
+
     var body: some View {
-        Form {
-            Text("These are Claude Code's settings, not cswap's. They decide "
-                + "whether cswap's resume nudges actually reach a stopped "
-                + "session. Changes apply to sessions started afterwards.")
-                .font(.caption)
+        Section {
             ForEach(Array(model.rows.enumerated()), id: \.element.key) { index, row in
-                Section(row.title) {
-                    Text(row.explanation).font(.caption).foregroundStyle(.secondary)
-                    HStack {
-                        Text(currentLabel(row))
-                        Spacer()
-                        Button("Set \(row.recommended.editableText)") {
-                            model.applyRecommended(index)
-                        }
-                        .disabled(row.effective?.source == .managed)
-                    }
-                    if row.effective?.source == .managed {
-                        Text("Managed by your organization — the user file cannot override it.")
-                            .font(.caption).foregroundStyle(.orange)
-                    }
-                    if let err = row.error {
-                        Text(err).font(.caption).foregroundStyle(.red)
-                    }
-                }
+                rowView(index, row)
+            }
+            Text("These are Claude Code's settings, not cswap's — they "
+                 + "decide whether cswap's resume nudges actually reach a "
+                 + "stopped session. Changes apply to sessions started "
+                 + "afterwards.")
+                .font(.caption).foregroundStyle(.secondary)
+        } header: {
+            HStack {
+                Text("Resume nudges — Claude Code side")
+                Spacer()
+                Text(readyCount == model.rows.count
+                     ? "nudges ready" : "\(readyCount)/\(model.rows.count) ready")
+                    .font(.caption)
+                    .foregroundStyle(readyCount == model.rows.count
+                                     ? Color.green : .orange)
             }
         }
-        .formStyle(.grouped)
         .onAppear { model.load() }
     }
 
-    private func currentLabel(_ row: ResumeReliabilityModel.Row) -> String {
-        guard let effective = row.effective else { return "current: not set" }
-        let origin = effective.source == .managed ? " (managed)" : ""
-        return "current: \(effective.value.editableText)\(origin)"
+    private func matches(_ row: ResumeReliabilityModel.Row) -> Bool {
+        row.effective?.value == row.recommended
+    }
+
+    @ViewBuilder private func rowView(
+        _ index: Int, _ row: ResumeReliabilityModel.Row
+    ) -> some View {
+        let good = matches(row)
+        let managed = row.effective?.source == .managed
+        VStack(alignment: .leading, spacing: 3) {
+            HStack(spacing: 6) {
+                Image(systemName: good ? "checkmark.circle.fill"
+                                       : "exclamationmark.triangle.fill")
+                    .foregroundStyle(good ? Color.green : .orange)
+                Text(row.title)
+                Spacer()
+                Text(stateText(row) + (managed ? " · managed" : ""))
+                    .font(.caption)
+                    .foregroundStyle(good ? Color.secondary : .orange)
+                if !good && !managed {
+                    Button("Set \(row.recommended.editableText)") {
+                        model.applyRecommended(index)
+                    }
+                }
+            }
+            Text(row.explanation)
+                .font(.caption).foregroundStyle(.secondary)
+            if managed && !good {
+                Text("Managed by your organization — the user file cannot override it.")
+                    .font(.caption).foregroundStyle(.orange)
+            }
+            if let err = row.error {
+                Text(err).font(.caption).foregroundStyle(.red)
+            }
+        }
+    }
+
+    private func stateText(_ row: ResumeReliabilityModel.Row) -> String {
+        guard let effective = row.effective else { return "not set" }
+        if case .bool(let b) = effective.value { return b ? "on" : "off" }
+        return effective.value.editableText
     }
 }
