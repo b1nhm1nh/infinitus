@@ -174,6 +174,54 @@ private struct WindowKeyState: NSViewRepresentable {
     func updateNSView(_ view: KeyWatchView, context: Context) {}
 }
 
+/// Real behind-window blur with a controllable radius — the thing no
+/// public API offers. CABackdropLayer is the private layer class every
+/// NSVisualEffectView/NSGlassEffectView builds on; driving it directly
+/// gives pure blurred transparency (no frost, no tint, no inactive
+/// dimming — raw CA has no appearance logic). Probe-verified
+/// 2026-08-30: backdrop shapes ghost through softly in every focus
+/// state. Falls back to the public glass when the class is missing.
+final class BackdropGlassNSView: NSView {
+    static var available: Bool { NSClassFromString("CABackdropLayer") != nil }
+
+    private var backdrop: CALayer?
+
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        wantsLayer = true
+        guard let cls = NSClassFromString("CABackdropLayer") as? CALayer.Type,
+              let filterCls = NSClassFromString("CAFilter") as? NSObject.Type,
+              let filter = filterCls.perform(NSSelectorFromString("filterWithType:"),
+                                             with: "gaussianBlur")?
+                  .takeUnretainedValue() as? NSObject
+        else { return }
+        let bd = cls.init()
+        filter.setValue(20.0, forKey: "inputRadius")
+        bd.filters = [filter]
+        bd.setValue(2.0, forKey: "scale")
+        bd.cornerRadius = 10
+        bd.masksToBounds = true
+        layer?.addSublayer(bd)
+        backdrop = bd
+    }
+
+    required init?(coder: NSCoder) { fatalError() }
+
+    override func layout() {
+        super.layout()
+        backdrop?.frame = bounds
+    }
+
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+}
+
+struct BackdropGlass: NSViewRepresentable {
+    func makeNSView(context: Context) -> BackdropGlassNSView {
+        BackdropGlassNSView(frame: .zero)
+    }
+    func updateNSView(_ view: BackdropGlassNSView, context: Context) {}
+}
+
 /// The popup container's full chrome: focus-swapped glass, a theme-tinted
 /// wash, and a themed border glow. Observes the model so a theme change
 /// re-tints the live popup.
@@ -190,14 +238,17 @@ struct ThemedGlassChrome: View {
         // floor keeps it from ever reaching the crisp no-blur look the
         // user rejected ("simple transparent").
         let clarity = isKey ? model.glassFocused : model.glassUnfocused
-        let glassBlend = 1 - 0.75 * clarity
         let milk = 1 - clarity
         ZStack {
             FrameRetuner(paintAlpha: 0.2 * milk)
-            if #available(macOS 26.0, *) {
-                GlassEffectLayer().opacity(glassBlend)
+            if BackdropGlassNSView.available {
+                // Pure blur; the dial adds frost on top via the scrim.
+                BackdropGlass()
+                Color.black.opacity(0.30 * milk)
+            } else if #available(macOS 26.0, *) {
+                GlassEffectLayer().opacity(1 - 0.75 * clarity)
             } else {
-                GlassBackground().opacity(glassBlend)
+                GlassBackground().opacity(1 - 0.75 * clarity)
             }
             let theme = model.rowTheme
             if !theme.plain, !theme.flashColor.isEmpty {

@@ -57,7 +57,15 @@ final class StatusItemHolder: ObservableObject {
 @MainActor
 final class StatusItemController {
     private let item: NSStatusItem
-    private let popover = NSPopover()
+    /// The anchored popup is a borderless non-activating panel, NOT an
+    /// NSPopover: popover windows refuse CABackdropLayer sampling at any
+    /// level (probed 2026-08-30 — the layer renders a black slab), and
+    /// the real tunable-blur glass is the whole point. A plain panel
+    /// also ends the popover-frame paint fights and the fitting-size
+    /// heal dance for good.
+    private var anchored: NSPanel?
+    private var anchoredIdeal: CGSize = .zero
+    private var dismissMonitors: [Any] = []
     private var pinned: NSWindow?
     /// Last content size PinnedRoot reported — it fires during
     /// NSWindow(contentViewController:) itself, before `pinned` is set.
@@ -84,16 +92,6 @@ final class StatusItemController {
         item.button?.target = self
         item.button?.action = #selector(togglePopover)
 
-        popover.behavior = .transient            // click-outside closes, like MenuBarExtra
-        let host = NSHostingController(
-            rootView: MenuContent(model: model, usage: usage)
-                .glassChrome(model: model))
-        // NSPopover observes its content controller's preferredContentSize;
-        // without this the popover keeps the width of the FIRST layout (no
-        // reset times yet) and clips both edges once the grid grows.
-        host.sizingOptions = .preferredContentSize
-        popover.contentViewController = host
-
         // The title and visibility follow the model; receive AFTER the
         // change lands (objectWillChange fires before mutation).
         sink = model.objectWillChange
@@ -109,14 +107,11 @@ final class StatusItemController {
         // NSApp.activate — restoring at login must not steal focus.
         if model.popoverPinned {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in
-                guard let self, !self.popover.isShown,
+                guard let self, self.anchored?.isVisible != true,
                       self.pinned?.isVisible != true,
                       let button = self.item.button, button.window != nil
                 else { return }
-                self.popover.behavior = .applicationDefined
-                self.popover.show(relativeTo: button.bounds, of: button,
-                                  preferredEdge: .minY)
-                self.healPopoverSize()
+                self.showAnchored()
             }
         }
     }
@@ -128,35 +123,97 @@ final class StatusItemController {
             item.isVisible = model.menuBarIconShown
         }
         // Pinned = survives click-outside; the status item still toggles
-        // it closed, so a pinned popover can never strand.
-        popover.behavior = model.popoverPinned ? .applicationDefined : .transient
-        // Self-heal a stale fitting size: a popover opened before content
-        // settled (pinned restore at launch) kept its narrow frame while
-        // rows landed wider — content clipped both edges (user screenshot
-        // 2026-08-30). Deferred past the morph animations.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) { [weak self] in
-            self?.healPopoverSize()
+        // it closed, so a pinned popup can never strand.
+        updateDismissMonitors()
+    }
+
+    private func showAnchored() {
+        if anchored == nil {
+            let host = NSHostingController(rootView: AnchoredRoot(
+                model: model, usage: usage,
+                onSize: { [weak self] size in self?.fitAnchored(to: size) })
+                .glassChrome(model: model))
+            // Same crash-avoidance as the pop-out: never let the hosting
+            // view drive the window frame (unbounded ideal width).
+            host.sizingOptions = []
+            let panel = NSPanel(contentRect: .zero,
+                                styleMask: [.borderless, .nonactivatingPanel],
+                                backing: .buffered, defer: false)
+            panel.contentViewController = host
+            panel.isOpaque = false
+            panel.backgroundColor = .clear
+            panel.hasShadow = true
+            // Floating: over normal windows, under the system's own menu
+            // bar popovers (Wi-Fi, battery — the old popover blocked them).
+            panel.level = .floating
+            panel.isReleasedWhenClosed = false
+            panel.hidesOnDeactivate = false
+            panel.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary]
+            // The panel is square; the chrome's rounding becomes real here.
+            host.view.wantsLayer = true
+            host.view.layer?.cornerRadius = 10
+            host.view.layer?.masksToBounds = true
+            anchored = panel
+        }
+        fitAnchored(to: anchoredIdeal)
+        positionAnchored()
+        anchored?.orderFrontRegardless()
+        updateDismissMonitors()
+    }
+
+    private func closeAnchored() {
+        anchored?.orderOut(nil)
+        updateDismissMonitors()
+    }
+
+    /// Track the content's measured ideal size, popover-measure style.
+    private func fitAnchored(to size: CGSize) {
+        anchoredIdeal = size
+        guard let panel = anchored, size.width > 1, size.height > 1,
+              size.width < 20_000, size.height < 20_000 else { return }
+        let current = panel.frame.size
+        if abs(current.width - size.width) > 0.5
+            || abs(current.height - size.height) > 0.5 {
+            panel.setContentSize(size)
+            positionAnchored()
         }
     }
 
-    private func healPopoverSize() {
-        guard popover.isShown,
-              let view = popover.contentViewController?.view else { return }
-        // A shown popover rides NSPopUpMenuWindowLevel — above the
-        // system's own menu bar popovers (Wi-Fi, battery, Control
-        // Center), so a pinned popup BLOCKED them (user 2026-08-30).
-        // Floating keeps it over normal windows but under menu popups.
-        if let w = view.window, w.level > .floating { w.level = .floating }
-        // preferredContentSize, not fittingSize: an NSHostingView's
-        // auto-layout fitting size can lag SwiftUI's real ideal — the
-        // stale-width overflow kept coming back (user, 3rd report).
-        var fit = popover.contentViewController?.preferredContentSize ?? .zero
-        if fit.width <= 1 || fit.height <= 1 { fit = view.fittingSize }
-        guard fit.width > 1, fit.height > 1,
-              fit.width < 20_000, fit.height < 20_000 else { return }
-        let current = popover.contentSize
-        if abs(current.width - fit.width) > 1 || abs(current.height - fit.height) > 1 {
-            popover.contentSize = fit
+    /// Hang the panel from the status item like the popover did: top edge
+    /// under the menu bar, centered on the button, clamped to the screen.
+    private func positionAnchored() {
+        guard let panel = anchored, let button = item.button,
+              let bw = button.window,
+              let screen = bw.screen ?? NSScreen.main else { return }
+        let rect = bw.convertToScreen(button.convert(button.bounds, to: nil))
+        let size = panel.frame.size
+        var x = rect.midX - size.width / 2
+        x = min(x, screen.visibleFrame.maxX - size.width - 8)
+        x = max(x, screen.visibleFrame.minX + 8)
+        panel.setFrameOrigin(NSPoint(x: x, y: rect.minY - size.height - 6))
+    }
+
+    /// Transient behavior by hand: click anywhere outside closes the
+    /// panel, unless pinned. Monitors exist only while visible+unpinned.
+    private func updateDismissMonitors() {
+        dismissMonitors.forEach(NSEvent.removeMonitor)
+        dismissMonitors = []
+        guard let panel = anchored, panel.isVisible,
+              !model.popoverPinned else { return }
+        if let g = NSEvent.addGlobalMonitorForEvents(
+            matching: [.leftMouseDown, .rightMouseDown],
+            handler: { [weak self] _ in self?.closeAnchored() }) {
+            dismissMonitors.append(g)
+        }
+        if let l = NSEvent.addLocalMonitorForEvents(
+            matching: [.leftMouseDown, .rightMouseDown],
+            handler: { [weak self] event in
+                if let self, event.window !== self.anchored {
+                    self.closeAnchored()
+                }
+                return event
+            }) {
+            dismissMonitors.append(l)
         }
     }
 
@@ -168,21 +225,17 @@ final class StatusItemController {
             pinned.orderOut(nil)
             return
         }
-        if popover.isShown { popover.performClose(nil) }
+        if anchored?.isVisible == true { closeAnchored() }
         showPinnedWindow()
     }
 
-    /// Bounce an open popover so it re-measures a wholesale content-shape
-    /// change (layout toggle). No-op when closed.
+    /// The popover needed a close/reopen bounce to re-measure a
+    /// wholesale content-shape change; the panel follows the content's
+    /// reported size live, so a re-fit is the whole job. No-op closed.
     func reopenPopover() {
-        guard popover.isShown else { return }
-        popover.performClose(nil)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) { [weak self] in
-            guard let self, let button = self.item.button else { return }
-            self.popover.behavior = self.model.popoverPinned ? .applicationDefined : .transient
-            NSApp.activate(ignoringOtherApps: true)
-            self.popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
-        }
+        guard anchored?.isVisible == true else { return }
+        fitAnchored(to: anchoredIdeal)
+        positionAnchored()
     }
 
     @objc private func togglePopover() {
@@ -193,13 +246,12 @@ final class StatusItemController {
             pinned.makeKeyAndOrderFront(nil)
             return
         }
-        if popover.isShown {
-            popover.performClose(nil)
-        } else if let button = item.button {
-            popover.behavior = model.popoverPinned ? .applicationDefined : .transient
-            NSApp.activate(ignoringOtherApps: true)
-            popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
-            healPopoverSize()
+        if anchored?.isVisible == true {
+            closeAnchored()
+        } else {
+            // Non-activating: opening the popup never yanks focus from
+            // whatever the user is working in.
+            showAnchored()
         }
     }
 
@@ -307,6 +359,21 @@ final class StatusItemController {
     @objc private func settingsKeyChanged() {
         guard let w = settings else { return }
         w.level = w.isKeyWindow ? .floating : .normal
+    }
+}
+
+/// The anchored panel's content: the shared popup body, self-measuring
+/// so the panel follows the content's ideal size (PinnedRoot's trick).
+private struct AnchoredRoot: View {
+    @ObservedObject var model: AppModel
+    @ObservedObject var usage: UsageModel
+    let onSize: (CGSize) -> Void
+
+    var body: some View {
+        MenuContent(model: model, usage: usage)
+            .fixedSize()
+            .onGeometryChange(for: CGSize.self) { $0.size } action: { onSize($0) }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 }
 
