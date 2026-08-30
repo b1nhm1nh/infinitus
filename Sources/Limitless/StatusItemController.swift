@@ -23,7 +23,19 @@ struct SettingsTab {
     var tint: Color = .accentColor
     /// Extra search terms beyond the title.
     var keywords: [String] = []
+    /// Providers render under a "Providers" section header with plain
+    /// icons (CodexBar sidebar, user screenshot 2026-08-30); nil = a
+    /// regular tab with the tinted tile.
+    var provider: ProviderBadge? = nil
     let view: AnyView
+}
+
+/// Sidebar state for a provider row: dimmed when not set up, a green
+/// dot when its engine is live.
+struct ProviderBadge {
+    var live = false
+    /// Rows for engines not built yet — visible roadmap, not selectable.
+    var placeholder = false
 }
 
 @MainActor

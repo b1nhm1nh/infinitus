@@ -51,16 +51,17 @@ struct ThemedGlassChrome: View {
 
     var body: some View {
         ZStack {
-            // The hud layer is ALWAYS underneath (2026-08-30, round 5):
-            // 1) its PopoverGlassView retunes the popover frame's own
-            //    near-opaque material — without it the ANCHORED popup has
-            //    no glass at all (only the pop-out window did);
-            // 2) NSGlassEffectView goes inactive with the window — the
-            //    hud (state .active) keeps the unfocused pop-out glassy.
+            // Round 6 (2026-08-30): the hud material ALONE. Six states
+            // later, the ledger reads:
+            //  - hud + frame retune  -> glass on anchored popup AND the
+            //    pop-out, focused or not (screenshot-verified).
+            //  - NSGlassEffectView alone -> stunning focused pop-out,
+            //    NO glass anchored (popover frame stays opaque), NO
+            //    glass unfocused (the view deactivates with the window).
+            //  - any STACK of the two -> the glass view re-opacifies the
+            //    composite: "glass is nowhere to be seen".
+            // So: no NSGlassEffectView. The hud layer does everything.
             GlassBackground()
-            if #available(macOS 26.0, *) {
-                GlassEffectLayer()
-            }
             let theme = model.rowTheme
             if !theme.plain, !theme.flashColor.isEmpty {
                 // Container themification: a visible top-down wash plus a
@@ -77,18 +78,6 @@ struct ThemedGlassChrome: View {
         }
         .ignoresSafeArea()
     }
-}
-
-/// AppKit Liquid Glass (macOS 26): the genuine article, not the SwiftUI
-/// approximation. Clear content view; the glass draws the backdrop.
-@available(macOS 26.0, *)
-private struct GlassEffectLayer: NSViewRepresentable {
-    func makeNSView(context: Context) -> NSGlassEffectView {
-        let view = NSGlassEffectView()
-        view.style = .clear
-        return view
-    }
-    func updateNSView(_ view: NSGlassEffectView, context: Context) {}
 }
 
 extension View {

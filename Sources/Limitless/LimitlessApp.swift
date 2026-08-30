@@ -103,24 +103,14 @@ struct LimitlessApp: App {
 /// popup's Settings… button opens renders them as an AppKit
 /// NSTabViewController(tabStyle: .toolbar) — the REAL icon-toolbar
 /// Settings look, which no public SwiftUI TabViewStyle reproduces.
-func settingsTabs(
+@MainActor func settingsTabs(
     model: AppModel, settingsModel: SettingsModel,
     reliabilityModel: ResumeReliabilityModel,
     notifyModel: NotifyModel, usageModel: UsageModel,
     updateModel: UpdateModel
 ) -> [SettingsTab] {
     [
-        // Providers sit directly in the sidebar (CodexBar-style, user
-        // 2026-08-30) — one row per engine, About at the bottom.
-        SettingsTab(title: "Claude", symbol: "asterisk", tint: .orange,
-                    keywords: ["engine", "auto switch", "interval", "config",
-                               "threshold", "rotate", "cswap", "provider"],
-                    view: AnyView(ClaudeEnginePane(model: model,
-                                                   settings: settingsModel))),
-        SettingsTab(title: "Codex", symbol: "circle.hexagongrid", tint: .mint,
-                    keywords: ["openai", "codex", "provider", "slots",
-                               "accounts", "engine"],
-                    view: AnyView(CodexEnginePane())),
+
         SettingsTab(title: "Resume reliability", symbol: "arrow.clockwise", tint: .blue,
                     keywords: ["session", "nudge", "wake", "stop"],
                     view: AnyView(ResumeReliabilityPane(model: reliabilityModel))),
@@ -151,6 +141,30 @@ func settingsTabs(
         SettingsTab(title: "About", symbol: "info.circle", tint: .indigo,
                     keywords: ["update", "version", "license", "links"],
                     view: AnyView(AboutPane(model: updateModel))),
+        // Providers under everything, CodexBar-style (user 2026-08-30).
+        SettingsTab(title: "Claude", symbol: "asterisk",
+                    keywords: ["engine", "auto switch", "interval", "config",
+                               "threshold", "rotate", "cswap", "provider"],
+                    provider: ProviderBadge(live: model.engineState.isRunning),
+                    view: AnyView(ClaudeEnginePane(model: model,
+                                                   settings: settingsModel))),
+        SettingsTab(title: "Codex", symbol: "circle.hexagongrid",
+                    keywords: ["openai", "codex", "provider", "slots",
+                               "accounts", "engine"],
+                    provider: ProviderBadge(),
+                    view: AnyView(CodexEnginePane())),
+        SettingsTab(title: "Gemini", symbol: "diamond",
+                    provider: ProviderBadge(placeholder: true),
+                    view: AnyView(EmptyView())),
+        SettingsTab(title: "OpenCode", symbol: "square.dashed",
+                    provider: ProviderBadge(placeholder: true),
+                    view: AnyView(EmptyView())),
+        SettingsTab(title: "Cursor", symbol: "cube",
+                    provider: ProviderBadge(placeholder: true),
+                    view: AnyView(EmptyView())),
+        SettingsTab(title: "Copilot", symbol: "airplane",
+                    provider: ProviderBadge(placeholder: true),
+                    view: AnyView(EmptyView())),
     ]
 }
 
@@ -176,7 +190,9 @@ struct SettingsRoot: View {
     var body: some View {
         NavigationSplitView {
             List(selection: $selection) {
-                ForEach(filtered, id: \.title) { tab in
+                // General tabs first; providers under their own header
+                // (CodexBar sidebar — user screenshot 2026-08-30).
+                ForEach(filtered.filter { $0.provider == nil }, id: \.title) { tab in
                     HStack(spacing: 8) {
                         Image(systemName: tab.symbol)
                             .font(.system(size: 11, weight: .semibold))
@@ -187,6 +203,36 @@ struct SettingsRoot: View {
                         Text(tab.title)
                     }
                     .tag(tab.title)
+                }
+                let providers = filtered.filter { $0.provider != nil }
+                if !providers.isEmpty {
+                    Section {
+                        ForEach(providers, id: \.title) { tab in
+                            let badge = tab.provider ?? ProviderBadge()
+                            HStack(spacing: 9) {
+                                Image(systemName: tab.symbol)
+                                    .font(.system(size: 12))
+                                    .frame(width: 18)
+                                Text(tab.title)
+                                Spacer()
+                                if badge.live {
+                                    Circle().fill(.green)
+                                        .frame(width: 7, height: 7)
+                                }
+                            }
+                            .foregroundStyle(badge.placeholder
+                                             ? AnyShapeStyle(.tertiary)
+                                             : AnyShapeStyle(.primary))
+                            .tag(tab.title)
+                            .selectionDisabled(badge.placeholder)
+                        }
+                    } header: {
+                        HStack {
+                            Text("Providers")
+                            Spacer()
+                            Text("\(providers.filter { $0.provider?.live == true }.count) on")
+                        }
+                    }
                 }
             }
             .searchable(text: $query, placement: .sidebar, prompt: "Search settings")
@@ -739,13 +785,19 @@ struct NextMarker: View {
                     Image(systemName: "arrowtriangle.right.fill")
                         .font(.caption2).foregroundStyle(.green)
                 } else {
-                    // Themed marker ("🎬" = next showing, "🎲" = next in
-                    // the party) — user request 2026-08-30.
-                    Text(theme.nextIcon).font(.caption2)
+                    // Themed marker; movie's 🎬 doubled the slotPrefix
+                    // clapperboard (user screenshot) — a marker matching
+                    // the slot prefix falls back to the green triangle.
+                    if theme.nextIcon == theme.slotPrefix {
+                        Image(systemName: "arrowtriangle.right.fill")
+                            .font(.caption2).foregroundStyle(.green)
+                    } else {
+                        Text(theme.nextIcon).font(.caption2)
+                    }
                 }
             }
             .instantTip("Next auto-switch target — the engine would "
-                        + "rotate to this account first")
+                        + "rotate to account \(number) first")
         } else if model.nextCandidate == nil,
                   let recovery = model.nextRecovery,
                   recovery.number == number {

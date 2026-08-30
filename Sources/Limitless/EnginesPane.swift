@@ -109,3 +109,11 @@ struct CodexEnginePane: View {
         .onAppear { codex.reload() }
     }
 }
+
+extension EngineSupervisor.State {
+    /// Sidebar live-dot: only a genuinely running engine counts.
+    var isRunning: Bool {
+        if case .running = self { return true }
+        return false
+    }
+}

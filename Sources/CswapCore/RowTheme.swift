@@ -168,7 +168,7 @@ public struct RowTheme: Codable, Equatable, Sendable, Identifiable {
         readyLabel: "now showing", flashColor: "orange",
         modelAlias: ["Fable": "Epic", "Opus": "Blockbuster",
                      "Sonnet": "Indie", "Haiku": "Short"],
-        planPrefix: "Studio ", slotPrefix: "🎬", resetWord: "premiering…", nextIcon: "🎬")
+        planPrefix: "Studio ", slotPrefix: "🎬", resetWord: "premiering…", nextIcon: "🍿")
 
     public static let hades = RowTheme(
         id: "hades", name: "Hades — blades & darkness",
