@@ -40,7 +40,9 @@ brew install --cask deathemperor/tap/infinitus@nightly
 ```
 
 Builds are ad-hoc signed, not notarized: if Gatekeeper balks, install
-with `--no-quarantine` (or right-click → Open once).
+with `--no-quarantine` (or right-click → Open once). The release
+pipeline is ready for Developer ID + notarization once a certificate
+exists — see [docs/RELEASING.md](docs/RELEASING.md).
 
 ### GitHub releases
 

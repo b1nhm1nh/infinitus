@@ -41,10 +41,23 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 </dict>
 </plist>
 PLIST
-# Prefer a real Apple Development identity: Notification Center refuses
-# ad-hoc-signed apps ("Notifications are not allowed for this application"),
-# and an ad-hoc grant would not survive rebuilds anyway.
-IDENTITY=$(security find-identity -v -p codesigning 2>/dev/null \
-    | awk -F'"' '/Apple Development/ {print $2; exit}')
-codesign --force --sign "${IDENTITY:--}" "$APP"
+# Signing identity, in order: SIGN_IDENTITY (the release workflow sets it
+# from an imported Developer ID cert), a Developer ID Application cert in
+# the keychain, an Apple Development cert (local builds: Notification
+# Center refuses ad-hoc-signed apps, and an ad-hoc grant would not survive
+# rebuilds anyway), else ad-hoc. Developer ID builds get the hardened
+# runtime + a secure timestamp, which notarization requires (RELEASING.md).
+find_identity() {
+    security find-identity -v -p codesigning 2>/dev/null \
+        | awk -F'"' -v pat="$1" '$0 ~ pat {print $2; exit}'
+}
+IDENTITY="${SIGN_IDENTITY:-}"
+[ -n "$IDENTITY" ] || IDENTITY="$(find_identity 'Developer ID Application')"
+[ -n "$IDENTITY" ] || IDENTITY="$(find_identity 'Apple Development')"
+case "$IDENTITY" in
+    "Developer ID Application"*)
+        codesign --force --options runtime --timestamp --sign "$IDENTITY" "$APP" ;;
+    *)
+        codesign --force --sign "${IDENTITY:--}" "$APP" ;;
+esac
 echo "Built $PWD/$APP — launch with: open $APP"
