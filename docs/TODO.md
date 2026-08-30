@@ -119,3 +119,9 @@
   themed dead marker landing — a drop/flicker/desaturate beat), the
   mirror of the refill celebration. Belongs in the Animations pane
   examples too.
+- Setting to hide the control center (footer actions) while keeping
+  the status chips — claude status, working sessions, auto mode
+  (user, 2026-08-30).
+- Right-click menu on the menu bar icon (user, 2026-08-30): theme
+  selection, the control-center functions when hidden by the setting
+  above, plus more (rotate, refresh, pop out, settings, quit…).
