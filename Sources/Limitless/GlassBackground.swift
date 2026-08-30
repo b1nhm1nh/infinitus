@@ -196,7 +196,7 @@ final class BackdropGlassNSView: NSView {
                   .takeUnretainedValue() as? NSObject
         else { return }
         let bd = cls.init()
-        filter.setValue(20.0, forKey: "inputRadius")
+        filter.setValue(30.0, forKey: "inputRadius")
         bd.filters = [filter]
         bd.setValue(2.0, forKey: "scale")
         bd.cornerRadius = 10
@@ -215,11 +215,26 @@ final class BackdropGlassNSView: NSView {
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
 }
 
-struct BackdropGlass: NSViewRepresentable {
-    func makeNSView(context: Context) -> BackdropGlassNSView {
-        BackdropGlassNSView(frame: .zero)
+/// Window content wrapper: [backdrop blur] under [SwiftUI hosting],
+/// both plain AppKit siblings so the blur escapes SwiftUI's offscreen
+/// flattening. Rounds and masks the whole stack.
+final class GlassContainerView: NSView {
+    static func wrap(_ hosted: NSView) -> GlassContainerView {
+        let container = GlassContainerView(frame: hosted.frame)
+        container.autoresizesSubviews = true
+        container.wantsLayer = true
+        container.layer?.cornerRadius = 10
+        container.layer?.masksToBounds = true
+        if BackdropGlassNSView.available {
+            let blur = BackdropGlassNSView(frame: container.bounds)
+            blur.autoresizingMask = [.width, .height]
+            container.addSubview(blur)
+        }
+        hosted.frame = container.bounds
+        hosted.autoresizingMask = [.width, .height]
+        container.addSubview(hosted)
+        return container
     }
-    func updateNSView(_ view: BackdropGlassNSView, context: Context) {}
 }
 
 /// The popup container's full chrome: focus-swapped glass, a theme-tinted
@@ -240,14 +255,15 @@ struct ThemedGlassChrome: View {
         let clarity = isKey ? model.glassFocused : model.glassUnfocused
         let milk = 1 - clarity
         ZStack {
-            FrameRetuner(paintAlpha: 0.2 * milk)
             if BackdropGlassNSView.available {
-                // Pure blur; the dial adds frost on top via the scrim.
-                BackdropGlass()
+                // The blur itself lives under the hosting view
+                // (GlassContainerView); here only the dial's frost.
                 Color.black.opacity(0.30 * milk)
             } else if #available(macOS 26.0, *) {
+                FrameRetuner(paintAlpha: 0.2 * milk)
                 GlassEffectLayer().opacity(1 - 0.75 * clarity)
             } else {
+                FrameRetuner(paintAlpha: 0.2 * milk)
                 GlassBackground().opacity(1 - 0.75 * clarity)
             }
             let theme = model.rowTheme

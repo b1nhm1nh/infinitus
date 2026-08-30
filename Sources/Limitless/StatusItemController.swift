@@ -64,6 +64,9 @@ final class StatusItemController {
     /// also ends the popover-frame paint fights and the fitting-size
     /// heal dance for good.
     private var anchored: NSPanel?
+    /// Kept so the hosting controller outlives contentView-based setup
+    /// (no contentViewController retains it any more).
+    private var anchoredHost: NSViewController?
     private var anchoredIdeal: CGSize = .zero
     private var dismissMonitors: [Any] = []
     private var pinned: NSWindow?
@@ -139,7 +142,13 @@ final class StatusItemController {
             let panel = NSPanel(contentRect: .zero,
                                 styleMask: [.borderless, .nonactivatingPanel],
                                 backing: .buffered, defer: false)
-            panel.contentViewController = host
+            // The blur view lives OUTSIDE the SwiftUI hosting tree:
+            // hosting flattens its subtree into offscreen groups, which
+            // silently breaks CABackdropLayer capture (user 2026-08-30:
+            // "no blur, just alpha") — the same layer blurs fine as a
+            // plain sibling under the hosting view.
+            panel.contentView = GlassContainerView.wrap(host.view)
+            anchoredHost = host
             panel.isOpaque = false
             panel.backgroundColor = .clear
             panel.hasShadow = true
@@ -149,10 +158,6 @@ final class StatusItemController {
             panel.isReleasedWhenClosed = false
             panel.hidesOnDeactivate = false
             panel.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary]
-            // The panel is square; the chrome's rounding becomes real here.
-            host.view.wantsLayer = true
-            host.view.layer?.cornerRadius = 10
-            host.view.layer?.masksToBounds = true
             anchored = panel
         }
         fitAnchored(to: anchoredIdeal)
@@ -274,6 +279,10 @@ final class StatusItemController {
             // it through onSize; that number is the popover's exact width.
             host.sizingOptions = []
             let w = NSWindow(contentViewController: host)
+            // Blur under the hosting view, outside SwiftUI (see the
+            // anchored panel note): swap the content view for a wrapped
+            // one; the controller stays retained by the window.
+            w.contentView = GlassContainerView.wrap(host.view)
             w.title = "Limitless"
             // Full-size content + hidden system title: the centered
             // "Limitless" header is drawn by PinnedRoot instead (the
@@ -334,6 +343,10 @@ final class StatusItemController {
             // from there.
             host.sizingOptions = []
             let w = NSWindow(contentViewController: host)
+            // Blur under the hosting view, outside SwiftUI (see the
+            // anchored panel note): swap the content view for a wrapped
+            // one; the controller stays retained by the window.
+            w.contentView = GlassContainerView.wrap(host.view)
             w.title = "Limitless"
             w.styleMask = [.titled, .closable, .resizable]
             w.toolbarStyle = .unified
