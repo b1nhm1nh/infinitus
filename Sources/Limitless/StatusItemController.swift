@@ -86,6 +86,23 @@ final class StatusItemController {
             .sink { [weak self] _ in
                 DispatchQueue.main.async { self?.apply() }
             }
+
+        // A pinned popup is a fixture, not a transient — bring it back on
+        // launch (user report 2026-08-30: pinned, app restarted, gone).
+        // Delayed so the status item has landed in the bar (a popover
+        // anchored to an unplaced button shows at the screen corner); no
+        // NSApp.activate — restoring at login must not steal focus.
+        if model.popoverPinned {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in
+                guard let self, !self.popover.isShown,
+                      self.pinned?.isVisible != true,
+                      let button = self.item.button, button.window != nil
+                else { return }
+                self.popover.behavior = .applicationDefined
+                self.popover.show(relativeTo: button.bounds, of: button,
+                                  preferredEdge: .minY)
+            }
+        }
     }
 
     private func apply() {
