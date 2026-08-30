@@ -35,6 +35,10 @@ private final class FrameRetunerView: NSView {
             if let effect = sub as? NSVisualEffectView {
                 effect.material = .hudWindow
                 effect.state = .active
+                // Mostly out of the way: the glass layer supplies the
+                // look; full-strength hud on top of it reads milky
+                // (user 2026-08-30: "increase the transparency").
+                effect.alphaValue = 0.35
             }
             retune(sub)
         }
@@ -66,7 +70,7 @@ struct ThemedGlassChrome: View {
             if !theme.plain, !theme.flashColor.isEmpty {
                 let tint = ThemeColor.resolve(theme.flashColor)
                 LinearGradient(
-                    colors: [tint.opacity(0.30), tint.opacity(0.06)],
+                    colors: [tint.opacity(0.16), tint.opacity(0.04)],
                     startPoint: .top, endPoint: .bottom)
                 RoundedRectangle(cornerRadius: 10)
                     .strokeBorder(tint.opacity(0.35), lineWidth: 1.5)
