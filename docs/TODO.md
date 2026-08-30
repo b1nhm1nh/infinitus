@@ -97,11 +97,21 @@
   credit, cash, ahead, dead, revive, next) and adjust vocabularies;
   also consider dropping the slot prefix when the row is dead (the
   dead marker already leads).
-- Tooltip z-index across rows (user screenshot, 2026-08-30): a slot
-  tip on row N draws UNDER row N+1's cells — zIndex on the hovered
-  cell only beats siblings inside its own HStack, not across GridRows.
-  Real fix: hoist tip rendering to a Grid-level overlay (anchor
-  preference, like the active band) or an NSPanel-backed tip window.
+- ~~Tooltip z-index across rows~~ → InstantTip publishes through
+  ActiveTipKey (anchor preference); MenuContent renders the one active
+  chip in a root overlay canvas above every row. Verified live.
+- ~~Dead-transition animation~~ → deathTicks diff in refreshSnapshot
+  (alive->dead, nothing on first load), DeathFlash red-hit/flicker/
+  slump; wide Grid via DeadRowBounds band, stacked cards wrap content
+  (full saturation drain). Debug-pane button added. NOT yet seen live
+  — fire 'Play the death beat' in the Animations pane to verify.
+- ~~Duplicate icon roles~~ → movie session 🎬→🎥 + ahead popcorn→
+  speedometer; hades next 🔥→🕯; swe ahead coffee→flame. Slot prefix
+  KEPT on dead rows (mixed prefixes misalign the slot column).
+- Settings sidebar detail appeared to lag one selection behind under
+  SYNTHETIC clicks (2026-08-30 automation session; app not active/key).
+  Check once with real clicks — if it reproduces, the wrapped
+  NSHostingView in showSettingsWindow is the suspect.
 - Visual verification pending: glass look, whole-row themed sweep,
   About icon, new themes, unified footer, sync export/import, hollow
   recovery triangle (needs an all-limited fleet to show).
