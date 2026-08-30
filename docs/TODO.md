@@ -87,9 +87,7 @@
   at least consistent ad-hoc + quarantine notes.
 - Promotional content (user, 2026-08-30) — after the improvement wave
   settles:
-  1. Repo README with the features list (menu bar usage, auto-switch,
-     themes/gamification, glass popup, pace bars, multi-engine slots,
-     iCloud sync, push notifications, sessions/status chips).
+  1. ~~Repo README features list~~ → done 2026-08-30 (local commit).
   2. Update the GitHub profile (deathemperor) to feature Limitless.
   3. Update huuloc.com (pensivie repo) with a Limitless section.
   4. Short feature walkthrough video — script + screen recording
