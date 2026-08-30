@@ -50,14 +50,14 @@
   re-checks `enabled` after its await before any write.
 
 ## Open
-- Next-candidate indicator "seems missing" (user, 2026-08-30) — diagnosed
-  NOT broken: every non-active account is at 100% on some limit (1 spend,
-  2 weekly, 3 five-hour, 4 scoped), so the engine's advisory
-  `_next_switch_candidate` honestly returns none and the triangle hides.
-  UX flaw: "no viable candidate" is indistinguishable from broken.
-  Candidate fix: engine falls back to "recovers soonest" among the
-  exhausted (soonest reset), app renders that state distinctly (e.g.
-  hollow/gray triangle + tooltip "all accounts limited; N recovers first").
+- ~~Next-candidate indicator "seems missing"~~ → real bug, engine-side:
+  the advisory `_next_switch_candidate` counted the spend-cap pct in its
+  >=100 "dead" rule, but spend is an estimate and the real ranking
+  (oauth.account_headroom) never consults it — a rested account (5h 0%,
+  7d 1%) went advisory-dead on spend 100%. Spend dropped from the
+  advisory; regression tests. Still open as UX polish: when ALL windows
+  are truly at-limit, "no candidate" is indistinguishable from broken
+  (hollow/gray triangle + "recovers soonest" would fix).
 - Sync settings: export and import config (user, 2026-08-30) — SyncPane
   gains Export…/Import… of the app's settings (the synced key set) as a
   JSON file; import applies via the existing merge path.
