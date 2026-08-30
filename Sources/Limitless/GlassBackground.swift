@@ -60,11 +60,27 @@ struct ThemedGlassChrome: View {
                     startPoint: .top, endPoint: .bottom)
             }
             if #available(macOS 26.0, *) {
-                Color.clear.glassEffect(.regular, in: .rect)
+                // The REAL Liquid Glass ("try the glass view", user
+                // 2026-08-30): NSGlassEffectView is the AppKit material
+                // itself — the SwiftUI glassEffect on a clear color only
+                // shimmered. Behind the tint so themes still read.
+                GlassEffectLayer()
             }
         }
         .ignoresSafeArea()
     }
+}
+
+/// AppKit Liquid Glass (macOS 26): the genuine article, not the SwiftUI
+/// approximation. Clear content view; the glass draws the backdrop.
+@available(macOS 26.0, *)
+private struct GlassEffectLayer: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSGlassEffectView {
+        let view = NSGlassEffectView()
+        view.style = .clear
+        return view
+    }
+    func updateNSView(_ view: NSGlassEffectView, context: Context) {}
 }
 
 extension View {
