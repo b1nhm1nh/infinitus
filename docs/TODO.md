@@ -31,8 +31,8 @@
   notifications + login item once under the new id.
 
 ## Deferred by design
-- Community theme gallery URLs point at `deathemperor/limitless` — 404s
-  until the repo is pushed.
+- ~~Community theme gallery URLs 404~~ → repo pushed 2026-08-30;
+  index.json + synthwave fetch verified live (HTTP 200).
 - Codex backend support: landscape researched (codex-rotate, codex-switcher,
   opencode plugin, openai/codex#9648); feasible as a second engine backend
   behind the same isolation boundary. Not requested.
@@ -78,13 +78,11 @@
   app flips to .regular activation policy while Settings is open
   (Dock + Cmd+Tab entry) and back to .accessory on willClose.
   Verified live both directions.
-- GitHub releases (user, 2026-08-30): "make it so" — publish
-  Limitless.app releases on GitHub for non-developer users; app
-  auto-update checks the releases feed (Sparkle or hand-rolled:
-  check latest tag, download zip, replace bundle, relaunch). Build
-  from source stays the developer path. Needs: repo push (explicit
-  user approval exists for release flow), Developer ID signing or
-  at least consistent ad-hoc + quarantine notes.
+- ~~GitHub releases~~ → shipped 2026-08-30 with the Homebrew wave:
+  repo public, v0.1.0 released by CI (macos-26 runner), nightly
+  prerelease rolling daily; About pane checks the feed and updates
+  through brew when brew-installed. Developer ID signing still open
+  (ad-hoc + --no-quarantine documented).
 - Promotional content (user, 2026-08-30) — after the improvement wave
   settles:
   1. ~~Repo README features list~~ → done 2026-08-30 (local commit).
@@ -181,3 +179,29 @@
   (pre-existing env-dependent failures in move/swap/store-guard
   suites are unrelated).
 
+
+## Shipped 2026-08-30 (night wave — 6 asks + 3 mid-turn)
+- ~~Theme preview "Fable"~~ → previews alias via theme.modelName.
+- ~~Themed active-account icon~~ → RowTheme.activeIcon replaces the
+  slot text (👑🌟🌿🐍🧠⌨️🧑‍🚀🏇⚡🕯); active outranks next.
+- ~~Pop-out lost on restart~~ → quit's window teardown wiped
+  popout_shown; AppDelegate.terminating guards pinnedClosed.
+  Verified: seed → quit → flag survives → restore at position.
+- ~~README à la CodexBar~~ → hero + badges + demo gif + Why/Install/
+  Privacy/Credits (CodexBar credited as inspiration); MIT LICENSE.
+- ~~Homebrew release~~ → repo public, v0.1.0 via release.yml
+  (macos-26), rolling nightly prerelease, deathemperor/homebrew-tap
+  with limitless + limitless@nightly casks; About updates via brew.
+  E2E: brew install --cask deathemperor/tap/limitless → 0.1.0 in
+  /Applications.
+- ~~Animation GIF~~ → docs/demo.gif (launch intro + two rotate
+  celebrations) recorded off a fabricated LIMITLESS_CSWAP shim
+  fleet — no real account data in the published gif.
+- ~~Linux/AUR ask~~ → app is AppKit (no Linux build); shipped the
+  engine instead: claude-swap formula in the tap (Linux-capable,
+  resources pinned, E2E-installed) + packaging/aur/PKGBUILD
+  (publishing needs the user's AUR account).
+- ~~Omarchy~~ → app not compatible (macOS-only) — README says so
+  honestly; engine CLI on Arch/Omarchy highlighted instead.
+- Open: Developer ID/notarization for quarantine-free installs;
+  release workflow doesn't auto-bump the tap cask (manual sha step).

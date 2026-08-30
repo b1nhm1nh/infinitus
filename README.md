@@ -47,6 +47,21 @@ Grab `Limitless-<version>.zip` from
 [releases](https://github.com/deathemperor/limitless/releases), unzip,
 drop `Limitless.app` into `/Applications`.
 
+### Linux — the engine CLI (Omarchy-ready)
+
+The menu bar app is macOS-native (AppKit), so Linux doesn't get the app
+itself — it gets the engine. Everything Limitless fronts (the fleet
+gauges, auto-switching, the `cswap` TUI) runs anywhere Python 3.12
+does, including Arch-based [Omarchy](https://omarchy.org):
+
+```sh
+brew install deathemperor/tap/claude-swap    # Homebrew on Linux (or macOS)
+uv tool install claude-swap                  # or straight from PyPI
+```
+
+Arch users can build from [`packaging/aur/PKGBUILD`](packaging/aur/) —
+`cswap` in a terminal is the same account switching, Omarchy-style.
+
 ### Requirements
 
 - macOS 14+ (best on macOS 26 — the glass chrome uses it)
