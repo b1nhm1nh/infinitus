@@ -105,3 +105,7 @@
 - Visual verification pending: glass look, whole-row themed sweep,
   About icon, new themes, unified footer, sync export/import, hollow
   recovery triangle (needs an all-limited fleet to show).
+- Ahead-of-pace icons (theme aheadIcon next to the gauge bars) have no
+  tooltip (user, 2026-08-30): add an InstantTip explaining pace — e.g.
+  "ahead of pace — usage is below the linear burn line for this window"
+  (and the deficit twin if one exists).
