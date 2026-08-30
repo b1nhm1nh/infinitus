@@ -228,6 +228,10 @@ final class StatusItemController {
     func popOut() {
         if let pinned, pinned.isVisible {
             pinned.orderOut(nil)
+            // Popping back IN: the content returns to its anchor spot —
+            // just hiding the window left nothing on screen (user bug
+            // report 2026-08-30).
+            showAnchored()
             return
         }
         if anchored?.isVisible == true { closeAnchored() }
