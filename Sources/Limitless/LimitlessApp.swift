@@ -273,6 +273,23 @@ struct MenuContent: View {
                         }
                     }
                 }
+            } else if model.popupLayout == "stacked" {
+                // Vertical layout: the controls ride a side rail — a
+                // footer row under narrow cards only added height, and
+                // the icons fill the width the tall popup wasn't using
+                // ("put icon on side to thicken the popup", user
+                // 2026-08-30).
+                VStack(alignment: .leading, spacing: 8) {
+                    if showHeader { LimitlessHeader(model: model) }
+                    HStack(alignment: .top, spacing: 10) {
+                        VStack(spacing: 12) { stackedRail }
+                            .buttonStyle(.borderless)
+                        VStack(alignment: .leading, spacing: 8) {
+                            accountArea
+                            errorLines
+                        }
+                    }
+                }
             } else {
                 VStack(alignment: .leading, spacing: 8) {
                     // Compact mode stays headerless on purpose — it exists
@@ -345,9 +362,6 @@ struct MenuContent: View {
                         }
                         .help("Quit")
                     }
-                    .labelStyle(AnyLabelStyle(model.popupLayout == "stacked"
-                                              ? AnyLabelStyle(.iconOnly)
-                                              : AnyLabelStyle(.titleAndIcon)))
                 }
             }
         }
@@ -392,6 +406,75 @@ struct MenuContent: View {
             .frame(maxHeight: 560)
         } else {
             AccountRows(model: model, usage: usage)
+        }
+    }
+
+    /// Stacked layout's control rail: the footer's actions as a vertical
+    /// icon column beside the cards. Unlike compactControls it keeps
+    /// Rotate/Refresh and the Compact (compress) toggle.
+    @ViewBuilder private var stackedRail: some View {
+        Button { model.rotate() } label: {
+            Image(systemName: "arrow.2.circlepath")
+        }
+        .help("Switch to the next account in rotation")
+        Button { Task { await model.refreshSnapshot() } } label: {
+            Image(systemName: "arrow.clockwise")
+        }
+        .help("Refresh account usage now")
+        Button { model.showSettings?() } label: {
+            Image(systemName: "gearshape")
+        }
+        .help("Settings")
+        Button { model.popoverPinned.toggle() } label: {
+            Image(systemName: model.popoverPinned ? "pin.fill" : "pin")
+        }
+        .help("Pin keeps this popup open when you click elsewhere")
+        Button {
+            withAnimation(.easeInOut(duration: 0.3)) {
+                model.compactRows.toggle()
+            }
+        } label: {
+            Image(systemName: "rectangle.compress.vertical")
+        }
+        .help("Hide actions, event log, and history")
+        layoutToggleIcon
+        popOutIcon
+        serviceDot
+        brainBadge
+        if model.appUpdatePending {
+            Button { model.relaunchApp() } label: {
+                Image(systemName: "arrow.triangle.2.circlepath")
+                    .foregroundStyle(.orange)
+            }
+            .help("A newer build is on disk — restart to update")
+        }
+        engineBadgeIcon
+        Button { model.shutdown() } label: {
+            Image(systemName: "power")
+        }
+        .help("Quit")
+    }
+
+    /// Rail-width session chip: the brain with the busy count as a badge
+    /// (agentChip's full-mode text row is wider than the rail).
+    @ViewBuilder private var brainBadge: some View {
+        if let live = model.liveSessions {
+            Image(systemName: "brain")
+                .font(.caption)
+                .foregroundStyle(live.busy > 0 ? Color.orange : Color.secondary)
+                .overlay(alignment: .topTrailing) {
+                    if live.busy > 0 {
+                        Text("\(live.busy)")
+                            .font(.system(size: 8, weight: .bold))
+                            .monospacedDigit()
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 3)
+                            .padding(.vertical, 1)
+                            .background(Capsule().fill(Color.orange))
+                            .offset(x: 8, y: -7)
+                    }
+                }
+                .help(SessionSummary.tooltip(live))
         }
     }
 
