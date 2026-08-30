@@ -15,6 +15,11 @@ struct GaugeBar: View {
     var paceRemaining: Double? = nil
     /// Boundary ticks (0-100, remaining axis) — day/hour segment marks.
     var dividers: [Double] = []
+    /// False in the settings theme previews: the numericText roll never
+    /// resolves inside the card's horizontal ScrollView (macOS 26 —
+    /// percent labels froze mid-roll as ":" slivers, user screenshot
+    /// 2026-08-30) and the intro fill has nothing to choreograph there.
+    var animated: Bool = true
     @ScaledMetric(relativeTo: .caption) private var barWidth = 56.0
     @ScaledMetric(relativeTo: .caption) private var barHeight = 6.0
     @State private var shown: Double = 0
@@ -37,10 +42,11 @@ struct GaugeBar: View {
 
             Text("\(Int(remaining))%")
                 .font(.caption).monospacedDigit()
-                .contentTransition(.numericText(value: remaining))
+                .contentTransition(animated ? .numericText(value: remaining)
+                                            : .identity)
                 .foregroundStyle(remaining <= 0 ? Color.red : color.opacity(0.9))
         }
-        .onAppear { playFill() }
+        .onAppear { animated ? playFill() : (shown = remaining) }
         // Replay intro re-runs the fill too (it was missing from the
         // debug pane's Replay, user 2026-08-30).
         .onChange(of: introTick) { _, _ in playFill() }

@@ -270,30 +270,37 @@ private struct ThemeCard: View {
                     Text("74%").monospacedDigit()
                 }
             } else {
+                // Every row wears its own fixedSize: a bare VStack of
+                // text+bar rows under-reports its ideal HEIGHT (macOS 26,
+                // probed 2026-08-30) and the enclosing ScrollView clipped
+                // the last row to ":" slivers (user screenshot).
                 HStack(spacing: 3) {
                     Text(theme.sessionLabel).font(.caption).bold()
                         .foregroundStyle(ThemeColor.resolve(theme.sessionColor))
-                    GaugeBar(remaining: 79, color: ThemeColor.resolve(theme.sessionColor))
+                    GaugeBar(remaining: 79, color: ThemeColor.resolve(theme.sessionColor), animated: false)
                     Text("4h 8m (22:09)").font(.caption).foregroundStyle(.secondary)
                 }
+                .fixedSize()
                 HStack(spacing: 3) {
                     aheadIcon
                     Text(theme.weeklyLabel).font(.caption).bold()
                         .foregroundStyle(ThemeColor.resolve(theme.weeklyColor))
-                    GaugeBar(remaining: 32, color: ThemeColor.resolve(theme.weeklyColor))
+                    GaugeBar(remaining: 32, color: ThemeColor.resolve(theme.weeklyColor), animated: false)
                     Text(theme.revivePrefix + "5d 9h (Sep 4 03:59)")
                         .font(.caption).foregroundStyle(.secondary)
                 }
+                .fixedSize()
                 HStack(spacing: 3) {
                     Text(theme.creditLabel).font(.caption).bold()
                         .foregroundStyle(ThemeColor.resolve(theme.creditColor))
-                    GaugeBar(remaining: 26, color: ThemeColor.resolve(theme.creditColor))
+                    GaugeBar(remaining: 26, color: ThemeColor.resolve(theme.creditColor), animated: false)
                     Text(theme.scopedPrefix + "Fable").font(.caption).bold()
                         .foregroundStyle(ThemeColor.resolve(theme.scopedColor))
-                    GaugeBar(remaining: 26, color: ThemeColor.resolve(theme.scopedColor))
+                    GaugeBar(remaining: 26, color: ThemeColor.resolve(theme.scopedColor), animated: false)
                     Text(verbatim: "\(theme.cashIcon)1,131")
                         .font(.caption).foregroundStyle(.yellow)
                 }
+                .fixedSize()
             }
         }
     }
