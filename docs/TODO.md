@@ -106,15 +106,24 @@
 - ~~Dead-transition animation~~ → deathTicks diff in refreshSnapshot
   (alive->dead, nothing on first load), DeathFlash red-hit/flicker/
   slump; wide Grid via DeadRowBounds band, stacked cards wrap content
-  (full saturation drain). Debug-pane button added. NOT yet seen live
-  — fire 'Play the death beat' in the Animations pane to verify.
+  (full saturation drain). Debug-pane button added. Animation verified
+  in an isolated probe 2026-08-30 (red hit + drain + settle, frames
+  captured); in-app trigger still worth one human click of 'Play the
+  death beat' (synthetic clicks can't actuate Form buttons).
 - ~~Duplicate icon roles~~ → movie session 🎬→🎥 + ahead popcorn→
   speedometer; hades next 🔥→🕯; swe ahead coffee→flame. Slot prefix
   KEPT on dead rows (mixed prefixes misalign the slot column).
-- Settings sidebar detail appeared to lag one selection behind under
-  SYNTHETIC clicks (2026-08-30 automation session; app not active/key).
-  Check once with real clicks — if it reproduces, the wrapped
-  NSHostingView in showSettingsWindow is the suspect.
+- ~~Settings sidebar detail lag~~ → root-caused to NavigationSplitView
+  in the controller-owned window (detail froze entirely under synthetic
+  clicks); SettingsRoot is now a hand-rolled sidebar of plain Buttons
+  and the detail follows selection. Residual: FORM buttons in the
+  detail panes still refuse synthetic clicks (sidebar + popup buttons
+  actuate with a focus-first click); real clicks unaffected.
+- Pop-out in COMPACT mode: the header strip overlaps the first row
+  (seen 2026-08-30 restoring a compact pop-out at launch, window 158pt
+  vs ~166 ideal). Check whether a manually opened compact pop-out does
+  the same — suspect the measured fixedSize vs the ignored top safe
+  area, not the new restore path.
 - Visual verification pending: About icon, sync export/import, hollow
   recovery triangle (needs an all-limited fleet to show). Glass,
   themed sweep, footer, new themes: verified 2026-08-30.
@@ -136,3 +145,36 @@
   on .rightMouseUp; performClick with item.menu set, then detached so
   left-click keeps toggling): Theme submenu with checkmark, Rotate/
   Refresh, Pin (stateful), Pop out/in, Settings, Restart, Quit.
+
+## Shipped 2026-08-30 (evening wave — 15 numbered asks + follow-ups)
+- ~~Theme preview ': :' rows~~ → macOS 26 VStack ideal-height bug;
+  per-row fixedSize; preview bars animated:false. Verified in probe.
+- ~~Custom theme reconcile~~ → templateJSON, themes/README table, and
+  the synthwave sample now carry every RowTheme field.
+- ~~Plain-theme skull~~ → Off theme's dead marker is ✕.
+- ~~New themes~~ → Sci-Fi, Wild West, Cyberpunk, Gothic builtins
+  (one role per icon each); ThemeColor learned brown. Verified live.
+- ~~Theme selection revamp~~ → Themes settings pane: builtin/custom
+  card grids + community gallery moved out of Display. Verified live.
+- ~~Settings reorder~~ + ~~search box top space~~ → hand-rolled
+  SettingsRoot, most-used panes first. Verified live.
+- ~~Visual layout/size pickers~~ → PickTile art tiles. Verified live.
+- ~~Icon-only menu bar~~ → titleIconOnly override toggle (synced).
+- ~~Engine updates into engine pane~~ → Engines → cswap hosts
+  auto-update + check/upgrade; About keeps app releases. Verified.
+- ~~Resume nudges into cswap pane~~ → status-first rows (check /
+  warning + one-click fix, n/2-ready pill). Verified live.
+- ~~Rows slide-in intro~~ → introStyle "rows", per-row stagger from
+  the right (Group-in-GridRow distribution). Verified live at launch.
+- ~~Compact rail responsive~~ → measured rows-column height vs counted
+  rail items; five accounts + hidden actions = one column. Verified.
+- ~~Pop-out persistence~~ → popout_shown/x/y; restored at launch
+  without stealing focus (position verified to the point); Cmd+W
+  clears. ~~Off-screen overflow~~ → clampOnScreen on every re-fit +
+  anchored bottom clamp.
+- ~~Switch push lists the fleet~~ → ENGINE side (claude-swap commit
+  572e073): switch_text(fleet=…) + switcher.fleet_status_rows —
+  '→ 2 bravo: 5h 45% · 7d 12%' lines under the head. Tests green
+  (pre-existing env-dependent failures in move/swap/store-guard
+  suites are unrelated).
+

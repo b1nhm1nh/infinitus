@@ -46,6 +46,12 @@ Native macOS menu bar app for the claude-swap engine. Split out of
 - SwiftUI Grid: spanning cells span the widest row's real column count;
   placeholders need `.frame(maxWidth: .infinity)` +
   `.gridCellUnsizedAxes(.horizontal)`.
+- macOS 26: a VStack of mixed text+gauge rows under-reports its ideal
+  HEIGHT under two-axis fixedSize (last row clips to slivers) — give
+  every such row its own `.fixedSize()`.
+- A GridRow can't wear a modifier (collapses to one cell), but a Group
+  INSIDE it distributes the modifier to every cell — that's how the
+  rows intro slides a whole grid row.
 
 ## Build / run / test
 `./make-app.sh && open Limitless.app` · `swift test` · `./dev.sh` (entr)
