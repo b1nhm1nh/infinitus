@@ -115,9 +115,9 @@
   SYNTHETIC clicks (2026-08-30 automation session; app not active/key).
   Check once with real clicks — if it reproduces, the wrapped
   NSHostingView in showSettingsWindow is the suspect.
-- Visual verification pending: glass look, whole-row themed sweep,
-  About icon, new themes, unified footer, sync export/import, hollow
-  recovery triangle (needs an all-limited fleet to show).
+- Visual verification pending: About icon, sync export/import, hollow
+  recovery triangle (needs an all-limited fleet to show). Glass,
+  themed sweep, footer, new themes: verified 2026-08-30.
 - ~~Ahead-of-pace icon tooltips~~ → InstantTip on both sites, edge
   .above (the cell's own summary tip owns .below); alignment ghosts
   stop answering hover.

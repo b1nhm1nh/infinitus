@@ -28,6 +28,9 @@ Native macOS menu bar app for the claude-swap engine. Split out of
 - The pop-out window must NOT let NSHostingView size it (crash on
   unbounded ideal width); PinnedRoot reports its fixedSize geometry and
   `fitPinned` applies it.
+- Never `cp` over the RUNNING unbundled binary — overwriting a signed
+  executable in place gets the process killed on its next page-in
+  (the dev instance "mysteriously died" 2026-08-30). pkill first.
 - macOS 26 ControlCenter can stop adopting new bundled apps' status items
   after rapid relaunch churn — only a logout clears it; `run-unbundled.sh`
   is the workaround. Don't run the dev loop's kill/reopen cycle for hours.
