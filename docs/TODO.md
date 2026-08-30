@@ -68,11 +68,16 @@
   Pin/Compact/layout/pop-out, then chips + engine badge + Quit trailing);
   "Test notification" retired (the Push pane keeps its own test);
   "Settings…" → "Settings".
-- Onboarding (user, 2026-08-30): first-run experience — when someone
-  installs Limitless.app without cswap, offer to install the engine
-  (uv tool install / pipx / brew detection), walk through adding the
-  first account, granting notifications. Today the app just shows an
-  empty popup + engine errors.
+- ~~Onboarding~~ → engineMissing welcome card in the popup: what the
+  engine is, Install button (uv tool install claude-swap via Process,
+  then relaunch re-runs the locator), manual commands shown. Intro
+  modifiers no longer hold content hidden when no data will ever come;
+  LIMITLESS_CSWAP env override ('' = no engine) makes it testable.
+  Notifications/add-account walkthrough still open for later.
+- ~~Settings window absent from Cmd+Tab~~ (user, 2026-08-30) → the
+  app flips to .regular activation policy while Settings is open
+  (Dock + Cmd+Tab entry) and back to .accessory on willClose.
+  Verified live both directions.
 - GitHub releases (user, 2026-08-30): "make it so" — publish
   Limitless.app releases on GitHub for non-developer users; app
   auto-update checks the releases feed (Sparkle or hand-rolled:
