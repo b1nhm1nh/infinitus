@@ -182,27 +182,29 @@ struct ThemedGlassChrome: View {
     @State private var isKey = false
 
     var body: some View {
-        // The user tunes chrome strength separately per focus state
-        // (2026-08-30: "I'll tune it"). The dial scales only the milk —
-        // frame paint and wash — NEVER the glass layer itself: fading
-        // the glass fades the blur, and a low dial then reads as plain
-        // alpha transparency, crisp backdrop text instead of glass
-        // (user, image pair: "which one is glass and which one is
-        // simple transparent?").
-        let strength = isKey ? model.glassFocused : model.glassUnfocused
+        // Per-focus TRANSPARENCY dial (2026-08-30, third semantics —
+        // the honest one). macOS exposes no blur/frost knob on glass, so
+        // the dial blends: at 0, full glass + milk (frosted slab over a
+        // dark backdrop); at 1, the glass thins to a 0.25 floor and the
+        // milk is gone — backdrop clearly visible with ghost blur. The
+        // floor keeps it from ever reaching the crisp no-blur look the
+        // user rejected ("simple transparent").
+        let clarity = isKey ? model.glassFocused : model.glassUnfocused
+        let glassBlend = 1 - 0.75 * clarity
+        let milk = 1 - clarity
         ZStack {
-            FrameRetuner(paintAlpha: 0.2 * strength)
+            FrameRetuner(paintAlpha: 0.2 * milk)
             if #available(macOS 26.0, *) {
-                GlassEffectLayer()
+                GlassEffectLayer().opacity(glassBlend)
             } else {
-                GlassBackground()
+                GlassBackground().opacity(glassBlend)
             }
             let theme = model.rowTheme
             if !theme.plain, !theme.flashColor.isEmpty {
                 let tint = ThemeColor.resolve(theme.flashColor)
                 LinearGradient(
-                    colors: [tint.opacity(0.16 * strength),
-                             tint.opacity(0.04 * strength)],
+                    colors: [tint.opacity(0.16 * milk),
+                             tint.opacity(0.04 * milk)],
                     startPoint: .top, endPoint: .bottom)
                 RoundedRectangle(cornerRadius: 10)
                     .strokeBorder(tint.opacity(0.35), lineWidth: 1.5)

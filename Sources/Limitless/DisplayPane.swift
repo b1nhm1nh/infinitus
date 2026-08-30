@@ -54,11 +54,11 @@ struct DisplayPane: View {
                 Text("Extra large").tag("xlarge")
                 Text("Huge").tag("huge")
             }
-            Section("Popup glass") {
+            Section("Popup transparency") {
                 glassSlider("Focused", value: $model.glassFocused)
                 glassSlider("Out of focus", value: $model.glassUnfocused)
-                Text("Glass strength per focus state — lower is more "
-                     + "transparent.")
+                Text("Higher is clearer — the backdrop shows through with "
+                     + "a soft glass blur. Lower is frostier.")
                     .font(.caption).foregroundStyle(.secondary)
             }
             Toggle("Compact popup (hide actions, event log, and history)",
