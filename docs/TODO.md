@@ -105,23 +105,21 @@
 - Visual verification pending: glass look, whole-row themed sweep,
   About icon, new themes, unified footer, sync export/import, hollow
   recovery triangle (needs an all-limited fleet to show).
-- Ahead-of-pace icons (theme aheadIcon next to the gauge bars) have no
-  tooltip (user, 2026-08-30): add an InstantTip explaining pace — e.g.
-  "ahead of pace — usage is below the linear burn line for this window"
-  (and the deficit twin if one exists).
-- Menu bar display setting: show REMAINING vs USED percentage (user,
-  2026-08-30). The title currently reports used%; add a Display toggle
-  (or picker) flipping the title math to remaining (100 - pct), and
-  decide whether the popup gauges' % labels follow the same setting or
-  stay HP-style remaining as they are.
+- ~~Ahead-of-pace icon tooltips~~ → InstantTip on both sites, edge
+  .above (the cell's own summary tip owns .below); alignment ghosts
+  stop answering hover.
+- ~~Menu bar remaining vs used~~ → "Menu bar counts remaining, not
+  used" toggle; TitlePrefs.titleRemaining flips 5h/7d/scoped at
+  display time. Popup gauges stay HP-style (already remaining).
 - Dead-transition animation (user, 2026-08-30): when an account flips
   alive -> dead in a snapshot, play a death animation on its row (the
   themed dead marker landing — a drop/flicker/desaturate beat), the
   mirror of the refill celebration. Belongs in the Animations pane
   examples too.
-- Setting to hide the control center (footer actions) while keeping
-  the status chips — claude status, working sessions, auto mode
-  (user, 2026-08-30).
-- Right-click menu on the menu bar icon (user, 2026-08-30): theme
-  selection, the control-center functions when hidden by the setting
-  above, plus more (rotate, refresh, pop out, settings, quit…).
+- ~~Hide control center, keep chips~~ → "Hide popup actions (status
+  chips stay)" Display toggle; wide footer, stacked rail, and compact
+  strip all hide their buttons, chips + restart-to-update stay.
+- ~~Right-click status-item menu~~ → just-in-time NSMenu (sendAction
+  on .rightMouseUp; performClick with item.menu set, then detached so
+  left-click keeps toggling): Theme submenu with checkmark, Rotate/
+  Refresh, Pin (stateful), Pop out/in, Settings, Restart, Quit.
