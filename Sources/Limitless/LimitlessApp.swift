@@ -364,6 +364,9 @@ struct MenuContent: View {
     /// drag strip, and two of them would stack.
     var showHeader = true
     @ObservedObject private var status = ServiceStatusModel.shared
+    /// Measured height of the compact rows column — the rail column
+    /// count follows it (never the other way round).
+    @State private var compactRowsHeight: CGFloat = 0
 
     var body: some View {
         Group {
@@ -382,12 +385,14 @@ struct MenuContent: View {
                             .buttonStyle(.borderless)
                     }
                 } else {
-                    // Rail columns follow the fleet (user 2026-08-30):
-                    // stacked cards are tall, so five-plus accounts give
-                    // one column room and the popup its narrowest width;
-                    // shorter lists (or the squat wide rows) need two.
-                    let oneColumn = model.popupLayout == "stacked"
-                        && model.accounts.count >= 5
+                    // Responsive rail (user 2026-08-30: five accounts
+                    // still got two columns): one column whenever the
+                    // MEASURED account column is tall enough to hold
+                    // every rail icon; two only when it isn't — the rail
+                    // must never drive the popup's height. Item counting
+                    // mirrors compactControls' conditionals.
+                    let oneColumn = compactRowsHeight
+                        >= CGFloat(compactRailItemCount) * 30 - 10
                     HStack(alignment: .top, spacing: 8) {
                         LazyVGrid(columns: Array(
                             repeating: GridItem(.fixed(20), spacing: 10),
@@ -402,6 +407,8 @@ struct MenuContent: View {
                             accountArea
                             errorLines
                         }
+                        .onGeometryChange(for: CGFloat.self) { $0.size.height }
+                            action: { compactRowsHeight = $0 }
                     }
                 }
             } else if model.popupLayout == "stacked" {
@@ -671,6 +678,16 @@ struct MenuContent: View {
                 }
                 .instantTip(SessionSummary.tooltip(live))
         }
+    }
+
+    /// How many icons compactControls will actually emit — must mirror
+    /// its conditionals so the rail's column math stays honest.
+    private var compactRailItemCount: Int {
+        var n = 2                                   // serviceDot + engineBadgeIcon
+        if !model.footerActionsHidden { n += 7 }    // 5 actions + restart + quit
+        if let live = model.liveSessions, live.busy > 0 { n += 1 }
+        if model.appUpdatePending { n += 1 }
+        return n
     }
 
     /// The compact-mode controls, container-agnostic: the caller decides
@@ -1432,9 +1449,14 @@ struct AccountGrid: View {
 
     var body: some View {
         Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 8) {
-            ForEach(model.accounts, id: \.number) { account in
+            ForEach(Array(model.accounts.enumerated()),
+                    id: \.element.number) { rowIndex, account in
                 let cells = AccountCells(model: model, usage: usage, account: account)
                 GridRow {
+                    // Group, not GridRow, carries the rows-intro: a Group
+                    // hands its modifier to each child, so the cells keep
+                    // their columns and still enter as one sliding row.
+                    Group {
                     HStack(spacing: 2) {
                         NextMarker(model: model, number: account.number)
                         Text(cells.slotDisplay)
@@ -1513,6 +1535,8 @@ struct AccountGrid: View {
                         cells.scopedCells
                         cells.cashCell
                     }
+                    }
+                    .introRow(model, index: rowIndex)
                 }
             }
         }
@@ -1572,8 +1596,10 @@ struct AccountStack: View {
             // cards, no per-window lines, just the BINDING window's pct
             // (full mode and compact "looked the same", user 2026-08-30).
             VStack(alignment: .leading, spacing: 5) {
-                ForEach(model.accounts, id: \.number) { account in
+                ForEach(Array(model.accounts.enumerated()),
+                        id: \.element.number) { i, account in
                     compactLine(account)
+                        .introRow(model, index: i)
                 }
             }
         } else {
@@ -1642,7 +1668,8 @@ struct AccountStack: View {
 
     private var fullCards: some View {
         VStack(alignment: .leading, spacing: 6) {
-            ForEach(model.accounts, id: \.number) { account in
+            ForEach(Array(model.accounts.enumerated()),
+                    id: \.element.number) { rowIndex, account in
                 let cells = AccountCells(model: model, usage: usage, account: account, banded: false)
                 VStack(alignment: .leading, spacing: 4) {
                     HStack(spacing: 4) {
@@ -1702,6 +1729,7 @@ struct AccountStack: View {
                 .switchFlash(account.active ? model.switchFlashTick : 0,
                              color: ThemeColor.flash(model.rowTheme))
                 .deathFlash(model.deathTicks[account.number] ?? 0)
+                .introRow(model, index: rowIndex)
             }
         }
     }

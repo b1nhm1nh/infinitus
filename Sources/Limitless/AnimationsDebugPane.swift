@@ -18,6 +18,7 @@ struct AnimationsDebugPane: View {
                     Text("Slide from top").tag("top")
                     Text("Slide from bottom").tag("bottom")
                     Text("Fade in").tag("fade")
+                    Text("Rows slide from right").tag("rows")
                 }
                 Picker("Title flourish", selection: $model.introTitle) {
                     Text("Zoom bounce").tag("zoom")

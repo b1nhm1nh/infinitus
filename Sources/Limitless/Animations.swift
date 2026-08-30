@@ -202,6 +202,10 @@ struct IntroContentReveal: ViewModifier {
     @ObservedObject var model: AppModel
     @State private var on = true
 
+    /// "rows" hands the entrance to the per-row IntroRowSlide stagger —
+    /// a container fade on top would just dim the sliding rows.
+    private var delegated: Bool { model.introStyle == "rows" }
+
     func body(content: Content) -> some View {
         let dy: CGFloat = switch model.introStyle {
         case "top": -44
@@ -209,8 +213,8 @@ struct IntroContentReveal: ViewModifier {
         default: 0
         }
         content
-            .opacity(on ? 1 : 0)
-            .offset(y: on ? 0 : dy)
+            .opacity(delegated || on ? 1 : 0)
+            .offset(y: delegated || on ? 0 : dy)
             // Hold hidden only while data is COMING. With no engine
             // installed nothing ever arrives — the onboarding card must
             // show, not an empty sliver (found live 2026-08-30).
@@ -228,6 +232,42 @@ struct IntroContentReveal: ViewModifier {
         withAnimation(.spring(duration: 0.7 / speed, bounce: 0.2)) {
             on = true
         }
+    }
+}
+
+/// One account row's entrance for the "rows" content style: slide in
+/// from the right, each row a beat after the one above (user
+/// 2026-08-30). Inert for every other style. On the wide Grid the
+/// modifier rides a Group INSIDE each GridRow — a Group distributes a
+/// modifier to each child, so the row's cells move as one without
+/// collapsing the GridRow (a modified GridRow is one cell).
+struct IntroRowSlide: ViewModifier {
+    @ObservedObject var model: AppModel
+    let index: Int
+    @State private var on = true
+
+    private var active: Bool { model.introStyle == "rows" }
+
+    func body(content: Content) -> some View {
+        content
+            .opacity(!active || on ? 1 : 0)
+            .offset(x: !active || on ? 0 : 90)
+            .onAppear {
+                guard active else { return }
+                model.accounts.isEmpty && !model.engineMissing
+                    ? (on = false) : play()
+            }
+            .onChange(of: model.introTick) { _, _ in if active { play() } }
+            .onChange(of: model.introStyle) { _, _ in
+                if active { play() } else { on = true }
+            }
+    }
+
+    private func play() {
+        let speed = max(0.2, model.introSpeed)
+        on = false
+        withAnimation(.spring(duration: 0.55 / speed, bounce: 0.22)
+            .delay(Double(index) * 0.09 / speed)) { on = true }
     }
 }
 
@@ -300,6 +340,9 @@ extension View {
     }
     func introContent(_ model: AppModel) -> some View {
         modifier(IntroContentReveal(model: model))
+    }
+    func introRow(_ model: AppModel, index: Int) -> some View {
+        modifier(IntroRowSlide(model: model, index: index))
     }
     func introTitle(_ model: AppModel) -> some View {
         modifier(IntroTitleFlourish(model: model))

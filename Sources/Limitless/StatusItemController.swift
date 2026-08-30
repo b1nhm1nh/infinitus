@@ -109,16 +109,21 @@ final class StatusItemController {
 
         // A pinned popup is a fixture, not a transient — bring it back on
         // launch (user report 2026-08-30: pinned, app restarted, gone).
-        // Delayed so the status item has landed in the bar (a popover
-        // anchored to an unplaced button shows at the screen corner); no
-        // NSApp.activate — restoring at login must not steal focus.
-        if model.popoverPinned {
+        // Same for the pop-out window, at its saved position (user
+        // 2026-08-30: "popout state is not saved"). Delayed so the status
+        // item has landed in the bar (a popover anchored to an unplaced
+        // button shows at the screen corner); no NSApp.activate —
+        // restoring at login must not steal focus.
+        let popOutRestore = UserDefaults.standard.bool(forKey: "popout_shown")
+        if model.popoverPinned || popOutRestore {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in
                 guard let self, self.anchored?.isVisible != true,
-                      self.pinned?.isVisible != true,
-                      let button = self.item.button, button.window != nil
-                else { return }
-                self.showAnchored()
+                      self.pinned?.isVisible != true else { return }
+                if popOutRestore {
+                    self.showPinnedWindow(activate: false)
+                } else if let button = self.item.button, button.window != nil {
+                    self.showAnchored()
+                }
             }
         }
     }
@@ -217,7 +222,11 @@ final class StatusItemController {
         var x = rect.midX - size.width / 2
         x = min(x, screen.visibleFrame.maxX - size.width - 8)
         x = max(x, screen.visibleFrame.minX + 8)
-        return NSRect(x: x, y: rect.minY - size.height - 6,
+        var y = rect.minY - size.height - 6
+        // A layout flip can also grow the panel past the bottom edge —
+        // ride up rather than hang off the screen.
+        y = max(y, screen.visibleFrame.minY + 8)
+        return NSRect(x: x, y: y,
                       width: size.width, height: size.height)
     }
 
@@ -259,6 +268,7 @@ final class StatusItemController {
     func popOut() {
         if let pinned, pinned.isVisible {
             pinned.orderOut(nil)
+            UserDefaults.standard.set(false, forKey: "popout_shown")
             // Popping back IN: the content returns to its anchor spot —
             // just hiding the window left nothing on screen (user bug
             // report 2026-08-30).
@@ -367,7 +377,7 @@ final class StatusItemController {
     /// (Pin now holds the popover itself); it remains the guaranteed way in
     /// via `open Limitless.app` -> applicationShouldHandleReopen when the
     /// status item is hidden or the bar refuses it.
-    func showPinnedWindow() {
+    func showPinnedWindow(activate: Bool = true) {
         if pinned == nil {
             let host = NSHostingController(rootView: PinnedRoot(
                 model: model, usage: usage,
@@ -411,11 +421,55 @@ final class StatusItemController {
             // see behind the window.
             w.isOpaque = false
             w.backgroundColor = .clear
+            // Position is a fixture too: follow moves into defaults,
+            // restore below; Cmd+W drops the restore-on-launch flag.
+            NotificationCenter.default.addObserver(
+                self, selector: #selector(pinnedMoved),
+                name: NSWindow.didMoveNotification, object: w)
+            NotificationCenter.default.addObserver(
+                self, selector: #selector(pinnedClosed),
+                name: NSWindow.willCloseNotification, object: w)
             pinned = w
             fitPinned(to: pinnedIdeal)
+            let d = UserDefaults.standard
+            if let x = d.object(forKey: "popout_x") as? Double,
+               let y = d.object(forKey: "popout_y") as? Double {
+                w.setFrameOrigin(NSPoint(x: x, y: y))
+                clampOnScreen(w)
+            }
         }
-        NSApp.activate(ignoringOtherApps: true)
-        pinned?.makeKeyAndOrderFront(nil)
+        UserDefaults.standard.set(true, forKey: "popout_shown")
+        if activate {
+            NSApp.activate(ignoringOtherApps: true)
+            pinned?.makeKeyAndOrderFront(nil)
+        } else {
+            pinned?.orderFrontRegardless()
+        }
+    }
+
+    @objc private func pinnedMoved() {
+        guard let pinned, pinned.isVisible else { return }
+        let d = UserDefaults.standard
+        d.set(Double(pinned.frame.origin.x), forKey: "popout_x")
+        d.set(Double(pinned.frame.origin.y), forKey: "popout_y")
+    }
+
+    @objc private func pinnedClosed() {
+        UserDefaults.standard.set(false, forKey: "popout_shown")
+    }
+
+    /// Nudge a window fully back into its screen's visible frame — a
+    /// stacked->wide flip can grow it off the edge (user 2026-08-30:
+    /// "auto move it in any part of container that overflow").
+    private func clampOnScreen(_ w: NSWindow) {
+        guard let screen = w.screen ?? NSScreen.main else { return }
+        let v = screen.visibleFrame
+        var f = w.frame
+        if f.maxX > v.maxX { f.origin.x = v.maxX - f.width }
+        if f.minX < v.minX { f.origin.x = v.minX }
+        if f.maxY > v.maxY { f.origin.y = v.maxY - f.height }
+        if f.minY < v.minY { f.origin.y = v.minY }
+        if f != w.frame { w.setFrame(f, display: true) }
     }
 
     /// Track the content's measured ideal size (layout, theme, compact,
@@ -427,6 +481,7 @@ final class StatusItemController {
         let current = pinned.contentRect(forFrameRect: pinned.frame).size
         if abs(current.width - size.width) > 0.5 || abs(current.height - size.height) > 0.5 {
             pinned.setContentSize(NSSize(width: size.width, height: size.height))
+            clampOnScreen(pinned)
         }
     }
 
