@@ -13,30 +13,62 @@ struct DisplayPane: View {
 
     var body: some View {
         Form {
+            Toggle("Menu bar shows only the icon", isOn: $model.titleIconOnly)
+                .help("Just the Limitless glyph — no account name or "
+                      + "percentages. The settings below return when "
+                      + "this is off.")
             Toggle("Show account name in menu bar", isOn: $model.showAccountName)
+                .disabled(model.titleIconOnly)
             Picker("Title percentage", selection: $model.titlePct) {
                 ForEach(TitlePrefs.pctChoices, id: \.self) {
                     Text(pctLabels[$0] ?? $0).tag($0)
                 }
             }
+            .disabled(model.titleIconOnly)
             Toggle("Show model limits in title", isOn: $model.titleScoped)
+                .disabled(model.titleIconOnly)
             Toggle("Menu bar counts remaining, not used",
                    isOn: $model.titleRemaining)
+                .disabled(model.titleIconOnly)
                 .help("Flips the menu bar percentages to what's left. "
                       + "The popup gauges already count remaining.")
-            Picker("Popup layout", selection: Binding(
-                get: { model.popupLayout },
-                set: { value in
-                    withAnimation(.easeInOut(duration: 0.3)) { model.popupLayout = value }
-                })) {
-                Text("Wide rows").tag("wide")
-                Text("Stacked cards").tag("stacked")
+            // Visual pickers, System Settings appearance-tile style
+            // (user 2026-08-30: "use visual for these 2 settings").
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Popup layout")
+                HStack(spacing: 12) {
+                    PickTile(title: "Wide rows",
+                             selected: model.popupLayout == "wide",
+                             choose: { setLayout("wide") }) {
+                        VStack(spacing: 3) {
+                            ForEach(0..<3, id: \.self) { _ in
+                                Capsule().fill(Color.secondary.opacity(0.65))
+                                    .frame(height: 3)
+                            }
+                        }
+                        .padding(.horizontal, 9)
+                    }
+                    PickTile(title: "Stacked cards",
+                             selected: model.popupLayout == "stacked",
+                             choose: { setLayout("stacked") }) {
+                        VStack(spacing: 3) {
+                            ForEach(0..<2, id: \.self) { _ in
+                                RoundedRectangle(cornerRadius: 2)
+                                    .fill(Color.secondary.opacity(0.65))
+                                    .frame(width: 22, height: 10)
+                            }
+                        }
+                    }
+                }
             }
-            Picker("Popup size", selection: $model.popupTextSize) {
-                Text("Default").tag("default")
-                Text("Large").tag("large")
-                Text("Extra large").tag("xlarge")
-                Text("Huge").tag("huge")
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Popup size")
+                HStack(spacing: 12) {
+                    sizeTile("Default", "default", 11)
+                    sizeTile("Large", "large", 13)
+                    sizeTile("Extra large", "xlarge", 15)
+                    sizeTile("Huge", "huge", 18)
+                }
             }
             Section("Popup transparency") {
                 glassSlider("Transparency", value: $model.glassFocused)
@@ -123,6 +155,19 @@ struct DisplayPane: View {
         .formStyle(.grouped)
     }
 
+    private func setLayout(_ value: String) {
+        withAnimation(.easeInOut(duration: 0.3)) { model.popupLayout = value }
+    }
+
+    private func sizeTile(_ title: String, _ tag: String,
+                          _ pt: CGFloat) -> some View {
+        PickTile(title: title, selected: model.popupTextSize == tag,
+                 choose: { model.popupTextSize = tag }) {
+            Text("Aa").font(.system(size: pt, weight: .medium))
+                .foregroundStyle(.secondary)
+        }
+    }
+
     private func glassSlider(_ label: String,
                              value: Binding<Double>) -> some View {
         LabeledContent(label) {
@@ -137,6 +182,35 @@ struct DisplayPane: View {
         }
     }
 
+}
+
+
+/// One visual settings choice: a little art tile + caption, ringed when
+/// selected — the System Settings appearance-picker look.
+private struct PickTile<Art: View>: View {
+    let title: String
+    let selected: Bool
+    let choose: () -> Void
+    @ViewBuilder let art: Art
+
+    var body: some View {
+        Button(action: choose) {
+            VStack(spacing: 4) {
+                art
+                    .frame(width: 58, height: 36)
+                    .background(RoundedRectangle(cornerRadius: 7)
+                        .fill(Color.secondary.opacity(0.10)))
+                    .overlay(RoundedRectangle(cornerRadius: 7)
+                        .strokeBorder(selected ? Color.accentColor
+                                               : Color.secondary.opacity(0.3),
+                                      lineWidth: selected ? 2 : 1))
+                Text(title).font(.caption)
+                    .foregroundStyle(selected ? Color.accentColor : .secondary)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
 }
 
 

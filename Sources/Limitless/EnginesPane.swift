@@ -7,6 +7,7 @@ import CswapCore
 struct ClaudeEnginePane: View {
     @ObservedObject var model: AppModel
     @ObservedObject var settings: SettingsModel
+    @ObservedObject var update: UpdateModel
 
     var body: some View {
         Form {
@@ -21,10 +22,57 @@ struct ClaudeEnginePane: View {
                 Text("Rotates Claude accounts before limits stall a session.")
                     .font(.caption).foregroundStyle(.secondary)
             }
+            // Engine updates live WITH the engine (user 2026-08-30:
+            // "move all of updates of engine to its engine setting");
+            // About keeps the app's own release channel.
+            Section("Engine updates") {
+                Toggle("Update automatically", isOn: Binding(
+                    get: { update.autoCheck && update.autoInstall },
+                    set: { update.autoCheck = $0; update.autoInstall = $0 }))
+                    .help("Watch PyPI daily; when a newer claude-swap "
+                          + "appears, run `cswap upgrade` unattended and "
+                          + "restart the engine.")
+                LabeledContent {
+                    HStack {
+                        if update.updateAvailable {
+                            Button("Update Now") { Task { await update.upgrade() } }
+                                .disabled(update.busy)
+                                .buttonStyle(.borderedProminent)
+                        }
+                        Button(update.busy ? "Checking…" : "Check for Updates…") {
+                            Task { await update.check() }
+                        }
+                        .disabled(update.busy)
+                    }
+                } label: {
+                    Text("cswap engine \(update.current ?? "—")")
+                    if let latest = update.latest {
+                        Text("latest on PyPI: \(latest)")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+                if let status = update.status {
+                    Text(status)
+                        .font(.caption)
+                        .foregroundStyle(update.updateAvailable ? Color.orange : .secondary)
+                }
+                if let output = update.upgradeOutput, !output.isEmpty {
+                    DisclosureGroup("upgrade output") {
+                        ScrollView {
+                            Text(output)
+                                .font(.system(.caption, design: .monospaced))
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .textSelection(.enabled)
+                        }
+                        .frame(maxHeight: 160)
+                    }
+                }
+            }
             SettingsFormBody(model: settings)
         }
         .formStyle(.grouped)
         .task { await settings.load() }
+        .onAppear { if update.current == nil { Task { await update.check() } } }
     }
 
     private var stateText: some View {

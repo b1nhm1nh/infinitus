@@ -65,6 +65,10 @@ final class AppModel: ObservableObject {
     // Menu bar percentages count remaining instead of used (todo
     // 2026-08-30). Menu-bar-only: the popup gauges stay HP-style.
     @Published var titleRemaining: Bool { didSet { defaults.set(titleRemaining, forKey: "title_remaining") } }
+    /// Icon only in the menu bar — no name, no percentages (user
+    /// 2026-08-30). Display-time override; the individual title prefs
+    /// keep their values for when this flips back off.
+    @Published var titleIconOnly: Bool { didSet { defaults.set(titleIconOnly, forKey: "title_icon_only") } }
     @Published var refreshInterval: Int { didSet { defaults.set(refreshInterval, forKey: "refresh_interval") } }
     @Published var gamification: String { didSet { defaults.set(gamification, forKey: "gamification_style") } }
     @Published var compactRows: Bool { didSet { defaults.set(compactRows, forKey: "compact_rows") } }
@@ -154,7 +158,8 @@ final class AppModel: ObservableObject {
     }
 
     var title: String {
-        TitleFormatter.format(
+        if titleIconOnly { return "" }
+        return TitleFormatter.format(
             account: accounts.first(where: { $0.active }),
             prefs: TitlePrefs(showAccountName: showAccountName,
                               titlePct: titlePct, titleScoped: titleScoped,
@@ -192,6 +197,7 @@ final class AppModel: ObservableObject {
         compactRows = defaults.object(forKey: "compact_rows") as? Bool ?? false
         footerActionsHidden = defaults.object(forKey: "footer_actions_hidden") as? Bool ?? false
         titleRemaining = defaults.object(forKey: "title_remaining") as? Bool ?? false
+        titleIconOnly = defaults.object(forKey: "title_icon_only") as? Bool ?? false
         popoverPinned = defaults.object(forKey: "popover_pinned") as? Bool ?? false
         popupLayout = defaults.string(forKey: "popup_layout") ?? "wide"
         popupTextSize = defaults.string(forKey: "popup_text_size") ?? "default"
@@ -258,6 +264,7 @@ final class AppModel: ObservableObject {
         compactRows = defaults.object(forKey: "compact_rows") as? Bool ?? false
         footerActionsHidden = defaults.object(forKey: "footer_actions_hidden") as? Bool ?? false
         titleRemaining = defaults.object(forKey: "title_remaining") as? Bool ?? false
+        titleIconOnly = defaults.object(forKey: "title_icon_only") as? Bool ?? false
         popupLayout = defaults.string(forKey: "popup_layout") ?? "wide"
         popupTextSize = defaults.string(forKey: "popup_text_size") ?? "default"
         glassFocused = defaults.object(forKey: "glass_focused") as? Double ?? 0.7

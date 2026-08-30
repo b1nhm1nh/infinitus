@@ -230,51 +230,6 @@ struct AboutPane: View {
             }
 
             Section("Updates") {
-                // One switch for the whole pipeline (user request
-                // 2026-08-30); the two prefs stay separate underneath so
-                // sync/rollback keep their meaning.
-                Toggle("Update automatically", isOn: Binding(
-                    get: { model.autoCheck && model.autoInstall },
-                    set: { model.autoCheck = $0; model.autoInstall = $0 }))
-                    .help("Watch PyPI daily; when a newer claude-swap "
-                          + "appears, run `cswap upgrade` unattended and "
-                          + "restart the engine.")
-                LabeledContent {
-                    HStack {
-                        if model.updateAvailable {
-                            Button("Update Now") { Task { await model.upgrade() } }
-                                .disabled(model.busy)
-                                .buttonStyle(.borderedProminent)
-                        }
-                        Button(model.busy ? "Checking…" : "Check for Updates…") {
-                            Task { await model.check() }
-                        }
-                        .disabled(model.busy)
-                    }
-                } label: {
-                    Text("cswap engine \(model.current ?? "—")")
-                    if let latest = model.latest {
-                        Text("latest on PyPI: \(latest)")
-                            .font(.caption).foregroundStyle(.secondary)
-                    }
-                }
-                if let status = model.status {
-                    Text(status)
-                        .font(.caption)
-                        .foregroundStyle(model.updateAvailable ? Color.orange : .secondary)
-                }
-                if let output = model.upgradeOutput, !output.isEmpty {
-                    DisclosureGroup("upgrade output") {
-                        ScrollView {
-                            Text(output)
-                                .font(.system(.caption, design: .monospaced))
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .textSelection(.enabled)
-                        }
-                        .frame(maxHeight: 160)
-                    }
-                }
-                Divider()
                 LabeledContent {
                     Button(appRelease.status == nil ? "Check GitHub Releases"
                            : "Recheck") {
@@ -286,9 +241,10 @@ struct AboutPane: View {
                         Text(s).font(.caption).foregroundStyle(.secondary)
                     }
                 }
-                Text("Engine updates come from PyPI; app releases come "
-                     + "from GitHub (deathemperor/limitless). Building "
-                     + "from source is the developer path.")
+                Text("App releases come from GitHub "
+                     + "(deathemperor/limitless); building from source is "
+                     + "the developer path. Engine updates moved to "
+                     + "Engines → cswap.")
                     .font(.caption).foregroundStyle(.secondary)
             }
 
@@ -327,7 +283,6 @@ struct AboutPane: View {
             }
         }
         .formStyle(.grouped)
-        .onAppear { if model.current == nil { Task { await model.check() } } }
     }
 
     /// The real Limitless icon EVERYWHERE (user 2026-08-30): bundled runs

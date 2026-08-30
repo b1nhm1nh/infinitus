@@ -153,10 +153,12 @@ struct LimitlessApp: App {
         // "claude is not an engine, cswap is").
         SettingsTab(title: "cswap", symbol: "asterisk",
                     keywords: ["engine", "auto switch", "interval", "config",
-                               "threshold", "rotate", "claude", "provider"],
+                               "threshold", "rotate", "claude", "provider",
+                               "update", "upgrade", "pypi"],
                     provider: ProviderBadge(live: model.engineState.isRunning),
                     view: AnyView(ClaudeEnginePane(model: model,
-                                                   settings: settingsModel))),
+                                                   settings: settingsModel,
+                                                   update: updateModel))),
         SettingsTab(title: "Codex", symbol: "circle.hexagongrid",
                     keywords: ["openai", "codex", "provider", "slots",
                                "accounts", "engine"],
@@ -166,7 +168,12 @@ struct LimitlessApp: App {
 }
 
 /// CodexBar-style settings shell: a searchable sidebar of icon-tile rows
-/// on the left, the selected pane on the right.
+/// on the left, the selected pane on the right. Hand-rolled (no
+/// NavigationSplitView): the split view's List-selection -> detail hop
+/// froze under synthetic clicks in the controller-owned window
+/// (2026-08-30), plain Buttons cannot, and the search field finally gets
+/// breathing room under the titlebar (user: "search box needs top
+/// space").
 struct SettingsRoot: View {
     let tabs: [SettingsTab]
     @State private var selection: String?
@@ -185,68 +192,126 @@ struct SettingsRoot: View {
     }
 
     var body: some View {
-        NavigationSplitView {
-            List(selection: $selection) {
-                // General tabs first; providers under their own header
-                // (CodexBar sidebar — user screenshot 2026-08-30).
-                ForEach(filtered.filter { $0.provider == nil }, id: \.title) { tab in
-                    HStack(spacing: 8) {
-                        if let image = tab.image {
-                            Image(nsImage: image)
-                                .resizable()
-                                .frame(width: 22, height: 22)
-                        } else {
-                            Image(systemName: tab.symbol)
-                                .font(.system(size: 11, weight: .semibold))
-                                .foregroundStyle(.white)
-                                .frame(width: 22, height: 22)
-                                .background(RoundedRectangle(cornerRadius: 6)
-                                    .fill(tab.tint.gradient))
-                        }
-                        Text(tab.title)
-                    }
-                    .tag(tab.title)
+        HStack(spacing: 0) {
+            sidebar
+                .frame(width: 215)
+            Divider()
+            Group {
+                if let tab = current {
+                    tab.view
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
-                let providers = filtered.filter { $0.provider != nil }
-                if !providers.isEmpty {
-                    Section {
-                        ForEach(providers, id: \.title) { tab in
-                            let badge = tab.provider ?? ProviderBadge()
-                            HStack(spacing: 9) {
-                                Image(systemName: tab.symbol)
-                                    .font(.system(size: 12))
-                                    .frame(width: 18)
-                                Text(tab.title)
-                                Spacer()
-                                if badge.live {
-                                    Circle().fill(.green)
-                                        .frame(width: 7, height: 7)
-                                }
-                            }
-                            .foregroundStyle(badge.placeholder
-                                             ? AnyShapeStyle(.tertiary)
-                                             : AnyShapeStyle(.primary))
-                            .tag(tab.title)
-                            .selectionDisabled(badge.placeholder)
-                        }
-                    } header: {
+            }
+        }
+        .frame(minWidth: 700, minHeight: 480)
+        .onAppear { if selection == nil { selection = tabs.first?.title } }
+    }
+
+    private var sidebar: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            searchField
+                .padding(.top, 14)
+                .padding(.horizontal, 10)
+                .padding(.bottom, 10)
+            ScrollView(showsIndicators: false) {
+                VStack(alignment: .leading, spacing: 2) {
+                    ForEach(filtered.filter { $0.provider == nil }, id: \.title) { tab in
+                        generalRow(tab)
+                    }
+                    let providers = filtered.filter { $0.provider != nil }
+                    if !providers.isEmpty {
                         HStack {
                             Text("Engines")
                             Spacer()
                             Text("\(providers.filter { $0.provider?.live == true }.count) on")
                         }
+                        .font(.caption).foregroundStyle(.secondary)
+                        .padding(.horizontal, 10)
+                        .padding(.top, 14)
+                        .padding(.bottom, 4)
+                        ForEach(providers, id: \.title) { tab in
+                            providerRow(tab)
+                        }
                     }
                 }
-            }
-            .searchable(text: $query, placement: .sidebar, prompt: "Search settings")
-            .navigationSplitViewColumnWidth(min: 190, ideal: 210, max: 260)
-        } detail: {
-            if let tab = current {
-                tab.view.navigationTitle(tab.title)
+                .padding(.horizontal, 8)
+                .padding(.bottom, 8)
             }
         }
-        .frame(minWidth: 700, minHeight: 480)
-        .onAppear { if selection == nil { selection = tabs.first?.title } }
+    }
+
+    private var searchField: some View {
+        HStack(spacing: 5) {
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
+            TextField("Search settings", text: $query)
+                .textFieldStyle(.plain)
+                .font(.system(size: 12))
+        }
+        .padding(.horizontal, 7)
+        .padding(.vertical, 5)
+        .background(RoundedRectangle(cornerRadius: 7)
+            .fill(Color.primary.opacity(0.06)))
+        .overlay(RoundedRectangle(cornerRadius: 7)
+            .strokeBorder(Color.secondary.opacity(0.25)))
+    }
+
+    private func generalRow(_ tab: SettingsTab) -> some View {
+        let selected = current?.title == tab.title
+        return Button { selection = tab.title } label: {
+            HStack(spacing: 8) {
+                if let image = tab.image {
+                    Image(nsImage: image)
+                        .resizable()
+                        .frame(width: 22, height: 22)
+                } else {
+                    Image(systemName: tab.symbol)
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .frame(width: 22, height: 22)
+                        .background(RoundedRectangle(cornerRadius: 6)
+                            .fill(tab.tint.gradient))
+                }
+                Text(tab.title)
+                    .foregroundStyle(selected ? .white : .primary)
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 6)
+            .padding(.vertical, 4)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .background(RoundedRectangle(cornerRadius: 6)
+            .fill(selected ? Color.accentColor : .clear))
+    }
+
+    private func providerRow(_ tab: SettingsTab) -> some View {
+        let badge = tab.provider ?? ProviderBadge()
+        let selected = current?.title == tab.title
+        return Button { selection = tab.title } label: {
+            HStack(spacing: 9) {
+                Image(systemName: tab.symbol)
+                    .font(.system(size: 12))
+                    .frame(width: 18)
+                Text(tab.title)
+                Spacer()
+                if badge.live {
+                    Circle().fill(.green)
+                        .frame(width: 7, height: 7)
+                }
+            }
+            .foregroundStyle(selected ? AnyShapeStyle(.white)
+                             : badge.placeholder ? AnyShapeStyle(.tertiary)
+                             : AnyShapeStyle(.primary))
+            .padding(.horizontal, 6)
+            .padding(.vertical, 4)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(badge.placeholder)
+        .background(RoundedRectangle(cornerRadius: 6)
+            .fill(selected ? Color.accentColor : .clear))
     }
 }
 
