@@ -1,14 +1,19 @@
 import SwiftUI
 import AppKit
 
-/// macOS glass for the popover and the pop-out window (user request
-/// 2026-08-30): a behind-window vibrancy material, so the desktop shows
-/// through the chrome. `.hudWindow` after the first pass with `.menu`
-/// read as near-solid in dark mode ("looks nothing glassy to me") —
-/// hud is the most translucent standard material.
+/// macOS glass for the popover and the pop-out window. Two materials,
+/// swapped by window focus (round 7, 2026-08-30 — user: "why can't you
+/// just build premium glass for every state?"):
+///  - KEY window  -> NSGlassEffectView, the real macOS 26 Liquid Glass.
+///  - not key     -> NSVisualEffectView hud, state .active — the glass
+///    view deactivates with the window (verified: unfocused pop-out went
+///    solid), the hud material does not.
+/// In BOTH cases FrameRetuner rewrites the NSPopover frame's own
+/// near-opaque material — without that the anchored popup never shows
+/// any backdrop, whatever we stack inside it.
 struct GlassBackground: NSViewRepresentable {
     func makeNSView(context: Context) -> NSVisualEffectView {
-        let view = PopoverGlassView()
+        let view = NSVisualEffectView()
         view.material = .hudWindow
         view.blendingMode = .behindWindow
         view.state = .active
@@ -18,13 +23,9 @@ struct GlassBackground: NSViewRepresentable {
     func updateNSView(_ view: NSVisualEffectView, context: Context) {}
 }
 
-/// The reason the popup "still doesn't look glassy" (user, 2026-08-30,
-/// third report): inside an NSPopover our effect view sits ON TOP of the
-/// popover's own frame, which draws the near-opaque system `.popover`
-/// material underneath — whatever we stack above it, the backdrop stays
-/// solid. The fix is to retarget that frame's OWN effect view to the
-/// translucent hud material when we land in the popover window.
-private final class PopoverGlassView: NSVisualEffectView {
+/// Side-effect view: retunes every effect view in the popover frame to
+/// the translucent hud material. Draws nothing itself.
+private final class FrameRetunerView: NSView {
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         guard let frameView = window?.contentView?.superview else { return }
@@ -33,40 +34,77 @@ private final class PopoverGlassView: NSVisualEffectView {
 
     private func retune(_ view: NSView) {
         for sub in view.subviews {
-            if let effect = sub as? NSVisualEffectView, effect !== self {
+            if let effect = sub as? NSVisualEffectView {
                 effect.material = .hudWindow
                 effect.state = .active
             }
             retune(sub)
         }
     }
+
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
 }
 
-/// The popup container's full chrome: behind-window blur, a theme-tinted
-/// wash riding on it (container themification, user request 2026-08-30),
-/// and on macOS 26 the Liquid Glass material on top. Observes the model
-/// so a theme change re-tints the live popup.
+private struct FrameRetuner: NSViewRepresentable {
+    func makeNSView(context: Context) -> FrameRetunerView { FrameRetunerView() }
+    func updateNSView(_ view: FrameRetunerView, context: Context) {}
+}
+
+/// Reports whether the hosting window is key, live.
+private final class KeyWatchView: NSView {
+    var onChange: ((Bool) -> Void)?
+    private var tokens: [NSObjectProtocol] = []
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        tokens.forEach(NotificationCenter.default.removeObserver)
+        tokens = []
+        guard let w = window else { return }
+        onChange?(w.isKeyWindow)
+        let nc = NotificationCenter.default
+        tokens.append(nc.addObserver(
+            forName: NSWindow.didBecomeKeyNotification, object: w,
+            queue: .main) { [weak self] _ in self?.onChange?(true) })
+        tokens.append(nc.addObserver(
+            forName: NSWindow.didResignKeyNotification, object: w,
+            queue: .main) { [weak self] _ in self?.onChange?(false) })
+    }
+
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+    deinit { tokens.forEach(NotificationCenter.default.removeObserver) }
+}
+
+private struct WindowKeyState: NSViewRepresentable {
+    @Binding var isKey: Bool
+
+    func makeNSView(context: Context) -> KeyWatchView {
+        let view = KeyWatchView()
+        view.onChange = { key in
+            DispatchQueue.main.async { isKey = key }
+        }
+        return view
+    }
+    func updateNSView(_ view: KeyWatchView, context: Context) {}
+}
+
+/// The popup container's full chrome: focus-swapped glass, a theme-tinted
+/// wash, and a themed border glow. Observes the model so a theme change
+/// re-tints the live popup.
 struct ThemedGlassChrome: View {
     @ObservedObject var model: AppModel
+    @State private var isKey = false
 
     var body: some View {
         ZStack {
-            // Round 6 (2026-08-30): the hud material ALONE. Six states
-            // later, the ledger reads:
-            //  - hud + frame retune  -> glass on anchored popup AND the
-            //    pop-out, focused or not (screenshot-verified).
-            //  - NSGlassEffectView alone -> stunning focused pop-out,
-            //    NO glass anchored (popover frame stays opaque), NO
-            //    glass unfocused (the view deactivates with the window).
-            //  - any STACK of the two -> the glass view re-opacifies the
-            //    composite: "glass is nowhere to be seen".
-            // So: no NSGlassEffectView. The hud layer does everything.
-            GlassBackground()
+            FrameRetuner()
+            if #available(macOS 26.0, *), isKey {
+                GlassEffectLayer()
+            } else {
+                GlassBackground()
+            }
             let theme = model.rowTheme
             if !theme.plain, !theme.flashColor.isEmpty {
-                // Container themification: a visible top-down wash plus a
-                // tinted edge glow ("not seeing as too themified", user
-                // 2026-08-30 — 0.16 read as nothing over the blur).
                 let tint = ThemeColor.resolve(theme.flashColor)
                 LinearGradient(
                     colors: [tint.opacity(0.30), tint.opacity(0.06)],
@@ -76,8 +114,21 @@ struct ThemedGlassChrome: View {
                     .padding(1)
             }
         }
+        .background(WindowKeyState(isKey: $isKey))
         .ignoresSafeArea()
     }
+}
+
+/// AppKit Liquid Glass (macOS 26): the genuine article. Only shown while
+/// the window is key — it deactivates (goes solid) otherwise.
+@available(macOS 26.0, *)
+private struct GlassEffectLayer: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSGlassEffectView {
+        let view = NSGlassEffectView()
+        view.style = .clear
+        return view
+    }
+    func updateNSView(_ view: NSGlassEffectView, context: Context) {}
 }
 
 extension View {

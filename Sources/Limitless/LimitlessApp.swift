@@ -780,24 +780,18 @@ struct NextMarker: View {
     var body: some View {
         let theme = model.rowTheme
         if model.nextCandidate == number {
-            Group {
-                if theme.plain || theme.nextIcon.isEmpty {
-                    Image(systemName: "arrowtriangle.right.fill")
-                        .font(.caption2).foregroundStyle(.green)
-                } else {
-                    // Themed marker; movie's 🎬 doubled the slotPrefix
-                    // clapperboard (user screenshot) — a marker matching
-                    // the slot prefix falls back to the green triangle.
-                    if theme.nextIcon == theme.slotPrefix {
-                        Image(systemName: "arrowtriangle.right.fill")
-                            .font(.caption2).foregroundStyle(.green)
-                    } else {
-                        Text(theme.nextIcon).font(.caption2)
-                    }
-                }
+            if theme.plain || theme.nextIcon.isEmpty {
+                Image(systemName: "arrowtriangle.right.fill")
+                    .font(.caption2).foregroundStyle(.green)
+                    .instantTip("Next auto-switch target — the engine "
+                                + "would rotate to account \(number) first")
+            } else {
+                // Themed candidates carry the icon IN the number cell
+                // (slotDisplay: 🍿 replaces 🎬5); keep the slot here so
+                // columns stay aligned.
+                Image(systemName: "arrowtriangle.right.fill")
+                    .font(.caption2).opacity(0)
             }
-            .instantTip("Next auto-switch target — the engine would "
-                        + "rotate to account \(number) first")
         } else if model.nextCandidate == nil,
                   let recovery = model.nextRecovery,
                   recovery.number == number {
@@ -874,6 +868,26 @@ struct AccountCells {
     var slotText: String {
         theme.plain ? "\(account.number)"
                     : theme.slotPrefix + "\(account.number)"
+    }
+
+    /// What the number cell SHOWS: the themed next-candidate icon
+    /// REPLACES the slot text outright (🍿 instead of 🎬5 — user
+    /// 2026-08-30, emphatically); the tooltip keeps the real number.
+    var slotDisplay: String {
+        if model.nextCandidate == account.number,
+           !theme.plain, !theme.nextIcon.isEmpty {
+            return theme.nextIcon
+        }
+        return slotText
+    }
+
+    var slotTip: String {
+        var tip = "Account \(account.number)"
+        if account.active { tip += " — active" }
+        if model.nextCandidate == account.number {
+            tip += " — next auto-switch target"
+        }
+        return tip
     }
 
     var displayName: String {
@@ -1284,11 +1298,10 @@ struct AccountGrid: View {
                 GridRow {
                     HStack(spacing: 2) {
                         NextMarker(model: model, number: account.number)
-                        Text(cells.slotText)
+                        Text(cells.slotDisplay)
                             .fontWeight(account.active ? .bold : .regular)
                             .foregroundStyle(account.active ? Color.accentColor : Color.primary)
-                            .instantTip("Account \(account.number)"
-                                        + (account.active ? " — active" : ""))
+                            .instantTip(cells.slotTip)
                     }
                     .activeBand(account.active)
                     Button(cells.displayName) {
@@ -1413,9 +1426,10 @@ struct AccountStack: View {
         let cells = AccountCells(model: model, usage: usage, account: account, banded: false)
         HStack(spacing: 4) {
             NextMarker(model: model, number: account.number)
-            Text(cells.slotText)
+            Text(cells.slotDisplay)
                 .fontWeight(.bold)
                 .foregroundStyle(account.active ? Color.accentColor : Color.secondary)
+                .instantTip(cells.slotTip)
             Button(cells.displayName) {
                 if !account.active { model.pendingSwitch = account.number }
             }
@@ -1472,11 +1486,10 @@ struct AccountStack: View {
                 VStack(alignment: .leading, spacing: 4) {
                     HStack(spacing: 4) {
                         NextMarker(model: model, number: account.number)
-                        Text(cells.slotText)
+                        Text(cells.slotDisplay)
                             .fontWeight(.bold)
                             .foregroundStyle(account.active ? Color.accentColor : Color.secondary)
-                            .instantTip("Account \(account.number)"
-                                        + (account.active ? " — active" : ""))
+                            .instantTip(cells.slotTip)
                         Button(cells.displayName) {
                             if !account.active { model.pendingSwitch = account.number }
                         }
