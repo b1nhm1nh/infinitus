@@ -1,9 +1,58 @@
 # Limitless
 
-Every Claude account in one menu bar — swap before you stall.
+**Every Claude account in one menu bar — swap before you stall.**
+
+May your limits never bind.
+
+[![Release](https://img.shields.io/github/v/release/deathemperor/limitless)](https://github.com/deathemperor/limitless/releases)
+![macOS 14+](https://img.shields.io/badge/macOS-14%2B-blue)
+[![Homebrew](https://img.shields.io/badge/homebrew-deathemperor%2Ftap-orange)](https://github.com/deathemperor/homebrew-tap)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+
+![Limitless demo — launch intro, themed fleet, rotate celebrations](docs/demo.gif)
 
 A native macOS menu bar app (Swift/SwiftUI) over the
-[claude-swap](https://github.com/deathemperor/claude-swap) engine.
+[claude-swap](https://github.com/deathemperor/claude-swap) engine: live
+usage gauges for a whole fleet of Claude accounts, auto-switch awareness,
+and a one-click rotate — wrapped in themes from RPG to Wild West.
+
+## Why
+
+Claude usage windows run out at the worst moment. If you keep more than
+one account, the juggling — which one has 5-hour headroom, which weekly
+window is about to bind, which one just died — is exactly the kind of
+state a menu bar should carry for you. Limitless shows the whole fleet at
+a glance and swaps before you stall.
+
+## Install
+
+### Homebrew
+
+```sh
+brew install --cask deathemperor/tap/limitless
+```
+
+Nightly channel (built from `main` every day; reinstall to update):
+
+```sh
+brew install --cask deathemperor/tap/limitless@nightly
+```
+
+Builds are ad-hoc signed, not notarized: if Gatekeeper balks, install
+with `--no-quarantine` (or right-click → Open once).
+
+### GitHub releases
+
+Grab `Limitless-<version>.zip` from
+[releases](https://github.com/deathemperor/limitless/releases), unzip,
+drop `Limitless.app` into `/Applications`.
+
+### Requirements
+
+- macOS 14+ (best on macOS 26 — the glass chrome uses it)
+- the `cswap` CLI on PATH (`uv tool install claude-swap` /
+  `pipx install claude-swap`) — the app's first-run card installs it
+  for you
 
 ## Features
 
@@ -12,9 +61,9 @@ A native macOS menu bar app (Swift/SwiftUI) over the
 - **Every account at a glance** — live 5-hour / weekly / per-model
   gauges for the whole fleet, pace markers when a window is burning
   faster than time passes, reset countdowns, dead rows with the cause.
-- **Auto-switch aware** — the next-candidate pick, switch history,
-  a celebration sweep on every switch (and a death beat when an
-  account runs out).
+- **Auto-switch aware** — the next-candidate pick, a themed marker on
+  the active account, switch history, a celebration sweep on every
+  switch (and a death beat when an account runs out).
 - **Themes** — RPG (HP/MP + gold), Movie, Hades, Metal Gear, AI
   Agentic, Classic SWE, Sci-Fi, Wild West, Cyberpunk, Gothic, or plain
   numbers; a Themes settings pane with card grid, your own skins via
@@ -33,14 +82,16 @@ A native macOS menu bar app (Swift/SwiftUI) over the
 - **Push notifications** — switch/limit events to Slack, Discord,
   Telegram or a webhook; secrets travel over stdin, shown masked.
 - **Pop-out window, compact mode, stacked/wide layouts, popup
-  scaling** — and a first-run card that installs the engine for you.
+  scaling** — the pop-out remembers its spot across restarts.
 
-## Requirements
+## Privacy
 
-- macOS 14+
-- the `cswap` CLI on PATH (`uv tool install claude-swap` / `pipx install claude-swap`)
+Everything stays on your machine. The app talks to the engine through
+`cswap … --json` subprocesses and never reads its files; usage-cost
+figures are estimates, never billing truth; push-notification secrets
+travel over stdin and render masked.
 
-## Build & run
+## Build from source
 
 ```sh
 ./make-app.sh && open Limitless.app
@@ -62,6 +113,12 @@ disk.
 Built-in row themes live in `Sources/CswapCore/RowTheme.swift`; add your
 own in `~/Library/Application Support/Limitless/themes.json`, or share one
 through [`themes/`](themes/README.md) with a pull request.
+
+## Credits
+
+Inspired by [CodexBar](https://github.com/steipete/CodexBar) (MIT) —
+the menu-bar-native take on AI usage limits, and the shape of this
+README.
 
 ## License
 

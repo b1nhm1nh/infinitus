@@ -1,0 +1,26 @@
+name: Release
+# Tag push (v*) builds the app on the macOS 26 image (the glass chrome
+# needs its SDK to compile) and publishes the zip on the release.
+on:
+  push:
+    tags: ["v*"]
+permissions:
+  contents: write
+jobs:
+  release:
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build app bundle
+        run: ./make-app.sh
+      - name: Zip
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          ditto -c -k --keepParent Limitless.app "Limitless-${VERSION}.zip"
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          gh release create "$GITHUB_REF_NAME" "Limitless-${VERSION}.zip" \
+            --title "Limitless $GITHUB_REF_NAME" --generate-notes

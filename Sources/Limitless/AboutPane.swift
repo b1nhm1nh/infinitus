@@ -182,12 +182,89 @@ final class AppReleaseModel: ObservableObject {
     }
 }
 
+/// Homebrew awareness (user 2026-08-30: "release to homebrew, updates
+/// should be from it too"). Channel detection is a Caskroom lookup; the
+/// upgrade itself is `brew upgrade/reinstall --cask` — brew swaps the
+/// bundle at a new inode, so the running process survives until relaunch.
+@MainActor
+final class BrewUpdater: ObservableObject {
+    enum Channel { case source, stable, nightly }
+    @Published var running = false
+    @Published var status: String?
+
+    static let brewPath: String? =
+        ["/opt/homebrew/bin/brew", "/usr/local/bin/brew"]
+            .first { FileManager.default.isExecutableFile(atPath: $0) }
+
+    static let channel: Channel = {
+        guard let brew = brewPath else { return .source }
+        let caskroom = URL(fileURLWithPath: brew)
+            .deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("Caskroom")
+        let fm = FileManager.default
+        if fm.fileExists(atPath: caskroom.appendingPathComponent("limitless@nightly").path) {
+            return .nightly
+        }
+        if fm.fileExists(atPath: caskroom.appendingPathComponent("limitless").path) {
+            return .stable
+        }
+        return .source
+    }()
+
+    var channelLabel: String {
+        switch Self.channel {
+        case .source: return "source build"
+        case .stable: return "Homebrew"
+        case .nightly: return "Homebrew (nightly)"
+        }
+    }
+
+    /// Runs the brew command, then relaunches into the replaced bundle.
+    func upgrade() {
+        guard !running, let brew = Self.brewPath else { return }
+        let args = Self.channel == .nightly
+            ? ["reinstall", "--cask", "limitless@nightly"]
+            : ["upgrade", "--cask", "limitless"]
+        running = true
+        status = "brew \(args.joined(separator: " "))…"
+        Task.detached {
+            let p = Process()
+            p.executableURL = URL(fileURLWithPath: brew)
+            p.arguments = args
+            let out = Pipe()
+            p.standardOutput = out
+            p.standardError = out
+            try? p.run()
+            let data = out.fileHandleForReading.readDataToEndOfFile()
+            p.waitUntilExit()
+            let ok = p.terminationStatus == 0
+            let tail = String(decoding: data, as: UTF8.self)
+                .split(separator: "\n").suffix(2).joined(separator: " · ")
+            await MainActor.run { [weak self] in
+                self?.running = false
+                if ok {
+                    self?.status = "updated — relaunching…"
+                    let bundle = Bundle.main.bundleURL.path
+                    let sh = Process()
+                    sh.executableURL = URL(fileURLWithPath: "/bin/sh")
+                    sh.arguments = ["-c", "sleep 0.8; /usr/bin/open \"\(bundle)\""]
+                    try? sh.run()
+                    NSApplication.shared.terminate(nil)
+                } else {
+                    self?.status = "brew failed: \(tail)"
+                }
+            }
+        }
+    }
+}
+
 /// About + updates, CodexBar-style: hero card (icon, version, build,
 /// tagline), an Updates group, full-row link rows with leading icons and a
 /// trailing arrow, and a license footer.
 struct AboutPane: View {
     @ObservedObject var model: UpdateModel
     @StateObject private var appRelease = AppReleaseModel()
+    @StateObject private var brew = BrewUpdater()
     @Environment(\.openURL) private var openURL
 
     private var appVersion: String {
@@ -241,10 +318,25 @@ struct AboutPane: View {
                         Text(s).font(.caption).foregroundStyle(.secondary)
                     }
                 }
-                Text("App releases come from GitHub "
-                     + "(deathemperor/limitless); building from source is "
-                     + "the developer path. Engine updates moved to "
-                     + "Engines → cswap.")
+                LabeledContent {
+                    if BrewUpdater.channel != .source {
+                        Button(BrewUpdater.channel == .nightly
+                               ? "Reinstall latest nightly" : "Update via Homebrew") {
+                            brew.upgrade()
+                        }
+                        .disabled(brew.running)
+                    }
+                } label: {
+                    Text("Installed via \(brew.channelLabel)")
+                    if let s = brew.status {
+                        Text(s).font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+                Text("App releases ship through Homebrew "
+                     + "(brew install --cask deathemperor/tap/limitless — "
+                     + "@nightly for the daily channel) and GitHub releases; "
+                     + "building from source is the developer path. Engine "
+                     + "updates moved to Engines → cswap.")
                     .font(.caption).foregroundStyle(.secondary)
             }
 
