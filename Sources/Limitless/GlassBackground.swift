@@ -1,14 +1,12 @@
 import SwiftUI
 import AppKit
 
-/// macOS glass for the popover and the pop-out window. Two materials,
-/// swapped by window focus (round 7, 2026-08-30 — user: "why can't you
-/// just build premium glass for every state?"):
-///  - KEY window  -> NSGlassEffectView, the real macOS 26 Liquid Glass.
-///  - not key     -> NSVisualEffectView hud, state .active — the glass
-///    view deactivates with the window (verified: unfocused pop-out went
-///    solid), the hud material does not.
-/// In BOTH cases FrameRetuner rewrites the NSPopover frame's own
+/// macOS glass for the popover and the pop-out window: NSGlassEffectView
+/// in EVERY state. The round-7 focus-swap rested on a false observation —
+/// a probe window (2026-08-30) proves plain NSGlassEffectView keeps full
+/// glass when the window resigns key; the "went solid" repro was the
+/// probe being occluded, and in-app the swap itself was what removed the
+/// glass. FrameRetuner still rewrites the NSPopover frame's own
 /// near-opaque material — without that the anchored popup never shows
 /// any backdrop, whatever we stack inside it.
 struct GlassBackground: NSViewRepresentable {
@@ -50,55 +48,16 @@ private struct FrameRetuner: NSViewRepresentable {
     func updateNSView(_ view: FrameRetunerView, context: Context) {}
 }
 
-/// Reports whether the hosting window is key, live.
-private final class KeyWatchView: NSView {
-    var onChange: ((Bool) -> Void)?
-    private var tokens: [NSObjectProtocol] = []
-
-    override func viewDidMoveToWindow() {
-        super.viewDidMoveToWindow()
-        tokens.forEach(NotificationCenter.default.removeObserver)
-        tokens = []
-        guard let w = window else { return }
-        onChange?(w.isKeyWindow)
-        let nc = NotificationCenter.default
-        tokens.append(nc.addObserver(
-            forName: NSWindow.didBecomeKeyNotification, object: w,
-            queue: .main) { [weak self] _ in self?.onChange?(true) })
-        tokens.append(nc.addObserver(
-            forName: NSWindow.didResignKeyNotification, object: w,
-            queue: .main) { [weak self] _ in self?.onChange?(false) })
-    }
-
-    override func hitTest(_ point: NSPoint) -> NSView? { nil }
-
-    deinit { tokens.forEach(NotificationCenter.default.removeObserver) }
-}
-
-private struct WindowKeyState: NSViewRepresentable {
-    @Binding var isKey: Bool
-
-    func makeNSView(context: Context) -> KeyWatchView {
-        let view = KeyWatchView()
-        view.onChange = { key in
-            DispatchQueue.main.async { isKey = key }
-        }
-        return view
-    }
-    func updateNSView(_ view: KeyWatchView, context: Context) {}
-}
-
 /// The popup container's full chrome: focus-swapped glass, a theme-tinted
 /// wash, and a themed border glow. Observes the model so a theme change
 /// re-tints the live popup.
 struct ThemedGlassChrome: View {
     @ObservedObject var model: AppModel
-    @State private var isKey = false
 
     var body: some View {
         ZStack {
             FrameRetuner()
-            if #available(macOS 26.0, *), isKey {
+            if #available(macOS 26.0, *) {
                 GlassEffectLayer()
             } else {
                 GlassBackground()
@@ -114,13 +73,12 @@ struct ThemedGlassChrome: View {
                     .padding(1)
             }
         }
-        .background(WindowKeyState(isKey: $isKey))
         .ignoresSafeArea()
     }
 }
 
-/// AppKit Liquid Glass (macOS 26): the genuine article. Only shown while
-/// the window is key — it deactivates (goes solid) otherwise.
+/// AppKit Liquid Glass (macOS 26): the genuine article, live in every
+/// focus state.
 @available(macOS 26.0, *)
 private struct GlassEffectLayer: NSViewRepresentable {
     func makeNSView(context: Context) -> NSGlassEffectView {
