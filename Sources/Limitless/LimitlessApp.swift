@@ -416,19 +416,19 @@ struct MenuContent: View {
         Button { model.rotate() } label: {
             Image(systemName: "arrow.2.circlepath")
         }
-        .help("Switch to the next account in rotation")
+        .instantTip("Rotate to next account")
         Button { Task { await model.refreshSnapshot() } } label: {
             Image(systemName: "arrow.clockwise")
         }
-        .help("Refresh account usage now")
+        .instantTip("Refresh usage")
         Button { model.showSettings?() } label: {
             Image(systemName: "gearshape")
         }
-        .help("Settings")
+        .instantTip("Settings")
         Button { model.popoverPinned.toggle() } label: {
             Image(systemName: model.popoverPinned ? "pin.fill" : "pin")
         }
-        .help("Pin keeps this popup open when you click elsewhere")
+        .instantTip(model.popoverPinned ? "Unpin popup" : "Pin popup open")
         Button {
             withAnimation(.easeInOut(duration: 0.3)) {
                 model.compactRows.toggle()
@@ -436,9 +436,12 @@ struct MenuContent: View {
         } label: {
             Image(systemName: "rectangle.compress.vertical")
         }
-        .help("Hide actions, event log, and history")
+        .instantTip("Compact mode")
         layoutToggleIcon
+            .instantTip(model.popupLayout == "stacked"
+                        ? "Switch to wide rows" : "Switch to stacked cards")
         popOutIcon
+            .instantTip("Pop out into a window")
         serviceDot
         brainBadge
         if model.appUpdatePending {
@@ -446,13 +449,13 @@ struct MenuContent: View {
                 Image(systemName: "arrow.triangle.2.circlepath")
                     .foregroundStyle(.orange)
             }
-            .help("A newer build is on disk — restart to update")
+            .instantTip("Restart to update")
         }
         engineBadgeIcon
         Button { model.shutdown() } label: {
             Image(systemName: "power")
         }
-        .help("Quit")
+        .instantTip("Quit")
     }
 
     /// Rail-width session chip: the brain with the busy count as a badge
@@ -729,10 +732,14 @@ struct AccountCells {
     var theme: RowTheme { model.rowTheme }
     var dead: Bool { AccountVitals.isDead(account.usage) }
 
+    /// Narrow contexts: compact rows, and the stacked cards ("make width
+    /// smaller even", user 2026-08-30) — both use the short vocabulary.
+    var compactText: Bool { model.compactRows || !banded }
+
     /// "Max 20x" -> "20x" in compact mode; "Enterprise" -> "Ent".
     var planText: String? {
         guard let plan = account.plan else { return nil }
-        guard model.compactRows else { return plan }
+        guard compactText else { return plan }
         return plan.replacingOccurrences(of: "Max ", with: "")
             .replacingOccurrences(of: "Enterprise", with: "Ent")
     }
@@ -762,7 +769,7 @@ struct AccountCells {
     }
 
     func resetText(_ w: UsageWindow) -> String? {
-        guard let when = model.compactRows
+        guard let when = compactText
             ? ResetLabel.compact(w) : ResetLabel.label(w) else { return nil }
         return (w.pct >= 100 ? theme.revivePrefix : "") + when
     }
@@ -1311,6 +1318,42 @@ private struct ActiveBand: ViewModifier {
 
 private extension View {
     func activeBand(_ on: Bool) -> some View { modifier(ActiveBand(active: on)) }
+}
+
+/// Zero-delay hover label for icon-only buttons ("instant tooltip",
+/// user 2026-08-30): .help() waits on the system tooltip delay, too slow
+/// to learn a rail of bare icons from. Rides to the RIGHT of the icon —
+/// the rail hugs the popup's left edge, so right always has room.
+private struct InstantTip: ViewModifier {
+    let text: String
+    @State private var hovering = false
+
+    func body(content: Content) -> some View {
+        content
+            .onHover { hovering = $0 }
+            .overlay(alignment: .leading) {
+                if hovering {
+                    Text(text)
+                        .font(.caption)
+                        .padding(.horizontal, 7)
+                        .padding(.vertical, 3)
+                        .background(
+                            RoundedRectangle(cornerRadius: 5)
+                                .fill(.regularMaterial)
+                                .shadow(radius: 2, y: 1))
+                        .fixedSize()
+                        .offset(x: 24)
+                        .allowsHitTesting(false)
+                        .transition(.opacity)
+                }
+            }
+            .zIndex(hovering ? 1 : 0)
+            .animation(.easeOut(duration: 0.12), value: hovering)
+    }
+}
+
+private extension View {
+    func instantTip(_ text: String) -> some View { modifier(InstantTip(text: text)) }
 }
 
 /// Type-erased LabelStyle so one Label can flip icon-only <-> titled at
