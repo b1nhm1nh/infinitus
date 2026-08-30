@@ -57,9 +57,8 @@ struct DisplayPane: View {
             Section("Popup glass") {
                 glassSlider("Focused", value: $model.glassFocused)
                 glassSlider("Out of focus", value: $model.glassUnfocused)
-                Text("Material strength per focus state — lower is more "
-                     + "transparent. Out-of-focus glass renders frostier, "
-                     + "so it gets its own dial.")
+                Text("Glass strength per focus state — lower is more "
+                     + "transparent.")
                     .font(.caption).foregroundStyle(.secondary)
             }
             Toggle("Compact popup (hide actions, event log, and history)",

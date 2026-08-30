@@ -51,6 +51,32 @@ private final class FrameRetunerView: NSView {
                 self?.applyToFrame()
             })
         }
+        // App-level deactivation also drops the window's active
+        // appearance without a resign-key on this window.
+        for name in [NSApplication.didBecomeActiveNotification,
+                     NSApplication.didResignActiveNotification] {
+            tokens.append(nc.addObserver(forName: name, object: nil,
+                                         queue: .main) { [weak self] _ in
+                self?.applyToFrame()
+            })
+        }
+    }
+
+    /// The genuine glass render is keyed off the window's private
+    /// "active appearance" — without this, an unfocused window swaps
+    /// glass for a flat frosted fallback and the transparency dial
+    /// becomes plain opacity (user 2026-08-30: "doesn't look like glass
+    /// transparency but just opacity"). Probe-verified: forcing it back
+    /// on restores real backdrop blur while unfocused. Guarded so a
+    /// future macOS that drops the selector just degrades to frosted.
+    private func forceActiveAppearance() {
+        guard let w = window, !w.isKeyWindow else { return }
+        let sel = NSSelectorFromString("_setHasActiveAppearance:")
+        guard w.responds(to: sel),
+              let imp = class_getMethodImplementation(type(of: w), sel)
+        else { return }
+        typealias SetBool = @convention(c) (NSObject, Selector, ObjCBool) -> Void
+        unsafeBitCast(imp, to: SetBool.self)(w, sel, true)
     }
 
     /// Frame paint alpha ceiling; the per-focus strength dial scales it.
@@ -59,6 +85,13 @@ private final class FrameRetunerView: NSView {
     }
 
     private func applyToFrame() {
+        forceActiveAppearance()
+        // Once more after AppKit's own key-state handling settles — the
+        // notification order between our observer and the appearance
+        // drop is not guaranteed.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
+            self?.forceActiveAppearance()
+        }
         guard let frameView = window?.contentView?.superview else { return }
         // NSPopoverFrame itself is an effect view following window
         // activity — inactive it swaps to a grayer, more solid material.
