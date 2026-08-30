@@ -27,6 +27,9 @@ struct SettingsTab {
     /// icons (CodexBar sidebar, user screenshot 2026-08-30); nil = a
     /// regular tab with the tinted tile.
     var provider: ProviderBadge? = nil
+    /// A real image instead of the SF-symbol tile (About wears the
+    /// actual Limitless icon, user 2026-08-30).
+    var image: NSImage? = nil
     let view: AnyView
 }
 

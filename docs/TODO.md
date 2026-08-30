@@ -97,6 +97,11 @@
   credit, cash, ahead, dead, revive, next) and adjust vocabularies;
   also consider dropping the slot prefix when the row is dead (the
   dead marker already leads).
+- Tooltip z-index across rows (user screenshot, 2026-08-30): a slot
+  tip on row N draws UNDER row N+1's cells — zIndex on the hovered
+  cell only beats siblings inside its own HStack, not across GridRows.
+  Real fix: hoist tip rendering to a Grid-level overlay (anchor
+  preference, like the active band) or an NSPanel-backed tip window.
 - Visual verification pending: glass look, whole-row themed sweep,
   About icon, new themes, unified footer, sync export/import, hollow
   recovery triangle (needs an all-limited fleet to show).

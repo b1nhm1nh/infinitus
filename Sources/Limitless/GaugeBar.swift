@@ -41,8 +41,12 @@ struct GaugeBar: View {
             // A jump UP of 25+ points is a window reset: replay the refill
             // from empty (the restore animation, user 2026-08-30).
             if new - old > 25 {
+                // Visibly fill: sit empty a beat, then a slow spring
+                // ("runs too fast", user 2026-08-30 playground test).
                 shown = 0
-                withAnimation(.spring(duration: 0.9, bounce: 0.25)) { shown = new }
+                withAnimation(.spring(duration: 1.8, bounce: 0.2).delay(0.25)) {
+                    shown = new
+                }
             } else {
                 withAnimation(.easeOut(duration: 0.5)) { shown = new }
             }

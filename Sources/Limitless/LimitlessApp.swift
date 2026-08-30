@@ -140,6 +140,7 @@ struct LimitlessApp: App {
                     view: AnyView(UsagePane(model: usageModel))),
         SettingsTab(title: "About", symbol: "info.circle", tint: .indigo,
                     keywords: ["update", "version", "license", "links"],
+                    image: AboutPane.limitlessIcon,
                     view: AnyView(AboutPane(model: updateModel))),
         // Providers under everything, CodexBar-style (user 2026-08-30).
         SettingsTab(title: "Claude", symbol: "asterisk",
@@ -194,12 +195,18 @@ struct SettingsRoot: View {
                 // (CodexBar sidebar — user screenshot 2026-08-30).
                 ForEach(filtered.filter { $0.provider == nil }, id: \.title) { tab in
                     HStack(spacing: 8) {
-                        Image(systemName: tab.symbol)
-                            .font(.system(size: 11, weight: .semibold))
-                            .foregroundStyle(.white)
-                            .frame(width: 22, height: 22)
-                            .background(RoundedRectangle(cornerRadius: 6)
-                                .fill(tab.tint.gradient))
+                        if let image = tab.image {
+                            Image(nsImage: image)
+                                .resizable()
+                                .frame(width: 22, height: 22)
+                        } else {
+                            Image(systemName: tab.symbol)
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundStyle(.white)
+                                .frame(width: 22, height: 22)
+                                .background(RoundedRectangle(cornerRadius: 6)
+                                    .fill(tab.tint.gradient))
+                        }
                         Text(tab.title)
                     }
                     .tag(tab.title)
