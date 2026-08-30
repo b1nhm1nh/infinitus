@@ -136,80 +136,77 @@ private struct FrameRetuner: NSViewRepresentable {
     }
 }
 
-/// Reports whether the hosting window is key, live.
-private final class KeyWatchView: NSView {
-    var onChange: ((Bool) -> Void)?
-    private var tokens: [NSObjectProtocol] = []
-
-    override func viewDidMoveToWindow() {
-        super.viewDidMoveToWindow()
-        tokens.forEach(NotificationCenter.default.removeObserver)
-        tokens = []
-        guard let w = window else { return }
-        onChange?(w.isKeyWindow)
-        let nc = NotificationCenter.default
-        tokens.append(nc.addObserver(
-            forName: NSWindow.didBecomeKeyNotification, object: w,
-            queue: .main) { [weak self] _ in self?.onChange?(true) })
-        tokens.append(nc.addObserver(
-            forName: NSWindow.didResignKeyNotification, object: w,
-            queue: .main) { [weak self] _ in self?.onChange?(false) })
-    }
-
-    override func hitTest(_ point: NSPoint) -> NSView? { nil }
-
-    deinit { tokens.forEach(NotificationCenter.default.removeObserver) }
-}
-
-private struct WindowKeyState: NSViewRepresentable {
-    @Binding var isKey: Bool
-
-    func makeNSView(context: Context) -> KeyWatchView {
-        let view = KeyWatchView()
-        view.onChange = { key in
-            DispatchQueue.main.async { isKey = key }
-        }
-        return view
-    }
-    func updateNSView(_ view: KeyWatchView, context: Context) {}
-}
-
-/// Real behind-window blur with a controllable radius — the thing no
-/// public API offers. CABackdropLayer is the private layer class every
-/// NSVisualEffectView/NSGlassEffectView builds on; driving it directly
-/// gives pure blurred transparency (no frost, no tint, no inactive
-/// dimming — raw CA has no appearance logic). Probe-verified
-/// 2026-08-30: backdrop shapes ghost through softly in every focus
-/// state. Falls back to the public glass when the class is missing.
-final class BackdropGlassNSView: NSView {
+/// NSVisualEffectView with its guts retuned: the effect view's
+/// window-server plumbing is the RELIABLE way to get behind-window
+/// compositing (a hand-rolled CABackdropLayer captured only
+/// sometimes — the popup "randomly transitioned" between blurred and
+/// plain alpha, user 2026-08-30). Inside it: replace the material's
+/// stock filters with one gaussian at a SMALL radius, and hide the
+/// tint layers. Small radius is the point — heavy blur over a dark
+/// backdrop averages to an opaque-looking slab; at ~10 the backdrop
+/// stays present as soft, obviously-blurred shapes. AppKit rebuilds
+/// material layers on appearance/state changes, so the retune re-runs
+/// on every such hook. Degrades to the stock hud material if the
+/// private classes vanish.
+final class BackdropGlassNSView: NSVisualEffectView {
     static var available: Bool { NSClassFromString("CABackdropLayer") != nil }
-
-    private var backdrop: CALayer?
 
     override init(frame: NSRect) {
         super.init(frame: frame)
+        material = .hudWindow
+        blendingMode = .behindWindow
+        state = .active
         wantsLayer = true
-        guard let cls = NSClassFromString("CABackdropLayer") as? CALayer.Type,
-              let filterCls = NSClassFromString("CAFilter") as? NSObject.Type,
-              let filter = filterCls.perform(NSSelectorFromString("filterWithType:"),
-                                             with: "gaussianBlur")?
-                  .takeUnretainedValue() as? NSObject
-        else { return }
-        let bd = cls.init()
-        filter.setValue(30.0, forKey: "inputRadius")
-        bd.filters = [filter]
-        bd.setValue(2.0, forKey: "scale")
-        bd.cornerRadius = 10
-        bd.masksToBounds = true
-        layer?.addSublayer(bd)
-        backdrop = bd
     }
 
     required init?(coder: NSCoder) { fatalError() }
 
-    override func layout() {
-        super.layout()
-        backdrop?.frame = bounds
+    private func findBackdrop(_ layer: CALayer) -> CALayer? {
+        if String(describing: type(of: layer)) == "CABackdropLayer" { return layer }
+        for sub in layer.sublayers ?? [] {
+            if let found = findBackdrop(sub) { return found }
+        }
+        return nil
+    }
+
+    private func retune() {
+        guard let root = layer, let backdrop = findBackdrop(root) else { return }
+        if let filterCls = NSClassFromString("CAFilter") as? NSObject.Type,
+           let blur = filterCls.perform(NSSelectorFromString("filterWithType:"),
+                                        with: "gaussianBlur")?
+               .takeUnretainedValue() as? NSObject {
+            blur.setValue(10.0, forKey: "inputRadius")
+            blur.setValue(true, forKey: "inputNormalizeEdges")
+            backdrop.filters = [blur]
+        }
+        // Everything that isn't (or doesn't hold) the backdrop is
+        // tint/overlay — hide it.
+        func hideTints(_ layer: CALayer) {
+            for sub in layer.sublayers ?? [] {
+                if sub === backdrop { continue }
+                if findBackdrop(sub) != nil { hideTints(sub) }
+                else { sub.isHidden = true }
+            }
+        }
+        hideTints(root)
+    }
+
+    override func updateLayer() {
+        super.updateLayer()
+        retune()
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        retune()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
+            self?.retune()
+        }
+    }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        retune()
     }
 
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
@@ -219,6 +216,43 @@ final class BackdropGlassNSView: NSView {
 /// both plain AppKit siblings so the blur escapes SwiftUI's offscreen
 /// flattening. Rounds and masks the whole stack.
 final class GlassContainerView: NSView {
+    private var tokens: [NSObjectProtocol] = []
+
+    /// Text vibrancy dims with the window's active appearance — one
+    /// more focus-driven shift. Pin it (guarded private setter;
+    /// degrades to normal dimming if the selector goes away).
+    private func forceActive() {
+        guard let w = window, !w.isKeyWindow else { return }
+        let sel = NSSelectorFromString("_setHasActiveAppearance:")
+        guard w.responds(to: sel),
+              let imp = class_getMethodImplementation(type(of: w), sel)
+        else { return }
+        typealias SetBool = @convention(c) (NSObject, Selector, ObjCBool) -> Void
+        unsafeBitCast(imp, to: SetBool.self)(w, sel, true)
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        tokens.forEach(NotificationCenter.default.removeObserver)
+        tokens = []
+        guard window != nil else { return }
+        forceActive()
+        let nc = NotificationCenter.default
+        for name in [NSWindow.didResignKeyNotification,
+                     NSApplication.didBecomeActiveNotification,
+                     NSApplication.didResignActiveNotification] {
+            tokens.append(nc.addObserver(forName: name, object: nil,
+                                         queue: .main) { [weak self] _ in
+                self?.forceActive()
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                    self?.forceActive()
+                }
+            })
+        }
+    }
+
+    deinit { tokens.forEach(NotificationCenter.default.removeObserver) }
+
     static func wrap(_ hosted: NSView) -> GlassContainerView {
         let container = GlassContainerView(frame: hosted.frame)
         container.autoresizesSubviews = true
@@ -242,17 +276,13 @@ final class GlassContainerView: NSView {
 /// re-tints the live popup.
 struct ThemedGlassChrome: View {
     @ObservedObject var model: AppModel
-    @State private var isKey = false
 
     var body: some View {
-        // Per-focus TRANSPARENCY dial (2026-08-30, third semantics —
-        // the honest one). macOS exposes no blur/frost knob on glass, so
-        // the dial blends: at 0, full glass + milk (frosted slab over a
-        // dark backdrop); at 1, the glass thins to a 0.25 floor and the
-        // milk is gone — backdrop clearly visible with ghost blur. The
-        // floor keeps it from ever reaching the crisp no-blur look the
-        // user rejected ("simple transparent").
-        let clarity = isKey ? model.glassFocused : model.glassUnfocused
+        // ONE state, ONE dial (final semantics). The tuned blur renders
+        // identically in every focus state, so the chrome reads no
+        // focus signal — any focus-reactive piece here made the popup
+        // "randomly transition" as key state flapped (user 2026-08-30).
+        let clarity = model.glassFocused
         let milk = 1 - clarity
         ZStack {
             if BackdropGlassNSView.available {
@@ -278,7 +308,6 @@ struct ThemedGlassChrome: View {
                     .padding(1)
             }
         }
-        .background(WindowKeyState(isKey: $isKey))
         .ignoresSafeArea()
     }
 }

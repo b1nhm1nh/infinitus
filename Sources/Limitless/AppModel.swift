@@ -64,12 +64,12 @@ final class AppModel: ObservableObject {
     @Published var compactRows: Bool { didSet { defaults.set(compactRows, forKey: "compact_rows") } }
     @Published var popupLayout: String { didSet { defaults.set(popupLayout, forKey: "popup_layout") } }
     @Published var popupTextSize: String { didSet { defaults.set(popupTextSize, forKey: "popup_text_size") } }
-    // Popup glass transparency per focus state, 0 (full frost) … 1
-    // (clearest — glass thinned to a blur floor, no milk). Two dials
-    // (user 2026-08-30: "let me control the transparency of it on 2
-    // modes. I'll tune it").
+    // Popup transparency, 0 (full frost) … 1 (clearest). ONE dial for
+    // every focus state: the backdrop-blur glass renders identically
+    // everywhere, and a per-focus value made the popup visibly jump as
+    // key state flapped (user 2026-08-30: "another state that randomly
+    // transition"). Key name kept for existing prefs.
     @Published var glassFocused: Double { didSet { defaults.set(glassFocused, forKey: "glass_focused") } }
-    @Published var glassUnfocused: Double { didSet { defaults.set(glassUnfocused, forKey: "glass_unfocused") } }
     // Deliberately NOT persisted: if a hidden icon survived a relaunch there
     // would be no UI left to unhide it from (the Settings window is only
     // reachable through the popup). Hiding lasts until quit.
@@ -153,7 +153,6 @@ final class AppModel: ObservableObject {
         popupLayout = defaults.string(forKey: "popup_layout") ?? "wide"
         popupTextSize = defaults.string(forKey: "popup_text_size") ?? "default"
         glassFocused = defaults.object(forKey: "glass_focused") as? Double ?? 0.7
-        glassUnfocused = defaults.object(forKey: "glass_unfocused") as? Double ?? 0.7
         keepAwake = defaults.object(forKey: "keep_awake") as? Bool ?? false
         // Push triggers default ON — they exist because they were asked for.
         pushSessionsDone = defaults.object(forKey: "push_sessions_done") as? Bool ?? true
@@ -183,7 +182,6 @@ final class AppModel: ObservableObject {
         popupLayout = defaults.string(forKey: "popup_layout") ?? "wide"
         popupTextSize = defaults.string(forKey: "popup_text_size") ?? "default"
         glassFocused = defaults.object(forKey: "glass_focused") as? Double ?? 0.7
-        glassUnfocused = defaults.object(forKey: "glass_unfocused") as? Double ?? 0.7
         keepAwake = defaults.object(forKey: "keep_awake") as? Bool ?? false
         pushSessionsDone = defaults.object(forKey: "push_sessions_done") as? Bool ?? true
         pushAllDead = defaults.object(forKey: "push_all_dead") as? Bool ?? true
