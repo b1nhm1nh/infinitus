@@ -182,16 +182,20 @@ struct ThemedGlassChrome: View {
     @State private var isKey = false
 
     var body: some View {
-        // The user tunes chrome strength separately per focus state —
-        // the unfocused glass renders as a milkier frosted fallback, so
-        // one dial can't serve both (2026-08-30: "I'll tune it").
+        // The user tunes chrome strength separately per focus state
+        // (2026-08-30: "I'll tune it"). The dial scales only the milk —
+        // frame paint and wash — NEVER the glass layer itself: fading
+        // the glass fades the blur, and a low dial then reads as plain
+        // alpha transparency, crisp backdrop text instead of glass
+        // (user, image pair: "which one is glass and which one is
+        // simple transparent?").
         let strength = isKey ? model.glassFocused : model.glassUnfocused
         ZStack {
             FrameRetuner(paintAlpha: 0.2 * strength)
             if #available(macOS 26.0, *) {
-                GlassEffectLayer().opacity(strength)
+                GlassEffectLayer()
             } else {
-                GlassBackground().opacity(strength)
+                GlassBackground()
             }
             let theme = model.rowTheme
             if !theme.plain, !theme.flashColor.isEmpty {

@@ -153,7 +153,7 @@ final class AppModel: ObservableObject {
         popupLayout = defaults.string(forKey: "popup_layout") ?? "wide"
         popupTextSize = defaults.string(forKey: "popup_text_size") ?? "default"
         glassFocused = defaults.object(forKey: "glass_focused") as? Double ?? 1.0
-        glassUnfocused = defaults.object(forKey: "glass_unfocused") as? Double ?? 1.0
+        glassUnfocused = defaults.object(forKey: "glass_unfocused") as? Double ?? 0.35
         keepAwake = defaults.object(forKey: "keep_awake") as? Bool ?? false
         // Push triggers default ON — they exist because they were asked for.
         pushSessionsDone = defaults.object(forKey: "push_sessions_done") as? Bool ?? true
@@ -183,7 +183,7 @@ final class AppModel: ObservableObject {
         popupLayout = defaults.string(forKey: "popup_layout") ?? "wide"
         popupTextSize = defaults.string(forKey: "popup_text_size") ?? "default"
         glassFocused = defaults.object(forKey: "glass_focused") as? Double ?? 1.0
-        glassUnfocused = defaults.object(forKey: "glass_unfocused") as? Double ?? 1.0
+        glassUnfocused = defaults.object(forKey: "glass_unfocused") as? Double ?? 0.35
         keepAwake = defaults.object(forKey: "keep_awake") as? Bool ?? false
         pushSessionsDone = defaults.object(forKey: "push_sessions_done") as? Bool ?? true
         pushAllDead = defaults.object(forKey: "push_all_dead") as? Bool ?? true
