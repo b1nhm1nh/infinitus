@@ -13,6 +13,39 @@ struct AnimationsDebugPane: View {
 
     var body: some View {
         Form {
+            Section("Launch intro") {
+                Picker("Content entrance", selection: $model.introStyle) {
+                    Text("Slide from top").tag("top")
+                    Text("Slide from bottom").tag("bottom")
+                    Text("Fade in").tag("fade")
+                }
+                Picker("Title flourish", selection: $model.introTitle) {
+                    Text("Zoom bounce").tag("zoom")
+                    Text("Stamp slam").tag("slam")
+                    Text("Spin up").tag("spin")
+                    Text("Off").tag("off")
+                }
+                LabeledContent("Speed") {
+                    HStack {
+                        Slider(value: $model.introSpeed, in: 0.4...2)
+                            .frame(width: 180)
+                        Text(String(format: "%.1fx", model.introSpeed))
+                            .font(.caption).monospacedDigit()
+                            .foregroundStyle(.secondary)
+                            .frame(width: 36, alignment: .trailing)
+                    }
+                }
+                HStack {
+                    Button("Replay intro") { model.introTick += 1 }
+                    Button("Restart app") { model.relaunchApp() }
+                }
+                Text("Open the popup, then Replay to audition; Restart "
+                     + "runs the real thing — controls slide in from "
+                     + "their sides, content enters per the picker, bars "
+                     + "fill up with the active-row flash, and the title "
+                     + "lands with the chosen flourish.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
             Section("Live popup (fires on the real rows)") {
                 Button("Flash the active row (switch celebration)") {
                     model.switchFlashTick += 1

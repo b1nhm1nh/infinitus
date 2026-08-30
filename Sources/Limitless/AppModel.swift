@@ -76,6 +76,13 @@ final class AppModel: ObservableObject {
     /// backdrop (user 2026-08-30: "max transparency doesn't make glass
     /// transparency that much") — so they thin with the dial too.
     var fillScale: Double { 1 - 0.6 * glassFocused }
+    // Launch-intro choreography (dev-tunable, 2026-08-30): content
+    // entrance style, overall speed multiplier, title flourish variant.
+    // introTick replays the whole intro on demand.
+    @Published var introTick = 0
+    @Published var introStyle: String { didSet { defaults.set(introStyle, forKey: "intro_style") } }
+    @Published var introSpeed: Double { didSet { defaults.set(introSpeed, forKey: "intro_speed") } }
+    @Published var introTitle: String { didSet { defaults.set(introTitle, forKey: "intro_title") } }
     // Deliberately NOT persisted: if a hidden icon survived a relaunch there
     // would be no UI left to unhide it from (the Settings window is only
     // reachable through the popup). Hiding lasts until quit.
@@ -159,6 +166,9 @@ final class AppModel: ObservableObject {
         popupLayout = defaults.string(forKey: "popup_layout") ?? "wide"
         popupTextSize = defaults.string(forKey: "popup_text_size") ?? "default"
         glassFocused = defaults.object(forKey: "glass_focused") as? Double ?? 0.7
+        introStyle = defaults.string(forKey: "intro_style") ?? "top"
+        introSpeed = defaults.object(forKey: "intro_speed") as? Double ?? 1.0
+        introTitle = defaults.string(forKey: "intro_title") ?? "zoom"
         keepAwake = defaults.object(forKey: "keep_awake") as? Bool ?? false
         // Push triggers default ON — they exist because they were asked for.
         pushSessionsDone = defaults.object(forKey: "push_sessions_done") as? Bool ?? true
@@ -267,7 +277,13 @@ final class AppModel: ObservableObject {
             await old?.stop()
             let p = Process()
             p.executableURL = URL(fileURLWithPath: "/bin/sh")
-            p.arguments = ["-c", "sleep 0.8; /usr/bin/open \"\(bundle)\""]
+            // Unbundled dev runs are a bare executable — `open` on its
+            // directory would just raise Finder.
+            let exe = Bundle.main.executablePath ?? ""
+            let cmd = bundle.hasSuffix(".app")
+                ? "sleep 0.8; /usr/bin/open \"\(bundle)\""
+                : "sleep 0.8; exec \"\(exe)\""
+            p.arguments = ["-c", cmd]
             try? p.run()
             await MainActor.run { NSApplication.shared.terminate(nil) }
         }

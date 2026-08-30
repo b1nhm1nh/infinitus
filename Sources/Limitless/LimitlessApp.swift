@@ -258,6 +258,7 @@ struct LimitlessHeader: View {
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(tint)
         }
+        .introTitle(model)
         .frame(maxWidth: .infinity)
     }
 
@@ -306,6 +307,7 @@ struct MenuContent: View {
                         accountArea
                         errorLines
                         HStack(spacing: 12) { compactControls }
+                            .introSlide(model, fromLeft: true)
                             .buttonStyle(.borderless)
                     }
                 } else {
@@ -341,6 +343,7 @@ struct MenuContent: View {
                     if showHeader { LimitlessHeader(model: model) }
                     HStack(alignment: .top, spacing: 10) {
                         VStack(spacing: 12) { stackedRail }
+                            .introSlide(model, fromLeft: true)
                             .buttonStyle(.borderless)
                             // Above the cards: the instant tips overlay
                             // rightward across the card column, and a
@@ -373,67 +376,75 @@ struct MenuContent: View {
                     // titled actions · icon view-toggles · status chips ·
                     // app controls at the trailing edge.
                     HStack(spacing: 6) {
-                        Button {
-                            model.rotate()
-                        } label: {
-                            Label("Rotate", systemImage: "arrow.2.circlepath")
-                        }
-                        .help("Switch to the next account in rotation")
-                        Button {
-                            Task { await model.refreshSnapshot() }
-                        } label: {
-                            Label("Refresh", systemImage: "arrow.clockwise")
-                        }
-                        .help("Refresh account usage now")
-                        Spacer().frame(width: 6)
-                        Button {
-                            model.popoverPinned.toggle()
-                        } label: {
-                            Image(systemName: model.popoverPinned ? "pin.fill" : "pin")
-                        }
-                        .instantTip(model.popoverPinned ? "Unpin popup" : "Pin popup open",
-                                    edge: .above)
-                        Button {
-                            withAnimation(.easeInOut(duration: 0.3)) {
-                                model.compactRows.toggle()
-                            }
-                        } label: {
-                            Image(systemName: "rectangle.compress.vertical")
-                        }
-                        .instantTip("Compact mode", edge: .above)
-                        layoutToggleIcon
-                            .instantTip(model.popupLayout == "stacked"
-                                        ? "Switch to wide rows" : "Switch to stacked cards",
-                                        edge: .above)
-                        popOutIcon
-                            .instantTip("Pop out into a window", edge: .above)
-                        Spacer()
-                        serviceChip
-                        agentChip
-                        engineBadge
-                        Spacer().frame(width: 6)
-                        if model.appUpdatePending {
+                        // Intro: the two ends of the control row enter
+                        // from their own sides (user launch script).
+                        HStack(spacing: 6) {
                             Button {
-                                model.relaunchApp()
+                                model.rotate()
                             } label: {
-                                Label("Restart to update",
-                                      systemImage: "arrow.triangle.2.circlepath")
-                                    .foregroundStyle(.orange)
+                                Label("Rotate", systemImage: "arrow.2.circlepath")
                             }
-                            .help("A newer build is on disk")
+                            .help("Switch to the next account in rotation")
+                            Button {
+                                Task { await model.refreshSnapshot() }
+                            } label: {
+                                Label("Refresh", systemImage: "arrow.clockwise")
+                            }
+                            .help("Refresh account usage now")
+                            Spacer().frame(width: 6)
+                            Button {
+                                model.popoverPinned.toggle()
+                            } label: {
+                                Image(systemName: model.popoverPinned ? "pin.fill" : "pin")
+                            }
+                            .instantTip(model.popoverPinned ? "Unpin popup" : "Pin popup open",
+                                        edge: .above)
+                            Button {
+                                withAnimation(.easeInOut(duration: 0.3)) {
+                                    model.compactRows.toggle()
+                                }
+                            } label: {
+                                Image(systemName: "rectangle.compress.vertical")
+                            }
+                            .instantTip("Compact mode", edge: .above)
+                            layoutToggleIcon
+                                .instantTip(model.popupLayout == "stacked"
+                                            ? "Switch to wide rows" : "Switch to stacked cards",
+                                            edge: .above)
+                            popOutIcon
+                                .instantTip("Pop out into a window", edge: .above)
                         }
-                        Button {
-                            model.showSettings?()
-                        } label: {
-                            Image(systemName: "gearshape")
+                        .introSlide(model, fromLeft: true)
+                        Spacer()
+                        HStack(spacing: 6) {
+                            serviceChip
+                            agentChip
+                            engineBadge
+                            Spacer().frame(width: 6)
+                            if model.appUpdatePending {
+                                Button {
+                                    model.relaunchApp()
+                                } label: {
+                                    Label("Restart to update",
+                                          systemImage: "arrow.triangle.2.circlepath")
+                                        .foregroundStyle(.orange)
+                                }
+                                .help("A newer build is on disk")
+                            }
+                            Button {
+                                model.showSettings?()
+                            } label: {
+                                Image(systemName: "gearshape")
+                            }
+                            .instantTip("Settings", edge: .above)
+                            Button {
+                                model.shutdown()   // engine stops first
+                            } label: {
+                                Image(systemName: "power")
+                            }
+                            .instantTip("Quit", edge: .above)
                         }
-                        .instantTip("Settings", edge: .above)
-                        Button {
-                            model.shutdown()   // engine stops first
-                        } label: {
-                            Image(systemName: "power")
-                        }
-                        .instantTip("Quit", edge: .above)
+                        .introSlide(model, fromLeft: false)
                     }
                 }
             }
@@ -473,14 +484,17 @@ struct MenuContent: View {
 
     /// Ten-plus accounts scroll instead of growing an off-screen popup.
     @ViewBuilder private var accountArea: some View {
-        if model.accounts.count > 10 {
-            ScrollView(showsIndicators: false) {
+        Group {
+            if model.accounts.count > 10 {
+                ScrollView(showsIndicators: false) {
+                    AccountRows(model: model, usage: usage)
+                }
+                .frame(maxHeight: 560)
+            } else {
                 AccountRows(model: model, usage: usage)
             }
-            .frame(maxHeight: 560)
-        } else {
-            AccountRows(model: model, usage: usage)
         }
+        .introContent(model)
     }
 
     /// Stacked layout's control rail: the footer's actions as a vertical

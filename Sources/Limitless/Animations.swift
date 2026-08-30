@@ -111,3 +111,130 @@ private struct PulseOpacity: ViewModifier {
 extension View {
     func pulseOpacity() -> some View { modifier(PulseOpacity()) }
 }
+
+
+// MARK: - Launch intro choreography (user script, 2026-08-30)
+//
+// app starts -> footer controls slide in (left group from the left,
+// right group from the right) while the account content enters
+// (dev-tunable: slide from top / bottom / fade, with speed) -> the
+// bars play their fill-up and the active row flashes (GaugeBar
+// onAppear + firstLoad switchFlashTick) -> the Limitless title lands
+// with an exaggerated flourish (several styles to audition).
+
+struct IntroSlideIn: ViewModifier {
+    @ObservedObject var model: AppModel
+    let fromLeft: Bool
+    @State private var on = true
+
+    func body(content: Content) -> some View {
+        content
+            .opacity(on ? 1 : 0)
+            .offset(x: on ? 0 : (fromLeft ? -70 : 70))
+            .onAppear { play() }
+            .onChange(of: model.introTick) { _, _ in play() }
+    }
+
+    private func play() {
+        let speed = max(0.2, model.introSpeed)
+        on = false
+        withAnimation(.spring(duration: 0.6 / speed, bounce: 0.25)) {
+            on = true
+        }
+    }
+}
+
+struct IntroContentReveal: ViewModifier {
+    @ObservedObject var model: AppModel
+    @State private var on = true
+
+    func body(content: Content) -> some View {
+        let dy: CGFloat = switch model.introStyle {
+        case "top": -44
+        case "bottom": 44
+        default: 0
+        }
+        content
+            .opacity(on ? 1 : 0)
+            .offset(y: on ? 0 : dy)
+            .onAppear { play() }
+            .onChange(of: model.introTick) { _, _ in play() }
+            .onChange(of: model.introStyle) { _, _ in play() }
+    }
+
+    private func play() {
+        let speed = max(0.2, model.introSpeed)
+        on = false
+        withAnimation(.spring(duration: 0.7 / speed, bounce: 0.2)) {
+            on = true
+        }
+    }
+}
+
+/// The title's landing — deliberately exaggerated; styles to audition:
+///  zoom  — grows from a dot with a big overshoot bounce
+///  slam  — stamps down from 3.4x with a tilt, flash on impact
+///  spin  — spins up two turns while growing
+struct IntroTitleFlourish: ViewModifier {
+    @ObservedObject var model: AppModel
+    @State private var on = true
+    @State private var glow = 0.0
+
+    func body(content: Content) -> some View {
+        content
+            .scaleEffect(on ? 1 : startScale)
+            .rotationEffect(.degrees(on ? 0 : startRotation))
+            .opacity(on ? 1 : 0)
+            .brightness(glow)
+            .onAppear { play() }
+            .onChange(of: model.introTick) { _, _ in play() }
+            .onChange(of: model.introTitle) { _, _ in play() }
+    }
+
+    private var startScale: CGFloat {
+        switch model.introTitle {
+        case "slam": 3.4
+        case "spin", "zoom": 0.1
+        default: 1
+        }
+    }
+
+    private var startRotation: Double {
+        switch model.introTitle {
+        case "slam": -12
+        case "spin": -720
+        default: 0
+        }
+    }
+
+    private func play() {
+        guard model.introTitle != "off" else { on = true; return }
+        let speed = max(0.2, model.introSpeed)
+        on = false
+        glow = 0
+        // Lands after the bars' fill-up is under way.
+        let delay = 1.6 / speed
+        let anim: Animation = switch model.introTitle {
+        case "slam": .spring(duration: 0.5 / speed, bounce: 0.35)
+        case "spin": .spring(duration: 0.9 / speed, bounce: 0.3)
+        default: .spring(duration: 0.7 / speed, bounce: 0.55)
+        }
+        withAnimation(anim.delay(delay)) { on = true }
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay + 0.15) {
+            glow = 0.8
+            withAnimation(.easeOut(duration: 0.8 / speed)) { glow = 0 }
+        }
+    }
+}
+
+extension View {
+    func introSlide(_ model: AppModel, fromLeft: Bool) -> some View {
+        modifier(IntroSlideIn(model: model, fromLeft: fromLeft))
+    }
+    func introContent(_ model: AppModel) -> some View {
+        modifier(IntroContentReveal(model: model))
+    }
+    func introTitle(_ model: AppModel) -> some View {
+        modifier(IntroTitleFlourish(model: model))
+    }
+}
