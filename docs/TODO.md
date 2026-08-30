@@ -61,5 +61,11 @@
 - Sync settings: export and import config (user, 2026-08-30) — SyncPane
   gains Export…/Import… of the app's settings (the synced key set) as a
   JSON file; import applies via the existing merge path.
+- Popup footer (user, 2026-08-30): unify the two button rows into one,
+  remove the "Test notification" button, add the missing icons —
+  row 1 (Rotate to next / Refresh / engine badge, LimitlessApp.swift
+  ~:283) is icon-less text buttons; row 2 (Settings/Pin/Compact/…)
+  already has Labels. Merge into one row of Label buttons.
+- Drop the "…" from the "Settings…" button text (user, 2026-08-30).
 - Visual verification of the 2026-08-30 batch pending: glass look,
   whole-row themed sweep, About icon, new themes.
