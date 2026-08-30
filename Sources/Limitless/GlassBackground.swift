@@ -21,8 +21,15 @@ struct GlassBackground: NSViewRepresentable {
     func updateNSView(_ view: NSVisualEffectView, context: Context) {}
 }
 
-/// Side-effect view: retunes every effect view in the popover frame to
-/// the translucent hud material. Draws nothing itself.
+/// Side-effect view: fades the popover frame's own material so our glass
+/// layer supplies the look. Draws nothing itself.
+///
+/// macOS 26 frame anatomy (probed 2026-08-30): NSPopoverFrame is itself
+/// an NSVisualEffectView hosting a private NSGlassView, whose OWN
+/// _NSCoreHostingView sibling of ContentHolderView paints the heavy
+/// popover material — our content hangs inside ContentHolderView, so
+/// fading that hosting view fades only the frame's paint. Probe-verified:
+/// backdrop text reads through crisply, rounded border survives.
 private final class FrameRetunerView: NSView {
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
@@ -30,15 +37,18 @@ private final class FrameRetunerView: NSView {
         retune(frameView)
     }
 
-    private func retune(_ view: NSView) {
-        for sub in view.subviews {
+    private func retune(_ frame: NSView) {
+        for sub in frame.subviews {
+            if String(describing: type(of: sub)) == "NSGlassView" {
+                for inner in sub.subviews
+                where String(describing: type(of: inner)).contains("HostingView") {
+                    inner.alphaValue = 0.2
+                }
+            }
+            // Pre-26 frames kept their material in effect-view subviews.
             if let effect = sub as? NSVisualEffectView {
                 effect.material = .hudWindow
                 effect.state = .active
-                // Mostly out of the way: the glass layer supplies the
-                // look; full-strength hud on top of it reads milky
-                // (user 2026-08-30: "increase the transparency").
-                effect.alphaValue = 0.35
             }
             retune(sub)
         }
