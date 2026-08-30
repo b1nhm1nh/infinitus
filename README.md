@@ -65,9 +65,11 @@ uv tool install claude-swap                  # or straight from PyPI
 Arch users can build from [`packaging/aur/PKGBUILD`](packaging/aur/) —
 `cswap` in a terminal is the same account switching, Omarchy-style.
 
-> **Untested on Linux.** The formula and PKGBUILD are built from the
-> PyPI package and have only been exercised on macOS so far — reports
-> welcome.
+> **Container-tested only.** The PyPI install (`python:3.12` image) and
+> the PKGBUILD (`archlinux` image, `makepkg -s`) both install and run
+> `cswap` (`--version`, `--help`, `config list`, `list`) — no real
+> accounts or desktop session were involved. Reports from actual Linux
+> desktops welcome.
 
 ### Requirements
 
