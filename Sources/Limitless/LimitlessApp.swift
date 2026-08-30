@@ -470,6 +470,9 @@ struct MenuContent: View {
                          ? nil : 560)
         .animation(.easeInOut(duration: 0.3), value: model.compactRows)
         .animation(.easeInOut(duration: 0.3), value: model.gamification)
+        // ONE tip chip for the whole popup, drawn above every row and
+        // control -- see ActiveTipKey for why locals couldn't win.
+        .overlayPreferenceValue(ActiveTipKey.self) { InstantTipCanvas(tips: $0) }
         // Real scaling, not dynamicTypeSize: macOS ignores Dynamic Type,
         // so the popup renders at 1x and scaleEffect + a matching frame
         // grow both the pixels AND the popover's fitting size.
@@ -1676,6 +1679,24 @@ private extension View {
 /// screenshots 2026-08-30) — below/above hug the popup's vertical axis.
 enum TipEdge { case trailing, below, above }
 
+/// One hovered tip, published up to the popup root. Drawing the chip
+/// as a local overlay put it UNDER later siblings — zIndex only orders
+/// views inside their own container, so a slot tip on row N rendered
+/// beneath row N+1's cells (user screenshot 2026-08-30). The root
+/// resolves the anchor and draws the ONE active chip above everything.
+struct TipData {
+    let anchor: Anchor<CGRect>
+    let text: String
+    let edge: TipEdge
+}
+
+struct ActiveTipKey: PreferenceKey {
+    static let defaultValue: [TipData] = []
+    static func reduce(value: inout [TipData], nextValue: () -> [TipData]) {
+        value.append(contentsOf: nextValue())
+    }
+}
+
 private struct InstantTip: ViewModifier {
     let text: String
     var edge: TipEdge = .below
@@ -1684,28 +1705,52 @@ private struct InstantTip: ViewModifier {
     func body(content: Content) -> some View {
         content
             .onHover { hovering = $0 }
-            .overlay(alignment: alignment) {
-                if hovering {
-                    tipBody
-                        .offset(x: edge == .trailing ? 24 : 0,
-                                y: edge == .below ? 22 : edge == .above ? -22 : 0)
-                        .allowsHitTesting(false)
-                        .transition(.opacity)
+            .anchorPreference(key: ActiveTipKey.self, value: .bounds) {
+                hovering ? [TipData(anchor: $0, text: text, edge: edge)] : []
+            }
+    }
+}
+
+/// The popup root's tip renderer — overlayPreferenceValue(ActiveTipKey)
+/// with this inside. Offsets mirror the old per-view overlay geometry
+/// (topLeading + 22 below, bottom-anchored above, midY trailing).
+struct InstantTipCanvas: View {
+    let tips: [TipData]
+
+    var body: some View {
+        GeometryReader { geo in
+            if let tip = tips.last {
+                let r = geo[tip.anchor]
+                switch tip.edge {
+                case .below:
+                    TipChip(text: tip.text)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity,
+                               alignment: .topLeading)
+                        .offset(x: r.minX, y: r.minY + 22)
+                case .above:
+                    // Bottom-anchored so the chip's own height never
+                    // matters: bottom edge lands at r.maxY - 22.
+                    TipChip(text: tip.text)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity,
+                               alignment: .bottomLeading)
+                        .offset(x: r.minX,
+                                y: r.maxY - 22 - geo.size.height)
+                case .trailing:
+                    TipChip(text: tip.text)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity,
+                               alignment: .topLeading)
+                        .offset(x: r.minX + 24, y: r.midY - 11)
                 }
             }
-            .zIndex(hovering ? 3 : 0)
-            .animation(.easeOut(duration: 0.12), value: hovering)
-    }
-
-    private var alignment: Alignment {
-        switch edge {
-        case .trailing: return .leading
-        case .below: return .topLeading
-        case .above: return .bottomLeading
         }
+        .allowsHitTesting(false)
     }
+}
 
-    @ViewBuilder private var tipBody: some View {
+private struct TipChip: View {
+    let text: String
+
+    @ViewBuilder var body: some View {
         // Short tips get their ideal width (fixedSize — an overlay is
         // proposed its ANCHOR's size, so frame(maxWidth:) clamps to a
         // 20pt icon and wraps one char per line, the 'vertical strip'
