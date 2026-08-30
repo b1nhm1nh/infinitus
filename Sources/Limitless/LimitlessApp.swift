@@ -438,6 +438,12 @@ struct MenuContent: View {
                             }
                             .instantTip("Settings", edge: .above)
                             Button {
+                                model.relaunchApp()
+                            } label: {
+                                Image(systemName: "arrow.trianglehead.clockwise")
+                            }
+                            .instantTip("Restart app", edge: .above)
+                            Button {
                                 model.shutdown()   // engine stops first
                             } label: {
                                 Image(systemName: "power")
@@ -461,6 +467,8 @@ struct MenuContent: View {
         // so the popup renders at 1x and scaleEffect + a matching frame
         // grow both the pixels AND the popover's fitting size.
         .modifier(PopupScale(scale: model.popupScale))
+        .environment(\.introTick, model.introTick)
+        .environment(\.introBarDelay, model.introBarDelay)
         .onAppear { status.refreshIfStale() }
         // Click-to-switch asks first (user request): rows only STAGE the
         // target; this alert commits it.
@@ -540,6 +548,10 @@ struct MenuContent: View {
             .instantTip("Restart to update")
         }
         engineBadgeIcon
+        Button { model.relaunchApp() } label: {
+            Image(systemName: "arrow.trianglehead.clockwise")
+        }
+        .instantTip("Restart app")
         Button { model.shutdown() } label: {
             Image(systemName: "power")
         }
@@ -604,6 +616,10 @@ struct MenuContent: View {
             .instantTip("Restart to update")
         }
         engineBadgeIcon
+        Button { model.relaunchApp() } label: {
+            Image(systemName: "arrow.trianglehead.clockwise")
+        }
+        .instantTip("Restart app")
         Button { model.shutdown() } label: {
             Image(systemName: "power")
         }
@@ -1234,7 +1250,15 @@ struct AccountCells {
     /// Estimated 7-day API-price spend from the Usage tab's cached
     /// report — never triggers the multi-second scan itself.
     @ViewBuilder var cashCell: some View {
-        if !theme.plain,
+        if !theme.plain, usage.report == nil {
+            // The report loads seconds after launch; an empty cell here
+            // made the popup visibly expand when the numbers landed
+            // (user 2026-08-30) — hold a representative width.
+            Text(verbatim: "\(theme.cashIcon)8,888")
+                .font(.caption)
+                .fixedSize()
+                .opacity(0)
+        } else if !theme.plain,
            let row = usage.report?.accounts.first(where: { $0.number == account.number }) {
             let usd = Int(row.estimatedUSD)
             Text(verbatim: model.compactRows && usd >= 1000

@@ -18,6 +18,10 @@ struct GaugeBar: View {
     @ScaledMetric(relativeTo: .caption) private var barWidth = 56.0
     @ScaledMetric(relativeTo: .caption) private var barHeight = 6.0
     @State private var shown: Double = 0
+    // Intro choreography inputs (default 0 outside the popup — the
+    // settings playground keeps its instant behavior).
+    @Environment(\.introTick) private var introTick
+    @Environment(\.introBarDelay) private var introBarDelay
 
     var body: some View {
         HStack(spacing: 3) {
@@ -36,14 +40,10 @@ struct GaugeBar: View {
                 .contentTransition(.numericText(value: remaining))
                 .foregroundStyle(remaining <= 0 ? Color.red : color.opacity(0.9))
         }
-        .onAppear {
-            // First render plays the fill-up, not a snap (user
-            // 2026-08-30: launch should animate the bars full).
-            shown = 0
-            withAnimation(.spring(duration: 1.8, bounce: 0.2).delay(0.25)) {
-                shown = remaining
-            }
-        }
+        .onAppear { playFill() }
+        // Replay intro re-runs the fill too (it was missing from the
+        // debug pane's Replay, user 2026-08-30).
+        .onChange(of: introTick) { _, _ in playFill() }
         .onChange(of: remaining) { old, new in
             // A jump UP of 25+ points is a window reset: replay the refill
             // from empty (the restore animation, user 2026-08-30).
@@ -57,6 +57,16 @@ struct GaugeBar: View {
             } else {
                 withAnimation(.easeOut(duration: 0.5)) { shown = new }
             }
+        }
+    }
+
+    /// The intro fill-up: from empty, held until the popup's content
+    /// entrance has landed (introBarDelay; 0 outside the popup).
+    private func playFill() {
+        shown = 0
+        withAnimation(.spring(duration: 1.8, bounce: 0.2)
+            .delay(0.25 + introBarDelay)) {
+            shown = remaining
         }
     }
 
@@ -101,5 +111,25 @@ struct GaugeBar: View {
                              with: .color(deficit ? .red : .green))
             }
         }
+    }
+}
+
+
+// MARK: Intro environment plumbing — set once on MenuContent, read by
+// every bar (GaugeBar takes no model).
+private struct IntroTickKey: EnvironmentKey {
+    static let defaultValue = 0
+}
+private struct IntroBarDelayKey: EnvironmentKey {
+    static let defaultValue = 0.0
+}
+extension EnvironmentValues {
+    var introTick: Int {
+        get { self[IntroTickKey.self] }
+        set { self[IntroTickKey.self] = newValue }
+    }
+    var introBarDelay: Double {
+        get { self[IntroBarDelayKey.self] }
+        set { self[IntroBarDelayKey.self] = newValue }
     }
 }

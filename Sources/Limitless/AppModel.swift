@@ -83,6 +83,22 @@ final class AppModel: ObservableObject {
     @Published var introStyle: String { didSet { defaults.set(introStyle, forKey: "intro_style") } }
     @Published var introSpeed: Double { didSet { defaults.set(introSpeed, forKey: "intro_speed") } }
     @Published var introTitle: String { didSet { defaults.set(introTitle, forKey: "intro_title") } }
+
+    /// Intro phase timing: bars (and the active-row flash) hold until
+    /// the content entrance has fully landed (user 2026-08-30: "only
+    /// when content in full display -> play bar fills + flash").
+    var introContentDuration: Double { 0.7 / max(0.2, introSpeed) }
+    var introBarDelay: Double { introContentDuration + 0.25 }
+
+    /// The debug pane's Replay: the WHOLE sequence, not just the
+    /// entrances — bars replay via the introTick environment, and the
+    /// flash fires after the fill starts.
+    func replayIntro() {
+        introTick += 1
+        DispatchQueue.main.asyncAfter(deadline: .now() + introBarDelay + 0.5) {
+            self.switchFlashTick += 1
+        }
+    }
     // Deliberately NOT persisted: if a hidden icon survived a relaunch there
     // would be no UI left to unhide it from (the Settings window is only
     // reachable through the popup). Hiding lasts until quit.
@@ -315,7 +331,7 @@ final class AppModel: ObservableObject {
             // active row plays its sweep alongside the bars' fill-up
             // (user 2026-08-30). Delayed so the popup has drawn.
             if firstLoad {
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                DispatchQueue.main.asyncAfter(deadline: .now() + introBarDelay + 0.5) {
                     self.switchFlashTick += 1
                 }
             }

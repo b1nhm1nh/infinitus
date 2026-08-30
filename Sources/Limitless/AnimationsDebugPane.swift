@@ -36,7 +36,7 @@ struct AnimationsDebugPane: View {
                     }
                 }
                 HStack {
-                    Button("Replay intro") { model.introTick += 1 }
+                    Button("Replay intro") { model.replayIntro() }
                     Button("Restart app") { model.relaunchApp() }
                 }
                 Text("Open the popup, then Replay to audition; Restart "
