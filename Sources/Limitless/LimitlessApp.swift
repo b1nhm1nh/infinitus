@@ -1126,8 +1126,12 @@ struct AccountCells {
                         // Instant, not .help — the slow system tooltip
                         // read as "no tooltip" (todo 2026-08-30). The
                         // invisible alignment copy must not answer hover.
+                        // .above: the cell's own summary tip also fires
+                        // on this hover and lands .below — same spot
+                        // would bury this one under it.
                         .instantTip("Burning faster than time passes — "
-                                    + "on pace to run out before the reset")
+                                    + "on pace to run out before the reset",
+                                    edge: .above)
                         .allowsHitTesting(w.aheadOfPace == true)
                     if theme.plain {
                         Text(session ? theme.sessionLabel : theme.weeklyLabel)
@@ -1241,7 +1245,8 @@ struct AccountCells {
                         aheadIcon
                             .opacity(w.aheadOfPace == true ? 1 : 0)
                             .instantTip("Burning faster than time passes — "
-                                        + "on pace to run out before the reset")
+                                        + "on pace to run out before the reset",
+                                        edge: .above)
                             .allowsHitTesting(w.aheadOfPace == true)
                         if theme.plain {
                             Text(w.name ?? "?").foregroundStyle(.secondary)
