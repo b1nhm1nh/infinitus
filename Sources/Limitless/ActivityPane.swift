@@ -9,21 +9,34 @@ struct ActivityPane: View {
     var body: some View {
         Form {
             Section("Switch history") {
-                SwitchHistoryView(cli: model.cli, startExpanded: true)
+                SwitchHistoryView(cli: model.cli, names: accountNames)
             }
             Section("Engine events") {
                 if model.eventLog.isEmpty {
                     Text("No events yet this session").foregroundStyle(.secondary)
                 } else {
-                    ForEach(Array(model.eventLog.suffix(30).enumerated().reversed()),
-                            id: \.offset) { _, line in
-                        Text(line)
-                            .font(.system(.caption, design: .monospaced))
-                            .frame(maxWidth: .infinity, alignment: .leading)
+                    ForEach(model.eventLog.suffix(30).reversed()) { entry in
+                        HStack(spacing: 6) {
+                            Image(systemName: entry.icon)
+                                .font(.caption).foregroundStyle(.secondary)
+                                .frame(width: 16)
+                            Text(entry.text)
+                            Spacer()
+                            Text(entry.at, format: .dateTime.hour().minute())
+                                .font(.caption).monospacedDigit()
+                                .foregroundStyle(.secondary)
+                        }
                     }
                 }
             }
         }
         .formStyle(.grouped)
+    }
+
+    /// Alias (or the email's local part) per account number.
+    private var accountNames: [Int: String] {
+        Dictionary(uniqueKeysWithValues: model.accounts.map { a in
+            (a.number, a.alias ?? String(a.email.split(separator: "@").first ?? "?"))
+        })
     }
 }

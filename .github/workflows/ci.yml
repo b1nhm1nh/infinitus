@@ -1,0 +1,23 @@
+name: CI
+# Build + test on every push/PR. Pattern borrowed from steipete/CodexBar's
+# ci.yml (concurrency-cancel + SwiftPM cache keyed on Package.resolved),
+# sized down for a single-platform menu bar app.
+on:
+  push:
+    branches: [main]
+  pull_request:
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  test:
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/cache@v4
+        with:
+          path: .build
+          key: spm-${{ runner.os }}-${{ hashFiles('Package.resolved', 'Package.swift') }}
+          restore-keys: spm-${{ runner.os }}-
+      - run: swift build
+      - run: swift test

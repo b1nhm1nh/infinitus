@@ -31,7 +31,13 @@ final class AppModel: ObservableObject {
     /// Animations tab so every effect can be fired by hand.
     let debugMenu = UserDefaults.standard.bool(forKey: "debug_menu")
     @Published var engineState: EngineSupervisor.State = .stopped
-    @Published var eventLog: [String] = []
+    struct EventEntry: Identifiable {
+        let id = UUID()
+        let at = Date()
+        let icon: String
+        let text: String
+    }
+    @Published var eventLog: [EventEntry] = []
     @Published var lastError: String?
 
     let cli: CswapCLI?
@@ -308,7 +314,7 @@ final class AppModel: ObservableObject {
     private func consume(_ line: EventLine) {
         switch line {
         case .event(let event):
-            eventLog.append(event.summary)
+            eventLog.append(EventEntry(icon: event.icon, text: event.summary))
             if eventLog.count > 100 { eventLog.removeFirst(eventLog.count - 100) }
             switch event.kind {
             case "switch":

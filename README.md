@@ -32,7 +32,8 @@ a glance and swaps before you stall.
 brew install --cask deathemperor/tap/limitless
 ```
 
-Nightly channel (built from `main` every day; reinstall to update):
+Nightly channel (built from `main` every day; reinstall to update —
+or flip the track in-app under About → Update channel):
 
 ```sh
 brew install --cask deathemperor/tap/limitless@nightly
@@ -80,9 +81,10 @@ Arch users can build from [`packaging/aur/PKGBUILD`](packaging/aur/) —
   the active account, switch history, a celebration sweep on every
   switch (and a death beat when an account runs out).
 - **Themes** — RPG (HP/MP + gold), Movie, Hades, Metal Gear, AI
-  Agentic, Classic SWE, Sci-Fi, Wild West, Cyberpunk, Gothic, or plain
-  numbers; a Themes settings pane with card grid, your own skins via
-  `themes.json`, and a community gallery.
+  Agentic, Classic SWE, Sci-Fi, Wild West, Cyberpunk, Gothic, Musical,
+  Planet Earth, Cosmos, Ocean, or plain numbers; a Themes settings pane
+  with card grid, your own skins via `themes.json`, and a community
+  gallery.
 - **Glass popup** — real backdrop blur in every focus state, with a
   transparency dial; a launch intro (slides, bar fill-up, title
   flourish — all tunable in the debug pane).

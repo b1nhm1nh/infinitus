@@ -17,7 +17,7 @@ public struct EngineEvent: Sendable {
         case "switch":
             return "switched \(str("from", path: "email")) → \(str("to", path: "email"))"
         case "no-switch":
-            return "no switch: \(str("reason"))"
+            return "no switch — \(str("reason").replacingOccurrences(of: "-", with: " "))"
         case "session-resumed":
             return "resumed \(str("sessionId"))"
         case "remote-control-rearmed":
@@ -32,7 +32,22 @@ public struct EngineEvent: Sendable {
             }
             return "pushed switch notice"
         default:
-            return kind
+            return kind.replacingOccurrences(of: "-", with: " ")
+        }
+    }
+
+    /// SF Symbol for the event-log row; unknown kinds get a plain dot.
+    public var icon: String {
+        switch kind {
+        case "switch": return "arrow.triangle.2.circlepath"
+        case "no-switch": return "hand.raised"
+        case "poll": return "clock.arrow.circlepath"
+        case "session-resumed": return "play.circle"
+        case "remote-control-rearmed": return "antenna.radiowaves.left.and.right"
+        case "away-notified": return "paperplane"
+        case "account-unquarantined": return "arrow.uturn.up"
+        case "all-exhausted": return "battery.0percent"
+        default: return "circle.fill"
         }
     }
 

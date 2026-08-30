@@ -151,14 +151,18 @@ final class AppReleaseModel: ObservableObject {
     private static let api = URL(
         string: "https://api.github.com/repos/deathemperor/limitless/releases/latest")!
 
-    func check(currentVersion: String) async {
+    private static let nightlyAPI = URL(
+        string: "https://api.github.com/repos/deathemperor/limitless/releases/tags/nightly")!
+
+    func check(currentVersion: String, nightly: Bool = false) async {
         status = "checking…"
         struct Release: Decodable {
             let tag_name: String
             let html_url: String
+            let name: String?
         }
         do {
-            var req = URLRequest(url: Self.api)
+            var req = URLRequest(url: nightly ? Self.nightlyAPI : Self.api)
             req.setValue("application/vnd.github+json",
                          forHTTPHeaderField: "Accept")
             let (data, resp) = try await URLSession.shared.data(for: req)
@@ -168,6 +172,11 @@ final class AppReleaseModel: ObservableObject {
             }
             let release = try JSONDecoder().decode(Release.self, from: data)
             latest = release.tag_name
+            if nightly {
+                // Rolling tag — no version to compare; show what's current.
+                status = "latest: \(release.name ?? "nightly") — reinstall to update"
+                return
+            }
             let tag = release.tag_name.hasPrefix("v")
                 ? String(release.tag_name.dropFirst()) : release.tag_name
             if let a = PackageVersion(currentVersion), let b = PackageVersion(tag),
@@ -197,7 +206,11 @@ final class BrewUpdater: ObservableObject {
             .first { FileManager.default.isExecutableFile(atPath: $0) }
 
     static let channel: Channel = {
-        guard let brew = brewPath else { return .source }
+        // A dev build (unbundled, or built into the repo) must never
+        // read the Caskroom as "this process came from brew" — only the
+        // /Applications copy is the cask's.
+        guard Bundle.main.bundlePath.hasPrefix("/Applications/"),
+              let brew = brewPath else { return .source }
         let caskroom = URL(fileURLWithPath: brew)
             .deletingLastPathComponent().deletingLastPathComponent()
             .appendingPathComponent("Caskroom")
@@ -219,39 +232,60 @@ final class BrewUpdater: ObservableObject {
         }
     }
 
+    /// Uninstall this track's cask, install the other one, relaunch.
+    /// The casks conflict_with each other, so the order matters.
+    func move(toNightly: Bool) {
+        guard !running, let brew = Self.brewPath else { return }
+        let fromCask = toNightly ? "limitless" : "limitless@nightly"
+        let toCask = toNightly ? "limitless@nightly" : "limitless"
+        run(brew: brew, steps: [["uninstall", "--cask", fromCask],
+                                ["install", "--cask", toCask]],
+            doing: "switching to \(toCask)…")
+    }
+
     /// Runs the brew command, then relaunches into the replaced bundle.
     func upgrade() {
         guard !running, let brew = Self.brewPath else { return }
         let args = Self.channel == .nightly
             ? ["reinstall", "--cask", "limitless@nightly"]
             : ["upgrade", "--cask", "limitless"]
+        run(brew: brew, steps: [args], doing: "brew \(args.joined(separator: " "))…")
+    }
+
+    private func run(brew: String, steps: [[String]], doing: String) {
         running = true
-        status = "brew \(args.joined(separator: " "))…"
+        status = doing
         Task.detached {
-            let p = Process()
-            p.executableURL = URL(fileURLWithPath: brew)
-            p.arguments = args
-            let out = Pipe()
-            p.standardOutput = out
-            p.standardError = out
-            try? p.run()
-            let data = out.fileHandleForReading.readDataToEndOfFile()
-            p.waitUntilExit()
-            let ok = p.terminationStatus == 0
-            let tail = String(decoding: data, as: UTF8.self)
-                .split(separator: "\n").suffix(2).joined(separator: " · ")
+            var ok = true
+            var tail = ""
+            for args in steps {
+                let p = Process()
+                p.executableURL = URL(fileURLWithPath: brew)
+                p.arguments = args
+                let out = Pipe()
+                p.standardOutput = out
+                p.standardError = out
+                try? p.run()
+                let data = out.fileHandleForReading.readDataToEndOfFile()
+                p.waitUntilExit()
+                tail = String(decoding: data, as: UTF8.self)
+                    .split(separator: "\n").suffix(2).joined(separator: " · ")
+                if p.terminationStatus != 0 { ok = false; break }
+            }
+            let done = ok
+            let detail = tail
             await MainActor.run { [weak self] in
                 self?.running = false
-                if ok {
-                    self?.status = "updated — relaunching…"
-                    let bundle = Bundle.main.bundleURL.path
+                if done {
+                    self?.status = "done — relaunching…"
                     let sh = Process()
                     sh.executableURL = URL(fileURLWithPath: "/bin/sh")
-                    sh.arguments = ["-c", "sleep 0.8; /usr/bin/open \"\(bundle)\""]
+                    sh.arguments = ["-c",
+                        "sleep 0.8; /usr/bin/open /Applications/Limitless.app"]
                     try? sh.run()
                     NSApplication.shared.terminate(nil)
                 } else {
-                    self?.status = "brew failed: \(tail)"
+                    self?.status = "brew failed: \(detail)"
                 }
             }
         }
@@ -265,6 +299,7 @@ struct AboutPane: View {
     @ObservedObject var model: UpdateModel
     @StateObject private var appRelease = AppReleaseModel()
     @StateObject private var brew = BrewUpdater()
+    @AppStorage("update_channel") private var updateChannel = "stable"
     @Environment(\.openURL) private var openURL
 
     private var appVersion: String {
@@ -310,7 +345,8 @@ struct AboutPane: View {
                 LabeledContent {
                     Button(appRelease.status == nil ? "Check GitHub Releases"
                            : "Recheck") {
-                        Task { await appRelease.check(currentVersion: appVersion) }
+                        Task { await appRelease.check(currentVersion: appVersion,
+                                                      nightly: updateChannel == "nightly") }
                     }
                 } label: {
                     Text("Limitless.app \(appVersion)")
@@ -331,6 +367,31 @@ struct AboutPane: View {
                     if let s = brew.status {
                         Text(s).font(.caption).foregroundStyle(.secondary)
                     }
+                }
+                Picker("Update channel", selection: $updateChannel) {
+                    Text("Stable").tag("stable")
+                    Text("Nightly").tag("nightly")
+                }
+                .pickerStyle(.segmented)
+                .onChange(of: updateChannel) {
+                    Task { await appRelease.check(currentVersion: appVersion,
+                                                  nightly: updateChannel == "nightly") }
+                }
+                if BrewUpdater.channel == .stable, updateChannel == "nightly" {
+                    Button("Switch the install to the nightly track") {
+                        brew.move(toNightly: true)
+                    }
+                    .disabled(brew.running)
+                } else if BrewUpdater.channel == .nightly, updateChannel == "stable" {
+                    Button("Switch the install back to stable") {
+                        brew.move(toNightly: false)
+                    }
+                    .disabled(brew.running)
+                } else if BrewUpdater.channel == .source {
+                    Text("Source builds only use the channel for the release "
+                         + "check; the brew tracks are limitless and "
+                         + "limitless@nightly.")
+                        .font(.caption).foregroundStyle(.secondary)
                 }
                 Text("App releases ship through Homebrew "
                      + "(brew install --cask deathemperor/tap/limitless — "

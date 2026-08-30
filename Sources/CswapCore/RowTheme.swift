@@ -280,8 +280,62 @@ public struct RowTheme: Codable, Equatable, Sendable, Identifiable {
                      "Sonnet": "Wraith", "Haiku": "Ghoul"],
         planPrefix: "Crypt ", slotPrefix: "✟", resetWord: "tolling midnight…", nextIcon: "🌹", activeIcon: "🕯")
 
+    public static let musical = RowTheme(
+        id: "musical", name: "Musical — tempo & encores",
+        sessionLabel: "🎵", sessionColor: "indigo",
+        weeklyLabel: "🎼", weeklyColor: "purple",
+        scopedPrefix: "🎤 ", scopedColor: "orange",
+        creditLabel: "🎫", creditColor: "green",
+        cashIcon: "💿", aheadIcon: "sf:metronome",
+        deadMarker: "🔇", revivePrefix: "encore ", deadVerb: "gone quiet",
+        readyLabel: "in tune", flashColor: "purple",
+        modelAlias: ["Fable": "Maestro", "Opus": "Opera",
+                     "Sonnet": "Sonata", "Haiku": "Jingle"],
+        planPrefix: "Act ", slotPrefix: "♪", resetWord: "tuning up…", nextIcon: "🎻", activeIcon: "🎷")
+
+    public static let earth = RowTheme(
+        id: "earth", name: "Planet Earth — wild documentary",
+        sessionLabel: "🐆", sessionColor: "orange",
+        weeklyLabel: "🌳", weeklyColor: "green",
+        scopedPrefix: "🦅 ", scopedColor: "teal",
+        creditLabel: "🍃", creditColor: "mint",
+        cashIcon: "🌰", aheadIcon: "🌋",
+        deadMarker: "🦴", revivePrefix: "🌱 ", deadVerb: "extinct",
+        readyLabel: "thriving", flashColor: "green",
+        modelAlias: ["Fable": "Blue Whale", "Opus": "Elephant",
+                     "Sonnet": "Wolf", "Haiku": "Hummingbird"],
+        planPrefix: "Biome ", slotPrefix: "🐾", resetWord: "migrating…", nextIcon: "🦋", activeIcon: "🦁")
+
+    public static let cosmo = RowTheme(
+        id: "cosmo", name: "Cosmos — stars & black holes",
+        sessionLabel: "☀", sessionColor: "yellow",
+        weeklyLabel: "🌌", weeklyColor: "purple",
+        scopedPrefix: "🌠 ", scopedColor: "indigo",
+        creditLabel: "💫", creditColor: "cyan",
+        cashIcon: "🌕", aheadIcon: "🌀",
+        deadMarker: "🕳", revivePrefix: "✨ ", deadVerb: "collapsed",
+        readyLabel: "shining", flashColor: "indigo",
+        modelAlias: ["Fable": "Galaxy", "Opus": "Supernova",
+                     "Sonnet": "Nebula", "Haiku": "Comet"],
+        planPrefix: "Orbit ", slotPrefix: "✦", resetWord: "orbiting back…", nextIcon: "🔭", activeIcon: "🪐")
+
+    public static let ocean = RowTheme(
+        id: "ocean", name: "Ocean — tides & deep water",
+        sessionLabel: "🌊", sessionColor: "blue",
+        weeklyLabel: "🐋", weeklyColor: "teal",
+        scopedPrefix: "🐠 ", scopedColor: "cyan",
+        creditLabel: "🐚", creditColor: "mint",
+        cashIcon: "🦪", aheadIcon: "🦈",
+        deadMarker: "⚓", revivePrefix: "🫧 ", deadVerb: "sunk",
+        readyLabel: "smooth sailing", flashColor: "teal",
+        modelAlias: ["Fable": "Leviathan", "Opus": "Orca",
+                     "Sonnet": "Dolphin", "Haiku": "Minnow"],
+        planPrefix: "Depth ", slotPrefix: "🪸", resetWord: "tide turning…", nextIcon: "🐬", activeIcon: "⛵")
+
     public static let builtins: [RowTheme] = [
-        off, rpg, movie, hades, mgs, agent, swe, scifi, west, cyber, gothic]
+        off, rpg, movie, hades, mgs, agent, swe, scifi, west, cyber,
+        gothic, musical, earth, cosmo, ocean,
+    ]
 
     // MARK: custom themes
 
