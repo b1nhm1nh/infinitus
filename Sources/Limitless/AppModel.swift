@@ -283,6 +283,7 @@ final class AppModel: ObservableObject {
             // instead of snapping them.
             let changed = !accountsVisuallyEqual(accounts, list.accounts)
             let previousActive = activeNumber
+            let firstLoad = accounts.isEmpty && !list.accounts.isEmpty
             withAnimation(.easeInOut(duration: 0.6)) {
                 accounts = list.accounts
                 activeNumber = list.activeAccountNumber
@@ -293,6 +294,14 @@ final class AppModel: ObservableObject {
             if let now = list.activeAccountNumber, let previousActive,
                previousActive != now {
                 switchFlashTick += 1
+            }
+            // Launch greeting: once the first snapshot renders, the
+            // active row plays its sweep alongside the bars' fill-up
+            // (user 2026-08-30). Delayed so the popup has drawn.
+            if firstLoad {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                    self.switchFlashTick += 1
+                }
             }
             if changed { dataPulseTick += 1 }
             lastError = nil

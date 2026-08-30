@@ -36,7 +36,14 @@ struct GaugeBar: View {
                 .contentTransition(.numericText(value: remaining))
                 .foregroundStyle(remaining <= 0 ? Color.red : color.opacity(0.9))
         }
-        .onAppear { shown = remaining }
+        .onAppear {
+            // First render plays the fill-up, not a snap (user
+            // 2026-08-30: launch should animate the bars full).
+            shown = 0
+            withAnimation(.spring(duration: 1.8, bounce: 0.2).delay(0.25)) {
+                shown = remaining
+            }
+        }
         .onChange(of: remaining) { old, new in
             // A jump UP of 25+ points is a window reset: replay the refill
             // from empty (the restore animation, user 2026-08-30).
