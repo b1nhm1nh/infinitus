@@ -80,6 +80,15 @@
   from source stays the developer path. Needs: repo push (explicit
   user approval exists for release flow), Developer ID signing or
   at least consistent ad-hoc + quarantine notes.
+- Promotional content (user, 2026-08-30) — after the improvement wave
+  settles:
+  1. Repo README with the features list (menu bar usage, auto-switch,
+     themes/gamification, glass popup, pace bars, multi-engine slots,
+     iCloud sync, push notifications, sessions/status chips).
+  2. Update the GitHub profile (deathemperor) to feature Limitless.
+  3. Update huuloc.com (pensivie repo) with a Limitless section.
+  4. Short feature walkthrough video — script + screen recording
+     (popup tour, themes flip, switch celebration, settings, engines).
 - Visual verification pending: glass look, whole-row themed sweep,
   About icon, new themes, unified footer, sync export/import, hollow
   recovery triangle (needs an all-limited fleet to show).
