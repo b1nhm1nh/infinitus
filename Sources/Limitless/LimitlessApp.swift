@@ -274,6 +274,7 @@ struct MenuContent: View {
                         }
                         .frame(width: oneColumn ? 24 : 52)
                         .buttonStyle(.borderless)
+                        .zIndex(1)   // instant tips overlay the row column
                         VStack(alignment: .leading, spacing: 8) {
                             accountArea
                             errorLines
@@ -500,17 +501,20 @@ struct MenuContent: View {
         Button { model.showSettings?() } label: {
             Image(systemName: "gearshape")
         }
-        .help("Settings")
+        .instantTip("Settings")
         Button { model.popoverPinned.toggle() } label: {
             Image(systemName: model.popoverPinned ? "pin.fill" : "pin")
         }
-        .help("Pin keeps this popup open when you click elsewhere")
+        .instantTip(model.popoverPinned ? "Unpin popup" : "Pin popup open")
         Button { model.compactRows.toggle() } label: {
             Image(systemName: "rectangle.expand.vertical")
         }
-        .help("Show actions and the full footer")
+        .instantTip("Full mode")
         layoutToggleIcon
+            .instantTip(model.popupLayout == "stacked"
+                        ? "Switch to wide rows" : "Switch to stacked cards")
         popOutIcon
+            .instantTip("Pop out into a window")
         serviceDot
         agentChip
         if model.appUpdatePending {
@@ -518,13 +522,13 @@ struct MenuContent: View {
                 Image(systemName: "arrow.triangle.2.circlepath")
                     .foregroundStyle(.orange)
             }
-            .help("A newer build is on disk — restart to update")
+            .instantTip("Restart to update")
         }
         engineBadgeIcon
         Button { model.shutdown() } label: {
             Image(systemName: "power")
         }
-        .help("Quit")
+        .instantTip("Quit")
     }
 
     /// Quick wide-rows <-> stacked-cards flip, mirroring the Display
@@ -1244,6 +1248,70 @@ struct AccountStack: View {
     @ObservedObject var usage: UsageModel
 
     var body: some View {
+        if model.compactRows {
+            // Compact stacked: a flat roster, one line per account — no
+            // cards, no per-window lines, just the BINDING window's pct
+            // (full mode and compact "looked the same", user 2026-08-30).
+            VStack(alignment: .leading, spacing: 5) {
+                ForEach(model.accounts, id: \.number) { account in
+                    compactLine(account)
+                }
+            }
+        } else {
+            fullCards
+        }
+    }
+
+    /// One roster line: marker, number, name, then the tightest limit
+    /// (the one that will actually stop the account) or the dead verb.
+    @ViewBuilder private func compactLine(_ account: Account) -> some View {
+        let cells = AccountCells(model: model, usage: usage, account: account, banded: false)
+        HStack(spacing: 4) {
+            NextMarker(model: model, number: account.number)
+            Text("\(account.number)")
+                .fontWeight(.bold)
+                .foregroundStyle(account.active ? Color.accentColor : Color.secondary)
+            Button(cells.displayName) {
+                if !account.active { model.pendingSwitch = account.number }
+            }
+            .buttonStyle(.plain)
+            .fontWeight(account.active ? .bold : .regular)
+            .foregroundStyle((account.disabled ?? false) || cells.dead
+                             ? .secondary : .primary)
+            .lineLimit(1)
+            Spacer(minLength: 8)
+            if cells.dead {
+                cells.deadCell
+            } else if let (label, pct) = bindingWindow(account) {
+                Text(label)
+                    .font(.caption).bold()
+                    .foregroundStyle(.secondary)
+                Text("\(Int(pct))%")
+                    .font(.caption).monospacedDigit()
+                    .foregroundStyle(pct >= 90 ? .orange : .secondary)
+            }
+        }
+        .padding(.vertical, 1)
+        .background {
+            if account.active {
+                RoundedRectangle(cornerRadius: 4)
+                    .fill(Color.accentColor.opacity(0.26))
+                    .padding(.horizontal, -4)
+            }
+        }
+    }
+
+    /// The window closest to its limit — the one that will bind first.
+    private func bindingWindow(_ account: Account) -> (String, Double)? {
+        guard let u = account.usage else { return nil }
+        var all: [(String, Double)] = []
+        if let w = u.fiveHour { all.append(("5h", w.pct)) }
+        if let w = u.sevenDay { all.append(("7d", w.pct)) }
+        for w in u.scoped ?? [] { all.append((w.name ?? "?", w.pct)) }
+        return all.max { $0.1 < $1.1 }
+    }
+
+    private var fullCards: some View {
         VStack(alignment: .leading, spacing: 6) {
             ForEach(model.accounts, id: \.number) { account in
                 let cells = AccountCells(model: model, usage: usage, account: account, banded: false)
