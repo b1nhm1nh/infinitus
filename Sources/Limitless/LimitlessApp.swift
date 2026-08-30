@@ -1009,13 +1009,8 @@ struct AccountGrid: View {
         3 + (model.accounts.map { ($0.usage?.scoped ?? []).count }.max() ?? 0)
     }
 
-    /// The active row's number-cell bounds — the sweep overlay's y anchor.
-    private struct ActiveRowAnchor: PreferenceKey {
-        static let defaultValue: Anchor<CGRect>? = nil
-        static func reduce(value: inout Anchor<CGRect>?,
-                           nextValue: () -> Anchor<CGRect>?) {
-            if let next = nextValue() { value = next }
-        }
+    private static func union(_ rects: [CGRect]) -> CGRect? {
+        rects.dropFirst().reduce(rects.first) { $0?.union($1) }
     }
 
     var body: some View {
@@ -1030,13 +1025,6 @@ struct AccountGrid: View {
                             .foregroundStyle(account.active ? Color.accentColor : Color.primary)
                     }
                     .activeBand(account.active)
-                    // Grid has no per-row view, so the celebration can't
-                    // attach here (it would sweep only this cell — user
-                    // report 2026-08-30). The cell reports its bounds and
-                    // the Grid runs the sweep full-width at that y.
-                    .anchorPreference(key: ActiveRowAnchor.self, value: .bounds) {
-                        account.active ? $0 : nil
-                    }
                     Button(cells.displayName) {
                         // disabled rows stay clickable, like rumps; the
                         // popup-level alert asks before committing
@@ -1104,12 +1092,22 @@ struct AccountGrid: View {
                 }
             }
         }
-        .overlayPreferenceValue(ActiveRowAnchor.self) { anchor in
+        // One band + one sweep for the whole active row (Grid has no
+        // per-row view): union the reported cell bounds, draw full-width.
+        // ± half the 8pt verticalSpacing so rows still read separated.
+        .backgroundPreferenceValue(ActiveCellBounds.self) { anchors in
             GeometryReader { geo in
-                if let anchor {
-                    let row = geo[anchor]
-                    // Full grid width, band-height (± half the 8pt
-                    // verticalSpacing, matching activeBand's extension).
+                if let row = Self.union(anchors.map { geo[$0] }) {
+                    Rectangle()
+                        .fill(Color.accentColor.opacity(0.30))
+                        .frame(width: geo.size.width, height: row.height + 8)
+                        .offset(y: row.minY - 4)
+                }
+            }
+        }
+        .overlayPreferenceValue(ActiveCellBounds.self) { anchors in
+            GeometryReader { geo in
+                if let row = Self.union(anchors.map { geo[$0] }) {
                     Color.clear
                         .frame(width: geo.size.width, height: row.height + 8)
                         .switchFlash(model.switchFlashTick,
@@ -1182,17 +1180,24 @@ struct AccountStack: View {
     }
 }
 
+/// Cells of the active row report their bounds; AccountGrid draws ONE
+/// full-width band over their union. Per-cell backgrounds sized to each
+/// cell's own height read as mismatched patches with seams — gauge cells
+/// are taller than text cells (user screenshot 2026-08-30).
+struct ActiveCellBounds: PreferenceKey {
+    static let defaultValue: [Anchor<CGRect>] = []
+    static func reduce(value: inout [Anchor<CGRect>],
+                       nextValue: () -> [Anchor<CGRect>]) {
+        value.append(contentsOf: nextValue())
+    }
+}
+
 private struct ActiveBand: ViewModifier {
     let active: Bool
 
     func body(content: Content) -> some View {
-        content.background {
-            if active {
-                Rectangle()
-                    .fill(Color.accentColor.opacity(0.30))
-                    .padding(.vertical, -4)     // half the Grid's verticalSpacing
-                    .padding(.horizontal, -6)   // half the horizontalSpacing
-            }
+        content.anchorPreference(key: ActiveCellBounds.self, value: .bounds) {
+            active ? [$0] : []
         }
     }
 }
