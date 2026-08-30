@@ -384,13 +384,13 @@ struct MenuContent: View {
                             } label: {
                                 Label("Rotate", systemImage: "arrow.2.circlepath")
                             }
-                            .help("Switch to the next account in rotation")
+                            .instantTip("Rotate to the next account", edge: .above)
                             Button {
                                 Task { await model.refreshSnapshot() }
                             } label: {
                                 Label("Refresh", systemImage: "arrow.clockwise")
                             }
-                            .help("Refresh account usage now")
+                            .instantTip("Refresh usage now", edge: .above)
                             Spacer().frame(width: 6)
                             Button {
                                 model.popoverPinned.toggle()

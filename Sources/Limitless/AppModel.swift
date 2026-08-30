@@ -330,10 +330,12 @@ final class AppModel: ObservableObject {
             // Launch greeting: once the first snapshot renders, the
             // active row plays its sweep alongside the bars' fill-up
             // (user 2026-08-30). Delayed so the popup has drawn.
+            // First snapshot = the intro's single clock: every entrance,
+            // the bars, the flash, and the title all key off this tick,
+            // so the sequence is identical run to run (title timing
+            // drifted when it ran from view-mount instead).
             if firstLoad {
-                DispatchQueue.main.asyncAfter(deadline: .now() + introBarDelay + 0.5) {
-                    self.switchFlashTick += 1
-                }
+                DispatchQueue.main.async { self.replayIntro() }
             }
             if changed { dataPulseTick += 1 }
             lastError = nil

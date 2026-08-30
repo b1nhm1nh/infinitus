@@ -114,3 +114,8 @@
   (or picker) flipping the title math to remaining (100 - pct), and
   decide whether the popup gauges' % labels follow the same setting or
   stay HP-style remaining as they are.
+- Dead-transition animation (user, 2026-08-30): when an account flips
+  alive -> dead in a snapshot, play a death animation on its row (the
+  themed dead marker landing — a drop/flicker/desaturate beat), the
+  mirror of the refill celebration. Belongs in the Animations pane
+  examples too.

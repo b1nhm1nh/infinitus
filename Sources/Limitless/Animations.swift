@@ -131,7 +131,7 @@ struct IntroSlideIn: ViewModifier {
         content
             .opacity(on ? 1 : 0)
             .offset(x: on ? 0 : (fromLeft ? -70 : 70))
-            .onAppear { play() }
+            .onAppear { model.accounts.isEmpty ? (on = false) : play() }
             .onChange(of: model.introTick) { _, _ in play() }
     }
 
@@ -157,7 +157,7 @@ struct IntroContentReveal: ViewModifier {
         content
             .opacity(on ? 1 : 0)
             .offset(y: on ? 0 : dy)
-            .onAppear { play() }
+            .onAppear { model.accounts.isEmpty ? (on = false) : play() }
             .onChange(of: model.introTick) { _, _ in play() }
             .onChange(of: model.introStyle) { _, _ in play() }
     }
@@ -186,7 +186,7 @@ struct IntroTitleFlourish: ViewModifier {
             .rotationEffect(.degrees(on ? 0 : startRotation))
             .opacity(on ? 1 : 0)
             .brightness(glow)
-            .onAppear { play() }
+            .onAppear { model.accounts.isEmpty ? (on = false) : play() }
             .onChange(of: model.introTick) { _, _ in play() }
             .onChange(of: model.introTitle) { _, _ in play() }
     }
@@ -212,8 +212,9 @@ struct IntroTitleFlourish: ViewModifier {
         let speed = max(0.2, model.introSpeed)
         on = false
         glow = 0
-        // Lands after the bars' fill-up is under way.
-        let delay = 1.6 / speed
+        // Lands while the bars' fill-up is under way — anchored to the
+        // same introBarDelay gate as the bars themselves.
+        let delay = model.introBarDelay + 0.9 / speed
         let anim: Animation = switch model.introTitle {
         case "slam": .spring(duration: 0.5 / speed, bounce: 0.35)
         case "spin": .spring(duration: 0.9 / speed, bounce: 0.3)
