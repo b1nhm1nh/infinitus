@@ -89,6 +89,14 @@
   3. Update huuloc.com (pensivie repo) with a Limitless section.
   4. Short feature walkthrough video — script + screen recording
      (popup tour, themes flip, switch celebration, settings, engines).
+- Duplicate icon uses within a theme (user screenshot, 2026-08-30):
+  movie uses 🎬 as BOTH the slot prefix and the session gauge label, so
+  a row reads clapperboard-number … clapperboard-gauge; the dead marker
+  📼/🔚 vs re-release icons overlap similarly. Audit every builtin so
+  each icon appears in exactly ONE role (slot, session, weekly, scoped,
+  credit, cash, ahead, dead, revive, next) and adjust vocabularies;
+  also consider dropping the slot prefix when the row is dead (the
+  dead marker already leads).
 - Visual verification pending: glass look, whole-row themed sweep,
   About icon, new themes, unified footer, sync export/import, hollow
   recovery triangle (needs an all-limited fleet to show).
