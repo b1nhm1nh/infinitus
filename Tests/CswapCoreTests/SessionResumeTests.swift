@@ -362,3 +362,64 @@ final class SessionResumeTests: XCTestCase {
         XCTAssertEqual(out.unreachable, [s])
     }
 }
+
+/// The Darwin socket path end to end against a scratch listener — the
+/// only channel for terminals without an injection API (Ghostty).
+final class PeerSocketLoopbackTests: XCTestCase {
+    func testSendDeliversAuthAndMessageFrames() throws {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("infinitus-sock-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir.appendingPathComponent("sessions"),
+                                                withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        try "{\"peerToken\":\"tok-77\"}".write(
+            to: dir.appendingPathComponent("sessions/77.beef.key"), atomically: true, encoding: .utf8)
+        // sun_path is 104 bytes; the temp dir is far longer.
+        let path = "/tmp/inf-\(getpid())-\(UInt32.random(in: 0...9999)).sock"
+        unlink(path)
+        defer { unlink(path) }
+        let server = socket(AF_UNIX, SOCK_STREAM, 0)
+        XCTAssertGreaterThanOrEqual(server, 0)
+        defer { close(server) }
+        var addr = sockaddr_un()
+        addr.sun_family = sa_family_t(AF_UNIX)
+        _ = path.withCString { strncpy(&addr.sun_path.0, $0, 103) }
+        let bound = withUnsafePointer(to: &addr) {
+            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                Darwin.bind(server, $0, socklen_t(MemoryLayout<sockaddr_un>.size))
+            }
+        }
+        XCTAssertEqual(bound, 0)
+        XCTAssertEqual(listen(server, 1), 0)
+
+        let done = expectation(description: "sent")
+        var ok = false
+        DispatchQueue.global().async {
+            ok = PeerSocket.send(socketPath: path, text: "wake up", pid: 77, claudeDir: dir, timeout: 3)
+            done.fulfill()
+        }
+        let client = accept(server, nil, nil)
+        XCTAssertGreaterThanOrEqual(client, 0)
+        var received = Data()
+        var buf = [UInt8](repeating: 0, count: 4096)
+        while true {
+            let n = read(client, &buf, buf.count)
+            if n <= 0 { break }
+            received.append(contentsOf: buf[0..<n])
+        }
+        close(client)
+        wait(for: [done], timeout: 5)
+        XCTAssertTrue(ok)
+
+        let lines = String(decoding: received, as: UTF8.self).split(separator: "\n").map(String.init)
+        XCTAssertEqual(lines.count, 2)
+        let auth = try JSONSerialization.jsonObject(with: Data(lines[0].utf8)) as! [String: Any]
+        XCTAssertEqual(auth["token"] as? String, "tok-77")
+        let msg = try JSONSerialization.jsonObject(with: Data(lines[1].utf8)) as! [String: Any]
+        let content = (msg["message"] as! [String: Any])["content"] as! String
+        XCTAssertEqual(content, PeerSocket.wrapBody("wake up", from: PeerSocket.ownAddress()))
+        XCTAssertEqual(msg["priority"] as? String, "next")
+        // A dead socket path fails fast and quietly.
+        XCTAssertFalse(PeerSocket.send(socketPath: "/tmp/inf-nope.sock", text: "x", pid: 77, claudeDir: dir, timeout: 1))
+    }
+}
