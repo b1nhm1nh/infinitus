@@ -77,6 +77,14 @@ public struct CswapCLI: Sendable {
         try JSONDecoder().decode(AccountList.self, from: await run(["list", "--json"]))
     }
 
+    /// Snapshot plus its raw bytes — the app caches the bytes so the
+    /// next launch renders instantly instead of opening an empty shell
+    /// while the subprocess runs (user 2026-08-30).
+    public func accountListRaw() async throws -> (AccountList, Data) {
+        let data = try await run(["list", "--json"])
+        return (try JSONDecoder().decode(AccountList.self, from: data), data)
+    }
+
     public func configList() async throws -> ConfigList {
         try JSONDecoder().decode(ConfigList.self, from: await run(["config", "list", "--json"]))
     }
@@ -158,6 +166,13 @@ public struct CswapCLI: Sendable {
         try JSONDecoder().decode(
             UsageReport.self,
             from: await run(["usage", "--days", String(days), "--json"]))
+    }
+
+    /// Report plus raw bytes, for the app-side launch cache (the scan
+    /// takes seconds; the cash column popped in late without it).
+    public func usageReportRaw(days: Int) async throws -> (UsageReport, Data) {
+        let data = try await run(["usage", "--days", String(days), "--json"])
+        return (try JSONDecoder().decode(UsageReport.self, from: data), data)
     }
 }
 

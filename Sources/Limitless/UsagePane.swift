@@ -13,11 +13,31 @@ final class UsageModel: ObservableObject {
     @Published var days = 7 { didSet { if days != oldValue { refresh() } } }
 
     private let cli: CswapCLI?
+    /// True while `report` is last run's cached scan — the first
+    /// loadIfNeeded still refreshes in the background.
+    private var cacheOnly = false
 
-    init(cli: CswapCLI?) { self.cli = cli }
+    static let cacheURL: URL = {
+        let base = FileManager.default.urls(for: .applicationSupportDirectory,
+                                            in: .userDomainMask)[0]
+        return base.appendingPathComponent("Limitless/usage-cache.json")
+    }()
+
+    init(cli: CswapCLI?) {
+        self.cli = cli
+        // Same instant-render treatment as the account snapshot: the
+        // cash column otherwise pops in seconds after launch (user
+        // 2026-08-30: "cache doesn't seem to have cash data").
+        if let data = try? Data(contentsOf: Self.cacheURL),
+           let cached = try? JSONDecoder().decode(UsageReport.self, from: data),
+           cached.days == days {
+            report = cached
+            cacheOnly = true
+        }
+    }
 
     func loadIfNeeded() {
-        if report == nil && !loading { refresh() }
+        if (report == nil || cacheOnly) && !loading { refresh() }
     }
 
     func refresh() {
@@ -27,7 +47,14 @@ final class UsageModel: ObservableObject {
         let days = days
         Task {
             do {
-                let r = try await cli.usageReport(days: days)
+                let (r, raw) = try await cli.usageReportRaw(days: days)
+                if days == self.days {
+                    try? FileManager.default.createDirectory(
+                        at: Self.cacheURL.deletingLastPathComponent(),
+                        withIntermediateDirectories: true)
+                    try? raw.write(to: Self.cacheURL, options: .atomic)
+                }
+                self.cacheOnly = false
                 // Animated: the cash column's width change interpolates
                 // (with the panel tracking it) instead of snapping the
                 // popup wider in one frame (container-jump bug,

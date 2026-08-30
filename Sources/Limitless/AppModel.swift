@@ -197,6 +197,37 @@ final class AppModel: ObservableObject {
             lastError = "cswap not found — install it (uv tool install claude-swap)"
         }
         sync.attach(model: self)
+        // Last run's snapshot renders NOW — the popup otherwise opened
+        // as an empty sliver and expanded seconds later when the first
+        // `cswap list` returned, eating the intro (user 2026-08-30).
+        // Live values roll in over it via the numeric transitions.
+        if let data = try? Data(contentsOf: Self.snapshotCacheURL),
+           let cached = try? JSONDecoder().decode(AccountList.self, from: data) {
+            accounts = cached.accounts
+            activeNumber = cached.activeAccountNumber
+            nextCandidate = cached.nextCandidate
+            nextRecovery = cached.nextRecovery
+            liveSessions = cached.liveSessions
+        }
+    }
+
+    /// App-side cache of our own subprocess output (never an engine
+    /// internal file).
+    static let snapshotCacheURL: URL = {
+        let base = FileManager.default.urls(for: .applicationSupportDirectory,
+                                            in: .userDomainMask)[0]
+        return base.appendingPathComponent("Limitless/snapshot-cache.json")
+    }()
+
+    /// The popup just opened with data already on screen (cache or an
+    /// earlier snapshot): play the launch flash on the same clock the
+    /// data-landing path uses. No-op while empty — that case is handled
+    /// by firstLoad in refreshSnapshot.
+    func introOpened() {
+        guard !accounts.isEmpty else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + introBarDelay + 0.5) {
+            self.switchFlashTick += 1
+        }
     }
 
     /// Re-read the persisted display prefs after an iCloud sync pull — the
@@ -308,7 +339,11 @@ final class AppModel: ObservableObject {
     func refreshSnapshot() async {
         guard let cli else { return }
         do {
-            let list = try await cli.accountList()
+            let (list, raw) = try await cli.accountListRaw()
+            try? FileManager.default.createDirectory(
+                at: Self.snapshotCacheURL.deletingLastPathComponent(),
+                withIntermediateDirectories: true)
+            try? raw.write(to: Self.snapshotCacheURL, options: .atomic)
             let previous = activeNumber
             // withAnimation: the pct texts carry .contentTransition(.numericText)
             // so a fresh snapshot rolls the digits (the token-burn feel)

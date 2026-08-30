@@ -164,6 +164,7 @@ final class StatusItemController {
         positionAnchored()
         anchored?.orderFrontRegardless()
         updateDismissMonitors()
+        model.introOpened()
     }
 
     private func closeAnchored() {

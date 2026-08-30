@@ -101,9 +101,12 @@ extension View {
 /// The "resetting…" pulse as a reusable modifier (debug pane demo).
 private struct PulseOpacity: ViewModifier {
     func body(content: Content) -> some View {
-        TimelineView(.periodic(from: .now, by: 0.05)) { ctx in
+        // .animation = every frame; the 0.05s periodic tick rendered a
+        // choppy ~20fps pulse (user: "low laggy", 2026-08-30). Faster
+        // sine too — reads as a flash, not a slow breath.
+        TimelineView(.animation) { ctx in
             content.opacity(0.35 + 0.65 * abs(sin(
-                ctx.date.timeIntervalSinceReferenceDate * 2.5)))
+                ctx.date.timeIntervalSinceReferenceDate * 4.0)))
         }
     }
 }
