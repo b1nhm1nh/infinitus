@@ -284,7 +284,10 @@ struct MenuContent: View {
                     // One footer row (user request 2026-08-30, was two):
                     // actions leading, app chrome after, status chips
                     // trailing. "Test notification" retired — the Push
-                    // pane keeps its own test button.
+                    // pane keeps its own test button. Stacked layout gets
+                    // icon-only buttons: the titled row out-widened the
+                    // narrow cards and the footer drove the popup width
+                    // (cards stretched to fill, 2026-08-30 screenshot).
                     HStack {
                         Button {
                             model.rotate()
@@ -342,6 +345,9 @@ struct MenuContent: View {
                         }
                         .help("Quit")
                     }
+                    .labelStyle(AnyLabelStyle(model.popupLayout == "stacked"
+                                              ? AnyLabelStyle(.iconOnly)
+                                              : AnyLabelStyle(.titleAndIcon)))
                 }
             }
         }
@@ -815,14 +821,15 @@ struct AccountCells {
         Group {
             if let w, !hiddenInCompact(w.pct) {
                 HStack(spacing: 3) {
-                    if !session {
-                        // Ahead-of-pace marker — ALWAYS in the layout,
-                        // invisible when pace is fine, so columns never
-                        // shift (a conditional icon broke alignment).
-                        aheadIcon
-                            .opacity(w.aheadOfPace == true ? 1 : 0)
-                            .help("Burning faster than the window elapses")
-                    }
+                    // Ahead-of-pace marker — ALWAYS in the layout,
+                    // invisible when pace is fine, so columns never shift
+                    // (a conditional icon broke alignment). Session lines
+                    // carry the slot too: without it the stacked cards'
+                    // 5h line started flush while 7d was indented
+                    // (user screenshot 2026-08-30).
+                    aheadIcon
+                        .opacity(w.aheadOfPace == true ? 1 : 0)
+                        .help("Burning faster than the window elapses")
                     if theme.plain {
                         Text(session ? theme.sessionLabel : theme.weeklyLabel)
                             .foregroundStyle(.secondary)
@@ -847,9 +854,9 @@ struct AccountCells {
                 // rather than truncate; the name column stays flexible.
                 .fixedSize()
                 .glowOnChange(of: w.pct, color: ThemeColor.flash(theme))
-            } else if w == nil, !model.compactRows {
+            } else if w == nil, banded, !model.compactRows {
                 Text("—").foregroundStyle(.tertiary)
-            } else if !model.compactRows {
+            } else if banded, !model.compactRows {
                 // Placeholder stretches to its COLUMN width: a zero-width
                 // cell left a hole in the active row's highlight band.
                 // gridCellUnsizedAxes: fill the column WITHOUT driving its
@@ -866,8 +873,13 @@ struct AccountCells {
     @ViewBuilder var spendCell: some View {
         if let spend = account.usage?.spend, spend.pct >= 100 {
             // Spent credit is a footnote, not a death: the overflow buffer
-            // is gone, the subscription windows still rule the row.
-            Text("\(theme.creditLabel) spent")
+            // is gone, the subscription windows still rule the row. The
+            // invisible pace slot keeps it aligned with the gauge lines
+            // in the stacked cards.
+            HStack(spacing: 3) {
+                aheadIcon.opacity(0)
+                Text("\(theme.creditLabel) spent")
+            }
                 .font(.caption).foregroundStyle(.tertiary)
                 .help(String(format: "usage credit exhausted: %.2f of %.0f %@ — "
                              + "account still usable on its plan limits",
@@ -876,6 +888,7 @@ struct AccountCells {
                 .activeBand(banded && account.active)
         } else if let spend = account.usage?.spend, !hiddenInCompact(spend.pct) {
             HStack(spacing: 3) {
+                aheadIcon.opacity(0)
                 Text(theme.creditLabel)
                     .font(theme.plain ? .body : .caption.bold())
                     .foregroundStyle(theme.plain
@@ -896,10 +909,12 @@ struct AccountCells {
             .fixedSize()
             .glowOnChange(of: spend.pct, color: ThemeColor.flash(theme))
             .activeBand(banded && account.active)
-        } else if !model.compactRows {
+        } else if banded, !model.compactRows {
             // Text, not Color.clear: a zero-size cell renders the active
             // band as a stray blob; an empty Text has line height. Stretch
-            // so the band fills the column other rows widened.
+            // so the band fills the column other rows widened. Grid only —
+            // in the stacked VStack this rendered as a stray blank line
+            // (user screenshot 2026-08-30).
             Text(verbatim: "")
                 .frame(maxWidth: .infinity)
                 .gridCellUnsizedAxes(.horizontal)
@@ -911,7 +926,7 @@ struct AccountCells {
         ForEach(account.usage?.scoped ?? [], id: \.name) { w in
             Group {
                 if hiddenInCompact(w.pct) {
-                    if !model.compactRows {
+                    if banded, !model.compactRows {
                         Text(verbatim: "")
                             .frame(maxWidth: .infinity)
                             .gridCellUnsizedAxes(.horizontal)
@@ -1164,13 +1179,22 @@ struct AccountStack: View {
                         cells.scopedCells
                     }
                 }
-                .padding(6)
+                .padding(8)
+                // Equal-width cards, not ragged islands: every card wears
+                // chrome (user: "stack cards layout need big improvement",
+                // 2026-08-30); the active one keeps the accent.
+                .frame(maxWidth: .infinity, alignment: .leading)
                 .background {
                     if account.active {
-                        RoundedRectangle(cornerRadius: 6)
+                        RoundedRectangle(cornerRadius: 8)
                             .fill(Color.accentColor.opacity(0.26))
-                            .overlay(RoundedRectangle(cornerRadius: 6)
+                            .overlay(RoundedRectangle(cornerRadius: 8)
                                 .strokeBorder(Color.accentColor.opacity(0.7)))
+                    } else {
+                        RoundedRectangle(cornerRadius: 8)
+                            .fill(Color.primary.opacity(0.07))
+                            .overlay(RoundedRectangle(cornerRadius: 8)
+                                .strokeBorder(Color.primary.opacity(0.12)))
                     }
                 }
                 .switchFlash(account.active ? model.switchFlashTick : 0,

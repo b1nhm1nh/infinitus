@@ -114,6 +114,25 @@ final class StatusItemController {
         // Pinned = survives click-outside; the status item still toggles
         // it closed, so a pinned popover can never strand.
         popover.behavior = model.popoverPinned ? .applicationDefined : .transient
+        // Self-heal a stale fitting size: a popover opened before content
+        // settled (pinned restore at launch) kept its narrow frame while
+        // rows landed wider — content clipped both edges (user screenshot
+        // 2026-08-30). Deferred past the morph animations.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) { [weak self] in
+            self?.healPopoverSize()
+        }
+    }
+
+    private func healPopoverSize() {
+        guard popover.isShown,
+              let view = popover.contentViewController?.view else { return }
+        let fit = view.fittingSize
+        guard fit.width > 1, fit.height > 1,
+              fit.width < 20_000, fit.height < 20_000 else { return }
+        let current = popover.contentSize
+        if abs(current.width - fit.width) > 1 || abs(current.height - fit.height) > 1 {
+            popover.contentSize = fit
+        }
     }
 
     /// The pop-out action: close the popover, open the floating window.
