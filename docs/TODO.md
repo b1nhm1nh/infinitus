@@ -109,3 +109,8 @@
   tooltip (user, 2026-08-30): add an InstantTip explaining pace — e.g.
   "ahead of pace — usage is below the linear burn line for this window"
   (and the deficit twin if one exists).
+- Menu bar display setting: show REMAINING vs USED percentage (user,
+  2026-08-30). The title currently reports used%; add a Display toggle
+  (or picker) flipping the title math to remaining (100 - pct), and
+  decide whether the popup gauges' % labels follow the same setting or
+  stay HP-style remaining as they are.
