@@ -1,15 +1,15 @@
-# Limitless
+# Infinitus
 
 **Every Claude account in one menu bar — swap before you stall.**
 
 May your limits never bind.
 
-[![Release](https://img.shields.io/github/v/release/deathemperor/limitless)](https://github.com/deathemperor/limitless/releases)
+[![Release](https://img.shields.io/github/v/release/deathemperor/infinitus)](https://github.com/deathemperor/infinitus/releases)
 ![macOS 14+](https://img.shields.io/badge/macOS-14%2B-blue)
 [![Homebrew](https://img.shields.io/badge/homebrew-deathemperor%2Ftap-orange)](https://github.com/deathemperor/homebrew-tap)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
-![Limitless demo — launch intro, themed fleet, rotate celebrations](docs/demo.gif)
+![Infinitus demo — launch intro, themed fleet, rotate celebrations](docs/demo.gif)
 
 A native macOS menu bar app (Swift/SwiftUI) over the
 [claude-swap](https://github.com/deathemperor/claude-swap) engine: live
@@ -21,7 +21,7 @@ and a one-click rotate — wrapped in themes from RPG to Wild West.
 Claude usage windows run out at the worst moment. If you keep more than
 one account, the juggling — which one has 5-hour headroom, which weekly
 window is about to bind, which one just died — is exactly the kind of
-state a menu bar should carry for you. Limitless shows the whole fleet at
+state a menu bar should carry for you. Infinitus shows the whole fleet at
 a glance and swaps before you stall.
 
 ## Install
@@ -29,14 +29,14 @@ a glance and swaps before you stall.
 ### Homebrew
 
 ```sh
-brew install --cask deathemperor/tap/limitless
+brew install --cask deathemperor/tap/infinitus
 ```
 
 Nightly channel (built from `main` every day; reinstall to update —
 or flip the track in-app under About → Update channel):
 
 ```sh
-brew install --cask deathemperor/tap/limitless@nightly
+brew install --cask deathemperor/tap/infinitus@nightly
 ```
 
 Builds are ad-hoc signed, not notarized: if Gatekeeper balks, install
@@ -44,14 +44,14 @@ with `--no-quarantine` (or right-click → Open once).
 
 ### GitHub releases
 
-Grab `Limitless-<version>.zip` from
-[releases](https://github.com/deathemperor/limitless/releases), unzip,
-drop `Limitless.app` into `/Applications`.
+Grab `Infinitus-<version>.zip` from
+[releases](https://github.com/deathemperor/infinitus/releases), unzip,
+drop `Infinitus.app` into `/Applications`.
 
 ### Linux — the engine CLI (Omarchy-ready)
 
 The menu bar app is macOS-native (AppKit), so Linux doesn't get the app
-itself — it gets the engine. Everything Limitless fronts (the fleet
+itself — it gets the engine. Everything Infinitus fronts (the fleet
 gauges, auto-switching, the `cswap` TUI) runs anywhere Python 3.12
 does, including Arch-based [Omarchy](https://omarchy.org):
 
@@ -115,7 +115,7 @@ travel over stdin and render masked.
 ## Build from source
 
 ```sh
-./make-app.sh && open Limitless.app
+./make-app.sh && open Infinitus.app
 ```
 
 `swift test` runs the CswapCore unit tests. `dev.sh` is a rebuild-on-save
@@ -153,7 +153,7 @@ active / next / dead markers, and the reset countdown wording.
 | Ocean — tides & deep water | Leviathan | ⛵ 🐬 ⚓ | smooth sailing / tide turning… |
 
 Built-in row themes live in `Sources/CswapCore/RowTheme.swift`; add your
-own in `~/Library/Application Support/Limitless/themes.json`, or share one
+own in `~/Library/Application Support/Infinitus/themes.json`, or share one
 through [`themes/`](themes/README.md) with a pull request.
 
 ## Credits

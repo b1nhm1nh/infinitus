@@ -54,12 +54,9 @@
   order of account, build auto order mechanism"): a toggle, and a
   mechanism that keeps the fleet sorted (headroom-first? soonest-reset
   last?) via `cswap reorder` — engine command exists, policy TBD.
-- Rename: "Limitless" collides with limitless.ai (user 2026-08-30).
-  Candidates checked for brew/GitHub/domain collisions (see the
-  2026-08-30 report); waiting on the pick. Cost of a rename: repo +
-  tap casks + `brew` migration for installed users, README/badges,
-  bundle id stays `com.huuloc.limitless` unless explicitly changed
-  (the id rule in CLAUDE.md).
+- ~~Rename: "Limitless" collides with limitless.ai~~ → Infinitus
+  (user pick 2026-08-30). Twin-loop mark; repo, casks (cask_renames
+  migration), workflows, App Support copy-migration; bundle id kept.
 - Resume/rc delivery beyond cmux (engine-side, ~/death/claude-swap):
   the PTY channel is cmux-only; herdr (`herdr agent prompt` /
   `pane process-info` maps pane → claude pid — verified) and tmux

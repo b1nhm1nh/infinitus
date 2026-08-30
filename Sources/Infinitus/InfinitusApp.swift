@@ -7,7 +7,7 @@ import CswapCore
 /// last window closes (verified live — the app died the moment the keepalive
 /// window was closed OR ordered out).
 final class AppDelegate: NSObject, NSApplicationDelegate {
-    // Injected by LimitlessApp.init; the status item is created HERE, in
+    // Injected by InfinitusApp.init; the status item is created HERE, in
     // applicationDidFinishLaunching — creating an NSStatusItem before the
     // app finishes launching fails silently (no item, no error).
     var makeStatusItem: (() -> Void)?
@@ -32,7 +32,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return .terminateNow
     }
 
-    /// `open Limitless.app` on an already-running instance lands here: show
+    /// `open Infinitus.app` on an already-running instance lands here: show
     /// the pinned window. This is the guaranteed way into the UI when the
     /// menu bar is too full to display the status item at all.
     func applicationShouldHandleReopen(_ app: NSApplication,
@@ -43,7 +43,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 }
 
 @main
-struct LimitlessApp: App {
+struct InfinitusApp: App {
     @StateObject private var model: AppModel
     @StateObject private var settingsModel: SettingsModel
     @StateObject private var reliabilityModel: ResumeReliabilityModel
@@ -56,6 +56,7 @@ struct LimitlessApp: App {
     init() {
         // Menu bar app: no Dock icon, no main window.
         NSApplication.shared.setActivationPolicy(.accessory)
+        RenameMigration.run()   // before anything reads App Support
         let model = AppModel()
         _model = StateObject(wrappedValue: model)
         let settingsModel = SettingsModel(cli: model.cli)
@@ -159,7 +160,7 @@ struct LimitlessApp: App {
     + [
         SettingsTab(title: "About", symbol: "info.circle", tint: .indigo,
                     keywords: ["update", "version", "license", "links"],
-                    image: AboutPane.limitlessIcon,
+                    image: AboutPane.infinitusIcon,
                     view: AnyView(AboutPane(appRelease: appRelease))),
         // Providers under everything, CodexBar-style (user 2026-08-30).
         // The engine is cswap; Claude is what it drives (user 2026-08-30:
@@ -330,17 +331,17 @@ struct SettingsRoot: View {
     }
 }
 
-/// The "Limitless" strip: app icon + name, tinted by the active theme
+/// The "Infinitus" strip: app icon + name, tinted by the active theme
 /// (user request 2026-08-30). The pop-out wears it as its drag-strip
 /// title; the full popover shows it above the rows.
-struct LimitlessHeader: View {
+struct InfinitusHeader: View {
     @ObservedObject var model: AppModel
 
     var body: some View {
         HStack(spacing: 5) {
             icon
                 .frame(width: 16, height: 16)
-            Text("Limitless")
+            Text("Infinitus")
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(tint)
         }
@@ -433,7 +434,7 @@ struct MenuContent: View {
                 // ("put icon on side to thicken the popup", user
                 // 2026-08-30).
                 VStack(alignment: .leading, spacing: 8) {
-                    if showHeader { LimitlessHeader(model: model) }
+                    if showHeader { InfinitusHeader(model: model) }
                     HStack(alignment: .top, spacing: 10) {
                         VStack(spacing: 12) { stackedRail }
                             .introSlide(model, fromLeft: true)
@@ -453,7 +454,7 @@ struct MenuContent: View {
                 VStack(alignment: .leading, spacing: 8) {
                     // Compact mode stays headerless on purpose — it exists
                     // to be tiny.
-                    if showHeader { LimitlessHeader(model: model) }
+                    if showHeader { InfinitusHeader(model: model) }
                     accountArea
                     errorLines
                     Divider()
@@ -534,7 +535,7 @@ struct MenuContent: View {
                                     Label("Update \(v)", systemImage: "arrow.down.circle.fill")
                                         .foregroundStyle(.orange)
                                 }
-                                .help("Limitless \(v) is out — About → Updates")
+                                .help("Infinitus \(v) is out — About → Updates")
                             }
                             if !model.footerActionsHidden {
                                 Button {
@@ -666,7 +667,7 @@ struct MenuContent: View {
                 Image(systemName: "arrow.down.circle.fill")
                     .foregroundStyle(.orange)
             }
-            .instantTip("Limitless \(v) is out — About → Updates")
+            .instantTip("Infinitus \(v) is out — About → Updates")
         }
         engineBadgeIcon
         if !model.footerActionsHidden {
@@ -756,7 +757,7 @@ struct MenuContent: View {
                 Image(systemName: "arrow.down.circle.fill")
                     .foregroundStyle(.orange)
             }
-            .instantTip("Limitless \(v) is out — About → Updates")
+            .instantTip("Infinitus \(v) is out — About → Updates")
         }
         engineBadgeIcon
         if !model.footerActionsHidden {
@@ -1943,10 +1944,10 @@ struct OnboardingCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Welcome to Limitless")
+            Text("Welcome to Infinitus")
                 .font(.headline)
             Text("The claude-swap engine isn't installed — it does the "
-                 + "account switching and usage reading. Limitless is "
+                 + "account switching and usage reading. Infinitus is "
                  + "the cockpit; cswap is the engine.")
                 .font(.caption)
                 .foregroundStyle(.secondary)

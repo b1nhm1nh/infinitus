@@ -53,7 +53,7 @@ final class SettingsSyncModel: ObservableObject {
         let drive = URL(fileURLWithPath:
             "\(home)/Library/Mobile Documents/com~apple~CloudDocs")
         guard FileManager.default.fileExists(atPath: drive.path) else { return nil }
-        return drive.appendingPathComponent("Limitless")
+        return drive.appendingPathComponent("Infinitus")
     }
 
     func tick() async {
@@ -108,7 +108,7 @@ final class SettingsSyncModel: ObservableObject {
     func importConfig(from url: URL) async {
         guard let snap = (try? Data(contentsOf: url)).flatMap(SyncSnapshot.decode)
         else {
-            status = "import failed: not a Limitless settings file"
+            status = "import failed: not a Infinitus settings file"
             return
         }
         await apply(snap)

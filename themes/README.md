@@ -1,6 +1,6 @@
 # Community row themes
 
-Shareable "skins" for the Limitless popup's account rows. The app's
+Shareable "skins" for the Infinitus popup's account rows. The app's
 Settings → Display → Row theme → **Community themes** section lists
 everything in `index.json` and installs a copy into the user's local
 `themes.json`.

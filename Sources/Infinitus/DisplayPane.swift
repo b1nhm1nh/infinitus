@@ -14,7 +14,7 @@ struct DisplayPane: View {
     var body: some View {
         Form {
             Toggle("Menu bar shows only the icon", isOn: $model.titleIconOnly)
-                .help("Just the Limitless glyph — no account name or "
+                .help("Just the Infinitus glyph — no account name or "
                       + "percentages. The settings below return when "
                       + "this is off.")
             Toggle("Show account name in menu bar", isOn: $model.showAccountName)

@@ -3,10 +3,10 @@ import Foundation
 
 /// OpenAI Codex account slots, Swift-native (2026-08-30). The Python
 /// `cswap codex` v1 was reverted the same day — multi-engine belongs in
-/// Limitless, not the Claude engine (user decision). Same mechanism:
+/// Infinitus, not the Claude engine (user decision). Same mechanism:
 /// $CODEX_HOME/auth.json (file-mode credential store, format verified
 /// against openai/codex fixtures) snapshotted into slots and swapped
-/// whole. Slots live in App Support/Limitless/engines/codex/<n>/.
+/// whole. Slots live in App Support/Infinitus/engines/codex/<n>/.
 /// v1 scope: add / switch / list. No refresh, no usage, no auto-switch.
 @MainActor
 final class CodexEngineModel: ObservableObject {
@@ -35,7 +35,7 @@ final class CodexEngineModel: ObservableObject {
     private var storeRoot: URL {
         FileManager.default.urls(for: .applicationSupportDirectory,
                                  in: .userDomainMask)[0]
-            .appendingPathComponent("Limitless/engines/codex")
+            .appendingPathComponent("Infinitus/engines/codex")
     }
 
     private var stateURL: URL { storeRoot.appendingPathComponent("state.json") }

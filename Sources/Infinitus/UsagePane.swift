@@ -20,7 +20,7 @@ final class UsageModel: ObservableObject {
     static let cacheURL: URL = {
         let base = FileManager.default.urls(for: .applicationSupportDirectory,
                                             in: .userDomainMask)[0]
-        return base.appendingPathComponent("Limitless/usage-cache.json")
+        return base.appendingPathComponent("Infinitus/usage-cache.json")
     }()
 
     init(cli: CswapCLI?) {

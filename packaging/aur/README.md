@@ -1,7 +1,7 @@
 # AUR packaging
 
 `PKGBUILD` for the claude-swap engine CLI — the piece of this stack that
-runs on Arch Linux (Omarchy included). The Limitless app is macOS-only.
+runs on Arch Linux (Omarchy included). The Infinitus app is macOS-only.
 
 Publishing needs an AUR account and its SSH key:
 

@@ -56,7 +56,7 @@ final class AppModel: ObservableObject {
     // The bundle on disk was rebuilt since this instance launched (the
     // dev loop, or a manual make-app.sh) — surfaced as "restart to update".
     @Published var appUpdatePending = false
-    /// A newer Limitless release than this build (About → Updates does
+    /// A newer Infinitus release than this build (About → Updates does
     /// the check; the popup chip just points there).
     @Published var appUpdateVersion: String?
     private let launchExecutableDate = AppModel.executableDate()
@@ -245,7 +245,7 @@ final class AppModel: ObservableObject {
     static let snapshotCacheURL: URL = {
         let base = FileManager.default.urls(for: .applicationSupportDirectory,
                                             in: .userDomainMask)[0]
-        return base.appendingPathComponent("Limitless/snapshot-cache.json")
+        return base.appendingPathComponent("Infinitus/snapshot-cache.json")
     }()
 
     /// The popup just opened with data already on screen (cache or an

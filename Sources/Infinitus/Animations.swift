@@ -167,7 +167,7 @@ extension View {
 // right group from the right) while the account content enters
 // (dev-tunable: slide from top / bottom / fade, with speed) -> the
 // bars play their fill-up and the active row flashes (GaugeBar
-// onAppear + firstLoad switchFlashTick) -> the Limitless title lands
+// onAppear + firstLoad switchFlashTick) -> the Infinitus title lands
 // with an exaggerated flourish (several styles to audition).
 
 struct IntroSlideIn: ViewModifier {

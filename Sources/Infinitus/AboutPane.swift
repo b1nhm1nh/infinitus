@@ -152,11 +152,11 @@ final class AppReleaseModel: ObservableObject {
     /// Popup hook: the version string when newer, nil otherwise.
     var onUpdate: ((String?) -> Void)?
     private static let api = URL(
-        string: "https://api.github.com/repos/deathemperor/limitless/releases/latest")!
+        string: "https://api.github.com/repos/deathemperor/infinitus/releases/latest")!
     private static let nightlyAPI = URL(
-        string: "https://api.github.com/repos/deathemperor/limitless/releases/tags/nightly")!
+        string: "https://api.github.com/repos/deathemperor/infinitus/releases/tags/nightly")!
     private static let caskURL = URL(
-        string: "https://raw.githubusercontent.com/deathemperor/homebrew-tap/main/Casks/limitless.rb")!
+        string: "https://raw.githubusercontent.com/deathemperor/homebrew-tap/main/Casks/infinitus.rb")!
     private let defaults = UserDefaults.standard
 
     var currentVersion: String {
@@ -267,10 +267,10 @@ final class BrewUpdater: ObservableObject {
             .deletingLastPathComponent().deletingLastPathComponent()
             .appendingPathComponent("Caskroom")
         let fm = FileManager.default
-        if fm.fileExists(atPath: caskroom.appendingPathComponent("limitless@nightly").path) {
+        if fm.fileExists(atPath: caskroom.appendingPathComponent("infinitus@nightly").path) {
             return .nightly
         }
-        if fm.fileExists(atPath: caskroom.appendingPathComponent("limitless").path) {
+        if fm.fileExists(atPath: caskroom.appendingPathComponent("infinitus").path) {
             return .stable
         }
         return .source
@@ -288,8 +288,8 @@ final class BrewUpdater: ObservableObject {
     /// The casks conflict_with each other, so the order matters.
     func move(toNightly: Bool) {
         guard !running, let brew = Self.brewPath else { return }
-        let fromCask = toNightly ? "limitless" : "limitless@nightly"
-        let toCask = toNightly ? "limitless@nightly" : "limitless"
+        let fromCask = toNightly ? "infinitus" : "infinitus@nightly"
+        let toCask = toNightly ? "infinitus@nightly" : "infinitus"
         run(brew: brew, steps: [["uninstall", "--cask", fromCask],
                                 ["install", "--cask", toCask]],
             doing: "switching to \(toCask)…")
@@ -299,8 +299,8 @@ final class BrewUpdater: ObservableObject {
     func upgrade() {
         guard !running, let brew = Self.brewPath else { return }
         let args = Self.channel == .nightly
-            ? ["reinstall", "--cask", "limitless@nightly"]
-            : ["upgrade", "--cask", "limitless"]
+            ? ["reinstall", "--cask", "infinitus@nightly"]
+            : ["upgrade", "--cask", "infinitus"]
         run(brew: brew, steps: [args], doing: "brew \(args.joined(separator: " "))…")
     }
 
@@ -333,7 +333,7 @@ final class BrewUpdater: ObservableObject {
                     let sh = Process()
                     sh.executableURL = URL(fileURLWithPath: "/bin/sh")
                     sh.arguments = ["-c",
-                        "sleep 0.8; /usr/bin/open /Applications/Limitless.app"]
+                        "sleep 0.8; /usr/bin/open /Applications/Infinitus.app"]
                     try? sh.run()
                     NSApplication.shared.terminate(nil)
                 } else {
@@ -376,7 +376,7 @@ struct AboutPane: View {
                 VStack(spacing: 5) {
                     appMark
                         .padding(.bottom, 6)
-                    Text("Limitless").font(.title2).bold()
+                    Text("Infinitus").font(.title2).bold()
                     Text(appBuild.map { "Version \(appVersion) (\($0))" }
                          ?? "Version \(appVersion)")
                         .foregroundStyle(.secondary)
@@ -408,7 +408,7 @@ struct AboutPane: View {
                         }
                     }
                 } label: {
-                    Text("Limitless.app \(appVersion) · \(brew.channelLabel)")
+                    Text("Infinitus.app \(appVersion) · \(brew.channelLabel)")
                     if let s = brew.status ?? appRelease.status {
                         Text(s).font(.caption)
                             .foregroundStyle(appRelease.updateAvailable ? Color.orange : .secondary)
@@ -458,12 +458,12 @@ struct AboutPane: View {
                 linkRow("chevron.left.forwardslash.chevron.right", "GitHub",
                         "https://github.com/deathemperor")
                 linkRow("globe", "Website", "https://huuloc.com")
-                linkRow("shippingbox", "Project — Limitless",
-                        "https://github.com/deathemperor/limitless")
+                linkRow("shippingbox", "Project — Infinitus",
+                        "https://github.com/deathemperor/infinitus")
             }
 
             Section {
-                Text("Limitless by deathemperor · MIT License")
+                Text("Infinitus by deathemperor · MIT License")
                     .font(.caption).foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity)
             }
@@ -471,13 +471,13 @@ struct AboutPane: View {
         .formStyle(.grouped)
     }
 
-    /// The real Limitless icon EVERYWHERE (user 2026-08-30): bundled runs
+    /// The real Infinitus icon EVERYWHERE (user 2026-08-30): bundled runs
     /// have it as the app icon; unbundled runs (run-unbundled.sh) pull it
-    /// from the built Limitless.app on disk (bundle id lookup, then the
+    /// from the built Infinitus.app on disk (bundle id lookup, then the
     /// repo's known path). The glyph-on-gradient card remains only as the
     /// final fallback when no built bundle exists at all.
     @ViewBuilder private var appMark: some View {
-        if let icon = Self.limitlessIcon {
+        if let icon = Self.infinitusIcon {
             Image(nsImage: icon)
                 .resizable()
                 .frame(width: 64, height: 64)
@@ -505,13 +505,14 @@ struct AboutPane: View {
         }
     }
 
-    static var limitlessIcon: NSImage? {
+    static var infinitusIcon: NSImage? {
         if Bundle.main.bundlePath.hasSuffix(".app"),
            let icon = NSApp.applicationIconImage {
             return icon
         }
-        var candidates = [FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent("death/limitless/Limitless.app").path]
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        var candidates = ["death/infinitus/Infinitus.app", "death/limitless/Infinitus.app"]
+            .map { home.appendingPathComponent($0).path }
         if let url = NSWorkspace.shared.urlForApplication(
             withBundleIdentifier: "com.huuloc.limitless") {
             candidates.insert(url.path, at: 0)

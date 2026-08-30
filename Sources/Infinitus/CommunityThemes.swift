@@ -21,9 +21,9 @@ final class CommunityThemesModel: ObservableObject {
     @Published var busy = false
 
     static let base = URL(string:
-        "https://raw.githubusercontent.com/deathemperor/limitless/main/themes/")!
+        "https://raw.githubusercontent.com/deathemperor/infinitus/main/themes/")!
     static let contributeURL = URL(string:
-        "https://github.com/deathemperor/limitless/tree/main/themes")!
+        "https://github.com/deathemperor/infinitus/tree/main/themes")!
 
     func refresh() async {
         busy = true

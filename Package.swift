@@ -2,16 +2,16 @@
 import PackageDescription
 
 let package = Package(
-    name: "Limitless",
+    name: "Infinitus",
     platforms: [.macOS(.v14)],
     targets: [
         // Pure layer: models, feed decoding, supervisor state machine.
         // No AppKit import — everything here runs under `swift test`.
         .target(name: "CswapCore", path: "Sources/CswapCore"),
         .executableTarget(
-            name: "Limitless",
+            name: "Infinitus",
             dependencies: ["CswapCore"],
-            path: "Sources/Limitless"
+            path: "Sources/Infinitus"
         ),
         .testTarget(
             name: "CswapCoreTests",

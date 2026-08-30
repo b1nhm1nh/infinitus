@@ -14,11 +14,11 @@ public enum CswapLocator {
         candidates: [String]? = nil,
         exists: (String) -> Bool = { FileManager.default.isExecutableFile(atPath: $0) }
     ) -> String? {
-        // Dev override: LIMITLESS_CSWAP=/path pins the binary; the empty
+        // Dev override: INFINITUS_CSWAP=/path pins the binary; the empty
         // string simulates a machine with no engine (onboarding testing —
         // a $HOME override can't fake it, NSHomeDirectory ignores $HOME).
         if candidates == nil,
-           let forced = ProcessInfo.processInfo.environment["LIMITLESS_CSWAP"] {
+           let forced = ProcessInfo.processInfo.environment["INFINITUS_CSWAP"] {
             return forced.isEmpty ? nil : (exists(forced) ? forced : nil)
         }
         return (candidates ?? defaultCandidates()).first(where: exists)

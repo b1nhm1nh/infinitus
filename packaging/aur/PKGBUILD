@@ -1,5 +1,5 @@
 # Maintainer: deathemperor <deathemperor1st@gmail.com>
-# The claude-swap engine CLI (upstream PyPI package, MIT). The Limitless
+# The claude-swap engine CLI (upstream PyPI package, MIT). The Infinitus
 # menu bar app itself is macOS-only; on Arch (Omarchy included) this CLI
 # is the piece that runs — `cswap` in a terminal, same account switching.
 pkgname=claude-swap

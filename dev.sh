@@ -1,5 +1,5 @@
 #!/bin/sh
-# Dev loop: rebuild the bundle and relaunch Limitless whenever a source
+# Dev loop: rebuild the bundle and relaunch Infinitus whenever a source
 # file changes. Closest thing to hot reload that fits headless CLI dev —
 # make-app.sh keeps the same bundle path, so notification/login grants
 # survive each relaunch. entr, not watchexec: watchexec 2.7 fails to
@@ -24,8 +24,8 @@ while :; do
         if [ -n "${UNBUNDLED:-}" ]; then
             ./run-unbundled.sh
         else
-            pkill -x Limitless
-            open Limitless.app
+            pkill -x Infinitus
+            open Infinitus.app
         fi
         echo "== relaunched $(date +%H:%M:%S)"'
 done

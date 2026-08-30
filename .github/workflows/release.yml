@@ -16,14 +16,14 @@ jobs:
       - name: Zip
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
-          ditto -c -k --keepParent Limitless.app "Limitless-${VERSION}.zip"
+          ditto -c -k --keepParent Infinitus.app "Infinitus-${VERSION}.zip"
       - name: Publish release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
-          gh release create "$GITHUB_REF_NAME" "Limitless-${VERSION}.zip" \
-            --title "Limitless $GITHUB_REF_NAME" --generate-notes
+          gh release create "$GITHUB_REF_NAME" "Infinitus-${VERSION}.zip" \
+            --title "Infinitus $GITHUB_REF_NAME" --generate-notes
       # Auto-bump the tap cask (CodexBar-style release->tap dispatch, done
       # here with a repo-scoped deploy key instead of a PAT).
       - name: Bump Homebrew cask
@@ -31,15 +31,15 @@ jobs:
           TAP_DEPLOY_KEY: ${{ secrets.TAP_DEPLOY_KEY }}
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
-          SHA=$(shasum -a 256 "Limitless-${VERSION}.zip" | cut -d' ' -f1)
+          SHA=$(shasum -a 256 "Infinitus-${VERSION}.zip" | cut -d' ' -f1)
           mkdir -p ~/.ssh && ssh-keyscan github.com >> ~/.ssh/known_hosts
           echo "$TAP_DEPLOY_KEY" > ~/.ssh/tap_key && chmod 600 ~/.ssh/tap_key
           export GIT_SSH_COMMAND="ssh -i ~/.ssh/tap_key -o IdentitiesOnly=yes"
           git clone git@github.com:deathemperor/homebrew-tap.git tap
           cd tap
           sed -i '' -e "s/^  version \".*\"/  version \"${VERSION}\"/" \
-                    -e "s/^  sha256 \".*\"/  sha256 \"${SHA}\"/" Casks/limitless.rb
-          git -c user.name="limitless-release" \
+                    -e "s/^  sha256 \".*\"/  sha256 \"${SHA}\"/" Casks/infinitus.rb
+          git -c user.name="infinitus-release" \
               -c user.email="actions@github.com" \
-              commit -am "limitless ${VERSION}"
+              commit -am "infinitus ${VERSION}"
           git push

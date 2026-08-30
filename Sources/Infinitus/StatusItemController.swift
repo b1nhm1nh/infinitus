@@ -28,7 +28,7 @@ struct SettingsTab {
     /// regular tab with the tinted tile.
     var provider: ProviderBadge? = nil
     /// A real image instead of the SF-symbol tile (About wears the
-    /// actual Limitless icon, user 2026-08-30).
+    /// actual Infinitus icon, user 2026-08-30).
     var image: NSImage? = nil
     let view: AnyView
 }
@@ -87,7 +87,7 @@ final class StatusItemController {
         item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         item.behavior = []                       // not user-removable
         item.button?.title = model.title
-        // The Limitless glyph rides as a template image so the bar can
+        // The Infinitus glyph rides as a template image so the bar can
         // tint it; the title is text-only percentages now (MenuBarGlyph
         // replaced the "⇄" text prefix, user request 2026-08-30).
         item.button?.image = MenuBarGlyph.image
@@ -345,8 +345,8 @@ final class StatusItemController {
                               #selector(menuPopOut)))
         menu.addItem(.separator())
         menu.addItem(menuItem("Settings…", #selector(menuSettings)))
-        menu.addItem(menuItem("Restart Limitless", #selector(menuRestart)))
-        menu.addItem(menuItem("Quit Limitless", #selector(menuQuit)))
+        menu.addItem(menuItem("Restart Infinitus", #selector(menuRestart)))
+        menu.addItem(menuItem("Quit Infinitus", #selector(menuQuit)))
 
         item.menu = menu
         item.button?.performClick(nil)
@@ -375,7 +375,7 @@ final class StatusItemController {
 
     /// Same content in a real window. No popup button opens this any more
     /// (Pin now holds the popover itself); it remains the guaranteed way in
-    /// via `open Limitless.app` -> applicationShouldHandleReopen when the
+    /// via `open Infinitus.app` -> applicationShouldHandleReopen when the
     /// status item is hidden or the bar refuses it.
     func showPinnedWindow(activate: Bool = true) {
         if pinned == nil {
@@ -396,9 +396,9 @@ final class StatusItemController {
             // anchored panel note): swap the content view for a wrapped
             // one; the controller stays retained by the window.
             w.contentView = GlassContainerView.wrap(host.view)
-            w.title = "Limitless"
+            w.title = "Infinitus"
             // Full-size content + hidden system title: the centered
-            // "Limitless" header is drawn by PinnedRoot instead (the
+            // "Infinitus" header is drawn by PinnedRoot instead (the
             // system title sits leading-aligned next to where the traffic
             // lights were; user wants it centered).
             w.styleMask = [.titled, .closable, .resizable, .fullSizeContentView]
@@ -507,7 +507,7 @@ final class StatusItemController {
             // anchored panel note): swap the content view for a wrapped
             // one; the controller stays retained by the window.
             w.contentView = GlassContainerView.wrap(host.view)
-            w.title = "Limitless"
+            w.title = "Infinitus"
             w.styleMask = [.titled, .closable, .resizable]
             w.toolbarStyle = .unified
             w.isReleasedWhenClosed = false
@@ -571,7 +571,7 @@ private struct PinnedRoot: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            LimitlessHeader(model: model)
+            InfinitusHeader(model: model)
                 .frame(height: 30)
             MenuContent(model: model, usage: usage, showHeader: false)
         }

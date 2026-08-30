@@ -1,4 +1,4 @@
-# Limitless — project rules
+# Infinitus — project rules
 
 Native macOS menu bar app for the claude-swap engine. Split out of
 `~/death/claude-swap/swift/CswapBar` on 2026-08-29 with history.
@@ -9,8 +9,11 @@ Native macOS menu bar app for the claude-swap engine. Split out of
   Never read engine internals (`~/.claude-swap-backup/*`). Reading
   `~/.claude/settings.json` (Claude Code's file) is fine.
 - **Bundle id is `com.huuloc.limitless`** — the one deliberate change,
-  done 2026-08-30 (user-approved). App Support moved to `Limitless/`
-  (copy-migration from `CswapBar/`; legacy dir left for rollback).
+  done 2026-08-30 (user-approved). The app was renamed Limitless →
+  Infinitus on 2026-08-30 (limitless.ai collision) WITHOUT touching the
+  id. App Support is `Infinitus/` (copy-migrated from `Limitless/`,
+  which came from `CswapBar/`; legacy dirs left for rollback). The
+  local checkout may still live at `~/death/limitless`.
   Notification Center and login-item grants key on the id and must be
   re-granted once under it. Never change the id casually again — the
   2026-08-29 casual change cost a day of ControlCenter-ban debugging.
@@ -54,5 +57,5 @@ Native macOS menu bar app for the claude-swap engine. Split out of
   rows intro slides a whole grid row.
 
 ## Build / run / test
-`./make-app.sh && open Limitless.app` · `swift test` · `./dev.sh` (entr)
+`./make-app.sh && open Infinitus.app` · `swift test` · `./dev.sh` (entr)
 · `./run-unbundled.sh` (menu bar wedge workaround).

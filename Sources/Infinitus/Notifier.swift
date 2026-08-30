@@ -28,15 +28,15 @@ enum Notifier {
                     DispatchQueue.main.async {
                         lastAuthError = "notifications degraded to osascript: \(error.localizedDescription)"
                     }
-                    NSLog("Limitless: UN auth failed, using osascript: \(error)")
+                    NSLog("Infinitus: UN auth failed, using osascript: \(error)")
                 } else if !granted {
                     unUsable = false
                     DispatchQueue.main.async {
                         lastAuthError = "notifications denied in System Settings; using osascript"
                     }
-                    NSLog("Limitless: UN auth not granted")
+                    NSLog("Infinitus: UN auth not granted")
                 } else {
-                    NSLog("Limitless: UN auth granted — native notifications active")
+                    NSLog("Infinitus: UN auth granted — native notifications active")
                 }
             }
     }
@@ -61,7 +61,7 @@ enum Notifier {
                 // Delivery refused (unauthorized, unregistered bundle…) —
                 // never drop the notification: resend via osascript.
                 unUsable = false
-                NSLog("Limitless: UN post failed, resending via osascript: \(error)")
+                NSLog("Infinitus: UN post failed, resending via osascript: \(error)")
                 postOsascript(title: title, body: body)
             }
         }

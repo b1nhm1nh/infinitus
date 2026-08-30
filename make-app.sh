@@ -1,20 +1,20 @@
 #!/bin/sh
-# Assemble Limitless.app from the release build (parity checklist: proper
+# Assemble Infinitus.app from the release build (parity checklist: proper
 # notification identity). LSUIElement keeps it out of the Dock; the bundle
 # identifier is what lets UNUserNotificationCenter work (Notifier.swift).
 set -eu
 cd "$(dirname "$0")"
 
 swift build -c release
-BIN="$(swift build -c release --show-bin-path)/Limitless"
-APP=Limitless.app
+BIN="$(swift build -c release --show-bin-path)/Infinitus"
+APP=Infinitus.app
 
 VERSION="$(cat VERSION 2>/dev/null | tr -d '[:space:]')"
 SHA="$(git rev-parse --short HEAD 2>/dev/null || echo dev)"
 
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
-cp "$BIN" "$APP/Contents/MacOS/Limitless"
+cp "$BIN" "$APP/Contents/MacOS/Infinitus"
 [ -f AppIcon.icns ] || ./make-icon.sh
 cp AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
 cat > "$APP/Contents/Info.plist" <<PLIST
@@ -22,7 +22,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-    <key>CFBundleExecutable</key><string>Limitless</string>
+    <key>CFBundleExecutable</key><string>Infinitus</string>
     <!-- com.huuloc.limitless: the ONE deliberate id change (2026-08-30,
          user-approved). Notification and login-item grants key on the id —
          re-grant both after this. Prefs migrate in-app from the old
@@ -30,7 +30,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
          from a persistent macOS 26 ControlCenter per-id ban acquired in
          the 2026-08-29 MenuBarExtra insert/evict war). -->
     <key>CFBundleIdentifier</key><string>com.huuloc.limitless</string>
-    <key>CFBundleName</key><string>Limitless</string>
+    <key>CFBundleName</key><string>Infinitus</string>
     <key>CFBundlePackageType</key><string>APPL</string>
     <key>CFBundleShortVersionString</key><string>${VERSION:-0.0.0}</string>
     <key>CFBundleVersion</key><string>${SHA}</string>

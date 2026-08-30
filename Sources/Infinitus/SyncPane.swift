@@ -14,7 +14,7 @@ struct SyncPane: View {
                 Toggle("Sync settings via iCloud Drive", isOn: $sync.enabled)
                     .help("Display prefs, custom themes, and set cswap "
                           + "engine settings travel through one JSON file "
-                          + "in iCloud Drive/Limitless. Never credentials "
+                          + "in iCloud Drive/Infinitus. Never credentials "
                           + "or push secrets. Last writer wins.")
                 if let status = sync.status {
                     Text(status).font(.caption).foregroundStyle(.secondary)
@@ -41,7 +41,7 @@ struct SyncPane: View {
     private func runExportPanel() {
         let panel = NSSavePanel()
         panel.allowedContentTypes = [.json]
-        panel.nameFieldStringValue = "limitless-settings.json"
+        panel.nameFieldStringValue = "infinitus-settings.json"
         guard panel.runModal() == .OK, let url = panel.url else { return }
         Task { await sync.export(to: url) }
     }
