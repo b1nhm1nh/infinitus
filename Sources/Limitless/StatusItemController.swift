@@ -183,8 +183,20 @@ final class StatusItemController {
         guard let panel = anchored, size.width > 1, size.height > 1,
               size.width < 20_000, size.height < 20_000 else { return }
         guard let frame = anchoredFrame(for: size) else { return }
-        if frame != panel.frame {
+        guard frame != panel.frame else { return }
+        // onGeometryChange reports the END size once, not per animation
+        // frame — applying it instantly snapped the panel ahead of the
+        // still-easing content (intermittent container jump, user
+        // screenshots ×2). Glide the panel over the same ~0.3s the
+        // SwiftUI width changes use; retargeting mid-glide is fine.
+        if !panel.isVisible {
             panel.setFrame(frame, display: true)
+        } else {
+            NSAnimationContext.runAnimationGroup { ctx in
+                ctx.duration = 0.28
+                ctx.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+                panel.animator().setFrame(frame, display: true)
+            }
         }
     }
 
