@@ -1376,7 +1376,7 @@ struct AccountGrid: View {
             GeometryReader { geo in
                 if let row = Self.union(anchors.map { geo[$0] }) {
                     Rectangle()
-                        .fill(Color.accentColor.opacity(0.30))
+                        .fill(Color.accentColor.opacity(0.30 * model.fillScale))
                         .frame(width: geo.size.width, height: row.height + 8)
                         .offset(y: row.minY - 4)
                 }
@@ -1451,7 +1451,7 @@ struct AccountStack: View {
         .background {
             if account.active {
                 RoundedRectangle(cornerRadius: 4)
-                    .fill(Color.accentColor.opacity(0.26))
+                    .fill(Color.accentColor.opacity(0.26 * model.fillScale))
                     .padding(.horizontal, -4)
             }
         }
@@ -1525,12 +1525,12 @@ struct AccountStack: View {
                 .background {
                     if account.active {
                         RoundedRectangle(cornerRadius: 8)
-                            .fill(Color.accentColor.opacity(0.26))
+                            .fill(Color.accentColor.opacity(0.26 * model.fillScale))
                             .overlay(RoundedRectangle(cornerRadius: 8)
                                 .strokeBorder(Color.accentColor.opacity(0.7)))
                     } else {
                         RoundedRectangle(cornerRadius: 8)
-                            .fill(Color.primary.opacity(0.07))
+                            .fill(Color.primary.opacity(0.07 * model.fillScale))
                             .overlay(RoundedRectangle(cornerRadius: 8)
                                 .strokeBorder(Color.primary.opacity(0.12)))
                     }

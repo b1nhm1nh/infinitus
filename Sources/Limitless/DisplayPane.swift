@@ -62,7 +62,7 @@ struct DisplayPane: View {
                      + "focus.")
                     .font(.caption).foregroundStyle(.secondary)
             }
-            Toggle("Compact popup (hide actions, event log, and history)",
+            Toggle("Compact popup (one-line accounts, icon controls)",
                    isOn: $model.compactRows)
             Toggle("Show menu bar icon", isOn: $model.menuBarIconShown)
                 .help("Hide lasts until quit — it always returns on the next "

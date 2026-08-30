@@ -70,6 +70,12 @@ final class AppModel: ObservableObject {
     // key state flapped (user 2026-08-30: "another state that randomly
     // transition"). Key name kept for existing prefs.
     @Published var glassFocused: Double { didSet { defaults.set(glassFocused, forKey: "glass_focused") } }
+    /// Content-fill scale for the transparency dial. Once the chrome
+    /// went pure at max (measured: body gaps match the backdrop's
+    /// luminance), the card/band fills were what still blocked the
+    /// backdrop (user 2026-08-30: "max transparency doesn't make glass
+    /// transparency that much") — so they thin with the dial too.
+    var fillScale: Double { 1 - 0.6 * glassFocused }
     // Deliberately NOT persisted: if a hidden icon survived a relaunch there
     // would be no UI left to unhide it from (the Settings window is only
     // reachable through the popup). Hiding lasts until quit.
