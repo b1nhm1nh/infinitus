@@ -54,6 +54,14 @@ struct DisplayPane: View {
                 Text("Extra large").tag("xlarge")
                 Text("Huge").tag("huge")
             }
+            Section("Popup glass") {
+                glassSlider("Focused", value: $model.glassFocused)
+                glassSlider("Out of focus", value: $model.glassUnfocused)
+                Text("Material strength per focus state — lower is more "
+                     + "transparent. Out-of-focus glass renders frostier, "
+                     + "so it gets its own dial.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
             Toggle("Compact popup (hide actions, event log, and history)",
                    isOn: $model.compactRows)
             Toggle("Show menu bar icon", isOn: $model.menuBarIconShown)
@@ -130,6 +138,20 @@ struct DisplayPane: View {
 
     /// Opens themes.json in the default editor, writing the starter
     /// template first if the file doesn't exist yet.
+    private func glassSlider(_ label: String,
+                             value: Binding<Double>) -> some View {
+        LabeledContent(label) {
+            HStack {
+                Slider(value: value, in: 0...1)
+                    .frame(width: 180)
+                Text("\(Int(value.wrappedValue * 100))%")
+                    .font(.caption).monospacedDigit()
+                    .foregroundStyle(.secondary)
+                    .frame(width: 36, alignment: .trailing)
+            }
+        }
+    }
+
     private func openThemesFile() {
         let url = RowTheme.customThemesURL()
         if !FileManager.default.fileExists(atPath: url.path) {

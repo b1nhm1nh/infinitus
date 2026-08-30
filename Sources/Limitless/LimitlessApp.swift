@@ -143,9 +143,11 @@ struct LimitlessApp: App {
                     image: AboutPane.limitlessIcon,
                     view: AnyView(AboutPane(model: updateModel))),
         // Providers under everything, CodexBar-style (user 2026-08-30).
-        SettingsTab(title: "Claude", symbol: "asterisk",
+        // The engine is cswap; Claude is what it drives (user 2026-08-30:
+        // "claude is not an engine, cswap is").
+        SettingsTab(title: "cswap", symbol: "asterisk",
                     keywords: ["engine", "auto switch", "interval", "config",
-                               "threshold", "rotate", "cswap", "provider"],
+                               "threshold", "rotate", "claude", "provider"],
                     provider: ProviderBadge(live: model.engineState.isRunning),
                     view: AnyView(ClaudeEnginePane(model: model,
                                                    settings: settingsModel))),

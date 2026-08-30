@@ -34,10 +34,13 @@ final class SettingsSyncModel: ObservableObject {
         "push_sessions_done", "push_all_dead", "push_last_alive",
     ]
     static let intKeys: Set<String> = ["refresh_interval"]
+    static let doubleKeys: Set<String> = ["glass_focused", "glass_unfocused"]
     static let stringKeys: Set<String> = [
         "title_pct", "gamification_style", "popup_layout", "popup_text_size",
     ]
-    static var appKeys: Set<String> { boolKeys.union(intKeys).union(stringKeys) }
+    static var appKeys: Set<String> {
+        boolKeys.union(intKeys).union(doubleKeys).union(stringKeys)
+    }
 
     init() {
         enabled = UserDefaults.standard.bool(forKey: "icloud_sync")
@@ -134,6 +137,8 @@ final class SettingsSyncModel: ObservableObject {
                 app[key] = .bool(defaults.bool(forKey: key))
             } else if Self.intKeys.contains(key) {
                 app[key] = .number(Double(defaults.integer(forKey: key)))
+            } else if Self.doubleKeys.contains(key) {
+                app[key] = .number(defaults.double(forKey: key))
             } else if let s = defaults.string(forKey: key) {
                 app[key] = .string(s)
             }
@@ -151,7 +156,9 @@ final class SettingsSyncModel: ObservableObject {
         for (key, value) in snap.app where Self.appKeys.contains(key) {
             switch value {
             case .bool(let b): defaults.set(b, forKey: key)
-            case .number(let n): defaults.set(Int(n), forKey: key)
+            case .number(let n):
+                if Self.doubleKeys.contains(key) { defaults.set(n, forKey: key) }
+                else { defaults.set(Int(n), forKey: key) }
             case .string(let s): defaults.set(s, forKey: key)
             default: break
             }
