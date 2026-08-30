@@ -50,6 +50,25 @@
   re-checks `enabled` after its await before any write.
 
 ## Open
+- Auto-order of accounts (user 2026-08-30: "setting to enable auto
+  order of account, build auto order mechanism"): a toggle, and a
+  mechanism that keeps the fleet sorted (headroom-first? soonest-reset
+  last?) via `cswap reorder` — engine command exists, policy TBD.
+- Rename: "Limitless" collides with limitless.ai (user 2026-08-30).
+  Candidates checked for brew/GitHub/domain collisions (see the
+  2026-08-30 report); waiting on the pick. Cost of a rename: repo +
+  tap casks + `brew` migration for installed users, README/badges,
+  bundle id stays `com.huuloc.limitless` unless explicitly changed
+  (the id rule in CLAUDE.md).
+- Resume/rc delivery beyond cmux (engine-side, ~/death/claude-swap):
+  the PTY channel is cmux-only; herdr (`herdr agent prompt` /
+  `pane process-info` maps pane → claude pid — verified) and tmux
+  (`send-keys` + `#{pane_pid}` descendant walk) are feasible mirrors
+  of cmux_control.py; Ghostty has no injection API (socket only).
+  `/rc` re-arm has NO fallback outside cmux. Peer-socket resume
+  verified 2026-08-30 into Ghostty and tmux test sessions.
+- Linux is untested: the claude-swap formula + PKGBUILD only ran on
+  macOS (README says so).
 - ~~Next-candidate indicator "seems missing"~~ → real bug, engine-side:
   the advisory `_next_switch_candidate` counted the spend-cap pct in its
   >=100 "dead" rule, but spend is an estimate and the real ranking

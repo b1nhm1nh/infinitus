@@ -56,6 +56,9 @@ final class AppModel: ObservableObject {
     // The bundle on disk was rebuilt since this instance launched (the
     // dev loop, or a manual make-app.sh) — surfaced as "restart to update".
     @Published var appUpdatePending = false
+    /// A newer Limitless release than this build (About → Updates does
+    /// the check; the popup chip just points there).
+    @Published var appUpdateVersion: String?
     private let launchExecutableDate = AppModel.executableDate()
     private var supervisor: EngineSupervisor?
     private var refreshTask: Task<Void, Never>?

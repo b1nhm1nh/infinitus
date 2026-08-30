@@ -139,55 +139,105 @@ final class UpdateModel: ObservableObject {
     }
 }
 
-/// The app's own release channel (user "make it so", 2026-08-30):
-/// GitHub releases on deathemperor/limitless. Until the repo is pushed
-/// and a release exists the check reports "no releases yet" — the
-/// machinery is live, the feed is what's pending. Developers keep
-/// building from source; releases are the distribution path.
+/// The app's own release channel. Like CodexBar (Sparkle off for brew
+/// installs — "those installs should be updated via brew"), the app never
+/// self-replaces: a Homebrew install checks what `brew upgrade` WOULD
+/// install (the tap's cask file) and hands off to brew; a source or zip
+/// install just gets the GitHub release check.
 @MainActor
 final class AppReleaseModel: ObservableObject {
     @Published var latest: String?
+    @Published var updateAvailable = false
     @Published var status: String?
+    /// Popup hook: the version string when newer, nil otherwise.
+    var onUpdate: ((String?) -> Void)?
     private static let api = URL(
         string: "https://api.github.com/repos/deathemperor/limitless/releases/latest")!
-
     private static let nightlyAPI = URL(
         string: "https://api.github.com/repos/deathemperor/limitless/releases/tags/nightly")!
+    private static let caskURL = URL(
+        string: "https://raw.githubusercontent.com/deathemperor/homebrew-tap/main/Casks/limitless.rb")!
+    private let defaults = UserDefaults.standard
 
-    func check(currentVersion: String, nightly: Bool = false) async {
+    var currentVersion: String {
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString")
+            as? String ?? "dev"
+    }
+    var nightly: Bool { defaults.string(forKey: "update_channel") == "nightly" }
+
+    /// Launch + every 6h: check when a day has passed — same cadence as
+    /// the engine's own checker; the popup chip is what surfaces it.
+    func startAutoCheck() {
+        Task { [weak self] in
+            while !Task.isCancelled {
+                if let self {
+                    let last = self.defaults.double(forKey: "app_update_last_check")
+                    if Date().timeIntervalSince1970 - last > 24 * 3600 {
+                        await self.check()
+                    }
+                }
+                try? await Task.sleep(nanoseconds: 6 * 3600 * 1_000_000_000)
+                if self == nil { return }
+            }
+        }
+    }
+
+    func check() async {
         status = "checking…"
+        updateAvailable = false
         struct Release: Decodable {
             let tag_name: String
-            let html_url: String
             let name: String?
         }
         do {
-            var req = URLRequest(url: nightly ? Self.nightlyAPI : Self.api)
-            req.setValue("application/vnd.github+json",
-                         forHTTPHeaderField: "Accept")
-            let (data, resp) = try await URLSession.shared.data(for: req)
-            if (resp as? HTTPURLResponse)?.statusCode == 404 {
-                status = "no releases published yet — this build came from source"
-                return
-            }
-            let release = try JSONDecoder().decode(Release.self, from: data)
-            latest = release.tag_name
             if nightly {
+                let (data, resp) = try await fetch(Self.nightlyAPI)
+                if resp == 404 { status = "no nightly published yet"; return }
+                let release = try JSONDecoder().decode(Release.self, from: data)
+                latest = release.tag_name
                 // Rolling tag — no version to compare; show what's current.
                 status = "latest: \(release.name ?? "nightly") — reinstall to update"
                 return
             }
-            let tag = release.tag_name.hasPrefix("v")
-                ? String(release.tag_name.dropFirst()) : release.tag_name
-            if let a = PackageVersion(currentVersion), let b = PackageVersion(tag),
-               a < b {
-                status = "\(release.tag_name) is available on GitHub"
+            let tag: String
+            let via: String
+            if BrewUpdater.channel == .stable {
+                let (data, _) = try await fetch(Self.caskURL)
+                let rb = String(decoding: data, as: UTF8.self)
+                guard let m = rb.firstMatch(of: #/version "([^"]+)"/#) else {
+                    status = "could not read the cask version"; return
+                }
+                tag = String(m.1); via = "via Homebrew"
             } else {
-                status = "up to date (latest release: \(release.tag_name))"
+                let (data, resp) = try await fetch(Self.api)
+                if resp == 404 {
+                    status = "no releases published yet — this build came from source"
+                    return
+                }
+                let release = try JSONDecoder().decode(Release.self, from: data)
+                tag = release.tag_name.hasPrefix("v")
+                    ? String(release.tag_name.dropFirst()) : release.tag_name
+                via = "on GitHub"
             }
+            latest = tag
+            defaults.set(Date().timeIntervalSince1970, forKey: "app_update_last_check")
+            if let a = PackageVersion(currentVersion), let b = PackageVersion(tag), a < b {
+                updateAvailable = true
+                status = "\(tag) is available \(via)"
+            } else {
+                status = "up to date (latest: \(tag))"
+            }
+            onUpdate?(updateAvailable ? tag : nil)
         } catch {
             status = "release check failed: \(error.localizedDescription)"
         }
+    }
+
+    private func fetch(_ url: URL) async throws -> (Data, Int) {
+        var req = URLRequest(url: url)
+        req.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
+        let (data, resp) = try await URLSession.shared.data(for: req)
+        return (data, (resp as? HTTPURLResponse)?.statusCode ?? 0)
     }
 }
 
@@ -296,8 +346,7 @@ final class BrewUpdater: ObservableObject {
 /// tagline), an Updates group, full-row link rows with leading icons and a
 /// trailing arrow, and a license footer.
 struct AboutPane: View {
-    @ObservedObject var model: UpdateModel
-    @StateObject private var appRelease = AppReleaseModel()
+    @ObservedObject var appRelease: AppReleaseModel
     @StateObject private var brew = BrewUpdater()
     @AppStorage("update_channel") private var updateChannel = "stable"
     @Environment(\.openURL) private var openURL
@@ -343,29 +392,24 @@ struct AboutPane: View {
 
             Section("Updates") {
                 LabeledContent {
-                    Button(appRelease.status == nil ? "Check GitHub Releases"
-                           : "Recheck") {
-                        Task { await appRelease.check(currentVersion: appVersion,
-                                                      nightly: updateChannel == "nightly") }
-                    }
-                } label: {
-                    Text("Limitless.app \(appVersion)")
-                    if let s = appRelease.status {
-                        Text(s).font(.caption).foregroundStyle(.secondary)
-                    }
-                }
-                LabeledContent {
-                    if BrewUpdater.channel != .source {
-                        Button(BrewUpdater.channel == .nightly
-                               ? "Reinstall latest nightly" : "Update via Homebrew") {
-                            brew.upgrade()
+                    HStack {
+                        if appRelease.updateAvailable, BrewUpdater.channel == .stable {
+                            Button("Update via Homebrew") { brew.upgrade() }
+                                .disabled(brew.running)
+                                .buttonStyle(.borderedProminent)
+                        } else if BrewUpdater.channel == .nightly {
+                            Button("Reinstall latest nightly") { brew.upgrade() }
+                                .disabled(brew.running)
                         }
-                        .disabled(brew.running)
+                        Button(appRelease.status == nil ? "Check for Updates…" : "Recheck") {
+                            Task { await appRelease.check() }
+                        }
                     }
                 } label: {
-                    Text("Installed via \(brew.channelLabel)")
-                    if let s = brew.status {
-                        Text(s).font(.caption).foregroundStyle(.secondary)
+                    Text("Limitless.app \(appVersion) · \(brew.channelLabel)")
+                    if let s = brew.status ?? appRelease.status {
+                        Text(s).font(.caption)
+                            .foregroundStyle(appRelease.updateAvailable ? Color.orange : .secondary)
                     }
                 }
                 Picker("Update channel", selection: $updateChannel) {
@@ -373,10 +417,7 @@ struct AboutPane: View {
                     Text("Nightly").tag("nightly")
                 }
                 .pickerStyle(.segmented)
-                .onChange(of: updateChannel) {
-                    Task { await appRelease.check(currentVersion: appVersion,
-                                                  nightly: updateChannel == "nightly") }
-                }
+                .onChange(of: updateChannel) { Task { await appRelease.check() } }
                 if BrewUpdater.channel == .stable, updateChannel == "nightly" {
                     Button("Switch the install to the nightly track") {
                         brew.move(toNightly: true)
@@ -387,17 +428,10 @@ struct AboutPane: View {
                         brew.move(toNightly: false)
                     }
                     .disabled(brew.running)
-                } else if BrewUpdater.channel == .source {
-                    Text("Source builds only use the channel for the release "
-                         + "check; the brew tracks are limitless and "
-                         + "limitless@nightly.")
-                        .font(.caption).foregroundStyle(.secondary)
                 }
-                Text("App releases ship through Homebrew "
-                     + "(brew install --cask deathemperor/tap/limitless — "
-                     + "@nightly for the daily channel) and GitHub releases; "
-                     + "building from source is the developer path. Engine "
-                     + "updates moved to Engines → cswap.")
+                Text("Homebrew installs update through brew — the app never "
+                     + "replaces itself (CodexBar does the same). Source builds "
+                     + "and zip installs only get the release check.")
                     .font(.caption).foregroundStyle(.secondary)
             }
 
@@ -424,9 +458,6 @@ struct AboutPane: View {
                 linkRow("globe", "Website", "https://huuloc.com")
                 linkRow("shippingbox", "Project — Limitless",
                         "https://github.com/deathemperor/limitless")
-                linkRow("gearshape.2", "Engine — claude-swap",
-                        "https://github.com/deathemperor/claude-swap")
-                linkRow("doc.text", "Release notes", changelogURL.absoluteString)
             }
 
             Section {
@@ -507,13 +538,5 @@ struct AboutPane: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-    }
-
-    private var changelogURL: URL {
-        // Release notes live on the upstream repo (the PyPI package's home).
-        if model.updateAvailable, let latest = model.latest {
-            return URL(string: "https://github.com/realiti4/claude-swap/releases/tag/v\(latest)")!
-        }
-        return URL(string: "https://github.com/realiti4/claude-swap/releases")!
     }
 }

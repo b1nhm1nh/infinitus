@@ -50,6 +50,7 @@ struct LimitlessApp: App {
     @StateObject private var notifyModel: NotifyModel
     @StateObject private var usageModel: UsageModel
     @StateObject private var updateModel: UpdateModel
+    @StateObject private var appRelease: AppReleaseModel
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
 
     init() {
@@ -67,6 +68,10 @@ struct LimitlessApp: App {
         _updateModel = StateObject(wrappedValue: update)
         update.restartEngine = { [weak model] in model?.restartEngine() }
         update.startAutoCheck()
+        let release = AppReleaseModel()
+        _appRelease = StateObject(wrappedValue: release)
+        release.onUpdate = { [weak model] in model?.appUpdateVersion = $0 }
+        release.startAutoCheck()
         let reliabilityModel = ResumeReliabilityModel()
         _reliabilityModel = StateObject(wrappedValue: reliabilityModel)
         // Warm the multi-second transcript scan at launch so the Usage tab
@@ -80,7 +85,7 @@ struct LimitlessApp: App {
                         model: model, settingsModel: settingsModel,
                         reliabilityModel: reliabilityModel,
                         notifyModel: notifyModel, usageModel: usage,
-                        updateModel: update)
+                        updateModel: update, appRelease: release)
                 })
         }
         model.startFeeds()
@@ -103,7 +108,7 @@ struct LimitlessApp: App {
                 model: model, settingsModel: settingsModel,
                 reliabilityModel: reliabilityModel,
                 notifyModel: notifyModel, usageModel: usageModel,
-                updateModel: updateModel))
+                updateModel: updateModel, appRelease: appRelease))
         }
     }
 }
@@ -118,7 +123,7 @@ struct LimitlessApp: App {
     model: AppModel, settingsModel: SettingsModel,
     reliabilityModel: ResumeReliabilityModel,
     notifyModel: NotifyModel, usageModel: UsageModel,
-    updateModel: UpdateModel
+    updateModel: UpdateModel, appRelease: AppReleaseModel
 ) -> [SettingsTab] {
     // Ordered by how often each pane is reached for (user 2026-08-30:
     // "reorder the settings"): everyday looks first, plumbing after,
@@ -155,7 +160,7 @@ struct LimitlessApp: App {
         SettingsTab(title: "About", symbol: "info.circle", tint: .indigo,
                     keywords: ["update", "version", "license", "links"],
                     image: AboutPane.limitlessIcon,
-                    view: AnyView(AboutPane(model: updateModel))),
+                    view: AnyView(AboutPane(appRelease: appRelease))),
         // Providers under everything, CodexBar-style (user 2026-08-30).
         // The engine is cswap; Claude is what it drives (user 2026-08-30:
         // "claude is not an engine, cswap is").
@@ -524,6 +529,13 @@ struct MenuContent: View {
                                 }
                                 .help("A newer build is on disk")
                             }
+                            if let v = model.appUpdateVersion {
+                                Button { model.showSettings?() } label: {
+                                    Label("Update \(v)", systemImage: "arrow.down.circle.fill")
+                                        .foregroundStyle(.orange)
+                                }
+                                .help("Limitless \(v) is out — About → Updates")
+                            }
                             if !model.footerActionsHidden {
                                 Button {
                                     model.showSettings?()
@@ -649,6 +661,13 @@ struct MenuContent: View {
             }
             .instantTip("Restart to update")
         }
+        if let v = model.appUpdateVersion {
+            Button { model.showSettings?() } label: {
+                Image(systemName: "arrow.down.circle.fill")
+                    .foregroundStyle(.orange)
+            }
+            .instantTip("Limitless \(v) is out — About → Updates")
+        }
         engineBadgeIcon
         if !model.footerActionsHidden {
         Button { model.relaunchApp() } label: {
@@ -697,6 +716,7 @@ struct MenuContent: View {
         if !model.footerActionsHidden { n += 7 }    // 5 actions + restart + quit
         if let live = model.liveSessions, live.busy > 0 { n += 1 }
         if model.appUpdatePending { n += 1 }
+        if model.appUpdateVersion != nil { n += 1 }
         return n
     }
 
@@ -730,6 +750,13 @@ struct MenuContent: View {
                     .foregroundStyle(.orange)
             }
             .instantTip("Restart to update")
+        }
+        if let v = model.appUpdateVersion {
+            Button { model.showSettings?() } label: {
+                Image(systemName: "arrow.down.circle.fill")
+                    .foregroundStyle(.orange)
+            }
+            .instantTip("Limitless \(v) is out — About → Updates")
         }
         engineBadgeIcon
         if !model.footerActionsHidden {

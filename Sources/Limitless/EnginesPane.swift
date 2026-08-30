@@ -58,6 +58,12 @@ struct ClaudeEnginePane: View {
                         .font(.caption)
                         .foregroundStyle(update.updateAvailable ? Color.orange : .secondary)
                 }
+                Link(destination: releaseNotesURL) {
+                    Label("Release notes", systemImage: "doc.text")
+                }
+                Link(destination: URL(string: "https://github.com/deathemperor/claude-swap")!) {
+                    Label("Engine — claude-swap", systemImage: "gearshape.2")
+                }
                 if let output = update.upgradeOutput, !output.isEmpty {
                     DisclosureGroup("upgrade output") {
                         ScrollView {
@@ -75,6 +81,14 @@ struct ClaudeEnginePane: View {
         .formStyle(.grouped)
         .task { await settings.load() }
         .onAppear { if update.current == nil { Task { await update.check() } } }
+    }
+
+    private var releaseNotesURL: URL {
+        // Release notes live on the upstream repo (the PyPI package's home).
+        if update.updateAvailable, let latest = update.latest {
+            return URL(string: "https://github.com/realiti4/claude-swap/releases/tag/v\(latest)")!
+        }
+        return URL(string: "https://github.com/realiti4/claude-swap/releases")!
     }
 
     private var stateText: some View {
