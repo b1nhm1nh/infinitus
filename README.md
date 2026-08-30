@@ -152,6 +152,71 @@ active / next / dead markers, and the reset countdown wording.
 | Cosmos — stars & black holes | Galaxy | 🪐 🔭 🕳 | shining / orbiting back… |
 | Ocean — tides & deep water | Leviathan | ⛵ 🐬 ⚓ | smooth sailing / tide turning… |
 
+### Gallery
+
+The same five-account demo fleet under every theme (pop-out window,
+wide layout; charlie is out of their weekly window).
+
+**Off — plain numbers**
+
+![Off — plain numbers](docs/themes/off.png)
+
+**RPG — HP/MP gauges + gold**
+
+![RPG — HP/MP gauges + gold](docs/themes/rpg.png)
+
+**Movie — reels & box office**
+
+![Movie — reels & box office](docs/themes/movie.png)
+
+**Hades — blades & darkness**
+
+![Hades — blades & darkness](docs/themes/hades.png)
+
+**Metal Gear — tactical espionage**
+
+![Metal Gear — tactical espionage](docs/themes/mgs.png)
+
+**AI Agentic — tokens & context**
+
+![AI Agentic — tokens & context](docs/themes/agent.png)
+
+**Classic SWE — hand-written, no AI**
+
+![Classic SWE — hand-written, no AI](docs/themes/swe.png)
+
+**Sci-Fi — warp cores & shields**
+
+![Sci-Fi — warp cores & shields](docs/themes/scifi.png)
+
+**Wild West — six-guns & gold rush**
+
+![Wild West — six-guns & gold rush](docs/themes/west.png)
+
+**Cyberpunk — chrome & neon**
+
+![Cyberpunk — chrome & neon](docs/themes/cyber.png)
+
+**Gothic — candles & cathedrals**
+
+![Gothic — candles & cathedrals](docs/themes/gothic.png)
+
+**Musical — tempo & encores**
+
+![Musical — tempo & encores](docs/themes/musical.png)
+
+**Planet Earth — wild documentary**
+
+![Planet Earth — wild documentary](docs/themes/earth.png)
+
+**Cosmos — stars & black holes**
+
+![Cosmos — stars & black holes](docs/themes/cosmo.png)
+
+**Ocean — tides & deep water**
+
+![Ocean — tides & deep water](docs/themes/ocean.png)
+
 Built-in row themes live in `Sources/CswapCore/RowTheme.swift`; add your
 own in `~/Library/Application Support/Infinitus/themes.json`, or share one
 through [`themes/`](themes/README.md) with a pull request.
