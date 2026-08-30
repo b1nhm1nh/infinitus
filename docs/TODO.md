@@ -42,7 +42,13 @@
   requested: detect ANTHROPIC_BASE_URL and show "routed via …" first;
   a router backend would be a second engine behind the same boundary.
 - Real Notification Center delivery needs a Developer ID signature or one
-  Xcode automatic-signing run (provisioning profile).
+  Xcode automatic-signing run (provisioning profile). Developer ID:
+  the pipeline is ready (make-app.sh SIGN_IDENTITY, release.yml
+  notarize+staple behind secrets, docs/RELEASING.md); the only cert on
+  this Mac is an Apple Development one under VIETNAM MANGO COMPANY
+  LIMITED's team — cannot stand in. Needs a Developer ID Application
+  cert from that team's Account Holder (signer would read as the
+  company) or a personal membership.
 
 - ~~AppIcon ∞~~ → make-icon.swift now scales the MenuBarGlyph path
   (identity source of truth) onto the gradient squircle; icns rebuilt.
@@ -72,8 +78,11 @@
   and capture_limit_screens (writes the engine's backup dir).
   A local fork engine with `autoswitch.resumeStoppedSessions` /
   `rearmRemoteControl` on nudges TWICE — turn those off.
-- Linux is untested: the claude-swap formula + PKGBUILD only ran on
-  macOS (README says so).
+- ~~Linux is untested~~ → container smoke tests 2026-08-31: pip install
+  on python:3.12-slim and `makepkg -s` of packaging/aur/PKGBUILD on
+  archlinux (amd64 emulation; pacman needs DisableSandbox there) both
+  install and run `cswap --version/--help/config list/list`. No real
+  accounts, no desktop. README says exactly that.
 - ~~Next-candidate indicator "seems missing"~~ → real bug, engine-side:
   the advisory `_next_switch_candidate` counted the spend-cap pct in its
   >=100 "dead" rule, but spend is an estimate and the real ranking
@@ -110,10 +119,16 @@
 - Promotional content (user, 2026-08-30) — after the improvement wave
   settles:
   1. ~~Repo README features list~~ → done 2026-08-30 (local commit).
-  2. Update the GitHub profile (deathemperor) to feature Limitless.
-  3. Update huuloc.com (pensivie repo) with a Limitless section.
-  4. Short feature walkthrough video — script + screen recording
-     (popup tour, themes flip, switch celebration, settings, engines).
+  2. ~~GitHub profile~~ → "> open Infinitus.app" section pushed
+     2026-08-31 (deathemperor/deathemperor 34bf589).
+  3. ~~huuloc.com~~ → Infinitus entry in Mad-Eye's Trunk (pensieve
+     src/data/arsenal.ts + icon), committed locally (59f92ce3), NOT
+     pushed — pushing deploys.
+  4. ~~Walkthrough video~~ → docs/promo/walkthrough.md shot list;
+     48s rough cut at ~/Movies/Infinitus-walkthrough.mp4 (shim fleet:
+     popup, rotate celebration, theme montage, settings tour). No
+     narration; the theme flip via the right-click menu isn't in it
+     (no synthetic right-click).
 - Duplicate icon uses within a theme (user screenshot, 2026-08-30):
   movie uses 🎬 as BOTH the slot prefix and the session gauge label, so
   a row reads clapperboard-number … clapperboard-gauge; the dead marker
@@ -147,9 +162,13 @@
 - ~~Pop-out in COMPACT mode header overlap~~ → not reproducing after
   the 2026-08-30 Grid overflow fix (compact pop-out captured at 169pt,
   no overlap). Reopen with a screenshot if it comes back.
-- Visual verification pending: About icon, sync export/import, hollow
-  recovery triangle (needs an all-limited fleet to show). Glass,
-  themed sweep, footer, new themes: verified 2026-08-30.
+- ~~Visual verification~~ → hollow recovery triangle verified on an
+  all-dead shim fleet (`SHIM_ALLDEAD=1`: every row dead, hollow gray ▷
+  on the recovering account); About pane verified unbundled (glyph on
+  the gradient card). Still human-only: the BUNDLED About icon (the
+  /Applications instance has no status item in this login session —
+  the ControlCenter wedge) and sync Export…/Import… (Form buttons
+  refuse synthetic clicks; AX exposes them unnamed).
 - ~~Ahead-of-pace icon tooltips~~ → InstantTip on both sites, edge
   .above (the cell's own summary tip owns .below); alignment ghosts
   stop answering hover.
