@@ -50,5 +50,16 @@
   re-checks `enabled` after its await before any write.
 
 ## Open
-- (nothing — visual verification of the 2026-08-30 batch pending:
-  glass look, whole-row themed sweep, About icon, new themes.)
+- Next-candidate indicator "seems missing" (user, 2026-08-30) — diagnosed
+  NOT broken: every non-active account is at 100% on some limit (1 spend,
+  2 weekly, 3 five-hour, 4 scoped), so the engine's advisory
+  `_next_switch_candidate` honestly returns none and the triangle hides.
+  UX flaw: "no viable candidate" is indistinguishable from broken.
+  Candidate fix: engine falls back to "recovers soonest" among the
+  exhausted (soonest reset), app renders that state distinctly (e.g.
+  hollow/gray triangle + tooltip "all accounts limited; N recovers first").
+- Sync settings: export and import config (user, 2026-08-30) — SyncPane
+  gains Export…/Import… of the app's settings (the synced key set) as a
+  JSON file; import applies via the existing merge path.
+- Visual verification of the 2026-08-30 batch pending: glass look,
+  whole-row themed sweep, About icon, new themes.
