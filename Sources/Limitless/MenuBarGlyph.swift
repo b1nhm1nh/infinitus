@@ -1,38 +1,28 @@
 import AppKit
 
-/// The status-item glyph: a rounded "L" whose foot sweeps up into a
-/// return loop capped with an arrowhead — Limitless identity plus
-/// "rotates accounts" motion. Replaced the ∞, which wasn't recognizable
-/// at menu bar size (user-verified; concept picked 2026-08-30). This
-/// path is the identity's source of truth — make-icon.swift scales the
-/// same coordinates up for AppIcon.icns. Template image, so the bar
-/// tints it for menu bar light/dark and the pressed state.
+/// The status-item glyph: the Infinitus twin loop — two rings fused at
+/// the center into a lemniscate. Reads as ∞ at Dock size and as two
+/// linked circles at 16pt, which is where the old single-stroke ∞ failed
+/// (blur, 2026-08-30). This path is the identity's source of truth —
+/// make-icon.swift scales the same coordinates up for AppIcon.icns and
+/// adds the swap arrow the bar is too small for. Template image, so the
+/// bar tints it for light/dark and the pressed state.
 enum MenuBarGlyph {
+    /// Ring geometry in the 17×16 design box; shared with make-icon.swift.
+    static let radius: CGFloat = 3.2
+    static let leftCenter = NSPoint(x: 6.0, y: 8.0)
+    static let rightCenter = NSPoint(x: 11.0, y: 8.0)
+
     static let image: NSImage = {
         let img = NSImage(size: NSSize(width: 17, height: 16), flipped: false) { _ in
             NSColor.black.set()
-
             let stroke = NSBezierPath()
             stroke.lineWidth = 2.0
-            stroke.lineCapStyle = .round
-            stroke.lineJoinStyle = .round
-            // The L: stem, then foot.
-            stroke.move(to: NSPoint(x: 3.2, y: 14.2))
-            stroke.line(to: NSPoint(x: 3.2, y: 3.0))
-            stroke.line(to: NSPoint(x: 10.2, y: 3.0))
-            // The foot curls up and back left (the return loop).
-            stroke.appendArc(withCenter: NSPoint(x: 10.2, y: 6.2), radius: 3.2,
-                             startAngle: -90, endAngle: 90, clockwise: false)
-            stroke.line(to: NSPoint(x: 9.0, y: 9.4))
+            stroke.appendOval(in: NSRect(x: leftCenter.x - radius, y: leftCenter.y - radius,
+                                         width: radius * 2, height: radius * 2))
+            stroke.appendOval(in: NSRect(x: rightCenter.x - radius, y: rightCenter.y - radius,
+                                         width: radius * 2, height: radius * 2))
             stroke.stroke()
-
-            // Arrowhead pointing left at the loop's end.
-            let head = NSBezierPath()
-            head.move(to: NSPoint(x: 6.6, y: 9.4))
-            head.line(to: NSPoint(x: 10.0, y: 11.2))
-            head.line(to: NSPoint(x: 10.0, y: 7.6))
-            head.close()
-            head.fill()
             return true
         }
         img.isTemplate = true

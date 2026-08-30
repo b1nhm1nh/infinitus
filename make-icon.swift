@@ -1,10 +1,8 @@
-// Renders the Limitless app icon — the white swap-loop L (same path as
-// MenuBarGlyph, which is the design's source of truth) over a
-// midnight→violet gradient squircle with a soft center glow — to the PNG
-// path given as argv[1], at exactly 1024×1024 pixels. The ∞ mark was
-// retired 2026-08-30: not recognizable at small sizes, and the Dock had
-// to match the menu bar identity.
-// Run by make-icon.sh; not part of the SwiftPM build.
+// Renders the Infinitus app icon — the twin loop (same ring geometry as
+// MenuBarGlyph, the identity's source of truth) with the swap arrow
+// breaking the right ring, over a midnight→cobalt squircle with an
+// ion-cyan center glow — to the PNG path given as argv[1], at exactly
+// 1024×1024 pixels. Run by make-icon.sh; not part of the SwiftPM build.
 import AppKit
 
 let out = CommandLine.arguments[1]
@@ -24,22 +22,22 @@ let body = NSRect(x: inset, y: inset,
                   width: CGFloat(px) - 2 * inset, height: CGFloat(px) - 2 * inset)
 let squircle = NSBezierPath(roundedRect: body, xRadius: 185, yRadius: 185)
 NSGradient(colors: [
-    NSColor(calibratedRed: 0.42, green: 0.20, blue: 0.95, alpha: 1),  // electric violet
-    NSColor(calibratedRed: 0.07, green: 0.05, blue: 0.20, alpha: 1),  // midnight indigo
+    NSColor(calibratedRed: 0.15, green: 0.28, blue: 0.85, alpha: 1),  // cobalt
+    NSColor(calibratedRed: 0.04, green: 0.06, blue: 0.15, alpha: 1),  // midnight
 ])!.draw(in: squircle, angle: -70)
 
-// Soft glow behind the mark so it reads as luminous, not printed.
+// Ion-cyan glow behind the mark so it reads as luminous, not printed.
 squircle.addClip()
 NSGradient(colors: [
-    NSColor(calibratedWhite: 1.0, alpha: 0.28),
-    NSColor(calibratedWhite: 1.0, alpha: 0.0),
+    NSColor(calibratedRed: 0.50, green: 0.91, blue: 1.0, alpha: 0.42),
+    NSColor(calibratedRed: 0.50, green: 0.91, blue: 1.0, alpha: 0.0),
 ])!.draw(
     fromCenter: NSPoint(x: CGFloat(px) / 2, y: CGFloat(px) / 2), radius: 0,
-    toCenter: NSPoint(x: CGFloat(px) / 2, y: CGFloat(px) / 2), radius: 380,
+    toCenter: NSPoint(x: CGFloat(px) / 2, y: CGFloat(px) / 2), radius: 400,
     options: []
 )
 
-// The swap-loop L, verbatim from MenuBarGlyph's 17×16 design space,
+// The twin loop, verbatim from MenuBarGlyph's 17×16 design space,
 // scaled up and centered (design-box center (8.5, 8) → canvas center).
 let s: CGFloat = 40
 let transform = NSAffineTransform()
@@ -47,23 +45,33 @@ transform.translateX(by: 512 - 8.5 * s, yBy: 512 - 8.0 * s)
 transform.scale(by: s)
 transform.concat()
 
+let r: CGFloat = 3.2
+let left = NSPoint(x: 6.0, y: 8.0)
+let right = NSPoint(x: 11.0, y: 8.0)
+
 NSColor.white.set()
 let stroke = NSBezierPath()
 stroke.lineWidth = 2.0
 stroke.lineCapStyle = .round
-stroke.lineJoinStyle = .round
-stroke.move(to: NSPoint(x: 3.2, y: 14.2))
-stroke.line(to: NSPoint(x: 3.2, y: 3.0))
-stroke.line(to: NSPoint(x: 10.2, y: 3.0))
-stroke.appendArc(withCenter: NSPoint(x: 10.2, y: 6.2), radius: 3.2,
-                 startAngle: -90, endAngle: 90, clockwise: false)
-stroke.line(to: NSPoint(x: 9.0, y: 9.4))
+stroke.appendOval(in: NSRect(x: left.x - r, y: left.y - r, width: r * 2, height: r * 2))
 stroke.stroke()
+// The right ring is broken between 10° and 70°; the swap arrow rides
+// the break, pointing clockwise — the rotation the app exists for.
+// (Its own path: appendArc would otherwise join from the oval's end.)
+let arc = NSBezierPath()
+arc.lineWidth = 2.0
+arc.lineCapStyle = .round
+arc.appendArc(withCenter: right, radius: r, startAngle: 70, endAngle: 10, clockwise: false)
+arc.stroke()
 
+let a = 70.0 * CGFloat.pi / 180
+let tip0 = NSPoint(x: right.x + r * cos(a), y: right.y + r * sin(a))
+let t = NSPoint(x: sin(a), y: -cos(a))        // clockwise tangent
+let n = NSPoint(x: cos(a), y: sin(a))         // outward normal
 let head = NSBezierPath()
-head.move(to: NSPoint(x: 6.6, y: 9.4))
-head.line(to: NSPoint(x: 10.0, y: 11.2))
-head.line(to: NSPoint(x: 10.0, y: 7.6))
+head.move(to: NSPoint(x: tip0.x + 2.4 * t.x, y: tip0.y + 2.4 * t.y))
+head.line(to: NSPoint(x: tip0.x + 1.9 * n.x, y: tip0.y + 1.9 * n.y))
+head.line(to: NSPoint(x: tip0.x - 1.9 * n.x, y: tip0.y - 1.9 * n.y))
 head.close()
 head.fill()
 
