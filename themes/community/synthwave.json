@@ -25,5 +25,6 @@
   "planPrefix": "MHz ",
   "slotPrefix": "▸",
   "resetWord": "rebooting the grid…",
-  "nextIcon": "⏭"
+  "nextIcon": "⏭",
+  "activeIcon": "🎧"
 }

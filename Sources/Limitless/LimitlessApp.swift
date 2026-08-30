@@ -21,6 +21,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         false
     }
 
+    /// Windows get willClose during an orderly terminate, and the pop-out's
+    /// close handler must NOT read that as "the user dismissed me" — quitting
+    /// wiped the restore flag every time (user 2026-08-30: "popout setting
+    /// is not saved after restarting"). shouldTerminate runs before any
+    /// window teardown, covering Quit and the relaunch path both.
+    static var terminating = false
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        AppDelegate.terminating = true
+        return .terminateNow
+    }
+
     /// `open Limitless.app` on an already-running instance lands here: show
     /// the pinned window. This is the guaranteed way into the UI when the
     /// menu bar is too full to display the status item at all.
@@ -1008,6 +1019,11 @@ struct AccountCells {
     /// REPLACES the slot text outright (🍿 instead of 🎬5 — user
     /// 2026-08-30, emphatically); the tooltip keeps the real number.
     var slotDisplay: String {
+        // Active outranks next: the engine never proposes the active
+        // account, but "you are here" would beat "up next" if it did.
+        if account.active, !theme.plain, !theme.activeIcon.isEmpty {
+            return theme.activeIcon
+        }
         if model.nextCandidate == account.number,
            !theme.plain, !theme.nextIcon.isEmpty {
             return theme.nextIcon

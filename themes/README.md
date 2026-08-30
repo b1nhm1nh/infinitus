@@ -54,6 +54,7 @@ everything in `index.json` and installs a copy into the user's local
 | `slotPrefix` | prepended to the account number ("P" → "P1") |
 | `resetWord` | the live "resetting…" word ("respawning…") |
 | `nextIcon` | next-candidate marker ("" = green triangle) |
+| `activeIcon` | active-account marker, replaces the slot text ("" = plain slot) |
 | `plain` | `true` renders text percentages instead of gauges |
 
 Colors are SwiftUI names (`red`, `cyan`, …) or `#rrggbb`.

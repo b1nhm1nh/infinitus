@@ -455,6 +455,8 @@ final class StatusItemController {
     }
 
     @objc private func pinnedClosed() {
+        // App-quit closes the window too; only a USER close drops the flag.
+        guard !AppDelegate.terminating else { return }
         UserDefaults.standard.set(false, forKey: "popout_shown")
     }
 

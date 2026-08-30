@@ -140,7 +140,7 @@ private struct ThemeCard: View {
                     Text(theme.creditLabel).foregroundStyle(.secondary)
                     Text("74%").monospacedDigit()
                     Text("·").foregroundStyle(.tertiary)
-                    Text(theme.scopedPrefix + "Fable").foregroundStyle(.secondary)
+                    Text(theme.scopedPrefix + theme.modelName("Fable")).foregroundStyle(.secondary)
                     Text("74%").monospacedDigit()
                 }
             } else {
@@ -168,7 +168,7 @@ private struct ThemeCard: View {
                     Text(theme.creditLabel).font(.caption).bold()
                         .foregroundStyle(ThemeColor.resolve(theme.creditColor))
                     GaugeBar(remaining: 26, color: ThemeColor.resolve(theme.creditColor), animated: false)
-                    Text(theme.scopedPrefix + "Fable").font(.caption).bold()
+                    Text(theme.scopedPrefix + theme.modelName("Fable")).font(.caption).bold()
                         .foregroundStyle(ThemeColor.resolve(theme.scopedColor))
                     GaugeBar(remaining: 26, color: ThemeColor.resolve(theme.scopedColor), animated: false)
                     Text(verbatim: "\(theme.cashIcon)1,131")

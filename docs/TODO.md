@@ -119,10 +119,9 @@
   and the detail follows selection. Residual: FORM buttons in the
   detail panes still refuse synthetic clicks (sidebar + popup buttons
   actuate with a focus-first click); real clicks unaffected.
-- Row 1 shows the next-marker (🎲) but its "P1" slot prefix goes
-  missing while P2-P5 render theirs (seen 2026-08-30, wide layout;
-  rows 2-5 wear the identical intro wrap and are fine → suspect
-  NextMarker/slot-cell plumbing, pre-existing). Not fixed.
+- ~~Row 1 "P1" slot prefix missing~~ → not a bug: the themed
+  next-candidate icon REPLACES the slot text by design (slotDisplay,
+  the user's emphatic 2026-08-30 ask). Misread during verification.
 - Pop-out in COMPACT mode: the header strip overlaps the first row
   (seen 2026-08-30 restoring a compact pop-out at launch, window 158pt
   vs ~166 ideal). Check whether a manually opened compact pop-out does
