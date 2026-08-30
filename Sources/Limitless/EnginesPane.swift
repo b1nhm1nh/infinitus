@@ -99,9 +99,9 @@ struct CodexEnginePane: View {
                      + "usage tracking or auto-switch for Codex yet.")
                     .font(.caption).foregroundStyle(.secondary)
             }
-            Section("Planned providers") {
-                Text("Gemini, OpenCode, Cursor, Copilot — same file-swap "
-                     + "shape, not built yet.")
+            Section("Planned") {
+                Text("Gemini CLI and opencode store logins the same "
+                     + "file-swap way — candidates if ever needed.")
                     .font(.caption).foregroundStyle(.tertiary)
             }
         }

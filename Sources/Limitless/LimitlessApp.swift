@@ -154,18 +154,6 @@ struct LimitlessApp: App {
                                "accounts", "engine"],
                     provider: ProviderBadge(),
                     view: AnyView(CodexEnginePane())),
-        SettingsTab(title: "Gemini", symbol: "diamond",
-                    provider: ProviderBadge(placeholder: true),
-                    view: AnyView(EmptyView())),
-        SettingsTab(title: "OpenCode", symbol: "square.dashed",
-                    provider: ProviderBadge(placeholder: true),
-                    view: AnyView(EmptyView())),
-        SettingsTab(title: "Cursor", symbol: "cube",
-                    provider: ProviderBadge(placeholder: true),
-                    view: AnyView(EmptyView())),
-        SettingsTab(title: "Copilot", symbol: "airplane",
-                    provider: ProviderBadge(placeholder: true),
-                    view: AnyView(EmptyView())),
     ]
 }
 
@@ -235,7 +223,7 @@ struct SettingsRoot: View {
                         }
                     } header: {
                         HStack {
-                            Text("Providers")
+                            Text("Engines")
                             Spacer()
                             Text("\(providers.filter { $0.provider?.live == true }.count) on")
                         }
