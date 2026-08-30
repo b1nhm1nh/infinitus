@@ -259,13 +259,20 @@ struct MenuContent: View {
                             .buttonStyle(.borderless)
                     }
                 } else {
+                    // Rail columns follow the fleet (user 2026-08-30):
+                    // stacked cards are tall, so five-plus accounts give
+                    // one column room and the popup its narrowest width;
+                    // shorter lists (or the squat wide rows) need two.
+                    let oneColumn = model.popupLayout == "stacked"
+                        && model.accounts.count >= 5
                     HStack(alignment: .top, spacing: 8) {
-                        LazyVGrid(columns: [GridItem(.fixed(20), spacing: 10),
-                                            GridItem(.fixed(20))],
+                        LazyVGrid(columns: Array(
+                            repeating: GridItem(.fixed(20), spacing: 10),
+                            count: oneColumn ? 1 : 2),
                                   spacing: 10) {
                             compactControls
                         }
-                        .frame(width: 52)
+                        .frame(width: oneColumn ? 24 : 52)
                         .buttonStyle(.borderless)
                         VStack(alignment: .leading, spacing: 8) {
                             accountArea
@@ -284,6 +291,11 @@ struct MenuContent: View {
                     HStack(alignment: .top, spacing: 10) {
                         VStack(spacing: 12) { stackedRail }
                             .buttonStyle(.borderless)
+                            // Above the cards: the instant tips overlay
+                            // rightward across the card column, and a
+                            // later sibling would draw over them
+                            // (user screenshot 2026-08-30).
+                            .zIndex(1)
                         VStack(alignment: .leading, spacing: 8) {
                             accountArea
                             errorLines
@@ -369,7 +381,8 @@ struct MenuContent: View {
         // No minWidth in compact: full mode's 560 floor was sticking
         // through the switch and padding the popup out sideways
         // (user-reported overflow after full->compact).
-        .frame(minWidth: model.compactRows ? nil : 560)
+        .frame(minWidth: model.compactRows || model.popupLayout == "stacked"
+                         ? nil : 560)
         .animation(.easeInOut(duration: 0.3), value: model.compactRows)
         .animation(.easeInOut(duration: 0.3), value: model.gamification)
         // Real scaling, not dynamicTypeSize: macOS ignores Dynamic Type,
