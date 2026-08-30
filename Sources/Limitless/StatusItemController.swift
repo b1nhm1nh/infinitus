@@ -172,30 +172,44 @@ final class StatusItemController {
     }
 
     /// Track the content's measured ideal size, popover-measure style.
+    /// SwiftUI streams sizes through onGeometryChange DURING animated
+    /// layout changes, so applying the full anchored frame here (size
+    /// AND position in one setFrame) makes the panel ride the content's
+    /// animation frame-by-frame — setContentSize + a separate reposition
+    /// let the panel lurch a frame ahead of the content (container-jump
+    /// bug, user screenshot 2026-08-30).
     private func fitAnchored(to size: CGSize) {
         anchoredIdeal = size
         guard let panel = anchored, size.width > 1, size.height > 1,
               size.width < 20_000, size.height < 20_000 else { return }
-        let current = panel.frame.size
-        if abs(current.width - size.width) > 0.5
-            || abs(current.height - size.height) > 0.5 {
-            panel.setContentSize(size)
-            positionAnchored()
+        guard let frame = anchoredFrame(for: size) else { return }
+        if frame != panel.frame {
+            panel.setFrame(frame, display: true)
         }
     }
 
     /// Hang the panel from the status item like the popover did: top edge
     /// under the menu bar, centered on the button, clamped to the screen.
-    private func positionAnchored() {
+    private func anchoredFrame(for content: CGSize) -> NSRect? {
         guard let panel = anchored, let button = item.button,
               let bw = button.window,
-              let screen = bw.screen ?? NSScreen.main else { return }
+              let screen = bw.screen ?? NSScreen.main else { return nil }
         let rect = bw.convertToScreen(button.convert(button.bounds, to: nil))
-        let size = panel.frame.size
+        let size = panel.frameRect(
+            forContentRect: NSRect(origin: .zero, size: content)).size
         var x = rect.midX - size.width / 2
         x = min(x, screen.visibleFrame.maxX - size.width - 8)
         x = max(x, screen.visibleFrame.minX + 8)
-        panel.setFrameOrigin(NSPoint(x: x, y: rect.minY - size.height - 6))
+        return NSRect(x: x, y: rect.minY - size.height - 6,
+                      width: size.width, height: size.height)
+    }
+
+    private func positionAnchored() {
+        guard let panel = anchored else { return }
+        let content = panel.contentRect(forFrameRect: panel.frame).size
+        if let frame = anchoredFrame(for: content) {
+            panel.setFrame(frame, display: true)
+        }
     }
 
     /// Transient behavior by hand: click anywhere outside closes the

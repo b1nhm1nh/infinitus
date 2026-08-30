@@ -28,7 +28,11 @@ final class UsageModel: ObservableObject {
         Task {
             do {
                 let r = try await cli.usageReport(days: days)
-                self.report = r
+                // Animated: the cash column's width change interpolates
+                // (with the panel tracking it) instead of snapping the
+                // popup wider in one frame (container-jump bug,
+                // user 2026-08-30).
+                withAnimation(.easeInOut(duration: 0.3)) { self.report = r }
             } catch { self.error = "\(error)" }
             self.loading = false
         }
