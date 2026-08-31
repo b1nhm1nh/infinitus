@@ -1275,11 +1275,16 @@ struct AccountCells {
     /// FFVII All Lucky 7s, the paired trigger: BOTH the 5h and 7d
     /// windows showing exactly 77 remaining (the solo trigger is a
     /// scoped/Fable bar at 77 — checked at its own call site).
-    var allLucky: Bool { account.allLucky7s }
+    /// Fever is an RPG-theme move (user 2026-08-31: "only activated on
+    /// RPG theme") — other skins stay in character.
+    var allLucky: Bool {
+        model.rowTheme.id == "rpg" && account.allLucky7s
+    }
 
     /// The paired trigger alone — the 5h/7d labels flash only when
     /// BOTH windows sit at 77 (a scoped bar at 77 flashes itself).
     var luckyPair: Bool {
+        guard model.rowTheme.id == "rpg" else { return false }
         guard let five = account.usage?.fiveHour?.pct,
               let seven = account.usage?.sevenDay?.pct else { return false }
         return Int(GaugeMath.remaining(usedPct: five)) == 77
@@ -1440,8 +1445,9 @@ struct AccountCells {
                                      // Far right on the wide grid: grow
                                      // leftward, into the window.
                                      dropAnchor: banded ? .trailing : .leading,
-                                     lucky: Int(GaugeMath.remaining(
-                                         usedPct: w.pct)) == 77)
+                                     lucky: model.rowTheme.id == "rpg"
+                                         && Int(GaugeMath.remaining(
+                                             usedPct: w.pct)) == 77)
                         }
                     }
                     .instantTip(WindowSummary.line(
@@ -1671,6 +1677,7 @@ struct AccountGrid: View {
             GeometryReader { geo in
                 ForEach(Array(dict.keys), id: \.self) { n in
                     if let a = dict[n]?.first,
+                       model.rowTheme.id == "rpg",
                        model.accounts.first(where: { $0.number == n })?
                            .allLucky7s == true {
                         let r = geo[a]
@@ -1801,7 +1808,7 @@ struct AccountStack: View {
         }
         .padding(.vertical, 1)
         .background {
-            if account.allLucky7s {
+            if model.rowTheme.id == "rpg", account.allLucky7s {
                 LuckyRowBackground(cornerRadius: 4)
                     .padding(.horizontal, -4)
             }
@@ -1902,7 +1909,7 @@ struct AccountStack: View {
                 .background {
                     // Fever first in the chain = between content and
                     // the card fill: the neon washes the whole card.
-                    if account.allLucky7s {
+                    if model.rowTheme.id == "rpg", account.allLucky7s {
                         LuckyRowBackground(cornerRadius: 8)
                     }
                 }
