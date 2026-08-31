@@ -23,6 +23,12 @@ final class AppModel: ObservableObject {
     /// Per-account death beats: bumped when a row flips alive -> dead
     /// in a snapshot (the celebration's mirror, user 2026-08-30).
     @Published var deathTicks: [Int: Int] = [:]
+    /// Rows currently DYING: dead in the data, but still rendered with
+    /// their gauges for a beat so the killing-blow drama (drop plunge,
+    /// shard finisher, death beat) plays out — the dead layout swap
+    /// unmounted the bar instantly ("killed instantly", user
+    /// 2026-08-31). Cleared a few seconds after each death.
+    @Published var dying: Set<Int> = []
     /// Revival fanfares: bumped when a row flips dead -> alive (its
     /// window reset while drained) — the dramatic full-line glow
     /// (user 2026-08-31).
@@ -569,7 +575,21 @@ final class AppModel: ObservableObject {
                previousActive != now {
                 switchFlashTick += 1
             }
-            for n in newlyDead { deathTicks[n, default: 0] += 1 }
+            // The death sequence (user 2026-08-31: kill animation for
+            // the last drop of any kind, "still play dead animation
+            // after"): the row keeps its gauges while the killing
+            // drop plays (plunge 0-1.5s, shards+shake ~1.5-2.4s), the
+            // death beat lands AFTER the finisher, and only then does
+            // the layout flip to the dead presentation.
+            for n in newlyDead {
+                dying.insert(n)
+                DispatchQueue.main.asyncAfter(deadline: .now() + 2.3) {
+                    self.deathTicks[n, default: 0] += 1
+                }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 3.9) {
+                    self.dying.remove(n)
+                }
+            }
             for n in newlyAlive { reviveTicks[n, default: 0] += 1 }
             // Launch greeting: once the first snapshot renders, the
             // active row plays its sweep alongside the bars' fill-up

@@ -1277,6 +1277,12 @@ struct AccountCells {
     /// scoped/Fable bar at 77 — checked at its own call site).
     /// Fever is an RPG-theme move (user 2026-08-31: "only activated on
     /// RPG theme") — other skins stay in character.
+    /// Layout gate: dead, AND past the dying grace — a freshly killed
+    /// row keeps its gauges long enough for the drama to play.
+    var showAsDead: Bool {
+        dead && !model.dying.contains(account.number)
+    }
+
     var allLucky: Bool {
         model.rowTheme.id == "rpg" && account.allLucky7s
     }
@@ -1428,8 +1434,22 @@ struct AccountCells {
         }
     }
 
+    /// ForEach element for the scoped cells: the theme id rides along
+    /// so a pure theme flip changes the element — with `w` alone the
+    /// cached child is never re-rendered (the frozen "Dragon" label,
+    /// user 2026-08-31). The id stays the window name, so gauge state
+    /// (drops, burn arming) survives the flip.
+    struct ScopedEntry: Identifiable {
+        let win: UsageWindow
+        let themeID: String
+        var id: String { win.name ?? "?" }
+    }
+
     @ViewBuilder var scopedCells: some View {
-        ForEach(account.usage?.scoped ?? [], id: \.name) { w in
+        ForEach((account.usage?.scoped ?? []).map {
+            ScopedEntry(win: $0, themeID: theme.id)
+        }) { entry in
+            let w = entry.win
             Group {
                 if hiddenInCompact(w.pct) {
                     if banded, !model.compactRows {
@@ -1640,7 +1660,7 @@ struct AccountGrid: View {
                             .gridCellUnsizedAxes(anyGauged ? .horizontal : [])
                             .activeBand(account.active)
                         oneLineFillers
-                    } else if cells.dead {
+                    } else if cells.showAsDead {
                         // A dead row shows ONLY what blocks it — a full MP
                         // gauge on an unusable account reads as usable.
                         cells.deadCell
@@ -1810,7 +1830,7 @@ struct AccountStack: View {
                              ? .secondary : .primary)
             .lineLimit(1)
             Spacer(minLength: 8)
-            if cells.dead {
+            if cells.showAsDead {
                 cells.deadCell
             } else if let (label, pct) = bindingWindow(account) {
                 Text(label)
@@ -1900,7 +1920,7 @@ struct AccountStack: View {
                                         && !model.isPlayground
                                         ? "Re-login now — opens this account's private login window"
                                         : note)
-                    } else if cells.dead {
+                    } else if cells.showAsDead {
                         cells.deadCell
                     } else if cells.allFresh {
                         cells.readyCell
