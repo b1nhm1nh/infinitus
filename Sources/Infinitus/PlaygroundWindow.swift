@@ -26,6 +26,94 @@ import CswapCore
             .appendingPathComponent("infinitus-demo-dead")
     }
 
+    /// Debug CLI channel (user 2026-08-31: "build a cli so that you
+    /// yourself can interact with the playground"): tools/playctl
+    /// writes one command per line to $TMPDIR/infinitus-cmd; this
+    /// watcher executes them on the demo model and acknowledges in
+    /// infinitus-cmd-out. Same tmp-file pattern as the demo hooks,
+    /// playground-only — the real model never sees it.
+    static var cmdTimer: Timer?
+    static var cmdURL: URL {
+        FileManager.default.temporaryDirectory
+            .appendingPathComponent("infinitus-cmd")
+    }
+
+    static func startCommandWatcher(model: AppModel) {
+        cmdTimer?.invalidate()
+        cmdTimer = Timer.scheduledTimer(withTimeInterval: 0.25,
+                                        repeats: true) { _ in
+            Task { @MainActor in runCommands(model: model) }
+        }
+    }
+
+    private static func demoFlag(_ name: String, on: Bool) {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent(name)
+        if on { try? Data().write(to: url) }
+        else { try? FileManager.default.removeItem(at: url) }
+    }
+
+    static func runCommands(model: AppModel) {
+        guard let raw = try? String(contentsOf: cmdURL, encoding: .utf8)
+        else { return }
+        try? FileManager.default.removeItem(at: cmdURL)
+        var replies: [String] = []
+        for line in raw.split(separator: "\n") {
+            let parts = line.split(separator: " ").map(String.init)
+            guard let verb = parts.first else { continue }
+            let arg = parts.count > 1 ? parts[1] : ""
+            var reply = "ok"
+            switch verb {
+            case "theme": model.gamification = arg
+            case "layout":
+                withAnimation(.easeInOut(duration: 0.3)) {
+                    model.popupLayout = arg
+                }
+            case "size": model.popupTextSize = arg
+            case "compact": model.compactRows = arg == "on"
+            case "burn": model.burnStyle = arg
+            case "introstyle": model.introStyle = arg
+            case "title": model.introTitle = arg
+            case "speed": model.introSpeed = Double(arg) ?? 1
+            case "intro": model.replayIntro()
+            case "switch":
+                let candidates = model.accounts.filter {
+                    !$0.active && $0.usage != nil && $0.disabled != true
+                        && !AccountVitals.isDead($0.usage)
+                }
+                if let next = candidates.randomElement() {
+                    model.switchTo(next.number)
+                }
+            case "dead":
+                demoFlag("infinitus-demo-dead", on: true)
+                Task { await model.refreshSnapshot() }
+            case "revive":
+                demoFlag("infinitus-demo-dead", on: false)
+                demoFlag("infinitus-demo-kill", on: false)
+                Task { await model.refreshSnapshot() }
+            case "drop":
+                demoFlag("infinitus-demo-drop" + arg, on: true)
+                Task { await model.refreshSnapshot() }
+            case "undrop":
+                demoFlag("infinitus-demo-drop" + arg, on: false)
+                Task { await model.refreshSnapshot() }
+            case "kill":
+                demoFlag("infinitus-demo-kill", on: true)
+                Task { await model.refreshSnapshot() }
+            case "refresh": Task { await model.refreshSnapshot() }
+            case "reset": model.resetPlaygroundPrefs()
+            case "themes":
+                reply = model.availableThemes.map(\.id).joined(separator: " ")
+            default: reply = "unknown: \(verb)"
+            }
+            replies.append(reply)
+        }
+        let out = FileManager.default.temporaryDirectory
+            .appendingPathComponent("infinitus-cmd-out")
+        try? replies.joined(separator: "\n")
+            .write(to: out, atomically: true, encoding: .utf8)
+    }
+
     /// Dev-loop hook: INFINITUS_PLAYGROUND=1 in the environment opens
     /// the window at launch. An env var on purpose — a defaults bool
     /// would stick and greet every future launch with a playground.
@@ -51,6 +139,7 @@ import CswapCore
             let demo = AppModel(playground: true)
             demo.startFeeds()
             demoModel = demo
+            startCommandWatcher(model: demo)
             let host = NSHostingController(
                 rootView: PlaygroundView(model: demo, usage: usage))
             // Never let SwiftUI size the window (the pop-out's unbounded
