@@ -222,40 +222,52 @@ extension View {
     }
 }
 
-/// FFVII "All Lucky 7s" fever (user 2026-08-31 easter egg: Fable at
-/// 77%, or 5h AND 7d both at 77%). Authentic to the PSX original: the
-/// digits FLASH in hard frame steps — no easing, no fades — gold and
-/// white like the 7777 damage pops, with a full rainbow run every few
-/// beats (the fever's sprite flash). Trigger logic lives at the call
-/// sites; this just renders the fever.
-struct LuckySevens: View {
-    var text = "77%"
-
-    private static let steps: [Color] = [
-        Color(red: 1.00, green: 0.85, blue: 0.20),   // gold
-        .white,
-        Color(red: 1.00, green: 0.85, blue: 0.20),
-        .white,
-        // the rainbow run
-        Color(red: 1.00, green: 0.25, blue: 0.25),
-        Color(red: 1.00, green: 0.60, blue: 0.10),
-        Color(red: 1.00, green: 0.95, blue: 0.20),
-        Color(red: 0.30, green: 1.00, blue: 0.35),
-        Color(red: 0.25, green: 0.90, blue: 1.00),
-        Color(red: 0.85, green: 0.40, blue: 1.00),
-    ]
+/// FFVII "All Lucky 7s" fever, done AUTHENTICALLY (user 2026-08-31
+/// screenshot: Barret's menu entry): the character NAME wears a
+/// per-letter rainbow whose colors travel along the text — a marquee,
+/// not a blink — over a steady rainbow gradient band. Nothing flashes;
+/// the original doesn't. Trigger (Fable at 77%, or 5h AND 7d both 77)
+/// is decided at the call sites.
+struct LuckyName: View {
+    let text: String
+    var font: Font = .body
+    var bold = true
 
     var body: some View {
-        TimelineView(.periodic(from: .now, by: 0.14)) { ctx in
-            let frame = Int(ctx.date.timeIntervalSinceReferenceDate / 0.14)
-            let color = Self.steps[frame % Self.steps.count]
-            Text(text)
-                .font(.caption).bold().monospacedDigit()
-                .foregroundStyle(color)
-                // Stepped pop, not a spring — frame flips like the PSX.
-                .scaleEffect(frame % 2 == 0 ? 1.0 : 1.12)
-                .help("All Lucky 7s!")
+        TimelineView(.periodic(from: .now, by: 0.12)) { ctx in
+            // Step, not smooth time: the PSX palette-cycles per frame.
+            let step = Int(ctx.date.timeIntervalSinceReferenceDate / 0.12)
+            Text(attributed(step))
+                .font(font)
+                .fontWeight(bold ? .bold : .regular)
         }
+        .background(
+            // The steady rainbow band behind the name.
+            LinearGradient(colors: [
+                Color(hue: 0.83, saturation: 0.55, brightness: 0.55),
+                Color(hue: 0.66, saturation: 0.60, brightness: 0.60),
+                Color(hue: 0.55, saturation: 0.55, brightness: 0.55),
+            ], startPoint: .topLeading, endPoint: .bottomTrailing)
+            .opacity(0.55)
+            .clipShape(RoundedRectangle(cornerRadius: 3))
+            .padding(-2)
+        )
+        .help("All Lucky 7s!")
+    }
+
+    private func attributed(_ step: Int) -> AttributedString {
+        var out = AttributedString()
+        for (i, ch) in text.enumerated() {
+            var run = AttributedString(String(ch))
+            // Colors travel letter-to-letter: index minus step.
+            let hue = (Double(i) * 0.13 - Double(step) * 0.045)
+                .truncatingRemainder(dividingBy: 1)
+            run.foregroundColor = Color(
+                hue: hue < 0 ? hue + 1 : hue,
+                saturation: 0.85, brightness: 1.0)
+            out += run
+        }
+        return out
     }
 }
 

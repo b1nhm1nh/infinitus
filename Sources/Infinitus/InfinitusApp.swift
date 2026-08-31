@@ -1274,11 +1274,23 @@ struct AccountCells {
     /// FFVII All Lucky 7s, the paired trigger: BOTH the 5h and 7d
     /// windows showing exactly 77 remaining (the solo trigger is a
     /// scoped/Fable bar at 77 — checked at its own call site).
-    var luckyPair: Bool {
-        guard let five = account.usage?.fiveHour?.pct,
-              let seven = account.usage?.sevenDay?.pct else { return false }
-        return Int(GaugeMath.remaining(usedPct: five)) == 77
-            && Int(GaugeMath.remaining(usedPct: seven)) == 77
+    var allLucky: Bool {
+        if let five = account.usage?.fiveHour?.pct,
+           let seven = account.usage?.sevenDay?.pct,
+           Int(GaugeMath.remaining(usedPct: five)) == 77,
+           Int(GaugeMath.remaining(usedPct: seven)) == 77 { return true }
+        return (account.usage?.scoped ?? []).contains {
+            Int(GaugeMath.remaining(usedPct: $0.pct)) == 77
+        }
+    }
+
+    /// The account name, wearing the fever when the 7s align.
+    @ViewBuilder var nameLabel: some View {
+        if allLucky {
+            LuckyName(text: displayName)
+        } else {
+            Text(displayName)
+        }
     }
 
     @ViewBuilder func windowCell(_ w: UsageWindow?, session: Bool) -> some View {
@@ -1316,8 +1328,7 @@ struct AccountCells {
                                 usedPct: w.pct, expectedPct: w.expectedPct,
                                 ahead: w.aheadOfPace),
                             // Mid-row on the wide grid: grow both ways.
-                            dropAnchor: banded && !session ? .center : .leading,
-                            lucky: luckyPair)
+                            dropAnchor: banded && !session ? .center : .leading)
                     }
                     resetLabelView(resetsAt: w.resetsAt, staticText: resetText(w))
                 }
@@ -1425,9 +1436,7 @@ struct AccountCells {
                                          ahead: w.aheadOfPace),
                                      // Far right on the wide grid: grow
                                      // leftward, into the window.
-                                     dropAnchor: banded ? .trailing : .leading,
-                                     lucky: Int(GaugeMath.remaining(
-                                         usedPct: w.pct)) == 77)
+                                     dropAnchor: banded ? .trailing : .leading)
                         }
                     }
                     .instantTip(WindowSummary.line(
@@ -1561,11 +1570,11 @@ struct AccountGrid: View {
                     // site would touch 13 call sites for the same union.
                     .anchorPreference(key: DeadRowBounds.self,
                                       value: .bounds) { [account.number: [$0]] }
-                    Button(cells.displayName) {
+                    Button(action: {
                         // disabled rows stay clickable, like rumps; the
                         // popup-level alert asks before committing
                         if !account.active { model.pendingSwitch = account.number }
-                    }
+                    }, label: { cells.nameLabel })
                     .buttonStyle(.plain)
                     .fontWeight(account.active ? .bold : .regular)
                     .foregroundStyle((account.disabled ?? false) || cells.dead
@@ -1748,9 +1757,9 @@ struct AccountStack: View {
                 .fontWeight(.bold)
                 .foregroundStyle(account.active ? Color.accentColor : Color.secondary)
                 .instantTip(cells.slotTip)
-            Button(cells.displayName) {
+            Button(action: {
                 if !account.active { model.pendingSwitch = account.number }
-            }
+            }, label: { cells.nameLabel })
             .buttonStyle(.plain)
             .fontWeight(account.active ? .bold : .regular)
             .foregroundStyle((account.disabled ?? false) || cells.dead
@@ -1818,9 +1827,9 @@ struct AccountStack: View {
                             .fontWeight(.bold)
                             .foregroundStyle(account.active ? Color.accentColor : Color.secondary)
                             .instantTip(cells.slotTip)
-                        Button(cells.displayName) {
+                        Button(action: {
                             if !account.active { model.pendingSwitch = account.number }
-                        }
+                        }, label: { cells.nameLabel })
                             .buttonStyle(.plain)
                             .fontWeight(account.active ? .bold : .regular)
                             .foregroundStyle((account.disabled ?? false) || cells.dead

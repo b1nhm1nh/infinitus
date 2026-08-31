@@ -60,6 +60,7 @@ import CswapCore
     private var token: String?
     private var shimDir: URL?
     private var authWindow: NSWindow?
+    private var webDelegate: AuthWebDelegate?
 
     var running: Bool {
         switch phase {
@@ -273,6 +274,16 @@ import CswapCore
         // opens already signed in; a fresh identifier for adds.
         cfg.websiteDataStore = WKWebsiteDataStore(forIdentifier: storeID)
         let web = WKWebView(frame: .zero, configuration: cfg)
+        // Google (and claude.com's login) refuse embedded-webview user
+        // agents and windows that can't host OAuth popups — the
+        // "error logging you in" box (user 2026-08-31). Present as
+        // Safari and give popups a real child window.
+        web.customUserAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+            + "AppleWebKit/605.1.15 (KHTML, like Gecko) "
+            + "Version/26.0 Safari/605.1.15"
+        let delegate = AuthWebDelegate()
+        webDelegate = delegate
+        web.uiDelegate = delegate
         web.load(URLRequest(url: url))
         // The paste bar rides INSIDE the window, so a flow started from
         // the popup list is self-contained — no Settings trip.
@@ -303,6 +314,46 @@ import CswapCore
     private func closeAuthWindow() {
         authWindow?.orderOut(nil)
         authWindow = nil
+        webDelegate?.closePopups()
+        webDelegate = nil
+    }
+}
+
+/// OAuth popup host: window.open from the login page (Google's flow)
+/// gets a real child window sharing the SAME configuration — required
+/// by WebKit, and what keeps the popup inside the private session.
+@MainActor final class AuthWebDelegate: NSObject, WKUIDelegate {
+    private var popups: [NSWindow] = []
+
+    func webView(_ webView: WKWebView,
+                 createWebViewWith configuration: WKWebViewConfiguration,
+                 for navigationAction: WKNavigationAction,
+                 windowFeatures: WKWindowFeatures) -> WKWebView? {
+        let web = WKWebView(frame: .zero, configuration: configuration)
+        web.customUserAgent = webView.customUserAgent
+        web.uiDelegate = self
+        let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 480, height: 640),
+                         styleMask: [.titled, .closable, .resizable],
+                         backing: .buffered, defer: false)
+        w.title = "Sign in"
+        w.contentView = web
+        w.isReleasedWhenClosed = false
+        w.center()
+        w.makeKeyAndOrderFront(nil)
+        popups.append(w)
+        return web
+    }
+
+    func webViewDidClose(_ webView: WKWebView) {
+        if let i = popups.firstIndex(where: { $0.contentView === webView }) {
+            popups[i].orderOut(nil)
+            popups.remove(at: i)
+        }
+    }
+
+    func closePopups() {
+        popups.forEach { $0.orderOut(nil) }
+        popups = []
     }
 }
 
