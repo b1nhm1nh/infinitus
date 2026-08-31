@@ -506,9 +506,7 @@ struct MenuContent: View {
                             }
                             .instantTip("Compact mode", edge: .above)
                             layoutToggleIcon
-                                .instantTip(model.popupLayout == "stacked"
-                                            ? "Switch to wide rows" : "Switch to stacked cards",
-                                            edge: .above)
+                                .instantTip(nextLayout.tip, edge: .above)
                             popOutIcon
                                 .instantTip("Pop out into a window", edge: .above)
                         }
@@ -567,7 +565,7 @@ struct MenuContent: View {
         // No minWidth in compact: full mode's 560 floor was sticking
         // through the switch and padding the popup out sideways
         // (user-reported overflow after full->compact).
-        .frame(minWidth: model.compactRows || model.popupLayout == "stacked"
+        .frame(minWidth: model.compactRows || model.popupLayout != "wide"
                          ? nil : 560)
         .animation(.easeInOut(duration: 0.3), value: model.compactRows)
         .animation(.easeInOut(duration: 0.3), value: model.gamification)
@@ -648,8 +646,7 @@ struct MenuContent: View {
         }
         .instantTip("Compact mode")
         layoutToggleIcon
-            .instantTip(model.popupLayout == "stacked"
-                        ? "Switch to wide rows" : "Switch to stacked cards")
+            .instantTip(nextLayout.tip)
         popOutIcon
             .instantTip("Pop out into a window")
         }
@@ -738,8 +735,7 @@ struct MenuContent: View {
         }
         .instantTip("Full mode")
         layoutToggleIcon
-            .instantTip(model.popupLayout == "stacked"
-                        ? "Switch to wide rows" : "Switch to stacked cards")
+            .instantTip(nextLayout.tip)
         popOutIcon
             .instantTip("Pop out into a window")
         }
@@ -772,19 +768,26 @@ struct MenuContent: View {
         }
     }
 
-    /// Quick wide-rows <-> stacked-cards flip, mirroring the Display
-    /// pane's "Popup layout" picker.
+    /// Cycles wide rows -> stacked cards -> horizontal cards, mirroring
+    /// the Display pane's "Popup layout" picker; icon and tip name the
+    /// NEXT layout in the cycle.
+    private var nextLayout: (id: String, icon: String, tip: String) {
+        switch model.popupLayout {
+        case "stacked": return ("hstack", "rectangle.split.2x1", "Switch to horizontal cards")
+        case "hstack": return ("wide", "line.3.horizontal", "Switch to wide rows")
+        default: return ("stacked", "rectangle.split.1x2", "Switch to stacked cards")
+        }
+    }
+
     private var layoutToggleIcon: some View {
         Button {
             withAnimation(.easeInOut(duration: 0.3)) {
-                model.popupLayout = model.popupLayout == "stacked" ? "wide" : "stacked"
+                model.popupLayout = nextLayout.id
             }
         } label: {
-            Image(systemName: model.popupLayout == "stacked"
-                  ? "rectangle.split.2x1" : "rectangle.split.1x2")
+            Image(systemName: nextLayout.icon)
         }
-        .help(model.popupLayout == "stacked"
-              ? "Switch to wide rows" : "Switch to stacked cards")
+        .help(nextLayout.tip)
     }
 
     @ViewBuilder private var errorLines: some View {
@@ -994,6 +997,11 @@ struct AccountRows: View {
         Group {
             if model.popupLayout == "stacked" {
                 AccountStack(model: model, usage: usage)
+                    .transition(.opacity.combined(with: .scale(scale: 0.98, anchor: .top)))
+            } else if model.popupLayout == "hstack" {
+                // Horizontal cards: the stacked card, laid side by side
+                // (user 2026-08-31: "still cards but stack horizontal").
+                AccountStack(model: model, usage: usage, horizontal: true)
                     .transition(.opacity.combined(with: .scale(scale: 0.98, anchor: .top)))
             } else {
                 AccountGrid(model: model, usage: usage)
@@ -1660,6 +1668,8 @@ struct AccountGrid: View {
 struct AccountStack: View {
     @ObservedObject var model: AppModel
     @ObservedObject var usage: UsageModel
+    /// Horizontal-cards layout ("hstack"): the same cards, side by side.
+    var horizontal = false
 
     var body: some View {
         if model.compactRows {
@@ -1673,6 +1683,8 @@ struct AccountStack: View {
                         .introRow(model, index: i)
                 }
             }
+        } else if horizontal {
+            horizontalCards
         } else {
             fullCards
         }
@@ -1738,7 +1750,16 @@ struct AccountStack: View {
     }
 
     private var fullCards: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 6) { cardList }
+    }
+
+    /// The same cards laid side by side, top-aligned — horizontal mode
+    /// keeps every card's natural width instead of stretching.
+    private var horizontalCards: some View {
+        HStack(alignment: .top, spacing: 6) { cardList }
+    }
+
+    private var cardList: some View {
             ForEach(Array(model.accounts.enumerated()),
                     id: \.element.number) { rowIndex, account in
                 let cells = AccountCells(model: model, usage: usage, account: account, banded: false)
@@ -1782,10 +1803,13 @@ struct AccountStack: View {
                     }
                 }
                 .padding(8)
-                // Equal-width cards, not ragged islands: every card wears
-                // chrome (user: "stack cards layout need big improvement",
-                // 2026-08-30); the active one keeps the accent.
-                .frame(maxWidth: .infinity, alignment: .leading)
+                // Vertical: equal-width cards, not ragged islands
+                // ("stack cards layout need big improvement", 2026-08-30).
+                // Horizontal: natural widths with a floor — infinity
+                // maxWidth would make HStack siblings fight over it.
+                .frame(minWidth: horizontal ? 150 : nil,
+                       maxWidth: horizontal ? nil : .infinity,
+                       alignment: .leading)
                 .background {
                     if account.active {
                         RoundedRectangle(cornerRadius: 8)
@@ -1804,7 +1828,6 @@ struct AccountStack: View {
                 .deathFlash(model.deathTicks[account.number] ?? 0)
                 .introRow(model, index: rowIndex)
             }
-        }
     }
 }
 

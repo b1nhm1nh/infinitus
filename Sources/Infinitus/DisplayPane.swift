@@ -59,6 +59,17 @@ struct DisplayPane: View {
                             }
                         }
                     }
+                    PickTile(title: "Horizontal cards",
+                             selected: model.popupLayout == "hstack",
+                             choose: { setLayout("hstack") }) {
+                        HStack(spacing: 3) {
+                            ForEach(0..<2, id: \.self) { _ in
+                                RoundedRectangle(cornerRadius: 2)
+                                    .fill(Color.secondary.opacity(0.65))
+                                    .frame(width: 10, height: 22)
+                            }
+                        }
+                    }
                 }
             }
             VStack(alignment: .leading, spacing: 6) {
