@@ -63,6 +63,11 @@
       human: real Omarchy desktop run (UTM VM: ISO at
       ~/Downloads/omarchy-4.0.1.iso — x86_64 only, emulated = slow),
       real-account cswap on Linux, AUR/PKGBUILD for the tray.
+- [ ] Release CI for Linux/Arch/Omarchy (user 2026-08-31): extend
+      release.yml (or a sibling job) to build `infinitus-tray` for
+      x86_64/aarch64 Linux (static, container like ci.yml's) and attach
+      it + the Quickshell plugin dir to the GitHub release; later an
+      AUR package. macOS release job stays untouched.
 - ~~Auto-order of accounts~~ → Display pane toggle; AutoOrder.swift
   ranks alive (binding pct, 5-point incumbent margin) < unknown < dead
   (soonest recovery) < disabled and calls `cswap reorder` only when the
