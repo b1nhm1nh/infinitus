@@ -241,6 +241,15 @@ public enum GaugeMath {
     public static func remaining(usedPct: Double) -> Double {
         max(0, min(100, 100 - usedPct))
     }
+
+    /// Pace-fire intensity 0…1: how far usage runs ahead of the
+    /// clock's expectation, saturating at +30 points. Zero unless the
+    /// engine says aheadOfPace (expectedPct alone can be behind pace).
+    public static func burnHeat(usedPct: Double, expectedPct: Double?,
+                                ahead: Bool?) -> Double {
+        guard ahead == true, let expected = expectedPct else { return 0 }
+        return max(0, min(1, (usedPct - expected) / 30))
+    }
 }
 
 /// `cswap history --json` — recent account switches, newest first. The

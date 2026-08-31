@@ -44,4 +44,17 @@ final class GaugeMathTests: XCTestCase {
         XCTAssertEqual(GaugeMath.remaining(usedPct: 120), 0)  // over-limit floors
         XCTAssertEqual(GaugeMath.remaining(usedPct: -1), 100)
     }
+
+    func testBurnHeatScalesWithLead() {
+        XCTAssertEqual(GaugeMath.burnHeat(usedPct: 40, expectedPct: 40, ahead: true), 0)
+        XCTAssertEqual(GaugeMath.burnHeat(usedPct: 55, expectedPct: 40, ahead: true), 0.5)
+        XCTAssertEqual(GaugeMath.burnHeat(usedPct: 90, expectedPct: 40, ahead: true), 1)  // caps at +30
+    }
+
+    func testBurnHeatGates() {
+        // Behind pace: expectedPct present but ahead is false/nil — no fire.
+        XCTAssertEqual(GaugeMath.burnHeat(usedPct: 64, expectedPct: 39, ahead: false), 0)
+        XCTAssertEqual(GaugeMath.burnHeat(usedPct: 64, expectedPct: 39, ahead: nil), 0)
+        XCTAssertEqual(GaugeMath.burnHeat(usedPct: 64, expectedPct: nil, ahead: true), 0)
+    }
 }

@@ -10,6 +10,7 @@ struct AnimationsDebugPane: View {
     @State private var samplePulse = 0
     @State private var resetDemo = Date().addingTimeInterval(605)
     @State private var refillDemo: Double = 100
+    @State private var burnAhead: Double = 20
 
     var body: some View {
         Form {
@@ -94,6 +95,35 @@ struct AnimationsDebugPane: View {
                         .font(.caption).bold().foregroundStyle(.green)
                         .pulseOpacity()
                 }
+            }
+            Section("Pace fire (7d & model bars)") {
+                Picker("Style", selection: $model.burnStyle) {
+                    Text("Off").tag("off")
+                    Text("Ember glow").tag("ember")
+                    Text("Flame licks").tag("flame")
+                    Text("Limit break").tag("limit")
+                }
+                HStack(spacing: 10) {
+                    GaugeBar(remaining: 36, color: .orange,
+                             paceRemaining: 36 + burnAhead,
+                             dividers: (1..<7).map { Double($0) * 100 / 7 },
+                             burnStyle: model.burnStyle,
+                             burnHeat: GaugeMath.burnHeat(
+                                 usedPct: 64, expectedPct: 64 - burnAhead,
+                                 ahead: burnAhead > 0))
+                    Slider(value: $burnAhead, in: 0...40)
+                        .frame(width: 140)
+                    Text("+\(Int(burnAhead)) pts ahead")
+                        .font(.caption).monospacedDigit()
+                        .foregroundStyle(.secondary)
+                        .frame(width: 84, alignment: .trailing)
+                }
+                Text("Lights up 7d and per-model bars when usage runs "
+                     + "ahead of the clock — the further ahead, the "
+                     + "hotter (+30 points is white hot). The style "
+                     + "applies live in the popup; the slider only "
+                     + "drives this sample bar.")
+                    .font(.caption).foregroundStyle(.secondary)
             }
             Section("Inline samples") {
                 HStack(spacing: 12) {

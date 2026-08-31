@@ -109,6 +109,8 @@ final class AppModel: ObservableObject {
     @Published var introStyle: String { didSet { defaults.set(introStyle, forKey: "intro_style") } }
     @Published var introSpeed: Double { didSet { defaults.set(introSpeed, forKey: "intro_speed") } }
     @Published var introTitle: String { didSet { defaults.set(introTitle, forKey: "intro_title") } }
+    /// Pace fire on 7d/model bars ("off"/"ember"/"flame"/"limit").
+    @Published var burnStyle: String { didSet { defaults.set(burnStyle, forKey: "burn_style") } }
 
     /// Intro phase timing: bars (and the active-row flash) hold until
     /// the content entrance has fully landed (user 2026-08-30: "only
@@ -224,6 +226,7 @@ final class AppModel: ObservableObject {
         introStyle = defaults.string(forKey: "intro_style") ?? "top"
         introSpeed = defaults.object(forKey: "intro_speed") as? Double ?? 1.0
         introTitle = defaults.string(forKey: "intro_title") ?? "zoom"
+        burnStyle = defaults.string(forKey: "burn_style") ?? "ember"
         keepAwake = defaults.object(forKey: "keep_awake") as? Bool ?? false
         autoOrder = defaults.object(forKey: "auto_order") as? Bool ?? false
         // Push triggers default ON — they exist because they were asked for.

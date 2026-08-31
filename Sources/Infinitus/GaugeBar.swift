@@ -20,6 +20,11 @@ struct GaugeBar: View {
     /// percent labels froze mid-roll as ":" slivers, user screenshot
     /// 2026-08-30) and the intro fill has nothing to choreograph there.
     var animated: Bool = true
+    /// Pace fire ("off"/"ember"/"flame"/"limit") + heat 0…1 (how far
+    /// ahead of pace, GaugeMath.burnHeat) — 7d/model bars burn when
+    /// usage outruns the clock (user 2026-08-31).
+    var burnStyle: String = "off"
+    var burnHeat: Double = 0
     @ScaledMetric(relativeTo: .caption) private var barWidth = 56.0
     @ScaledMetric(relativeTo: .caption) private var barHeight = 6.0
     @State private var shown: Double = 0
@@ -39,6 +44,17 @@ struct GaugeBar: View {
             }
             .frame(width: barWidth, height: barHeight)
             .clipShape(Capsule())
+            // Unclipped overlay so flames lick a few points above the
+            // capsule; BurnOverlay caps its own rise (grid rows sit
+            // close above). Gated here so the TimelineView inside
+            // doesn't exist — and costs nothing — on calm bars.
+            .overlay(alignment: .bottom) {
+                if animated, burnHeat > 0, burnStyle != "off" {
+                    BurnOverlay(style: burnStyle, heat: burnHeat,
+                                fillFraction: min(100, max(0, shown)) / 100,
+                                barWidth: barWidth, barHeight: barHeight)
+                }
+            }
 
             Text("\(Int(remaining))%")
                 .font(.caption).monospacedDigit()

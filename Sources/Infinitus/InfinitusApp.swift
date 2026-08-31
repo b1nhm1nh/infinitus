@@ -1297,7 +1297,12 @@ struct AccountCells {
                             paceRemaining: w.expectedPct.map { 100 - $0 },
                             dividers: session
                                 ? (1..<5).map { Double($0) * 20 }
-                                : (1..<7).map { Double($0) * 100 / 7 })
+                                : (1..<7).map { Double($0) * 100 / 7 },
+                            // Pace fire on the 7d bar only (5h stays calm).
+                            burnStyle: session ? "off" : model.burnStyle,
+                            burnHeat: session ? 0 : GaugeMath.burnHeat(
+                                usedPct: w.pct, expectedPct: w.expectedPct,
+                                ahead: w.aheadOfPace))
                     }
                     resetLabelView(resetsAt: w.resetsAt, staticText: resetText(w))
                 }
@@ -1405,7 +1410,11 @@ struct AccountCells {
                             GaugeBar(remaining: GaugeMath.remaining(usedPct: w.pct),
                                      color: ThemeColor.resolve(theme.scopedColor),
                                      paceRemaining: w.expectedPct.map { 100 - $0 },
-                                     dividers: (1..<7).map { Double($0) * 100 / 7 })
+                                     dividers: (1..<7).map { Double($0) * 100 / 7 },
+                                     burnStyle: model.burnStyle,
+                                     burnHeat: GaugeMath.burnHeat(
+                                         usedPct: w.pct, expectedPct: w.expectedPct,
+                                         ahead: w.aheadOfPace))
                         }
                     }
                     .instantTip(WindowSummary.line(
