@@ -84,7 +84,9 @@ struct BurnOverlay: View {
     // MARK: styles
 
     /// Ember glow — the burning region smolders (gradient heat inside
-    /// the fill), a big pulsing coal at the tip, sparks everywhere.
+    /// the fill), coals dotted through it, a big pulsing coal at the
+    /// tip, sparks everywhere ("more flames and embers", user
+    /// 2026-08-31 round 3).
     private func ember(_ c: inout GraphicsContext, _ t: Double,
                        _ bar: CGRect, _ x0: Double, _ tipX: Double) {
         var inBar = c
@@ -103,6 +105,28 @@ struct BurnOverlay: View {
                 ]),
                 startPoint: CGPoint(x: x0, y: bar.midY),
                 endPoint: CGPoint(x: tipX, y: bar.midY)))
+        // Coals smoldering along the burning region (not just the tip).
+        let coals = 2 + Int(heat * 3.99)
+        for i in 0..<coals {
+            let seed = Double(i) * 5.13
+            let cx = x0 + (0.1 + 0.75 * n(seed)) * max(1, tipX - x0)
+            let cFlick = 0.65 + 0.35 * sin(t * (3.5 + n(seed + 2) * 3)
+                                           + seed * 9)
+            let cr = (1.6 + 2.2 * heat) * cFlick
+            let cc = CGPoint(x: cx, y: bar.midY)
+            inBar.fill(
+                Path(ellipseIn: CGRect(x: cc.x - cr, y: cc.y - cr,
+                                       width: cr * 2, height: cr * 2)),
+                with: .radialGradient(
+                    Gradient(stops: [
+                        .init(color: flameYellow.opacity(0.85 * bright),
+                              location: 0),
+                        .init(color: emberOrange.opacity(0.5 * bright),
+                              location: 0.5),
+                        .init(color: emberOrange.opacity(0), location: 1),
+                    ]),
+                    center: cc, startRadius: 0, endRadius: cr))
+        }
         let flick = 0.75 + 0.25 * sin(t * 5.5 + sin(t * 9.3) * 1.3)
         let r = (3.0 + 3.5 * heat) * flick
         let center = CGPoint(x: tipX, y: bar.midY)
@@ -115,15 +139,15 @@ struct BurnOverlay: View {
                        .init(color: emberOrange.opacity(0), location: 1),
                    ]),
                    center: center, startRadius: 0, endRadius: r))
-        sparks(&c, t, bar, x0, tipX, count: 2 + Int(heat * 5.99))
+        sparks(&c, t, bar, x0, tipX, count: 6 + Int(heat * 9.99))
     }
 
-    /// Flame licks — tongues across the WHOLE burning region, rising
-    /// well above the bar, biggest at the tip.
+    /// Flame licks — a dense wall of tongues across the WHOLE burning
+    /// region, rising well above the bar, biggest at the tip.
     private func flame(_ c: inout GraphicsContext, _ t: Double,
                        _ bar: CGRect, _ x0: Double, _ tipX: Double) {
         let span = max(1, tipX - x0)
-        let count = max(3, min(10, Int(span / 6) + 1))
+        let count = max(5, min(18, Int(span / 3.5) + 1))
         for i in 0..<count {
             let seed = Double(i) * 3.77
             let fx = tipX - span * Double(i) / Double(count) - n(seed + 5) * 2
@@ -139,7 +163,7 @@ struct BurnOverlay: View {
                           sway: sway * 0.7),
                    with: .color(flameYellow.opacity(0.75 * bright)))
         }
-        sparks(&c, t, bar, x0, tipX, count: 2 + Int(heat * 4.99))
+        sparks(&c, t, bar, x0, tipX, count: 6 + Int(heat * 7.99))
     }
 
     private func tongue(_ bar: CGRect, cx: Double, w: Double, h: Double,
@@ -219,5 +243,7 @@ struct BurnOverlay: View {
                        .init(color: flameYellow.opacity(0), location: 1),
                    ]),
                    center: center, startRadius: 0, endRadius: pr))
+        // Embers flying off the white-hot bar.
+        sparks(&c, t, bar, x0, tipX, count: 5 + Int(heat * 7.99))
     }
 }
