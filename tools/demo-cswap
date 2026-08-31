@@ -6,6 +6,11 @@ import json, sys, time, os, datetime
 
 # Not next to the script: Resources are sealed by the code signature.
 STATE = os.path.join(os.environ.get("TMPDIR", "/tmp"), "infinitus-demo-state.json")
+# Demo hook: `touch $TMPDIR/infinitus-demo-drop` makes alpha's 5h window
+# jump +25 points on the next refresh — replays the HP-drop drama on a
+# real row (rm the file to jump back, which replays the refill).
+DROP = os.path.exists(os.path.join(os.environ.get("TMPDIR", "/tmp"),
+                                   "infinitus-demo-drop"))
 
 def state():
     try:
@@ -44,7 +49,7 @@ def account(num, alias, plan, five, seven, scoped, spend_used, active):
 def fleet(active):
     return [
         account(1, "alpha", "Max 20x",
-                win(37.0, 2.4, "2h 25m", "23:59"),
+                win(62.0 if DROP else 37.0, 2.4, "2h 25m", "23:59"),
                 win(22.0, 118, "4d 22h", "Sep 4 19:59", 31.0, False),
                 [win(18.0, 118, "4d 22h", "Sep 4 19:59", 31.0, False, "Fable")],
                 41.2, active == 1),

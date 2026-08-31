@@ -28,6 +28,19 @@ struct GaugeBar: View {
     @ScaledMetric(relativeTo: .caption) private var barWidth = 56.0
     @ScaledMetric(relativeTo: .caption) private var barHeight = 6.0
     @State private var shown: Double = 0
+    // HP-drop drama (user 2026-08-31): a big one-refresh plunge zooms
+    // the bar 5×, flashes the doomed chunk, then drains it. dropSeq
+    // invalidates the pending closures when a newer change lands.
+    @State private var dropTo: Double? = nil
+    @State private var dropZoom = false
+    @State private var cutFlash = false
+    @State private var dropSeq = 0
+    /// A one-refresh plunge of 10+ remaining-points is a dramatic burn.
+    /// 60+ is a data correction, not a burn (an account/window swap —
+    /// and the debug pane's refill demo hops 100→8 on its way to the
+    /// spring refill; theatre there would fight the refill animation).
+    private static let dropMin = 10.0
+    private static let dropMax = 60.0
     // Intro choreography inputs (default 0 outside the popup — the
     // settings playground keeps its instant behavior).
     @Environment(\.introTick) private var introTick
@@ -40,6 +53,17 @@ struct GaugeBar: View {
                 // Fill animates via frame width (Canvas can't animate).
                 Capsule().fill(color)
                     .frame(width: max(0, barWidth * min(100, max(0, shown)) / 100))
+                // The doomed chunk: from the drop floor to the live fill
+                // edge — derived from `shown`, so the filldown eats it in
+                // perfect sync with the fill (no separate choreography).
+                if let to = dropTo {
+                    let x0 = barWidth * min(100, max(0, to)) / 100
+                    let x1 = barWidth * min(100, max(0, shown)) / 100
+                    Rectangle().fill(.white)
+                        .frame(width: max(0, x1 - x0))
+                        .offset(x: x0)
+                        .opacity(cutFlash ? 0.95 : 0.35)
+                }
                 overlayMarks
             }
             .frame(width: barWidth, height: barHeight)
@@ -55,6 +79,10 @@ struct GaugeBar: View {
                                 barWidth: barWidth, barHeight: barHeight)
                 }
             }
+            // The HP-drop zoom — after the burn overlay so flames zoom
+            // with the bar. Overlapping neighbor rows is the drama.
+            .scaleEffect(dropZoom ? 5 : 1, anchor: .leading)
+            .zIndex(dropZoom ? 10 : 0)
 
             Text("\(Int(remaining))%")
                 .font(.caption).monospacedDigit()
@@ -67,6 +95,15 @@ struct GaugeBar: View {
         // debug pane's Replay, user 2026-08-30).
         .onChange(of: introTick) { _, _ in playFill() }
         .onChange(of: remaining) { old, new in
+            // Every change invalidates a running drop sequence AND resets
+            // its visuals unconditionally — restoration must never live
+            // only in a cancellable closure (or the bar sticks at 5×).
+            dropSeq += 1
+            if dropZoom || dropTo != nil {
+                withAnimation(.easeOut(duration: 0.2)) { dropZoom = false }
+                dropTo = nil
+                cutFlash = false
+            }
             // A jump UP of 25+ points is a window reset: replay the refill
             // from empty (the restore animation, user 2026-08-30).
             if new - old > 25 {
@@ -76,8 +113,32 @@ struct GaugeBar: View {
                 withAnimation(.spring(duration: 1.8, bounce: 0.2).delay(0.25)) {
                     shown = new
                 }
+            } else if old - new >= Self.dropMin, old - new <= Self.dropMax,
+                      animated {
+                playDrop(to: new)
             } else {
                 withAnimation(.easeOut(duration: 0.5)) { shown = new }
+            }
+        }
+    }
+
+    /// The HP-drop sequence (user 2026-08-31): zoom the bar 5× in
+    /// place, flash the chunk about to be lost, then drain it with an
+    /// easeIn filldown and settle back to size.
+    private func playDrop(to: Double) {
+        let seq = dropSeq
+        dropTo = to                       // chunk = [to, shown]; hold at old
+        withAnimation(.spring(duration: 0.3, bounce: 0.45)) { dropZoom = true }
+        withAnimation(.easeInOut(duration: 0.11)
+            .repeatCount(7, autoreverses: true).delay(0.25)) { cutFlash = true }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.05) {
+            guard seq == dropSeq else { return }
+            withAnimation(.easeIn(duration: 0.5)) { shown = to }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.75) {
+                guard seq == dropSeq else { return }
+                withAnimation(.spring(duration: 0.4)) { dropZoom = false }
+                dropTo = nil
+                cutFlash = false
             }
         }
     }

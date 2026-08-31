@@ -11,6 +11,7 @@ struct AnimationsDebugPane: View {
     @State private var resetDemo = Date().addingTimeInterval(605)
     @State private var refillDemo: Double = 100
     @State private var burnAhead: Double = 20
+    @State private var dropDemo: Double = 100
 
     var body: some View {
         Form {
@@ -86,6 +87,20 @@ struct AnimationsDebugPane: View {
                 Text("Green stripe = pace reserve; red tick near empty is "
                      + "the warning mark; segment ticks are hours (5h bar) "
                      + "or days (7d bar).")
+                    .font(.caption).foregroundStyle(.secondary)
+                HStack(spacing: 10) {
+                    GaugeBar(remaining: dropDemo, color: .blue,
+                             paceRemaining: 55,
+                             dividers: (1..<5).map { Double($0) * 20 })
+                    Button(dropDemo > 50 ? "Replay HP drop (\u{2212}35)"
+                                         : "Refill first") {
+                        dropDemo = dropDemo > 50 ? dropDemo - 35 : 100
+                    }
+                }
+                Text("Big one-refresh drops (10\u{2013}60 points) play the "
+                     + "drama on any bar: zoom to 5\u{00d7}, the doomed chunk "
+                     + "flashes white, then a hard filldown. The button "
+                     + "alternates with a refill once the bar runs low.")
                     .font(.caption).foregroundStyle(.secondary)
                 HStack(spacing: 10) {
                     Text("Themed reset word:")
