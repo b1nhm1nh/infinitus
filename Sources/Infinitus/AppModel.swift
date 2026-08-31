@@ -177,6 +177,7 @@ final class AppModel: ObservableObject {
     private let awake = KeepAwake()
     private var pushTriggers = PushTriggers()
     private let defaults: UserDefaults
+    static let playgroundSuite = "com.huuloc.limitless.playground"
 
     /// Custom skins from themes.json, loaded at launch and on demand
     /// (the Display pane reloads when it appears).
@@ -227,12 +228,12 @@ final class AppModel: ObservableObject {
         isPlayground = playground
         // Playground prefs sandbox: reads SEED from the user's live
         // settings (registration domain, volatile), writes land in a
-        // throwaway suite wiped on every launch — the playground's
-        // layout/size/theme knobs never touch real prefs.
+        // private suite that now PERSISTS across launches (user
+        // 2026-08-31: "persist playground state with selected
+        // changes") — still never touching real prefs. Reset wipes the
+        // suite back to the live-settings seed.
         if playground {
-            let suite = "com.huuloc.limitless.playground"
-            let d = UserDefaults(suiteName: suite)!
-            d.removePersistentDomain(forName: suite)
+            let d = UserDefaults(suiteName: Self.playgroundSuite)!
             d.register(defaults: UserDefaults.standard.dictionaryRepresentation())
             defaults = d
         } else {
@@ -349,6 +350,19 @@ final class AppModel: ObservableObject {
         pushSessionsDone = defaults.object(forKey: "push_sessions_done") as? Bool ?? true
         pushAllDead = defaults.object(forKey: "push_all_dead") as? Bool ?? true
         pushLastAlive = defaults.object(forKey: "push_last_alive") as? Bool ?? true
+    }
+
+    /// Playground reset (user 2026-08-31): wipe the sandbox suite so
+    /// every knob falls back to the registration seed — the user's
+    /// live settings — then re-read. Playground models only.
+    func resetPlaygroundPrefs() {
+        guard isPlayground else { return }
+        defaults.removePersistentDomain(forName: Self.playgroundSuite)
+        reloadPrefs()
+        introStyle = defaults.string(forKey: "intro_style") ?? "top"
+        introSpeed = defaults.object(forKey: "intro_speed") as? Double ?? 1.0
+        introTitle = defaults.string(forKey: "intro_title") ?? "zoom"
+        burnStyle = defaults.string(forKey: "burn_style") ?? "ember"
     }
 
     /// Idempotent: called from app init so the supervised engine starts at

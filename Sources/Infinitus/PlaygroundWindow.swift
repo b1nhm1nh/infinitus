@@ -224,6 +224,11 @@ struct PlaygroundView: View {
                         Text(String(format: "%.1fx", model.introSpeed))
                             .font(.caption).monospacedDigit()
                             .foregroundStyle(.secondary)
+                        Spacer()
+                        // Knob changes persist across playground opens
+                        // (sandbox suite); Reset falls back to the
+                        // live-settings seed.
+                        Button("Reset knobs") { model.resetPlaygroundPrefs() }
                     }
                     MenuContent(model: model, usage: usage)
                         .fixedSize()
