@@ -292,7 +292,15 @@ import CswapCore
         authWindow = w
         w.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
-        startSystemSheet()
+        // Routing: a relogin target with a saved private session skips
+        // the sheet — its own window opens already signed in as THAT
+        // account. Everyone else gets the ephemeral sheet (fresh
+        // sign-in, passkeys work).
+        if let email = reloginEmail, Self.storeMap()[email] != nil {
+            openPrivateWindow()
+        } else {
+            startSystemSheet()
+        }
     }
 
     /// The opt-in private window: this account's own isolated session
@@ -340,7 +348,12 @@ import CswapCore
         let provider = AuthAnchorProvider(window: authWindow)
         anchorProvider = provider
         session.presentationContextProvider = provider
-        session.prefersEphemeralWebBrowserSession = false
+        // EPHEMERAL, non-negotiably: the shared sheet store carried
+        // account 1's claude session into account 2's relogin ("it
+        // opens my account1", user screenshot 2026-08-31). Passkeys
+        // don't need cookies — they live in the OS keychain — so a
+        // fresh session costs one Touch ID tap and bleeds nothing.
+        session.prefersEphemeralWebBrowserSession = true
         systemSession = session
         session.start()
     }
@@ -434,8 +447,10 @@ private struct AuthWindowRoot: View {
                 Text("Re-login for \(target) \u{2014} sign in as that account.")
                     .font(.caption).foregroundStyle(.orange)
             }
-            Text("1. Sign in and approve in the sign-in sheet "
-                 + "(passkeys and Touch ID work there).\n"
+            Text("1. Sign in and approve in the sign-in sheet or window "
+                 + "(the sheet is a fresh private session \u{2014} "
+                 + "passkeys and Touch ID work; it never remembers "
+                 + "another account).\n"
                  + "2. Copy the code it shows and paste it here.")
                 .font(.caption).foregroundStyle(.secondary)
             HStack(spacing: 8) {
