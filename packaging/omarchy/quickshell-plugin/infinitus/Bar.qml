@@ -58,6 +58,46 @@ BarWidget {
     onExited: root.refresh()
   }
 
+  // Right-click cycles the theme through the real settings mechanism —
+  // `omarchy bar set` writes shell.json, the shell hot-applies it, and
+  // themeId's change triggers the re-render. Quattro 4.0.1 has no
+  // widget-settings GUI; the CLI is the supported editor.
+  property var themeIds: []
+
+  Process {
+    id: themesProc
+    command: [root.trayBin, "themes"]
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: {
+        var ids = []
+        var lines = String(text || "").split("\n")
+        for (var i = 0; i < lines.length; i++) {
+          var id = lines[i].split("\t")[0].trim()
+          if (id) ids.push(id)
+        }
+        root.themeIds = ids
+      }
+    }
+  }
+
+  Process {
+    id: themeSetProc
+    property string nextTheme: ""
+    command: ["omarchy", "bar", "set", "infinitus.fleet", "theme", nextTheme]
+  }
+
+  function cycleTheme() {
+    if (themeIds.length === 0 || themeSetProc.running) return
+    var i = themeIds.indexOf(themeId)
+    themeSetProc.nextTheme = themeIds[(i + 1) % themeIds.length]
+    themeSetProc.running = true
+  }
+
+  onThemeIdChanged: refresh()
+
+  Component.onCompleted: themesProc.running = true
+
   Timer {
     interval: root.refreshMs
     running: true
@@ -86,7 +126,12 @@ BarWidget {
     anchors.fill: parent
     hoverEnabled: true
     cursorShape: Qt.PointingHandCursor
-    onClicked: if (!rotateProc.running) rotateProc.running = true
+    acceptedButtons: Qt.LeftButton | Qt.MiddleButton | Qt.RightButton
+    onClicked: function(mouse) {
+      if (mouse.button === Qt.RightButton) root.cycleTheme()
+      else if (mouse.button === Qt.MiddleButton) root.refresh()
+      else if (!rotateProc.running) rotateProc.running = true
+    }
     onEntered: if (root.bar) root.bar.showTooltip(root, root.statusTooltip)
     onExited: if (root.bar) root.bar.hideTooltip(root)
   }
