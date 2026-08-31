@@ -1,5 +1,6 @@
 import SwiftUI
 import WebKit
+import AuthenticationServices
 import CswapCore
 
 /// Native account management (user 2026-08-31: "add new account,
@@ -61,6 +62,8 @@ import CswapCore
     private var shimDir: URL?
     private var authWindow: NSWindow?
     private var webDelegate: AuthWebDelegate?
+    private var systemSession: ASWebAuthenticationSession?
+    private var anchorProvider: AuthAnchorProvider?
 
     var running: Bool {
         switch phase {
@@ -302,6 +305,28 @@ import CswapCore
         NSApp.activate(ignoringOtherApps: true)
     }
 
+    /// Passkey path (user 2026-08-31: "couldn't use passkey"): WebAuthn
+    /// is entitlement-locked to real browsers — a WKWebView only gets
+    /// the Bluetooth-hybrid fallback, which fails. The system sheet
+    /// (Safari's out-of-process service) has full passkey support.
+    /// Its cookie store is app-shared, not per-account — Google's own
+    /// account chooser covers multi-account there.
+    func startSystemSheet() {
+        guard let url = authURL else { return }
+        let session = ASWebAuthenticationSession(
+            url: url, callbackURLScheme: nil) { [weak self] _, _ in
+            // No custom-scheme callback exists — the flow ends when the
+            // user copies the code and closes the sheet; nothing to do.
+            self?.systemSession = nil
+        }
+        let provider = AuthAnchorProvider(window: authWindow)
+        anchorProvider = provider
+        session.presentationContextProvider = provider
+        session.prefersEphemeralWebBrowserSession = false
+        systemSession = session
+        session.start()
+    }
+
     func reopenAuth() {
         if let w = authWindow {
             w.makeKeyAndOrderFront(nil)
@@ -316,6 +341,20 @@ import CswapCore
         authWindow = nil
         webDelegate?.closePopups()
         webDelegate = nil
+        systemSession?.cancel()
+        systemSession = nil
+        anchorProvider = nil
+    }
+}
+
+/// Presentation anchor for the system sign-in sheet.
+final class AuthAnchorProvider: NSObject,
+    ASWebAuthenticationPresentationContextProviding {
+    private weak var window: NSWindow?
+    init(window: NSWindow?) { self.window = window }
+    func presentationAnchor(for session: ASWebAuthenticationSession)
+        -> ASPresentationAnchor {
+        window ?? NSApp.windows.first ?? ASPresentationAnchor()
     }
 }
 
@@ -388,6 +427,18 @@ private struct AuthWindowRoot: View {
                 Button("Cancel") { flow.cancel() }
             }
             .padding(10)
+            HStack(spacing: 6) {
+                Text("Passkey account? This window can't do passkeys "
+                     + "(password sign-in works) —")
+                    .font(.caption).foregroundStyle(.secondary)
+                Button("use the system sign-in sheet") {
+                    flow.startSystemSheet()
+                }
+                .buttonStyle(.link).font(.caption)
+                Text("then paste the code above.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            .padding(.horizontal, 10).padding(.bottom, 8)
         }
     }
 }
