@@ -550,7 +550,7 @@ struct MenuContent: View {
                                     } label: {
                                         Image(systemName: "wand.and.stars")
                                     }
-                                    .instantTip("Animation playground (dev)",
+                                    .instantTip("Playground (dev)",
                                                 edge: .above)
                                 }
                                 Button {
@@ -650,7 +650,7 @@ struct MenuContent: View {
             Button { Playground.show(usage: usage) } label: {
                 Image(systemName: "wand.and.stars")
             }
-            .instantTip("Animation playground (dev)")
+            .instantTip("Playground (dev)")
         }
         Button { model.showSettings?() } label: {
             Image(systemName: "gearshape")
@@ -752,7 +752,7 @@ struct MenuContent: View {
             Button { Playground.show(usage: usage) } label: {
                 Image(systemName: "wand.and.stars")
             }
-            .instantTip("Animation playground (dev)")
+            .instantTip("Playground (dev)")
         }
         Button { model.showSettings?() } label: {
             Image(systemName: "gearshape")
@@ -1271,6 +1271,16 @@ struct AccountCells {
         }
     }
 
+    /// FFVII All Lucky 7s, the paired trigger: BOTH the 5h and 7d
+    /// windows showing exactly 77 remaining (the solo trigger is a
+    /// scoped/Fable bar at 77 — checked at its own call site).
+    var luckyPair: Bool {
+        guard let five = account.usage?.fiveHour?.pct,
+              let seven = account.usage?.sevenDay?.pct else { return false }
+        return Int(GaugeMath.remaining(usedPct: five)) == 77
+            && Int(GaugeMath.remaining(usedPct: seven)) == 77
+    }
+
     @ViewBuilder func windowCell(_ w: UsageWindow?, session: Bool) -> some View {
         Group {
             if let w, !hiddenInCompact(w.pct) {
@@ -1306,7 +1316,8 @@ struct AccountCells {
                                 usedPct: w.pct, expectedPct: w.expectedPct,
                                 ahead: w.aheadOfPace),
                             // Mid-row on the wide grid: grow both ways.
-                            dropAnchor: banded && !session ? .center : .leading)
+                            dropAnchor: banded && !session ? .center : .leading,
+                            lucky: luckyPair)
                     }
                     resetLabelView(resetsAt: w.resetsAt, staticText: resetText(w))
                 }
@@ -1414,7 +1425,9 @@ struct AccountCells {
                                          ahead: w.aheadOfPace),
                                      // Far right on the wide grid: grow
                                      // leftward, into the window.
-                                     dropAnchor: banded ? .trailing : .leading)
+                                     dropAnchor: banded ? .trailing : .leading,
+                                     lucky: Int(GaugeMath.remaining(
+                                         usedPct: w.pct)) == 77)
                         }
                     }
                     .instantTip(WindowSummary.line(
@@ -1578,11 +1591,17 @@ struct AccountGrid: View {
                         // wraps to three rows inside one grid column;
                         // fixedSize overflows across the filler cells
                         // instead, tooltip keeps the whole sentence.
-                        Text(SentinelNotes.short(for: account.usageStatus) ?? note)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                        // relogin_required is a BUTTON: it starts the
+                        // in-app relogin right from the list (user
+                        // 2026-08-31) — real engine only, the demo cast
+                        // must never launch a real OAuth flow.
+                        SentinelActionText(model: model, account: account,
+                                           note: note)
                             .fixedSize()
-                            .instantTip(note)
+                            .instantTip(account.usageStatus == "relogin_required"
+                                        && !model.isPlayground
+                                        ? "Re-login now — opens this account's private login window"
+                                        : note)
                             .gridCellUnsizedAxes(anyGauged ? .horizontal : [])
                             .activeBand(account.active)
                         oneLineFillers
@@ -1815,9 +1834,13 @@ struct AccountStack: View {
                         cells.cashCell
                     }
                     if let note = SentinelNotes.note(for: account.usageStatus) {
-                        Text(SentinelNotes.short(for: account.usageStatus) ?? note)
-                            .font(.caption).foregroundStyle(.secondary)
-                            .lineLimit(1).instantTip(note)
+                        SentinelActionText(model: model, account: account,
+                                           note: note)
+                            .lineLimit(1)
+                            .instantTip(account.usageStatus == "relogin_required"
+                                        && !model.isPlayground
+                                        ? "Re-login now — opens this account's private login window"
+                                        : note)
                     } else if cells.dead {
                         cells.deadCell
                     } else if cells.allFresh {
@@ -1868,6 +1891,42 @@ struct AccountStack: View {
 /// One anchor per row, keyed by account number — the death band's
 /// geometry feed (the beat needs to know WHICH row, unlike the single
 /// active band).
+/// Sentinel note cell: plain text, except relogin_required on a real
+/// engine — that one is a button starting the in-app relogin flow for
+/// the account, straight from the list (user 2026-08-31).
+struct SentinelActionText: View {
+    @ObservedObject var model: AppModel
+    let account: Account
+    let note: String
+
+    private var label: String {
+        SentinelNotes.short(for: account.usageStatus) ?? note
+    }
+    private var actionable: Bool {
+        account.usageStatus == "relogin_required" && !model.isPlayground
+    }
+
+    var body: some View {
+        if actionable {
+            Button {
+                TokenFlow.shared.start(model: model, relogin: account)
+            } label: {
+                HStack(spacing: 3) {
+                    Text(label)
+                    Image(systemName: "arrow.right.circle")
+                }
+                .font(.caption)
+                .foregroundStyle(.orange)
+            }
+            .buttonStyle(.plain)
+        } else {
+            Text(label)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+}
+
 struct DeadRowBounds: PreferenceKey {
     static let defaultValue: [Int: [Anchor<CGRect>]] = [:]
     static func reduce(value: inout [Int: [Anchor<CGRect>]],

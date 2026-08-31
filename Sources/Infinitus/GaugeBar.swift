@@ -31,6 +31,10 @@ struct GaugeBar: View {
     /// (user 2026-08-31: "fable drop: overflown hidden as fable is
     /// far right of window — happens only on list").
     var dropAnchor: UnitPoint = .leading
+    /// FFVII All Lucky 7s (easter egg, user 2026-08-31): the call site
+    /// decides the trigger (Fable at 77, or 5h AND 7d both at 77) and
+    /// the label plays the fever flash instead of the plain percent.
+    var lucky: Bool = false
     @ScaledMetric(relativeTo: .caption) private var barWidth = 56.0
     @ScaledMetric(relativeTo: .caption) private var barHeight = 6.0
     @State private var shown: Double = 0
@@ -116,11 +120,15 @@ struct GaugeBar: View {
             .scaleEffect(dropZoom ? 5 : 1, anchor: dropAnchor)
             .zIndex(dropZoom ? 10 : 0)
 
-            Text("\(Int(remaining))%")
-                .font(.caption).monospacedDigit()
-                .contentTransition(animated ? .numericText(value: remaining)
-                                            : .identity)
-                .foregroundStyle(remaining <= 0 ? Color.red : color.opacity(0.9))
+            if lucky, animated {
+                LuckySevens(text: "\(Int(remaining))%")
+            } else {
+                Text("\(Int(remaining))%")
+                    .font(.caption).monospacedDigit()
+                    .contentTransition(animated ? .numericText(value: remaining)
+                                                : .identity)
+                    .foregroundStyle(remaining <= 0 ? Color.red : color.opacity(0.9))
+            }
         }
         .onAppear { animated ? playFill() : (shown = remaining) }
         // Replay intro re-runs the fill too (it was missing from the

@@ -13,6 +13,11 @@ import CswapCore
 /// Each account keeps its own isolated web session, so Relogin opens
 /// already signed in as that account.
 @MainActor final class TokenFlow: ObservableObject {
+    /// One app-wide flow: the popup's "re-login needed" note starts it
+    /// directly from the list (user 2026-08-31), the Accounts pane
+    /// mirrors whatever is in flight.
+    static let shared = TokenFlow()
+
     enum Phase: Equatable {
         case idle
         case launching
@@ -49,6 +54,7 @@ import CswapCore
     }
 
     private var process: Process?
+    private weak var model: AppModel?
     private var master: FileHandle?
     private var buffer = ""
     private var token: String?
@@ -78,6 +84,7 @@ import CswapCore
         buffer = ""
         authURL = nil
         phase = .launching
+        self.model = model
         do { try launch(model: model) } catch {
             phase = .failed("couldn't start claude setup-token: \(error.localizedDescription)")
         }
@@ -212,9 +219,11 @@ import CswapCore
         master?.readabilityHandler = nil
         guard let token, status == 0 || token.count > 30 else {
             let tail = buffer.suffix(300).trimmingCharacters(in: .whitespacesAndNewlines)
-            phase = .failed(tail.isEmpty
-                            ? "setup-token exited \(status) without a token"
-                            : String(tail))
+            let msg = tail.isEmpty
+                ? "setup-token exited \(status) without a token"
+                : String(tail)
+            phase = .failed(msg)
+            model.lastError = "relogin: \(msg.prefix(120))"
             cleanup()
             return
         }
@@ -265,11 +274,16 @@ import CswapCore
         cfg.websiteDataStore = WKWebsiteDataStore(forIdentifier: storeID)
         let web = WKWebView(frame: .zero, configuration: cfg)
         web.load(URLRequest(url: url))
-        let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 560, height: 720),
+        // The paste bar rides INSIDE the window, so a flow started from
+        // the popup list is self-contained — no Settings trip.
+        let host = NSHostingController(rootView: AuthWindowRoot(flow: self, web: web))
+        host.sizingOptions = []
+        let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 560, height: 760),
                          styleMask: [.titled, .closable, .resizable],
                          backing: .buffered, defer: false)
         w.title = "Claude login (private)"
-        w.contentView = web
+        w.contentViewController = host
+        w.setContentSize(NSSize(width: 560, height: 760))
         w.isReleasedWhenClosed = false
         w.center()
         authWindow = w
@@ -292,9 +306,44 @@ import CswapCore
     }
 }
 
+private struct AuthWebView: NSViewRepresentable {
+    let web: WKWebView
+    func makeNSView(context: Context) -> WKWebView { web }
+    func updateNSView(_ nsView: WKWebView, context: Context) {}
+}
+
+/// Login window content: the OAuth page with the paste-back bar under
+/// it — sign in, approve, copy the code, paste it right here.
+private struct AuthWindowRoot: View {
+    @ObservedObject var flow: TokenFlow
+    let web: WKWebView
+
+    var body: some View {
+        VStack(spacing: 0) {
+            AuthWebView(web: web)
+            Divider()
+            HStack(spacing: 8) {
+                if let target = flow.reloginTarget {
+                    Text("Re-login: \(target)").font(.caption)
+                        .foregroundStyle(.orange)
+                }
+                TextField("Paste the code shown after approval",
+                          text: $flow.code)
+                    .textFieldStyle(.roundedBorder)
+                Button("Submit") { flow.submitCode() }
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(flow.code.trimmingCharacters(
+                        in: .whitespaces).isEmpty)
+                Button("Cancel") { flow.cancel() }
+            }
+            .padding(10)
+        }
+    }
+}
+
 struct AccountsPane: View {
     @ObservedObject var model: AppModel
-    @StateObject private var flow = TokenFlow()
+    @ObservedObject private var flow = TokenFlow.shared
     @State private var confirmDelete: Account?
 
     var body: some View {

@@ -57,7 +57,7 @@ import CswapCore
             // ideal-width crash class); sized once below, user-owned after.
             host.sizingOptions = []
             let w = NSWindow(contentViewController: host)
-            w.title = "Animation Playground"
+            w.title = "Playground"
             w.styleMask = [.titled, .closable, .resizable]
             w.isReleasedWhenClosed = false
             w.setContentSize(NSSize(width: 720, height: 660))
@@ -168,53 +168,73 @@ struct PlaygroundView: View {
                         Button("Fable") { playDrop("fable") }
                     }
                     HStack(spacing: 14) {
-                        Picker("Layout", selection: layoutBinding) {
-                            Text("Wide rows").tag("wide")
-                            Text("Stacked cards").tag("stacked")
-                            Text("Horizontal cards").tag("hstack")
+                        // Segmented, not dropdowns (user 2026-08-31:
+                        // "don't use dropdown for selections") — every
+                        // option visible, one click to compare.
+                        Text("Layout").font(.caption).foregroundStyle(.secondary)
+                        Picker("", selection: layoutBinding) {
+                            Text("Wide").tag("wide")
+                            Text("Stacked").tag("stacked")
+                            Text("Cards").tag("hstack")
                         }
-                        .fixedSize()
-                        Picker("Size", selection: $model.popupTextSize) {
-                            Text("Default").tag("default")
-                            Text("Large").tag("large")
-                            Text("X-Large").tag("xlarge")
-                            Text("Huge").tag("huge")
+                        .pickerStyle(.segmented).fixedSize().labelsHidden()
+                        Text("Size").font(.caption).foregroundStyle(.secondary)
+                        Picker("", selection: $model.popupTextSize) {
+                            Text("1×").tag("default")
+                            Text("1.15×").tag("large")
+                            Text("1.3×").tag("xlarge")
+                            Text("1.5×").tag("huge")
                         }
-                        .fixedSize()
-                        Toggle("Compact rows", isOn: $model.compactRows)
+                        .pickerStyle(.segmented).fixedSize().labelsHidden()
+                        Toggle("Compact", isOn: $model.compactRows)
                     }
-                    HStack(spacing: 14) {
-                        Picker("Theme", selection: $model.gamification) {
-                            ForEach(model.availableThemes) { t in
-                                Text(t.name).tag(t.id)
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        Text("Theme").font(.caption).foregroundStyle(.secondary)
+                        // Buttons, not a dropdown: theme names are too
+                        // long for a segmented control — a scrolling
+                        // row of pills (selected = accent tint).
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 6) {
+                                ForEach(model.availableThemes) { t in
+                                    Button(t.name) { model.gamification = t.id }
+                                        .buttonStyle(.bordered)
+                                        .tint(model.gamification == t.id
+                                              ? Color.accentColor : nil)
+                                }
                             }
                         }
-                        .fixedSize()
-                        Picker("Pace fire", selection: $model.burnStyle) {
+                    }
+                    HStack(spacing: 14) {
+                        Text("Pace fire").font(.caption).foregroundStyle(.secondary)
+                        Picker("", selection: $model.burnStyle) {
                             Text("Off").tag("off")
-                            Text("Ember glow").tag("ember")
-                            Text("Flame licks").tag("flame")
-                            Text("Limit break").tag("limit")
+                            Text("Ember").tag("ember")
+                            Text("Flame").tag("flame")
+                            Text("Limit").tag("limit")
                         }
-                        .fixedSize()
-                        Picker("Intro", selection: $model.introStyle) {
-                            Text("Slide from top").tag("top")
-                            Text("Slide from bottom").tag("bottom")
-                            Text("Fade in").tag("fade")
-                            Text("Rows from right").tag("rows")
-                            // A legal live value (the reveal's default
-                            // arm) — without it the picker renders blank
-                            // for prefs that hold "off".
-                            Text("Off").tag("off")
-                        }
-                        .fixedSize()
-                        Picker("Title", selection: $model.introTitle) {
-                            Text("Zoom bounce").tag("zoom")
-                            Text("Stamp slam").tag("slam")
-                            Text("Spin up").tag("spin")
+                        .pickerStyle(.segmented).fixedSize().labelsHidden()
+                        Text("Title").font(.caption).foregroundStyle(.secondary)
+                        Picker("", selection: $model.introTitle) {
+                            Text("Zoom").tag("zoom")
+                            Text("Slam").tag("slam")
+                            Text("Spin").tag("spin")
                             Text("Off").tag("off")
                         }
-                        .fixedSize()
+                        .pickerStyle(.segmented).fixedSize().labelsHidden()
+                    }
+                    HStack(spacing: 14) {
+                        Text("Intro").font(.caption).foregroundStyle(.secondary)
+                        // "off" is a legal live value (the reveal's
+                        // default arm) — omitted, the control renders
+                        // no selection for prefs that hold it.
+                        Picker("", selection: $model.introStyle) {
+                            Text("Top").tag("top")
+                            Text("Bottom").tag("bottom")
+                            Text("Fade").tag("fade")
+                            Text("Rows").tag("rows")
+                            Text("Off").tag("off")
+                        }
+                        .pickerStyle(.segmented).fixedSize().labelsHidden()
                     }
                     HStack(spacing: 14) {
                         Text("Intro speed").font(.caption)

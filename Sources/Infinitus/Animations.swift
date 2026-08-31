@@ -222,6 +222,43 @@ extension View {
     }
 }
 
+/// FFVII "All Lucky 7s" fever (user 2026-08-31 easter egg: Fable at
+/// 77%, or 5h AND 7d both at 77%). Authentic to the PSX original: the
+/// digits FLASH in hard frame steps — no easing, no fades — gold and
+/// white like the 7777 damage pops, with a full rainbow run every few
+/// beats (the fever's sprite flash). Trigger logic lives at the call
+/// sites; this just renders the fever.
+struct LuckySevens: View {
+    var text = "77%"
+
+    private static let steps: [Color] = [
+        Color(red: 1.00, green: 0.85, blue: 0.20),   // gold
+        .white,
+        Color(red: 1.00, green: 0.85, blue: 0.20),
+        .white,
+        // the rainbow run
+        Color(red: 1.00, green: 0.25, blue: 0.25),
+        Color(red: 1.00, green: 0.60, blue: 0.10),
+        Color(red: 1.00, green: 0.95, blue: 0.20),
+        Color(red: 0.30, green: 1.00, blue: 0.35),
+        Color(red: 0.25, green: 0.90, blue: 1.00),
+        Color(red: 0.85, green: 0.40, blue: 1.00),
+    ]
+
+    var body: some View {
+        TimelineView(.periodic(from: .now, by: 0.14)) { ctx in
+            let frame = Int(ctx.date.timeIntervalSinceReferenceDate / 0.14)
+            let color = Self.steps[frame % Self.steps.count]
+            Text(text)
+                .font(.caption).bold().monospacedDigit()
+                .foregroundStyle(color)
+                // Stepped pop, not a spring — frame flips like the PSX.
+                .scaleEffect(frame % 2 == 0 ? 1.0 : 1.12)
+                .help("All Lucky 7s!")
+        }
+    }
+}
+
 /// The "resetting…" pulse as a reusable modifier (debug pane demo).
 private struct PulseOpacity: ViewModifier {
     func body(content: Content) -> some View {

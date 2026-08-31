@@ -17,7 +17,7 @@ struct AnimationsDebugPane: View {
     var body: some View {
         Form {
             Section {
-                Button("Open animation playground") {
+                Button("Open playground") {
                     Playground.show(usage: usage)
                 }
                 Text("A resizable window with the self-contained demos \u{2014} "

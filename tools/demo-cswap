@@ -94,7 +94,8 @@ def fleet(active):
         account(5, "echo", "Max 20x",
                 win(51.0, 0.9, "54m", "22:28"),
                 win(41.0, 108, "4d 12h", "Sep 4 09:59", 35.0, False),
-                [win(38.0, 108, "4d 12h", "Sep 4 09:59", 35.0, False, "Fable")],
+                # Fable at 77% remaining: the All Lucky 7s easter egg row.
+                [win(23.0, 108, "4d 12h", "Sep 4 09:59", 35.0, False, "Fable")],
                 63.0, active == 5),
         # One account per remaining condition (user 2026-08-31:
         # "more accounts one with each state").
