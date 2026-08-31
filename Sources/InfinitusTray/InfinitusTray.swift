@@ -76,6 +76,16 @@ struct InfinitusTray {
         let theme = RowTheme.builtins.first { $0.id == themeID } ?? .off
         do {
             let list = try await CswapCLI(binaryPath: bin).accountList()
+            // Engine installed, fleet empty: a bare glyph with no
+            // tooltip reads as broken — onboard instead.
+            guard !list.accounts.isEmpty else {
+                emit(WaybarPayload(
+                    text: "\(TitleFormatter.icon) no accounts",
+                    tooltip: "the engine has no accounts yet — sign in "
+                        + "with Claude Code, then:\ncswap add",
+                    class: "warning", percentage: nil))
+                return
+            }
             let now = Date()
             let active = list.accounts.first { $0.active }
             let prefs = TitlePrefs(showAccountName: true, titlePct: "both",
