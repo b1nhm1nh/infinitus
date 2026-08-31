@@ -125,7 +125,7 @@
      src/data/arsenal.ts + icon), committed locally (59f92ce3), NOT
      pushed — pushing deploys.
   4. ~~Walkthrough video~~ → re-recorded 2026-08-31 per user ask:
-     74s cut at ~/Movies/Infinitus-walkthrough.mp4 (shim fleet) —
+     75s cut at ~/Movies/Infinitus-walkthrough.mp4 (shim fleet) —
      open+hover tour, rotate celebration, compact in wide AND stacked,
      all three layouts (incl. the new horizontal cards, morphed live
      in the pop-out), LIVE theme switching (Sci-Fi/Hades/Movie/RPG via

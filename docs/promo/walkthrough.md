@@ -21,7 +21,7 @@ Recording: `screencapture -v -V <seconds> -R x,y,w,h out.mov` per shot on
 the shim fleet (`INFINITUS_CSWAP=$S/cswap-shim ./run-unbundled.sh`),
 then `ffmpeg -f concat` the segments; keep the mp4 out of git.
 
-## Recorded cut №2 — 2026-08-31 (74s, ~/Movies/Infinitus-walkthrough.mp4)
+## Recorded cut №2 — 2026-08-31 (75s, ~/Movies/Infinitus-walkthrough.mp4)
 
 Re-recorded per user ask ("changing layout, compact mode for both,
 theme switching") on the shim fleet, all interactions scripted:
@@ -33,8 +33,11 @@ theme switching") on the shim fleet, all interactions scripted:
 | 0:20 | Compact (wide) | One-line rows + icon rail, and back |
 | 0:30 | Layouts | Wide -> stacked cards; compact in stacked, and back |
 | 0:41 | Pop out | Pop-out window appears, morphs stacked -> horizontal cards in place |
-| 0:54 | Themes | Settings -> Themes card grid; pop-out re-skins live: Sci-Fi -> Hades -> Movie -> RPG |
+| 0:54 | Themes | Settings window snapped flush beside the pop-out; Themes card grid re-skins the fleet live: Sci-Fi -> Hades -> Movie -> RPG |
 
 Notes: the bar click raises the pop-out once one exists (by design), so
 the popup can't sit beside it — layout flips ride the pop-out's own
 rail. macOS notification banners photobomb the region; wait them out.
+Themes retake: both window frames are placed exactly (Settings frame via
+its NSWindow-frame default + AX move, pop-out via popout_x/y) so the two
+windows sit adjacent and all five cards clear the region bottom.
