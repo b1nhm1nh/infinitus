@@ -4,10 +4,16 @@ name: Release
 on:
   push:
     tags: ["v*"]
+  # Dispatch builds the Linux artifacts without a tag (CI dry run);
+  # nothing is published from a dispatch.
+  workflow_dispatch:
 permissions:
   contents: write
 jobs:
   release:
+    # Tag pushes only — a workflow_dispatch dry run must not try to
+    # `gh release create` from a branch.
+    if: startsWith(github.ref, 'refs/tags/')
     runs-on: macos-26
     env:
       # secrets can't be referenced in `if:` directly; job env is the
@@ -86,3 +92,50 @@ jobs:
               -c user.email="actions@github.com" \
               commit -am "infinitus ${VERSION}"
           git push
+
+  # The Omarchy/Linux face: `infinitus-tray` built self-contained
+  # (-static-stdlib: Swift runtime linked in, glibc dynamic — runs on
+  # Arch without the toolchain) for both architectures, plus the
+  # packaging/omarchy dir (Quickshell plugin + Waybar config) as one
+  # tarball. Build is container-side; publishing runs on the plain
+  # runner because `gh` doesn't exist in the swift image.
+  linux-build:
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            arch: x86_64
+          - runner: ubuntu-24.04-arm
+            arch: aarch64
+    container: swift:6.1
+    steps:
+      - uses: actions/checkout@v4
+      - run: swift build -c release -Xswiftc -static-stdlib
+      - run: swift test
+      - name: Stage artifacts
+        run: |
+          mkdir -p dist
+          cp .build/release/infinitus-tray "dist/infinitus-tray-linux-${{ matrix.arch }}"
+          tar -C packaging -czf dist/infinitus-omarchy.tar.gz omarchy
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-${{ matrix.arch }}
+          path: dist/
+  linux-publish:
+    needs: [release, linux-build]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+      - name: Upload to release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release upload "$GITHUB_REF_NAME" \
+            dist/linux-x86_64/infinitus-tray-linux-x86_64 \
+            dist/linux-aarch64/infinitus-tray-linux-aarch64 \
+            dist/linux-x86_64/infinitus-omarchy.tar.gz \
+            --clobber
