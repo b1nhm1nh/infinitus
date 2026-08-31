@@ -9,6 +9,10 @@ permissions:
 jobs:
   release:
     runs-on: macos-26
+    env:
+      # secrets can't be referenced in `if:` directly; job env is the
+      # documented bridge (step-local env is invisible to its own `if`).
+      DEVID_P12: ${{ secrets.DEVELOPER_ID_P12_BASE64 }}
     steps:
       - uses: actions/checkout@v4
       # Developer ID + notarization run only when the secrets exist
@@ -16,7 +20,7 @@ jobs:
       # before. Order matters: sign → notarize the app → staple the app →
       # THEN zip, because the staple lives on the .app, not the archive.
       - name: Import Developer ID certificate
-        if: ${{ secrets.DEVELOPER_ID_P12_BASE64 != '' }}
+        if: env.DEVID_P12 != ''
         env:
           DEVID_P12: ${{ secrets.DEVELOPER_ID_P12_BASE64 }}
           DEVID_P12_PASSWORD: ${{ secrets.DEVELOPER_ID_P12_PASSWORD }}
@@ -37,7 +41,7 @@ jobs:
       - name: Build app bundle
         run: ./make-app.sh
       - name: Notarize and staple
-        if: ${{ secrets.DEVELOPER_ID_P12_BASE64 != '' }}
+        if: env.DEVID_P12 != ''
         env:
           NOTARY_KEY_ID: ${{ secrets.NOTARY_KEY_ID }}
           NOTARY_ISSUER_ID: ${{ secrets.NOTARY_ISSUER_ID }}
