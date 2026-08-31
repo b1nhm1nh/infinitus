@@ -56,6 +56,13 @@
   re-checks `enabled` after its await before any write.
 
 ## Open
+
+- [ ] Omarchy/Linux: `infinitus-tray` shipped (Waybar module,
+      packaging/omarchy). Verified in containers (swift:6.1 build+114
+      tests, static binary + waybar config parse on Arch ARM). Still
+      human: real Omarchy desktop run (UTM VM: ISO at
+      ~/Downloads/omarchy-4.0.1.iso — x86_64 only, emulated = slow),
+      real-account cswap on Linux, AUR/PKGBUILD for the tray.
 - ~~Auto-order of accounts~~ → Display pane toggle; AutoOrder.swift
   ranks alive (binding pct, 5-point incumbent margin) < unknown < dead
   (soonest recovery) < disabled and calls `cswap reorder` only when the

@@ -1,4 +1,13 @@
 import Foundation
+#if canImport(Darwin)
+import Darwin
+private let sysSend = Darwin.send
+private let sysSockStream = SOCK_STREAM
+#else
+import Glibc
+private let sysSend = Glibc.send
+private let sysSockStream = Int32(SOCK_STREAM.rawValue)   // Glibc enum
+#endif
 
 /// Claude Code's cross-session inbox: newline-delimited JSON over the
 /// session's Unix socket — an auth frame carrying the peer token, then a
@@ -94,10 +103,12 @@ public enum PeerSocket {
     }
 
     static func write(_ payload: Data, to socketPath: String, timeout: TimeInterval) -> Bool {
-        let fd = socket(AF_UNIX, SOCK_STREAM, 0)
+        let fd = socket(AF_UNIX, sysSockStream, 0)
         guard fd >= 0 else { return false }
         defer { close(fd) }
-        var tv = timeval(tv_sec: Int(timeout), tv_usec: Int32((timeout - floor(timeout)) * 1_000_000))
+        var tv = timeval()   // field types differ across libcs
+        tv.tv_sec = Int(timeout)
+        tv.tv_usec = numericCast(Int((timeout - floor(timeout)) * 1_000_000))
         setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv, socklen_t(MemoryLayout<timeval>.size))
         setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, socklen_t(MemoryLayout<timeval>.size))
         var addr = sockaddr_un()
@@ -121,7 +132,7 @@ public enum PeerSocket {
         let bytes = [UInt8](payload)
         while sent < bytes.count {
             let n = bytes.withUnsafeBufferPointer { buf in
-                Darwin.send(fd, buf.baseAddress! + sent, bytes.count - sent, 0)
+                sysSend(fd, buf.baseAddress! + sent, bytes.count - sent, 0)
             }
             guard n > 0 else { return false }
             sent += n

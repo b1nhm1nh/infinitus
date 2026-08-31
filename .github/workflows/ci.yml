@@ -21,3 +21,13 @@ jobs:
           restore-keys: spm-${{ github.repository }}-${{ runner.os }}-
       - run: swift build
       - run: swift test
+  # The Omarchy/Waybar face (packaging/omarchy): core + tray must keep
+  # building on Linux. Same plain invocations — the manifest gates the
+  # AppKit target off non-macOS hosts.
+  linux:
+    runs-on: ubuntu-latest
+    container: swift:6.1
+    steps:
+      - uses: actions/checkout@v4
+      - run: swift build
+      - run: swift test

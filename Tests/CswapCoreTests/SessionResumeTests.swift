@@ -1,4 +1,13 @@
 import XCTest
+#if canImport(Darwin)
+import Darwin
+private let sysBind = Darwin.bind
+private let sysSockStream = SOCK_STREAM
+#else
+import Glibc
+private let sysBind = Glibc.bind
+private let sysSockStream = Int32(SOCK_STREAM.rawValue)   // Glibc enum
+#endif
 @testable import CswapCore
 
 /// A scripted multiplexer: one surface, a queue of screens to hand back,
@@ -378,7 +387,7 @@ final class PeerSocketLoopbackTests: XCTestCase {
         let path = "/tmp/inf-\(getpid())-\(UInt32.random(in: 0...9999)).sock"
         unlink(path)
         defer { unlink(path) }
-        let server = socket(AF_UNIX, SOCK_STREAM, 0)
+        let server = socket(AF_UNIX, sysSockStream, 0)
         XCTAssertGreaterThanOrEqual(server, 0)
         defer { close(server) }
         var addr = sockaddr_un()
@@ -386,7 +395,7 @@ final class PeerSocketLoopbackTests: XCTestCase {
         _ = path.withCString { strncpy(&addr.sun_path.0, $0, 103) }
         let bound = withUnsafePointer(to: &addr) {
             $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
-                Darwin.bind(server, $0, socklen_t(MemoryLayout<sockaddr_un>.size))
+                sysBind(server, $0, socklen_t(MemoryLayout<sockaddr_un>.size))
             }
         }
         XCTAssertEqual(bound, 0)

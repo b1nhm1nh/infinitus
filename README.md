@@ -50,12 +50,15 @@ Grab `Infinitus-<version>.zip` from
 [releases](https://github.com/deathemperor/infinitus/releases), unzip,
 drop `Infinitus.app` into `/Applications`.
 
-### Linux — the engine CLI (Omarchy-ready)
+### Linux — engine CLI + Waybar module (Omarchy-ready)
 
-The menu bar app is macOS-native (AppKit), so Linux doesn't get the app
-itself — it gets the engine. Everything Infinitus fronts (the fleet
-gauges, auto-switching, the `cswap` TUI) runs anywhere Python 3.12
-does, including Arch-based [Omarchy](https://omarchy.org):
+The menu bar app is macOS-native (AppKit), but its Swift core ports:
+`infinitus-tray` renders the same fleet — themes, sentinel notes,
+one-click rotate — as a Waybar module for
+[Omarchy](https://omarchy.org) and any Waybar desktop
+(see [`packaging/omarchy/`](packaging/omarchy/README.md)).
+The engine itself (fleet gauges, auto-switching, the `cswap` TUI)
+runs anywhere Python 3.12 does:
 
 ```sh
 brew install deathemperor/tap/claude-swap    # Homebrew on Linux (or macOS)
@@ -65,11 +68,12 @@ uv tool install claude-swap                  # or straight from PyPI
 Arch users can build from [`packaging/aur/PKGBUILD`](packaging/aur/) —
 `cswap` in a terminal is the same account switching, Omarchy-style.
 
-> **Container-tested only.** The PyPI install (`python:3.12` image) and
-> the PKGBUILD (`archlinux` image, `makepkg -s`) both install and run
-> `cswap` (`--version`, `--help`, `config list`, `list`) — no real
-> accounts or desktop session were involved. Reports from actual Linux
-> desktops welcome.
+> **Container-tested only.** The PyPI install (`python:3.12` image), the
+> PKGBUILD (`archlinux` image, `makepkg -s`) and the static
+> `infinitus-tray` binary (Arch Linux ARM image, themed Waybar JSON
+> against a demo fleet) all run in containers — no real accounts or
+> desktop session were involved. Reports from actual Linux desktops
+> welcome.
 
 ### Requirements
 

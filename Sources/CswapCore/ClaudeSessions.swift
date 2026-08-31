@@ -30,6 +30,17 @@ public struct ClaudeSessionRecord: Sendable, Equatable {
 }
 
 public enum ClaudeSessions {
+    /// True when the NSNumber is really a JSON boolean. Darwin exposes the
+    /// CFBoolean singletons; corelibs-foundation has neither — there the
+    /// objCType "c" (Int8/bool storage) is the tell.
+    static func isBool(_ n: NSNumber) -> Bool {
+        #if canImport(Darwin)
+        return n === kCFBooleanTrue || n === kCFBooleanFalse
+        #else
+        return String(cString: n.objCType) == "c"
+        #endif
+    }
+
     /// Claude Code's config home — `CLAUDE_CONFIG_DIR` when set, else `~/.claude`.
     public static func configHome(home: String = NSHomeDirectory(),
                                   environment: [String: String] = ProcessInfo.processInfo.environment) -> URL {
@@ -54,8 +65,7 @@ public enum ClaudeSessions {
         for name in names where name.hasSuffix(".json") {
             guard let data = try? Data(contentsOf: dir.appendingPathComponent(name)),
                   let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                  let pidNumber = obj["pid"] as? NSNumber, pidNumber !== kCFBooleanTrue,
-                  pidNumber !== kCFBooleanFalse
+                  let pidNumber = obj["pid"] as? NSNumber, !isBool(pidNumber)
             else { continue }
             let pid = pidNumber.int32Value
             guard alive(pid) else { continue }
@@ -67,8 +77,7 @@ public enum ClaudeSessions {
                 kind: obj["kind"] as? String ?? "",
                 status: obj["status"] as? String,
                 messagingSocketPath: obj["messagingSocketPath"] as? String ?? "",
-                peerProtocol: (proto !== kCFBooleanTrue && proto !== kCFBooleanFalse)
-                    ? (proto?.intValue ?? 0) : 0))
+                peerProtocol: proto.map { isBool($0) ? 0 : $0.intValue } ?? 0))
         }
         return out.sorted { $0.pid < $1.pid }
     }
