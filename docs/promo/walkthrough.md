@@ -21,7 +21,7 @@ Recording: `screencapture -v -V <seconds> -R x,y,w,h out.mov` per shot on
 the shim fleet (`INFINITUS_CSWAP=$S/cswap-shim ./run-unbundled.sh`),
 then `ffmpeg -f concat` the segments; keep the mp4 out of git.
 
-## Recorded cut №2 — 2026-08-31 (75s, ~/Movies/Infinitus-walkthrough.mp4)
+## Recorded cut №2 — 2026-08-31 (39s tight / 75s full, ~/Movies/Infinitus-walkthrough[-full].mp4)
 
 Re-recorded per user ask ("changing layout, compact mode for both,
 theme switching") on the shim fleet, all interactions scripted:
@@ -41,3 +41,6 @@ rail. macOS notification banners photobomb the region; wait them out.
 Themes retake: both window frames are placed exactly (Settings frame via
 its NSWindow-frame default + AX move, pop-out via popout_x/y) so the two
 windows sit adjacent and all five cards clear the region bottom.
+Tight cut: mpdecimate collapses static holds ~3-5x (gentler on the
+hover tour and themes so dwells stay readable, harder on layout
+mechanics) + 1.1x global pace; motion frames stay. 75s -> 39s.
