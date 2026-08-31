@@ -538,6 +538,17 @@ struct MenuContent: View {
                                 .help("Infinitus \(v) is out — About → Updates")
                             }
                             if !model.footerActionsHidden {
+                                if model.debugMenu {
+                                    // Dev builds only (defaults write
+                                    // <domain> debug_menu -bool true).
+                                    Button {
+                                        Playground.show(usage: usage)
+                                    } label: {
+                                        Image(systemName: "wand.and.stars")
+                                    }
+                                    .instantTip("Animation playground (dev)",
+                                                edge: .above)
+                                }
                                 Button {
                                     model.showSettings?()
                                 } label: {
@@ -631,6 +642,12 @@ struct MenuContent: View {
             Image(systemName: "arrow.clockwise")
         }
         .instantTip("Refresh usage")
+        if model.debugMenu {
+            Button { Playground.show(usage: usage) } label: {
+                Image(systemName: "wand.and.stars")
+            }
+            .instantTip("Animation playground (dev)")
+        }
         Button { model.showSettings?() } label: {
             Image(systemName: "gearshape")
         }
@@ -713,7 +730,10 @@ struct MenuContent: View {
     /// its conditionals so the rail's column math stays honest.
     private var compactRailItemCount: Int {
         var n = 2                                   // serviceDot + engineBadgeIcon
-        if !model.footerActionsHidden { n += 7 }    // 5 actions + restart + quit
+        if !model.footerActionsHidden {
+            n += 7                                  // 5 actions + restart + quit
+            if model.debugMenu { n += 1 }           // playground wand (dev)
+        }
         if let live = model.liveSessions, live.busy > 0 { n += 1 }
         if model.appUpdatePending { n += 1 }
         if model.appUpdateVersion != nil { n += 1 }
@@ -724,6 +744,12 @@ struct MenuContent: View {
     /// rail grid vs horizontal strip.
     @ViewBuilder private var compactControls: some View {
         if !model.footerActionsHidden {
+        if model.debugMenu {
+            Button { Playground.show(usage: usage) } label: {
+                Image(systemName: "wand.and.stars")
+            }
+            .instantTip("Animation playground (dev)")
+        }
         Button { model.showSettings?() } label: {
             Image(systemName: "gearshape")
         }
