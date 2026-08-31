@@ -12,8 +12,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // app finishes launching fails silently (no item, no error).
     var makeStatusItem: (() -> Void)?
     var statusHolder: StatusItemHolder?
+    /// NSApp.delegate is SwiftUI's proxy, not this adaptor — anything
+    /// outside the scene graph (the playground command channel) reaches
+    /// the controller through here.
+    static weak var shared: AppDelegate?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        AppDelegate.shared = self
         makeStatusItem?()
     }
 

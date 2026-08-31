@@ -110,6 +110,10 @@ import CswapCore
                     w.collectionBehavior.insert(.moveToActiveSpace)
                     w.makeKeyAndOrderFront(nil)
                 }
+            // The real app's Settings window (not playground state) —
+            // lets the dev loop check its chrome without a click.
+            case "settings":
+                AppDelegate.shared?.statusHolder?.controller.showSettingsWindow()
             case "reset": model.resetPlaygroundPrefs()
             case "themes":
                 reply = model.availableThemes.map(\.id).joined(separator: " ")

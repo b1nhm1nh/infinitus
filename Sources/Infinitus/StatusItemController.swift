@@ -522,8 +522,9 @@ final class StatusItemController {
             let w = NSWindow(contentViewController: host)
             // Blur under the hosting view, outside SwiftUI (see the
             // anchored panel note): swap the content view for a wrapped
-            // one; the controller stays retained by the window.
-            w.contentView = GlassContainerView.wrap(host.view)
+            // one; the controller stays retained by the window. The
+            // scrim keeps sidebar text readable over white apps.
+            w.contentView = GlassContainerView.wrap(host.view, scrim: true)
             w.title = "Infinitus"
             w.styleMask = [.titled, .closable, .resizable]
             w.toolbarStyle = .unified

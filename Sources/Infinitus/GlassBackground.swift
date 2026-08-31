@@ -212,6 +212,34 @@ final class BackdropGlassNSView: NSVisualEffectView {
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
 }
 
+/// Luminance-stabilizing wash over the backdrop blur: dark appearance
+/// lays black, light lays white, so text keeps contrast over any app
+/// behind the window. Static — never focus-driven (glass runs in all
+/// states).
+final class GlassScrimView: NSView {
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        wantsLayer = true
+    }
+
+    required init?(coder: NSCoder) { fatalError() }
+
+    override func updateLayer() {
+        super.updateLayer()
+        let dark = effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+        layer?.backgroundColor = dark
+            ? NSColor.black.withAlphaComponent(0.5).cgColor
+            : NSColor.white.withAlphaComponent(0.55).cgColor
+    }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        needsDisplay = true
+    }
+
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+}
+
 /// Window content wrapper: [backdrop blur] under [SwiftUI hosting],
 /// both plain AppKit siblings so the blur escapes SwiftUI's offscreen
 /// flattening. Rounds and masks the whole stack.
@@ -253,7 +281,7 @@ final class GlassContainerView: NSView {
 
     deinit { tokens.forEach(NotificationCenter.default.removeObserver) }
 
-    static func wrap(_ hosted: NSView) -> GlassContainerView {
+    static func wrap(_ hosted: NSView, scrim: Bool = false) -> GlassContainerView {
         let container = GlassContainerView(frame: hosted.frame)
         container.autoresizesSubviews = true
         container.wantsLayer = true
@@ -263,6 +291,16 @@ final class GlassContainerView: NSView {
             let blur = BackdropGlassNSView(frame: container.bounds)
             blur.autoresizingMask = [.width, .height]
             container.addSubview(blur)
+            // The retuned backdrop is pure blur — over a white app the
+            // sidebar text washes out (user screenshot 2026-09-01). A
+            // static appearance-following wash keeps contrast no matter
+            // what sits behind. Settings only: the popup/pop-out carry
+            // ThemedGlassChrome's wash and the transparency dial.
+            if scrim {
+                let wash = GlassScrimView(frame: container.bounds)
+                wash.autoresizingMask = [.width, .height]
+                container.addSubview(wash)
+            }
         }
         hosted.frame = container.bounds
         hosted.autoresizingMask = [.width, .height]
