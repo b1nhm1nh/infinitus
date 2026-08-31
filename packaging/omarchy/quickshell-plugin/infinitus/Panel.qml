@@ -48,8 +48,20 @@ Panel {
                      : Style.selectedStateColor(contentForeground, Color.accent)
   }
 
+  // Rows replay their slide-in only for opens (and rows born during
+  // one), not for the 30s data refreshes that recreate the Repeater.
+  property bool introActive: false
+
+  Timer {
+    id: introTimer
+    interval: 600
+    onTriggered: root.introActive = false
+  }
+
   function open() {
     refresh()
+    root.introActive = true
+    introTimer.restart()
     root.controller.show()
     Qt.callLater(function() {
       if (root.opened) setCenterHoverRevealSuppressed(true)
@@ -237,6 +249,7 @@ Panel {
             Rectangle {
               id: row
               required property var modelData
+              required property int index
               readonly property bool clickable: !modelData.active && !modelData.disabled && !modelData.note
 
               width: fleetColumn.width
@@ -247,7 +260,37 @@ Panel {
                 : (rowMouse.containsMouse && clickable
                    ? Style.hoverFillFor(root.contentForeground, Color.accent)
                    : "transparent")
-              opacity: modelData.disabled ? 0.45 : 1
+              opacity: (modelData.disabled ? 0.45 : 1) * intro
+
+              Behavior on color { ColorAnimation { duration: 200 } }
+
+              // Slide-in intro on open, staggered per row (the macOS
+              // popup's rows intro).
+              property real intro: 1
+              transform: Translate { x: (1 - row.intro) * Style.space(20) }
+
+              SequentialAnimation {
+                id: introAnim
+                PauseAnimation { duration: row.index * 30 }
+                NumberAnimation {
+                  target: row; property: "intro"; to: 1
+                  duration: 200; easing.type: Easing.OutCubic
+                }
+              }
+
+              function playIntro() {
+                intro = 0
+                introAnim.restart()
+              }
+
+              Component.onCompleted: if (root.introActive) playIntro()
+
+              Connections {
+                target: root
+                function onIntroActiveChanged() {
+                  if (root.introActive) row.playIntro()
+                }
+              }
 
               MouseArea {
                 id: rowMouse
@@ -286,6 +329,8 @@ Panel {
                     color: row.modelData.active ? Color.accent : root.mutedForeground
                     font.family: root.contentFontFamily
                     font.pixelSize: Style.font.body
+
+                    Behavior on color { ColorAnimation { duration: 200 } }
                   }
 
                   Text {
@@ -348,6 +393,8 @@ Panel {
                     width: rowContent.width
                     height: Style.space(16)
                     opacity: row.modelData.deadLine ? 0.55 : 1
+
+                    Behavior on opacity { NumberAnimation { duration: 200 } }
 
                     Text {
                       id: windowLabel

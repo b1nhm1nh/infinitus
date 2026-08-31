@@ -161,6 +161,8 @@ BarWidget {
     anchors.fill: parent
     hoverEnabled: true
     cursorShape: Qt.PointingHandCursor
+    // Any button toggles the panel (Qt defaults to LeftButton only).
+    acceptedButtons: Qt.LeftButton | Qt.MiddleButton | Qt.RightButton
     onClicked: root.togglePanel()
     onEntered: if (root.bar && !root.opened) root.bar.showTooltip(root, root.statusTooltip)
     onExited: if (root.bar) root.bar.hideTooltip(root)
