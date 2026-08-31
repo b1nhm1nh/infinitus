@@ -294,15 +294,12 @@ import CswapCore
         authWindow = w
         w.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
-        // Routing: a relogin target with a saved private session skips
-        // the sheet — its own window opens already signed in as THAT
-        // account. Everyone else gets the ephemeral sheet (fresh
-        // sign-in, passkeys work).
-        if let email = reloginEmail, Self.storeMap()[email] != nil {
-            openPrivateWindow()
-        } else {
-            startSystemSheet()
-        }
+        // ALWAYS the sheet: it does passkeys AND passwords. The
+        // saved-session auto-routing sent a passkey account into the
+        // private window — where WebAuthn can never run — and hit the
+        // Bluetooth-fallback wall again (user screenshot 2026-08-31).
+        // The private window stays strictly opt-in.
+        startSystemSheet()
     }
 
     /// The opt-in private window: this account's own isolated session
@@ -467,13 +464,13 @@ private struct AuthWindowRoot: View {
             }
             HStack(spacing: 6) {
                 Button("Reopen sign-in sheet") { flow.startSystemSheet() }
-                Button("Use private window instead") {
+                Button("Use private window (no passkeys)") {
                     flow.openPrivateWindow()
                 }
                 .help("An isolated per-account browser session \u{2014} "
                       + "remembers this account's login for the next "
-                      + "re-login. No passkeys there; password sign-in "
-                      + "works.")
+                      + "re-login. Passkeys CANNOT work there (a macOS "
+                      + "restriction); password sign-in only.")
             }
         }
         .padding(14)
