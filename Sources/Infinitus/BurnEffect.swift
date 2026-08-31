@@ -32,10 +32,11 @@ struct BurnOverlay: View {
                 let bar = CGRect(x: 0, y: rise, width: size.width,
                                  height: size.height - rise)
                 let tipX = bar.width * fillFraction
-                // Burning region: from near the tip at low heat to the
-                // whole fill at heat 1.
-                let coverage = 0.3 + 0.7 * heat
-                let x0 = tipX * (1 - coverage)
+                // The WHOLE fill burns at any heat (user 2026-08-31,
+                // twice: limit round then "amber effect still looking
+                // missing left parts of bar") — heat drives intensity,
+                // count and speed, never span.
+                let x0 = 0.0
                 switch style {
                 case "ember": ember(&c, t, bar, x0, tipX)
                 case "flame": flame(&c, t, bar, x0, tipX)
@@ -97,7 +98,10 @@ struct BurnOverlay: View {
                         height: bar.height)),
             with: .linearGradient(
                 Gradient(stops: [
-                    .init(color: emberOrange.opacity(0), location: 0),
+                    // A real floor at the left edge — a 0-opacity start
+                    // read as "missing left parts" (user screenshot).
+                    .init(color: emberOrange.opacity(0.30 * bright * pulse),
+                          location: 0),
                     .init(color: emberOrange.opacity(0.6 * bright * pulse),
                           location: 0.55),
                     .init(color: flameYellow.opacity(0.8 * bright * pulse),
@@ -237,5 +241,51 @@ struct BurnOverlay: View {
                                  width: px, height: bar.height)),
                      with: .color(coreWhite.opacity(0.95 * hot2 * tipFlip)))
         }
+    }
+}
+
+/// The killing-blow finisher (user 2026-08-31: "a dramatic dead effect
+/// if any kind of drops kill"): when an HP drop drains a bar to ZERO,
+/// shards burst off it — ember and ash flying radially with a little
+/// gravity — while GaugeBar shakes the bar at full zoom. One-shot,
+/// deterministic seeds, exists only for ~0.9s per kill.
+struct KillBurst: View {
+    let tick: Int
+    @State private var start: Date?
+
+    var body: some View {
+        TimelineView(.animation) { ctx in
+            Canvas { c, size in
+                guard let start else { return }
+                let t = ctx.date.timeIntervalSince(start)
+                guard t >= 0, t < 0.9 else { return }
+                let cx = size.width / 2
+                let cy = size.height / 2
+                for i in 0..<20 {
+                    let seed = Double(i) * 3.19
+                    let ang = n(seed) * .pi * 2
+                    let v = 28 + n(seed + 1) * 60
+                    let x = cx + cos(ang) * v * t
+                    let y = cy + sin(ang) * v * t * 0.55 + 46 * t * t
+                    let fade = max(0, 1 - t / 0.9)
+                    let r = (1.1 + n(seed + 2) * 1.7) * fade
+                    let color: Color = i % 3 == 0
+                        ? Color(red: 1.00, green: 0.96, blue: 0.85)
+                        : i % 2 == 0
+                        ? Color(red: 1.00, green: 0.45, blue: 0.10)
+                        : Color(red: 0.90, green: 0.12, blue: 0.08)
+                    c.fill(Path(ellipseIn: CGRect(x: x - r, y: y - r,
+                                                  width: r * 2, height: r * 2)),
+                           with: .color(color.opacity(fade)))
+                }
+            }
+        }
+        .onChange(of: tick) { _, _ in start = Date() }
+        .allowsHitTesting(false)
+    }
+
+    private func n(_ i: Double) -> Double {
+        let v = sin(i * 12.9898) * 43758.5453
+        return v - v.rounded(.down)
     }
 }

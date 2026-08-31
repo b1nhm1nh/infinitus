@@ -1281,6 +1281,21 @@ struct AccountCells {
         model.rowTheme.id == "rpg" && account.allLucky7s
     }
 
+    /// Limit break is an RPG-exclusive (user 2026-08-31: "only and
+    /// always apply for RPG and apply on Fable"): other themes
+    /// downgrade a selected limit style to ember...
+    var effectiveBurnStyle: String {
+        model.burnStyle == "limit" && model.rowTheme.id != "rpg"
+            ? "ember" : model.burnStyle
+    }
+
+    /// ...and under RPG the Fable bar ALWAYS burns limit-style — the
+    /// rainbow marquee is its signature ("off" still masters it off).
+    var fableBurnStyle: String {
+        guard model.burnStyle != "off" else { return "off" }
+        return model.rowTheme.id == "rpg" ? "limit" : effectiveBurnStyle
+    }
+
     /// The paired trigger alone — the 5h/7d labels flash only when
     /// BOTH windows sit at 77 (a scoped bar at 77 flashes itself).
     var luckyPair: Bool {
@@ -1330,7 +1345,7 @@ struct AccountCells {
                                 ? (1..<5).map { Double($0) * 20 }
                                 : (1..<7).map { Double($0) * 100 / 7 },
                             // Pace fire on the 7d bar only (5h stays calm).
-                            burnStyle: session ? "off" : model.burnStyle,
+                            burnStyle: session ? "off" : effectiveBurnStyle,
                             burnHeat: session ? 0 : GaugeMath.burnHeat(
                                 usedPct: w.pct, expectedPct: w.expectedPct,
                                 ahead: w.aheadOfPace),
@@ -1438,7 +1453,7 @@ struct AccountCells {
                                      color: ThemeColor.resolve(theme.scopedColor),
                                      paceRemaining: w.expectedPct.map { 100 - $0 },
                                      dividers: (1..<7).map { Double($0) * 100 / 7 },
-                                     burnStyle: model.burnStyle,
+                                     burnStyle: fableBurnStyle,
                                      burnHeat: GaugeMath.burnHeat(
                                          usedPct: w.pct, expectedPct: w.expectedPct,
                                          ahead: w.aheadOfPace),

@@ -18,6 +18,10 @@ DROP = os.path.exists(os.path.join(os.environ.get("TMPDIR", "/tmp"),
 # playground's Play dead / Play revived buttons; dead outranks DROP.
 DEAD = os.path.exists(os.path.join(os.environ.get("TMPDIR", "/tmp"),
                                    "infinitus-demo-dead"))
+# Killing blow: alpha's 5h jumps to 100% — a 63-point drop that KILLS,
+# playing the drop drama plus the shard-burst finisher and death beat.
+KILL = os.path.exists(os.path.join(os.environ.get("TMPDIR", "/tmp"),
+                                   "infinitus-demo-kill"))
 # Playground drop buttons (user 2026-08-31 "play drop (5h,7d,fable)"):
 # each flag pins ONE of alpha's windows +35 points used — flag on plays
 # the drop drama on that bar, flag off plays the spring refill.
@@ -69,8 +73,8 @@ def account(num, alias, plan, five, seven, scoped, spend_used, active,
 def fleet(active):
     return [
         account(1, "alpha", "Max 20x",
-                win(100.0 if DEAD else 72.0 if DROP5 else 62.0 if DROP
-                    else 37.0, 2.4, "2h 25m", "23:59"),
+                win(100.0 if DEAD or KILL else 72.0 if DROP5
+                    else 62.0 if DROP else 37.0, 2.4, "2h 25m", "23:59"),
                 win(57.0 if DROP7 else 22.0, 118, "4d 22h", "Sep 4 19:59",
                     31.0, False),
                 [win(53.0 if DROPF else 18.0, 118, "4d 22h", "Sep 4 19:59",

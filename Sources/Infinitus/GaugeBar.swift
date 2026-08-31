@@ -44,6 +44,9 @@ struct GaugeBar: View {
     @State private var dropZoom = false
     @State private var cutFlash = false
     @State private var dropSeq = 0
+    /// Killing blow: a drop that drains the bar to zero bursts shards
+    /// and shakes at full zoom (user 2026-08-31).
+    @State private var killTick = 0
     // Ahead-of-pace effects hold until the intro fill has landed
     // (user 2026-08-31: "ahead effect: should only starts when intro
     // ended") — a burn riding the bar WHILE it fills from empty reads
@@ -114,6 +117,25 @@ struct GaugeBar: View {
                         .allowsHitTesting(false)
                 }
             }
+            // Shard burst on a killing blow — above the bar, zooming
+            // with it.
+            .overlay {
+                KillBurst(tick: killTick)
+                    .frame(width: barWidth * 1.8, height: 44)
+            }
+            // The kill shake: hard jitter, zoomed.
+            .keyframeAnimator(initialValue: 0.0, trigger: killTick) { view, x in
+                view.offset(x: x)
+            } keyframes: { _ in
+                KeyframeTrack {
+                    CubicKeyframe(0.001, duration: 0.001)
+                    CubicKeyframe(-2.5, duration: 0.05)
+                    CubicKeyframe(2.5, duration: 0.05)
+                    CubicKeyframe(-2, duration: 0.05)
+                    CubicKeyframe(1.5, duration: 0.05)
+                    CubicKeyframe(0, duration: 0.08)
+                }
+            }
             // The HP-drop zoom — after the burn overlay so flames zoom
             // with the bar. Overlapping neighbor rows is the drama.
             .scaleEffect(dropZoom ? 5 : 1, anchor: dropAnchor)
@@ -152,8 +174,12 @@ struct GaugeBar: View {
                 withAnimation(.spring(duration: 1.8, bounce: 0.2).delay(0.25)) {
                     shown = new
                 }
-            } else if old - new >= Self.dropMin, old - new <= Self.dropMax,
+            } else if old - new >= Self.dropMin,
+                      old - new <= Self.dropMax || new <= 0.5,
                       animated {
+                // A drop past dropMax still plays when it KILLS — a
+                // 63-point killing blow is the drama, not a data
+                // correction.
                 playDrop(to: new)
             } else {
                 withAnimation(.easeOut(duration: 0.5)) { shown = new }
@@ -170,10 +196,19 @@ struct GaugeBar: View {
         withAnimation(.spring(duration: 0.3, bounce: 0.45)) { dropZoom = true }
         withAnimation(.easeInOut(duration: 0.11)
             .repeatCount(7, autoreverses: true).delay(0.25)) { cutFlash = true }
+        let kill = to <= 0.5
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.05) {
             guard seq == dropSeq else { return }
             withAnimation(.easeIn(duration: 0.5)) { shown = to }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.75) {
+            if kill {
+                // The finisher lands as the drain hits bottom: shards
+                // fly, the bar shakes, the zoom lingers on the corpse.
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) {
+                    guard seq == dropSeq else { return }
+                    killTick += 1
+                }
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + (kill ? 1.6 : 0.75)) {
                 guard seq == dropSeq else { return }
                 withAnimation(.spring(duration: 0.4)) { dropZoom = false }
                 dropTo = nil

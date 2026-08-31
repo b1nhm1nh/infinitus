@@ -43,7 +43,7 @@ import CswapCore
             // a previous run left hooks behind.
             try? FileManager.default.removeItem(at: deadFlag)
             for f in ["infinitus-demo-drop5h", "infinitus-demo-drop7d",
-                      "infinitus-demo-dropfable"] {
+                      "infinitus-demo-dropfable", "infinitus-demo-kill"] {
                 try? FileManager.default.removeItem(
                     at: FileManager.default.temporaryDirectory
                         .appendingPathComponent(f))
@@ -97,6 +97,22 @@ struct PlaygroundView: View {
                         model.popupLayout = v
                     }
                 })
+    }
+
+    /// One press = the whole tragedy: the kill flag pins alpha's 5h at
+    /// 100 (a killing 63-point drop — finisher, death beat), the
+    /// delayed clear plays the revival.
+    private func playKill() {
+        let flag = FileManager.default.temporaryDirectory
+            .appendingPathComponent("infinitus-demo-kill")
+        try? Data().write(to: flag)
+        demoDead = true
+        Task { await model.refreshSnapshot() }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 7) {
+            try? FileManager.default.removeItem(at: flag)
+            demoDead = false
+            Task { await model.refreshSnapshot() }
+        }
     }
 
     /// Drop-button cycle: the demo flag pins one of alpha's windows
@@ -166,6 +182,10 @@ struct PlaygroundView: View {
                         Button("5h") { playDrop("5h") }
                         Button("7d") { playDrop("7d") }
                         Button("Fable") { playDrop("fable") }
+                        // The killing blow: alpha's 5h to 100% — drop
+                        // drama + shard finisher + death beat, then the
+                        // delayed clear revives (fanfare included).
+                        Button("Kill") { playKill() }
                     }
                     HStack(spacing: 14) {
                         // Segmented, not dropdowns (user 2026-08-31:
