@@ -61,6 +61,7 @@ import CswapCore
     private var token: String?
     private var shimDir: URL?
     private var authWindow: NSWindow?
+    private var webWindow: NSWindow?
     private var webDelegate: AuthWebDelegate?
     private var systemSession: ASWebAuthenticationSession?
     private var anchorProvider: AuthAnchorProvider?
@@ -268,19 +269,42 @@ import CswapCore
         token = nil
     }
 
-    // MARK: ephemeral login window
+    // MARK: login windows
 
+    /// Sheet-first (user 2026-08-31 — the footer-link version was
+    /// rejected): capturing the OAuth URL immediately opens the SYSTEM
+    /// sign-in sheet, where passkeys, Touch ID and Google all just
+    /// work, anchored to a compact companion window holding the
+    /// paste-code bar. The per-account private WKWebView window stays
+    /// available as the opt-in alternative for isolated sessions.
     private func openAuthWindow(_ url: URL) {
+        let host = NSHostingController(rootView: AuthWindowRoot(flow: self))
+        host.sizingOptions = []
+        let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 520, height: 190),
+                         styleMask: [.titled, .closable],
+                         backing: .buffered, defer: false)
+        w.title = reloginTarget.map { "Re-login \u{2014} \($0)" }
+            ?? "Add Claude account"
+        w.contentViewController = host
+        w.setContentSize(NSSize(width: 520, height: 190))
+        w.isReleasedWhenClosed = false
+        w.center()
+        authWindow = w
+        w.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+        startSystemSheet()
+    }
+
+    /// The opt-in private window: this account's own isolated session
+    /// (signed in already on later re-logins), Safari UA, popup
+    /// hosting. No passkeys — WebAuthn is entitlement-locked to real
+    /// browsers; password sign-in works.
+    func openPrivateWindow() {
+        guard let url = authURL else { return }
+        if let w = webWindow { w.makeKeyAndOrderFront(nil); return }
         let cfg = WKWebViewConfiguration()
-        // A private per-flow store, isolated from the user's browser.
-        // Persistent under the account's own identifier so a RELOGIN
-        // opens already signed in; a fresh identifier for adds.
         cfg.websiteDataStore = WKWebsiteDataStore(forIdentifier: storeID)
         let web = WKWebView(frame: .zero, configuration: cfg)
-        // Google (and claude.com's login) refuse embedded-webview user
-        // agents and windows that can't host OAuth popups — the
-        // "error logging you in" box (user 2026-08-31). Present as
-        // Safari and give popups a real child window.
         web.customUserAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
             + "AppleWebKit/605.1.15 (KHTML, like Gecko) "
             + "Version/26.0 Safari/605.1.15"
@@ -288,21 +312,15 @@ import CswapCore
         webDelegate = delegate
         web.uiDelegate = delegate
         web.load(URLRequest(url: url))
-        // The paste bar rides INSIDE the window, so a flow started from
-        // the popup list is self-contained — no Settings trip.
-        let host = NSHostingController(rootView: AuthWindowRoot(flow: self, web: web))
-        host.sizingOptions = []
-        let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 560, height: 760),
+        let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 560, height: 720),
                          styleMask: [.titled, .closable, .resizable],
                          backing: .buffered, defer: false)
         w.title = "Claude login (private)"
-        w.contentViewController = host
-        w.setContentSize(NSSize(width: 560, height: 760))
+        w.contentView = web
         w.isReleasedWhenClosed = false
         w.center()
-        authWindow = w
+        webWindow = w
         w.makeKeyAndOrderFront(nil)
-        NSApp.activate(ignoringOtherApps: true)
     }
 
     /// Passkey path (user 2026-08-31: "couldn't use passkey"): WebAuthn
@@ -339,6 +357,8 @@ import CswapCore
     private func closeAuthWindow() {
         authWindow?.orderOut(nil)
         authWindow = nil
+        webWindow?.orderOut(nil)
+        webWindow = nil
         webDelegate?.closePopups()
         webDelegate = nil
         systemSession?.cancel()
@@ -402,21 +422,23 @@ private struct AuthWebView: NSViewRepresentable {
     func updateNSView(_ nsView: WKWebView, context: Context) {}
 }
 
-/// Login window content: the OAuth page with the paste-back bar under
-/// it — sign in, approve, copy the code, paste it right here.
+/// The companion window: sign-in status + the paste-code bar. The
+/// actual signing-in happens in the system sheet (passkeys work
+/// there), which this window anchors.
 private struct AuthWindowRoot: View {
     @ObservedObject var flow: TokenFlow
-    let web: WKWebView
 
     var body: some View {
-        VStack(spacing: 0) {
-            AuthWebView(web: web)
-            Divider()
+        VStack(alignment: .leading, spacing: 10) {
+            if let target = flow.reloginTarget {
+                Text("Re-login for \(target) \u{2014} sign in as that account.")
+                    .font(.caption).foregroundStyle(.orange)
+            }
+            Text("1. Sign in and approve in the sign-in sheet "
+                 + "(passkeys and Touch ID work there).\n"
+                 + "2. Copy the code it shows and paste it here.")
+                .font(.caption).foregroundStyle(.secondary)
             HStack(spacing: 8) {
-                if let target = flow.reloginTarget {
-                    Text("Re-login: \(target)").font(.caption)
-                        .foregroundStyle(.orange)
-                }
                 TextField("Paste the code shown after approval",
                           text: $flow.code)
                     .textFieldStyle(.roundedBorder)
@@ -426,20 +448,19 @@ private struct AuthWindowRoot: View {
                         in: .whitespaces).isEmpty)
                 Button("Cancel") { flow.cancel() }
             }
-            .padding(10)
             HStack(spacing: 6) {
-                Text("Passkey account? This window can't do passkeys "
-                     + "(password sign-in works) —")
-                    .font(.caption).foregroundStyle(.secondary)
-                Button("use the system sign-in sheet") {
-                    flow.startSystemSheet()
+                Button("Reopen sign-in sheet") { flow.startSystemSheet() }
+                Button("Use private window instead") {
+                    flow.openPrivateWindow()
                 }
-                .buttonStyle(.link).font(.caption)
-                Text("then paste the code above.")
-                    .font(.caption).foregroundStyle(.secondary)
+                .help("An isolated per-account browser session \u{2014} "
+                      + "remembers this account's login for the next "
+                      + "re-login. No passkeys there; password sign-in "
+                      + "works.")
             }
-            .padding(.horizontal, 10).padding(.bottom, 8)
         }
+        .padding(14)
+        .frame(width: 520, alignment: .leading)
     }
 }
 

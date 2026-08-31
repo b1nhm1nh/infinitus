@@ -1,4 +1,5 @@
 import SwiftUI
+import CswapCore
 
 /// The account-switch celebration: a bright sweep that runs across the row
 /// plus a brief accent glow. Attach to the active row; fires whenever
@@ -228,6 +229,92 @@ extension View {
 /// not a blink — over a steady rainbow gradient band. Nothing flashes;
 /// the original doesn't. Trigger (Fable at 77%, or 5h AND 7d both 77)
 /// is decided at the call sites.
+/// One shared trigger for the fever: Fable (any scoped window) showing
+/// exactly 77 remaining, or the 5h AND 7d pair both at 77.
+extension Account {
+    var allLucky7s: Bool {
+        if let five = usage?.fiveHour?.pct,
+           let seven = usage?.sevenDay?.pct,
+           Int(GaugeMath.remaining(usedPct: five)) == 77,
+           Int(GaugeMath.remaining(usedPct: seven)) == 77 { return true }
+        return (usage?.scoped ?? []).contains {
+            Int(GaugeMath.remaining(usedPct: $0.pct)) == 77
+        }
+    }
+}
+
+/// The fever's FULL-ROW treatment (user 2026-08-31: "flashing rainbow
+/// background ... apply full row ... like rainbow neon light"): a
+/// hue-cycling rainbow gradient washing the whole row, rimmed with a
+/// glowing neon stroke, pulsing in hard steps. Sits BEHIND content.
+struct LuckyRowBackground: View {
+    var cornerRadius: Double = 5
+
+    private static let rainbow: [Color] = [
+        Color(red: 1.0, green: 0.2, blue: 0.2),
+        Color(red: 1.0, green: 0.6, blue: 0.1),
+        Color(red: 1.0, green: 0.95, blue: 0.2),
+        Color(red: 0.3, green: 1.0, blue: 0.35),
+        Color(red: 0.25, green: 0.9, blue: 1.0),
+        Color(red: 0.4, green: 0.45, blue: 1.0),
+        Color(red: 0.85, green: 0.4, blue: 1.0),
+        Color(red: 1.0, green: 0.2, blue: 0.2),
+    ]
+
+    var body: some View {
+        TimelineView(.animation) { ctx in
+            let t = ctx.date.timeIntervalSinceReferenceDate
+            // Neon-tube flash: stepped, not eased.
+            let blink = t.truncatingRemainder(dividingBy: 0.5) < 0.25
+                ? 1.0 : 0.65
+            let grad = LinearGradient(colors: Self.rainbow,
+                                      startPoint: .leading,
+                                      endPoint: .trailing)
+            let shape = RoundedRectangle(cornerRadius: cornerRadius)
+            ZStack {
+                shape.fill(grad).opacity(0.20 * blink)
+                shape.strokeBorder(grad, lineWidth: 1.5)
+                    .opacity(0.9 * blink)
+                    .shadow(color: .white.opacity(0.35 * blink), radius: 4)
+            }
+            // The rainbow travels: continuous hue cycle over the fixed
+            // gradient reads as the neon chase.
+            .hueRotation(.degrees(t * 240))
+        }
+        .allowsHitTesting(false)
+    }
+}
+
+/// The activating digits themselves (user 2026-08-31: "keep the
+/// flashing 77 numbers that activated the effect"): the percent label
+/// on a bar sitting at 77 flashes in hard frame steps — gold/white
+/// like the 7777 damage pops, with a rainbow run.
+struct LuckySevens: View {
+    let text: String
+
+    private static let steps: [Color] = [
+        Color(red: 1.00, green: 0.85, blue: 0.20), .white,
+        Color(red: 1.00, green: 0.85, blue: 0.20), .white,
+        Color(red: 1.00, green: 0.25, blue: 0.25),
+        Color(red: 1.00, green: 0.60, blue: 0.10),
+        Color(red: 1.00, green: 0.95, blue: 0.20),
+        Color(red: 0.30, green: 1.00, blue: 0.35),
+        Color(red: 0.25, green: 0.90, blue: 1.00),
+        Color(red: 0.85, green: 0.40, blue: 1.00),
+    ]
+
+    var body: some View {
+        TimelineView(.periodic(from: .now, by: 0.14)) { ctx in
+            let frame = Int(ctx.date.timeIntervalSinceReferenceDate / 0.14)
+            Text(text)
+                .font(.caption).bold().monospacedDigit()
+                .foregroundStyle(Self.steps[frame % Self.steps.count])
+                .scaleEffect(frame % 2 == 0 ? 1.0 : 1.12)
+        }
+        .help("All Lucky 7s!")
+    }
+}
+
 struct LuckyName: View {
     let text: String
     var font: Font = .body
@@ -241,17 +328,6 @@ struct LuckyName: View {
                 .font(font)
                 .fontWeight(bold ? .bold : .regular)
         }
-        .background(
-            // The steady rainbow band behind the name.
-            LinearGradient(colors: [
-                Color(hue: 0.83, saturation: 0.55, brightness: 0.55),
-                Color(hue: 0.66, saturation: 0.60, brightness: 0.60),
-                Color(hue: 0.55, saturation: 0.55, brightness: 0.55),
-            ], startPoint: .topLeading, endPoint: .bottomTrailing)
-            .opacity(0.55)
-            .clipShape(RoundedRectangle(cornerRadius: 3))
-            .padding(-2)
-        )
         .help("All Lucky 7s!")
     }
 

@@ -1274,14 +1274,15 @@ struct AccountCells {
     /// FFVII All Lucky 7s, the paired trigger: BOTH the 5h and 7d
     /// windows showing exactly 77 remaining (the solo trigger is a
     /// scoped/Fable bar at 77 — checked at its own call site).
-    var allLucky: Bool {
-        if let five = account.usage?.fiveHour?.pct,
-           let seven = account.usage?.sevenDay?.pct,
-           Int(GaugeMath.remaining(usedPct: five)) == 77,
-           Int(GaugeMath.remaining(usedPct: seven)) == 77 { return true }
-        return (account.usage?.scoped ?? []).contains {
-            Int(GaugeMath.remaining(usedPct: $0.pct)) == 77
-        }
+    var allLucky: Bool { account.allLucky7s }
+
+    /// The paired trigger alone — the 5h/7d labels flash only when
+    /// BOTH windows sit at 77 (a scoped bar at 77 flashes itself).
+    var luckyPair: Bool {
+        guard let five = account.usage?.fiveHour?.pct,
+              let seven = account.usage?.sevenDay?.pct else { return false }
+        return Int(GaugeMath.remaining(usedPct: five)) == 77
+            && Int(GaugeMath.remaining(usedPct: seven)) == 77
     }
 
     /// The account name, wearing the fever when the 7s align.
@@ -1328,7 +1329,8 @@ struct AccountCells {
                                 usedPct: w.pct, expectedPct: w.expectedPct,
                                 ahead: w.aheadOfPace),
                             // Mid-row on the wide grid: grow both ways.
-                            dropAnchor: banded && !session ? .center : .leading)
+                            dropAnchor: banded && !session ? .center : .leading,
+                            lucky: luckyPair)
                     }
                     resetLabelView(resetsAt: w.resetsAt, staticText: resetText(w))
                 }
@@ -1436,7 +1438,9 @@ struct AccountCells {
                                          ahead: w.aheadOfPace),
                                      // Far right on the wide grid: grow
                                      // leftward, into the window.
-                                     dropAnchor: banded ? .trailing : .leading)
+                                     dropAnchor: banded ? .trailing : .leading,
+                                     lucky: Int(GaugeMath.remaining(
+                                         usedPct: w.pct)) == 77)
                         }
                     }
                     .instantTip(WindowSummary.line(
@@ -1659,6 +1663,23 @@ struct AccountGrid: View {
         // One band + one sweep for the whole active row (Grid has no
         // per-row view): union the reported cell bounds, draw full-width.
         // ± half the 8pt verticalSpacing so rows still read separated.
+        // All Lucky 7s: the fever's rainbow-neon wash across the FULL
+        // row (every row reports into DeadRowBounds, so its dict knows
+        // each row's bounds).
+        .backgroundPreferenceValue(DeadRowBounds.self) { dict in
+            GeometryReader { geo in
+                ForEach(Array(dict.keys), id: \.self) { n in
+                    if let a = dict[n]?.first,
+                       model.accounts.first(where: { $0.number == n })?
+                           .allLucky7s == true {
+                        let r = geo[a]
+                        LuckyRowBackground()
+                            .frame(width: geo.size.width, height: r.height + 6)
+                            .offset(y: r.minY - 3)
+                    }
+                }
+            }
+        }
         .backgroundPreferenceValue(ActiveCellBounds.self) { anchors in
             GeometryReader { geo in
                 if let row = Self.union(anchors.map { geo[$0] }) {
@@ -1779,6 +1800,12 @@ struct AccountStack: View {
         }
         .padding(.vertical, 1)
         .background {
+            if account.allLucky7s {
+                LuckyRowBackground(cornerRadius: 4)
+                    .padding(.horizontal, -4)
+            }
+        }
+        .background {
             if account.active {
                 RoundedRectangle(cornerRadius: 4)
                     .fill(Color.accentColor.opacity(0.26 * model.fillScale))
@@ -1871,6 +1898,13 @@ struct AccountStack: View {
                 .frame(minWidth: horizontal ? 150 : nil,
                        maxWidth: horizontal ? nil : .infinity,
                        alignment: .leading)
+                .background {
+                    // Fever first in the chain = between content and
+                    // the card fill: the neon washes the whole card.
+                    if account.allLucky7s {
+                        LuckyRowBackground(cornerRadius: 8)
+                    }
+                }
                 .background {
                     if account.active {
                         RoundedRectangle(cornerRadius: 8)
