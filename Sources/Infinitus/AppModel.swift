@@ -43,6 +43,12 @@ final class AppModel: ObservableObject {
     @Published var lastError: String?
 
     let cli: CswapCLI?
+    /// True for the Animation Playground's private model: cli is pinned
+    /// to the bundled demo script and every outward side effect —
+    /// snapshot cache, notifications, resume nudges, push, sync, power
+    /// assertions, the engine supervisor — is suppressed, so nothing it
+    /// does can touch real accounts or real sessions (user 2026-08-31).
+    let isPlayground: Bool
     /// Set by StatusItemHolder — opens the controller-owned Settings window
     /// (the SwiftUI Settings scene is unreachable from popover hosts).
     var showSettings: (() -> Void)?
@@ -213,7 +219,8 @@ final class AppModel: ObservableObject {
         std.set(true, forKey: "migrated_from_g2")
     }
 
-    init() {
+    init(playground: Bool = false) {
+        isPlayground = playground
         Self.migrateLegacyDefaults()
         showAccountName = defaults.object(forKey: "show_account_name") as? Bool ?? true
         let pct = defaults.string(forKey: "title_pct") ?? "both"
@@ -247,7 +254,16 @@ final class AppModel: ObservableObject {
         pushSessionsDone = defaults.object(forKey: "push_sessions_done") as? Bool ?? true
         pushAllDead = defaults.object(forKey: "push_all_dead") as? Bool ?? true
         pushLastAlive = defaults.object(forKey: "push_last_alive") as? Bool ?? true
-        if mock, let demo = Self.demoScriptPath() {
+        if playground {
+            // Isolation is the contract: no demo script, no data at all
+            // (never fall back to the real engine here).
+            if let demo = Self.demoScriptPath() {
+                cli = CswapCLI(binaryPath: demo)
+            } else {
+                cli = nil
+                lastError = "demo script missing — playground has no data"
+            }
+        } else if mock, let demo = Self.demoScriptPath() {
             cli = CswapCLI(binaryPath: demo)
         } else if let path = CswapLocator.locate() {
             cli = CswapCLI(binaryPath: path)
@@ -258,12 +274,13 @@ final class AppModel: ObservableObject {
             cli = nil
             lastError = "cswap not found — install it (uv tool install claude-swap)"
         }
-        sync.attach(model: self)
+        if !playground { sync.attach(model: self) }
         // Last run's snapshot renders NOW — the popup otherwise opened
         // as an empty sliver and expanded seconds later when the first
         // `cswap list` returned, eating the intro (user 2026-08-30).
         // Live values roll in over it via the numeric transitions.
-        if let data = try? Data(contentsOf: Self.snapshotCacheURL),
+        if !playground,
+           let data = try? Data(contentsOf: Self.snapshotCacheURL),
            let cached = try? JSONDecoder().decode(AccountList.self, from: data) {
             accounts = cached.accounts
             activeNumber = cached.activeAccountNumber
@@ -327,7 +344,7 @@ final class AppModel: ObservableObject {
             if self.eventLog.count > 100 { self.eventLog.removeFirst(self.eventLog.count - 100) }
         }
         guard let cli, supervisor == nil else { return }
-        startEngine(binary: cli.binaryPath)
+        if !isPlayground { startEngine(binary: cli.binaryPath) }
         refreshTask = Task { [weak self] in
             while !Task.isCancelled {
                 await self?.refreshSnapshot()
@@ -485,10 +502,12 @@ final class AppModel: ObservableObject {
         guard let cli else { return }
         do {
             let (list, raw) = try await cli.accountListRaw()
-            try? FileManager.default.createDirectory(
-                at: Self.snapshotCacheURL.deletingLastPathComponent(),
-                withIntermediateDirectories: true)
-            try? raw.write(to: Self.snapshotCacheURL, options: .atomic)
+            if !isPlayground {
+                try? FileManager.default.createDirectory(
+                    at: Self.snapshotCacheURL.deletingLastPathComponent(),
+                    withIntermediateDirectories: true)
+                try? raw.write(to: Self.snapshotCacheURL, options: .atomic)
+            }
             let previous = activeNumber
             // withAnimation: the pct texts carry .contentTransition(.numericText)
             // so a fresh snapshot rolls the digits (the token-burn feel)
@@ -539,7 +558,7 @@ final class AppModel: ObservableObject {
             // parked engine sees no events — the 2026-08-28 silent-switch
             // bug. The diff sees every switch regardless of who executed it,
             // manual ones included.
-            if let current = list.activeAccountNumber,
+            if !isPlayground, let current = list.activeAccountNumber,
                let previous, previous != current, lastNotifiedActive != current {
                 lastNotifiedActive = current
                 let name = accounts.first(where: { $0.number == current })
@@ -547,15 +566,19 @@ final class AppModel: ObservableObject {
                 Notifier.post(title: "claude-swap",
                               body: "switched to account \(current) (\(name))")
             }
-            awake.update(wanted: keepAwake,
-                         busyCount: list.liveSessions?.busy ?? 0)
+            if !isPlayground {
+                awake.update(wanted: keepAwake,
+                             busyCount: list.liveSessions?.busy ?? 0)
+            }
             applyAutoOrder()
             // Same display-feed vantage: a switch (manual or parked-engine)
             // re-arms /rc; an active account that can work resumes stopped
             // sessions. Detached, single-flight — never awaited here.
-            let active = list.accounts.first { $0.number == list.activeAccountNumber }
-            resume.tick(switched: previous != nil && previous != list.activeAccountNumber,
-                        activeAlive: active.map { !AccountVitals.isDead($0.usage) } ?? false)
+            if !isPlayground {
+                let active = list.accounts.first { $0.number == list.activeAccountNumber }
+                resume.tick(switched: previous != nil && previous != list.activeAccountNumber,
+                            activeAlive: active.map { !AccountVitals.isDead($0.usage) } ?? false)
+            }
             // Same display-feed vantage as the switch diff above: these
             // triggers fire even while the supervised engine is parked.
             let health = list.accounts
@@ -570,13 +593,13 @@ final class AppModel: ObservableObject {
                 accounts: health,
                 flags: .init(sessionsDone: pushSessionsDone,
                              allDead: pushAllDead, lastAlive: pushLastAlive))
-            for msg in pushes {
+            for msg in pushes where !isPlayground {
                 Notifier.post(title: "claude-swap", body: msg)
                 // Text over stdin, matching the channel-setup commands;
                 // no channels configured is a quiet no-op (try?).
                 Task { _ = try? await cli.run(["notify", "push", "-"], stdin: msg) }
             }
-            await sync.tick()
+            if !isPlayground { await sync.tick() }
         } catch {
             // Keep the last good snapshot rather than blanking the menu —
             // same policy as the rumps menubar's _worker.

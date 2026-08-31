@@ -13,22 +13,30 @@ import CswapCore
 /// because they need the popup open.
 @MainActor enum Playground {
     static var window: NSWindow?
+    /// The playground's PRIVATE model: pinned to the demo script with
+    /// every outward side effect suppressed (AppModel.isPlayground) —
+    /// switching, rotating, reordering in here touches demo state only,
+    /// never real accounts (user 2026-08-31).
+    static var demoModel: AppModel?
 
     /// Dev-loop hook: INFINITUS_PLAYGROUND=1 in the environment opens
     /// the window at launch. An env var on purpose — a defaults bool
     /// would stick and greet every future launch with a playground.
-    static func openAtLaunchIfAsked(model: AppModel, usage: UsageModel) {
+    static func openAtLaunchIfAsked(usage: UsageModel) {
         guard ProcessInfo.processInfo.environment["INFINITUS_PLAYGROUND"] == "1"
         else { return }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
-            show(model: model, usage: usage)
+            show(usage: usage)
         }
     }
 
-    static func show(model: AppModel, usage: UsageModel) {
+    static func show(usage: UsageModel) {
         if window == nil {
+            let demo = AppModel(playground: true)
+            demo.startFeeds()
+            demoModel = demo
             let host = NSHostingController(
-                rootView: PlaygroundView(model: model, usage: usage))
+                rootView: PlaygroundView(model: demo, usage: usage))
             // Never let SwiftUI size the window (the pop-out's unbounded
             // ideal-width crash class); sized once below, user-owned after.
             host.sizingOptions = []
@@ -64,10 +72,11 @@ struct PlaygroundView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
-                section("Production popup — the real UI on the live model") {
-                    Text("Mock mode feeds it the full-state cast: healthy, "
-                         + "ahead of pace (mild + hot), dead, fresh, behind "
-                         + "pace, re-login sentinel, disabled, near-reset.")
+                section("Production popup — the real UI on the demo fleet") {
+                    Text("Always the mock cast (healthy, ahead mild + hot, "
+                         + "dead, fresh, behind pace, sentinel, disabled, "
+                         + "near-reset) on a private engine — switching and "
+                         + "reordering here never touch your real accounts.")
                         .font(.caption).foregroundStyle(.secondary)
                     MenuContent(model: model, usage: usage)
                         .fixedSize()

@@ -109,17 +109,6 @@ private struct ThemeCard: View {
         .buttonStyle(.plain)
     }
 
-    @ViewBuilder private var aheadIcon: some View {
-        if theme.aheadIcon.hasPrefix("sf:") {
-            let symbol = String(theme.aheadIcon.dropFirst(3))
-            Image(systemName: symbol)
-                .symbolRenderingMode(symbol == "flame.circle.fill" ? .palette : .monochrome)
-                .foregroundStyle(.white, .orange)
-        } else {
-            Text(theme.aheadIcon).font(.caption)
-        }
-    }
-
     // Same fake numbers for every theme so the cards compare like-for-like:
     // session 21% used, weekly 68% used (ahead of pace), credit 74%, $1,131.
     @ViewBuilder private var preview: some View {
@@ -131,7 +120,6 @@ private struct ThemeCard: View {
                     Text("4h 8m (22:09)").font(.caption).foregroundStyle(.secondary)
                 }
                 HStack(spacing: 3) {
-                    aheadIcon
                     Text(theme.weeklyLabel).foregroundStyle(.secondary)
                     Text("68%").monospacedDigit()
                     Text("5d 9h (Sep 4 03:59)").font(.caption).foregroundStyle(.secondary)
@@ -156,7 +144,6 @@ private struct ThemeCard: View {
                 }
                 .fixedSize()
                 HStack(spacing: 3) {
-                    aheadIcon
                     Text(theme.weeklyLabel).font(.caption).bold()
                         .foregroundStyle(ThemeColor.resolve(theme.weeklyColor))
                     GaugeBar(remaining: 32, color: ThemeColor.resolve(theme.weeklyColor), animated: false)

@@ -97,7 +97,7 @@ struct InfinitusApp: App {
             Notifier.requestAuthorization()
         }
         Task { await model.refreshSnapshot() }
-        Playground.openAtLaunchIfAsked(model: model, usage: usage)
+        Playground.openAtLaunchIfAsked(usage: usage)
     }
 
     var body: some Scene {
@@ -1091,17 +1091,6 @@ struct AccountCells {
         model.compactRows && (pct <= 0 || pct >= 100)
     }
 
-    @ViewBuilder var aheadIcon: some View {
-        if theme.aheadIcon.hasPrefix("sf:") {
-            let symbol = String(theme.aheadIcon.dropFirst(3))
-            Image(systemName: symbol)
-                .symbolRenderingMode(symbol == "flame.circle.fill" ? .palette : .monochrome)
-                .foregroundStyle(.white, .orange)
-        } else {
-            Text(theme.aheadIcon).font(.caption)
-        }
-    }
-
     func resetText(_ w: UsageWindow) -> String? {
         guard let when = compactText
             ? ResetLabel.compact(w) : ResetLabel.label(w) else { return nil }
@@ -1154,7 +1143,6 @@ struct AccountCells {
     @ViewBuilder var readyCell: some View {
         let spent = (account.usage?.spend?.pct ?? 0) >= 100
         HStack(spacing: 3) {
-            aheadIcon.opacity(0)   // column alignment with gauge lines
             Image(systemName: "checkmark.circle.fill")
                 .font(.caption).foregroundStyle(.green)
             Text(theme.plain ? "ready" : theme.readyLabel)
@@ -1178,10 +1166,6 @@ struct AccountCells {
     @ViewBuilder var deadCell: some View {
         if let cause = deadCause {
             HStack(spacing: 4) {
-                // Invisible pace slot: keeps "HP down" starting where the
-                // gauge lines start (column alignment, user screenshot
-                // 2026-08-30).
-                aheadIcon.opacity(0)
                 // Themed label + themed verb ("MP down", "🎬 sold out");
                 // the plain theme keeps plain words. The tooltip carries
                 // the plain-English translation either way.
@@ -1261,24 +1245,10 @@ struct AccountCells {
         Group {
             if let w, !hiddenInCompact(w.pct) {
                 HStack(spacing: 3) {
-                    // Ahead-of-pace marker — ALWAYS in the layout,
-                    // invisible when pace is fine, so columns never shift
-                    // (a conditional icon broke alignment). Session lines
-                    // carry the slot too: without it the stacked cards'
-                    // 5h line started flush while 7d was indented
-                    // (user screenshot 2026-08-30).
-                    aheadIcon
-                        .opacity(w.aheadOfPace == true ? 1 : 0)
-                        // Instant, not .help — the slow system tooltip
-                        // read as "no tooltip" (todo 2026-08-30). The
-                        // invisible alignment copy must not answer hover.
-                        // .above: the cell's own summary tip also fires
-                        // on this hover and lands .below — same spot
-                        // would bury this one under it.
-                        .instantTip("Burning faster than time passes — "
-                                    + "on pace to run out before the reset",
-                                    edge: .above)
-                        .allowsHitTesting(w.aheadOfPace == true)
+                    // No ahead-of-pace badge: the burn effect on the bar
+                    // itself carries that signal now (user 2026-08-31,
+                    // "remove flame icon now with effects") — and with
+                    // every cell slot-free, columns still align.
                     if theme.plain {
                         Text(session ? theme.sessionLabel : theme.weeklyLabel)
                             .foregroundStyle(.secondary)
@@ -1337,7 +1307,6 @@ struct AccountCells {
             // invisible pace slot keeps it aligned with the gauge lines
             // in the stacked cards.
             HStack(spacing: 3) {
-                aheadIcon.opacity(0)
                 Text("\(theme.creditLabel) spent")
             }
                 .font(.caption).foregroundStyle(.tertiary)
@@ -1348,7 +1317,6 @@ struct AccountCells {
                 .activeBand(banded && account.active)
         } else if let spend = account.usage?.spend, !hiddenInCompact(spend.pct) {
             HStack(spacing: 3) {
-                aheadIcon.opacity(0)
                 Text(theme.creditLabel)
                     .font(theme.plain ? .body : .caption.bold())
                     .foregroundStyle(theme.plain
@@ -1393,12 +1361,6 @@ struct AccountCells {
                     }
                 } else {
                     HStack(spacing: 3) {
-                        aheadIcon
-                            .opacity(w.aheadOfPace == true ? 1 : 0)
-                            .instantTip("Burning faster than time passes — "
-                                        + "on pace to run out before the reset",
-                                        edge: .above)
-                            .allowsHitTesting(w.aheadOfPace == true)
                         if theme.plain {
                             Text(w.name ?? "?").foregroundStyle(.secondary)
                             Text("\(Int(w.pct))%")

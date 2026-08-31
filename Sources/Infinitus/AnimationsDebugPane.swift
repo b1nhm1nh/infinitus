@@ -18,7 +18,7 @@ struct AnimationsDebugPane: View {
         Form {
             Section {
                 Button("Open animation playground") {
-                    Playground.show(model: model, usage: usage)
+                    Playground.show(usage: usage)
                 }
                 Text("A resizable window with the self-contained demos \u{2014} "
                      + "burn styles side by side, the HP drop, refills \u{2014} "
