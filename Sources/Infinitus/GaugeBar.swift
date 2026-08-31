@@ -25,6 +25,12 @@ struct GaugeBar: View {
     /// usage outruns the clock (user 2026-08-31).
     var burnStyle: String = "off"
     var burnHeat: Double = 0
+    /// Where the HP-drop zoom grows from. Columns near the popup's
+    /// right edge (weekly/spend/scoped on the wide grid) anchor
+    /// center or trailing so the 5× bar stays inside the window
+    /// (user 2026-08-31: "fable drop: overflown hidden as fable is
+    /// far right of window — happens only on list").
+    var dropAnchor: UnitPoint = .leading
     @ScaledMetric(relativeTo: .caption) private var barWidth = 56.0
     @ScaledMetric(relativeTo: .caption) private var barHeight = 6.0
     @State private var shown: Double = 0
@@ -79,9 +85,28 @@ struct GaugeBar: View {
                                 barWidth: barWidth, barHeight: barHeight)
                 }
             }
+            // Heat halo (user 2026-08-31: "bar with few left the
+            // effects on remaining is too subtle"): the burn rides the
+            // FILL, which nearly vanishes near empty — a heat-tinted
+            // glowing border on the whole capsule keeps ahead-of-pace
+            // readable at any fill. Ember orange -> core white as heat
+            // climbs (BurnOverlay's palette).
+            .overlay {
+                if animated, burnHeat > 0, burnStyle != "off" {
+                    let tint = Color(red: 1,
+                                     green: 0.45 + 0.51 * burnHeat,
+                                     blue: 0.10 + 0.75 * burnHeat)
+                    Capsule()
+                        .strokeBorder(tint.opacity(0.4 + 0.5 * burnHeat),
+                                      lineWidth: 1)
+                        .shadow(color: tint.opacity(0.5 + 0.5 * burnHeat),
+                                radius: 2 + 5 * burnHeat)
+                        .allowsHitTesting(false)
+                }
+            }
             // The HP-drop zoom — after the burn overlay so flames zoom
             // with the bar. Overlapping neighbor rows is the drama.
-            .scaleEffect(dropZoom ? 5 : 1, anchor: .leading)
+            .scaleEffect(dropZoom ? 5 : 1, anchor: dropAnchor)
             .zIndex(dropZoom ? 10 : 0)
 
             Text("\(Int(remaining))%")

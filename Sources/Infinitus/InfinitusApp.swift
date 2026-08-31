@@ -1300,7 +1300,9 @@ struct AccountCells {
                             burnStyle: session ? "off" : model.burnStyle,
                             burnHeat: session ? 0 : GaugeMath.burnHeat(
                                 usedPct: w.pct, expectedPct: w.expectedPct,
-                                ahead: w.aheadOfPace))
+                                ahead: w.aheadOfPace),
+                            // Mid-row on the wide grid: grow both ways.
+                            dropAnchor: banded && !session ? .center : .leading)
                     }
                     resetLabelView(resetsAt: w.resetsAt, staticText: resetText(w))
                 }
@@ -1355,7 +1357,8 @@ struct AccountCells {
                         .contentTransition(.numericText(value: spend.pct))
                 } else {
                     GaugeBar(remaining: GaugeMath.remaining(usedPct: spend.pct),
-                             color: ThemeColor.resolve(theme.creditColor))
+                             color: ThemeColor.resolve(theme.creditColor),
+                             dropAnchor: banded ? .center : .leading)
                 }
             }
             .instantTip(String(format: "usage credit: %.2f of %.0f %@",
@@ -1404,7 +1407,10 @@ struct AccountCells {
                                      burnStyle: model.burnStyle,
                                      burnHeat: GaugeMath.burnHeat(
                                          usedPct: w.pct, expectedPct: w.expectedPct,
-                                         ahead: w.aheadOfPace))
+                                         ahead: w.aheadOfPace),
+                                     // Far right on the wide grid: grow
+                                     // leftward, into the window.
+                                     dropAnchor: banded ? .trailing : .leading)
                         }
                     }
                     .instantTip(WindowSummary.line(
