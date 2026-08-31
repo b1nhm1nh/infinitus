@@ -486,36 +486,61 @@ struct AccountsPane: View {
     var body: some View {
         Form {
             Section("Accounts") {
+                // Order + rename live HERE now (user 2026-08-31: "move
+                // the account order and rename to Accounts tab") — one
+                // place owns the fleet: drag to reorder, type to
+                // rename, relogin and delete on every row.
+                Toggle("Keep accounts sorted by headroom",
+                       isOn: $model.autoOrder)
+                    .help(Self.autoOrderHelp)
+                Text(orderCaption)
+                    .font(.caption).foregroundStyle(.secondary)
                 if model.accounts.isEmpty {
                     Text("No accounts yet — add the first one below.")
                         .foregroundStyle(.secondary)
                 }
-                ForEach(model.accounts, id: \.number) { a in
-                    HStack(spacing: 10) {
-                        Text("\(a.number)").monospacedDigit()
-                            .foregroundStyle(.secondary)
-                        VStack(alignment: .leading, spacing: 1) {
-                            Text(a.alias?.isEmpty == false ? a.alias! : a.email)
-                                .fontWeight(a.active ? .bold : .regular)
-                            if a.alias?.isEmpty == false {
-                                Text(a.email).font(.caption)
+                List {
+                    ForEach(model.accounts, id: \.number) { a in
+                        HStack(spacing: 8) {
+                            Image(systemName: "line.3.horizontal")
+                                .foregroundStyle(.tertiary)
+                            Text("\(a.number)").monospacedDigit()
+                                .foregroundStyle(.secondary)
+                            RenameField(model: model, account: a)
+                            Text(a.email).lineLimit(1)
+                                .font(.caption).foregroundStyle(.secondary)
+                            if let plan = a.plan {
+                                Text(plan)
+                                    .font(.caption2)
+                                    .padding(.horizontal, 5).padding(.vertical, 1)
+                                    .background(Capsule()
+                                        .fill(Color.secondary.opacity(0.15)))
                                     .foregroundStyle(.secondary)
                             }
-                        }
-                        statusChip(a)
-                        Spacer()
-                        if a.usageStatus != "ok" || (a.disabled ?? false) == false {
+                            statusChip(a)
+                            Spacer()
                             Button("Relogin") {
                                 flow.start(model: model, relogin: a)
                             }
                             .disabled(flow.running)
+                            Button(role: .destructive) {
+                                confirmDelete = a
+                            } label: { Image(systemName: "trash") }
+                            .buttonStyle(.borderless)
+                            .disabled(flow.running)
+                            .help("Remove this account from the engine")
                         }
-                        Button(role: .destructive) {
-                            confirmDelete = a
-                        } label: { Image(systemName: "trash") }
-                        .disabled(flow.running)
-                        .help("Remove this account from the engine")
+                        .moveDisabled(model.autoOrder)
                     }
+                    .onMove { from, to in
+                        var order = model.accounts.map(\.number)
+                        order.move(fromOffsets: from, toOffset: to)
+                        model.reorder(order)
+                    }
+                }
+                .frame(minHeight: CGFloat(model.accounts.count) * 30 + 16)
+                if let err = model.reorderError {
+                    Text(err).font(.caption).foregroundStyle(.red)
                 }
             }
             Section("Add account") {
@@ -536,6 +561,19 @@ struct AccountsPane: View {
                  + "account itself is untouched — you can add it back "
                  + "any time.")
         }
+    }
+
+    private static let autoOrderHelp = "After every refresh, the fleet is reordered most headroom first (unknown, then out-of-limit by who recovers first, then disabled last). Slot numbers shift with it. Small differences don't move a row, so neighbours never flip-flop."
+
+    private var orderCaption: String {
+        let rename = "Type in the Name field to rename an account (sets its "
+            + "cswap alias, shown everywhere); clear it to go back to the email."
+        if model.autoOrder {
+            return "Sorted automatically — drag is off while this is on. " + rename
+        }
+        return "Drag rows to set the rotation order — Rotate cycles "
+            + "through them (aliases, backups, and history move with each "
+            + "account). " + rename
     }
 
     @ViewBuilder private func statusChip(_ a: Account) -> some View {
@@ -632,5 +670,32 @@ struct AccountsPane: View {
                 model.lastError = "\(error)"
             }
         }
+    }
+}
+
+/// One account's editable display name. Local draft, committed on Enter or
+/// focus loss — never on every keystroke (each commit is a `cswap alias`
+/// subprocess + snapshot refresh).
+private struct RenameField: View {
+    @ObservedObject var model: AppModel
+    let account: Account
+    @State private var draft = ""
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        TextField("Name", text: $draft)
+            .textFieldStyle(.roundedBorder)
+            .frame(width: 150)
+            .focused($focused)
+            .onAppear { draft = account.alias ?? "" }
+            .onChange(of: account.alias) { draft = account.alias ?? "" }
+            .onSubmit { commit() }
+            .onChange(of: focused) { if !focused { commit() } }
+    }
+
+    private func commit() {
+        let trimmed = draft.trimmingCharacters(in: .whitespaces)
+        guard trimmed != (account.alias ?? "") else { return }
+        model.rename(account.number, to: trimmed)
     }
 }
