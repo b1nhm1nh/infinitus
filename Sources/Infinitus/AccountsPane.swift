@@ -4,15 +4,14 @@ import AuthenticationServices
 import CswapCore
 
 /// Native account management (user 2026-08-31: "add new account,
-/// relogin, delete. do not reuse cswap['s login flow]"). Login is
-/// Claude's own OAuth — the app hosts `claude setup-token` on a PTY,
-/// shows the OAuth URL in a PRIVATE in-app web window (never the
-/// default browser: its claude.ai session belongs to ONE account and
-/// switching there means logout/login churn — user 2026-08-31), takes
-/// the pasted code, and hands the minted token to the engine over
-/// stdin (`cswap add-token -`). The token is shown masked only.
-/// Each account keeps its own isolated web session, so Relogin opens
-/// already signed in as that account.
+/// relogin, delete. do not reuse cswap['s login flow]"). The app hosts
+/// `claude auth login` on a PTY — NOT `setup-token`, whose inference-
+/// only token can't join an account slot (it minted a junk
+/// "setup-token-7@" account, user screenshot 2026-08-31) — shows the
+/// OAuth URL in a private sheet/window, takes the pasted code, then
+/// runs the engine's blessed pair: `cswap add` captures the new live
+/// credential into its slot, `cswap switch <previous>` restores the
+/// account that was active, undoing the login's clobber in seconds.
 @MainActor final class TokenFlow: ObservableObject {
     /// One app-wide flow: the popup's "re-login needed" note starts it
     /// directly from the list (user 2026-08-31), the Accounts pane
@@ -58,7 +57,7 @@ import CswapCore
     private weak var model: AppModel?
     private var master: FileHandle?
     private var buffer = ""
-    private var token: String?
+    private var previousActive: Int?
     private var shimDir: URL?
     private var authWindow: NSWindow?
     private var webWindow: NSWindow?
@@ -77,6 +76,7 @@ import CswapCore
         guard !running else { return }
         reloginTarget = relogin.map { ($0.alias?.isEmpty == false ? $0.alias! : $0.email) }
         reloginEmail = relogin?.email
+        previousActive = model.activeNumber
         preEmails = Set(model.accounts.map(\.email))
         if let email = relogin?.email,
            let saved = Self.storeMap()[email], let id = UUID(uuidString: saved) {
@@ -85,7 +85,6 @@ import CswapCore
             storeID = UUID()        // fresh jar for a fresh login
         }
         code = ""
-        token = nil
         buffer = ""
         authURL = nil
         phase = .launching
@@ -154,7 +153,12 @@ import CswapCore
 
         let p = Process()
         p.executableURL = URL(fileURLWithPath: claude)
-        p.arguments = ["setup-token"]
+        // The REAL login (full account credential), temporarily taking
+        // the live slot; finished() hands it to the engine and switches
+        // back. --email prefills the relogin target's address.
+        var args = ["auth", "login", "--claudeai"]
+        if let email = reloginEmail { args += ["--email", email] }
+        p.arguments = args
         var env = ProcessInfo.processInfo.environment
         env["PATH"] = dir.path + ":" + (env["PATH"] ?? "/usr/bin:/bin")
         env["TERM"] = "xterm-256color"
@@ -213,33 +217,32 @@ import CswapCore
                 openAuthWindow(url)
             }
         }
-        // The minted long-lived token.
-        if let r = buffer.range(of: #"sk-ant-[A-Za-z0-9_\-]{24,}"#,
-                                options: .regularExpression) {
-            token = String(buffer[r])
-        }
     }
 
     private func finished(status: Int32, model: AppModel) {
         master?.readabilityHandler = nil
-        guard let token, status == 0 || token.count > 30 else {
+        guard status == 0 else {
             let tail = buffer.suffix(300).trimmingCharacters(in: .whitespacesAndNewlines)
-            let msg = tail.isEmpty
-                ? "setup-token exited \(status) without a token"
-                : String(tail)
+            let msg = tail.isEmpty ? "claude auth login exited \(status)"
+                                   : String(tail)
             phase = .failed(msg)
             model.lastError = "relogin: \(msg.prefix(120))"
             cleanup()
             return
         }
         phase = .registering
-        let masked = "…" + token.suffix(6)
+        let restoreTo = previousActive
         Task {
             do {
                 guard let cli = model.cli else {
                     throw CLIError(message: "no engine")
                 }
-                try await cli.addToken(token)
+                // The blessed pair: capture the fresh credential into
+                // its slot, then restore whoever was active before.
+                try await cli.addCurrent()
+                if let n = restoreTo {
+                    try? await cli.switchTo(n)
+                }
                 await model.refreshSnapshot()
                 // Bind the web session to its account for future
                 // relogins: the relogin target, or the one new email.
@@ -252,9 +255,9 @@ import CswapCore
                         Self.bind(email: email, id: self.storeID)
                     }
                 }
-                self.phase = .done(masked)
+                self.phase = .done("captured")
             } catch {
-                self.phase = .failed("engine refused the token: \(error)")
+                self.phase = .failed("engine refused the account: \(error)")
             }
             self.cleanup()
         }
@@ -266,7 +269,6 @@ import CswapCore
         shimDir = nil
         process = nil
         master = nil
-        token = nil
     }
 
     // MARK: login windows
@@ -601,11 +603,12 @@ struct AccountsPane: View {
                      : "Waiting for the token…")
                 Button("Cancel") { flow.cancel() }
             }
-        case .done(let masked):
+        case .done:
             HStack(spacing: 8) {
                 Image(systemName: "checkmark.circle.fill")
                     .foregroundStyle(.green)
-                Text("Token \(masked) registered — account list refreshed.")
+                Text("Account captured — the engine holds its credential "
+                     + "and your previous active account is restored.")
                 Button("Add another") { flow.start(model: model) }
                 Button("Done") { flow.phase = .idle }
             }

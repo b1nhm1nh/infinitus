@@ -112,6 +112,14 @@ public struct CswapCLI: Sendable {
         try await run(["reorder"] + numbers.map(String.init) + ["--json"])
     }
 
+    /// Capture the CURRENTLY logged-in Claude Code account into the
+    /// engine — the second half of the blessed relogin flow ("log in
+    /// with Claude Code, then run: cswap add").
+    @discardableResult
+    public func addCurrent() async throws -> Data {
+        try await run(["add"], stdin: "y")
+    }
+
     /// Register a setup-token (or API key) with the engine — the token
     /// travels over stdin, never argv (`cswap add-token -`). cswap
     /// matches the credential's identity to an existing slot (relogin)

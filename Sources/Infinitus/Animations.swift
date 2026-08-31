@@ -243,10 +243,11 @@ extension Account {
     }
 }
 
-/// The fever's FULL-ROW treatment (user 2026-08-31: "flashing rainbow
-/// background ... apply full row ... like rainbow neon light"): a
-/// hue-cycling rainbow gradient washing the whole row, rimmed with a
-/// glowing neon stroke, pulsing in hard steps. Sits BEHIND content.
+/// The fever's FULL-ROW treatment (user 2026-08-31, refined: "not
+/// flashing but border will loop in circle"): a steady hue-cycling
+/// rainbow wash over the whole row, rimmed by a neon border whose
+/// rainbow CHASES around the perimeter — a rotating angular gradient,
+/// no blinking anywhere. Sits BEHIND content.
 struct LuckyRowBackground: View {
     var cornerRadius: Double = 5
 
@@ -264,22 +265,67 @@ struct LuckyRowBackground: View {
     var body: some View {
         TimelineView(.animation) { ctx in
             let t = ctx.date.timeIntervalSinceReferenceDate
-            // Neon-tube flash: stepped, not eased.
-            let blink = t.truncatingRemainder(dividingBy: 0.5) < 0.25
-                ? 1.0 : 0.65
-            let grad = LinearGradient(colors: Self.rainbow,
-                                      startPoint: .leading,
-                                      endPoint: .trailing)
             let shape = RoundedRectangle(cornerRadius: cornerRadius)
             ZStack {
-                shape.fill(grad).opacity(0.20 * blink)
-                shape.strokeBorder(grad, lineWidth: 1.5)
-                    .opacity(0.9 * blink)
-                    .shadow(color: .white.opacity(0.35 * blink), radius: 4)
+                // Steady wash; the slow hue cycle keeps it alive
+                // without any brightness change (no flash).
+                shape.fill(LinearGradient(colors: Self.rainbow,
+                                          startPoint: .leading,
+                                          endPoint: .trailing))
+                    .opacity(0.18)
+                    .hueRotation(.degrees(t * 40))
+                // The neon border, Gemini-style (user 2026-08-31
+                // screenshot): ONE luminous comet arc orbiting the
+                // outline — a bright head with a soft blurred tail
+                // fading behind it, hue drifting as it travels. Canvas
+                // + trimmedPath; hard segments read as a picket fence.
+                Canvas { c, size in
+                    let rect = CGRect(origin: .zero, size: size)
+                        .insetBy(dx: 1.5, dy: 1.5)
+                    let path = Path(roundedRect: rect,
+                                    cornerRadius: cornerRadius)
+                    let phase = (t * 0.16).truncatingRemainder(dividingBy: 1)
+                    let hue = (t * 0.06).truncatingRemainder(dividingBy: 1)
+                    func seg(_ f0: Double, _ f1: Double, _ color: Color,
+                             _ w: Double, _ ctx: GraphicsContext) {
+                        let a = f0.truncatingRemainder(dividingBy: 1)
+                        let b = a + (f1 - f0)
+                        let style = StrokeStyle(lineWidth: w, lineCap: .round)
+                        if b <= 1 {
+                            ctx.stroke(path.trimmedPath(from: a, to: b),
+                                       with: .color(color), style: style)
+                        } else {
+                            ctx.stroke(path.trimmedPath(from: a, to: 1),
+                                       with: .color(color), style: style)
+                            ctx.stroke(path.trimmedPath(from: 0, to: b - 1),
+                                       with: .color(color), style: style)
+                        }
+                    }
+                    let tailN = 14
+                    let segLen = 0.012
+                    // Soft outer glow pass, then the bright core.
+                    var glow = c
+                    glow.addFilter(.blur(radius: 4))
+                    for k in 0..<tailN {
+                        let fade = pow(1 - Double(k) / Double(tailN), 2)
+                        let f0 = phase - Double(k + 1) * segLen
+                        let color = Color(hue: (hue + Double(k) * 0.015)
+                            .truncatingRemainder(dividingBy: 1),
+                            saturation: 0.9, brightness: 1.0)
+                        seg(f0 + 1, f0 + 1 + segLen,
+                            color.opacity(0.8 * fade), 4.5, glow)
+                    }
+                    for k in 0..<tailN {
+                        let fade = pow(1 - Double(k) / Double(tailN), 2)
+                        let f0 = phase - Double(k + 1) * segLen
+                        let color = Color(hue: (hue + Double(k) * 0.015)
+                            .truncatingRemainder(dividingBy: 1),
+                            saturation: 0.75, brightness: 1.0)
+                        seg(f0 + 1, f0 + 1 + segLen,
+                            color.opacity(fade), 1.8, c)
+                    }
+                }
             }
-            // The rainbow travels: continuous hue cycle over the fixed
-            // gradient reads as the neon chase.
-            .hueRotation(.degrees(t * 240))
         }
         .allowsHitTesting(false)
     }
