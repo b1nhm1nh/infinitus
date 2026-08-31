@@ -5,14 +5,14 @@
   "version": "1.0.0",
   "author": "Infinitus",
   "license": "MIT",
-  "description": "claude-swap fleet in the bar: active account usage, themed fleet tooltip, click to rotate.",
+  "description": "claude-swap fleet in the bar: active account usage, themed fleet tooltip, click opens the fleet panel.",
   "kinds": ["bar-widget"],
   "entryPoints": {
-    "barWidget": "Bar.qml"
+    "barWidget": "BarWidget.qml"
   },
   "barWidget": {
     "displayName": "Infinitus fleet",
-    "description": "Active claude-swap account with 5h/7d usage; hover for the whole themed fleet; click rotates to the next account.",
+    "description": "Active claude-swap account with 5h/7d usage; hover for the whole themed fleet; click opens the fleet panel (switch, rotate, themes).",
     "category": "AI",
     "aliases": ["infinitus", "cswap"],
     "allowMultiple": false,

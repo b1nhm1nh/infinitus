@@ -51,6 +51,19 @@ Newer Omarchy replaced Waybar with a Quickshell shell. The same
    (or a wrapper) at that path. Theme id and refresh interval live in
    the widget's settings (`barWidget.schema`).
 
+Clicking the bar label opens the fleet panel — the popup UI, matching
+the macOS app: per-account rows with usage gauges (dead, sentinel, and
+disabled states rendered like the macOS popup), click a row to switch
+to that account, rotate + theme stepper in the footer. Keys while
+open: `1`–`9` switch, `r` rotate, `[`/`]` step the theme, Escape
+closes. IPC drives it too:
+`qs ipc -i <instance> call infinitus.fleet toggle` (also `rotate`,
+`refresh`, `cycleTheme`).
+
+Development note: the shell hot-reloads plugin files but serves QML
+from a component cache — after editing the plugin's QML, restart the
+shell to actually pick the change up.
+
 Building natively on Arch instead of the Docker route: the official
 ubuntu24.04 toolchain tarball runs fine with three symlink shims
 (`libncurses.so.6` and `libtinfo.so.6` -> `libncursesw.so.6`,
