@@ -44,3 +44,5 @@ windows sit adjacent and all five cards clear the region bottom.
 Tight cut: mpdecimate collapses static holds ~3-5x (gentler on the
 hover tour and themes so dwells stay readable, harder on layout
 mechanics) + 1.1x global pace; motion frames stay. 75s -> 39s.
+README demo.gif is the tight cut as gif: crop the 1600x900 pad to
+1600x678, 10fps, 960w, palettegen/paletteuse (bayer dither) — 4.8MB.

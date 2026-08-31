@@ -9,7 +9,7 @@ May your limits never bind.
 [![Homebrew](https://img.shields.io/badge/homebrew-deathemperor%2Ftap-orange)](https://github.com/deathemperor/homebrew-tap)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
-![Infinitus demo — launch intro, themed fleet, rotate celebrations](docs/demo.gif)
+![Infinitus demo — layouts, compact mode, pop-out, live theme switching](docs/demo.gif)
 
 A native macOS menu bar app (Swift/SwiftUI) over the
 [claude-swap](https://github.com/deathemperor/claude-swap) engine: live
