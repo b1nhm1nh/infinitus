@@ -110,8 +110,9 @@ Arch users can build from [`packaging/aur/PKGBUILD`](packaging/aur/) —
 - **iCloud settings sync** + file export/import (never credentials).
 - **Push notifications** — switch/limit events to Slack, Discord,
   Telegram or a webhook; secrets travel over stdin, shown masked.
-- **Pop-out window, compact mode, stacked/wide layouts, popup
-  scaling** — the pop-out remembers its spot across restarts.
+- **Pop-out window, compact mode, three layouts (wide rows, stacked
+  cards, horizontal cards), popup scaling** — the pop-out remembers
+  its spot across restarts.
 
 ## Privacy
 

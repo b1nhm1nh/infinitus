@@ -124,11 +124,13 @@
   3. ~~huuloc.com~~ → Infinitus entry in Mad-Eye's Trunk (pensieve
      src/data/arsenal.ts + icon), committed locally (59f92ce3), NOT
      pushed — pushing deploys.
-  4. ~~Walkthrough video~~ → docs/promo/walkthrough.md shot list;
-     48s rough cut at ~/Movies/Infinitus-walkthrough.mp4 (shim fleet:
-     popup, rotate celebration, theme montage, settings tour). No
-     narration; the theme flip via the right-click menu isn't in it
-     (no synthetic right-click).
+  4. ~~Walkthrough video~~ → re-recorded 2026-08-31 per user ask:
+     74s cut at ~/Movies/Infinitus-walkthrough.mp4 (shim fleet) —
+     open+hover tour, rotate celebration, compact in wide AND stacked,
+     all three layouts (incl. the new horizontal cards, morphed live
+     in the pop-out), LIVE theme switching (Sci-Fi/Hades/Movie/RPG via
+     the Themes pane, pop-out re-skinning). Shot log in
+     docs/promo/walkthrough.md. No narration.
 - Duplicate icon uses within a theme (user screenshot, 2026-08-30):
   movie uses 🎬 as BOTH the slot prefix and the session gauge label, so
   a row reads clapperboard-number … clapperboard-gauge; the dead marker
