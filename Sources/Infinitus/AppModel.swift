@@ -111,6 +111,16 @@ final class AppModel: ObservableObject {
     @Published var introTitle: String { didSet { defaults.set(introTitle, forKey: "intro_title") } }
     /// Pace fire on 7d/model bars ("off"/"ember"/"flame"/"limit").
     @Published var burnStyle: String { didSet { defaults.set(burnStyle, forKey: "burn_style") } }
+    /// Mock mode (user 2026-08-31): the bundled demo fleet stands in
+    /// for the engine. Machine-local, deliberately never synced. cli
+    /// is a let, so flipping this relaunches — the restart IS the
+    /// re-detect (installEngine precedent).
+    @Published var mockMode: Bool {
+        didSet {
+            defaults.set(mockMode, forKey: "mock_mode")
+            relaunchApp()
+        }
+    }
 
     /// Intro phase timing: bars (and the active-row flash) hold until
     /// the content entrance has fully landed (user 2026-08-30: "only
@@ -227,14 +237,23 @@ final class AppModel: ObservableObject {
         introSpeed = defaults.object(forKey: "intro_speed") as? Double ?? 1.0
         introTitle = defaults.string(forKey: "intro_title") ?? "zoom"
         burnStyle = defaults.string(forKey: "burn_style") ?? "ember"
+        // Local: init reads it again below before every stored
+        // property is set (two-phase init forbids self.mockMode there).
+        let mock = defaults.object(forKey: "mock_mode") as? Bool ?? false
+        mockMode = mock
         keepAwake = defaults.object(forKey: "keep_awake") as? Bool ?? false
         autoOrder = defaults.object(forKey: "auto_order") as? Bool ?? false
         // Push triggers default ON — they exist because they were asked for.
         pushSessionsDone = defaults.object(forKey: "push_sessions_done") as? Bool ?? true
         pushAllDead = defaults.object(forKey: "push_all_dead") as? Bool ?? true
         pushLastAlive = defaults.object(forKey: "push_last_alive") as? Bool ?? true
-        if let path = CswapLocator.locate() {
+        if mock, let demo = Self.demoScriptPath() {
+            cli = CswapCLI(binaryPath: demo)
+        } else if let path = CswapLocator.locate() {
             cli = CswapCLI(binaryPath: path)
+            if mock {
+                lastError = "demo script missing — running the real engine"
+            }
         } else {
             cli = nil
             lastError = "cswap not found — install it (uv tool install claude-swap)"
@@ -369,6 +388,20 @@ final class AppModel: ObservableObject {
     /// Stop the engine cleanly, then relaunch this app from its bundle —
     /// the "restart to update" action after an on-disk rebuild.
     // MARK: onboarding — engine install (todo 2026-08-30)
+
+    /// The bundled demo engine (tools/demo-cswap -> Resources), a tiny
+    /// fabricated-fleet cswap. Unbundled dev runs look next to the
+    /// executable instead (run-unbundled.sh copies it there).
+    static func demoScriptPath() -> String? {
+        if let p = Bundle.main.path(forResource: "demo-cswap", ofType: nil),
+           FileManager.default.isExecutableFile(atPath: p) { return p }
+        if let dir = (Bundle.main.executablePath as NSString?)?
+            .deletingLastPathComponent {
+            let p = dir + "/demo-cswap"
+            if FileManager.default.isExecutableFile(atPath: p) { return p }
+        }
+        return nil
+    }
 
     /// True when no cswap binary was found at launch; the popup swaps
     /// its rows for the onboarding card.

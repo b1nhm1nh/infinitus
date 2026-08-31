@@ -1,0 +1,153 @@
+#!/usr/bin/env python3
+"""Demo cswap: the app's mock mode — a fabricated five-account
+fleet (bravo ahead of pace, charlie dead). No real data; also used
+for README recordings. Ships in the app bundle's Resources."""
+import json, sys, time, os, datetime
+
+# Not next to the script: Resources are sealed by the code signature.
+STATE = os.path.join(os.environ.get("TMPDIR", "/tmp"), "infinitus-demo-state.json")
+
+def state():
+    try:
+        return json.load(open(STATE))
+    except Exception:
+        return {"active": 1}
+
+def save(st): json.dump(st, open(STATE, "w"))
+
+def iso(hours):
+    t = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=hours)
+    return t.isoformat()
+
+def win(pct, hours, countdown, clock, expected=None, ahead=False, scoped_name=None):
+    d = {"pct": pct, "resetsAt": iso(hours), "countdown": countdown, "clock": clock}
+    if expected is not None:
+        d.update({"expectedPct": expected, "aheadOfPace": ahead,
+                  "projectedExhaustionAt": iso(hours*2), "willLastToReset": not ahead})
+    if scoped_name: d["name"] = scoped_name
+    return d
+
+def account(num, alias, plan, five, seven, scoped, spend_used, active):
+    return {
+        "number": num, "email": f"{alias}@example.com",
+        "organizationName": f"{alias}@example.com's Organization",
+        "organizationUuid": f"00000000-0000-0000-0000-00000000000{num}",
+        "isOrganization": True, "active": active, "usageStatus": "ok",
+        "usage": {"fiveHour": five, "sevenDay": seven,
+                  "spend": {"used": spend_used, "limit": 200.0,
+                            "pct": round(spend_used/2.0, 1), "currency": "USD"},
+                  "scoped": scoped},
+        "alias": alias, "plan": plan,
+        "usageFetchedAt": iso(0), "usageAgeSeconds": 30.0,
+    }
+
+def fleet(active):
+    return [
+        account(1, "alpha", "Max 20x",
+                win(37.0, 2.4, "2h 25m", "23:59"),
+                win(22.0, 118, "4d 22h", "Sep 4 19:59", 31.0, False),
+                [win(18.0, 118, "4d 22h", "Sep 4 19:59", 31.0, False, "Fable")],
+                41.2, active == 1),
+        account(2, "bravo", "Max 20x",
+                win(72.0, 1.1, "1h 5m", "22:39"),
+                win(64.0, 96, "4d 0h", "Sep 3 21:59", 39.0, True),
+                [win(58.0, 96, "4d 0h", "Sep 3 21:59", 39.0, True, "Fable")],
+                96.6, active == 2),
+        account(3, "charlie", "Max 5x",
+                win(12.0, 3.0, "3h 0m", "00:34"),
+                win(100.0, 27, "1d 3h", "Sep 1 00:59", 74.0, False),
+                [win(100.0, 27, "1d 3h", "Sep 1 00:59", 74.0, False, "Fable")],
+                88.1, active == 3),
+        account(4, "delta", "Max 5x",
+                win(4.0, 4.6, "4h 36m", "02:10"),
+                win(9.0, 140, "5d 20h", "Sep 5 17:59", 12.0, False),
+                [win(6.0, 140, "5d 20h", "Sep 5 17:59", 12.0, False, "Fable")],
+                12.4, active == 4),
+        account(5, "echo", "Max 20x",
+                win(51.0, 0.9, "54m", "22:28"),
+                win(41.0, 108, "4d 12h", "Sep 4 09:59", 35.0, False),
+                [win(38.0, 108, "4d 12h", "Sep 4 09:59", 35.0, False, "Fable")],
+                63.0, active == 5),
+    ]
+
+def sessions():
+    now = int(time.time()*1000)
+    rows = [("busy", "/Users/demo/projects/api"), ("busy", "/Users/demo/projects/web"),
+            ("busy", "/Users/demo/projects/cli"), ("idle", "/Users/demo/projects/docs"),
+            ("idle", "/Users/demo/projects/infra"), ("idle", "/Users/demo/notes"),
+            ("idle", "/Users/demo/projects/blog"), ("idle", "/Users/demo/scratch")]
+    return {"busy": 3, "idle": 5, "waiting": 0, "shell": 0, "unknown": 0,
+            "total": 8,
+            "sessions": [{"pid": 1000+i, "cwd": c, "status": s,
+                          "kind": "interactive", "startedAt": now - i*900000}
+                         for i, (s, c) in enumerate(rows)]}
+
+def ordered(rows, st):
+    order = st.get("order") or []
+    rank = {n: i for i, n in enumerate(order)}
+    return sorted(rows, key=lambda r: rank.get(r["number"], len(order) + r["number"]))
+
+args = sys.argv[1:]
+cmd = args[0] if args else ""
+
+if cmd == "--version":
+    print("cswap 0.26.0")
+elif cmd == "list":
+    st = state()
+    accounts = ordered(fleet(st["active"]), st)
+    payload = {"schemaVersion": 1, "activeAccountNumber": st["active"],
+               "nextCandidate": 4 if st["active"] != 4 else 1,
+               "liveSessions": sessions(), "accounts": accounts}
+    if os.environ.get("SHIM_ALLDEAD"):
+        # Every window maxed: no viable candidate, echo recovers first.
+        for a in accounts:
+            for w in [a["usage"]["fiveHour"], a["usage"]["sevenDay"]] + a["usage"]["scoped"]:
+                w["pct"] = 100.0
+        payload["nextCandidate"] = None
+        payload["nextRecovery"] = {"number": 5, "at": iso(0.9)}
+    print(json.dumps(payload))
+elif cmd == "reorder":
+    st = state()
+    st["order"] = [int(a) for a in args[1:] if a.isdigit()]
+    save(st)
+    print(json.dumps({"schemaVersion": 1, "order": st["order"]}))
+elif cmd == "switch":
+    st = state()
+    nums = [a for a in args[1:] if a.isdigit()]
+    st["active"] = int(nums[0]) if nums else (4 if st["active"] != 4 else 1)
+    save(st)
+    print(json.dumps({"schemaVersion": 1, "switchedTo": st["active"]}))
+elif cmd == "usage":
+    accts = [(1, "alpha", 74.31, 812), (2, "bravo", 41.02, 465),
+             (3, "charlie", 18.77, 240), (4, "delta", 6.40, 91), (5, "echo", 52.13, 530)]
+    print(json.dumps({"schemaVersion": 1, "days": 7,
+        "estimatedTotalUSD": round(sum(a[2] for a in accts), 2),
+        "priceTable": {"source": "models.dev", "date": "2026-08-28"},
+        "accounts": [{"number": n, "email": f"{al}@example.com", "alias": al,
+                      "estimatedUSD": usd, "messages": msg, "input": msg*300,
+                      "output": msg*2200, "cacheRead": msg*140000, "cacheWrite": msg*9000,
+                      "models": [{"model": "claude-fable-5", "estimatedUSD": round(usd*0.6, 2), "messages": msg//2},
+                                 {"model": "claude-sonnet-5", "estimatedUSD": round(usd*0.4, 2), "messages": msg - msg//2}]}
+                     for n, al, usd, msg in accts]}))
+elif cmd == "config":
+    print(json.dumps({"schemaVersion": 1, "path": "/Users/demo/.claude-swap-backup/settings.json",
+        "settings": [{"key": "autoswitch.enabled", "value": True, "isSet": False,
+                      "kind": "bool", "help": "Auto-switching on/off", "default": True},
+                     {"key": "autoswitch.threshold", "value": 98.0, "isSet": False,
+                      "kind": "float", "help": "Switch when a window hits this pct", "default": 98.0}]}))
+elif cmd == "history":
+    print(json.dumps({"schemaVersion": 1, "switches": [
+        {"from": 5, "to": 1, "at": "2026-08-30 19:41"},
+        {"from": 2, "to": 5, "at": "2026-08-30 14:05"},
+        {"from": 1, "to": 2, "at": "2026-08-30 09:12"}],
+        "logPath": "/Users/demo/.claude-swap-backup/claude-swap.log"}))
+elif cmd == "notify":
+    print(json.dumps({"schemaVersion": 1, "slackWebhookUrl": None,
+                      "telegramBotToken": None, "telegramChatId": None}))
+elif cmd == "auto":
+    try:
+        while True: time.sleep(3600)
+    except KeyboardInterrupt:
+        pass
+else:
+    print("{}")

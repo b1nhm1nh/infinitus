@@ -23,6 +23,14 @@ struct ClaudeEnginePane: View {
                 Text("Rotates Claude accounts before limits stall a session.")
                     .font(.caption).foregroundStyle(.secondary)
             }
+            Section("Mock data") {
+                Toggle("Demo fleet (fabricated accounts)", isOn: $model.mockMode)
+                Text("Five made-up accounts standing in for the engine — "
+                     + "bravo burns ahead of pace, charlie is dead, rotate "
+                     + "and reorder play along. Nothing reads or touches "
+                     + "your real accounts; flipping this restarts the app.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
             ResumeNudgesSection(service: model.resume)
             ResumeReliabilitySection(model: reliability)
             // Engine updates live WITH the engine (user 2026-08-30:
