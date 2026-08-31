@@ -172,7 +172,7 @@ final class AppModel: ObservableObject {
     let sync = SettingsSyncModel()
     private let awake = KeepAwake()
     private var pushTriggers = PushTriggers()
-    private let defaults = UserDefaults.standard
+    private let defaults: UserDefaults
 
     /// Custom skins from themes.json, loaded at launch and on demand
     /// (the Display pane reloads when it appears).
@@ -221,6 +221,19 @@ final class AppModel: ObservableObject {
 
     init(playground: Bool = false) {
         isPlayground = playground
+        // Playground prefs sandbox: reads SEED from the user's live
+        // settings (registration domain, volatile), writes land in a
+        // throwaway suite wiped on every launch — the playground's
+        // layout/size/theme knobs never touch real prefs.
+        if playground {
+            let suite = "com.huuloc.limitless.playground"
+            let d = UserDefaults(suiteName: suite)!
+            d.removePersistentDomain(forName: suite)
+            d.register(defaults: UserDefaults.standard.dictionaryRepresentation())
+            defaults = d
+        } else {
+            defaults = UserDefaults.standard
+        }
         Self.migrateLegacyDefaults()
         showAccountName = defaults.object(forKey: "show_account_name") as? Bool ?? true
         let pct = defaults.string(forKey: "title_pct") ?? "both"

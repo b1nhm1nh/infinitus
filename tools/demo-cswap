@@ -12,6 +12,12 @@ STATE = os.path.join(os.environ.get("TMPDIR", "/tmp"), "infinitus-demo-state.jso
 # real row (rm the file to jump back, which replays the refill).
 DROP = os.path.exists(os.path.join(os.environ.get("TMPDIR", "/tmp"),
                                    "infinitus-demo-drop"))
+# `touch $TMPDIR/infinitus-demo-dead` pins alpha's 5h window at 100%: the
+# row dies on the next refresh (the real newlyDead death beat), and rm
+# revives it (a +63-point jump, the spring refill). Drives the
+# playground's Play dead / Play revived buttons; dead outranks DROP.
+DEAD = os.path.exists(os.path.join(os.environ.get("TMPDIR", "/tmp"),
+                                   "infinitus-demo-dead"))
 
 def state():
     try:
@@ -54,7 +60,8 @@ def account(num, alias, plan, five, seven, scoped, spend_used, active,
 def fleet(active):
     return [
         account(1, "alpha", "Max 20x",
-                win(62.0 if DROP else 37.0, 2.4, "2h 25m", "23:59"),
+                win(100.0 if DEAD else 62.0 if DROP else 37.0,
+                    2.4, "2h 25m", "23:59"),
                 win(22.0, 118, "4d 22h", "Sep 4 19:59", 31.0, False),
                 [win(18.0, 118, "4d 22h", "Sep 4 19:59", 31.0, False, "Fable")],
                 41.2, active == 1),
