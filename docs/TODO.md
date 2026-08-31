@@ -69,10 +69,12 @@
   infinitus-omarchy.tar.gz to the release; workflow_dispatch = dry run
   (builds, publishes nothing). macOS job untouched beyond a tag guard.
   Later still: AUR package.
-- [ ] Playground demo video (user 2026-08-31, after Linux parity):
-      drive the top buttons via tools/playctl, fast-paced — short
-      delays between interactions, but every animation plays to its
-      end before the next action (no cutting mid-animation).
+- ~~Playground demo video~~ → docs/playground-demo.mp4 (29s):
+  intro, switch, drop+refill cascade (5h/7d/Fable), killing blow +
+  death beat, revive, MGS theme flip, switch, back to RPG. Driven by
+  tools/playctl; recorded per-window with a ScreenCaptureKit helper
+  (screencapture -v can't record one window). Playground gained a
+  `front` command (SCK suspends windows on inactive Spaces).
 - ~~Auto-order of accounts~~ → Display pane toggle; AutoOrder.swift
   ranks alive (binding pct, 5-point incumbent margin) < unknown < dead
   (soonest recovery) < disabled and calls `cswap reorder` only when the

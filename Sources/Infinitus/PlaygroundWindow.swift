@@ -101,6 +101,15 @@ import CswapCore
                 demoFlag("infinitus-demo-kill", on: true)
                 Task { await model.refreshSnapshot() }
             case "refresh": Task { await model.refreshSnapshot() }
+            // Recording helper: ScreenCaptureKit suspends windows on an
+            // inactive Space, so the video tool needs the window brought
+            // to the current one.
+            case "front":
+                NSApp.activate(ignoringOtherApps: true)
+                for w in NSApp.windows where w.title == "Playground" {
+                    w.collectionBehavior.insert(.moveToActiveSpace)
+                    w.makeKeyAndOrderFront(nil)
+                }
             case "reset": model.resetPlaygroundPrefs()
             case "themes":
                 reply = model.availableThemes.map(\.id).joined(separator: " ")
