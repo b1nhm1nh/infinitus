@@ -137,6 +137,7 @@ final class StatusItemController {
         // Pinned = survives click-outside; the status item still toggles
         // it closed, so a pinned popup can never strand.
         updateDismissMonitors()
+        pinnedKeyChanged()
     }
 
     private func showAnchored() {
@@ -411,10 +412,18 @@ final class StatusItemController {
                            .miniaturizeButton, .zoomButton] {
                 w.standardWindowButton(button)?.isHidden = true
             }
-            // The whole point of popping out is staying visible while you
-            // work elsewhere — float above normal windows like the pinned
-            // popover does.
+            // Float while KEY or while the pin is on — an unpinned,
+            // backgrounded pop-out has no business sitting over other
+            // apps (user 2026-08-31: "not pinned but still stays on top
+            // always"; same treatment as Settings). Pinning it restores
+            // the stay-visible-while-working-elsewhere HUD behavior.
             w.level = .floating
+            NotificationCenter.default.addObserver(
+                self, selector: #selector(pinnedKeyChanged),
+                name: NSWindow.didBecomeKeyNotification, object: w)
+            NotificationCenter.default.addObserver(
+                self, selector: #selector(pinnedKeyChanged),
+                name: NSWindow.didResignKeyNotification, object: w)
             w.isMovableByWindowBackground = true
             w.isReleasedWhenClosed = false
             // Let the GlassBackground's behind-window material actually
@@ -445,6 +454,14 @@ final class StatusItemController {
         } else {
             pinned?.orderFrontRegardless()
         }
+        pinnedKeyChanged()
+    }
+
+    /// The pop-out's level follows key status and the pin, so a pin
+    /// toggle retargets it live (apply() calls this on model changes).
+    @objc private func pinnedKeyChanged() {
+        guard let w = pinned else { return }
+        w.level = model.popoverPinned || w.isKeyWindow ? .floating : .normal
     }
 
     @objc private func pinnedMoved() {
