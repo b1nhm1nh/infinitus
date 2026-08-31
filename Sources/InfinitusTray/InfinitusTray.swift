@@ -15,6 +15,45 @@ struct WaybarPayload: Encodable {
     let percentage: Int?
 }
 
+// Structured feed for the Quickshell panel (`panel` command). Themed
+// strings are rendered here so QML stays a dumb renderer; pcts stay raw
+// numbers so the gauges can draw. NOT pango-escaped — this is data, not
+// Waybar markup.
+struct PanelWindow: Encodable {
+    let label: String
+    let pct: Int          // used, 0–100
+    let reset: String?
+}
+
+struct PanelAccount: Encodable {
+    let number: Int
+    let name: String
+    let plan: String?     // themed plan label
+    let marker: String
+    let active: Bool
+    let disabled: Bool
+    let isNext: Bool
+    let note: String?     // sentinel (relogin etc.), themed
+    let deadLine: String? // themed "☠ fallen — 🩸 2h 25m"
+    let windows: [PanelWindow]
+}
+
+struct PanelTheme: Encodable {
+    let id: String
+    let name: String
+}
+
+struct PanelPayload: Encodable {
+    let schemaVersion: Int
+    let themeId: String
+    let title: String       // bar-style active line for the panel header
+    let sessionsLine: String?
+    let activeNumber: Int?
+    let accounts: [PanelAccount]
+    let themes: [PanelTheme]
+    let error: String?
+}
+
 @main
 struct InfinitusTray {
     static func main() async {
@@ -22,6 +61,7 @@ struct InfinitusTray {
         let command = args.isEmpty ? "status" : args.removeFirst()
         var themeID = "off"
         var remaining = false
+        var positional: [String] = []
         var i = 0
         while i < args.count {
             switch args[i] {
@@ -30,6 +70,8 @@ struct InfinitusTray {
                 i += 1
             case "--remaining":
                 remaining = true
+            case let a where !a.hasPrefix("-"):
+                positional.append(a)
             default:
                 fail("unknown option: \(args[i])")
             }
@@ -38,8 +80,12 @@ struct InfinitusTray {
         switch command {
         case "status":
             await status(themeID: themeID, remaining: remaining)
+        case "panel":
+            await panel(themeID: themeID)
         case "rotate":
             await rotate()
+        case "switch":
+            await switchTo(positional.first)
         case "themes":
             for theme in RowTheme.builtins {
                 print("\(theme.id)\t\(theme.name)")
@@ -55,7 +101,9 @@ struct InfinitusTray {
     infinitus-tray — Waybar module for the claude-swap fleet (Omarchy/Linux)
 
       status [--theme ID] [--remaining]   Waybar JSON: active account + fleet tooltip
+      panel [--theme ID]                  structured fleet JSON for the Quickshell panel
       rotate                              switch to the next account
+      switch <n>                          switch to account n
       themes                              list built-in theme ids
 
     Wire-up (packaging/omarchy/waybar-infinitus.jsonc):
@@ -150,7 +198,102 @@ struct InfinitusTray {
         return parts.joined(separator: "  ")
     }
 
-    // MARK: rotate
+    // MARK: panel
+
+    /// Structured fleet JSON for the Quickshell popup panel.
+    static func panel(themeID: String) async {
+        let theme = RowTheme.builtins.first { $0.id == themeID } ?? .off
+        let themes = RowTheme.builtins.map { PanelTheme(id: $0.id, name: $0.name) }
+        func emitError(_ message: String) {
+            emitPanel(PanelPayload(
+                schemaVersion: 1, themeId: theme.id,
+                title: "\(TitleFormatter.icon) \(message)", sessionsLine: nil,
+                activeNumber: nil, accounts: [], themes: themes, error: message))
+        }
+        guard let bin = CswapLocator.locate() else {
+            emitError("cswap not found")
+            return
+        }
+        do {
+            let list = try await CswapCLI(binaryPath: bin).accountList()
+            let now = Date()
+            let active = list.accounts.first { $0.active }
+            let prefs = TitlePrefs(showAccountName: true, titlePct: "both",
+                                   titleScoped: false, titleRemaining: false)
+            let accounts = list.accounts.map { a -> PanelAccount in
+                let name = a.alias ?? String(a.email.prefix(while: { $0 != "@" }))
+                let marker: String
+                if a.active { marker = theme.activeIcon.isEmpty ? "●" : theme.activeIcon }
+                else if a.number == list.nextCandidate { marker = theme.nextIcon.isEmpty ? "▶" : theme.nextIcon }
+                else { marker = "·" }
+                var note: String?
+                var deadLine: String?
+                var windows: [PanelWindow] = []
+                if let s = SentinelNotes.short(for: a.usageStatus) {
+                    note = s
+                } else if let cause = AccountVitals.cause(a.usage) {
+                    var s = "\(theme.deadMarker) \(theme.deadVerb)"
+                    if let reset = ResetLabel.label(resetsAt: cause.resetsAt,
+                                                   countdown: cause.countdown,
+                                                   clock: cause.clock, now: now) {
+                        s += " — \(theme.revivePrefix)\(reset)"
+                    }
+                    deadLine = s
+                }
+                if let w = a.usage?.fiveHour {
+                    windows.append(PanelWindow(label: theme.sessionLabel,
+                                               pct: Int(w.pct.rounded()),
+                                               reset: ResetLabel.short(w, now: now)))
+                }
+                if let w = a.usage?.sevenDay, let pct = WeeklyRoll.displayPct(w, now: now) {
+                    windows.append(PanelWindow(label: theme.weeklyLabel,
+                                               pct: Int(pct.rounded()),
+                                               reset: ResetLabel.compact(w, now: now)))
+                }
+                for w in a.usage?.scoped ?? [] {
+                    guard let pct = WeeklyRoll.displayPct(w, now: now) else { continue }
+                    windows.append(PanelWindow(
+                        label: "\(theme.scopedPrefix)\(theme.modelName(w.name))",
+                        pct: Int(pct.rounded()), reset: nil))
+                }
+                return PanelAccount(
+                    number: a.number, name: name,
+                    plan: a.plan.map { theme.planLabel($0, compact: true) },
+                    marker: marker, active: a.active,
+                    disabled: a.disabled ?? false,
+                    isNext: a.number == list.nextCandidate,
+                    note: note, deadLine: deadLine, windows: windows)
+            }
+            emitPanel(PanelPayload(
+                schemaVersion: 1, themeId: theme.id,
+                title: list.accounts.isEmpty
+                    ? "\(TitleFormatter.icon) no accounts — cswap add"
+                    : TitleFormatter.format(account: active, prefs: prefs, now: now),
+                sessionsLine: list.liveSessions.map { SessionSummary.tooltip($0) },
+                activeNumber: active?.number, accounts: accounts,
+                themes: themes, error: nil))
+        } catch {
+            emitError("engine error: \(error)")
+        }
+    }
+
+    static func emitPanel(_ payload: PanelPayload) {
+        let data = (try? JSONEncoder().encode(payload)) ?? Data("{}".utf8)
+        print(String(decoding: data, as: UTF8.self))
+    }
+
+    // MARK: rotate / switch
+
+    static func switchTo(_ arg: String?) async {
+        guard let arg, let n = Int(arg) else { fail("usage: infinitus-tray switch <n>") }
+        guard let bin = CswapLocator.locate() else { fail("cswap not found") }
+        do {
+            _ = try await CswapCLI(binaryPath: bin).switchTo(n)
+            print("switched to \(n)")
+        } catch {
+            fail("switch failed: \(error)")
+        }
+    }
 
     static func rotate() async {
         guard let bin = CswapLocator.locate() else { fail("cswap not found") }
