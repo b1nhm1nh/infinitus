@@ -189,8 +189,8 @@ struct BurnOverlay: View {
     /// palette bands. The burning region runs the classic tip-ward
     /// palette marquee (one white shine head per cycle), the whole
     /// band blinks in stepped palette-swap pulses (a frame flip, not a
-    /// sine), the fill tip runs white-hot, and plus-shaped star glints
-    /// pop on the pixel grid above. Nothing fades — everything snaps.
+    /// sine) and the fill tip runs white-hot. Everything stays INSIDE
+    /// the capsule — the FFVII gauge floats nothing above itself.
     private func limit(_ c: inout GraphicsContext, _ t: Double,
                        _ bar: CGRect, _ x0: Double, _ tipX: Double) {
         let px = 2.0                                  // the "pixel"
@@ -198,21 +198,30 @@ struct BurnOverlay: View {
         let hot2 = 0.6 + 0.4 * heat
         // Stepped palette-swap blink: PSX pulsing was a frame flip.
         let blink = fract(t * (1.4 + 1.6 * heat)) < 0.5 ? 1.0 : 0.72
-        // One shine wave per cycle, banded hard (2 cells per band).
-        let deepRed = Color(red: 0.85, green: 0.12, blue: 0.05)
-        let palette: [Color] = [deepRed, emberOrange, emberOrange,
-                                flameYellow, coreWhite, flameYellow,
-                                emberOrange, deepRed]
+        // The FFVII full-gauge shimmer is a RAINBOW marquee (user
+        // 2026-08-31 screenshot note) — one hard band per hue plus the
+        // white shine head, cycling end to end.
+        let palette: [Color] = [
+            Color(red: 1.00, green: 0.20, blue: 0.20),   // red
+            Color(red: 1.00, green: 0.60, blue: 0.10),   // orange
+            Color(red: 1.00, green: 0.95, blue: 0.20),   // yellow
+            Color(red: 0.30, green: 1.00, blue: 0.35),   // green
+            Color(red: 0.25, green: 0.90, blue: 1.00),   // cyan
+            Color(red: 0.35, green: 0.45, blue: 1.00),   // blue
+            Color(red: 0.85, green: 0.40, blue: 1.00),   // violet
+            coreWhite,                                   // shine head
+        ]
         let cellsPerBand = 2
         let cycle = palette.count * cellsPerBand      // 16 cells = 32pt
         var hot = c
         hot.clip(to: Path(roundedRect: bar, cornerRadius: bar.height / 2))
-        // Column marquee across the burning region, scrolling toward
-        // the tip; the loop wraps seamlessly because the palette does.
+        // Column marquee across the WHOLE fill — the FFVII gauge
+        // shimmers end to end (user screenshot: 'effect not filling
+        // all bar'); heat drives speed and brightness, not span. The
+        // loop wraps seamlessly because the palette does.
         let scroll = Int(fract(t / (1.1 - 0.5 * heat)) * Double(cycle))
-        let c0 = Int((x0 / px).rounded(.down))
         let c1 = Int((tipX / px).rounded(.up))
-        for col in c0..<max(c0 + 1, c1) {
+        for col in 0..<max(1, c1) {
             let idx = ((col - scroll) % cycle + cycle) % cycle
             let color = palette[idx / cellsPerBand]
             hot.fill(Path(CGRect(x: Double(col) * px, y: bar.minY,
@@ -223,32 +232,10 @@ struct BurnOverlay: View {
         let tipFlip = fract(t * 6) < 0.5 ? 1.0 : 0.6
         for j in 1...2 {
             let x = q(tipX) - Double(j) * px
-            guard x >= x0 else { break }
+            guard x >= 0 else { break }
             hot.fill(Path(CGRect(x: x, y: bar.minY,
                                  width: px, height: bar.height)),
                      with: .color(coreWhite.opacity(0.95 * hot2 * tipFlip)))
-        }
-        // Star glints above the gauge — the JRPG sparkle, a plus of
-        // five pixels that pops center -> full -> center on the grid.
-        let stars = 2 + Int(heat * 2.99)
-        for i in 0..<stars {
-            let seed = Double(i) * 9.17
-            let cyc = 0.9 + n(seed) * 0.8
-            let ph = fract(t / cyc + n(seed + 1))
-            guard ph < 0.45 else { continue }         // pop, not glow
-            let gx = q(x0 + n(seed + 2) * max(1, tipX - x0))
-            let gy = px + q(n(seed + 3) * (rise - 3 * px))
-            let full = ph >= 0.12 && ph <= 0.33
-            let color = (full ? coreWhite : flameYellow)
-                .opacity(0.9 * hot2)
-            let arms: [(Double, Double)] = full
-                ? [(0, 0), (px, 0), (-px, 0), (0, px), (0, -px)]
-                : [(0, 0)]
-            for (dx, dy) in arms {
-                c.fill(Path(CGRect(x: gx + dx, y: gy + dy,
-                                   width: px, height: px)),
-                       with: .color(color))
-            }
         }
     }
 }
