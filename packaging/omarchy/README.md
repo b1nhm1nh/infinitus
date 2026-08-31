@@ -36,3 +36,24 @@ stays behind `cswap … --json`, exactly like the app.
 
 Estimates shown are never billing truth; the module reads nothing of
 the engine's internals.
+
+## Omarchy 4+ (Quickshell bar)
+
+Newer Omarchy replaced Waybar with a Quickshell shell. The same
+`infinitus-tray` binary drives a native bar plugin instead:
+
+1. Copy `quickshell-plugin/infinitus/` to `~/.config/omarchy/plugins/infinitus/`
+   (the shell hot-reloads local plugins).
+2. Add `{ "id": "infinitus.fleet" }` to `bar.layout.right` in
+   `~/.config/omarchy/shell.json` — a plugin is enabled by being
+   referenced there.
+3. The widget execs `~/.local/bin/infinitus-tray` — install the binary
+   (or a wrapper) at that path. Theme id and refresh interval live in
+   the widget's settings (`barWidget.schema`).
+
+Building natively on Arch instead of the Docker route: the official
+ubuntu24.04 toolchain tarball runs fine with three symlink shims
+(`libncurses.so.6` and `libtinfo.so.6` -> `libncursesw.so.6`,
+`libxml2.so.2` -> `libxml2.so.16`) on `LD_LIBRARY_PATH`; the built
+binary needs the toolchain's `usr/lib/swift/linux` on its runtime
+`LD_LIBRARY_PATH` too (or `-static-stdlib`).
