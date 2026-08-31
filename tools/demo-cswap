@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
-"""Demo cswap: the app's mock mode — a fabricated five-account
-fleet (bravo ahead of pace, charlie dead). No real data; also used
+"""Demo cswap: the app's mock mode — a fabricated fleet with one
+account per condition (healthy, ahead of pace mild+hot, dead, fresh,
+behind pace, sentinel, disabled, near-reset). No real data; also used
 for README recordings. Ships in the app bundle's Resources."""
 import json, sys, time, os, datetime
 
@@ -32,19 +33,23 @@ def win(pct, hours, countdown, clock, expected=None, ahead=False, scoped_name=No
     if scoped_name: d["name"] = scoped_name
     return d
 
-def account(num, alias, plan, five, seven, scoped, spend_used, active):
-    return {
+def account(num, alias, plan, five, seven, scoped, spend_used, active,
+            status="ok", disabled=False):
+    a = {
         "number": num, "email": f"{alias}@example.com",
         "organizationName": f"{alias}@example.com's Organization",
-        "organizationUuid": f"00000000-0000-0000-0000-00000000000{num}",
-        "isOrganization": True, "active": active, "usageStatus": "ok",
-        "usage": {"fiveHour": five, "sevenDay": seven,
+        "organizationUuid": f"00000000-0000-0000-0000-0000000000{num:02d}",
+        "isOrganization": True, "active": active, "usageStatus": status,
+        "usage": None if status != "ok" else
+                 {"fiveHour": five, "sevenDay": seven,
                   "spend": {"used": spend_used, "limit": 200.0,
                             "pct": round(spend_used/2.0, 1), "currency": "USD"},
                   "scoped": scoped},
         "alias": alias, "plan": plan,
         "usageFetchedAt": iso(0), "usageAgeSeconds": 30.0,
     }
+    if disabled: a["disabled"] = True
+    return a
 
 def fleet(active):
     return [
@@ -73,6 +78,26 @@ def fleet(active):
                 win(41.0, 108, "4d 12h", "Sep 4 09:59", 35.0, False),
                 [win(38.0, 108, "4d 12h", "Sep 4 09:59", 35.0, False, "Fable")],
                 63.0, active == 5),
+        # One account per remaining condition (user 2026-08-31:
+        # "more accounts one with each state").
+        account(6, "foxtrot", "Max 20x",   # mildly ahead of pace (+8)
+                win(44.0, 2.0, "2h 0m", "23:34"),
+                win(47.0, 100, "4d 4h", "Sep 4 01:59", 39.0, True),
+                [win(43.0, 100, "4d 4h", "Sep 4 01:59", 39.0, True, "Fable")],
+                58.9, active == 6),
+        account(7, "golf", "Pro",          # sentinel: needs re-login
+                None, None, None, 0.0, active == 7,
+                status="relogin_required"),
+        account(8, "hotel", "Max 5x",      # disabled by the user
+                win(28.0, 1.7, "1h 40m", "23:14"),
+                win(33.0, 130, "5d 10h", "Sep 5 07:59", 20.0, False),
+                [win(30.0, 130, "5d 10h", "Sep 5 07:59", 20.0, False, "Fable")],
+                17.3, active == 8, disabled=True),
+        account(9, "india", "Max 20x",     # 5h nearly maxed, resets in 4m
+                win(97.0, 0.07, "4m", "21:38"),
+                win(55.0, 90, "3d 18h", "Sep 3 15:59", 52.0, False),
+                [win(50.0, 90, "3d 18h", "Sep 3 15:59", 52.0, False, "Fable")],
+                71.5, active == 9),
     ]
 
 def sessions():
@@ -106,6 +131,8 @@ elif cmd == "list":
     if os.environ.get("SHIM_ALLDEAD"):
         # Every window maxed: no viable candidate, echo recovers first.
         for a in accounts:
+            if not a["usage"]:
+                continue
             for w in [a["usage"]["fiveHour"], a["usage"]["sevenDay"]] + a["usage"]["scoped"]:
                 w["pct"] = 100.0
         payload["nextCandidate"] = None
@@ -124,7 +151,8 @@ elif cmd == "switch":
     print(json.dumps({"schemaVersion": 1, "switchedTo": st["active"]}))
 elif cmd == "usage":
     accts = [(1, "alpha", 74.31, 812), (2, "bravo", 41.02, 465),
-             (3, "charlie", 18.77, 240), (4, "delta", 6.40, 91), (5, "echo", 52.13, 530)]
+             (3, "charlie", 18.77, 240), (4, "delta", 6.40, 91), (5, "echo", 52.13, 530),
+             (6, "foxtrot", 33.60, 371), (8, "hotel", 9.85, 118), (9, "india", 61.44, 640)]
     print(json.dumps({"schemaVersion": 1, "days": 7,
         "estimatedTotalUSD": round(sum(a[2] for a in accts), 2),
         "priceTable": {"source": "models.dev", "date": "2026-08-28"},

@@ -97,6 +97,7 @@ struct InfinitusApp: App {
             Notifier.requestAuthorization()
         }
         Task { await model.refreshSnapshot() }
+        Playground.openAtLaunchIfAsked(model: model, usage: usage)
     }
 
     var body: some Scene {
@@ -155,7 +156,8 @@ struct InfinitusApp: App {
     + (model.debugMenu
        ? [SettingsTab(title: "Animations", symbol: "sparkles", tint: .pink,
                       keywords: ["debug", "test"],
-                      view: AnyView(AnimationsDebugPane(model: model)))]
+                      view: AnyView(AnimationsDebugPane(model: model,
+                                                        usage: usageModel)))]
        : [])
     + [
         SettingsTab(title: "About", symbol: "info.circle", tint: .indigo,
