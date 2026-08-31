@@ -41,6 +41,13 @@ struct GaugeBar: View {
     @State private var dropZoom = false
     @State private var cutFlash = false
     @State private var dropSeq = 0
+    // Ahead-of-pace effects hold until the intro fill has landed
+    // (user 2026-08-31: "ahead effect: should only starts when intro
+    // ended") — a burn riding the bar WHILE it fills from empty reads
+    // as a glitch, not drama. Armed by playFill's timer; seq-guarded
+    // like the drop closures.
+    @State private var burnArmed = false
+    @State private var burnArmSeq = 0
     /// A one-refresh plunge of 10+ remaining-points is a dramatic burn.
     /// 60+ is a data correction, not a burn (an account/window swap —
     /// and the debug pane's refill demo hops 100→8 on its way to the
@@ -79,7 +86,7 @@ struct GaugeBar: View {
             // close above). Gated here so the TimelineView inside
             // doesn't exist — and costs nothing — on calm bars.
             .overlay(alignment: .bottom) {
-                if animated, burnHeat > 0, burnStyle != "off" {
+                if animated, burnArmed, burnHeat > 0, burnStyle != "off" {
                     BurnOverlay(style: burnStyle, heat: burnHeat,
                                 fillFraction: min(100, max(0, shown)) / 100,
                                 barWidth: barWidth, barHeight: barHeight)
@@ -92,7 +99,7 @@ struct GaugeBar: View {
             // readable at any fill. Ember orange -> core white as heat
             // climbs (BurnOverlay's palette).
             .overlay {
-                if animated, burnHeat > 0, burnStyle != "off" {
+                if animated, burnArmed, burnHeat > 0, burnStyle != "off" {
                     let tint = Color(red: 1,
                                      green: 0.45 + 0.51 * burnHeat,
                                      blue: 0.10 + 0.75 * burnHeat)
@@ -172,6 +179,14 @@ struct GaugeBar: View {
     /// entrance has landed (introBarDelay; 0 outside the popup).
     private func playFill() {
         shown = 0
+        burnArmed = false
+        burnArmSeq += 1
+        let seq = burnArmSeq
+        DispatchQueue.main.asyncAfter(
+            deadline: .now() + 0.25 + introBarDelay + 1.6) {
+            guard seq == burnArmSeq else { return }
+            burnArmed = true
+        }
         withAnimation(.spring(duration: 1.8, bounce: 0.2)
             .delay(0.25 + introBarDelay)) {
             shown = remaining

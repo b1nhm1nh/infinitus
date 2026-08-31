@@ -183,67 +183,72 @@ struct BurnOverlay: View {
         }
     }
 
-    /// FFVII limit break — the fill runs white hot: a fast scrolling
-    /// heat gradient, a shine sweep, a heat-haze glow rising off the
-    /// whole burning region, a blazing tip.
+    /// FFVII limit break — the PSX gauge, faithfully (user 2026-08-31:
+    /// "pixel perfect & animation fidelity with FFVII"). No gradients,
+    /// no anti-aliasing, no alpha ramps: chunky 2pt pixels in hard
+    /// palette bands. The burning region runs the classic tip-ward
+    /// palette marquee (one white shine head per cycle), the whole
+    /// band blinks in stepped palette-swap pulses (a frame flip, not a
+    /// sine), the fill tip runs white-hot, and plus-shaped star glints
+    /// pop on the pixel grid above. Nothing fades — everything snaps.
     private func limit(_ c: inout GraphicsContext, _ t: Double,
                        _ bar: CGRect, _ x0: Double, _ tipX: Double) {
+        let px = 2.0                                  // the "pixel"
+        func q(_ v: Double) -> Double { (v / px).rounded(.down) * px }
         let hot2 = 0.6 + 0.4 * heat
-        let fill = CGRect(x: 0, y: bar.minY, width: tipX, height: bar.height)
-        // In-bar parts clip to the capsule; halo and haze stay outside.
+        // Stepped palette-swap blink: PSX pulsing was a frame flip.
+        let blink = fract(t * (1.4 + 1.6 * heat)) < 0.5 ? 1.0 : 0.72
+        // One shine wave per cycle, banded hard (2 cells per band).
+        let deepRed = Color(red: 0.85, green: 0.12, blue: 0.05)
+        let palette: [Color] = [deepRed, emberOrange, emberOrange,
+                                flameYellow, coreWhite, flameYellow,
+                                emberOrange, deepRed]
+        let cellsPerBand = 2
+        let cycle = palette.count * cellsPerBand      // 16 cells = 32pt
         var hot = c
         hot.clip(to: Path(roundedRect: bar, cornerRadius: bar.height / 2))
-        hot.blendMode = .plusLighter
-        // Scrolling heat band (red ends clamp, so the wrap is seamless).
-        let phase = fract(t * (0.6 + 1.0 * heat))
-        let L = max(24, fill.width)
-        let bx0 = (phase * 2 - 1) * L
-        hot.fill(Path(fill), with: .linearGradient(
-            Gradient(stops: [
-                .init(color: Color(red: 0.9, green: 0.1, blue: 0.05)
-                    .opacity(0.35 * hot2), location: 0),
-                .init(color: emberOrange.opacity(0.65 * hot2), location: 0.35),
-                .init(color: flameYellow.opacity(0.9 * hot2), location: 0.5),
-                .init(color: emberOrange.opacity(0.65 * hot2), location: 0.65),
-                .init(color: Color(red: 0.9, green: 0.1, blue: 0.05)
-                    .opacity(0.35 * hot2), location: 1),
-            ]),
-            startPoint: CGPoint(x: bx0, y: bar.midY),
-            endPoint: CGPoint(x: bx0 + L, y: bar.midY)))
-        // Shine sweep, slanted like the pace stripe.
-        let sph = fract(t * (0.5 + 0.6 * heat))
-        let sx = (sph * 1.5 - 0.25) * fill.width
-        let slant = bar.height * 0.35
-        var shine = Path()
-        shine.move(to: CGPoint(x: sx - 3 + slant, y: bar.minY))
-        shine.addLine(to: CGPoint(x: sx + 3 + slant, y: bar.minY))
-        shine.addLine(to: CGPoint(x: sx + 3 - slant, y: bar.maxY))
-        shine.addLine(to: CGPoint(x: sx - 3 - slant, y: bar.maxY))
-        shine.closeSubpath()
-        hot.fill(shine, with: .color(coreWhite.opacity(0.7 * hot2)))
-        // Heat haze rising off the whole burning region.
-        let hazePulse = 0.75 + 0.25 * sin(t * 5.1)
-        c.fill(Path(CGRect(x: x0, y: 0, width: tipX - x0, height: rise)),
-               with: .linearGradient(
-                   Gradient(stops: [
-                       .init(color: emberOrange.opacity(0), location: 0),
-                       .init(color: emberOrange.opacity(0.45 * hot2 * hazePulse),
-                             location: 1),
-                   ]),
-                   startPoint: CGPoint(x: x0, y: 0),
-                   endPoint: CGPoint(x: x0, y: rise)))
-        // Blazing tip halo.
-        let pr = (2.5 + 3.5 * heat) * (0.8 + 0.2 * sin(t * 7))
-        let center = CGPoint(x: tipX, y: bar.midY)
-        c.fill(Path(ellipseIn: CGRect(x: center.x - pr, y: center.y - pr,
-                                      width: pr * 2, height: pr * 2)),
-               with: .radialGradient(
-                   Gradient(stops: [
-                       .init(color: coreWhite.opacity(0.9 * hot2), location: 0),
-                       .init(color: flameYellow.opacity(0), location: 1),
-                   ]),
-                   center: center, startRadius: 0, endRadius: pr))
-        // Embers flying off the white-hot bar.
-        sparks(&c, t, bar, x0, tipX, count: 5 + Int(heat * 7.99))
+        // Column marquee across the burning region, scrolling toward
+        // the tip; the loop wraps seamlessly because the palette does.
+        let scroll = Int(fract(t / (1.1 - 0.5 * heat)) * Double(cycle))
+        let c0 = Int((x0 / px).rounded(.down))
+        let c1 = Int((tipX / px).rounded(.up))
+        for col in c0..<max(c0 + 1, c1) {
+            let idx = ((col - scroll) % cycle + cycle) % cycle
+            let color = palette[idx / cellsPerBand]
+            hot.fill(Path(CGRect(x: Double(col) * px, y: bar.minY,
+                                 width: px, height: bar.height)),
+                     with: .color(color.opacity(0.85 * hot2 * blink)))
+        }
+        // White-hot tip: the leading pixel columns flip harder.
+        let tipFlip = fract(t * 6) < 0.5 ? 1.0 : 0.6
+        for j in 1...2 {
+            let x = q(tipX) - Double(j) * px
+            guard x >= x0 else { break }
+            hot.fill(Path(CGRect(x: x, y: bar.minY,
+                                 width: px, height: bar.height)),
+                     with: .color(coreWhite.opacity(0.95 * hot2 * tipFlip)))
+        }
+        // Star glints above the gauge — the JRPG sparkle, a plus of
+        // five pixels that pops center -> full -> center on the grid.
+        let stars = 2 + Int(heat * 2.99)
+        for i in 0..<stars {
+            let seed = Double(i) * 9.17
+            let cyc = 0.9 + n(seed) * 0.8
+            let ph = fract(t / cyc + n(seed + 1))
+            guard ph < 0.45 else { continue }         // pop, not glow
+            let gx = q(x0 + n(seed + 2) * max(1, tipX - x0))
+            let gy = px + q(n(seed + 3) * (rise - 3 * px))
+            let full = ph >= 0.12 && ph <= 0.33
+            let color = (full ? coreWhite : flameYellow)
+                .opacity(0.9 * hot2)
+            let arms: [(Double, Double)] = full
+                ? [(0, 0), (px, 0), (-px, 0), (0, px), (0, -px)]
+                : [(0, 0)]
+            for (dx, dy) in arms {
+                c.fill(Path(CGRect(x: gx + dx, y: gy + dy,
+                                   width: px, height: px)),
+                       with: .color(color))
+            }
+        }
     }
 }
