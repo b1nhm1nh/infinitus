@@ -23,6 +23,10 @@ final class AppModel: ObservableObject {
     /// Per-account death beats: bumped when a row flips alive -> dead
     /// in a snapshot (the celebration's mirror, user 2026-08-30).
     @Published var deathTicks: [Int: Int] = [:]
+    /// Revival fanfares: bumped when a row flips dead -> alive (its
+    /// window reset while drained) — the dramatic full-line glow
+    /// (user 2026-08-31).
+    @Published var reviveTicks: [Int: Int] = [:]
     /// Click-to-switch staging: the row sets this, the popup's
     /// confirmation alert commits or clears it.
     @Published var pendingSwitch: Int?
@@ -535,6 +539,11 @@ final class AppModel: ObservableObject {
             let newlyDead = list.accounts.filter {
                 AccountVitals.isDead($0.usage) && wasAlive.contains($0.number)
             }.map(\.number)
+            let wasDead = Set(accounts.filter {
+                AccountVitals.isDead($0.usage) }.map(\.number))
+            let newlyAlive = list.accounts.filter {
+                !AccountVitals.isDead($0.usage) && wasDead.contains($0.number)
+            }.map(\.number)
             withAnimation(.easeInOut(duration: 0.6)) {
                 accounts = list.accounts
                 activeNumber = list.activeAccountNumber
@@ -547,6 +556,7 @@ final class AppModel: ObservableObject {
                 switchFlashTick += 1
             }
             for n in newlyDead { deathTicks[n, default: 0] += 1 }
+            for n in newlyAlive { reviveTicks[n, default: 0] += 1 }
             // Launch greeting: once the first snapshot renders, the
             // active row plays its sweep alongside the bars' fill-up
             // (user 2026-08-30). Delayed so the popup has drawn.

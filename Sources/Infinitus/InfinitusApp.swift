@@ -1648,12 +1648,32 @@ struct AccountGrid: View {
         .overlayPreferenceValue(DeadRowBounds.self) { dict in
             GeometryReader { geo in
                 ForEach(Array(dict.keys), id: \.self) { n in
-                    if let a = dict[n]?.first,
-                       let tick = model.deathTicks[n], tick > 0 {
+                    // The band exists for EVERY row, tick or none: a
+                    // keyframeAnimator born with its trigger already
+                    // bumped renders parked and never plays — the view
+                    // must predate the bump (first-death silence,
+                    // caught on the revive glow 2026-08-31).
+                    if let a = dict[n]?.first {
                         let r = geo[a]
                         Color.clear
                             .frame(width: geo.size.width, height: r.height + 10)
-                            .deathFlash(tick)
+                            .deathFlash(model.deathTicks[n] ?? 0)
+                            .offset(y: r.minY - 5)
+                            .allowsHitTesting(false)
+                    }
+                }
+            }
+        }
+        // Revival fanfares: EVERY row reports into DeadRowBounds, so
+        // the same dict serves the dead -> alive glow (full grid width).
+        .overlayPreferenceValue(DeadRowBounds.self) { dict in
+            GeometryReader { geo in
+                ForEach(Array(dict.keys), id: \.self) { n in
+                    if let a = dict[n]?.first {
+                        let r = geo[a]
+                        Color.clear
+                            .frame(width: geo.size.width, height: r.height + 10)
+                            .reviveFlash(model.reviveTicks[n] ?? 0)
                             .offset(y: r.minY - 5)
                             .allowsHitTesting(false)
                     }
@@ -1825,6 +1845,7 @@ struct AccountStack: View {
                 .switchFlash(account.active ? model.switchFlashTick : 0,
                              color: ThemeColor.flash(model.rowTheme))
                 .deathFlash(model.deathTicks[account.number] ?? 0)
+                .reviveFlash(model.reviveTicks[account.number] ?? 0)
                 .introRow(model, index: rowIndex)
             }
     }

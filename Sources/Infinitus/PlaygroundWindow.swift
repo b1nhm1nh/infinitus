@@ -39,9 +39,15 @@ import CswapCore
 
     static func show(usage: UsageModel) {
         if window == nil {
-            // Fresh start: the fleet opens alive even if a previous run
-            // left the dead hook behind.
+            // Fresh start: the fleet opens alive and undropped even if
+            // a previous run left hooks behind.
             try? FileManager.default.removeItem(at: deadFlag)
+            for f in ["infinitus-demo-drop5h", "infinitus-demo-drop7d",
+                      "infinitus-demo-dropfable"] {
+                try? FileManager.default.removeItem(
+                    at: FileManager.default.temporaryDirectory
+                        .appendingPathComponent(f))
+            }
             let demo = AppModel(playground: true)
             demo.startFeeds()
             demoModel = demo
@@ -93,6 +99,21 @@ struct PlaygroundView: View {
                 })
     }
 
+    /// Drop-button cycle: the demo flag pins one of alpha's windows
+    /// +35 points used; the immediate refresh plays the drop drama,
+    /// the delayed clear plays the refill. State ends clean, so every
+    /// press replays the full cycle.
+    private func playDrop(_ win: String) {
+        let flag = FileManager.default.temporaryDirectory
+            .appendingPathComponent("infinitus-demo-drop" + win)
+        try? Data().write(to: flag)
+        Task { await model.refreshSnapshot() }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
+            try? FileManager.default.removeItem(at: flag)
+            Task { await model.refreshSnapshot() }
+        }
+    }
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
@@ -112,6 +133,7 @@ struct PlaygroundView: View {
                             let candidates = model.accounts.filter {
                                 !$0.active && $0.usage != nil
                                     && $0.disabled != true
+                                    && !AccountVitals.isDead($0.usage)
                             }
                             if let next = candidates.randomElement() {
                                 model.switchTo(next.number)
@@ -134,6 +156,16 @@ struct PlaygroundView: View {
                             Task { await model.refreshSnapshot() }
                         }
                         .disabled(!demoDead)
+                    }
+                    HStack(spacing: 10) {
+                        // One press = the whole drama on alpha's real
+                        // bar: flag + refresh plays the -35 plunge, the
+                        // delayed clear plays the +35 spring refill.
+                        Text("Play drop").font(.caption)
+                            .foregroundStyle(.secondary)
+                        Button("5h") { playDrop("5h") }
+                        Button("7d") { playDrop("7d") }
+                        Button("Fable") { playDrop("fable") }
                     }
                     HStack(spacing: 14) {
                         Picker("Layout", selection: layoutBinding) {

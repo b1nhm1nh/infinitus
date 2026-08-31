@@ -143,6 +143,85 @@ extension View {
     }
 }
 
+/// The revival fanfare — the death beat's bright mirror (user
+/// 2026-08-31: "account revive needs dramatic full line revival
+/// glowing effect"). A green surge washes the whole row while a wide
+/// bright sweep runs its length, the row lifts out of the slump and
+/// settles, and the glow breathes twice before fading. Overlay-first
+/// like SwitchFlash, so the wide Grid's CLEAR band hosts it too
+/// (brightness alone is a no-op on transparent content).
+struct ReviveFlash: ViewModifier {
+    let trigger: Int
+    var color: Color = .green
+
+    func body(content: Content) -> some View {
+        content
+            // Full-length sweep: wider and slower than the switch
+            // celebration — a resurrection, not a handoff. Parked
+            // outside the clipped bounds until triggered.
+            .overlay {
+                GeometryReader { geo in
+                    let width = geo.size.width
+                    Rectangle()
+                        .fill(
+                            LinearGradient(
+                                colors: [.clear,
+                                         color.opacity(0.45),
+                                         Color.white.opacity(0.55),
+                                         color.opacity(0.45),
+                                         .clear],
+                                startPoint: .leading, endPoint: .trailing)
+                        )
+                        .frame(width: max(80, width * 0.35))
+                        .keyframeAnimator(
+                            initialValue: -0.5,
+                            trigger: trigger
+                        ) { view, x in
+                            view.offset(x: x * width)
+                        } keyframes: { _ in
+                            KeyframeTrack {
+                                CubicKeyframe(-0.5, duration: 0.001)
+                                CubicKeyframe(1.2, duration: 1.1)
+                            }
+                        }
+                        .allowsHitTesting(false)
+                }
+                .clipped()
+            }
+            .keyframeAnimator(initialValue: 0.0, trigger: trigger) { view, glow in
+                view
+                    .overlay { color.opacity(glow * 0.28).allowsHitTesting(false) }
+                    .shadow(color: color.opacity(glow), radius: 12 * glow)
+                    .brightness(glow * 0.18)
+            } keyframes: { _ in
+                KeyframeTrack {
+                    CubicKeyframe(0.001, duration: 0.001)
+                    CubicKeyframe(1.0, duration: 0.20)   // the surge
+                    CubicKeyframe(0.45, duration: 0.30)  // breathe out
+                    CubicKeyframe(0.9, duration: 0.30)   // second pulse
+                    CubicKeyframe(0.0, duration: 1.2)    // glow fades
+                }
+            }
+            // The anti-slump: rise and settle.
+            .keyframeAnimator(initialValue: 0.0, trigger: trigger) { view, y in
+                view.offset(y: y)
+            } keyframes: { _ in
+                KeyframeTrack {
+                    CubicKeyframe(0.001, duration: 0.001)
+                    CubicKeyframe(-4, duration: 0.25)    // lift
+                    SpringKeyframe(0, duration: 0.7, spring: .bouncy)
+                }
+            }
+    }
+}
+
+extension View {
+    /// Revival fanfare; fires when `trigger` changes (0 = never armed).
+    func reviveFlash(_ trigger: Int, color: Color = .green) -> some View {
+        modifier(ReviveFlash(trigger: trigger, color: color))
+    }
+}
+
 /// The "resetting…" pulse as a reusable modifier (debug pane demo).
 private struct PulseOpacity: ViewModifier {
     func body(content: Content) -> some View {
