@@ -27,6 +27,7 @@ public enum CswapLocator {
 
 public struct CLIError: Error, Sendable {
     public let message: String
+    public init(message: String) { self.message = message }
 }
 
 /// Thin async wrapper over Process for one-shot cswap commands.
@@ -109,6 +110,23 @@ public struct CswapCLI: Sendable {
     @discardableResult
     public func reorder(_ numbers: [Int]) async throws -> Data {
         try await run(["reorder"] + numbers.map(String.init) + ["--json"])
+    }
+
+    /// Register a setup-token (or API key) with the engine — the token
+    /// travels over stdin, never argv (`cswap add-token -`). cswap
+    /// matches the credential's identity to an existing slot (relogin)
+    /// or creates a new one (add). No --json: the engine only supports
+    /// it on list/status/switch; success is exit 0.
+    @discardableResult
+    public func addToken(_ token: String) async throws -> Data {
+        try await run(["add-token", "-"], stdin: token)
+    }
+
+    /// Remove an account slot. stdin pre-answers a confirmation prompt
+    /// if the engine asks one (unread stdin is harmless if it doesn't).
+    @discardableResult
+    public func removeAccount(_ number: Int) async throws -> Data {
+        try await run(["remove", String(number)], stdin: "y")
     }
 
     /// Set (non-empty) or remove (empty) an account's display alias.
