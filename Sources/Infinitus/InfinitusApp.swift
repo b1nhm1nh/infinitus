@@ -1110,7 +1110,7 @@ struct AccountCells {
     }
 
     var displayName: String {
-        let name = [dead ? theme.deadMarker : nil,
+        let name = [showAsDead ? theme.deadMarker : nil,
                     account.icon, account.alias ?? account.email]
             .compactMap { $0 }.joined(separator: " ")
         return (account.disabled ?? false) ? "\(name)  (disabled)" : name
@@ -1119,7 +1119,8 @@ struct AccountCells {
     /// Compact mode drops cells that carry no signal: untouched (0%) and
     /// exhausted (100% — the dead marker already says it).
     func hiddenInCompact(_ pct: Double) -> Bool {
-        model.compactRows && (pct <= 0 || pct >= 100)
+        model.compactRows
+            && (pct <= 0 || (pct >= 100 && !model.dying.contains(account.number)))
     }
 
     func resetText(_ w: UsageWindow) -> String? {
@@ -1623,7 +1624,7 @@ struct AccountGrid: View {
                     }, label: { cells.nameLabel })
                     .buttonStyle(.plain)
                     .fontWeight(account.active ? .bold : .regular)
-                    .foregroundStyle((account.disabled ?? false) || cells.dead
+                    .foregroundStyle((account.disabled ?? false) || cells.showAsDead
                                      ? AnyShapeStyle(.secondary)
                                      : account.active
                                      ? AnyShapeStyle(Color.accentColor)

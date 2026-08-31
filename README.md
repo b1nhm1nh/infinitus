@@ -152,6 +152,14 @@ then the wand button in the popup footer or Settings → Animations →
 Open playground. Dev loops can launch straight into it with
 `INFINITUS_PLAYGROUND=1 ./run-unbundled.sh`.
 
+Drive it from the shell with `tools/playctl` — the playground polls a
+command file and acknowledges each line, so scripts (and coding agents)
+can flip knobs and replay animations without touching the mouse:
+`playctl theme rpg`, `playctl layout stacked`, `playctl drop fable`,
+`playctl kill`, `playctl dead` / `revive`, `playctl refresh`,
+`playctl themes`, and `playctl shot out.png` to capture the window
+by its CGWindowID.
+
 Everything inside is sandboxed twice. The embedded popup is the real
 `MenuContent`, but it runs a **private AppModel pinned to the bundled
 `demo-cswap` script** — never the real engine; switching, rotating and

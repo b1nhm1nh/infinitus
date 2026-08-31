@@ -588,6 +588,13 @@ final class AppModel: ObservableObject {
                 }
                 DispatchQueue.main.asyncAfter(deadline: .now() + 3.9) {
                     self.dying.remove(n)
+                    // The dead row keeps its place (and its skull is
+                    // held back) until the tragedy finishes; only now
+                    // does auto-order move it down (user 2026-08-31:
+                    // "delay moving the account until dead plays").
+                    withAnimation(.easeInOut(duration: 0.5)) {
+                        self.applyAutoOrder()
+                    }
                 }
             }
             for n in newlyAlive { reviveTicks[n, default: 0] += 1 }
@@ -770,7 +777,8 @@ final class AppModel: ObservableObject {
     /// different account by the time the user hits Switch.
     func applyAutoOrder() {
         guard autoOrder, cli != nil, !autoOrderInFlight,
-              pendingSwitch == nil, !accounts.isEmpty else { return }
+              pendingSwitch == nil, !accounts.isEmpty,
+              dying.isEmpty else { return }
         let desired = AutoOrder.order(accounts)
         guard desired != accounts.map(\.number) else { return }
         autoOrderInFlight = true
