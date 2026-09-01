@@ -91,6 +91,20 @@ MVP cut for A:
 3. Live Activity: recovery countdown when all accounts are limited.
 4. TestFlight distribution (personal use; no App Store review fight).
 
+## Teams (asked 2026-09-01)
+
+CloudKit shares user-to-user: a private-database custom zone can be
+shared whole (CKShare zone sharing, macOS 12.3+/iOS 15.4+) to invited
+Apple IDs, read-only or read-write, surfacing in the invitee's shared
+database with live sync. Team shape: each member publishes their fleet
+snapshot into their own zone and shares it read-only; every member's
+app merges own + shared zones into a team dashboard (limits, headroom,
+waste across the team). Read-write participants would even allow
+cross-user rotation requests — wants explicit confirm UX on the
+receiving Mac. Constraints: iCloud + Apple platforms only, one CloudKit
+container = one dev team for all builds, and shared zones expose
+account emails/usage — opt-in per zone with a "what they'll see" note.
+
 ## Effects parity (asked 2026-09-01)
 
 Full parity in-app under the CloudKit mirror: the macOS popup is

@@ -54,6 +54,7 @@ struct InfinitusApp: App {
     @StateObject private var reliabilityModel: ResumeReliabilityModel
     @StateObject private var notifyModel: NotifyModel
     @StateObject private var usageModel: UsageModel
+    @StateObject private var utilizationModel = UtilizationModel()
     @StateObject private var updateModel: UpdateModel
     @StateObject private var appRelease: AppReleaseModel
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
@@ -70,6 +71,8 @@ struct InfinitusApp: App {
         _notifyModel = StateObject(wrappedValue: notifyModel)
         let usage = UsageModel(cli: model.cli)
         _usageModel = StateObject(wrappedValue: usage)
+        let utilization = UtilizationModel()
+        _utilizationModel = StateObject(wrappedValue: utilization)
         let update = UpdateModel(cli: model.cli)
         _updateModel = StateObject(wrappedValue: update)
         update.restartEngine = { [weak model] in model?.restartEngine() }
@@ -91,6 +94,7 @@ struct InfinitusApp: App {
                         model: model, settingsModel: settingsModel,
                         reliabilityModel: reliabilityModel,
                         notifyModel: notifyModel, usageModel: usage,
+                        utilizationModel: utilization,
                         updateModel: update, appRelease: release)
                 })
         }
@@ -115,6 +119,7 @@ struct InfinitusApp: App {
                 model: model, settingsModel: settingsModel,
                 reliabilityModel: reliabilityModel,
                 notifyModel: notifyModel, usageModel: usageModel,
+                utilizationModel: utilizationModel,
                 updateModel: updateModel, appRelease: appRelease))
         }
     }
@@ -130,6 +135,7 @@ struct InfinitusApp: App {
     model: AppModel, settingsModel: SettingsModel,
     reliabilityModel: ResumeReliabilityModel,
     notifyModel: NotifyModel, usageModel: UsageModel,
+    utilizationModel: UtilizationModel,
     updateModel: UpdateModel, appRelease: AppReleaseModel
 ) -> [SettingsTab] {
     // Ordered by how often each pane is reached for (user 2026-08-30:
@@ -156,6 +162,11 @@ struct InfinitusApp: App {
         SettingsTab(title: "Usage", symbol: "chart.bar", tint: .green,
                     keywords: ["spend", "cost", "tokens", "estimate"],
                     view: AnyView(UsagePane(model: usageModel))),
+        SettingsTab(title: "Utilization", symbol: "chart.xyaxis.line",
+                    tint: .mint,
+                    keywords: ["history", "utilization", "waste", "window",
+                               "5h", "7d", "weekly", "chart", "over time"],
+                    view: AnyView(UtilizationPane(model: utilizationModel))),
         SettingsTab(title: "Activity", symbol: "clock.arrow.circlepath", tint: .teal,
                     keywords: ["history", "switches", "log", "events"],
                     view: AnyView(ActivityPane(model: model))),

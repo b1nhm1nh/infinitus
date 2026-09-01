@@ -51,7 +51,7 @@ final class SettingsSyncModel: ObservableObject {
 
     func attach(model: AppModel) { self.model = model }
 
-    static func containerDir(home: String = NSHomeDirectory()) -> URL? {
+    nonisolated static func containerDir(home: String = NSHomeDirectory()) -> URL? {
         let drive = URL(fileURLWithPath:
             "\(home)/Library/Mobile Documents/com~apple~CloudDocs")
         guard FileManager.default.fileExists(atPath: drive.path) else { return nil }

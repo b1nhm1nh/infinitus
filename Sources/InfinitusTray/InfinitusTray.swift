@@ -142,6 +142,9 @@ struct InfinitusTray {
         let theme = RowTheme.builtins.first { $0.id == themeID } ?? .off
         do {
             let list = try await CswapCLI(binaryPath: bin).accountList()
+            // Utilization history rides the Waybar heartbeat — one
+            // append per fresh engine usage poll (todo 2026-09-01).
+            TrayHistory.record(accounts: list.accounts, enginePath: bin)
             // Engine installed, fleet empty: a bare glyph with no
             // tooltip reads as broken — onboard instead.
             guard !list.accounts.isEmpty else {

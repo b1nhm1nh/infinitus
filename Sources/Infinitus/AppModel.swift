@@ -190,6 +190,7 @@ final class AppModel: ObservableObject {
     @Published var pushAllDead: Bool { didSet { defaults.set(pushAllDead, forKey: "push_all_dead") } }
     @Published var pushLastAlive: Bool { didSet { defaults.set(pushLastAlive, forKey: "push_last_alive") } }
     let sync = SettingsSyncModel()
+    let historyRecorder = UsageHistoryRecorder()
     private let awake = KeepAwake()
     private var pushTriggers = PushTriggers()
     private let defaults: UserDefaults
@@ -586,6 +587,16 @@ final class AppModel: ObservableObject {
             if let now = list.activeAccountNumber, let previousActive,
                previousActive != now {
                 switchFlashTick += 1
+            }
+            // Utilization history (todo 2026-09-01): every real snapshot
+            // feeds the per-machine JSONL; the playground's fabricated
+            // fleet must never pollute it.
+            if !isPlayground {
+                let accts = list.accounts
+                let syncOn = sync.enabled
+                Task.detached(priority: .utility) { [historyRecorder] in
+                    await historyRecorder.record(accounts: accts, syncEnabled: syncOn)
+                }
             }
             // All-limited: count the limit-stopped sessions waiting to be
             // resumed (todo 2026-09-01), reusing the resume mechanism's
