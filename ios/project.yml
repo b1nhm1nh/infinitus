@@ -1,0 +1,30 @@
+# XcodeGen manifest for the mobile companion (#9). The .xcodeproj is
+# GENERATED — run `xcodegen generate` in ios/ after changing this; the
+# project file itself stays untracked.
+name: InfinitusMobile
+options:
+  deploymentTarget:
+    iOS: "17.0"
+packages:
+  Infinitus:
+    path: ..
+targets:
+  InfinitusMobile:
+    type: application
+    platform: iOS
+    sources: [InfinitusMobile]
+    dependencies:
+      - package: Infinitus
+        product: CswapCore
+    settings:
+      base:
+        # Mobile has its own id — the mac app's com.huuloc.limitless is
+        # untouchable (CLAUDE.md). Revisit before TestFlight if wanted.
+        PRODUCT_BUNDLE_IDENTIFIER: com.huuloc.infinitus.mobile
+        # Simulator-only until the Apple Developer account lands (#9).
+        CODE_SIGNING_ALLOWED: "NO"
+        GENERATE_INFOPLIST_FILE: "YES"
+        INFOPLIST_KEY_UILaunchScreen_Generation: "YES"
+        INFOPLIST_KEY_UISupportedInterfaceOrientations: UIInterfaceOrientationPortrait
+        SWIFT_VERSION: "5.9"
+        TARGETED_DEVICE_FAMILY: "1"
