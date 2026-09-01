@@ -58,6 +58,17 @@
 
 ## Open
 
+- [ ] Usage utilization history (user 2026-09-01): track every
+      account's 5h/7d/per-model (Fable) utilization over time; a
+      dashboard charting all + each account with waste estimates
+      (quota that perished unused at window resets); history synced
+      over iCloud.
+- [ ] Onboarding (user 2026-09-01): first-run flow, simulated on this
+      machine. Detect a bare `claude` CLI → read the signed-in
+      account → offer it as the first managed account; detect an
+      existing cswap install → list its accounts to adopt; detect
+      CLIProxyAPI the same way (and set CLIProxy up locally to test
+      the detection).
 - [ ] CLIProxyAPI as an alternate backend (user 2026-09-01):
       router-for-me/CLIProxyAPI pools CLI OAuth credentials behind an
       OpenAI-compatible proxy; CPAMC (Cli-Proxy-API-Management-Center)
