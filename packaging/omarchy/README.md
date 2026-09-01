@@ -51,12 +51,18 @@ Newer Omarchy replaced Waybar with a Quickshell shell. The same
    (or a wrapper) at that path. Theme id and refresh interval live in
    the widget's settings (`barWidget.schema`).
 
-Clicking the bar label opens the fleet panel — the popup UI, matching
-the macOS app: per-account rows with usage gauges (dead, sentinel, and
-disabled states rendered like the macOS popup), click a row to switch
-to that account, rotate + theme stepper in the footer. Keys while
-open: `1`–`9` switch, `r` rotate, `[`/`]` step the theme, Escape
-closes. IPC drives it too:
+Clicking the bar label (any button) opens the fleet panel — the popup
+UI, matching the macOS app: per-account rows with usage gauges (dead,
+sentinel, and disabled states rendered like the macOS popup; a window
+running behind its weekly pace breathes a mint sheen), click a row to
+switch to that account, right-click a row to hold it out of rotation
+(or return it), rotate + theme stepper in the footer. Rows sort by
+headroom with the active account and next candidate on top (the
+`sortByHeadroom` setting; off = engine slot order). When every account
+is at a limit the header counts down to the first one back — and says
+how many limit-stopped sessions wait to resume. Keys while open:
+`1`–`9` switch, `r` rotate, `[`/`]` step the theme, Escape closes.
+IPC drives it too:
 `qs ipc -i <instance> call infinitus.fleet toggle` (also `rotate`,
 `refresh`, `cycleTheme`).
 
