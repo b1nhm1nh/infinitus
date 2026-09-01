@@ -75,8 +75,11 @@ file keeps the shipped log and the deferred-by-design notes.
 - #10 Human handoffs: AUR publish, Linux real-account cswap, signing
 - ~~#11 Full-screen mode~~ → shipped 2026-09-01 (Display → Fleet wall,
       screen picker, scaled popup body, Esc leaves)
-- #12 Fleet wall layout — a real wall-display design (mission-control
-      hero/rail/bench brainstorm in the issue), not the scaled popup
+- ~~#12 Fleet wall layout~~ → shipped 2026-09-01 (mission-control
+      hero/rail/bench; wall is a mode — popup/pop-out close)
+- #13 Session progress tracking — watch agents, not accounts
+      (zero-token transcript parsing + optional Claude narration;
+      brainstorm in docs/research/session-progress.md)
 
 ## Shipped 2026-09-01 (second wave — the remote-control batch)
 
