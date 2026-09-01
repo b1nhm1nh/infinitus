@@ -120,6 +120,46 @@ of transport: WidgetKit renders are static/budgeted and Live Activity
 pushes are budgeted — lock-screen countdowns tick natively, but
 continuous ambient effects are in-app only.
 
+## Live Activities (issues #1, #2 — designed 2026-09-01)
+
+Two activities, one ActivityAttributes each, both fed by the CloudKit
+mirror's push pipeline. iOS budgets Live Activity pushes — the designs
+lean on `Text(timerInterval:)` / `ProgressView(timerInterval:)`, which
+tick natively with ZERO pushes, and reserve pushes for state changes.
+
+### Working sessions (#2)
+Runs while the Mac reports busy sessions.
+
+- Lock screen / banner: leading — active account (icon/alias) over a
+  small binding-window gauge; center — "3 working · 12 sessions";
+  trailing — the next candidate, deliberately subtle (dimmed "→ loc",
+  no gauge: it's a hint, not a second protagonist).
+- Dynamic Island: compact leading ∞ glyph (or the account's one-emoji
+  icon), compact trailing binding % (tabular digits); expanded — alias
+  + plan, 5h/7d mini-bars, footer "next: loc"; minimal — %.
+- Updates (pushed): switch happened (new alias), binding % moved ≥5pts,
+  session counts changed. Everything else waits — budget discipline.
+  `NSSupportsLiveActivitiesFrequentUpdates` if the budget bites.
+- Lifecycle: start when busy > 0 arrives, end after busy == 0 holds
+  ~10 min (or 8h max runtime — re-arm on next event).
+
+### All-dead revival countdown (#1)
+Starts when the fleet snapshot says every account is limited.
+
+- Lock screen: "All accounts limited" (urgent accent) — first-reviver
+  alias — `Text(timerInterval:)` countdown to its recovery instant —
+  "N sessions waiting to resume". Ticks without pushes.
+- Dynamic Island: expanded — countdown center-stage inside a
+  progress ring (stop → reset); compact — ⏳ + mm:ss; minimal ⏳.
+- End: the recovery/switch push flips it to a brief "revived — loc is
+  back" final state, then dismisses. If the reviver changes (an
+  earlier reset appears), one push rewrites the timer.
+- macOS equivalent: the menu bar countdown exists today; the designed
+  extra is a small floating always-on-top panel (countdown + reviver,
+  click opens the popup) — plus the free win that macOS 15+ surfaces
+  iPhone Live Activities in the menu bar via iPhone Mirroring once the
+  iOS side ships.
+
 ## The user's decisions (blocking)
 
 1. **Platform**: iOS only, or Android too? (Android kills option A/B
