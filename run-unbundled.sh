@@ -19,6 +19,7 @@ pkill -x Infinitus-unbundled 2>/dev/null || true
 sleep 0.5
 cp Infinitus.app/Contents/MacOS/Infinitus "$OUT"
 cp tools/demo-cswap "$(dirname "$OUT")/demo-cswap"
+[ -f AppIcon.icns ] && cp AppIcon.icns "$(dirname "$OUT")/AppIcon.icns"
 codesign --force --sign - "$OUT" 2>/dev/null
 if ! defaults read Infinitus-unbundled >/dev/null 2>&1; then
     { defaults export Limitless-unbundled - 2>/dev/null \

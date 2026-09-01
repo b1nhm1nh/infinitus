@@ -415,10 +415,18 @@ struct PlaygroundView: View {
                         // live-settings seed.
                         Button("Reset knobs") { model.resetPlaygroundPrefs() }
                     }
-                    MenuContent(model: model, usage: usage)
-                        .fixedSize()
-                        .background(RoundedRectangle(cornerRadius: 10)
-                            .fill(.black.opacity(0.15)))
+                    // The preview always wears the header strip — compact
+                    // mode drops it in the real popup (tiny on purpose),
+                    // but the playground exists to show the chrome
+                    // ("title & icon not found on playground", 2026-09-01).
+                    VStack(alignment: .leading, spacing: 8) {
+                        InfinitusHeader(model: model)
+                        MenuContent(model: model, usage: usage,
+                                    showHeader: false)
+                    }
+                    .fixedSize()
+                    .background(RoundedRectangle(cornerRadius: 10)
+                        .fill(.black.opacity(0.15)))
                 }
                 Divider()
                 section("Pace fire — every style, one heat dial") {
