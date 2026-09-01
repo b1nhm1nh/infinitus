@@ -91,6 +91,21 @@ MVP cut for A:
 3. Live Activity: recovery countdown when all accounts are limited.
 4. TestFlight distribution (personal use; no App Store review fight).
 
+## Effects parity (asked 2026-09-01)
+
+Full parity in-app under the CloudKit mirror: the macOS popup is
+itself poll-driven, and every effect is rendered locally from state —
+HP drops animate the diff between consecutive snapshots, chill/burn/
+celebration are local TimelineView loops keyed off snapshot state,
+countdowns tick from `resetsAt`. GaugeMath/DisplayLogic compile for
+iOS unchanged. Caveats are cadence, not capability: drops land per
+Mac refresh (~60s, same as desktop); a stale reopen should suppress
+the one giant catch-up drop (or play the playground cascade); a
+sleeping Mac freezes state (badge staleness). Platform rule regardless
+of transport: WidgetKit renders are static/budgeted and Live Activity
+pushes are budgeted — lock-screen countdowns tick natively, but
+continuous ambient effects are in-app only.
+
 ## The user's decisions (blocking)
 
 1. **Platform**: iOS only, or Android too? (Android kills option A/B
