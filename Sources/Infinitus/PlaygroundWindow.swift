@@ -113,6 +113,13 @@ import CswapCore
             // The real app's Settings window (not playground state) —
             // lets the dev loop check its chrome without a click.
             case "settings":
+                if !arg.isEmpty {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                        NotificationCenter.default.post(
+                            name: Notification.Name("infinitus.selectPane"),
+                            object: arg)
+                    }
+                }
                 AppDelegate.shared?.statusHolder?.controller.showSettingsWindow()
             case "reset": model.resetPlaygroundPrefs()
             case "themes":

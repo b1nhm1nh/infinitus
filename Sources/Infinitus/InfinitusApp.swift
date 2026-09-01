@@ -244,6 +244,15 @@ struct SettingsRoot: View {
         }
         .frame(minWidth: 700, minHeight: 480)
         .onAppear { if selection == nil { selection = tabs.first?.title } }
+        // Dev harness: `playctl settings <Title>` lands on a named pane
+        // (pane screenshots without synthetic sidebar clicks).
+        .onReceive(NotificationCenter.default.publisher(
+            for: Notification.Name("infinitus.selectPane"))) { note in
+            if let title = note.object as? String,
+               tabs.contains(where: { $0.title == title }) {
+                selection = title
+            }
+        }
     }
 
     private var sidebar: some View {

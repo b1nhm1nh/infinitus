@@ -121,6 +121,10 @@ struct UtilizationPane: View {
                 LineMark(x: .value("Time", p.date), y: .value("%", p.pct))
                     .foregroundStyle(by: .value("Series", p.series))
                     .interpolationMethod(.monotone)
+                    // Dots as well as lines: a series with one sample
+                    // (fresh install, sparse hours) draws no line at all.
+                    .symbol(by: .value("Series", p.series))
+                    .symbolSize(18)
             }
             .chartYScale(domain: 0...100)
             .chartLegend(.visible)
