@@ -71,8 +71,20 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
-          gh release create "$GITHUB_REF_NAME" "Infinitus-${VERSION}.zip" \
-            --title "Infinitus $GITHUB_REF_NAME" --generate-notes
+          # Composed notes from CHANGELOG.md (the "## <version>" section);
+          # --generate-notes only as the fallback when a tag has no entry.
+          awk -v v="$VERSION" '
+            $0 == "## " v { grab = 1; next }
+            grab && /^## /  { exit }
+            grab            { print }
+          ' CHANGELOG.md > notes.md
+          if [ -s notes.md ]; then
+            gh release create "$GITHUB_REF_NAME" "Infinitus-${VERSION}.zip" \
+              --title "Infinitus $GITHUB_REF_NAME" --notes-file notes.md
+          else
+            gh release create "$GITHUB_REF_NAME" "Infinitus-${VERSION}.zip" \
+              --title "Infinitus $GITHUB_REF_NAME" --generate-notes
+          fi
       # Auto-bump the tap cask (CodexBar-style release->tap dispatch, done
       # here with a repo-scoped deploy key instead of a PAT).
       - name: Bump Homebrew cask
