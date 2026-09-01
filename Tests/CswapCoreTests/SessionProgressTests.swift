@@ -173,4 +173,24 @@ final class SessionProgressTests: XCTestCase {
         XCTAssertEqual(progress.outputTokens, 3)
         XCTAssertEqual(progress.lastActivityAt, UsageHistory.parseISO("2026-09-01T10:00:00.000Z"))
     }
+
+    func testMatchPairsSessionsToRecordsByPid() {
+        let sessions = [SessionDetail(pid: 1, cwd: "/a", status: "busy", kind: "interactive", startedAt: 0),
+                        SessionDetail(pid: 2, cwd: "/b", status: "idle", kind: "interactive", startedAt: 0)]
+        let records = [ClaudeSessionRecord(pid: 1, sessionId: "s1", cwd: "/a"),
+                       ClaudeSessionRecord(pid: 2, sessionId: "s2", cwd: "/b")]
+        let pairs = SessionProgress.match(sessions: sessions, records: records)
+        XCTAssertEqual(pairs.count, 2)
+        XCTAssertEqual(pairs.first { $0.session.pid == 1 }?.record.sessionId, "s1")
+        XCTAssertEqual(pairs.first { $0.session.pid == 2 }?.record.sessionId, "s2")
+    }
+
+    func testMatchIgnoresUnmatchedSessions() {
+        let sessions = [SessionDetail(pid: 1, cwd: "/a", status: "busy", kind: "interactive", startedAt: 0),
+                        SessionDetail(pid: 99, cwd: "/z", status: "busy", kind: "interactive", startedAt: 0)]
+        let records = [ClaudeSessionRecord(pid: 1, sessionId: "s1", cwd: "/a")]
+        let pairs = SessionProgress.match(sessions: sessions, records: records)
+        XCTAssertEqual(pairs.count, 1)
+        XCTAssertEqual(pairs.first?.session.pid, 1)
+    }
 }

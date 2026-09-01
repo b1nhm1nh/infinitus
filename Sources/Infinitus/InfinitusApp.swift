@@ -752,7 +752,7 @@ struct MenuContent: View {
                 .contentShape(Rectangle())
                 .onTapGesture { model.sessionsShown.toggle() }
                 .popover(isPresented: $model.sessionsShown, arrowEdge: .trailing) {
-                    SessionListCard(live: live)
+                    SessionListCard(live: live, progress: model.sessionProgress)
                 }
                 .instantTip(SessionSummary.tooltip(live))
         }
@@ -921,7 +921,7 @@ struct MenuContent: View {
             .contentShape(Rectangle())
             .onTapGesture { model.sessionsShown.toggle() }
             .popover(isPresented: $model.sessionsShown, arrowEdge: .bottom) {
-                SessionListCard(live: live)
+                SessionListCard(live: live, progress: model.sessionProgress)
             }
             .instantTip(SessionSummary.tooltip(live), edge: .above)
         }

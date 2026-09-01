@@ -54,6 +54,8 @@ final class AppModel: ObservableObject {
     @Published var eventLog: [EventEntry] = []
     /// App-side resume nudges + /rc re-arm (ResumeService.swift).
     let resume = ResumeService()
+    /// Sessions popover's mini progress rows (SessionProgressModel.swift).
+    let sessionProgress = SessionProgressModel()
     @Published var lastError: String?
 
     let cli: CswapCLI?

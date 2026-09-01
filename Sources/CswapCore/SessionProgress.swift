@@ -139,6 +139,15 @@ public struct SessionProgress: Sendable, Equatable {
         return parse(lines: lines)
     }
 
+    /// Pairs each engine-reported session with its Claude Code session
+    /// record by pid; a session with no matching record is dropped — the
+    /// popover row falls back to its current single-line rendering.
+    public static func match(sessions: [SessionDetail], records: [ClaudeSessionRecord])
+        -> [(session: SessionDetail, record: ClaudeSessionRecord)] {
+        let byPid = Dictionary(records.map { (Int($0.pid), $0) }, uniquingKeysWith: { a, _ in a })
+        return sessions.compactMap { s in byPid[s.pid].map { (s, $0) } }
+    }
+
     private static func describe(_ toolUse: [String: Any]) -> String {
         let name = toolUse["name"] as? String ?? ""
         let input = toolUse["input"] as? [String: Any] ?? [:]
