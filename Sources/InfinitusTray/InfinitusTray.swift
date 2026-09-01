@@ -43,6 +43,15 @@ struct PanelTheme: Encodable {
     let name: String
 }
 
+/// Present only when EVERY account is at a limit: the account that
+/// recovers first (raw ISO instant — the panel ticks the countdown
+/// itself) and how many limit-stopped sessions wait to be resumed.
+struct PanelRecovery: Encodable {
+    let number: Int
+    let at: String
+    let waiting: Int
+}
+
 struct PanelPayload: Encodable {
     let schemaVersion: Int
     let themeId: String
@@ -51,6 +60,7 @@ struct PanelPayload: Encodable {
     let activeNumber: Int?
     let accounts: [PanelAccount]
     let themes: [PanelTheme]
+    let nextRecovery: PanelRecovery?
     let error: String?
 }
 
@@ -166,6 +176,9 @@ struct InfinitusTray {
         let marker: String
         if a.active { marker = theme.activeIcon.isEmpty ? "●" : theme.activeIcon }
         else if a.number == list.nextCandidate { marker = theme.nextIcon.isEmpty ? "▶" : theme.nextIcon }
+        // All limited: hollow marker on the first to recover (the macOS
+        // popup's gray/orange triangle).
+        else if list.nextCandidate == nil, a.number == list.nextRecovery?.number { marker = "▷" }
         else { marker = "·" }
         var parts = ["\(marker) \(theme.slotPrefix)\(a.number) \(name)"]
         if let plan = a.plan { parts.append(theme.planLabel(plan, compact: true)) }
@@ -208,7 +221,8 @@ struct InfinitusTray {
             emitPanel(PanelPayload(
                 schemaVersion: 1, themeId: theme.id,
                 title: "\(TitleFormatter.icon) \(message)", sessionsLine: nil,
-                activeNumber: nil, accounts: [], themes: themes, error: message))
+                activeNumber: nil, accounts: [], themes: themes,
+                nextRecovery: nil, error: message))
         }
         guard let bin = CswapLocator.locate() else {
             emitError("cswap not found")
@@ -225,6 +239,7 @@ struct InfinitusTray {
                 let marker: String
                 if a.active { marker = theme.activeIcon.isEmpty ? "●" : theme.activeIcon }
                 else if a.number == list.nextCandidate { marker = theme.nextIcon.isEmpty ? "▶" : theme.nextIcon }
+                else if list.nextCandidate == nil, a.number == list.nextRecovery?.number { marker = "▷" }
                 else { marker = "·" }
                 var note: String?
                 var deadLine: String?
@@ -264,6 +279,18 @@ struct InfinitusTray {
                     isNext: a.number == list.nextCandidate,
                     note: note, deadLine: deadLine, windows: windows)
             }
+            // All-limited: the engine names the first account to recover;
+            // the waiting count reuses the resume mechanism's own
+            // stopped-session detection (Claude Code's files only —
+            // never engine internals).
+            var recovery: PanelRecovery?
+            if list.nextCandidate == nil, let rec = list.nextRecovery {
+                let dir = ClaudeSessions.configHome()
+                let stopped = Transcript.findStopped(
+                    sessions: ClaudeSessions.list(claudeDir: dir), claudeDir: dir)
+                recovery = PanelRecovery(number: rec.number, at: rec.at,
+                                         waiting: stopped.count)
+            }
             emitPanel(PanelPayload(
                 schemaVersion: 1, themeId: theme.id,
                 title: list.accounts.isEmpty
@@ -271,7 +298,7 @@ struct InfinitusTray {
                     : TitleFormatter.format(account: active, prefs: prefs, now: now),
                 sessionsLine: list.liveSessions.map { SessionSummary.tooltip($0) },
                 activeNumber: active?.number, accounts: accounts,
-                themes: themes, error: nil))
+                themes: themes, nextRecovery: recovery, error: nil))
         } catch {
             emitError("engine error: \(error)")
         }

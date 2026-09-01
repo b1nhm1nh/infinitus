@@ -38,6 +38,40 @@ Panel {
     return themeId
   }
 
+  // All-limited state: the payload names the first account to recover
+  // (raw ISO instant) and the limit-stopped sessions waiting to resume;
+  // the countdown ticks HERE (a subprocess per second is a non-starter).
+  readonly property var recovery: fleet && fleet.nextRecovery ? fleet.nextRecovery : null
+  property double nowTick: Date.now()
+
+  Timer {
+    interval: 1000
+    running: root.opened && root.recovery !== null
+    repeat: true
+    onTriggered: root.nowTick = Date.now()
+  }
+
+  function countdown(iso) {
+    var total = Math.max(0, Math.round((new Date(iso).getTime() - nowTick) / 1000))
+    function pad(n) { return (n < 10 ? "0" : "") + n }
+    var hms = pad(Math.floor((total % 86400) / 3600)) + ":"
+            + pad(Math.floor((total % 3600) / 60)) + ":" + pad(total % 60)
+    var days = Math.floor(total / 86400)
+    return days > 0 ? days + "d " + hms : hms
+  }
+
+  readonly property string recoveryLine: {
+    if (!recovery) return ""
+    var name = "#" + recovery.number
+    for (var i = 0; i < accounts.length; i++)
+      if (accounts[i].number === recovery.number) { name = accounts[i].name; break }
+    var line = "All accounts limited — " + name + " recovers in " + countdown(recovery.at)
+    if (recovery.waiting > 0)
+      line += " · " + recovery.waiting
+            + (recovery.waiting === 1 ? " session" : " sessions") + " waiting to resume"
+    return line
+  }
+
   // Guarded so the widget renders before the bar is injected.
   readonly property color contentForeground: bar ? bar.foreground : Color.foreground
   readonly property string contentFontFamily: bar ? bar.fontFamily : Style.font.family
@@ -234,6 +268,19 @@ Panel {
               font.family: root.contentFontFamily
               font.pixelSize: Style.font.caption
             }
+
+            // All-limited banner: first reviver + live countdown +
+            // sessions waiting to resume (matches the macOS popup).
+            Text {
+              textFormat: Text.PlainText
+              visible: root.recovery !== null
+              width: parent.width
+              text: root.recoveryLine
+              elide: Text.ElideRight
+              color: Color.urgent
+              font.family: root.contentFontFamily
+              font.pixelSize: Style.font.caption
+            }
           }
 
           PanelSeparator {
@@ -261,6 +308,12 @@ Panel {
                    ? Style.hoverFillFor(root.contentForeground, Color.accent)
                    : "transparent")
               opacity: (modelData.disabled ? 0.45 : 1) * intro
+
+              // The first row to recover while everything is limited.
+              readonly property bool recovering: root.recovery !== null
+                && root.recovery.number === modelData.number
+              border.width: recovering ? 1 : 0
+              border.color: Color.urgent
 
               Behavior on color { ColorAnimation { duration: 200 } }
 

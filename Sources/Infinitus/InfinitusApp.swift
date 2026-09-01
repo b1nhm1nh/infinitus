@@ -829,9 +829,36 @@ struct MenuContent: View {
     }
 
     @ViewBuilder private var errorLines: some View {
+        // All-limited banner (todo 2026-09-01): names the first account
+        // to recover with a live one-second countdown, and counts the
+        // limit-stopped sessions waiting to be resumed. Rides the error
+        // slot so every layout carries it without four insert sites.
+        if model.nextCandidate == nil, let rec = model.nextRecovery,
+           let date = WeeklyRoll.parse(rec.at) {
+            let name = model.accounts.first { $0.number == rec.number }
+                .map { $0.alias ?? String($0.email.prefix(while: { $0 != "@" })) }
+                ?? "#\(rec.number)"
+            TimelineView(.periodic(from: .now, by: 1)) { ctx in
+                (Text(Image(systemName: "arrowtriangle.right"))
+                    .foregroundStyle(.orange)
+                 + Text(" All accounts limited — \(name) recovers in ")
+                 + Text(RecoveryCountdown.label(until: date, now: ctx.date))
+                    .bold().monospacedDigit().foregroundStyle(.orange)
+                 + Text(waitingResumeSuffix))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .fixedSize()
+            }
+        }
         if let err = model.lastError {
             Text(err).font(.caption).foregroundStyle(.red).lineLimit(2)
         }
+    }
+
+    private var waitingResumeSuffix: String {
+        guard let waiting = model.waitingResume else { return "" }
+        return " · \(waiting) session\(waiting == 1 ? "" : "s") waiting to resume"
     }
 
     /// Live Claude Code sessions on this machine — they all ride the
@@ -1009,9 +1036,11 @@ struct NextMarker: View {
         } else if model.nextCandidate == nil,
                   let recovery = model.nextRecovery,
                   recovery.number == number {
+            // Orange, not secondary: the first row to recover is the
+            // one to watch while everything is limited (todo 2026-09-01).
             Image(systemName: "arrowtriangle.right")
                 .font(.caption2)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(.orange)
                 .instantTip("All accounts are at a limit — this one "
                             + "recovers first\(Self.eta(recovery.at))")
         } else {

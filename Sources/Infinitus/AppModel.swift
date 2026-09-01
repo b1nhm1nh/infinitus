@@ -11,6 +11,10 @@ final class AppModel: ObservableObject {
     @Published var accounts: [Account] = []
     @Published var activeNumber: Int?
     @Published var nextCandidate: Int?
+    /// Limit-stopped sessions waiting to resume; non-nil only while
+    /// every account is at a limit (rides the all-limited banner).
+    @Published var waitingResume: Int?
+    private var waitingScanAt: Date = .distantPast
     @Published var nextRecovery: NextRecovery?
     @Published var liveSessions: LiveSessions?
     /// Session-list popover (brain chip click) — popup-wide state so the
@@ -574,6 +578,27 @@ final class AppModel: ObservableObject {
             if let now = list.activeAccountNumber, let previousActive,
                previousActive != now {
                 switchFlashTick += 1
+            }
+            // All-limited: count the limit-stopped sessions waiting to be
+            // resumed (todo 2026-09-01), reusing the resume mechanism's
+            // own detection — Claude Code's files, never engine internals.
+            // Throttled: the transcript tails re-read at most every 20s.
+            if list.nextCandidate == nil, list.nextRecovery != nil {
+                if Date().timeIntervalSince(waitingScanAt) > 20 {
+                    waitingScanAt = Date()
+                    Task.detached(priority: .utility) { [weak self] in
+                        let dir = ClaudeSessions.configHome()
+                        let stopped = Transcript.findStopped(
+                            sessions: ClaudeSessions.list(claudeDir: dir),
+                            claudeDir: dir)
+                        let count = stopped.count
+                        await MainActor.run { [weak self] in
+                            self?.waitingResume = count
+                        }
+                    }
+                }
+            } else {
+                waitingResume = nil
             }
             // The death sequence (user 2026-08-31: kill animation for
             // the last drop of any kind, "still play dead animation

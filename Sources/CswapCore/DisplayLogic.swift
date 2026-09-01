@@ -309,3 +309,17 @@ public enum AccountVitals {
         return pcts.contains { $0 >= 100 }
     }
 }
+
+/// Live countdown to a recovery instant, for the all-limited state
+/// (todo 2026-09-01: "highlight the first to be revived with countdown
+/// active"). Ticks in the UI every second; pure here so it's testable.
+public enum RecoveryCountdown {
+    /// "1d 02:03:04" / "02:03:04"; clamps at zero once the instant is due.
+    public static func label(until: Date, now: Date) -> String {
+        let secs = max(0, Int(until.timeIntervalSince(now).rounded()))
+        let hms = String(format: "%02d:%02d:%02d",
+                         (secs % 86400) / 3600, (secs % 3600) / 60, secs % 60)
+        let days = secs / 86400
+        return days > 0 ? "\(days)d \(hms)" : hms
+    }
+}
