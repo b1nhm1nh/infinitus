@@ -7,6 +7,22 @@ struct FleetScreen: View {
     var body: some View {
         NavigationStack {
             List {
+                if let error = model.error {
+                    Label(error, systemImage: "exclamationmark.triangle")
+                        .font(.footnote)
+                        .foregroundStyle(.orange)
+                }
+                if model.snapshot == nil, model.error == nil {
+                    // First launch, no mirror yet — say so instead of a
+                    // blank list (flagged in the phase-2 report).
+                    ContentUnavailableView(
+                        "Waiting for the fleet",
+                        systemImage: "antenna.radiowaves.left.and.right",
+                        description: Text("No snapshot yet. The Mac app "
+                            + "exports one automatically; in the simulator, "
+                            + "launch with INFINITUS_MIRROR_PATH pointing at "
+                            + "its mirror-snapshot.json."))
+                }
                 if let snapshot = model.snapshot, isStale(snapshot.capturedAt) {
                     StalenessBanner(capturedAt: snapshot.capturedAt)
                 }
@@ -15,9 +31,11 @@ struct FleetScreen: View {
                         DeadHero(recovery: rec, accounts: model.accounts)
                     }
                 }
-                Section("Accounts") {
-                    ForEach(model.accounts, id: \.number) { account in
-                        AccountRow(account: account, nextCandidate: model.nextCandidate)
+                if !model.accounts.isEmpty {
+                    Section("Accounts") {
+                        ForEach(model.accounts, id: \.number) { account in
+                            AccountRow(account: account, nextCandidate: model.nextCandidate)
+                        }
                     }
                 }
                 if let sessions = model.snapshot?.sessions, !sessions.isEmpty {
