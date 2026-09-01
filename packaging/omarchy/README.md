@@ -54,7 +54,10 @@ Newer Omarchy replaced Waybar with a Quickshell shell. The same
 Clicking the bar label (any button) opens the fleet panel — the popup
 UI, matching the macOS app: per-account rows with usage gauges (dead,
 sentinel, and disabled states rendered like the macOS popup; a window
-running behind its weekly pace breathes a mint sheen), click a row to
+running behind its weekly pace breathes a mint sheen; a row whose
+binding window reaches the 90s pulses an urgent border; a row dead on
+its 5h window alone keeps its weekly/per-model gauges, timers
+skipped), click a row to
 switch to that account, right-click a row to hold it out of rotation
 (or return it), rotate + theme stepper in the footer. Rows sort by
 headroom with the active account and next candidate on top (the
