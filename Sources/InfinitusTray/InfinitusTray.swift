@@ -173,7 +173,8 @@ struct InfinitusTray {
             let active = list.accounts.first { $0.active }
             let prefs = TitlePrefs(showAccountName: true, titlePct: "both",
                                    titleScoped: false, titleRemaining: remaining)
-            let rows = list.accounts.map { row($0, list: list, theme: theme, now: now) }
+            let recovery = RecoveryMath.corrected(engine: list.nextRecovery, accounts: list.accounts)
+            let rows = list.accounts.map { row($0, list: list, recovery: recovery, theme: theme, now: now) }
             var tooltip = rows.joined(separator: "\n")
             if let live = list.liveSessions {
                 tooltip += "\n" + SessionSummary.tooltip(live)
@@ -196,14 +197,19 @@ struct InfinitusTray {
 
     /// One themed fleet line: marker, slot, name, plan, then either the
     /// sentinel note, the dead cause + revive reset, or the usage windows.
-    static func row(_ a: Account, list: AccountList, theme: RowTheme, now: Date) -> String {
+    ///
+    /// `recovery` is the corrected next-recovery (RecoveryMath), not
+    /// `list.nextRecovery` verbatim — the engine's advisory skips the
+    /// active account, which misnames the reviver when the active one is
+    /// both dead and soonest (user report 2026-09-02).
+    static func row(_ a: Account, list: AccountList, recovery: NextRecovery?, theme: RowTheme, now: Date) -> String {
         let name = a.alias ?? String(a.email.prefix(while: { $0 != "@" }))
         let marker: String
         if a.active { marker = theme.activeIcon.isEmpty ? "●" : theme.activeIcon }
         else if a.number == list.nextCandidate { marker = theme.nextIcon.isEmpty ? "▶" : theme.nextIcon }
         // All limited: hollow marker on the first to recover (the macOS
         // popup's gray/orange triangle).
-        else if list.nextCandidate == nil, a.number == list.nextRecovery?.number { marker = "▷" }
+        else if list.nextCandidate == nil, a.number == recovery?.number { marker = "▷" }
         else { marker = "·" }
         var parts = ["\(marker) \(theme.slotPrefix)\(a.number) \(name)"]
         if let plan = a.plan { parts.append(theme.planLabel(plan, compact: true)) }
@@ -266,12 +272,16 @@ struct InfinitusTray {
                 : DisplayOrder.sort(list.accounts,
                                     active: active?.number,
                                     next: list.nextCandidate)
+            // Corrected, not the engine's verbatim value: its advisory
+            // skips the active account, which misnames the reviver when
+            // the active one is both dead and soonest (2026-09-02).
+            let recovery = RecoveryMath.corrected(engine: list.nextRecovery, accounts: list.accounts)
             let accounts = ordered.map { a -> PanelAccount in
                 let name = a.alias ?? String(a.email.prefix(while: { $0 != "@" }))
                 let marker: String
                 if a.active { marker = theme.activeIcon.isEmpty ? "●" : theme.activeIcon }
                 else if a.number == list.nextCandidate { marker = theme.nextIcon.isEmpty ? "▶" : theme.nextIcon }
-                else if list.nextCandidate == nil, a.number == list.nextRecovery?.number { marker = "▷" }
+                else if list.nextCandidate == nil, a.number == recovery?.number { marker = "▷" }
                 else { marker = "·" }
                 var note: String?
                 var deadLine: String?
@@ -338,12 +348,12 @@ struct InfinitusTray {
             // stopped-session detection (Claude Code's files only —
             // never engine internals).
             let claudeDir = ClaudeSessions.configHome()
-            var recovery: PanelRecovery?
-            if list.nextCandidate == nil, let rec = list.nextRecovery {
+            var panelRecovery: PanelRecovery?
+            if list.nextCandidate == nil, let rec = recovery {
                 let stopped = Transcript.findStopped(
                     sessions: ClaudeSessions.list(claudeDir: claudeDir), claudeDir: claudeDir)
-                recovery = PanelRecovery(number: rec.number, at: rec.at,
-                                         waiting: stopped.count)
+                panelRecovery = PanelRecovery(number: rec.number, at: rec.at,
+                                              waiting: stopped.count)
             }
             // Session progress rows (issue #13 step 4): busy/waiting
             // first (same ordering as the macOS wall's session board),
@@ -378,7 +388,7 @@ struct InfinitusTray {
                     : TitleFormatter.format(account: active, prefs: prefs, now: now),
                 sessionsLine: list.liveSessions.map { SessionSummary.tooltip($0) },
                 activeNumber: active?.number, accounts: accounts,
-                themes: themes, nextRecovery: recovery, sessions: sessions, error: nil))
+                themes: themes, nextRecovery: panelRecovery, sessions: sessions, error: nil))
         } catch {
             emitError("engine error: \(error)")
         }

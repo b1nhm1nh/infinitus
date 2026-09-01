@@ -326,7 +326,7 @@ final class AppModel: ObservableObject {
             accounts = cached.accounts
             activeNumber = cached.activeAccountNumber
             nextCandidate = cached.nextCandidate
-            nextRecovery = cached.nextRecovery
+            nextRecovery = RecoveryMath.corrected(engine: cached.nextRecovery, accounts: cached.accounts)
             liveSessions = cached.liveSessions
         }
     }
@@ -645,7 +645,7 @@ final class AppModel: ObservableObject {
                 accounts = list.accounts
                 activeNumber = list.activeAccountNumber
                 nextCandidate = list.nextCandidate
-                nextRecovery = list.nextRecovery
+                nextRecovery = RecoveryMath.corrected(engine: list.nextRecovery, accounts: list.accounts)
                 liveSessions = list.liveSessions
             }
             if let now = list.activeAccountNumber, let previousActive,

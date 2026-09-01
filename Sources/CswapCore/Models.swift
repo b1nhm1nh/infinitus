@@ -25,6 +25,11 @@ public struct NextRecovery: Decodable, Sendable {
     public let number: Int
     /// ISO-8601 instant the account is fully usable again.
     public let at: String
+
+    public init(number: Int, at: String) {
+        self.number = number
+        self.at = at
+    }
 }
 
 public struct LiveSessions: Decodable, Sendable {
