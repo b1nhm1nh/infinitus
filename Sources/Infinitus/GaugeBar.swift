@@ -25,6 +25,10 @@ struct GaugeBar: View {
     /// usage outruns the clock (user 2026-08-31).
     var burnStyle: String = "off"
     var burnHeat: Double = 0
+    /// Cool glow 0…1 (behind pace, GaugeMath.chillDepth) — the burn's
+    /// inverse: reserve breathes a slow mint halo. Mutually exclusive
+    /// with burnHeat by construction (aheadOfPace true vs false).
+    var chill: Double = 0
     /// Where the HP-drop zoom grows from. Columns near the popup's
     /// right edge (weekly/spend/scoped on the wide grid) anchor
     /// center or trailing so the 5× bar stays inside the window
@@ -115,6 +119,28 @@ struct GaugeBar: View {
                         .shadow(color: tint.opacity(0.5 + 0.5 * burnHeat),
                                 radius: 2 + 5 * burnHeat)
                         .allowsHitTesting(false)
+                }
+            }
+            // Cool halo (todo 2026-09-01: "effects to accounts that are
+            // behind in usage"): the heat halo's inverse — usage running
+            // behind the clock breathes a slow mint glow. Deliberately
+            // calmer than the burn: reserve is good news, not drama.
+            .overlay {
+                if animated, burnArmed, chill > 0, burnStyle != "off" {
+                    TimelineView(.animation(minimumInterval: 1.0 / 30)) { ctx in
+                        let phase = (sin(ctx.date.timeIntervalSinceReferenceDate
+                                         * 2 * .pi / 2.4) + 1) / 2
+                        // Deep breath: mostly-off at the trough so the
+                        // pulse reads as motion, not a painted border.
+                        let strength = (0.35 + 0.65 * chill) * (0.15 + 0.85 * phase)
+                        let tint = Color(red: 0.35, green: 0.95, blue: 0.75)
+                        Capsule()
+                            .strokeBorder(tint.opacity(0.85 * strength),
+                                          lineWidth: 1)
+                            .shadow(color: tint.opacity(strength),
+                                    radius: 2 + 5 * strength)
+                    }
+                    .allowsHitTesting(false)
                 }
             }
             // Shard burst on a killing blow — above the bar, zooming

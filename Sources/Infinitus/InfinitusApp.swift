@@ -1390,6 +1390,9 @@ struct AccountCells {
                             burnHeat: session ? 0 : GaugeMath.burnHeat(
                                 usedPct: w.pct, expectedPct: w.expectedPct,
                                 ahead: w.aheadOfPace),
+                            chill: session ? 0 : GaugeMath.chillDepth(
+                                usedPct: w.pct, expectedPct: w.expectedPct,
+                                ahead: w.aheadOfPace),
                             // Mid-row on the wide grid: grow both ways.
                             dropAnchor: banded && !session ? .center : .leading,
                             lucky: luckyPair)
@@ -1510,6 +1513,9 @@ struct AccountCells {
                                      dividers: (1..<7).map { Double($0) * 100 / 7 },
                                      burnStyle: fableBurnStyle,
                                      burnHeat: GaugeMath.burnHeat(
+                                         usedPct: w.pct, expectedPct: w.expectedPct,
+                                         ahead: w.aheadOfPace),
+                                     chill: GaugeMath.chillDepth(
                                          usedPct: w.pct, expectedPct: w.expectedPct,
                                          ahead: w.aheadOfPace),
                                      // Far right on the wide grid: grow

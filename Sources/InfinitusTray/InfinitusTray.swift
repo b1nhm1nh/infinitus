@@ -23,6 +23,8 @@ struct PanelWindow: Encodable {
     let label: String
     let pct: Int          // used, 0–100
     let reset: String?
+    /// Behind-pace glow 0…1 (GaugeMath.chillDepth); omitted when calm.
+    let chill: Double?
 }
 
 struct PanelAccount: Encodable {
@@ -255,21 +257,32 @@ struct InfinitusTray {
                     }
                     deadLine = s
                 }
+                func paceChill(_ w: UsageWindow) -> Double? {
+                    let c = GaugeMath.chillDepth(usedPct: w.pct,
+                                                 expectedPct: w.expectedPct,
+                                                 ahead: w.aheadOfPace)
+                    return c > 0 ? c : nil
+                }
                 if let w = a.usage?.fiveHour {
+                    // The 5h bar stays calm on macOS too — pace effects
+                    // are weekly/model signals.
                     windows.append(PanelWindow(label: theme.sessionLabel,
                                                pct: Int(w.pct.rounded()),
-                                               reset: ResetLabel.short(w, now: now)))
+                                               reset: ResetLabel.short(w, now: now),
+                                               chill: nil))
                 }
                 if let w = a.usage?.sevenDay, let pct = WeeklyRoll.displayPct(w, now: now) {
                     windows.append(PanelWindow(label: theme.weeklyLabel,
                                                pct: Int(pct.rounded()),
-                                               reset: ResetLabel.compact(w, now: now)))
+                                               reset: ResetLabel.compact(w, now: now),
+                                               chill: paceChill(w)))
                 }
                 for w in a.usage?.scoped ?? [] {
                     guard let pct = WeeklyRoll.displayPct(w, now: now) else { continue }
                     windows.append(PanelWindow(
                         label: "\(theme.scopedPrefix)\(theme.modelName(w.name))",
-                        pct: Int(pct.rounded()), reset: nil))
+                        pct: Int(pct.rounded()), reset: nil,
+                        chill: paceChill(w)))
                 }
                 return PanelAccount(
                     number: a.number, name: name,

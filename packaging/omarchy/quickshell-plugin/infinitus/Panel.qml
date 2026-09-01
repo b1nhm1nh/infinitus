@@ -507,6 +507,28 @@ Panel {
                         color: root.gaugeColor(windowRow.modelData.pct)
 
                         Behavior on width { NumberAnimation { duration: 160; easing.type: Easing.OutCubic } }
+
+                        // Behind-pace breath (macOS GaugeBar's cool halo):
+                        // usage running behind the clock pulses a slow
+                        // mint sheen over the fill — calm, not drama.
+                        Rectangle {
+                          anchors.fill: parent
+                          radius: parent.radius
+                          color: "#59f2bf"
+                          visible: (windowRow.modelData.chill || 0) > 0
+
+                          SequentialAnimation on opacity {
+                            running: (windowRow.modelData.chill || 0) > 0
+                            loops: Animation.Infinite
+                            NumberAnimation {
+                              from: 0.12; to: 0.12 + 0.4 * (windowRow.modelData.chill || 0)
+                              duration: 1200; easing.type: Easing.InOutSine
+                            }
+                            NumberAnimation {
+                              to: 0.12; duration: 1200; easing.type: Easing.InOutSine
+                            }
+                          }
+                        }
                       }
                     }
                   }

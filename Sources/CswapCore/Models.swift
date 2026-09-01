@@ -250,6 +250,16 @@ public enum GaugeMath {
         guard ahead == true, let expected = expectedPct else { return 0 }
         return max(0, min(1, (usedPct - expected) / 30))
     }
+
+    /// Cool-glow intensity 0…1: how far usage runs BEHIND the clock's
+    /// expectation — burnHeat's inverse, same ±30-point saturation.
+    /// Zero unless the engine explicitly says NOT aheadOfPace (todo
+    /// 2026-09-01: "effects to accounts that are behind in usage").
+    public static func chillDepth(usedPct: Double, expectedPct: Double?,
+                                  ahead: Bool?) -> Double {
+        guard ahead == false, let expected = expectedPct else { return 0 }
+        return max(0, min(1, (expected - usedPct) / 30))
+    }
 }
 
 /// `cswap history --json` — recent account switches, newest first. The

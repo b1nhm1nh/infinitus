@@ -80,3 +80,20 @@ final class ModelsTests: XCTestCase {
         if case .bool = resume.value {} else { XCTFail("bool value expected") }
     }
 }
+
+final class ChillDepthTests: XCTestCase {
+    func testBehindPaceScales() {
+        XCTAssertEqual(GaugeMath.chillDepth(usedPct: 22, expectedPct: 31, ahead: false),
+                       0.3, accuracy: 0.001)
+        XCTAssertEqual(GaugeMath.chillDepth(usedPct: 0, expectedPct: 40, ahead: false), 1)
+    }
+
+    func testZeroUnlessExplicitlyNotAhead() {
+        // nil ahead means the engine sent no pace verdict — no effect,
+        // symmetric with burnHeat's `ahead == true` guard.
+        XCTAssertEqual(GaugeMath.chillDepth(usedPct: 10, expectedPct: 40, ahead: nil), 0)
+        XCTAssertEqual(GaugeMath.chillDepth(usedPct: 10, expectedPct: 40, ahead: true), 0)
+        XCTAssertEqual(GaugeMath.chillDepth(usedPct: 10, expectedPct: nil, ahead: false), 0)
+        XCTAssertEqual(GaugeMath.chillDepth(usedPct: 50, expectedPct: 40, ahead: false), 0)
+    }
+}
