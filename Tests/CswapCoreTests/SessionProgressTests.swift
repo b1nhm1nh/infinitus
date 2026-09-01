@@ -53,6 +53,10 @@ final class SessionProgressTests: XCTestCase {
                        "Writing Foo.swift")
         XCTAssertEqual(SessionProgress.parse(lines: [line("Bash", #"{"command":"swift test --filter X"}"#)]).nowDoing,
                        "Running swift")
+        XCTAssertEqual(SessionProgress.parse(lines: [line("Bash", #"{"command":"cd /x/y && swift build -c release"}"#)]).nowDoing,
+                       "Running swift")
+        XCTAssertEqual(SessionProgress.parse(lines: [line("Bash", #"{"command":"cd /x/y"}"#)]).nowDoing,
+                       "Running cd")
         let longPattern = String(repeating: "x", count: 60)
         let grep = SessionProgress.parse(lines: [line("Grep", #"{"pattern":"\#(longPattern)"}"#)]).nowDoing
         XCTAssertEqual(grep, "Searching " + String(longPattern.prefix(40)))

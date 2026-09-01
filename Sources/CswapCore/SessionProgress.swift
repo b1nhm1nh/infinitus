@@ -157,8 +157,13 @@ public struct SessionProgress: Sendable, Equatable, Codable {
             let path = input["file_path"] as? String ?? ""
             return "\(verb) \(URL(fileURLWithPath: path).lastPathComponent)"
         case "Bash":
+            // Compound commands open with plumbing ("cd x && swift build");
+            // report the first segment that isn't a cd/env preamble.
             let command = input["command"] as? String ?? ""
-            let first = command.split(separator: " ", maxSplits: 1).first.map(String.init) ?? command
+            let plumbing: Set<String> = ["cd", "export", "source", "set"]
+            let words = command.split(separator: "&&")
+                .compactMap { $0.split(separator: " ").first.map(String.init) }
+            let first = words.first { !plumbing.contains($0) } ?? words.first ?? command
             return "Running \(first)"
         case "Grep":
             let pattern = input["pattern"] as? String ?? ""
