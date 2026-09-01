@@ -76,11 +76,17 @@ public enum PtyNudge {
         public var sent: [String] = []          // "host:ref" per surface typed into
         public var skippedSelf = 0
         public var skippedIdle = 0
+        /// Mid-turn sessions left alone — typing or Esc would land inside
+        /// running work (user bug 2026-09-01: "Interrupted" after a sweep).
+        public var skippedBusy = 0
         public var noSurface = 0
         public var confirmed: [String] = []
         public var urls: [String] = []
         public init() {}
-        public var isEmpty: Bool { sent.isEmpty && noSurface == 0 && skippedIdle == 0 && skippedSelf == 0 }
+        public var isEmpty: Bool {
+            sent.isEmpty && noSurface == 0 && skippedIdle == 0
+                && skippedSelf == 0 && skippedBusy == 0
+        }
     }
 
     /// Type `/rc` into every terminal hosting a live interactive session,
@@ -95,7 +101,12 @@ public enum PtyNudge {
         ttyOfPid: (Int32) -> String? = ProcessFacts.tty(of:),
         ancestorsOf: (Int32) -> [Int32] = ProcessFacts.ancestors(of:),
         idleSeconds: (String) -> TimeInterval? = { ProcessFacts.idleSeconds(tty: $0) },
-        sleep: (TimeInterval) -> Void = { Thread.sleep(forTimeInterval: $0) }
+        sleep: (TimeInterval) -> Void = { Thread.sleep(forTimeInterval: $0) },
+        /// When a session's last turn was a limit stop, its instant —
+        /// idleness is then measured against the STOP, not against now
+        /// (user 2026-09-01: a 7d-limit wait made every session "idle").
+        stoppedAt: (ClaudeSessionRecord) -> Date? = { _ in nil },
+        now: () -> Date = Date.init
     ) -> SweepResult {
         var result = SweepResult()
         var typed: [(host: any PtyHost, ref: String)] = []
@@ -103,10 +114,23 @@ public enum PtyNudge {
         let surfaces = hosts.map { ($0, (try? $0.surfaces()) ?? []) }
         for session in sessions where session.kind == "interactive" || session.kind.isEmpty {
             if selfPids.contains(session.pid) { result.skippedSelf += 1; continue }
+            // A busy session is mid-turn: /rc queues into the running
+            // work and the later Esc interrupts it. It re-arms on the
+            // next sweep once idle.
+            if session.status == "busy" { result.skippedBusy += 1; continue }
             let tty = ttyOfPid(session.pid)
-            if activeWithin > 0, let tty, let idle = idleSeconds(tty), idle > activeWithin {
-                result.skippedIdle += 1
-                continue
+            if activeWithin > 0, let tty, let idle = idleSeconds(tty) {
+                // The clock a limit stop froze doesn't count as idleness:
+                // subtract the wait since the stop, so "active within N
+                // min" means active in the N minutes BEFORE the limit hit.
+                var effective = idle
+                if let stop = stoppedAt(session) {
+                    effective = max(0, idle - now().timeIntervalSince(stop))
+                }
+                if effective > activeWithin {
+                    result.skippedIdle += 1
+                    continue
+                }
             }
             let ancestors = ancestorsOf(session.pid)
             var hit: (any PtyHost, PtySurface)?
@@ -128,10 +152,17 @@ public enum PtyNudge {
             let urls = sessionURL.matches(in: screen, range: range).compactMap {
                 Range($0.range, in: screen).map { String(screen[$0]) }
             }
-            if !urls.isEmpty || remoteControlMarkers.allSatisfy({ flat(screen).contains($0) }) {
+            let f = flat(screen)
+            if !urls.isEmpty || remoteControlMarkers.allSatisfy({ f.contains($0) }) {
                 result.confirmed.append("\(host.name):\(ref)")
                 result.urls.append(contentsOf: urls)
-                try? host.sendEsc(ref)
+                // The session URL also lives in the persistent
+                // "/remote-control is active" status line: when a turn is
+                // RUNNING the panel is long gone and this Esc would land
+                // on the turn itself (user bug 2026-09-01, "Interrupted ·
+                // What should Claude do instead?"). Dismiss only settled
+                // screens.
+                if !isRunning(f) { try? host.sendEsc(ref) }
             }
         }
         return result

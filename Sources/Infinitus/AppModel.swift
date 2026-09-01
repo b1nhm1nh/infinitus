@@ -388,6 +388,7 @@ final class AppModel: ObservableObject {
     /// LAUNCH — a window-style MenuBarExtra may not build its content view
     /// until the first click, and rumps started its engine immediately.
     func startFeeds() {
+        detectOnboarding()
         resume.log = { [weak self] icon, text in
             guard let self else { return }
             self.eventLog.append(EventEntry(icon: icon, text: text))
@@ -473,6 +474,60 @@ final class AppModel: ObservableObject {
     /// True when no cswap binary was found at launch; the popup swaps
     /// its rows for the onboarding card.
     var engineMissing: Bool { cli == nil }
+
+    // MARK: onboarding — machine detection (todo 2026-09-01)
+
+    @Published var claudeCLI: ClaudeCLIInfo?
+    @Published var cliProxy: CLIProxyInfo?
+    /// Something answered on the management port while the auth dir
+    /// exists — the proxy is probably running right now.
+    @Published var cliProxyLive = false
+    @Published var addingFirstAccount = false
+    @Published var firstAccountMessage: String?
+    /// Set once a real snapshot decoded — gates the "no accounts" card
+    /// so it can't flash during the first refresh.
+    @Published var snapshotLoaded = false
+
+    func detectOnboarding() {
+        Task.detached(priority: .utility) { [weak self] in
+            let claude = ClaudeCLIDetect.info()
+            let proxy = CLIProxyDetect.info()
+            let live: Bool
+            if proxy != nil {
+                var req = URLRequest(
+                    url: URL(string: "http://127.0.0.1:\(CLIProxyDetect.defaultPort)/")!)
+                req.timeoutInterval = 0.8
+                // ANY HTTP answer counts — management routes 404 without a
+                // secret key, the point is that something is listening.
+                live = (try? await URLSession.shared.data(for: req)) != nil
+            } else {
+                live = false
+            }
+            await MainActor.run { [weak self] in
+                guard let self else { return }
+                self.claudeCLI = claude.isPresent ? claude : nil
+                self.cliProxy = proxy
+                self.cliProxyLive = live
+            }
+        }
+    }
+
+    /// `cswap add` registers whichever account Claude Code is signed in
+    /// as — the "adopt the current login" onboarding path.
+    func addFirstAccount() {
+        guard let cli, !addingFirstAccount else { return }
+        addingFirstAccount = true
+        firstAccountMessage = nil
+        Task {
+            do {
+                _ = try await cli.run(["add"])
+                await refreshSnapshot()
+            } catch {
+                firstAccountMessage = (error as? CLIError)?.message ?? "\(error)"
+            }
+            addingFirstAccount = false
+        }
+    }
     @Published var installingEngine = false
     @Published var installMessage: String?
 
@@ -577,6 +632,7 @@ final class AppModel: ObservableObject {
             let newlyAlive = list.accounts.filter {
                 !AccountVitals.isDead($0.usage) && wasDead.contains($0.number)
             }.map(\.number)
+            snapshotLoaded = true
             withAnimation(.easeInOut(duration: 0.6)) {
                 accounts = list.accounts
                 activeNumber = list.activeAccountNumber
@@ -685,7 +741,10 @@ final class AppModel: ObservableObject {
             if !isPlayground {
                 let active = list.accounts.first { $0.number == list.activeAccountNumber }
                 resume.tick(switched: previous != nil && previous != list.activeAccountNumber,
-                            activeAlive: active.map { !AccountVitals.isDead($0.usage) } ?? false)
+                            activeAlive: active.map { !AccountVitals.isDead($0.usage) } ?? false,
+                            activeNumber: list.activeAccountNumber,
+                            activeFetchedAt: active?.usageFetchedAt
+                                .flatMap(UsageHistory.parseISO))
             }
             // Same display-feed vantage as the switch diff above: these
             // triggers fire even while the supervised engine is parked.

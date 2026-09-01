@@ -647,6 +647,8 @@ struct MenuContent: View {
         Group {
             if model.engineMissing {
                 OnboardingCard(model: model)
+            } else if model.accounts.isEmpty && model.snapshotLoaded {
+                FirstAccountCard(model: model)
             } else if model.accounts.count > 10 {
                 ScrollView(showsIndicators: false) {
                     AccountRows(model: model, usage: usage)
@@ -2285,7 +2287,95 @@ struct OnboardingCard: View {
                 .font(.caption).monospaced()
                 .foregroundStyle(.tertiary)
                 .textSelection(.enabled)
+            DetectionLines(model: model, afterInstall: true)
         }
         .padding(6)
+    }
+}
+
+/// Engine present, fleet empty: adopt whatever this machine already has
+/// (todo 2026-09-01). `cswap add` registers Claude Code's current login.
+struct FirstAccountCard: View {
+    @ObservedObject var model: AppModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Almost there")
+                .font(.headline)
+            Text("The engine is running but manages no accounts yet.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: 300, alignment: .leading)
+                .fixedSize(horizontal: false, vertical: true)
+            if let claude = model.claudeCLI, let email = claude.email {
+                Button {
+                    model.addFirstAccount()
+                } label: {
+                    if model.addingFirstAccount {
+                        HStack(spacing: 5) {
+                            ProgressView().controlSize(.small)
+                            Text("Adding…")
+                        }
+                    } else {
+                        Label("Add \(email)", systemImage: "person.badge.plus")
+                    }
+                }
+                .disabled(model.addingFirstAccount)
+                if let org = claude.organization {
+                    Text("Claude Code on this Mac is signed in as "
+                         + "\(email) — \(org).")
+                        .font(.caption).foregroundStyle(.secondary)
+                        .frame(maxWidth: 300, alignment: .leading)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            } else {
+                Text("Sign in with Claude Code first, then:  cswap add")
+                    .font(.caption).monospaced()
+                    .foregroundStyle(.tertiary)
+                    .textSelection(.enabled)
+            }
+            if let msg = model.firstAccountMessage {
+                Text(msg).font(.caption).foregroundStyle(.orange)
+                    .frame(maxWidth: 300, alignment: .leading)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            DetectionLines(model: model, afterInstall: false)
+        }
+        .padding(6)
+    }
+}
+
+/// Shared what-else-is-on-this-machine footnotes for both cards.
+private struct DetectionLines: View {
+    @ObservedObject var model: AppModel
+    let afterInstall: Bool
+
+    var body: some View {
+        Group {
+            if afterInstall, let claude = model.claudeCLI,
+               let email = claude.email {
+                Text("Claude Code is signed in as \(email) — after the "
+                     + "install it becomes your first account in one click.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            if let proxy = model.cliProxy {
+                Text(Self.proxyLine(proxy, live: model.cliProxyLive))
+                    .font(.caption2).foregroundStyle(.tertiary)
+            }
+        }
+        .frame(maxWidth: 300, alignment: .leading)
+        .fixedSize(horizontal: false, vertical: true)
+    }
+
+    // Plain string concat stalls the ViewBuilder type-checker (swift 6.3,
+    // measured here) — built as a function instead.
+    static func proxyLine(_ proxy: CLIProxyInfo, live: Bool) -> String {
+        var s = "CLIProxyAPI detected"
+        if live { s += " (running)" }
+        s += " — \(proxy.credentialFiles) credential file"
+        if proxy.credentialFiles != 1 { s += "s" }
+        s += " in \(proxy.authDir). Proxy backend support is on the "
+        s += "roadmap; cswap manages accounts directly."
+        return s
     }
 }

@@ -34,6 +34,13 @@ final class ResumeService: ObservableObject {
     /// effort (held for review, burned twice) is never retried — only a NEW
     /// stop is, so a held message can't be queued twice.
     private var nudged: Set<String> = []
+    /// Last nudge instant per SESSION — a burned retry mints a fresh
+    /// stopUuid, which is how the 2026-09-01 nudge loop escaped the set
+    /// above (three nudges in one minute). ResumeGate.cooldown spaces them.
+    private var lastNudge: [String: Date] = [:]
+    /// Active account number when each stop was first observed, so a
+    /// later SWITCH is distinguishable from the same stale account.
+    private var stopFirstActive: [String: Int] = [:]
 
     init() {
         resumeEnabled = defaults.object(forKey: "resume_stopped_sessions") as? Bool ?? false
@@ -44,9 +51,13 @@ final class ResumeService: ObservableObject {
 
     /// Called on every snapshot. `switched`: the active account changed
     /// (display-feed diff, so manual and parked-engine switches count);
-    /// `activeAlive`: the account we are on can take work — the only state
-    /// in which a nudge helps. Blocking work runs detached; single-flight.
-    func tick(switched: Bool, activeAlive: Bool) {
+    /// `activeAlive`: the account we are on can take work; `activeNumber` /
+    /// `activeFetchedAt` feed ResumeGate — "alive" is only as fresh as the
+    /// engine's last usage poll, and a verdict that predates the stop is
+    /// the stale read that burned three nudges in a minute (2026-09-01).
+    /// Blocking work runs detached; single-flight.
+    func tick(switched: Bool, activeAlive: Bool,
+              activeNumber: Int? = nil, activeFetchedAt: Date? = nil) {
         let doRearm = switched && rearmEnabled
         let doResume = resumeEnabled && activeAlive
         guard doRearm || doResume, !busy else { return }
@@ -54,44 +65,78 @@ final class ResumeService: ObservableObject {
         let claudeDir = claudeDir
         let activeWithin = TimeInterval(rearmActiveWithinMinutes) * 60
         let already = nudged
+        let lastNudgeCopy = lastNudge
+        let firstActiveCopy = stopFirstActive
         Task.detached(priority: .utility) { [weak self] in
             let hosts = PtyHosts.available()
             let sessions = ClaudeSessions.list(claudeDir: claudeDir)
+            let stops = Transcript.findStopped(sessions: sessions, claudeDir: claudeDir)
             var sweep: PtyNudge.SweepResult?
             if doRearm {
                 // The app may run from inside a session (run-unbundled.sh
                 // from a Claude Code shell): never type into our own lineage.
                 let selfPids = Set(ProcessFacts.ancestors(of: getpid()))
+                let stopBySession = Dictionary(
+                    stops.compactMap { s in s.stoppedAt.map { (s.sessionId, $0) } },
+                    uniquingKeysWith: { a, _ in a })
                 sweep = PtyNudge.rearmRemoteControl(
                     hosts: hosts, sessions: sessions, selfPids: selfPids,
-                    activeWithin: activeWithin, confirm: true)
+                    activeWithin: activeWithin, confirm: true,
+                    stoppedAt: { stopBySession[$0.sessionId] })
             }
             var outcome: ResumeCoordinator.Outcome?
             var standing: [String] = []
+            var newFirstSeen: [String: Int] = [:]
+            var held = 0
             if doResume {
-                let stopped = Transcript.findStopped(sessions: sessions, claudeDir: claudeDir)
-                    .filter { !already.contains($0.stopUuid) }
-                if !stopped.isEmpty {
-                    outcome = ResumeCoordinator(hosts: hosts, claudeDir: claudeDir).resume(stopped)
+                var eligible: [StoppedSession] = []
+                for s in stops where !already.contains(s.stopUuid) {
+                    if firstActiveCopy[s.stopUuid] == nil,
+                       newFirstSeen[s.stopUuid] == nil, let n = activeNumber {
+                        newFirstSeen[s.stopUuid] = n
+                    }
+                    let first = firstActiveCopy[s.stopUuid] ?? newFirstSeen[s.stopUuid]
+                    if ResumeGate.allows(stoppedAt: s.stoppedAt,
+                                         firstSeenActive: first,
+                                         currentActive: activeNumber,
+                                         activeFetchedAt: activeFetchedAt,
+                                         lastNudge: lastNudgeCopy[s.sessionId]) {
+                        eligible.append(s)
+                    } else {
+                        held += 1
+                    }
+                }
+                if !eligible.isEmpty {
+                    outcome = ResumeCoordinator(hosts: hosts, claudeDir: claudeDir).resume(eligible)
                     // Whatever still shows a limit stop after our best
                     // effort is remembered so the next tick leaves it alone.
                     standing = Transcript.findStopped(sessions: sessions, claudeDir: claudeDir)
                         .map(\.stopUuid).filter { !$0.isEmpty }
                 }
             }
-            await self?.finish(sweep: sweep, outcome: outcome, standing: standing)
+            await self?.finish(sweep: sweep, outcome: outcome, standing: standing,
+                               firstSeen: newFirstSeen, held: held)
         }
     }
 
     private func finish(sweep: PtyNudge.SweepResult?, outcome: ResumeCoordinator.Outcome?,
-                        standing: [String]) {
+                        standing: [String], firstSeen: [String: Int], held: Int) {
         busy = false
         nudged.formUnion(standing)
+        stopFirstActive.merge(firstSeen) { a, _ in a }
+        if let outcome {
+            for session in outcome.accepted { lastNudge[session.sessionId] = Date() }
+        }
+        if held > 0 {
+            log?("hourglass", "\(held) stopped session(s) held — waiting for "
+                 + "a switch or a fresh usage poll after the stop")
+        }
         var lines: [String] = []
         if let sweep, !sweep.isEmpty {
             var text = "re-armed /rc on \(sweep.sent.count) session(s)"
             if !sweep.confirmed.isEmpty { text += ", \(sweep.confirmed.count) confirmed" }
             if sweep.skippedIdle > 0 { text += ", \(sweep.skippedIdle) idle skipped" }
+            if sweep.skippedBusy > 0 { text += ", \(sweep.skippedBusy) mid-turn skipped" }
             if sweep.noSurface > 0 { text += ", \(sweep.noSurface) without a terminal" }
             log?("antenna.radiowaves.left.and.right", text)
             lines.append(text)

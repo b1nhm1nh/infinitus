@@ -77,15 +77,33 @@
       app's push. Rides the mobile companion transport.
 - [ ] Move todos to GitHub issues (user 2026-09-01): open items become
       issues on deathemperor/infinitus; TODO.md becomes the pointer.
-- [ ] Auto-resume bugs (user 2026-09-01, session restored):
-      (1) nudge text landed in the session's input but was never
-      submitted — visible as a typed line without send; keyboard-input/
-      Enter delivery suspect in PtyNudge; (2) nudge fired while the
-      session's account was still limited — Claude Code answered "hit
-      your session limit … continuing automatically at 3:20pm", i.e.
-      the resume raced the engine switch (or fired on recovery of an
-      account the session isn't riding). Needs trigger-ordering fix:
-      nudge only after the ACTIVE account has headroom.
+- [ ] Capture quality (user 2026-09-01): (1) CleanShot WINDOW captures
+      of the pop-out render text/background low-quality — window
+      captures composite the layer without its backdrop blur, so the
+      translucent chrome washes out (and may capture at 1x); (2) free
+      region captures over bright backgrounds show the same washed
+      look live — bright-background legibility wants the Settings-style
+      appearance scrim (or an auto-contrast floor) on the popup/pop-out.
+- [ ] Auto-resume bugs (user 2026-09-01, session restored) — three of
+      four FIXED same day: (2)+(3) the nudge loop (3 nudges/min into a
+      still-limited session) was a stale-verdict race — "active is
+      alive" predated the stop; ResumeGate now requires evidence after
+      the stop (a switch since first sighting, or a usage poll newer
+      than the stop) plus a 10-min per-session cooldown that survives
+      burned stopUuids; (4) the /rc sweep interrupted a RUNNING turn —
+      busy sessions are now skipped at typing time and the confirm-Esc
+      is withheld whenever the screen shows "esc to interrupt" (the
+      session URL also lives in the persistent status line, which is
+      what armed the stray Esc). Still open: (1) nudge text typed but
+      never submitted (Enter delivery on some host) — needs a repro
+      with the terminal name.
+- [ ] Resume idle window vs limit stops (user 2026-09-01): the
+      "only sessions active within N min" filter measures idleness
+      against NOW — after a long limit wait (Fable/7d stops sit for
+      hours or days) every session looks idle and gets skipped. Idle
+      should be measured against the moment the limit hit: a session
+      active right up to its stop was never idle, however long the
+      restore took.
 - [ ] Usage utilization history (user 2026-09-01): track every
       account's 5h/7d/per-model (Fable) utilization over time; a
       dashboard charting all + each account with waste estimates

@@ -15,9 +15,13 @@ public struct StoppedSession: Sendable, Equatable {
     /// "burned, nudge again" from "held for review, leave it alone". Empty
     /// disables verification for that session rather than guessing.
     public var stopUuid: String
+    /// When the limit stop landed (the entry's own timestamp); nil when
+    /// the transcript doesn't carry one.
+    public var stoppedAt: Date?
 
     public init(sessionId: String, pid: Int32, cwd: String, socketPath: String = "",
-                peerProtocol: Int = 0, message: String = "", stopUuid: String = "") {
+                peerProtocol: Int = 0, message: String = "", stopUuid: String = "",
+                stoppedAt: Date? = nil) {
         self.sessionId = sessionId
         self.pid = pid
         self.cwd = cwd
@@ -25,6 +29,7 @@ public struct StoppedSession: Sendable, Equatable {
         self.peerProtocol = peerProtocol
         self.message = message
         self.stopUuid = stopUuid
+        self.stoppedAt = stoppedAt
     }
 
     public var canUseSocket: Bool { !socketPath.isEmpty && peerProtocol == PeerSocket.protocolVersion }
@@ -109,7 +114,9 @@ public enum Transcript {
             out.append(StoppedSession(
                 sessionId: session.sessionId, pid: session.pid, cwd: session.cwd,
                 socketPath: session.messagingSocketPath, peerProtocol: session.peerProtocol,
-                message: limitText(entry), stopUuid: entry["uuid"] as? String ?? ""))
+                message: limitText(entry), stopUuid: entry["uuid"] as? String ?? "",
+                stoppedAt: (entry["timestamp"] as? String)
+                    .flatMap(UsageHistory.parseISO)))
         }
         return out
     }
@@ -136,5 +143,50 @@ public enum Transcript {
         }
         if (entry["type"] as? String) == "user" { return .waiting }
         return .done
+    }
+}
+
+/// Whether a nudge can actually help a stopped session (bugfix
+/// 2026-09-01: three nudges in one minute into a still-limited session).
+/// The display snapshot said the active account was alive, but that
+/// verdict PREDATED the stop — the session had just burned the account
+/// to 100% and the engine was still serving cached usage. A nudge is
+/// evidence-based now: something must have changed SINCE the stop.
+public enum ResumeGate {
+    /// Minimum spacing between nudges to one session, whatever else
+    /// happens — new stop entries included (each burned retry mints a
+    /// fresh stopUuid, which is exactly how the loop ran away).
+    public static let cooldown: TimeInterval = 600
+
+    /// - stoppedAt: when the limit stop landed (nil = unknown).
+    /// - firstSeenActive: the active account number when THIS stop was
+    ///   first observed (nil = the stop is new this tick).
+    /// - currentActive: the active account number now.
+    /// - activeFetchedAt: when the engine last fetched the active
+    ///   account's usage (the "alive" verdict is only as fresh as this).
+    /// - lastNudge: when this SESSION was last nudged, any stop entry.
+    public static func allows(stoppedAt: Date?,
+                              firstSeenActive: Int?,
+                              currentActive: Int?,
+                              activeFetchedAt: Date?,
+                              lastNudge: Date?,
+                              now: Date = Date()) -> Bool {
+        if let lastNudge, now.timeIntervalSince(lastNudge) < cooldown {
+            return false
+        }
+        // A switch since the stop was first seen: the session rides new
+        // credentials — nudge regardless of usage-poll freshness.
+        if let firstSeenActive, let currentActive,
+           firstSeenActive != currentActive {
+            return true
+        }
+        // Same account: the alive verdict must postdate the stop, or it
+        // is the exact stale read that caused the burn loop.
+        if let stoppedAt, let activeFetchedAt, activeFetchedAt > stoppedAt {
+            return true
+        }
+        // Unknown stop time with no switch: hold. The cooldown alone
+        // cannot make a stale verdict true.
+        return false
     }
 }
