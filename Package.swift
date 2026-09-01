@@ -33,9 +33,10 @@ targets.append(.executableTarget(
 
 let package = Package(
     name: "Infinitus",
-    platforms: [.macOS(.v14)],
+    platforms: [.macOS(.v14), .iOS(.v17)],
     products: [
         .executable(name: "infinitus-tray", targets: ["InfinitusTray"]),
+        .library(name: "CswapCore", targets: ["CswapCore"]),
     ],
     targets: targets
 )

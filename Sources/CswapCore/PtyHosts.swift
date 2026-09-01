@@ -1,5 +1,6 @@
 import Foundation
 
+#if !os(iOS)
 /// A terminal surface hosting a shell — one cmux surface, tmux pane or
 /// herdr pane. `tty` is the pty it fronts when the host exposes it;
 /// `pids` the foreground processes when it exposes those instead.
@@ -277,3 +278,4 @@ public enum PtyHosts {
         return out
     }
 }
+#endif

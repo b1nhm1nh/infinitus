@@ -196,6 +196,7 @@ final class AppModel: ObservableObject {
     @Published var pushLastAlive: Bool { didSet { defaults.set(pushLastAlive, forKey: "push_last_alive") } }
     let sync = SettingsSyncModel()
     let historyRecorder = UsageHistoryRecorder()
+    let mirrorExporter = MirrorExporter()
     private let awake = KeepAwake()
     private var pushTriggers = PushTriggers()
     private let defaults: UserDefaults
@@ -660,6 +661,11 @@ final class AppModel: ObservableObject {
                 let syncOn = sync.enabled
                 Task.detached(priority: .utility) { [historyRecorder] in
                     await historyRecorder.record(accounts: accts, syncEnabled: syncOn)
+                }
+                // Fleet mirror (#9 phase 1): lets the mobile companion see
+                // this machine's last snapshot. Throttled inside the actor.
+                Task.detached(priority: .utility) { [mirrorExporter] in
+                    await mirrorExporter.record(listJSON: raw)
                 }
             }
             // All-limited: count the limit-stopped sessions waiting to be

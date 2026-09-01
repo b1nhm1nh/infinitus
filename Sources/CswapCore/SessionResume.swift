@@ -1,5 +1,6 @@
 import Foundation
 
+#if !os(iOS)
 /// Resumes Claude Code sessions a usage limit stopped: a terminal nudge
 /// first (cmux/tmux/herdr), the peer socket as fallback, with the
 /// engine's pacing — 5s/15s retries while a nudge burns on stale
@@ -110,3 +111,4 @@ public struct ResumeCoordinator {
         return burned
     }
 }
+#endif

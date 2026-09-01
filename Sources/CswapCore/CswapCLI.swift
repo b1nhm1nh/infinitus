@@ -1,5 +1,6 @@
 import Foundation
 
+#if !os(iOS)
 /// Where the `cswap` binary lives. Checked in order; first hit wins.
 public enum CswapLocator {
     public static func defaultCandidates(home: String = NSHomeDirectory()) -> [String] {
@@ -224,3 +225,4 @@ public struct NotifyStatus: Decodable, Sendable {
     public let telegramBotToken: String?
     public let telegramChatId: String?
 }
+#endif

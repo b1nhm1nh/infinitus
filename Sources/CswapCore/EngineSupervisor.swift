@@ -1,5 +1,6 @@
 import Foundation
 
+#if !os(iOS)
 /// Assembles NDJSON lines from pipe chunks and remembers whether an
 /// engine-refused event went by. Mutated from the pipe's readability
 /// handler and read from the termination handler — two GCD threads, hence
@@ -142,3 +143,4 @@ public actor EngineSupervisor {
         return delay
     }
 }
+#endif

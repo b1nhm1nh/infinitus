@@ -1,5 +1,6 @@
 import Foundation
 
+#if !os(iOS)
 /// Typing into the terminal that hosts a stopped session — the channel
 /// that works when the peer socket does not (older Claude Code builds, a
 /// session that never bound one) and that can clear the limit menu the
@@ -168,3 +169,4 @@ public enum PtyNudge {
         return result
     }
 }
+#endif
