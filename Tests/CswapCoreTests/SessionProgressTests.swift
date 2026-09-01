@@ -165,17 +165,22 @@ final class SessionProgressTests: XCTestCase {
         let sid = "abc"
         let tdir = dir.appendingPathComponent("projects/-tmp-proj")
         try FileManager.default.createDirectory(at: tdir, withIntermediateDirectories: true)
+        let userEntry = """
+        {"type":"user","timestamp":"2026-09-01T09:59:00.000Z",\
+        "message":{"content":"Fix the flaky test"}}
+        """
         let entry = """
         {"type":"assistant","timestamp":"2026-09-01T10:00:00.000Z",\
         "message":{"content":[{"type":"tool_use","name":"Read","input":{"file_path":"/a/Foo.swift"}}],\
         "usage":{"output_tokens":3}}}
         """
-        try (entry + "\n").write(to: tdir.appendingPathComponent("\(sid).jsonl"),
+        try (userEntry + "\n" + entry + "\n").write(to: tdir.appendingPathComponent("\(sid).jsonl"),
                                  atomically: true, encoding: .utf8)
         let progress = SessionProgress.read(sessionId: sid, cwd: cwd, claudeDir: dir)
         XCTAssertEqual(progress.nowDoing, "Reading Foo.swift")
         XCTAssertEqual(progress.outputTokens, 3)
         XCTAssertEqual(progress.lastActivityAt, UsageHistory.parseISO("2026-09-01T10:00:00.000Z"))
+        XCTAssertEqual(progress.goal, "Fix the flaky test")
     }
 
     func testMatchPairsSessionsToRecordsByPid() {
@@ -196,6 +201,59 @@ final class SessionProgressTests: XCTestCase {
         let pairs = SessionProgress.match(sessions: sessions, records: records)
         XCTAssertEqual(pairs.count, 1)
         XCTAssertEqual(pairs.first?.session.pid, 1)
+    }
+
+    func testGoalFromPlainStringUserMessage() {
+        let lines = [
+            """
+            {"type":"user","timestamp":"2026-09-01T10:00:00.000Z",\
+            "message":{"content":"Fix the flaky test\\nsecond line"}}
+            """
+        ]
+        XCTAssertEqual(SessionProgress.goal(lines: lines), "Fix the flaky test")
+    }
+
+    func testGoalSkipsToolResultAndSystemInjectedThenPicksNextRealEntry() {
+        let lines = [
+            """
+            {"type":"user","timestamp":"2026-09-01T10:00:00.000Z",\
+            "message":{"content":[{"type":"tool_result","content":"ok"}]}}
+            """,
+            """
+            {"type":"user","timestamp":"2026-09-01T10:00:01.000Z",\
+            "message":{"content":[{"type":"text","text":"<command-name>foo</command-name>"}]}}
+            """,
+            """
+            {"type":"user","timestamp":"2026-09-01T10:00:02.000Z",\
+            "message":{"content":[{"type":"text","text":"  Refactor the parser"}]}}
+            """
+        ]
+        XCTAssertEqual(SessionProgress.goal(lines: lines), "Refactor the parser")
+    }
+
+    func testGoalNilWhenNoQualifyingEntry() {
+        let lines = [
+            """
+            {"type":"assistant","timestamp":"2026-09-01T10:00:00.000Z",\
+            "message":{"content":[{"type":"text","text":"working"}]}}
+            """,
+            """
+            {"type":"user","timestamp":"2026-09-01T10:00:01.000Z",\
+            "message":{"content":[{"type":"tool_result","content":"ok"}]}}
+            """
+        ]
+        XCTAssertNil(SessionProgress.goal(lines: lines))
+    }
+
+    func testGoalTruncatedTo100Chars() {
+        let long = String(repeating: "x", count: 150)
+        let lines = [
+            """
+            {"type":"user","timestamp":"2026-09-01T10:00:00.000Z",\
+            "message":{"content":"\(long)"}}
+            """
+        ]
+        XCTAssertEqual(SessionProgress.goal(lines: lines), String(long.prefix(100)))
     }
 
     func testSessionPanelRowMapsRepoAndProgressFields() {

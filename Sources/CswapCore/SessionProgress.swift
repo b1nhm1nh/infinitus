@@ -26,6 +26,11 @@ public struct SessionProgress: Sendable, Equatable, Codable {
     public let todos: Todos?
     /// Latest `type:"summary"` entry's `summary` field.
     public let title: String?
+    /// What the session was asked to do — the first real user prompt at the
+    /// transcript HEAD, not the tail. Nil when the head has no qualifying
+    /// entry (or wasn't read). New optional field; absent in old cached
+    /// JSON, which still decodes fine.
+    public let goal: String?
     /// Sum of `message.usage.output_tokens` across the tail.
     public let outputTokens: Int
     /// True when the last entry that decides whether work has stopped
@@ -33,11 +38,12 @@ public struct SessionProgress: Sendable, Equatable, Codable {
     public let retrying: Bool
 
     public init(lastActivityAt: Date? = nil, nowDoing: String? = nil, todos: Todos? = nil,
-                title: String? = nil, outputTokens: Int = 0, retrying: Bool = false) {
+                title: String? = nil, goal: String? = nil, outputTokens: Int = 0, retrying: Bool = false) {
         self.lastActivityAt = lastActivityAt
         self.nowDoing = nowDoing
         self.todos = todos
         self.title = title
+        self.goal = goal
         self.outputTokens = outputTokens
         self.retrying = retrying
     }
@@ -119,7 +125,41 @@ public struct SessionProgress: Sendable, Equatable, Codable {
             && (lastDecisive?["isApiErrorMessage"] as? Bool) == true
 
         return SessionProgress(lastActivityAt: lastActivityAt, nowDoing: nowDoing, todos: todos,
-                                title: title, outputTokens: outputTokens, retrying: retrying)
+                                title: title, goal: goal(lines: lines), outputTokens: outputTokens,
+                                retrying: retrying)
+    }
+
+    /// The first real user prompt at the HEAD of the transcript (oldest→
+    /// newest), skipping tool_result entries and system-injected payloads
+    /// (`<command-name>`, `<system-reminder>`, etc. — anything starting
+    /// with `<`). First line only, leading whitespace stripped, truncated
+    /// to 100 chars.
+    public static func goal(lines: [String]) -> String? {
+        let entries: [[String: Any]] = lines.compactMap { line in
+            guard line.first == "{",
+                  let data = line.data(using: .utf8),
+                  let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+            else { return nil }
+            return obj
+        }
+
+        for entry in entries where (entry["type"] as? String) == "user" {
+            guard let message = entry["message"] as? [String: Any] else { continue }
+            let text: String?
+            if let plain = message["content"] as? String {
+                text = plain
+            } else if let content = message["content"] as? [[String: Any]], let first = content.first {
+                text = (first["type"] as? String) == "tool_result" ? nil : first["text"] as? String
+            } else {
+                text = nil
+            }
+            guard let text, let rawFirstLine = text.split(separator: "\n", maxSplits: 1).first else { continue }
+            var firstLine = Substring(rawFirstLine)
+            while let head = firstLine.first, head.isWhitespace { firstLine.removeFirst() }
+            guard !firstLine.isEmpty, firstLine.first != "<" else { continue }
+            return String(firstLine.prefix(100))
+        }
+        return nil
     }
 
     /// Reads the tail of `<claudeDir>/projects/<slug>/<sessionId>.jsonl`
@@ -128,15 +168,35 @@ public struct SessionProgress: Sendable, Equatable, Codable {
     public static func read(sessionId: String, cwd: String, claudeDir: URL,
                              maxBytes: Int = 512 * 1024) -> SessionProgress {
         let url = Transcript.path(cwd: cwd, sessionId: sessionId, claudeDir: claudeDir)
-        guard let handle = try? FileHandle(forReadingFrom: url) else { return parse(lines: []) }
+        let headGoal = readGoal(sessionId: sessionId, cwd: cwd, claudeDir: claudeDir)
+        func withGoal(_ progress: SessionProgress) -> SessionProgress {
+            SessionProgress(lastActivityAt: progress.lastActivityAt, nowDoing: progress.nowDoing,
+                             todos: progress.todos, title: progress.title,
+                             goal: headGoal ?? progress.goal, outputTokens: progress.outputTokens,
+                             retrying: progress.retrying)
+        }
+        guard let handle = try? FileHandle(forReadingFrom: url) else { return withGoal(parse(lines: [])) }
         defer { try? handle.close() }
-        guard let size = try? handle.seekToEnd() else { return parse(lines: []) }
+        guard let size = try? handle.seekToEnd() else { return withGoal(parse(lines: [])) }
         let start = size > UInt64(maxBytes) ? size - UInt64(maxBytes) : 0
         guard (try? handle.seek(toOffset: start)) != nil,
-              let blob = try? handle.readToEnd() else { return parse(lines: []) }
+              let blob = try? handle.readToEnd() else { return withGoal(parse(lines: [])) }
         let lines = blob.split(separator: UInt8(ascii: "\n"))
             .map { String(decoding: $0, as: UTF8.self) }
-        return parse(lines: lines)
+        return withGoal(parse(lines: lines))
+    }
+
+    /// Reads only the FIRST `maxBytes` of the transcript — the goal lives at
+    /// the HEAD, the opposite end from everything else `read` extracts.
+    public static func readGoal(sessionId: String, cwd: String, claudeDir: URL,
+                                 maxBytes: Int = 64 * 1024) -> String? {
+        let url = Transcript.path(cwd: cwd, sessionId: sessionId, claudeDir: claudeDir)
+        guard let handle = try? FileHandle(forReadingFrom: url) else { return nil }
+        defer { try? handle.close() }
+        guard let blob = try? handle.read(upToCount: maxBytes) else { return nil }
+        let lines = blob.split(separator: UInt8(ascii: "\n"))
+            .map { String(decoding: $0, as: UTF8.self) }
+        return goal(lines: lines)
     }
 
     /// Pairs each engine-reported session with its Claude Code session
@@ -187,10 +247,11 @@ public struct SessionPanelRow: Sendable, Equatable, Codable {
     public let activeForm: String?
     public let retrying: Bool
     public let quietMinutes: Int?
+    public let goal: String?
 
     public init(repo: String, status: String, nowDoing: String? = nil, todosDone: Int? = nil,
                 todosTotal: Int? = nil, activeForm: String? = nil, retrying: Bool = false,
-                quietMinutes: Int? = nil) {
+                quietMinutes: Int? = nil, goal: String? = nil) {
         self.repo = repo
         self.status = status
         self.nowDoing = nowDoing
@@ -199,6 +260,7 @@ public struct SessionPanelRow: Sendable, Equatable, Codable {
         self.activeForm = activeForm
         self.retrying = retrying
         self.quietMinutes = quietMinutes
+        self.goal = goal
     }
 
     /// `repo` is the last path component of the record's cwd. `quietMinutes`
@@ -218,6 +280,7 @@ public struct SessionPanelRow: Sendable, Equatable, Codable {
             todosTotal: progress.todos?.total,
             activeForm: progress.todos?.activeForm,
             retrying: progress.retrying,
-            quietMinutes: quietMinutes)
+            quietMinutes: quietMinutes,
+            goal: progress.goal)
     }
 }

@@ -258,8 +258,8 @@ struct WallLayout: View {
                     .font(.system(size: 14))
                     .foregroundStyle(.secondary)
             }
-            if let title = progress?.title {
-                Text(title)
+            if let subtitle = progress?.title ?? progress?.goal {
+                Text(subtitle)
                     .font(.system(size: 18))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
