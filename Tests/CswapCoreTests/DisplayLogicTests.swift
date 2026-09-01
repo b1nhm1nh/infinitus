@@ -238,13 +238,15 @@ final class ResetLabelCompactTests: XCTestCase {
 final class RecoveryCountdownTests: XCTestCase {
     func testHoursMinutesSeconds() {
         let now = Date(timeIntervalSince1970: 0)
-        let until = now.addingTimeInterval(2 * 3600 + 3 * 60 + 4)
+        let secs: Double = 7384   // 2h 3m 4s
+        let until = now.addingTimeInterval(secs)
         XCTAssertEqual(RecoveryCountdown.label(until: until, now: now), "02:03:04")
     }
 
     func testDaysPrefix() {
         let now = Date(timeIntervalSince1970: 0)
-        let until = now.addingTimeInterval(86400 + 2 * 3600 + 33 * 60 + 12)
+        let secs: Double = 95592   // 1d 2h 33m 12s
+        let until = now.addingTimeInterval(secs)
         XCTAssertEqual(RecoveryCountdown.label(until: until, now: now), "1d 02:33:12")
     }
 
