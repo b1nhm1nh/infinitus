@@ -431,11 +431,16 @@ struct IntroSlideIn: ViewModifier {
             .offset(x: on ? 0 : (fromLeft ? -70 : 70))
             // Hold hidden only while data is COMING. With no engine
             // installed nothing ever arrives — the onboarding card must
-            // show, not an empty sliver (found live 2026-08-30).
+            // show, not an empty sliver (found live 2026-08-30). Same
+            // for an engine with an EMPTY fleet: once the first snapshot
+            // decoded, what's there (FirstAccountCard) is the content
+            // (found live 2026-09-01 — blank panel).
             .onAppear {
                 model.accounts.isEmpty && !model.engineMissing
+                    && !model.snapshotLoaded
                     ? (on = false) : play()
             }
+            .onChange(of: model.snapshotLoaded) { _, _ in if !on { play() } }
             .onChange(of: model.introTick) { _, _ in play() }
     }
 
@@ -467,11 +472,16 @@ struct IntroContentReveal: ViewModifier {
             .offset(y: delegated || on ? 0 : dy)
             // Hold hidden only while data is COMING. With no engine
             // installed nothing ever arrives — the onboarding card must
-            // show, not an empty sliver (found live 2026-08-30).
+            // show, not an empty sliver (found live 2026-08-30). Same
+            // for an engine with an EMPTY fleet: once the first snapshot
+            // decoded, what's there (FirstAccountCard) is the content
+            // (found live 2026-09-01 — blank panel).
             .onAppear {
                 model.accounts.isEmpty && !model.engineMissing
+                    && !model.snapshotLoaded
                     ? (on = false) : play()
             }
+            .onChange(of: model.snapshotLoaded) { _, _ in if !on { play() } }
             .onChange(of: model.introTick) { _, _ in play() }
             .onChange(of: model.introStyle) { _, _ in play() }
     }
@@ -538,11 +548,16 @@ struct IntroTitleFlourish: ViewModifier {
             .brightness(glow)
             // Hold hidden only while data is COMING. With no engine
             // installed nothing ever arrives — the onboarding card must
-            // show, not an empty sliver (found live 2026-08-30).
+            // show, not an empty sliver (found live 2026-08-30). Same
+            // for an engine with an EMPTY fleet: once the first snapshot
+            // decoded, what's there (FirstAccountCard) is the content
+            // (found live 2026-09-01 — blank panel).
             .onAppear {
                 model.accounts.isEmpty && !model.engineMissing
+                    && !model.snapshotLoaded
                     ? (on = false) : play()
             }
+            .onChange(of: model.snapshotLoaded) { _, _ in if !on { play() } }
             .onChange(of: model.introTick) { _, _ in play() }
             .onChange(of: model.introTitle) { _, _ in play() }
     }

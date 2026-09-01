@@ -148,10 +148,19 @@ struct InfinitusTray {
             // Engine installed, fleet empty: a bare glyph with no
             // tooltip reads as broken — onboard instead.
             guard !list.accounts.isEmpty else {
+                // Onboarding parity with the macOS FirstAccountCard
+                // (todo 2026-09-01): name the login `cswap add` adopts.
+                var tip = "the engine has no accounts yet — "
+                let claude = ClaudeCLIDetect.info()
+                if let email = claude.email {
+                    tip += "Claude Code is signed in as \(email); "
+                        + "adopt it with:\ncswap add"
+                } else {
+                    tip += "sign in with Claude Code, then:\ncswap add"
+                }
                 emit(WaybarPayload(
                     text: "\(TitleFormatter.icon) no accounts",
-                    tooltip: "the engine has no accounts yet — sign in "
-                        + "with Claude Code, then:\ncswap add",
+                    tooltip: tip,
                     class: "warning", percentage: nil))
                 return
             }

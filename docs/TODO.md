@@ -104,6 +104,21 @@
       should be measured against the moment the limit hit: a session
       active right up to its stop was never idle, however long the
       restore took.
+- [ ] Window-start scheduling — "the big Infinitus" (user 2026-09-01,
+      think-aloud; PLAN ONLY AFTER other open work is done): the 5h
+      window's clock starts at the FIRST request, so an idle account
+      carries no ticking reset — sometimes 4h of dead calendar for 1h
+      of actual multi-session work. A smart engine could deliberately
+      start windows early (a tiny primer request "lights" the window so
+      its reset lands sooner), timed from intelligently gathered usage
+      of current work — enabling back-to-back 5h sessions on the SAME
+      account, and raising fleet uptime with the accounts already in
+      the pool. User invites any mechanism, including Claude itself
+      inside the engine strategizing the nudges/"reset battle plan",
+      and capacity advice ("you need another account" suggestions).
+      Feeds on the utilization history shipped today. Note: primer
+      requests spend real quota and touch ToS-adjacent territory —
+      design pass must weigh that.
 - [ ] Usage utilization history (user 2026-09-01): track every
       account's 5h/7d/per-model (Fable) utilization over time; a
       dashboard charting all + each account with waste estimates

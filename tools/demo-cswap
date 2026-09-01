@@ -147,6 +147,12 @@ if cmd == "--version":
     print("cswap 0.26.0")
 elif cmd == "list":
     st = state()
+    # Onboarding simulation: an engine that manages nothing yet.
+    if os.environ.get("DEMO_EMPTY"):
+        print(json.dumps({"schemaVersion": 1, "activeAccountNumber": None,
+                          "nextCandidate": None, "liveSessions": None,
+                          "accounts": []}))
+        sys.exit(0)
     accounts = ordered(fleet(st["active"]), st)
     # Dynamic rotation holds (disable/enable verbs); hotel stays the
     # static example unless explicitly enabled.
