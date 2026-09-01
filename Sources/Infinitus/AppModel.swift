@@ -167,6 +167,12 @@ final class AppModel: ObservableObject {
     /// Hold a power assertion while any session is mid-turn (KeepAwake).
     /// Keep the fleet sorted (most headroom first) through `cswap reorder`
     /// after every snapshot — see CswapCore.AutoOrder for the policy.
+    /// Display-only: rows sorted most-headroom-first with the active
+    /// account and the next candidate pinned on top (todo 2026-09-01).
+    /// Engine slots never move — unlike autoOrder, nothing is written.
+    @Published var sortByHeadroom: Bool {
+        didSet { defaults.set(sortByHeadroom, forKey: "sort_headroom") }
+    }
     @Published var autoOrder: Bool {
         didSet {
             defaults.set(autoOrder, forKey: "auto_order")
@@ -278,6 +284,7 @@ final class AppModel: ObservableObject {
         mockMode = mock
         keepAwake = defaults.object(forKey: "keep_awake") as? Bool ?? false
         autoOrder = defaults.object(forKey: "auto_order") as? Bool ?? false
+        sortByHeadroom = defaults.object(forKey: "sort_headroom") as? Bool ?? true
         // Push triggers default ON — they exist because they were asked for.
         pushSessionsDone = defaults.object(forKey: "push_sessions_done") as? Bool ?? true
         pushAllDead = defaults.object(forKey: "push_all_dead") as? Bool ?? true
@@ -357,6 +364,7 @@ final class AppModel: ObservableObject {
         glassFocused = defaults.object(forKey: "glass_focused") as? Double ?? 0.7
         keepAwake = defaults.object(forKey: "keep_awake") as? Bool ?? false
         autoOrder = defaults.object(forKey: "auto_order") as? Bool ?? false
+        sortByHeadroom = defaults.object(forKey: "sort_headroom") as? Bool ?? true
         pushSessionsDone = defaults.object(forKey: "push_sessions_done") as? Bool ?? true
         pushAllDead = defaults.object(forKey: "push_all_dead") as? Bool ?? true
         pushLastAlive = defaults.object(forKey: "push_last_alive") as? Bool ?? true
@@ -808,6 +816,27 @@ final class AppModel: ObservableObject {
         guard desired != accounts.map(\.number) else { return }
         autoOrderInFlight = true
         reorder(desired) { [weak self] in self?.autoOrderInFlight = false }
+    }
+
+    /// What the popup rows iterate: raw engine order, or the headroom
+    /// sort with active + next pinned.
+    var displayAccounts: [Account] {
+        sortByHeadroom
+            ? DisplayOrder.sort(accounts, active: activeNumber, next: nextCandidate)
+            : accounts
+    }
+
+    /// Hold an account out of rotation / return it (engine-side flag;
+    /// the row renders as "disabled" either way).
+    func setRotation(_ number: Int, enabled: Bool) {
+        guard let cli else { return }
+        Task {
+            do {
+                _ = try await cli.setRotation(number, enabled: enabled)
+                lastError = nil
+            } catch { lastError = "\(error)" }
+            await refreshSnapshot()
+        }
     }
 
     func reorder(_ order: [Int], done: (() -> Void)? = nil) {

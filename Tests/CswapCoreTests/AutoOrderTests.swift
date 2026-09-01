@@ -68,3 +68,30 @@ final class AutoOrderTests: XCTestCase {
         XCTAssertEqual(AutoOrder.order(list.accounts), [1, 2, 3])
     }
 }
+
+final class DisplayOrderTests: XCTestCase {
+    private func acct(_ n: Int, five: Double? = nil, disabled: Bool? = nil) -> Account {
+        let json = """
+        {"number": \(n), "email": "a\(n)@x.com", "active": false,
+         "organizationName": "o", "organizationUuid": "u",
+         "isOrganization": false,
+         "usageStatus": "ok"\(disabled == true ? ", \"disabled\": true" : "")
+         \(five != nil ? ", \"usage\": {\"fiveHour\": {\"pct\": \(five!)}}" : "")}
+        """
+        return try! JSONDecoder().decode(Account.self, from: Data(json.utf8))
+    }
+
+    func testActiveAndNextPinThenHeadroom() {
+        let accounts = [acct(1, five: 80), acct(2, five: 10),
+                        acct(3, five: 40), acct(4, five: 90),
+                        acct(5, disabled: true)]
+        let sorted = DisplayOrder.sort(accounts, active: 4, next: 3)
+        XCTAssertEqual(sorted.map(\.number), [4, 3, 2, 1, 5])
+    }
+
+    func testNoPinsFallsBackToHeadroom() {
+        let accounts = [acct(1, five: 80), acct(2, five: 10)]
+        XCTAssertEqual(DisplayOrder.sort(accounts, active: nil, next: nil)
+                        .map(\.number), [2, 1])
+    }
+}

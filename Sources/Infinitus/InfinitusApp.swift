@@ -1636,7 +1636,7 @@ struct AccountGrid: View {
 
     var body: some View {
         Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 8) {
-            ForEach(Array(model.accounts.enumerated()),
+            ForEach(Array(model.displayAccounts.enumerated()),
                     id: \.element.number) { rowIndex, account in
                 let cells = AccountCells(model: model, usage: usage, account: account)
                 GridRow {
@@ -1839,7 +1839,7 @@ struct AccountStack: View {
             // cards, no per-window lines, just the BINDING window's pct
             // (full mode and compact "looked the same", user 2026-08-30).
             VStack(alignment: .leading, spacing: 5) {
-                ForEach(Array(model.accounts.enumerated()),
+                ForEach(Array(model.displayAccounts.enumerated()),
                         id: \.element.number) { i, account in
                     compactLine(account)
                         .introRow(model, index: i)
@@ -1928,7 +1928,7 @@ struct AccountStack: View {
     }
 
     private var cardList: some View {
-            ForEach(Array(model.accounts.enumerated()),
+            ForEach(Array(model.displayAccounts.enumerated()),
                     id: \.element.number) { rowIndex, account in
                 let cells = AccountCells(model: model, usage: usage, account: account, banded: false)
                 VStack(alignment: .leading, spacing: 4) {

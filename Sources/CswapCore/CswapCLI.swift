@@ -112,6 +112,14 @@ public struct CswapCLI: Sendable {
         try await run(["reorder"] + numbers.map(String.init) + ["--json"])
     }
 
+    /// Hold an account out of auto-rotation / return it (todo
+    /// 2026-09-01: "option to disable (skip) accounts from rotation").
+    @discardableResult
+    public func setRotation(_ number: Int, enabled: Bool) async throws -> Data {
+        // No --json: the engine scopes that flag to list/status/switch.
+        try await run([enabled ? "enable" : "disable", String(number)])
+    }
+
     /// Capture the CURRENTLY logged-in Claude Code account into the
     /// engine — the second half of the blessed relogin flow ("log in
     /// with Claude Code, then run: cswap add").

@@ -93,3 +93,35 @@ public enum AutoOrder {
         order(accounts.map(row))
     }
 }
+
+/// Display-only ordering (todo 2026-09-01: "sorted by headroom but put
+/// active and first candidate on top"): the active account leads, the
+/// next candidate follows, then AutoOrder's ranking — most headroom
+/// first, unknown, dead by soonest recovery, disabled last. No margin:
+/// a display sort writes nothing, so flip-flop costs nothing. Engine
+/// slot numbers never move.
+public enum DisplayOrder {
+    public static func sort(_ accounts: [Account],
+                            active: Int?, next: Int?) -> [Account] {
+        func pin(_ a: Account) -> Int {
+            if a.number == active { return 0 }
+            if a.number == next { return 1 }
+            return 2
+        }
+        return accounts.sorted { l, r in
+            let pl = pin(l), pr = pin(r)
+            if pl != pr { return pl < pr }
+            let rl = AutoOrder.row(l), rr = AutoOrder.row(r)
+            if rl.rank != rr.rank { return rl.rank < rr.rank }
+            switch rl.rank {
+            case .alive where rl.bindingPct != rr.bindingPct:
+                return rl.bindingPct < rr.bindingPct
+            case .dead where rl.recovery != rr.recovery:
+                return (rl.recovery ?? .distantFuture)
+                     < (rr.recovery ?? .distantFuture)
+            default:
+                return l.number < r.number
+            }
+        }
+    }
+}

@@ -73,6 +73,7 @@ struct InfinitusTray {
         let command = args.isEmpty ? "status" : args.removeFirst()
         var themeID = "off"
         var remaining = false
+        var engineOrder = false
         var positional: [String] = []
         var i = 0
         while i < args.count {
@@ -82,6 +83,8 @@ struct InfinitusTray {
                 i += 1
             case "--remaining":
                 remaining = true
+            case "--engine-order":
+                engineOrder = true
             case let a where !a.hasPrefix("-"):
                 positional.append(a)
             default:
@@ -93,11 +96,13 @@ struct InfinitusTray {
         case "status":
             await status(themeID: themeID, remaining: remaining)
         case "panel":
-            await panel(themeID: themeID)
+            await panel(themeID: themeID, engineOrder: engineOrder)
         case "rotate":
             await rotate()
         case "switch":
             await switchTo(positional.first)
+        case "disable", "enable":
+            await setRotation(positional.first, enabled: command == "enable")
         case "themes":
             for theme in RowTheme.builtins {
                 print("\(theme.id)\t\(theme.name)")
@@ -113,9 +118,10 @@ struct InfinitusTray {
     infinitus-tray — Waybar module for the claude-swap fleet (Omarchy/Linux)
 
       status [--theme ID] [--remaining]   Waybar JSON: active account + fleet tooltip
-      panel [--theme ID]                  structured fleet JSON for the Quickshell panel
+      panel [--theme ID] [--engine-order] structured fleet JSON for the Quickshell panel
       rotate                              switch to the next account
       switch <n>                          switch to account n
+      disable <n> / enable <n>            hold an account out of rotation / return it
       themes                              list built-in theme ids
 
     Wire-up (packaging/omarchy/waybar-infinitus.jsonc):
@@ -216,7 +222,7 @@ struct InfinitusTray {
     // MARK: panel
 
     /// Structured fleet JSON for the Quickshell popup panel.
-    static func panel(themeID: String) async {
+    static func panel(themeID: String, engineOrder: Bool = false) async {
         let theme = RowTheme.builtins.first { $0.id == themeID } ?? .off
         let themes = RowTheme.builtins.map { PanelTheme(id: $0.id, name: $0.name) }
         func emitError(_ message: String) {
@@ -236,7 +242,14 @@ struct InfinitusTray {
             let active = list.accounts.first { $0.active }
             let prefs = TitlePrefs(showAccountName: true, titlePct: "both",
                                    titleScoped: false, titleRemaining: false)
-            let accounts = list.accounts.map { a -> PanelAccount in
+            // Display order (todo 2026-09-01, matches the macOS popup):
+            // active, next candidate, then most headroom first —
+            // display-only, engine slots untouched. --engine-order opts out.
+            let ordered = engineOrder ? list.accounts
+                : DisplayOrder.sort(list.accounts,
+                                    active: active?.number,
+                                    next: list.nextCandidate)
+            let accounts = ordered.map { a -> PanelAccount in
                 let name = a.alias ?? String(a.email.prefix(while: { $0 != "@" }))
                 let marker: String
                 if a.active { marker = theme.activeIcon.isEmpty ? "●" : theme.activeIcon }
@@ -332,6 +345,18 @@ struct InfinitusTray {
             print("switched to \(n)")
         } catch {
             fail("switch failed: \(error)")
+        }
+    }
+
+    static func setRotation(_ arg: String?, enabled: Bool) async {
+        let verb = enabled ? "enable" : "disable"
+        guard let arg, let n = Int(arg) else { fail("usage: infinitus-tray \(verb) <n>") }
+        guard let bin = CswapLocator.locate() else { fail("cswap not found") }
+        do {
+            _ = try await CswapCLI(binaryPath: bin).setRotation(n, enabled: enabled)
+            print("\(verb)d \(n)")
+        } catch {
+            fail("\(verb) failed: \(error)")
         }
     }
 

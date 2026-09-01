@@ -32,6 +32,7 @@ final class SettingsSyncModel: ObservableObject {
         "show_account_name", "title_scoped", "title_remaining", "title_icon_only",
         "compact_rows", "footer_actions_hidden",
         "update_auto_check", "update_auto_install", "keep_awake", "auto_order",
+        "sort_headroom",
         "push_sessions_done", "push_all_dead", "push_last_alive",
     ]
     static let intKeys: Set<String> = ["refresh_interval"]

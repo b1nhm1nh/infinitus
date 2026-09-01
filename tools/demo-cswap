@@ -148,6 +148,14 @@ if cmd == "--version":
 elif cmd == "list":
     st = state()
     accounts = ordered(fleet(st["active"]), st)
+    # Dynamic rotation holds (disable/enable verbs); hotel stays the
+    # static example unless explicitly enabled.
+    for a in accounts:
+        n = a["number"]
+        if n in st.get("disabled", []):
+            a["disabled"] = True
+        elif n in st.get("enabled", []):
+            a.pop("disabled", None)
     payload = {"schemaVersion": 1, "activeAccountNumber": st["active"],
                "nextCandidate": 4 if st["active"] != 4 else 1,
                "liveSessions": sessions(), "accounts": accounts}
@@ -161,6 +169,16 @@ elif cmd == "list":
         payload["nextCandidate"] = None
         payload["nextRecovery"] = {"number": 5, "at": iso(0.9)}
     print(json.dumps(payload))
+elif cmd in ("disable", "enable"):
+    st = state()
+    nums = [int(a) for a in args[1:] if a.isdigit()]
+    dis = set(st.get("disabled", [])); en = set(st.get("enabled", []))
+    for n in nums:
+        if cmd == "disable": dis.add(n); en.discard(n)
+        else: en.add(n); dis.discard(n)
+    st["disabled"] = sorted(dis); st["enabled"] = sorted(en)
+    save(st)
+    print(f"{cmd}d: {nums}")
 elif cmd == "reorder":
     st = state()
     st["order"] = [int(a) for a in args[1:] if a.isdigit()]

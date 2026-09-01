@@ -169,9 +169,13 @@ Panel {
 
   onThemeIdChanged: if (opened) refresh()
 
+  readonly property bool sortByHeadroom: setting("sortByHeadroom", true) === true
+
   Process {
     id: panelProc
-    command: [root.trayBin, "panel", "--theme", root.themeId]
+    command: root.sortByHeadroom
+      ? [root.trayBin, "panel", "--theme", root.themeId]
+      : [root.trayBin, "panel", "--theme", root.themeId, "--engine-order"]
     stdout: StdioCollector {
       waitForEnd: true
       onStreamFinished: {
@@ -187,6 +191,24 @@ Panel {
     id: rotateProc
     command: [root.trayBin, "rotate"]
     onExited: root.refreshAll()
+  }
+
+  // Right-click a row: hold it out of rotation / return it (todo
+  // 2026-09-01) — engine disable/enable via the tray.
+  Process {
+    id: rotationProc
+    property int accountNumber: 0
+    property bool enable: false
+    command: [root.trayBin, rotationProc.enable ? "enable" : "disable",
+              String(rotationProc.accountNumber)]
+    onExited: root.refreshAll()
+  }
+
+  function toggleRotation(number, disabled) {
+    if (rotationProc.running) return
+    rotationProc.accountNumber = number
+    rotationProc.enable = disabled
+    rotationProc.running = true
   }
 
   Process {
@@ -349,13 +371,23 @@ Panel {
                 id: rowMouse
                 anchors.fill: parent
                 hoverEnabled: true
-                enabled: row.clickable
+                acceptedButtons: Qt.LeftButton | Qt.RightButton
                 cursorShape: row.clickable ? Qt.PointingHandCursor : Qt.ArrowCursor
-                onClicked: root.switchTo(row.modelData.number)
+                onClicked: function(mouse) {
+                  // Right button holds the account out of rotation /
+                  // returns it — works on any row, disabled included.
+                  if (mouse.button === Qt.RightButton)
+                    root.toggleRotation(row.modelData.number, row.modelData.disabled)
+                  else if (row.clickable)
+                    root.switchTo(row.modelData.number)
+                }
 
                 PanelToolTip {
-                  visible: rowMouse.containsMouse && row.clickable
-                  text: "Switch to " + row.modelData.name
+                  visible: rowMouse.containsMouse
+                  text: (row.clickable ? "Switch to " + row.modelData.name + " · " : "")
+                    + (row.modelData.disabled
+                       ? "right-click returns it to rotation"
+                       : "right-click holds it out of rotation")
                   fontFamily: root.contentFontFamily
                 }
               }

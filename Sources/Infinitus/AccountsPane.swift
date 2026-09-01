@@ -493,6 +493,15 @@ struct AccountsPane: View {
                 Toggle("Keep accounts sorted by headroom",
                        isOn: $model.autoOrder)
                     .help(Self.autoOrderHelp)
+                // Display-only cousin of autoOrder (todo 2026-09-01):
+                // the popup shows headroom order with active + next on
+                // top; engine slot numbers stay put.
+                Toggle("Popup sorts rows by headroom (active and next first)",
+                       isOn: $model.sortByHeadroom)
+                    .help("Display only — the popup lists the active "
+                          + "account, then the next candidate, then most "
+                          + "headroom first. Slot numbers don't move; "
+                          + "this list keeps the engine's order.")
                 Text(orderCaption)
                     .font(.caption).foregroundStyle(.secondary)
                 if model.accounts.isEmpty {
@@ -519,6 +528,22 @@ struct AccountsPane: View {
                             }
                             statusChip(a)
                             Spacer()
+                            // Rotation hold (todo 2026-09-01): engine
+                            // `disable`/`enable` — the row stays listed,
+                            // auto-rotation skips it.
+                            Button {
+                                model.setRotation(a.number,
+                                                  enabled: a.disabled ?? false)
+                            } label: {
+                                Image(systemName: (a.disabled ?? false)
+                                      ? "play.circle" : "pause.circle")
+                            }
+                            .buttonStyle(.borderless)
+                            .disabled(flow.running)
+                            .help((a.disabled ?? false)
+                                  ? "Return this account to rotation"
+                                  : "Hold this account out of rotation "
+                                    + "(it stays listed, rotate skips it)")
                             Button("Relogin") {
                                 flow.start(model: model, relogin: a)
                             }
