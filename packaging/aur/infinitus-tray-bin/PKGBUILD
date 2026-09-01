@@ -24,9 +24,11 @@ source_x86_64=("infinitus-tray-$pkgver-x86_64::$url/releases/download/v$pkgver/i
 source_aarch64=("infinitus-tray-$pkgver-aarch64::$url/releases/download/v$pkgver/infinitus-tray-linux-aarch64")
 # Refresh with `updpkgsums` at every release — CI rebuilds the
 # binaries, so sums from a local build will not match the assets.
-sha256sums=('SKIP' 'SKIP')
-sha256sums_x86_64=('SKIP')
-sha256sums_aarch64=('SKIP')
+# These are the v0.3.0 published-asset sums (updpkgsums, 2026-09-01).
+sha256sums=('204d39dee619e1ea04fcbabf794c7bbbd3680576795677c03496f09c3f8d8c82'
+            '271b92b111a4fb8314f3346791092806ae8777287fe2c6b4bd7b745756f58cbf')
+sha256sums_x86_64=('5c593a308e35569aa98f84cbb4502c563a10d7b266aa180587011010052db8d3')
+sha256sums_aarch64=('02de774f3f86516bb7ab58ed0185bf940dd566d9f5c6fdb93132c48d20b410a3')
 
 package() {
   install -Dm755 "infinitus-tray-$pkgver-$CARCH" "$pkgdir/usr/bin/infinitus-tray"

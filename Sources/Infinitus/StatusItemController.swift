@@ -402,7 +402,7 @@ final class StatusItemController {
             // "Infinitus" header is drawn by PinnedRoot instead (the
             // system title sits leading-aligned next to where the traffic
             // lights were; user wants it centered).
-            w.styleMask = [.titled, .closable, .resizable, .fullSizeContentView]
+            w.styleMask = [.titled, .closable, .fullSizeContentView]
             w.titleVisibility = .hidden
             w.titlebarAppearsTransparent = true
             // No traffic lights at all (user request): the pop-out button

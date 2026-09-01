@@ -1144,7 +1144,10 @@ struct AccountCells {
     }
 
     var displayName: String {
-        let name = [showAsDead ? theme.deadMarker : nil,
+        // The pause mark leads: a long alias truncates the tail, so a
+        // suffix-only tag vanished on real fleets (user 2026-09-01).
+        let name = [(account.disabled ?? false) ? "⏸" : nil,
+                    showAsDead ? theme.deadMarker : nil,
                     account.icon, account.alias ?? account.email]
             .compactMap { $0 }.joined(separator: " ")
         return (account.disabled ?? false) ? "\(name)  (disabled)" : name
