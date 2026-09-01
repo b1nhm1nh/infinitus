@@ -57,6 +57,20 @@
 
 ## Open
 
+- [ ] CLIProxyAPI as an alternate backend (user 2026-09-01):
+      router-for-me/CLIProxyAPI pools CLI OAuth credentials behind an
+      OpenAI-compatible proxy; CPAMC (Cli-Proxy-API-Management-Center)
+      is its bundled web UI over the proxy's Management API. Would be
+      a second engine behind the same isolation boundary (HTTP
+      Management API instead of `cswap … --json`; opposite layer to
+      cswap's credential swap — see "Router ecosystem" above; running
+      both fights). Data-point mapping vs our features:
+      docs/research/cliproxyapi-backend.md; upstream PR for the
+      missing points if the mapping finds gaps.
+- [ ] Mobile companion app (user 2026-09-01): phone-side fleet view +
+      push when the desk is away. Brainstorm written to
+      docs/research/mobile-companion.md — direction picks (platform,
+      read-only vs remote control, transport) are the user's.
 - [ ] Omarchy/Linux: `infinitus-tray` shipped (Waybar module,
       packaging/omarchy) + the Quickshell fleet panel (macOS popup
       parity, verified live in the UTM VM 2026-08-31/09-01). AUR

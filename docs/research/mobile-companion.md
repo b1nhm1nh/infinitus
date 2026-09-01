@@ -1,0 +1,103 @@
+# Mobile companion — brainstorm (2026-09-01)
+
+Asked for as "a mobile app companion of Infinitus". Nothing is decided;
+this maps the space and marks the decisions that are the user's.
+No code until a direction is picked.
+
+## What "companion" plausibly means
+
+The desk app already covers the desk. The phone's job is the away
+case, which today is only `cswap notify slack` (webhook push, one-way,
+no state). Candidate jobs, roughly in value order:
+
+1. **Fleet at a glance** — the popup's content: per-account 5h/7d/
+   per-model gauges, active + next candidate, recovery countdowns,
+   all-limited banner with sessions-waiting count.
+2. **Push that matters** — switch happened, all accounts exhausted,
+   first account recovered, session resumed. Today these die on the
+   Mac's Notification Center (and the Slack webhook).
+3. **Remote actions** — switch to N, disable/enable rotation, send the
+   resume nudge. This is what turns "glance" into "don't walk back to
+   the desk".
+4. **Live Activity / widgets** — recovery countdown in the Dynamic
+   Island; a lock-screen gauge widget. High polish-to-effort ratio on
+   iOS; nothing equivalent on the Mac side to build.
+
+## Hard constraints carried over
+
+- **Engine isolation**: the phone must never hold OAuth credentials or
+  read engine internals. Everything the phone sees is a snapshot the
+  Mac app already derived via `cswap … --json`. (A "standalone" app
+  that copies credentials onto the phone is rejected on this rule
+  alone.)
+- **Secrets over stdin, masked display** — same posture: whatever
+  transport is picked must not put tokens in URLs or argv.
+- **The Mac may be asleep.** A companion that only relays a live Mac is
+  honest about it: state goes stale, actions queue. Push must carry
+  enough payload to render without a fetch.
+
+## Architecture options
+
+### A. Read-only mirror (CloudKit)
+Mac app writes the fleet snapshot (the same `AccountList` we already
+decode) to the user's private CloudKit database on every refresh;
+phone subscribes (CKQuerySubscription → APNs push, silent + alert).
+- No server to run, no accounts beyond the user's iCloud, transport
+  encrypted and scoped to the Apple ID. The app already has an iCloud
+  sync pane (SettingsSyncModel) — same mental model.
+- CswapCore is pure Swift: Models/DisplayLogic/GaugeMath/AutoOrder/
+  RecoveryCountdown compile for iOS as-is. The phone app is mostly
+  SwiftUI over code we already ship. GaugeBar & friends are macOS-
+  flavored but small.
+- Cost: requires a paid Apple Developer membership for CloudKit +
+  push entitlements — the same membership that unlocks the
+  long-standing Developer ID / notarization todo. One purchase, two
+  todos.
+
+### B. Two-way remote (CloudKit command queue)
+A on top of a `commands` record type: phone writes
+`{switch|disable|enable|nudge, target}`, Mac app subscribes, validates,
+executes via the existing CLI verbs, writes the result back. No inbound
+port on the Mac, works from anywhere, offline-queues naturally.
+- The dangerous verbs stay on the Mac: the phone only ever asks.
+- Needs idempotency + a confirm step in the phone UI for switch (it
+  kills the desk session's account mid-turn otherwise).
+
+### C. Direct connection (Tailscale/WireGuard + local HTTP)
+Infinitus serves a small localhost API; the phone reaches it over the
+user's tailnet. Real-time, no Apple membership, Android-capable.
+- Cost: we now maintain an HTTP server + auth inside the menu bar app,
+  and it only works while the Mac is awake and on the tailnet. More
+  moving parts on the trusted side, which is the wrong side to grow.
+
+### D. Push-only, no app (ntfy.sh / Pushover)
+Extend `cswap notify` with a second channel. Cheapest possible away
+signal, no fleet view, no actions. Worth doing anyway as a stopgap;
+does not satisfy "companion app".
+
+## Recommendation
+
+**A first, B second, same transport.** CloudKit mirror ships a real
+read-only companion (fleet view + push + countdown Live Activity) with
+the least new trust surface, and B is an additive record type on the
+same rails when remote actions are wanted. C only wins if Android is a
+requirement — CloudKit is Apple-only.
+
+MVP cut for A:
+1. Mac: `CloudKitMirror` service — snapshot upsert on refresh + event
+   records on switch/all-exhausted/recovery (reuses the event feed).
+2. iOS app: single fleet screen (rows ≈ popup rows), pull-to-refresh
+   reads CloudKit, push renders from payload. CswapCore via SPM.
+3. Live Activity: recovery countdown when all accounts are limited.
+4. TestFlight distribution (personal use; no App Store review fight).
+
+## The user's decisions (blocking)
+
+1. **Platform**: iOS only, or Android too? (Android kills option A/B
+   as-is → C or a self-hosted relay.)
+2. **Read-only first, or is remote control the whole point?**
+3. **Apple Developer membership** ($99/yr): required for A/B push +
+   CloudKit — and it would also unlock Developer ID signing for the
+   Mac app (docs/RELEASING.md pipeline is already built for it).
+4. Where the phone UI should sit on the theme spectrum: plain gauges
+   or the full themed treatment (RPG/MGS/…)?
