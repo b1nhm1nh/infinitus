@@ -344,12 +344,15 @@ struct WallLayout: View {
     // MARK: bench
 
     private var bench: some View {
-        HStack(spacing: 18) {
-            ForEach(model.displayAccounts.filter { !$0.active },
-                    id: \.number) { a in
-                benchCard(a)
+        ScrollView(.horizontal) {
+            HStack(spacing: 18) {
+                ForEach(model.displayAccounts.filter { !$0.active },
+                        id: \.number) { a in
+                    benchCard(a)
+                }
             }
         }
+        .scrollIndicators(.hidden)
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
@@ -386,20 +389,14 @@ struct WallLayout: View {
                         }
                     }
                 } else {
-                    ZStack(alignment: .leading) {
-                        Capsule().fill(.white.opacity(0.08))
-                        Capsule()
-                            .fill(critical ? Color.red : Color.accentColor)
-                            .frame(width: max(6, 170 * (100 - worst) / 100))
-                    }
-                    .frame(width: 170, height: 10)
+                    benchGauge(worst: worst, critical: critical)
                     Text("\(Int(100 - worst))% left")
                         .font(.system(size: 16))
                         .foregroundStyle(.secondary)
                 }
             }
             .padding(16)
-            .frame(width: 226, alignment: .leading)
+            .frame(minWidth: 150, maxWidth: 240, alignment: .leading)
             .background(
                 RoundedRectangle(cornerRadius: 14)
                     .fill(.white.opacity(isNext ? 0.10 : 0.05)))
@@ -416,6 +413,19 @@ struct WallLayout: View {
             }
         }
         .buttonStyle(.plain)
+    }
+
+    private func benchGauge(worst: Double, critical: Bool) -> some View {
+        GeometryReader { geo in
+            ZStack(alignment: .leading) {
+                Capsule().fill(.white.opacity(0.08))
+                Capsule()
+                    .fill(critical ? Color.red : Color.accentColor)
+                    .frame(width: max(6, geo.size.width * (100 - worst) / 100))
+            }
+        }
+        .frame(idealWidth: 170, maxWidth: 170)
+        .frame(height: 10)
     }
 
     // MARK: sparkline data
