@@ -10,7 +10,8 @@
 <meta property="og:image" content="https://infinitus.run/img/wall.png">
 <meta property="og:url" content="https://infinitus.run">
 <meta name="twitter:card" content="summary_large_image">
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>♾️</text></svg>">
+<link rel="icon" type="image/png" href="/img/icon.png">
+<link rel="apple-touch-icon" href="/img/icon128.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:ital,wght@0,400;0,500;0,600;1,400&family=Instrument+Serif:ital@0;1&display=swap">
@@ -58,7 +59,9 @@
     height: 42px;
   }
   .menubar .item { color: var(--dim); }
-  .menubar .brand { color: var(--text); font-weight: 600; }
+  .menubar .brand { color: var(--text); font-weight: 600;
+    display: inline-flex; align-items: center; gap: 7px; }
+  .menubar .appicon { width: 18px; height: 18px; border-radius: 4px; }
   .menubar .tray {
     margin-left: auto; display: flex; align-items: center; gap: 16px;
     color: var(--dim);
@@ -200,7 +203,7 @@
 
 <div class="menubar">
   <div class="wrap">
-    <span class="item brand">♾ Infinitus</span>
+    <span class="item brand"><img class="appicon" src="/img/icon.png" alt="" width="18" height="18"> Infinitus</span>
     <nav aria-label="Sections">
       <a href="#how">How it works</a>
       <a href="#features">Features</a>
@@ -267,8 +270,9 @@
     <p class="sub">The whole fleet in one glance — RPG theme shown: MP is
       your 5-hour window, HP the weekly, Dragon the per-model quota.
       Skulls are limited accounts; the crown is who's carrying.</p>
-    <img class="screen" src="/img/popup.png" width="2060" height="600"
-         alt="Infinitus popup: eight accounts with HP/MP-style usage gauges, reset clocks, and per-account spend">
+    <video class="screen" src="/img/popup.mp4" width="1030" height="310"
+           autoplay loop muted playsinline
+           aria-label="Infinitus popup demo: intro animation, an account switch, a 5-hour window death, fleet-wide death and revival, and a theme change"></video>
   </div>
 </section>
 
