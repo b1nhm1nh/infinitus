@@ -19,6 +19,9 @@ struct WallLayout: View {
                            alignment: .topLeading)
                 rail.frame(width: 430, alignment: .topLeading)
             }
+            if (model.liveSessions?.busy ?? 0) > 0 {
+                sessionBoard
+            }
             bench
         }
         .padding(52)
@@ -204,6 +207,138 @@ struct WallLayout: View {
             }
             Spacer()
         }
+    }
+
+    // MARK: session board
+
+    /// Busy-first, capped at 6 + overflow — the fleet wall's payoff
+    /// surface (issue #13 step 3): one big card per working session.
+    private var boardSessions: [SessionDetail] {
+        (model.liveSessions?.sessions ?? [])
+            .filter { $0.status == "busy" || $0.status == "waiting" }
+            .sorted { a, _ in a.status == "busy" }
+    }
+
+    private var sessionBoard: some View {
+        let sessions = boardSessions
+        let shown = Array(sessions.prefix(6))
+        let overflow = sessions.count - shown.count
+        return ScrollView(.horizontal, showsIndicators: false) {
+            HStack(alignment: .top, spacing: 20) {
+                ForEach(shown, id: \.pid) { s in
+                    sessionCard(s)
+                }
+                if overflow > 0 {
+                    Text("+\(overflow) more")
+                        .font(.system(size: 22, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 120, alignment: .leading)
+                }
+            }
+        }
+        .task(id: shown.map(\.pid)) {
+            while !Task.isCancelled {
+                model.sessionProgress.refresh(sessions: shown)
+                try? await Task.sleep(nanoseconds: 10 * 1_000_000_000)
+            }
+        }
+    }
+
+    private func sessionCard(_ s: SessionDetail) -> some View {
+        let progress = model.sessionProgress.byPid[s.pid]
+        return VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
+                Text((s.cwd as NSString).lastPathComponent)
+                    .font(.system(size: 26, weight: .bold))
+                    .lineLimit(1)
+                Circle()
+                    .fill(s.status == "busy" ? Color.orange : Color.yellow)
+                    .frame(width: 10, height: 10)
+                Text(s.kind)
+                    .font(.system(size: 14))
+                    .foregroundStyle(.secondary)
+            }
+            if let title = progress?.title {
+                Text(title)
+                    .font(.system(size: 18))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+            boardNowDoing(progress)
+            if let todos = progress?.todos {
+                boardTodoRow(todos)
+            }
+            boardFooter(s, progress)
+        }
+        .padding(18)
+        .frame(width: 380, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 16)
+                .fill(.white.opacity(0.06)))
+    }
+
+    @ViewBuilder
+    private func boardNowDoing(_ progress: SessionProgress?) -> some View {
+        if let progress, progress.retrying {
+            Text("retrying")
+                .font(.system(size: 20, weight: .semibold))
+                .foregroundStyle(.orange)
+        } else if let nowDoing = progress?.nowDoing {
+            Text(nowDoing)
+                .font(.system(size: 20))
+                .lineLimit(1)
+                .truncationMode(.head)
+        }
+    }
+
+    private func boardTodoRow(_ todos: SessionProgress.Todos) -> some View {
+        let fraction = todos.total > 0 ? CGFloat(todos.done) / CGFloat(todos.total) : 0
+        return HStack(spacing: 8) {
+            ZStack(alignment: .leading) {
+                Capsule().fill(Color.secondary.opacity(0.25))
+                Capsule().fill(Color.accentColor)
+                    .frame(width: 200 * fraction)
+            }
+            .frame(width: 200, height: 8)
+            Text("\(todos.done)/\(todos.total)")
+                .font(.system(size: 16, weight: .semibold))
+                .monospacedDigit()
+            if let activeForm = todos.activeForm {
+                Text(activeForm)
+                    .font(.system(size: 16))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+        }
+    }
+
+    private func boardFooter(_ s: SessionDetail, _ progress: SessionProgress?) -> some View {
+        HStack(spacing: 10) {
+            Text(elapsed(since: s.startedAt))
+                .font(.system(size: 15))
+                .foregroundStyle(.tertiary)
+                .monospacedDigit()
+            if let quiet = quietMinutes(progress) {
+                Text("quiet \(quiet)m")
+                    .font(.system(size: 15))
+                    .foregroundStyle(.tertiary)
+            }
+        }
+    }
+
+    private func quietMinutes(_ progress: SessionProgress?) -> Int? {
+        guard let last = progress?.lastActivityAt else { return nil }
+        let idle = -last.timeIntervalSinceNow
+        guard idle > 120 else { return nil }
+        return Int(idle / 60)
+    }
+
+    private func elapsed(since epochMs: Double) -> String {
+        let started = Date(timeIntervalSince1970: epochMs / 1000)
+        let s = Int(-started.timeIntervalSinceNow)
+        if s < 3600 { return "\(s / 60)m" }
+        if s < 86_400 { return "\(s / 3600)h" }
+        return "\(s / 86_400)d"
     }
 
     // MARK: bench
