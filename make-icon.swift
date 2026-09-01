@@ -21,19 +21,16 @@ let inset: CGFloat = 100
 let body = NSRect(x: inset, y: inset,
                   width: CGFloat(px) - 2 * inset, height: CGFloat(px) - 2 * inset)
 let squircle = NSBezierPath(roundedRect: body, xRadius: 185, yRadius: 185)
-// Palette restored to the pre-2026-08-30 electric-violet identity
-// (user 2026-09-01: cobalt "seems weirder than previous versions");
-// the twin-loop mark stays.
 NSGradient(colors: [
-    NSColor(calibratedRed: 0.42, green: 0.20, blue: 0.95, alpha: 1),  // electric violet
-    NSColor(calibratedRed: 0.07, green: 0.05, blue: 0.20, alpha: 1),  // midnight indigo
+    NSColor(calibratedRed: 0.15, green: 0.28, blue: 0.85, alpha: 1),  // cobalt
+    NSColor(calibratedRed: 0.04, green: 0.06, blue: 0.15, alpha: 1),  // midnight
 ])!.draw(in: squircle, angle: -70)
 
-// Soft glow behind the mark so it reads as luminous, not printed.
+// Ion-cyan glow behind the mark so it reads as luminous, not printed.
 squircle.addClip()
 NSGradient(colors: [
-    NSColor(calibratedWhite: 1.0, alpha: 0.30),
-    NSColor(calibratedWhite: 1.0, alpha: 0.0),
+    NSColor(calibratedRed: 0.50, green: 0.91, blue: 1.0, alpha: 0.42),
+    NSColor(calibratedRed: 0.50, green: 0.91, blue: 1.0, alpha: 0.0),
 ])!.draw(
     fromCenter: NSPoint(x: CGFloat(px) / 2, y: CGFloat(px) / 2), radius: 0,
     toCenter: NSPoint(x: CGFloat(px) / 2, y: CGFloat(px) / 2), radius: 400,
