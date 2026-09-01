@@ -1,7 +1,13 @@
 # AUR packaging
 
-`PKGBUILD` for the claude-swap engine CLI — the piece of this stack that
-runs on Arch Linux (Omarchy included). The Infinitus app is macOS-only.
+Two packages, one directory each (two PKGBUILDs can't share a dir):
+
+- `claude-swap/` — the engine CLI (builds from PyPI).
+- `infinitus-tray-bin/` — the prebuilt bar/panel binary from the GitHub
+  release + Waybar config + Omarchy Quickshell plugin (its README has
+  the release-time bump steps).
+
+The Infinitus menu bar app itself is macOS-only.
 
 Publishing needs an AUR account and its SSH key:
 
