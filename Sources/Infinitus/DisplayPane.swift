@@ -81,6 +81,7 @@ struct DisplayPane: View {
                     sizeTile("Huge", "huge", 18)
                 }
             }
+            WallSection(model: model)
             Section("Popup transparency") {
                 glassSlider("Transparency", value: $model.glassFocused)
                 Text("Higher is clearer — the backdrop shows through with "

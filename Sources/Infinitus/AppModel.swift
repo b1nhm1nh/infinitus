@@ -75,6 +75,9 @@ final class AppModel: ObservableObject {
     /// Set by StatusItemHolder — closes the popover and opens the same
     /// content as a free-floating window (the pop-out action).
     var popOut: (() -> Void)?
+    /// Set by StatusItemHolder — toggles the full-screen fleet wall
+    /// (issue #11).
+    var showWall: (() -> Void)?
     // The bundle on disk was rebuilt since this instance launched (the
     // dev loop, or a manual make-app.sh) — surfaced as "restart to update".
     @Published var appUpdatePending = false

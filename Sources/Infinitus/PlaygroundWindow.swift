@@ -121,6 +121,8 @@ import CswapCore
                     }
                 }
                 AppDelegate.shared?.statusHolder?.controller.showSettingsWindow()
+            case "wall":
+                AppDelegate.shared?.statusHolder?.controller.toggleWall()
             case "reset": model.resetPlaygroundPrefs()
             case "themes":
                 reply = model.availableThemes.map(\.id).joined(separator: " ")

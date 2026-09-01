@@ -1,0 +1,132 @@
+import SwiftUI
+import AppKit
+import CswapCore
+
+/// Full-screen fleet wall (issue #11): the popup body blown up to fill a
+/// whole display — for the spare screen that exists "just to look at".
+/// A borderless screen-sized window (kiosk style, not the fullScreen
+/// space: no menu bar reveal, no Space shuffle), content scaled to fit
+/// by the PopupScale trick — measure the 1x ideal, scaleEffect to the
+/// screen. Esc or a click on the corner ✕ closes it.
+@MainActor
+final class WallWindowController {
+    private var window: NSWindow?
+    private var keyMonitor: Any?
+
+    func toggle(model: AppModel, usage: UsageModel) {
+        if window != nil { close() } else { show(model: model, usage: usage) }
+    }
+
+    /// The user's pick from Display settings, else the first screen that
+    /// isn't the main one (the "spare screen" default), else the main.
+    static func targetScreen() -> NSScreen? {
+        let wanted = UserDefaults.standard.string(forKey: "wall_display")
+        if let wanted,
+           let hit = NSScreen.screens.first(where: { $0.localizedName == wanted }) {
+            return hit
+        }
+        return NSScreen.screens.first { $0 != NSScreen.main } ?? NSScreen.main
+    }
+
+    func show(model: AppModel, usage: UsageModel) {
+        guard window == nil, let screen = Self.targetScreen() else { return }
+        let root = WallRoot(model: model, usage: usage,
+                            close: { [weak self] in self?.close() })
+        let host = NSHostingController(rootView: root)
+        host.sizingOptions = []
+        let w = NSWindow(contentRect: screen.frame, styleMask: [.borderless],
+                         backing: .buffered, defer: false, screen: screen)
+        w.contentViewController = host
+        w.setFrame(screen.frame, display: true)
+        w.isOpaque = true
+        w.backgroundColor = .black
+        w.level = .normal
+        w.collectionBehavior = [.fullScreenAuxiliary, .canJoinAllSpaces]
+        w.isReleasedWhenClosed = false
+        window = w
+        keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) {
+            [weak self] event in
+            if event.keyCode == 53 {   // Esc
+                self?.close()
+                return nil
+            }
+            return event
+        }
+        w.makeKeyAndOrderFront(nil)
+    }
+
+    func close() {
+        if let keyMonitor { NSEvent.removeMonitor(keyMonitor) }
+        keyMonitor = nil
+        window?.orderOut(nil)
+        window = nil
+    }
+}
+
+/// The wall content: title, the shared popup body, scaled to fill the
+/// screen with margins. Same measure-then-scale trick as PopupScale —
+/// fixedSize gives the honest 1x ideal, scaleEffect grows the pixels.
+private struct WallRoot: View {
+    @ObservedObject var model: AppModel
+    @ObservedObject var usage: UsageModel
+    let close: () -> Void
+    @State private var ideal: CGSize = .zero
+
+    var body: some View {
+        GeometryReader { geo in
+            ZStack(alignment: .topTrailing) {
+                Color.black.ignoresSafeArea()
+                MenuContent(model: model, usage: usage)
+                    .fixedSize()
+                    .onGeometryChange(for: CGSize.self) { $0.size } action: { ideal = $0 }
+                    .scaleEffect(scale(in: geo.size), anchor: .center)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity,
+                           alignment: .center)
+                Button(action: close) {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 22))
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .padding(18)
+                .help("Close (Esc)")
+            }
+        }
+        .preferredColorScheme(.dark)
+    }
+
+    private func scale(in room: CGSize) -> CGFloat {
+        guard ideal.width > 0, ideal.height > 0 else { return 1 }
+        return min((room.width * 0.92) / ideal.width,
+                   (room.height * 0.88) / ideal.height)
+    }
+}
+
+/// Display-pane rows: pick the wall's screen, enter it.
+struct WallSection: View {
+    @ObservedObject var model: AppModel
+    @State private var choice = UserDefaults.standard.string(forKey: "wall_display")
+        ?? ""
+
+    var body: some View {
+        Section("Fleet wall") {
+            Picker("Display", selection: $choice) {
+                Text("Spare screen (auto)").tag("")
+                ForEach(NSScreen.screens.map(\.localizedName), id: \.self) {
+                    Text($0).tag($0)
+                }
+            }
+            .onChange(of: choice) { _, v in
+                if v.isEmpty {
+                    UserDefaults.standard.removeObject(forKey: "wall_display")
+                } else {
+                    UserDefaults.standard.set(v, forKey: "wall_display")
+                }
+            }
+            Button("Enter full-screen fleet wall") { model.showWall?() }
+            Text("The popup, screen-sized — for the display that's just "
+                 + "there to look at. Esc leaves.")
+                .font(.caption).foregroundStyle(.secondary)
+        }
+    }
+}

@@ -51,6 +51,7 @@ final class StatusItemHolder: ObservableObject {
         model.showSettings = { [weak controller] in controller?.showSettingsWindow() }
         model.reopenPopover = { [weak controller] in controller?.reopenPopover() }
         model.popOut = { [weak controller] in controller?.popOut() }
+        model.showWall = { [weak controller] in controller?.toggleWall() }
     }
 }
 
@@ -76,6 +77,7 @@ final class StatusItemController {
     private var settings: NSWindow?
     private let model: AppModel
     private let usage: UsageModel
+    private let wall = WallWindowController()
     private let settingsTabs: () -> [SettingsTab]
     private var sink: AnyCancellable?
 
@@ -554,6 +556,8 @@ final class StatusItemController {
         NSApp.activate(ignoringOtherApps: true)
         settings?.makeKeyAndOrderFront(nil)
     }
+
+    func toggleWall() { wall.toggle(model: model, usage: usage) }
 
     @objc private func settingsClosed() {
         NSApp.setActivationPolicy(.accessory)
