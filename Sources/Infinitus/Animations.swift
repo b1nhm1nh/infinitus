@@ -613,3 +613,27 @@ extension View {
         modifier(IntroTitleFlourish(model: model))
     }
 }
+
+/// Dying-account flash (user 2026-09-01: "when account is dying —
+/// under 10% — flash the row"): a slow red breath over the whole row
+/// while its binding window sits in the 90s. Distinct cadence from the
+/// death band (one-shot) and the chill halo (mint, per-gauge): this is
+/// an ambient alarm, urgent but not seizure bait.
+struct CriticalPulse: View {
+    var body: some View {
+        TimelineView(.animation(minimumInterval: 1.0 / 20)) { ctx in
+            let t = ctx.date.timeIntervalSinceReferenceDate
+            // 1.6s period, eased by sin^2 so the off-beat rests longer.
+            let raw = sin(t * .pi / 0.8)
+            let phase = raw * raw
+            RoundedRectangle(cornerRadius: 4)
+                .fill(Color.red.opacity(0.05 + 0.13 * phase))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 4)
+                        .strokeBorder(Color.red.opacity(0.15 + 0.35 * phase),
+                                      lineWidth: 1)
+                )
+        }
+        .allowsHitTesting(false)
+    }
+}

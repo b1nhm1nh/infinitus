@@ -1381,7 +1381,8 @@ struct AccountCells {
         }
     }
 
-    @ViewBuilder func windowCell(_ w: UsageWindow?, session: Bool) -> some View {
+    @ViewBuilder func windowCell(_ w: UsageWindow?, session: Bool,
+                                 timer: Bool = true) -> some View {
         Group {
             if let w, !hiddenInCompact(w.pct) {
                 HStack(spacing: 3) {
@@ -1422,7 +1423,9 @@ struct AccountCells {
                             dropAnchor: banded && !session ? .center : .leading,
                             lucky: luckyPair)
                     }
-                    resetLabelView(resetsAt: w.resetsAt, staticText: resetText(w))
+                    if timer {
+                        resetLabelView(resetsAt: w.resetsAt, staticText: resetText(w))
+                    }
                 }
                 .instantTip(WindowSummary.line(
                     w, kind: session ? "Session (5h)" : "Weekly (7d)"))
@@ -1726,6 +1729,33 @@ struct AccountGrid: View {
                             .gridCellUnsizedAxes(anyGauged ? .horizontal : [])
                             .activeBand(account.active)
                         oneLineFillers
+                    } else if cells.showAsDead,
+                              cells.deadCause?.kind == .session,
+                              account.usage?.sevenDay != nil {
+                        // Dead on the 5h window ONLY (user 2026-09-01):
+                        // the weekly and per-model quotas still carry real
+                        // signal — gauges shown, their timers skipped; the
+                        // 5h cause line keeps its own countdown.
+                        if model.compactRows {
+                            HStack(spacing: 12) {
+                                cells.deadCell
+                                cells.windowCell(account.usage?.sevenDay,
+                                                 session: false, timer: false)
+                                cells.spendCell
+                                cells.scopedCells
+                            }
+                            .fixedSize()
+                            .activeBand(account.active)
+                            .gridCellColumns(usageColumns)
+                            cells.cashCell
+                        } else {
+                            cells.deadCell
+                            cells.windowCell(account.usage?.sevenDay,
+                                             session: false, timer: false)
+                            cells.spendCell
+                            cells.scopedCells
+                            cells.cashCell
+                        }
                     } else if cells.showAsDead {
                         // A dead row shows ONLY what blocks it — a full MP
                         // gauge on an unusable account reads as usable.
@@ -1810,6 +1840,12 @@ struct AccountGrid: View {
                         .allowsHitTesting(false)
                 }
             }
+        }
+        // Dying flash (user 2026-09-01): rows whose binding window is in
+        // the 90s breathe red until they either die or recover. Reuses
+        // the per-row bounds every slot cell already reports.
+        .overlayPreferenceValue(DeadRowBounds.self) { dict in
+            criticalOverlay(dict)
         }
         // Death beats: a red band over each row whose account just went
         // dead (the slot cell reported its bounds; full grid width).
@@ -1986,6 +2022,16 @@ struct AccountStack: View {
                                         && !model.isPlayground
                                         ? "Re-login now — opens this account's private login window"
                                         : note)
+                    } else if cells.showAsDead,
+                              cells.deadCause?.kind == .session,
+                              account.usage?.sevenDay != nil {
+                        // 5h-only death: weekly + per-model still shown,
+                        // timers skipped (user 2026-09-01).
+                        cells.deadCell
+                        cells.windowCell(account.usage?.sevenDay,
+                                         session: false, timer: false)
+                        cells.spendCell
+                        cells.scopedCells
                     } else if cells.showAsDead {
                         cells.deadCell
                     } else if cells.allFresh {
@@ -2075,6 +2121,29 @@ struct SentinelActionText: View {
             Text(label)
                 .font(.caption)
                 .foregroundStyle(.secondary)
+        }
+    }
+}
+
+extension AccountGrid {
+    /// Accounts alive but with a binding window at 90%+ — the dying set.
+    var criticalNumbers: [Int] {
+        model.displayAccounts.filter { a in
+            !AccountVitals.isDead(a.usage)
+                && (PushTriggers.worstPlanPct(a.usage) ?? 0) >= 90
+        }.map(\.number)
+    }
+
+    func criticalOverlay(_ dict: [Int: [Anchor<CGRect>]]) -> some View {
+        GeometryReader { geo in
+            ForEach(criticalNumbers, id: \.self) { n in
+                if let a = dict[n]?.first {
+                    let r = geo[a]
+                    CriticalPulse()
+                        .frame(width: geo.size.width, height: r.height + 8)
+                        .offset(y: r.minY - 4)
+                }
+            }
         }
     }
 }

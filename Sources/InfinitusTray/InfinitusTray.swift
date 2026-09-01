@@ -37,6 +37,8 @@ struct PanelAccount: Encodable {
     let isNext: Bool
     let note: String?     // sentinel (relogin etc.), themed
     let deadLine: String? // themed "☠ fallen — 🩸 2h 25m"
+    /// Binding window in the 90s (alive): the panel row flashes.
+    let critical: Bool
     let windows: [PanelWindow]
 }
 
@@ -270,10 +272,13 @@ struct InfinitusTray {
                 else { marker = "·" }
                 var note: String?
                 var deadLine: String?
+                var deadBySession = false
+                var critical = false
                 var windows: [PanelWindow] = []
                 if let s = SentinelNotes.short(for: a.usageStatus) {
                     note = s
                 } else if let cause = AccountVitals.cause(a.usage) {
+                    deadBySession = cause.kind == .session
                     var s = "\(theme.deadMarker) \(theme.deadVerb)"
                     if let reset = ResetLabel.label(resetsAt: cause.resetsAt,
                                                    countdown: cause.countdown,
@@ -281,6 +286,10 @@ struct InfinitusTray {
                         s += " — \(theme.revivePrefix)\(reset)"
                     }
                     deadLine = s
+                } else if (PushTriggers.worstPlanPct(a.usage) ?? 0) >= 90 {
+                    // Dying flash (user 2026-09-01): alive, binding
+                    // window in the 90s.
+                    critical = true
                 }
                 func paceChill(_ w: UsageWindow) -> Double? {
                     let c = GaugeMath.chillDepth(usedPct: w.pct,
@@ -288,18 +297,21 @@ struct InfinitusTray {
                                                  ahead: w.aheadOfPace)
                     return c > 0 ? c : nil
                 }
-                if let w = a.usage?.fiveHour {
+                if let w = a.usage?.fiveHour, !deadBySession {
                     // The 5h bar stays calm on macOS too — pace effects
-                    // are weekly/model signals.
+                    // are weekly/model signals. Dead-by-5h drops it: the
+                    // death line IS the 5h story (user 2026-09-01).
                     windows.append(PanelWindow(label: theme.sessionLabel,
                                                pct: Int(w.pct.rounded()),
                                                reset: ResetLabel.short(w, now: now),
                                                chill: nil))
                 }
                 if let w = a.usage?.sevenDay, let pct = WeeklyRoll.displayPct(w, now: now) {
+                    // Dead-by-5h keeps the weekly gauge, skips its timer.
                     windows.append(PanelWindow(label: theme.weeklyLabel,
                                                pct: Int(pct.rounded()),
-                                               reset: ResetLabel.compact(w, now: now),
+                                               reset: deadBySession ? nil
+                                                   : ResetLabel.compact(w, now: now),
                                                chill: paceChill(w)))
                 }
                 for w in a.usage?.scoped ?? [] {
@@ -315,7 +327,8 @@ struct InfinitusTray {
                     marker: marker, active: a.active,
                     disabled: a.disabled ?? false,
                     isNext: a.number == list.nextCandidate,
-                    note: note, deadLine: deadLine, windows: windows)
+                    note: note, deadLine: deadLine, critical: critical,
+                    windows: windows)
             }
             // All-limited: the engine names the first account to recover;
             // the waiting count reuses the resume mechanism's own

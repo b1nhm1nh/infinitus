@@ -119,6 +119,14 @@
       Feeds on the utilization history shipped today. Note: primer
       requests spend real quota and touch ToS-adjacent territory —
       design pass must weigh that.
+- [ ] Playground simulations (user 2026-09-01): onboarding states
+      (no engine / empty fleet — env-only today: INFINITUS_CSWAP="" and
+      DEMO_EMPTY=1 need relaunches) and account-SWITCH scenarios as
+      playground knobs — "account switching looks buggy on some cases
+      and relying on real data is like 5h wait, 7d wait". Wants demo
+      engine hooks for the auto-switch decision paths (at-limit,
+      consume-first move, no-return bar, quarantine, cooldown) so
+      switch behavior is reproducible in minutes, not window-resets.
 - [ ] Usage utilization history (user 2026-09-01): track every
       account's 5h/7d/per-model (Fable) utilization over time; a
       dashboard charting all + each account with waste estimates

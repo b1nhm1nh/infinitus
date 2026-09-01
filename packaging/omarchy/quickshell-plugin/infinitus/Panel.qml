@@ -334,8 +334,25 @@ Panel {
               // The first row to recover while everything is limited.
               readonly property bool recovering: root.recovery !== null
                 && root.recovery.number === modelData.number
-              border.width: recovering ? 1 : 0
+              // Dying flash (user 2026-09-01): binding window in the 90s.
+              readonly property bool critical: modelData.critical === true
+              // Same urgent color as the recovery border; the PULSE is
+              // what says "dying" (recovery holds steady).
+              border.width: (recovering || critical) ? 1 : 0
               border.color: Color.urgent
+
+              SequentialAnimation on border.color {
+                running: row.critical
+                loops: Animation.Infinite
+                ColorAnimation {
+                  to: "transparent"; duration: 800
+                  easing.type: Easing.InOutSine
+                }
+                ColorAnimation {
+                  to: Color.urgent; duration: 800
+                  easing.type: Easing.InOutSine
+                }
+              }
 
               Behavior on color { ColorAnimation { duration: 200 } }
 
