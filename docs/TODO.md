@@ -64,9 +64,10 @@
       a second engine behind the same isolation boundary (HTTP
       Management API instead of `cswap … --json`; opposite layer to
       cswap's credential swap — see "Router ecosystem" above; running
-      both fights). Data-point mapping vs our features:
-      docs/research/cliproxyapi-backend.md; upstream PR for the
-      missing points if the mapping finds gaps.
+      both fights). Data-point mapping vs our features done 2026-09-01
+      (docs/research/cliproxyapi-backend.md): no blocking gaps — the
+      existing Management API covers the popup; three QoL upstream-PR
+      candidates listed in the doc, opening one is the user's call.
 - [ ] Mobile companion app (user 2026-09-01): phone-side fleet view +
       push when the desk is away. Brainstorm written to
       docs/research/mobile-companion.md — direction picks (platform,
