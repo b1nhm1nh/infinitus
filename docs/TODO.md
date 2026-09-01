@@ -41,15 +41,15 @@
   Opposite layer to cswap's credential swap — running both fights. If ever
   requested: detect ANTHROPIC_BASE_URL and show "routed via …" first;
   a router backend would be a second engine behind the same boundary.
-- ~~Developer ID signing~~ → done 2026-09-01: Developer ID Application
-  cert issued under VIETNAM MANGO COMPANY LIMITED (MXWP8THXMP, to Sep
-  2031; signer reads as the company only in `codesign -dvv`), local
-  build notarized (Accepted) + stapled + spctl-clean, all five CI
-  secrets set — next tag ships signed automatically. Still open from
-  this: re-grant Notification Center under a Developer ID build (real
-  delivery should now work — osascript fallback retires), and drop the
-  `--no-quarantine` wording from README + cask on the first signed
-  release.
+- Developer ID signing: proven end-to-end 2026-09-01 under the company
+  team (cert → notarytool Accepted → staple → spctl pass → 5 CI
+  secrets), then UNSIGNED same day on user request ("I'll be providing
+  a new account"): secrets deleted, identity removed from the keychain,
+  CI back on the ad-hoc path. The runbook is exercised — redoing it
+  with the new account is ~10 min (docs/RELEASING.md). Cert artifacts
+  left on disk for the user to discard (~/Desktop/devid-csr,
+  ~/Downloads/AuthKey_339Q7369BM.p8 — p12 unopenable, its password
+  died with the secret).
 
 - ~~AppIcon ∞~~ → make-icon.swift now scales the MenuBarGlyph path
   (identity source of truth) onto the gradient squircle; icns rebuilt.
@@ -58,6 +58,34 @@
 
 ## Open
 
+- [ ] Dying-account flash (user 2026-09-01): when an account is under
+      10% headroom, flash the row. Both OSes.
+- [ ] Dead-by-5h rows (user 2026-09-01): an account dead on its 5h
+      window should still show the 7d and per-model gauges — just skip
+      the countdown timers.
+- [ ] All-dead Live Activity (user 2026-09-01): when every account is
+      limited, a revival countdown as an iOS Live Activity (mobile
+      companion) and the closest macOS equivalent (persistent menu bar
+      countdown exists; consider a floating mini-window). Design in
+      docs/research/mobile-companion.md.
+- [ ] Working-sessions Live Activity design (user 2026-09-01): while
+      sessions are running — active account details + subtle next
+      candidate. Designed in docs/research/mobile-companion.md; ships
+      with the mobile companion.
+- [ ] Slack push mirror to mobile (user 2026-09-01): whatever the
+      engine's away-mode Slack channel carries also reaches the mobile
+      app's push. Rides the mobile companion transport.
+- [ ] Move todos to GitHub issues (user 2026-09-01): open items become
+      issues on deathemperor/infinitus; TODO.md becomes the pointer.
+- [ ] Auto-resume bugs (user 2026-09-01, session restored):
+      (1) nudge text landed in the session's input but was never
+      submitted — visible as a typed line without send; keyboard-input/
+      Enter delivery suspect in PtyNudge; (2) nudge fired while the
+      session's account was still limited — Claude Code answered "hit
+      your session limit … continuing automatically at 3:20pm", i.e.
+      the resume raced the engine switch (or fired on recovery of an
+      account the session isn't riding). Needs trigger-ordering fix:
+      nudge only after the ACTIVE account has headroom.
 - [ ] Usage utilization history (user 2026-09-01): track every
       account's 5h/7d/per-model (Fable) utilization over time; a
       dashboard charting all + each account with waste estimates
