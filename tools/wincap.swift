@@ -2,7 +2,7 @@ import ScreenCaptureKit
 import AVFoundation
 import CoreGraphics
 
-// wincap <CGWindowID> <out.mov> — record ONE window (never a screen
+// wincap <CGWindowID> <out.mov> [scale] — record ONE window (never a screen
 // region) via ScreenCaptureKit + AVAssetWriter until SIGINT/SIGTERM.
 // Build: swiftc -O -parse-as-library -o wincap wincap.swift
 // Used for docs/playground-demo.mp4 with tools/playctl driving the
@@ -68,8 +68,8 @@ final class Recorder: NSObject, SCStreamOutput, SCStreamDelegate {
 struct Main {
     static func main() async throws {
         let args = CommandLine.arguments
-        guard args.count == 3, let widNum = UInt32(args[1]) else {
-            log("usage: wincap <windowID> <out.mov>")
+        guard args.count >= 3, let widNum = UInt32(args[1]) else {
+            log("usage: wincap <windowID> <out.mov> [scale]")
             exit(64)
         }
         _ = CGMainDisplayID()   // force the WindowServer connection (CGS init)
@@ -86,9 +86,13 @@ struct Main {
 
         let filter = SCContentFilter(desktopIndependentWindow: win)
         let cfg = SCStreamConfiguration()
-        // H.264 tops out at 4096 px — record at point size, even dims.
-        let w = (Int(win.frame.width) / 2) * 2
-        let h = (Int(win.frame.height) / 2) * 2
+        // H.264 tops out at 4096 px — point size by default; an optional
+        // third arg scales (2 = Retina-native, "video quality looks low",
+        // user 2026-09-01). Even dims either way.
+        let scale = CommandLine.arguments.count > 3
+            ? (Int(CommandLine.arguments[3]) ?? 1) : 1
+        let w = (Int(win.frame.width) * scale / 2) * 2
+        let h = (Int(win.frame.height) * scale / 2) * 2
         cfg.width = w
         cfg.height = h
         cfg.minimumFrameInterval = CMTime(value: 1, timescale: 30)

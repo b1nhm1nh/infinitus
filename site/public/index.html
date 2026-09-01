@@ -170,6 +170,14 @@
   .card h3 .dot { color: var(--mint); margin-right: 7px; }
   .card p { margin: 0; color: var(--dim); font-size: 13.5px; line-height: 1.6; }
 
+  .themes { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; }
+  @media (max-width: 900px) { .themes { grid-template-columns: repeat(3, 1fr); } }
+  @media (max-width: 540px) { .themes { grid-template-columns: repeat(2, 1fr); } }
+  .themes > div { border: 1px solid var(--line); border-radius: 10px;
+    padding: 12px 14px; background: var(--panel); display: grid; gap: 2px; }
+  .themes b { font-weight: 600; font-size: 14px; }
+  .themes span { color: var(--dim); font-size: 12.5px; }
+
   /* ── wall band ── */
   .wall { background: #06080b; border-top: 1px solid var(--line); }
   .wall .inner { display: grid; grid-template-columns: 1fr; gap: 40px; }
@@ -207,6 +215,7 @@
     <nav aria-label="Sections">
       <a href="#how">How it works</a>
       <a href="#features">Features</a>
+      <a href="#themes">Themes</a>
       <a href="#wall">The wall</a>
       <a href="#install">Install</a>
     </nav>
@@ -270,7 +279,7 @@
     <p class="sub">The whole fleet in one glance — RPG theme shown: MP is
       your 5-hour window, HP the weekly, Dragon the per-model quota.
       Skulls are limited accounts; the crown is who's carrying.</p>
-    <video class="screen" src="/img/popup.mp4" width="1030" height="310"
+    <video class="screen" src="/img/popup.mp4" width="2060" height="612"
            autoplay loop muted playsinline
            aria-label="Infinitus popup demo: intro animation, an account switch, a 5-hour window death, fleet-wide death and revival, and a theme change"></video>
   </div>
@@ -324,6 +333,32 @@
       <div class="card"><h3><span class="dot">●</span>CLIProxyAPI backend</h3>
         <p>Fleets already running behind the proxy plug in through its
         management API as an alternate engine.</p></div>
+    </div>
+  </div>
+</section>
+
+<section id="themes">
+  <div class="wrap">
+    <h2>Fifteen skins, one fleet</h2>
+    <p class="sub">Every theme renames the windows, restyles the gauges,
+      and brings its own intro, death, and revival effects. Pick one in
+      Settings, or audition them all in the playground.</p>
+    <div class="themes">
+      <div><b>Off</b><span>plain numbers</span></div>
+      <div><b>RPG</b><span>HP/MP gauges + gold</span></div>
+      <div><b>Movie</b><span>reels &amp; box office</span></div>
+      <div><b>Hades</b><span>blades &amp; darkness</span></div>
+      <div><b>Metal Gear</b><span>tactical espionage</span></div>
+      <div><b>AI Agentic</b><span>tokens &amp; context</span></div>
+      <div><b>Classic SWE</b><span>hand-written, no AI</span></div>
+      <div><b>Sci-Fi</b><span>warp cores &amp; shields</span></div>
+      <div><b>Wild West</b><span>six-guns &amp; gold rush</span></div>
+      <div><b>Cyberpunk</b><span>chrome &amp; neon</span></div>
+      <div><b>Gothic</b><span>candles &amp; cathedrals</span></div>
+      <div><b>Musical</b><span>tempo &amp; encores</span></div>
+      <div><b>Planet Earth</b><span>wild documentary</span></div>
+      <div><b>Cosmos</b><span>stars &amp; black holes</span></div>
+      <div><b>Ocean</b><span>tides &amp; deep water</span></div>
     </div>
   </div>
 </section>
