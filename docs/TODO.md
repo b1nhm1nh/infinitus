@@ -58,11 +58,13 @@
 ## Open
 
 - [ ] Omarchy/Linux: `infinitus-tray` shipped (Waybar module,
-      packaging/omarchy). Verified in containers (swift:6.1 build+114
-      tests, static binary + waybar config parse on Arch ARM). Still
-      human: real Omarchy desktop run (UTM VM: ISO at
-      ~/Downloads/omarchy-4.0.1.iso — x86_64 only, emulated = slow),
-      real-account cswap on Linux, AUR/PKGBUILD for the tray.
+      packaging/omarchy) + the Quickshell fleet panel (macOS popup
+      parity, verified live in the UTM VM 2026-08-31/09-01). AUR
+      PKGBUILD for the tray written 2026-09-01
+      (packaging/aur/infinitus-tray-bin, names verified free) —
+      publishing still needs the user's AUR account + updpkgsums
+      against the v0.3.0 assets (runbook in its README). Still human:
+      real-account cswap on Linux.
 - ~~Release CI for Linux/Arch/Omarchy~~ → release.yml `linux-build`
   matrix (x86_64 + ubuntu-24.04-arm, swift:6.1 container,
   -static-stdlib) + `linux-publish` attaching the binaries and an
@@ -150,7 +152,10 @@
      in the pop-out), LIVE theme switching (Sci-Fi/Hades/Movie/RPG via
      the Themes pane, pop-out re-skinning). Shot log in
      docs/promo/walkthrough.md. No narration.
-- Duplicate icon uses within a theme (user screenshot, 2026-08-30):
+- ~~Duplicate icon uses within a theme~~ → resolved by the struck
+  "Duplicate icon roles" entry below (movie/hades/swe adjusted);
+  re-audited 2026-09-01: all 15 builtins clean, one role per icon.
+- (original entry) Duplicate icon uses within a theme (user screenshot, 2026-08-30):
   movie uses 🎬 as BOTH the slot prefix and the session gauge label, so
   a row reads clapperboard-number … clapperboard-gauge; the dead marker
   📼/🔚 vs re-release icons overlap similarly. Audit every builtin so
@@ -204,6 +209,29 @@
   on .rightMouseUp; performClick with item.menu set, then detached so
   left-click keeps toggling): Theme submenu with checkmark, Rotate/
   Refresh, Pin (stateful), Pop out/in, Settings, Restart, Quit.
+
+## Shipped 2026-09-01 (the 0.3.0 wave — 8 todos, both OSes)
+- ~~Omarchy right-click dead + anim/effects ask~~ → any-button click
+  opens the panel (MouseArea acceptedButtons); rows intro, hover/active
+  color motion, gauge fills already animated.
+- ~~Glass over white apps~~ → GlassScrimView appearance-following wash,
+  Settings window only (popup/pop-out keep the tuned dial); playground
+  `settings` command via AppDelegate.shared.
+- ~~All-dead: waiting sessions + first-reviver countdown~~ → banner with
+  live 1s countdown (RecoveryCountdown, TimelineView / QML Timer),
+  Transcript.findStopped count, orange marker + urgent border.
+- ~~Behind-pace effects~~ → GaugeMath.chillDepth + breathing mint halo
+  (macOS) / pulsing fill sheen (panel).
+- ~~Disable accounts from rotation~~ → engine disable/enable surfaced:
+  Accounts pause/play button, panel row right-click, tray verbs,
+  demo-cswap verbs.
+- ~~Sort by headroom, active + candidate pinned~~ → DisplayOrder.sort,
+  display-only; Accounts toggle (synced sort_headroom) + panel
+  sortByHeadroom setting (--engine-order opts out).
+- ~~Composed changelogs~~ → CHANGELOG.md; release.yml publishes the
+  version's section (--generate-notes only as fallback).
+- ~~Release new version~~ → v0.3.0 tagged; first tag exercising
+  linux-publish (Linux binaries + omarchy tarball on the release).
 
 ## Shipped 2026-08-30 (evening wave — 15 numbered asks + follow-ups)
 - ~~Theme preview ': :' rows~~ → macOS 26 VStack ideal-height bug;
