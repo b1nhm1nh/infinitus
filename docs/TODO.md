@@ -56,255 +56,64 @@
 - ~~Sync "pushed" under an off toggle~~ → disable-mid-tick race; tick()
   re-checks `enabled` after its await before any write.
 
-## Open
+## Open — tracked as GitHub issues since 2026-09-01
 
-- [ ] Dying-account flash (user 2026-09-01): when an account is under
-      10% headroom, flash the row. Both OSes.
-- [ ] Dead-by-5h rows (user 2026-09-01): an account dead on its 5h
-      window should still show the 7d and per-model gauges — just skip
-      the countdown timers.
-- [ ] All-dead Live Activity (user 2026-09-01): when every account is
-      limited, a revival countdown as an iOS Live Activity (mobile
-      companion) and the closest macOS equivalent (persistent menu bar
-      countdown exists; consider a floating mini-window). Design in
-      docs/research/mobile-companion.md.
-- [ ] Working-sessions Live Activity design (user 2026-09-01): while
-      sessions are running — active account details + subtle next
-      candidate. Designed in docs/research/mobile-companion.md; ships
-      with the mobile companion.
-- [ ] Slack push mirror to mobile (user 2026-09-01): whatever the
-      engine's away-mode Slack channel carries also reaches the mobile
-      app's push. Rides the mobile companion transport.
-- [ ] Move todos to GitHub issues (user 2026-09-01): open items become
-      issues on deathemperor/infinitus; TODO.md becomes the pointer.
-- [ ] Capture quality (user 2026-09-01): (1) CleanShot WINDOW captures
-      of the pop-out render text/background low-quality — window
-      captures composite the layer without its backdrop blur, so the
-      translucent chrome washes out (and may capture at 1x); (2) free
-      region captures over bright backgrounds show the same washed
-      look live — bright-background legibility wants the Settings-style
-      appearance scrim (or an auto-contrast floor) on the popup/pop-out.
-- [ ] Auto-resume bugs (user 2026-09-01, session restored) — three of
-      four FIXED same day: (2)+(3) the nudge loop (3 nudges/min into a
-      still-limited session) was a stale-verdict race — "active is
-      alive" predated the stop; ResumeGate now requires evidence after
-      the stop (a switch since first sighting, or a usage poll newer
-      than the stop) plus a 10-min per-session cooldown that survives
-      burned stopUuids; (4) the /rc sweep interrupted a RUNNING turn —
-      busy sessions are now skipped at typing time and the confirm-Esc
-      is withheld whenever the screen shows "esc to interrupt" (the
-      session URL also lives in the persistent status line, which is
-      what armed the stray Esc). Still open: (1) nudge text typed but
-      never submitted (Enter delivery on some host) — needs a repro
-      with the terminal name.
-- [ ] Resume idle window vs limit stops (user 2026-09-01): the
-      "only sessions active within N min" filter measures idleness
-      against NOW — after a long limit wait (Fable/7d stops sit for
-      hours or days) every session looks idle and gets skipped. Idle
-      should be measured against the moment the limit hit: a session
-      active right up to its stop was never idle, however long the
-      restore took.
-- [ ] Window-start scheduling — "the big Infinitus" (user 2026-09-01,
-      think-aloud; PLAN ONLY AFTER other open work is done): the 5h
-      window's clock starts at the FIRST request, so an idle account
-      carries no ticking reset — sometimes 4h of dead calendar for 1h
-      of actual multi-session work. A smart engine could deliberately
-      start windows early (a tiny primer request "lights" the window so
-      its reset lands sooner), timed from intelligently gathered usage
-      of current work — enabling back-to-back 5h sessions on the SAME
-      account, and raising fleet uptime with the accounts already in
-      the pool. User invites any mechanism, including Claude itself
-      inside the engine strategizing the nudges/"reset battle plan",
-      and capacity advice ("you need another account" suggestions).
-      Feeds on the utilization history shipped today. Note: primer
-      requests spend real quota and touch ToS-adjacent territory —
-      design pass must weigh that.
-- [ ] Playground simulations (user 2026-09-01): onboarding states
-      (no engine / empty fleet — env-only today: INFINITUS_CSWAP="" and
-      DEMO_EMPTY=1 need relaunches) and account-SWITCH scenarios as
-      playground knobs — "account switching looks buggy on some cases
-      and relying on real data is like 5h wait, 7d wait". Wants demo
-      engine hooks for the auto-switch decision paths (at-limit,
-      consume-first move, no-return bar, quarantine, cooldown) so
-      switch behavior is reproducible in minutes, not window-resets.
-- [ ] Usage utilization history (user 2026-09-01): track every
-      account's 5h/7d/per-model (Fable) utilization over time; a
-      dashboard charting all + each account with waste estimates
-      (quota that perished unused at window resets); history synced
-      over iCloud.
-- [ ] Onboarding (user 2026-09-01): first-run flow, simulated on this
-      machine. Detect a bare `claude` CLI → read the signed-in
-      account → offer it as the first managed account; detect an
-      existing cswap install → list its accounts to adopt; detect
-      CLIProxyAPI the same way (and set CLIProxy up locally to test
-      the detection).
-- [ ] CLIProxyAPI as an alternate backend (user 2026-09-01):
-      router-for-me/CLIProxyAPI pools CLI OAuth credentials behind an
-      OpenAI-compatible proxy; CPAMC (Cli-Proxy-API-Management-Center)
-      is its bundled web UI over the proxy's Management API. Would be
-      a second engine behind the same isolation boundary (HTTP
-      Management API instead of `cswap … --json`; opposite layer to
-      cswap's credential swap — see "Router ecosystem" above; running
-      both fights). Data-point mapping vs our features done 2026-09-01
-      (docs/research/cliproxyapi-backend.md): no blocking gaps — the
-      existing Management API covers the popup; three QoL upstream-PR
-      candidates listed in the doc, opening one is the user's call.
-- [ ] Mobile companion app (user 2026-09-01): phone-side fleet view +
-      push when the desk is away. Brainstorm written to
-      docs/research/mobile-companion.md — direction picks (platform,
-      read-only vs remote control, transport) are the user's.
-- [ ] Omarchy/Linux: `infinitus-tray` shipped (Waybar module,
-      packaging/omarchy) + the Quickshell fleet panel (macOS popup
-      parity, verified live in the UTM VM 2026-08-31/09-01). AUR
-      PKGBUILD for the tray written 2026-09-01
-      (packaging/aur/infinitus-tray-bin, names verified free) —
-      sums filled from the published v0.3.0 assets, makepkg-tested on
-      the Arch VM — publishing still needs the user's AUR account
-      (runbook in its README). Still human: real-account cswap on Linux.
-- ~~Release CI for Linux/Arch/Omarchy~~ → release.yml `linux-build`
-  matrix (x86_64 + ubuntu-24.04-arm, swift:6.1 container,
-  -static-stdlib) + `linux-publish` attaching the binaries and an
-  infinitus-omarchy.tar.gz to the release; workflow_dispatch = dry run
-  (builds, publishes nothing). macOS job untouched beyond a tag guard.
-  Later still: AUR package.
-- ~~Playground demo video~~ → docs/playground-demo.mp4 (29s):
-  intro, switch, drop+refill cascade (5h/7d/Fable), killing blow +
-  death beat, revive, MGS theme flip, switch, back to RPG. Driven by
-  tools/playctl; recorded per-window with a ScreenCaptureKit helper
-  (screencapture -v can't record one window). Playground gained a
-  `front` command (SCK suspends windows on inactive Spaces).
-- ~~Auto-order of accounts~~ → Display pane toggle; AutoOrder.swift
-  ranks alive (binding pct, 5-point incumbent margin) < unknown < dead
-  (soonest recovery) < disabled and calls `cswap reorder` only when the
-  order differs; drag disabled while on; synced key `auto_order`.
-- ~~Rename: "Limitless" collides with limitless.ai~~ → Infinitus
-  (user pick 2026-08-30). Twin-loop mark; repo, casks (cask_renames
-  migration), workflows, App Support copy-migration; bundle id kept.
-- ~~Resume/rc delivery beyond cmux~~ → the whole nudge mechanism now
-  lives in the APP (user 2026-08-30: "move all the nudge mechanism to
-  Infinitus" — upstream never merged the engine's copy, PR #250):
-  CswapCore ClaudeSessions/Transcript/PeerSocket/PtyHosts/PtyNudge/
-  SessionResume + ResumeService (Engines pane "Resume nudges —
-  Infinitus side", off by default, per-machine). Terminals cmux, tmux
-  (`send-keys -l`, pane_pid ancestry match), herdr (`pane send-text` +
-  `send-keys enter`, process-info pid match); peer socket fallback;
-  `/rc` sweep with self-lineage skip + idle filter + confirm/Esc.
-  Live-verified 2026-08-31: typed nudges into the tmux and herdr test
-  sessions, both replied. Ghostty stays socket-only (no injection API).
-  Left engine-side on purpose: LimitStopScanner (autoswitch evidence)
-  and capture_limit_screens (writes the engine's backup dir).
-  A local fork engine with `autoswitch.resumeStoppedSessions` /
-  `rearmRemoteControl` on nudges TWICE — turn those off.
-- ~~Linux is untested~~ → container smoke tests 2026-08-31: pip install
-  on python:3.12-slim and `makepkg -s` of packaging/aur/PKGBUILD on
-  archlinux (amd64 emulation; pacman needs DisableSandbox there) both
-  install and run `cswap --version/--help/config list/list`. No real
-  accounts, no desktop. README says exactly that.
-- ~~Next-candidate indicator "seems missing"~~ → real bug, engine-side:
-  the advisory `_next_switch_candidate` counted the spend-cap pct in its
-  >=100 "dead" rule, but spend is an estimate and the real ranking
-  (oauth.account_headroom) never consults it — a rested account (5h 0%,
-  7d 1%) went advisory-dead on spend 100%. Spend dropped from the
-  advisory; regression tests.
-- ~~All-limited looks broken~~ → engine emits `nextRecovery {number, at}`
-  when no candidate is viable (last maxed window resetting soonest);
-  the app's shared NextMarker renders it as a hollow gray triangle with
-  a "recovers first (date)" tooltip, distinct from the green candidate.
-- ~~Sync export/import~~ → SyncPane "File" section: Export…/Import… of
-  the same SyncSnapshot the iCloud file carries (never credentials or
-  push secrets); import marks the current remote as seen so the next
-  tick pushes the import instead of pulling the old remote back.
-- ~~Popup footer~~ → one row of Label buttons (Rotate/Refresh/Settings/
-  Pin/Compact/layout/pop-out, then chips + engine badge + Quit trailing);
-  "Test notification" retired (the Push pane keeps its own test);
-  "Settings…" → "Settings".
-- ~~Onboarding~~ → engineMissing welcome card in the popup: what the
-  engine is, Install button (uv tool install claude-swap via Process,
-  then relaunch re-runs the locator), manual commands shown. Intro
-  modifiers no longer hold content hidden when no data will ever come;
-  LIMITLESS_CSWAP env override ('' = no engine) makes it testable.
-  Notifications/add-account walkthrough still open for later.
-- ~~Settings window absent from Cmd+Tab~~ (user, 2026-08-30) → the
-  app flips to .regular activation policy while Settings is open
-  (Dock + Cmd+Tab entry) and back to .accessory on willClose.
-  Verified live both directions.
-- ~~GitHub releases~~ → shipped 2026-08-30 with the Homebrew wave:
-  repo public, v0.1.0 released by CI (macos-26 runner), nightly
-  prerelease rolling daily; About pane checks the feed and updates
-  through brew when brew-installed. Developer ID signing still open
-  (ad-hoc + --no-quarantine documented).
-- Promotional content (user, 2026-08-30) — after the improvement wave
-  settles:
-  1. ~~Repo README features list~~ → done 2026-08-30 (local commit).
-  2. ~~GitHub profile~~ → "> open Infinitus.app" section pushed
-     2026-08-31 (deathemperor/deathemperor 34bf589).
-  3. ~~huuloc.com~~ → Infinitus entry in Mad-Eye's Trunk (pensieve
-     src/data/arsenal.ts + icon), committed locally (59f92ce3), NOT
-     pushed — pushing deploys.
-  4. ~~Walkthrough video~~ → re-recorded 2026-08-31 per user ask:
-     39s tight cut (75s full alongside) at ~/Movies/Infinitus-walkthrough.mp4 (shim fleet) —
-     open+hover tour, rotate celebration, compact in wide AND stacked,
-     all three layouts (incl. the new horizontal cards, morphed live
-     in the pop-out), LIVE theme switching (Sci-Fi/Hades/Movie/RPG via
-     the Themes pane, pop-out re-skinning). Shot log in
-     docs/promo/walkthrough.md. No narration.
-- ~~Duplicate icon uses within a theme~~ → resolved by the struck
-  "Duplicate icon roles" entry below (movie/hades/swe adjusted);
-  re-audited 2026-09-01: all 15 builtins clean, one role per icon.
-- (original entry) Duplicate icon uses within a theme (user screenshot, 2026-08-30):
-  movie uses 🎬 as BOTH the slot prefix and the session gauge label, so
-  a row reads clapperboard-number … clapperboard-gauge; the dead marker
-  📼/🔚 vs re-release icons overlap similarly. Audit every builtin so
-  each icon appears in exactly ONE role (slot, session, weekly, scoped,
-  credit, cash, ahead, dead, revive, next) and adjust vocabularies;
-  also consider dropping the slot prefix when the row is dead (the
-  dead marker already leads).
-- ~~Tooltip z-index across rows~~ → InstantTip publishes through
-  ActiveTipKey (anchor preference); MenuContent renders the one active
-  chip in a root overlay canvas above every row. Verified live.
-- ~~Dead-transition animation~~ → deathTicks diff in refreshSnapshot
-  (alive->dead, nothing on first load), DeathFlash red-hit/flicker/
-  slump; wide Grid via DeadRowBounds band, stacked cards wrap content
-  (full saturation drain). Debug-pane button added. Animation verified
-  in an isolated probe 2026-08-30 (red hit + drain + settle, frames
-  captured); in-app trigger still worth one human click of 'Play the
-  death beat' (synthetic clicks can't actuate Form buttons).
-- ~~Duplicate icon roles~~ → movie session 🎬→🎥 + ahead popcorn→
-  speedometer; hades next 🔥→🕯; swe ahead coffee→flame. Slot prefix
-  KEPT on dead rows (mixed prefixes misalign the slot column).
-- ~~Settings sidebar detail lag~~ → root-caused to NavigationSplitView
-  in the controller-owned window (detail froze entirely under synthetic
-  clicks); SettingsRoot is now a hand-rolled sidebar of plain Buttons
-  and the detail follows selection. Residual: FORM buttons in the
-  detail panes still refuse synthetic clicks (sidebar + popup buttons
-  actuate with a focus-first click); real clicks unaffected.
-- ~~Row 1 "P1" slot prefix missing~~ → not a bug: the themed
-  next-candidate icon REPLACES the slot text by design (slotDisplay,
-  the user's emphatic 2026-08-30 ask). Misread during verification.
-- ~~Pop-out in COMPACT mode header overlap~~ → not reproducing after
-  the 2026-08-30 Grid overflow fix (compact pop-out captured at 169pt,
-  no overlap). Reopen with a screenshot if it comes back.
-- ~~Visual verification~~ → hollow recovery triangle verified on an
-  all-dead shim fleet (`SHIM_ALLDEAD=1`: every row dead, hollow gray ▷
-  on the recovering account); About pane verified unbundled (glyph on
-  the gradient card). Still human-only: the BUNDLED About icon (the
-  /Applications instance has no status item in this login session —
-  the ControlCenter wedge) and sync Export…/Import… (Form buttons
-  refuse synthetic clicks; AX exposes them unnamed).
-- ~~Ahead-of-pace icon tooltips~~ → InstantTip on both sites, edge
-  .above (the cell's own summary tip owns .below); alignment ghosts
-  stop answering hover.
-- ~~Menu bar remaining vs used~~ → "Menu bar counts remaining, not
-  used" toggle; TitlePrefs.titleRemaining flips 5h/7d/scoped at
-  display time. Popup gauges stay HP-style (already remaining).
-- ~~Dead-transition animation~~ (duplicate of the struck entry above).
-- ~~Hide control center, keep chips~~ → "Hide popup actions (status
-  chips stay)" Display toggle; wide footer, stacked rail, and compact
-  strip all hide their buttons, chips + restart-to-update stay.
-- ~~Right-click status-item menu~~ → just-in-time NSMenu (sendAction
-  on .rightMouseUp; performClick with item.menu set, then detached so
-  left-click keeps toggling): Theme submenu with checkmark, Rotate/
-  Refresh, Pin (stateful), Pop out/in, Settings, Restart, Quit.
+Open work lives at github.com/deathemperor/infinitus/issues (user
+2026-09-01: "move todo items to use github issues tracking"); this
+file keeps the shipped log and the deferred-by-design notes.
+
+- #1 All-dead Live Activity (iOS + macOS equivalent)
+- #2 Working-sessions Live Activity design
+- #3 Slack push mirror to mobile
+- #4 Capture quality (window captures + bright backgrounds)
+- #5 Resume nudge typed but never submitted (Enter delivery)
+- #6 Playground simulations (onboarding + auto-switch scenarios)
+- #7 Window-start scheduling — "the big Infinitus" (plan last)
+- #8 CLIProxyAPI alternate backend (mapping done, no blocking gaps)
+- #9 Mobile companion app (brainstorm done, user picks pending)
+- #10 Human handoffs: AUR publish, Linux real-account cswap, signing
+
+## Shipped 2026-09-01 (second wave — the remote-control batch)
+
+- ~~Usage utilization history~~ → UsageHistory JSONL per machine
+  (email-keyed, engine-poll stamped) + WasteMath weekly generations;
+  recorders on BOTH OSes (AppModel actor / TrayHistory on the Waybar
+  heartbeat, demo engines excluded); Utilization settings pane (range/
+  window/account pickers, waste rows with observation-gap honesty);
+  iCloud Drive mirror per machine when settings sync is on, merged at
+  read. Verified live on the real fleet.
+- ~~Onboarding~~ → ClaudeCLIDetect (~/.claude.json oauthAccount) +
+  CLIProxyDetect (presence + credential-file count, contents never
+  read; a real ~/.cli-proxy-api was found on this machine) + port
+  probe; engine-missing card gains detection lines, empty-fleet gains
+  FirstAccountCard with one-click `cswap add`; tray tooltip names the
+  adoptable login. Empty-fleet was blank — IntroContentReveal held
+  content for rows that never come; snapshotLoaded releases it.
+  Simulated live: INFINITUS_CSWAP="" and DEMO_EMPTY=1.
+- ~~Dying-account flash~~ → macOS CriticalPulse (red breath over rows
+  whose binding window is ≥90%, riding the DeadRowBounds anchors);
+  Omarchy panel pulses the urgent border (recovery holds steady, the
+  pulse is the signal). Verified in the playground.
+- ~~Dead-by-5h rows~~ → weekly/spend/per-model gauges stay visible
+  with timers skipped; the 5h cause line keeps its own countdown
+  (wide/compact/stacked + panel). Verified: killed alpha shows
+  "MP down · 2h23m" + HP/$/Dragon gauges timer-less.
+- ~~Auto-resume bugs (3 of 4)~~ → ResumeGate: nudges need evidence
+  AFTER the stop (switch since first sighting, or usage poll newer
+  than the stop) + 10-min per-session cooldown surviving burned
+  stopUuids; /rc sweep skips busy sessions and withholds the
+  confirm-Esc while "esc to interrupt" shows; sweep idleness measured
+  against the stop instant (a 7d wait no longer reads as idle).
+  Remaining Enter-delivery report → issue #5.
+- ~~Move todos to GitHub issues~~ → issues #1–#10; this file is the
+  pointer + history.
+- Also: consume-first "why account 1?" answered (at-limit escape +
+  self-correction; engine settings verified); CLIProxyAPI Management
+  API mapped (docs/research/cliproxyapi-backend.md); mobile companion
+  brainstormed (docs/research/mobile-companion.md — effects parity,
+  remote control, Teams); Developer ID signing proven then unsigned on
+  request; native aarch64 Omarchy VM build launched (ggalancs/
+  omarchy-arm-utm, vetted, official sources).
 
 ## Shipped 2026-09-01 (the 0.3.0 wave — 8 todos, both OSes)
 - ~~Omarchy right-click dead + anim/effects ask~~ → any-button click
