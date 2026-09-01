@@ -62,9 +62,9 @@
       parity, verified live in the UTM VM 2026-08-31/09-01). AUR
       PKGBUILD for the tray written 2026-09-01
       (packaging/aur/infinitus-tray-bin, names verified free) —
-      publishing still needs the user's AUR account + updpkgsums
-      against the v0.3.0 assets (runbook in its README). Still human:
-      real-account cswap on Linux.
+      sums filled from the published v0.3.0 assets, makepkg-tested on
+      the Arch VM — publishing still needs the user's AUR account
+      (runbook in its README). Still human: real-account cswap on Linux.
 - ~~Release CI for Linux/Arch/Omarchy~~ → release.yml `linux-build`
   matrix (x86_64 + ubuntu-24.04-arm, swift:6.1 container,
   -static-stdlib) + `linux-publish` attaching the binaries and an
