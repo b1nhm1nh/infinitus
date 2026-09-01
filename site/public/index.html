@@ -1,0 +1,429 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Infinitus</title>
+<meta name="description" content="Menu-bar mission control for your Claude Code account fleet — auto-rotation, session resume, live usage gauges, and a full-screen wall.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>♾️</text></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:ital,wght@0,400;0,500;0,600;1,400&family=Instrument+Serif:ital@0;1&display=swap">
+<style>
+  :root {
+    --bg: #0a0d11;
+    --panel: #11161d;
+    --panel-2: #151b23;
+    --line: #232b35;
+    --text: #e6e1d6;
+    --dim: #8b93a0;
+    --faint: #545c68;
+    --orange: #f0a03c;
+    --mint: #58d38c;
+    --red: #e4574f;
+    --yellow: #e3c15c;
+    --mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+    --serif: "Instrument Serif", Georgia, serif;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 15px;
+    line-height: 1.65;
+    -webkit-font-smoothing: antialiased;
+  }
+  a { color: var(--mint); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  a:focus-visible, button:focus-visible { outline: 2px solid var(--orange); outline-offset: 3px; }
+  .wrap { max-width: 1060px; margin: 0 auto; padding: 0 24px; }
+
+  /* ── fake macOS menu bar ── */
+  .menubar {
+    position: sticky; top: 0; z-index: 10;
+    background: rgba(10,13,17,.88); backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--line);
+    font-size: 13px;
+  }
+  .menubar .wrap {
+    display: flex; align-items: center; gap: 22px;
+    height: 42px;
+  }
+  .menubar .item { color: var(--dim); }
+  .menubar .brand { color: var(--text); font-weight: 600; }
+  .menubar .tray {
+    margin-left: auto; display: flex; align-items: center; gap: 16px;
+    color: var(--dim);
+  }
+  .menubar .infty {
+    color: var(--orange); font-weight: 600; font-size: 15px;
+    padding: 2px 8px; border-radius: 5px; background: rgba(240,160,60,.12);
+  }
+  .menubar nav a { color: var(--dim); }
+  .menubar nav a:hover { color: var(--text); text-decoration: none; }
+  .menubar nav { display: flex; gap: 18px; }
+  @media (max-width: 640px) { .menubar nav { display: none; } }
+
+  /* ── hero ── */
+  .hero { padding: 88px 0 40px; }
+  .kicker {
+    color: var(--orange); font-size: 13px; letter-spacing: .18em;
+    text-transform: uppercase; margin: 0 0 18px;
+  }
+  h1 {
+    font-family: var(--serif); font-weight: 400;
+    font-size: clamp(42px, 7vw, 74px); line-height: 1.05;
+    margin: 0 0 22px; text-wrap: balance; letter-spacing: .01em;
+  }
+  h1 em { color: var(--orange); font-style: italic; }
+  .lede {
+    color: var(--dim); max-width: 58ch; font-size: 16px; margin: 0 0 34px;
+  }
+  .cta { display: flex; gap: 14px; flex-wrap: wrap; align-items: center; }
+  .btn {
+    display: inline-block; padding: 12px 22px; border-radius: 8px;
+    font-family: var(--mono); font-size: 14px; font-weight: 600;
+    border: 1px solid var(--line); color: var(--text);
+  }
+  .btn:hover { text-decoration: none; border-color: var(--dim); }
+  .btn.primary {
+    background: var(--orange); border-color: var(--orange); color: #14100a;
+  }
+  .btn.primary:hover { filter: brightness(1.08); }
+  .cta .note { color: var(--faint); font-size: 13px; }
+
+  /* ── live fleet demo ── */
+  .fleet { padding: 26px 0 70px; }
+  .fleet-frame {
+    background: var(--panel); border: 1px solid var(--line);
+    border-radius: 14px; padding: 22px 24px 18px;
+    box-shadow: 0 30px 80px rgba(0,0,0,.45);
+  }
+  .fleet-head {
+    display: flex; align-items: baseline; gap: 12px;
+    color: var(--faint); font-size: 12px; margin-bottom: 16px;
+    text-transform: uppercase; letter-spacing: .14em;
+  }
+  .fleet-head .live { color: var(--mint); }
+  .acct { display: grid; grid-template-columns: 150px 1fr 120px; gap: 14px;
+    align-items: center; padding: 11px 0; border-top: 1px solid var(--line); }
+  .acct:first-of-type { border-top: 0; }
+  .acct .name { font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .acct .name .mark { color: var(--orange); margin-right: 8px; }
+  .acct.dead .name, .acct.dead .stat { color: var(--faint); }
+  .gauge { height: 12px; border-radius: 6px; background: #1c232c; overflow: hidden; }
+  .gauge > i {
+    display: block; height: 100%; border-radius: 6px;
+    background: linear-gradient(90deg, var(--mint), #86e0ab);
+    transition: width .5s ease;
+  }
+  .acct.warn .gauge > i { background: linear-gradient(90deg, var(--orange), #f6bd6d); }
+  .acct.dead .gauge > i { background: var(--red); width: 2% !important; }
+  .acct .stat { font-size: 12.5px; color: var(--dim); text-align: right;
+    font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .acct .stat b { color: var(--text); font-weight: 600; }
+  .fleet-foot { margin-top: 14px; font-size: 12.5px; color: var(--faint); }
+  .fleet-foot .ev { color: var(--dim); }
+  .fleet-foot .ev b { color: var(--orange); font-weight: 600; }
+  @media (max-width: 560px) { .acct { grid-template-columns: 110px 1fr; }
+    .acct .stat { display: none; } }
+
+  /* ── sections ── */
+  section { padding: 70px 0; border-top: 1px solid var(--line); }
+  h2 {
+    font-family: var(--serif); font-weight: 400; font-size: 34px;
+    margin: 0 0 10px; letter-spacing: .01em;
+  }
+  .sub { color: var(--dim); margin: 0 0 40px; max-width: 62ch; }
+
+  .steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 22px; }
+  @media (max-width: 760px) { .steps { grid-template-columns: 1fr; } }
+  .step { border: 1px solid var(--line); border-radius: 12px; padding: 22px;
+    background: var(--panel); }
+  .step .n { color: var(--orange); font-size: 13px; letter-spacing: .14em; }
+  .step h3 { margin: 10px 0 8px; font-size: 16px; font-weight: 600; }
+  .step p { margin: 0; color: var(--dim); font-size: 14px; }
+
+  .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 18px; }
+  @media (max-width: 960px) { .grid { grid-template-columns: repeat(2, 1fr); } }
+  @media (max-width: 540px) { .grid { grid-template-columns: 1fr; } }
+  .card { border: 1px solid var(--line); border-radius: 12px; padding: 20px;
+    background: var(--panel); }
+  .card h3 { margin: 0 0 8px; font-size: 15px; font-weight: 600; }
+  .card h3 .dot { color: var(--mint); margin-right: 7px; }
+  .card p { margin: 0; color: var(--dim); font-size: 13.5px; line-height: 1.6; }
+
+  /* ── wall band ── */
+  .wall { background: #06080b; border-top: 1px solid var(--line); }
+  .wall .inner { display: grid; grid-template-columns: 1.1fr .9fr; gap: 46px;
+    align-items: center; }
+  @media (max-width: 860px) { .wall .inner { grid-template-columns: 1fr; } }
+  .wall-mock { border: 1px solid var(--line); border-radius: 12px;
+    background: #000; padding: 26px; }
+  .wall-mock .big { font-size: 42px; font-weight: 600; color: var(--orange);
+    font-variant-numeric: tabular-nums; letter-spacing: .02em; }
+  .wall-mock .who { color: var(--text); font-size: 17px; margin-bottom: 4px; }
+  .wall-mock .lbl { color: var(--faint); font-size: 11px; letter-spacing: .16em;
+    text-transform: uppercase; }
+  .wall-mock .sess { margin-top: 20px; border-top: 1px solid var(--line);
+    padding-top: 14px; display: grid; gap: 9px; }
+  .wall-mock .srow { display: flex; gap: 10px; font-size: 13px; align-items: baseline; }
+  .wall-mock .srow .d { color: var(--orange); }
+  .wall-mock .srow .repo { color: var(--text); }
+  .wall-mock .srow .doing { color: var(--dim); overflow: hidden;
+    text-overflow: ellipsis; white-space: nowrap; }
+  .wall-mock .srow .todo { margin-left: auto; color: var(--mint);
+    font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+  /* ── install ── */
+  pre {
+    background: var(--panel-2); border: 1px solid var(--line);
+    border-radius: 10px; padding: 16px 18px; overflow-x: auto;
+    font-size: 13.5px; line-height: 1.7; margin: 0;
+  }
+  pre .c { color: var(--faint); }
+  pre .g { color: var(--mint); }
+  .install-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; }
+  @media (max-width: 860px) { .install-cols { grid-template-columns: 1fr; } }
+  .install-cols h3 { font-size: 15px; font-weight: 600; margin: 0 0 12px; }
+  .fineprint { color: var(--faint); font-size: 12.5px; margin-top: 14px; }
+
+  footer { border-top: 1px solid var(--line); padding: 40px 0 60px;
+    color: var(--faint); font-size: 13px; }
+  footer .wrap { display: flex; gap: 24px; flex-wrap: wrap;
+    justify-content: space-between; }
+  footer a { color: var(--dim); }
+
+  @media (prefers-reduced-motion: reduce) {
+    html { scroll-behavior: auto; }
+    .gauge > i { transition: none; }
+  }
+</style>
+</head>
+<body>
+
+<div class="menubar">
+  <div class="wrap">
+    <span class="item brand">♾ Infinitus</span>
+    <nav aria-label="Sections">
+      <a href="#how">How it works</a>
+      <a href="#features">Features</a>
+      <a href="#wall">The wall</a>
+      <a href="#install">Install</a>
+    </nav>
+    <span class="tray">
+      <a href="https://github.com/deathemperor/infinitus" style="color:var(--dim)">GitHub</a>
+      <span class="infty" id="tray-pct">∞ 64%</span>
+    </span>
+  </div>
+</div>
+
+<header class="hero wrap">
+  <p class="kicker">macOS menu bar · Linux panel</p>
+  <h1>Your Claude fleet,<br><em>never</em> off the clock.</h1>
+  <p class="lede">
+    Infinitus is mission control for a fleet of Claude Code accounts.
+    It watches every usage window, rotates to the freshest account the
+    moment a limit hits, and nudges your stopped sessions back to work —
+    so an agent run survives the five-hour wall without you.
+  </p>
+  <div class="cta">
+    <a class="btn primary" href="https://github.com/deathemperor/infinitus/releases/latest">Download for macOS</a>
+    <a class="btn" href="https://github.com/deathemperor/infinitus">Source on GitHub</a>
+    <span class="note">v0.3 · Apple silicon · free &amp; open source</span>
+  </div>
+</header>
+
+<div class="fleet wrap" aria-hidden="true">
+  <div class="fleet-frame">
+    <div class="fleet-head"><span>account fleet</span><span class="live">● live rotation demo</span></div>
+    <div id="fleet"></div>
+    <div class="fleet-foot"><span class="ev" id="fleet-event">engine: consume-first · watching 3 windows per account</span></div>
+  </div>
+</div>
+
+<section id="how">
+  <div class="wrap">
+    <h2>How it works</h2>
+    <p class="sub">A native Swift app over the <b>claude-swap</b> engine.
+      Every engine touchpoint is an isolated <code>cswap --json</code>
+      subprocess — Infinitus never touches your credentials directly.</p>
+    <div class="steps">
+      <div class="step"><span class="n">01 · WATCH</span>
+        <h3>Every window, every account</h3>
+        <p>5-hour, weekly, and per-model usage gauges with reset clocks,
+        pace markers, and a flash warning when an account is dying.</p></div>
+      <div class="step"><span class="n">02 · SWITCH</span>
+        <h3>Rotate on the limit, not after it</h3>
+        <p>Consume-first auto-switch picks the account whose weekly window
+        resets soonest. Limits become a hand-off, not an outage.</p></div>
+      <div class="step"><span class="n">03 · RESUME</span>
+        <h3>Sessions pick themselves back up</h3>
+        <p>Stopped Claude Code sessions get a resume nudge on the fresh
+        account — with guards so a mid-turn session is never interrupted.</p></div>
+    </div>
+  </div>
+</section>
+
+<section id="features">
+  <div class="wrap">
+    <h2>Features</h2>
+    <p class="sub">Built for people who run agents all day and want to look
+      at one thing — briefly — when it matters.</p>
+    <div class="grid">
+      <div class="card"><h3><span class="dot">●</span>Session progress</h3>
+        <p>Zero-token transcript parsing shows what every agent is doing:
+        current task, todo progress, quiet time, retry trouble.</p></div>
+      <div class="card"><h3><span class="dot">●</span>Fleet wall</h3>
+        <p>A full-screen mission-control layout for the spare display:
+        hero gauges, revival countdowns, a bench of every account.</p></div>
+      <div class="card"><h3><span class="dot">●</span>Usage history</h3>
+        <p>Per-account utilization over time with waste estimates —
+        see the capacity your fleet left on the table. iCloud sync.</p></div>
+      <div class="card"><h3><span class="dot">●</span>Resume guards</h3>
+        <p>Evidence-gated nudges: only after a real switch or a fresh
+        capacity verdict, never into a busy session, with cooldowns.</p></div>
+      <div class="card"><h3><span class="dot">●</span>Themes</h3>
+        <p>RPG HP bars, tactical-espionage flavor, or plain minimal —
+        the fleet reads at a glance either way.</p></div>
+      <div class="card"><h3><span class="dot">●</span>All-dead countdown</h3>
+        <p>When every account is limited, a giant countdown to the first
+        revival — and how many sessions are waiting on it.</p></div>
+      <div class="card"><h3><span class="dot">●</span>Linux port</h3>
+        <p>A Quickshell panel for Omarchy / Arch with the same gauges,
+        dead-account flash, and session rows.</p></div>
+      <div class="card"><h3><span class="dot">●</span>Playground</h3>
+        <p>Simulate empty fleets, all-dead nights, and switch storms
+        without burning real quota.</p></div>
+    </div>
+  </div>
+</section>
+
+<section id="wall" class="wall">
+  <div class="wrap inner">
+    <div>
+      <h2>The wall</h2>
+      <p class="sub" style="margin-bottom:18px">Point a spare display at your
+        fleet. When agents are working, a session board shows each one's
+        repo, current task, and todo progress. When everything is limited,
+        the revival countdown takes the room. When nothing is happening —
+        it's dark, on purpose.</p>
+      <p class="sub" style="margin-bottom:0">You only need to look when
+        something is moving. That's the whole idea.</p>
+    </div>
+    <div class="wall-mock" aria-hidden="true">
+      <div class="lbl">active account</div>
+      <div class="who">papaya · Max 20×</div>
+      <div class="big" id="wall-pct">64% left</div>
+      <div class="sess">
+        <div class="srow"><span class="d">●</span><span class="repo">limitless</span>
+          <span class="doing">Editing WallLayout.swift</span><span class="todo">5/7</span></div>
+        <div class="srow"><span class="d">●</span><span class="repo">banyan</span>
+          <span class="doing">Running swift test</span><span class="todo">2/4</span></div>
+        <div class="srow"><span class="d" style="color:var(--yellow)">●</span><span class="repo">claude-swap</span>
+          <span class="doing">waiting for input</span><span class="todo">quiet 4m</span></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="install">
+  <div class="wrap">
+    <h2>Install</h2>
+    <p class="sub">Grab a release or build from source — it's a plain
+      SwiftPM project.</p>
+    <div class="install-cols">
+      <div>
+        <h3>macOS</h3>
+        <pre><span class="c"># download Infinitus.app from the latest release</span>
+<span class="g">open</span> https://github.com/deathemperor/infinitus/releases
+
+<span class="c"># or build it yourself</span>
+<span class="g">git</span> clone https://github.com/deathemperor/infinitus
+<span class="g">cd</span> infinitus &amp;&amp; ./make-app.sh &amp;&amp; <span class="g">open</span> Infinitus.app</pre>
+        <p class="fineprint">Builds are currently unsigned — first launch is
+        right-click → Open. Requires the claude-swap CLI on your PATH;
+        Infinitus walks you through first-account setup.</p>
+      </div>
+      <div>
+        <h3>Linux (Omarchy / Arch)</h3>
+        <pre><span class="c"># tray daemon + Quickshell panel plugin</span>
+<span class="g">git</span> clone https://github.com/deathemperor/infinitus
+<span class="g">cd</span> infinitus
+<span class="g">swift</span> build -c release --product infinitus-tray
+<span class="c"># panel: packaging/omarchy/quickshell-plugin/</span></pre>
+        <p class="fineprint">Same core, same gauges — rendered in your
+        Quickshell bar. AUR package planned.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <span>♾ Infinitus — free &amp; open source, MIT-spirited.</span>
+    <span>
+      <a href="https://github.com/deathemperor/infinitus">GitHub</a> ·
+      <a href="https://github.com/deathemperor/infinitus/issues">Issues</a> ·
+      <span title="Usage-cost figures shown in the app are estimates, never billing truth.">usage figures are estimates</span>
+    </span>
+  </div>
+</footer>
+
+<script>
+(function () {
+  var accounts = [
+    { name: "papaya",  pct: 64, warn: false, dead: false, reset: "resets 2d 4h" },
+    { name: "banyan",  pct: 12, warn: true,  dead: false, reset: "resets 9h 12m" },
+    { name: "cassava", pct: 0,  warn: false, dead: true,  reset: "revives 1h 03m" }
+  ];
+  var activeIdx = 0;
+  var host = document.getElementById("fleet");
+  var evEl = document.getElementById("fleet-event");
+  var trayEl = document.getElementById("tray-pct");
+  var wallEl = document.getElementById("wall-pct");
+
+  function render() {
+    host.innerHTML = accounts.map(function (a, i) {
+      var cls = "acct" + (a.warn ? " warn" : "") + (a.dead ? " dead" : "");
+      var mark = i === activeIdx ? '<span class="mark">▶</span>' : "";
+      var stat = a.dead ? a.reset : "<b>" + a.pct + "%</b> · " + a.reset;
+      return '<div class="' + cls + '"><div class="name">' + mark + a.name +
+        '</div><div class="gauge"><i style="width:' + Math.max(a.pct, 2) +
+        '%"></i></div><div class="stat">' + stat + "</div></div>";
+    }).join("");
+    trayEl.textContent = "∞ " + accounts[activeIdx].pct + "%";
+    if (wallEl) wallEl.textContent = accounts[activeIdx].pct + "% left";
+  }
+
+  var reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  render();
+  if (reduced) return;
+
+  setInterval(function () {
+    var a = accounts[activeIdx];
+    a.pct = Math.max(0, a.pct - (1 + Math.floor(Math.random() * 3)));
+    a.warn = a.pct <= 15 && a.pct > 0;
+    if (a.pct === 0) {
+      a.dead = true; a.warn = false;
+      a.reset = "revives 4h 58m";
+      var next = accounts.findIndex(function (x) { return !x.dead; });
+      if (next === -1) {
+        accounts.forEach(function (x) { x.dead = false; x.warn = false; x.pct = 60 + Math.floor(Math.random() * 35); x.reset = "resets 6d 22h"; });
+        next = 0;
+        evEl.innerHTML = '<b>window reset</b> — fleet revived, back to work';
+      } else {
+        evEl.innerHTML = '<b>limit hit</b> — switched ' + a.name + " → " +
+          accounts[next].name + " · resume nudge sent to 3 sessions";
+      }
+      activeIdx = next;
+    }
+    render();
+  }, 1400);
+})();
+</script>
+</body>
+</html>
