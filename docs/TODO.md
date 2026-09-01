@@ -68,10 +68,12 @@ file keeps the shipped log and the deferred-by-design notes.
 - #4 Capture quality (window captures + bright backgrounds)
 - #5 Resume nudge typed but never submitted (Enter delivery)
 - #6 Playground simulations (onboarding + auto-switch scenarios)
-- #7 Window-start scheduling — "the big Infinitus" (plan last)
+- #7 Infinitus smart engine — reset battle plans, window-start
+      scheduling, capacity advice ("the big Infinitus"; plan last)
 - #8 CLIProxyAPI alternate backend (mapping done, no blocking gaps)
 - #9 Mobile companion app (brainstorm done, user picks pending)
 - #10 Human handoffs: AUR publish, Linux real-account cswap, signing
+- #11 Full-screen mode — fleet wall display for a spare screen
 
 ## Shipped 2026-09-01 (second wave — the remote-control batch)
 
