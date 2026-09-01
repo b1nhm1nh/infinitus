@@ -2133,30 +2133,44 @@ private struct InstantTip: ViewModifier {
 /// (topLeading + 22 below, bottom-anchored above, midY trailing).
 struct InstantTipCanvas: View {
     let tips: [TipData]
+    /// Measured chip width, for edge clamping. One tip shows at a time,
+    /// so a single measurement is enough.
+    @State private var chipWidth: CGFloat = 0
+
+    /// The window clips its content, so a tip can never render OUTSIDE
+    /// the popup (user ask 2026-09-01 — that would need a separate
+    /// floating panel). Clamp instead: a chip near the right edge
+    /// shifts left, never clips.
+    private func clampX(_ x: CGFloat, in width: CGFloat) -> CGFloat {
+        max(4, min(x, width - chipWidth - 4))
+    }
 
     var body: some View {
         GeometryReader { geo in
             if let tip = tips.last {
                 let r = geo[tip.anchor]
+                let chip = TipChip(text: tip.text)
+                    .onGeometryChange(for: CGFloat.self) { $0.size.width }
+                        action: { chipWidth = $0 }
                 switch tip.edge {
                 case .below:
-                    TipChip(text: tip.text)
+                    chip
                         .frame(maxWidth: .infinity, maxHeight: .infinity,
                                alignment: .topLeading)
-                        .offset(x: r.minX, y: r.minY + 22)
+                        .offset(x: clampX(r.minX, in: geo.size.width), y: r.minY + 22)
                 case .above:
                     // Bottom-anchored so the chip's own height never
                     // matters: bottom edge lands at r.maxY - 22.
-                    TipChip(text: tip.text)
+                    chip
                         .frame(maxWidth: .infinity, maxHeight: .infinity,
                                alignment: .bottomLeading)
-                        .offset(x: r.minX,
+                        .offset(x: clampX(r.minX, in: geo.size.width),
                                 y: r.maxY - 22 - geo.size.height)
                 case .trailing:
-                    TipChip(text: tip.text)
+                    chip
                         .frame(maxWidth: .infinity, maxHeight: .infinity,
                                alignment: .topLeading)
-                        .offset(x: r.minX + 24, y: r.midY - 11)
+                        .offset(x: clampX(r.minX + 24, in: geo.size.width), y: r.midY - 11)
                 }
             }
         }
