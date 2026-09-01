@@ -381,30 +381,18 @@ struct InfinitusHeader: View {
         .frame(maxWidth: .infinity)
     }
 
-    /// Unbundled runs (run-unbundled.sh) have no AppIcon, so
-    /// applicationIconImage is the generic document icon — try an
-    /// AppIcon.icns dropped next to the executable (run-unbundled.sh
-    /// copies it), else the menu bar glyph tinted like the title.
-    @ViewBuilder private var icon: some View {
-        if Bundle.main.bundlePath.hasSuffix(".app"),
-           let appIcon = NSApp.applicationIconImage {
-            Image(nsImage: appIcon).resizable()
-        } else if let sidecar = Self.sidecarIcon {
-            Image(nsImage: sidecar).resizable()
-        } else {
-            Image(nsImage: MenuBarGlyph.image)
-                .renderingMode(.template)
-                .resizable()
-                .scaledToFit()
-                .foregroundStyle(tint)
-        }
+    /// Always the glyph, tinted like the title — never the app-icon
+    /// squircle: the header's icon must match the themed text ("before
+    /// that the icon color match the text", user 2026-09-01; the raw
+    /// icon only ever showed because bundled runs took a different
+    /// branch than the unbundled dev builds).
+    private var icon: some View {
+        Image(nsImage: MenuBarGlyph.image)
+            .renderingMode(.template)
+            .resizable()
+            .scaledToFit()
+            .foregroundStyle(tint)
     }
-
-    private static let sidecarIcon: NSImage? = {
-        guard let dir = (Bundle.main.executablePath as NSString?)?
-            .deletingLastPathComponent else { return nil }
-        return NSImage(contentsOfFile: dir + "/AppIcon.icns")
-    }()
 
     private var tint: Color {
         let theme = model.rowTheme
