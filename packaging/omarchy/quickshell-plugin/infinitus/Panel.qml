@@ -31,6 +31,9 @@ Panel {
 
   property var fleet: null
   readonly property var accounts: fleet && fleet.accounts ? fleet.accounts : []
+  // Compact session-progress rows (issue #13 step 4): busy/waiting
+  // sessions, capped, from the same payload.
+  readonly property var sessions: fleet && fleet.sessions ? fleet.sessions : []
   readonly property var themeList: fleet && fleet.themes ? fleet.themes : []
   readonly property string themeName: {
     for (var i = 0; i < themeList.length; i++)
@@ -581,6 +584,87 @@ Panel {
                       }
                     }
                   }
+                }
+              }
+            }
+          }
+
+          // ---- Sessions: compact progress rows (issue #13 step 4),
+          // the Omarchy counterpart of the macOS popover's session
+          // list — busy/waiting only, capped, shown when non-empty.
+          Column {
+            width: parent.width
+            visible: root.sessions.length > 0
+            spacing: Style.space(4)
+
+            PanelSeparator {
+              width: parent.width
+              foreground: root.contentForeground
+            }
+
+            Repeater {
+              model: root.sessions
+
+              Item {
+                id: sessionRow
+                required property var modelData
+                width: fleetColumn.width
+                height: Style.space(16)
+
+                Rectangle {
+                  id: sessionDot
+                  width: Style.space(7)
+                  height: Style.space(7)
+                  radius: width / 2
+                  anchors.left: parent.left
+                  anchors.verticalCenter: parent.verticalCenter
+                  color: sessionRow.modelData.status === "busy" ? "orange" : "yellow"
+                }
+
+                Text {
+                  id: sessionRepo
+                  textFormat: Text.PlainText
+                  anchors.left: sessionDot.right
+                  anchors.leftMargin: Style.space(6)
+                  anchors.verticalCenter: parent.verticalCenter
+                  width: Style.space(90)
+                  elide: Text.ElideRight
+                  text: sessionRow.modelData.repo
+                  color: root.contentForeground
+                  font.family: root.contentFontFamily
+                  font.pixelSize: Style.font.caption
+                }
+
+                Text {
+                  id: sessionQuiet
+                  textFormat: Text.PlainText
+                  anchors.right: parent.right
+                  anchors.verticalCenter: parent.verticalCenter
+                  visible: !!sessionRow.modelData.quietMinutes
+                  text: sessionRow.modelData.quietMinutes ? "quiet " + sessionRow.modelData.quietMinutes + "m" : ""
+                  color: root.mutedForeground
+                  opacity: 0.7
+                  font.family: root.contentFontFamily
+                  font.pixelSize: Style.font.caption
+                }
+
+                Text {
+                  textFormat: Text.PlainText
+                  anchors.left: sessionRepo.right
+                  anchors.leftMargin: Style.space(8)
+                  anchors.right: sessionQuiet.left
+                  anchors.rightMargin: Style.space(8)
+                  anchors.verticalCenter: parent.verticalCenter
+                  elide: Text.ElideRight
+                  text: sessionRow.modelData.retrying ? "retrying"
+                      : sessionRow.modelData.nowDoing ? sessionRow.modelData.nowDoing
+                      : sessionRow.modelData.todosTotal
+                        ? (sessionRow.modelData.todosDone + "/" + sessionRow.modelData.todosTotal
+                           + (sessionRow.modelData.activeForm ? " · " + sessionRow.modelData.activeForm : ""))
+                        : ""
+                  color: sessionRow.modelData.retrying ? Color.urgent : root.mutedForeground
+                  font.family: root.contentFontFamily
+                  font.pixelSize: Style.font.caption
                 }
               }
             }

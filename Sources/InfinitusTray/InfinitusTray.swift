@@ -65,6 +65,9 @@ struct PanelPayload: Encodable {
     let accounts: [PanelAccount]
     let themes: [PanelTheme]
     let nextRecovery: PanelRecovery?
+    /// Compact session-progress rows (issue #13 step 4) — busy/waiting
+    /// sessions, capped, additive field so older panels ignore it.
+    let sessions: [SessionPanelRow]
     let error: String?
 }
 
@@ -244,7 +247,7 @@ struct InfinitusTray {
                 schemaVersion: 1, themeId: theme.id,
                 title: "\(TitleFormatter.icon) \(message)", sessionsLine: nil,
                 activeNumber: nil, accounts: [], themes: themes,
-                nextRecovery: nil, error: message))
+                nextRecovery: nil, sessions: [], error: message))
         }
         guard let bin = CswapLocator.locate() else {
             emitError("cswap not found")
@@ -334,14 +337,40 @@ struct InfinitusTray {
             // the waiting count reuses the resume mechanism's own
             // stopped-session detection (Claude Code's files only —
             // never engine internals).
+            let claudeDir = ClaudeSessions.configHome()
             var recovery: PanelRecovery?
             if list.nextCandidate == nil, let rec = list.nextRecovery {
-                let dir = ClaudeSessions.configHome()
                 let stopped = Transcript.findStopped(
-                    sessions: ClaudeSessions.list(claudeDir: dir), claudeDir: dir)
+                    sessions: ClaudeSessions.list(claudeDir: claudeDir), claudeDir: claudeDir)
                 recovery = PanelRecovery(number: rec.number, at: rec.at,
                                          waiting: stopped.count)
             }
+            // Session progress rows (issue #13 step 4): busy/waiting
+            // first (same ordering as the macOS wall's session board),
+            // capped at 6. No self-skip here — neither the macOS popover
+            // nor the wall board excludes the tray's/app's own lineage,
+            // so this doesn't invent one either (flagged as a concern).
+            let sessionRecords = ClaudeSessions.list(claudeDir: claudeDir)
+                .filter { $0.status == "busy" || $0.status == "waiting" }
+                .sorted { a, _ in a.status == "busy" }
+            let selectedSessions = Array(sessionRecords.prefix(6))
+            var progressCache = SessionProgressCache.load()
+            let sessions = selectedSessions.map { record -> SessionPanelRow in
+                let stamp = SessionProgressCache.stamp(sessionId: record.sessionId,
+                                                       cwd: record.cwd, claudeDir: claudeDir)
+                let progress: SessionProgress
+                if let entry = progressCache[record.sessionId],
+                   entry.size == stamp.size, entry.mtime == stamp.mtime {
+                    progress = entry.progress
+                } else {
+                    progress = SessionProgress.read(sessionId: record.sessionId,
+                                                    cwd: record.cwd, claudeDir: claudeDir)
+                    progressCache[record.sessionId] = .init(size: stamp.size, mtime: stamp.mtime,
+                                                            progress: progress)
+                }
+                return SessionPanelRow.make(record: record, progress: progress, now: now)
+            }
+            SessionProgressCache.save(progressCache)
             emitPanel(PanelPayload(
                 schemaVersion: 1, themeId: theme.id,
                 title: list.accounts.isEmpty
@@ -349,7 +378,7 @@ struct InfinitusTray {
                     : TitleFormatter.format(account: active, prefs: prefs, now: now),
                 sessionsLine: list.liveSessions.map { SessionSummary.tooltip($0) },
                 activeNumber: active?.number, accounts: accounts,
-                themes: themes, nextRecovery: recovery, error: nil))
+                themes: themes, nextRecovery: recovery, sessions: sessions, error: nil))
         } catch {
             emitError("engine error: \(error)")
         }

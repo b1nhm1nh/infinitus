@@ -193,4 +193,30 @@ final class SessionProgressTests: XCTestCase {
         XCTAssertEqual(pairs.count, 1)
         XCTAssertEqual(pairs.first?.session.pid, 1)
     }
+
+    func testSessionPanelRowMapsRepoAndProgressFields() {
+        let record = ClaudeSessionRecord(pid: 1, sessionId: "s1",
+                                         cwd: "/Users/x/death/limitless", status: "busy")
+        let progress = SessionProgress(
+            nowDoing: "Reading Foo.swift",
+            todos: .init(done: 1, total: 3, activeForm: "Doing b"),
+            retrying: false)
+        let row = SessionPanelRow.make(record: record, progress: progress)
+        XCTAssertEqual(row.repo, "limitless")
+        XCTAssertEqual(row.status, "busy")
+        XCTAssertEqual(row.nowDoing, "Reading Foo.swift")
+        XCTAssertEqual(row.todosDone, 1)
+        XCTAssertEqual(row.todosTotal, 3)
+        XCTAssertEqual(row.activeForm, "Doing b")
+        XCTAssertFalse(row.retrying)
+    }
+
+    func testSessionPanelRowQuietMinutesThresholdAt120Seconds() {
+        let record = ClaudeSessionRecord(pid: 1, sessionId: "s1", cwd: "/a/b", status: "waiting")
+        let now = Date()
+        let justUnder = SessionProgress(lastActivityAt: now.addingTimeInterval(-119))
+        XCTAssertNil(SessionPanelRow.make(record: record, progress: justUnder, now: now).quietMinutes)
+        let over = SessionProgress(lastActivityAt: now.addingTimeInterval(-181))
+        XCTAssertEqual(SessionPanelRow.make(record: record, progress: over, now: now).quietMinutes, 3)
+    }
 }

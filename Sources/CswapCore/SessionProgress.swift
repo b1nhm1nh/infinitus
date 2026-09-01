@@ -3,10 +3,10 @@ import Foundation
 /// Zero-token progress snapshot derived from a transcript tail — "layer 0"
 /// from docs/research/session-progress.md: what the transcript already
 /// says about a session, without spending a single token to summarize it.
-public struct SessionProgress: Sendable, Equatable {
+public struct SessionProgress: Sendable, Equatable, Codable {
     /// The most recent `TodoWrite` payload — a structured self-report the
     /// agent already maintains, read for free.
-    public struct Todos: Sendable, Equatable {
+    public struct Todos: Sendable, Equatable, Codable {
         public let done: Int
         public let total: Int
         public let activeForm: String?
@@ -166,5 +166,53 @@ public struct SessionProgress: Sendable, Equatable {
         default:
             return name
         }
+    }
+}
+
+/// Compact per-session row for a fleet panel (the Linux Quickshell panel,
+/// issue #13 step 4) — repo name, status, and a one-line progress
+/// summary. Pure mapping from a live session record + its
+/// transcript-derived progress, so it's testable without touching disk.
+public struct SessionPanelRow: Sendable, Equatable, Codable {
+    public let repo: String
+    public let status: String
+    public let nowDoing: String?
+    public let todosDone: Int?
+    public let todosTotal: Int?
+    public let activeForm: String?
+    public let retrying: Bool
+    public let quietMinutes: Int?
+
+    public init(repo: String, status: String, nowDoing: String? = nil, todosDone: Int? = nil,
+                todosTotal: Int? = nil, activeForm: String? = nil, retrying: Bool = false,
+                quietMinutes: Int? = nil) {
+        self.repo = repo
+        self.status = status
+        self.nowDoing = nowDoing
+        self.todosDone = todosDone
+        self.todosTotal = todosTotal
+        self.activeForm = activeForm
+        self.retrying = retrying
+        self.quietMinutes = quietMinutes
+    }
+
+    /// `repo` is the last path component of the record's cwd. `quietMinutes`
+    /// is present only once the transcript has been silent over 120s — same
+    /// threshold as the macOS popover's SessionProgressLine.
+    public static func make(record: ClaudeSessionRecord, progress: SessionProgress,
+                             now: Date = Date()) -> SessionPanelRow {
+        let quietMinutes: Int? = progress.lastActivityAt.flatMap { last in
+            let idle = now.timeIntervalSince(last)
+            return idle > 120 ? Int(idle / 60) : nil
+        }
+        return SessionPanelRow(
+            repo: URL(fileURLWithPath: record.cwd).lastPathComponent,
+            status: record.status ?? "",
+            nowDoing: progress.nowDoing,
+            todosDone: progress.todos?.done,
+            todosTotal: progress.todos?.total,
+            activeForm: progress.todos?.activeForm,
+            retrying: progress.retrying,
+            quietMinutes: quietMinutes)
     }
 }
