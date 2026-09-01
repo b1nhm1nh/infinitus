@@ -474,9 +474,12 @@ final class AppModel: ObservableObject {
         return nil
     }
 
+    /// Playground-only: pretend no engine was found, so the onboarding
+    /// card is reachable without an env-var relaunch (issue #6).
+    @Published var simulateNoEngine = false
     /// True when no cswap binary was found at launch; the popup swaps
     /// its rows for the onboarding card.
-    var engineMissing: Bool { cli == nil }
+    var engineMissing: Bool { cli == nil || simulateNoEngine }
 
     // MARK: onboarding — machine detection (todo 2026-09-01)
 

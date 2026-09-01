@@ -145,10 +145,22 @@ cmd = args[0] if args else ""
 
 if cmd == "--version":
     print("cswap 0.26.0")
+elif cmd == "simulate":
+    # Playground scenario staging (issue #6): `simulate empty|alldead|off`
+    # persists in the state file so every later `list` plays the scene —
+    # unlike the SHIM_* env vars, this works on a RUNNING app.
+    st = state()
+    mode = args[1] if len(args) > 1 else "off"
+    if mode == "off":
+        st.pop("scenario", None)
+    else:
+        st["scenario"] = mode
+    save(st)
+    print(json.dumps({"ok": True, "scenario": st.get("scenario")}))
 elif cmd == "list":
     st = state()
     # Onboarding simulation: an engine that manages nothing yet.
-    if os.environ.get("DEMO_EMPTY"):
+    if st.get("scenario") == "empty" or os.environ.get("DEMO_EMPTY"):
         print(json.dumps({"schemaVersion": 1, "activeAccountNumber": None,
                           "nextCandidate": None, "liveSessions": None,
                           "accounts": []}))
@@ -165,7 +177,7 @@ elif cmd == "list":
     payload = {"schemaVersion": 1, "activeAccountNumber": st["active"],
                "nextCandidate": 4 if st["active"] != 4 else 1,
                "liveSessions": sessions(), "accounts": accounts}
-    if os.environ.get("SHIM_ALLDEAD"):
+    if st.get("scenario") == "alldead" or os.environ.get("SHIM_ALLDEAD"):
         # Every window maxed: no viable candidate, echo recovers first.
         for a in accounts:
             if not a["usage"]:

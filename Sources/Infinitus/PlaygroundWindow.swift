@@ -121,6 +121,17 @@ import CswapCore
                     }
                 }
                 AppDelegate.shared?.statusHolder?.controller.showSettingsWindow()
+            case "scenario":
+                if arg == "noengine" { model.simulateNoEngine = true }
+                else if model.simulateNoEngine && arg == "off" {
+                    model.simulateNoEngine = false
+                } else {
+                    model.simulateNoEngine = false
+                    Task {
+                        _ = try? await model.cli?.run(["simulate", arg])
+                        await model.refreshSnapshot()
+                    }
+                }
             case "wall":
                 AppDelegate.shared?.statusHolder?.controller.toggleWall()
             case "reset": model.resetPlaygroundPrefs()
@@ -230,6 +241,14 @@ struct PlaygroundView: View {
     /// +35 points used; the immediate refresh plays the drop drama,
     /// the delayed clear plays the refill. State ends clean, so every
     /// press replays the full cycle.
+    private func setScenario(_ mode: String) {
+        model.simulateNoEngine = false
+        Task {
+            _ = try? await model.cli?.run(["simulate", mode])
+            await model.refreshSnapshot()
+        }
+    }
+
     private func playDrop(_ win: String) {
         let flag = FileManager.default.temporaryDirectory
             .appendingPathComponent("infinitus-demo-drop" + win)
@@ -297,6 +316,21 @@ struct PlaygroundView: View {
                         // drama + shard finisher + death beat, then the
                         // delayed clear revives (fanfare included).
                         Button("Kill") { playKill() }
+                    }
+                    HStack(spacing: 10) {
+                        // Scenario staging (issue #6): reproducible
+                        // states that otherwise need real 5h/7d waits or
+                        // env-var relaunches. Persisted demo-engine state
+                        // (simulate verb) + a model flag for no-engine.
+                        Text("Scenario").font(.caption)
+                            .foregroundStyle(.secondary)
+                        Button("Normal") { setScenario("off") }
+                        Button("Empty fleet") { setScenario("empty") }
+                        Button("All dead") { setScenario("alldead") }
+                        Button(model.simulateNoEngine
+                               ? "Engine back" : "No engine") {
+                            model.simulateNoEngine.toggle()
+                        }
                     }
                     HStack(spacing: 14) {
                         // Segmented, not dropdowns (user 2026-08-31:

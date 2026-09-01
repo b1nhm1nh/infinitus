@@ -73,7 +73,10 @@ file keeps the shipped log and the deferred-by-design notes.
 - #8 CLIProxyAPI alternate backend (mapping done, no blocking gaps)
 - #9 Mobile companion app (brainstorm done, user picks pending)
 - #10 Human handoffs: AUR publish, Linux real-account cswap, signing
-- #11 Full-screen mode — fleet wall display for a spare screen
+- ~~#11 Full-screen mode~~ → shipped 2026-09-01 (Display → Fleet wall,
+      screen picker, scaled popup body, Esc leaves)
+- #12 Fleet wall layout — a real wall-display design (mission-control
+      hero/rail/bench brainstorm in the issue), not the scaled popup
 
 ## Shipped 2026-09-01 (second wave — the remote-control batch)
 
