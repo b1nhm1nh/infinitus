@@ -143,6 +143,7 @@ final class StatusItemController {
     }
 
     private func showAnchored() {
+        if wall.isVisible { wall.dismissForPopup() }
         if anchored == nil {
             let host = NSHostingController(rootView: AnchoredRoot(
                 model: model, usage: usage,
@@ -381,6 +382,7 @@ final class StatusItemController {
     /// via `open Infinitus.app` -> applicationShouldHandleReopen when the
     /// status item is hidden or the bar refuses it.
     func showPinnedWindow(activate: Bool = true) {
+        if wall.isVisible { wall.dismissForPopup() }
         if pinned == nil {
             let host = NSHostingController(rootView: PinnedRoot(
                 model: model, usage: usage,
@@ -557,7 +559,18 @@ final class StatusItemController {
         settings?.makeKeyAndOrderFront(nil)
     }
 
-    func toggleWall() { wall.toggle(model: model, usage: usage) }
+    /// Wall is a MODE (user 2026-09-01): entering it closes the popup
+    /// and pop-out; leaving restores the pop-out if it was up.
+    func toggleWall() {
+        if wall.isVisible { wall.close(); return }
+        let hadPinned = pinned?.isVisible == true
+        if anchored?.isVisible == true { closeAnchored() }
+        if hadPinned { pinned?.orderOut(nil) }
+        wall.restore = { [weak self] in
+            if hadPinned { self?.showPinnedWindow() }
+        }
+        wall.show(model: model, usage: usage)
+    }
 
     @objc private func settingsClosed() {
         NSApp.setActivationPolicy(.accessory)

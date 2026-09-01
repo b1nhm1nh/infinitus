@@ -12,9 +12,21 @@ import CswapCore
 final class WallWindowController {
     private var window: NSWindow?
     private var keyMonitor: Any?
+    /// Wall-mode restore hook (user 2026-09-01: "fleet wall is a mode" —
+    /// popup/pop-out close when it opens): set by the controller before
+    /// show, invoked on close to bring back what the wall displaced.
+    var restore: (() -> Void)?
+
+    var isVisible: Bool { window != nil }
 
     func toggle(model: AppModel, usage: UsageModel) {
         if window != nil { close() } else { show(model: model, usage: usage) }
+    }
+
+    /// Close without restoring — the popup is opening on its own.
+    func dismissForPopup() {
+        restore = nil
+        close()
     }
 
     /// The user's pick from Display settings, else the first screen that
@@ -60,6 +72,8 @@ final class WallWindowController {
         keyMonitor = nil
         window?.orderOut(nil)
         window = nil
+        restore?()
+        restore = nil
     }
 }
 
@@ -76,12 +90,9 @@ private struct WallRoot: View {
         GeometryReader { geo in
             ZStack(alignment: .topTrailing) {
                 Color.black.ignoresSafeArea()
-                MenuContent(model: model, usage: usage)
-                    .fixedSize()
-                    .onGeometryChange(for: CGSize.self) { $0.size } action: { ideal = $0 }
-                    .scaleEffect(scale(in: geo.size), anchor: .center)
+                WallLayout(model: model)
                     .frame(maxWidth: .infinity, maxHeight: .infinity,
-                           alignment: .center)
+                           alignment: .topLeading)
                 Button(action: close) {
                     Image(systemName: "xmark.circle.fill")
                         .font(.system(size: 22))
