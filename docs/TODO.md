@@ -41,14 +41,15 @@
   Opposite layer to cswap's credential swap — running both fights. If ever
   requested: detect ANTHROPIC_BASE_URL and show "routed via …" first;
   a router backend would be a second engine behind the same boundary.
-- Real Notification Center delivery needs a Developer ID signature or one
-  Xcode automatic-signing run (provisioning profile). Developer ID:
-  the pipeline is ready (make-app.sh SIGN_IDENTITY, release.yml
-  notarize+staple behind secrets, docs/RELEASING.md); the only cert on
-  this Mac is an Apple Development one under VIETNAM MANGO COMPANY
-  LIMITED's team — cannot stand in. Needs a Developer ID Application
-  cert from that team's Account Holder (signer would read as the
-  company) or a personal membership.
+- ~~Developer ID signing~~ → done 2026-09-01: Developer ID Application
+  cert issued under VIETNAM MANGO COMPANY LIMITED (MXWP8THXMP, to Sep
+  2031; signer reads as the company only in `codesign -dvv`), local
+  build notarized (Accepted) + stapled + spctl-clean, all five CI
+  secrets set — next tag ships signed automatically. Still open from
+  this: re-grant Notification Center under a Developer ID build (real
+  delivery should now work — osascript fallback retires), and drop the
+  `--no-quarantine` wording from README + cask on the first signed
+  release.
 
 - ~~AppIcon ∞~~ → make-icon.swift now scales the MenuBarGlyph path
   (identity source of truth) onto the gradient squircle; icns rebuilt.

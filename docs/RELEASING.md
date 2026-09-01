@@ -6,16 +6,19 @@ from `main` daily.
 
 ## Signing today
 
-Builds are **ad-hoc signed** in CI (no identity on the runner) and
-**Apple Development-signed** locally when such a cert is in the keychain
-(`make-app.sh` picks it up — Notification Center refuses ad-hoc apps).
-Neither satisfies Gatekeeper on another Mac: users see "Apple could not
-verify…" and install with `--no-quarantine` or right-click → Open.
+Since 2026-09-01: **Developer ID Application: VIETNAM MANGO COMPANY
+LIMITED (MXWP8THXMP)** (cert to Sep 2031). The identity lives in the
+login keychain (`make-app.sh` prefers it automatically, hardened
+runtime + timestamp) and CI carries all five secrets below, so a tag
+push ships a signed, notarized, stapled zip end to end. Verified
+locally: notarytool Accepted + stapler + `spctl` "Notarized Developer
+ID". Normal users see no signer name; `codesign -dvv` reads the
+company. The private key + cert + CSR live in `~/Desktop/devid-csr/`
+(the notary `.p8` is `~/Downloads/AuthKey_339Q7369BM.p8`, mode 0600) —
+re-export a fresh `.p12` from there if the secret ever needs rotating.
 
-An Apple Development certificate — even one issued under an organization's
-team — cannot be turned into distribution trust. Gatekeeper trusts exactly
-one kind of identity outside the App Store: **Developer ID Application**,
-plus notarization.
+First release signed this way: drop the `--no-quarantine` wording from
+the README and the cask.
 
 ## Getting a Developer ID
 
