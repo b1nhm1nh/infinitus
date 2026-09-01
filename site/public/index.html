@@ -170,9 +170,11 @@
   .card h3 .dot { color: var(--mint); margin-right: 7px; }
   .card p { margin: 0; color: var(--dim); font-size: 13.5px; line-height: 1.6; }
 
-  .themes { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; }
-  @media (max-width: 900px) { .themes { grid-template-columns: repeat(3, 1fr); } }
-  @media (max-width: 540px) { .themes { grid-template-columns: repeat(2, 1fr); } }
+  .themes { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+  @media (max-width: 900px) { .themes { grid-template-columns: repeat(2, 1fr); } }
+  @media (max-width: 540px) { .themes { grid-template-columns: 1fr; } }
+  .themes img { width: 100%; height: auto; border-radius: 8px;
+    border: 1px solid var(--line); margin-top: 8px; }
   .themes > div { border: 1px solid var(--line); border-radius: 10px;
     padding: 12px 14px; background: var(--panel); display: grid; gap: 2px; }
   .themes b { font-weight: 600; font-size: 14px; }
@@ -344,21 +346,51 @@
       and brings its own intro, death, and revival effects. Pick one in
       Settings, or audition them all in the playground.</p>
     <div class="themes">
-      <div><b>Off</b><span>plain numbers</span></div>
-      <div><b>RPG</b><span>HP/MP gauges + gold</span></div>
-      <div><b>Movie</b><span>reels &amp; box office</span></div>
-      <div><b>Hades</b><span>blades &amp; darkness</span></div>
-      <div><b>Metal Gear</b><span>tactical espionage</span></div>
-      <div><b>AI Agentic</b><span>tokens &amp; context</span></div>
-      <div><b>Classic SWE</b><span>hand-written, no AI</span></div>
-      <div><b>Sci-Fi</b><span>warp cores &amp; shields</span></div>
-      <div><b>Wild West</b><span>six-guns &amp; gold rush</span></div>
-      <div><b>Cyberpunk</b><span>chrome &amp; neon</span></div>
-      <div><b>Gothic</b><span>candles &amp; cathedrals</span></div>
-      <div><b>Musical</b><span>tempo &amp; encores</span></div>
-      <div><b>Planet Earth</b><span>wild documentary</span></div>
-      <div><b>Cosmos</b><span>stars &amp; black holes</span></div>
-      <div><b>Ocean</b><span>tides &amp; deep water</span></div>
+      <div><b>Off</b><span>plain numbers</span>
+        <img src="/img/themes/off.png" loading="lazy" width="1600" height="106"
+             alt="Off theme rows"></div>
+      <div><b>RPG</b><span>HP/MP gauges + gold</span>
+        <img src="/img/themes/rpg.png" loading="lazy" width="1600" height="106"
+             alt="RPG theme rows"></div>
+      <div><b>Movie</b><span>reels &amp; box office</span>
+        <img src="/img/themes/movie.png" loading="lazy" width="1600" height="106"
+             alt="Movie theme rows"></div>
+      <div><b>Hades</b><span>blades &amp; darkness</span>
+        <img src="/img/themes/hades.png" loading="lazy" width="1600" height="106"
+             alt="Hades theme rows"></div>
+      <div><b>Metal Gear</b><span>tactical espionage</span>
+        <img src="/img/themes/mgs.png" loading="lazy" width="1600" height="106"
+             alt="Metal Gear theme rows"></div>
+      <div><b>AI Agentic</b><span>tokens &amp; context</span>
+        <img src="/img/themes/agent.png" loading="lazy" width="1600" height="106"
+             alt="AI Agentic theme rows"></div>
+      <div><b>Classic SWE</b><span>hand-written, no AI</span>
+        <img src="/img/themes/swe.png" loading="lazy" width="1600" height="106"
+             alt="Classic SWE theme rows"></div>
+      <div><b>Sci-Fi</b><span>warp cores &amp; shields</span>
+        <img src="/img/themes/scifi.png" loading="lazy" width="1600" height="106"
+             alt="Sci-Fi theme rows"></div>
+      <div><b>Wild West</b><span>six-guns &amp; gold rush</span>
+        <img src="/img/themes/west.png" loading="lazy" width="1600" height="106"
+             alt="Wild West theme rows"></div>
+      <div><b>Cyberpunk</b><span>chrome &amp; neon</span>
+        <img src="/img/themes/cyber.png" loading="lazy" width="1600" height="106"
+             alt="Cyberpunk theme rows"></div>
+      <div><b>Gothic</b><span>candles &amp; cathedrals</span>
+        <img src="/img/themes/gothic.png" loading="lazy" width="1600" height="106"
+             alt="Gothic theme rows"></div>
+      <div><b>Musical</b><span>tempo &amp; encores</span>
+        <img src="/img/themes/musical.png" loading="lazy" width="1600" height="106"
+             alt="Musical theme rows"></div>
+      <div><b>Planet Earth</b><span>wild documentary</span>
+        <img src="/img/themes/earth.png" loading="lazy" width="1600" height="106"
+             alt="Planet Earth theme rows"></div>
+      <div><b>Cosmos</b><span>stars &amp; black holes</span>
+        <img src="/img/themes/cosmo.png" loading="lazy" width="1600" height="106"
+             alt="Cosmos theme rows"></div>
+      <div><b>Ocean</b><span>tides &amp; deep water</span>
+        <img src="/img/themes/ocean.png" loading="lazy" width="1600" height="106"
+             alt="Ocean theme rows"></div>
     </div>
   </div>
 </section>
