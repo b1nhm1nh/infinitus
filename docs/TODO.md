@@ -389,7 +389,11 @@ file keeps the shipped log and the deferred-by-design notes.
   without bound on macOS 26; dropped (0.08 MB/min after). `perf` now
   reports `heapBytes`.
 - CI: `e2e` job (tools/e2e.sh) gates idle CPU ≤ 8% / RSS ≤ 220 MB / heap
-  growth ≤ 768 KB/min with the demo fleet, rpg + ember.
+  growth ≤ 768 KB/min with the demo fleet, rpg + ember. 2026-09-03: also
+  switch/hold/unhold/rename round-trips, wall over pop-out and back, the
+  all-dead scenario; the perf sample comes AFTER that churn — which is
+  how it caught the wall leaving its 15 fps sparks ticking after close
+  (~8% idle per visit; fixed: content detached, window reused).
 - RSS itself (~140-160 MB) is mostly file-backed and system caches:
   footprint 81 MB = 59 MB malloc (SwiftUI attribute graph + view tree for
   a 12-row grid, 13 MB ColorSync transform cache, fonts) + CoreAnimation;
