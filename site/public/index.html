@@ -3,13 +3,30 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Infinitus</title>
-<meta name="description" content="Menu-bar mission control for your Claude Code account fleet — auto-rotation, session resume, live usage gauges, and a full-screen wall.">
-<meta property="og:title" content="Infinitus">
-<meta property="og:description" content="Your Claude fleet, never off the clock — auto-rotation, session resume, live gauges, and a full-screen wall.">
-<meta property="og:image" content="https://infinitus.run/img/wall.png">
-<meta property="og:url" content="https://infinitus.run">
+<title>Infinitus — Claude Code account fleet manager for macOS &amp; Linux</title>
+<meta name="description" content="Infinitus is a free, open-source menu bar app that runs a fleet of Claude Code accounts: live 5-hour and weekly usage gauges, automatic account rotation when a limit hits, session resume nudges, a full-screen fleet wall, 15 themes. macOS and Linux (Omarchy / Arch).">
+<meta name="keywords" content="Claude Code, Claude usage limit, Claude account switcher, claude-swap, Claude Code rate limit, 5-hour window, weekly limit, menu bar app, macOS, Linux, Omarchy, Quickshell, Anthropic, AI agent tooling, session resume">
+<meta name="author" content="deathemperor">
+<meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1">
+<meta name="theme-color" content="#0a0d11">
+<link rel="canonical" href="https://infinitus.run/">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Infinitus">
+<meta property="og:locale" content="en_US">
+<meta property="og:title" content="Infinitus — your Claude fleet, never off the clock">
+<meta property="og:description" content="Free, open-source mission control for a fleet of Claude Code accounts: live usage gauges, auto-rotation on limits, session resume, a fleet wall, 15 themes. macOS &amp; Linux.">
+<meta property="og:image" content="https://infinitus.run/img/og.png">
+<meta property="og:image:type" content="image/png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Infinitus — your Claude fleet, never off the clock. Fleet manager for Claude Code, macOS &amp; Linux.">
+<meta property="og:url" content="https://infinitus.run/">
 <meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Infinitus — your Claude fleet, never off the clock">
+<meta name="twitter:description" content="Free, open-source mission control for a fleet of Claude Code accounts. macOS &amp; Linux.">
+<meta name="twitter:image" content="https://infinitus.run/img/og.png">
+<meta name="twitter:image:alt" content="Infinitus — your Claude fleet, never off the clock.">
+<link rel="alternate" type="text/plain" href="https://infinitus.run/llms.txt" title="llms.txt">
 <link rel="icon" type="image/png" href="/img/icon.png">
 <link rel="apple-touch-icon" href="/img/icon128.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -102,7 +119,14 @@
   }
   .btn.primary:hover { filter: brightness(1.08); }
   .cta .note { color: var(--faint); font-size: 13px; }
+  .also { color: var(--faint); font-size: 12.5px; margin: 14px 0 0; }
+  .also a { color: var(--dim); text-decoration: underline; text-underline-offset: 3px; text-decoration-color: var(--line); }
+  .also a:hover { color: var(--text); }
 
+  .faq { margin: 0; max-width: 68ch; }
+  .faq dt { font-weight: 600; margin: 22px 0 6px; }
+  .faq dd { margin: 0; color: var(--dim); line-height: 1.6; }
+  .faq code { color: var(--mint); font-size: 13px; }
   /* ── live fleet demo ── */
   .fleet { padding: 26px 0 70px; }
   .fleet-frame {
@@ -208,6 +232,71 @@
     .gauge > i { transition: none; }
   }
 </style>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "SoftwareApplication",
+      "@id": "https://infinitus.run/#app",
+      "name": "Infinitus",
+      "url": "https://infinitus.run/",
+      "description": "Menu bar mission control for a fleet of Claude Code accounts: live 5-hour and weekly usage gauges, automatic account rotation when a limit hits, session resume nudges, a full-screen fleet wall and 15 themes.",
+      "applicationCategory": "DeveloperApplication",
+      "operatingSystem": "macOS 14+, Linux (Omarchy / Arch, Quickshell)",
+      "softwareVersion": "0.3.0",
+      "license": "https://github.com/deathemperor/infinitus/blob/main/LICENSE",
+      "isAccessibleForFree": true,
+      "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+      "downloadUrl": "https://github.com/deathemperor/infinitus/releases/latest",
+      "installUrl": "https://infinitus.run/#install",
+      "screenshot": [
+        "https://infinitus.run/img/og.png",
+        "https://infinitus.run/img/wall.png",
+        "https://infinitus.run/img/themes/rpg.png"
+      ],
+      "image": "https://infinitus.run/img/icon128.png",
+      "featureList": [
+        "Live 5-hour, weekly and per-model usage gauges for every Claude Code account",
+        "Automatic rotation to the freshest account when a limit hits",
+        "Resume nudges that restart stopped Claude Code sessions after a switch",
+        "Session progress: what each running agent is doing, todo counts, retries",
+        "Full-screen fleet wall with hero gauges and a session board",
+        "15 themes with their own intro, death and revival effects",
+        "Usage history and utilization estimates",
+        "Linux tray daemon with an Omarchy Quickshell panel plugin"
+      ],
+      "sameAs": ["https://github.com/deathemperor/infinitus"],
+      "author": { "@type": "Person", "name": "deathemperor", "url": "https://github.com/deathemperor" }
+    },
+    {
+      "@type": "WebSite",
+      "@id": "https://infinitus.run/#site",
+      "url": "https://infinitus.run/",
+      "name": "Infinitus",
+      "inLanguage": "en"
+    },
+    {
+      "@type": "FAQPage",
+      "@id": "https://infinitus.run/#faq",
+      "mainEntity": [
+        { "@type": "Question", "name": "What is Infinitus?",
+          "acceptedAnswer": { "@type": "Answer", "text": "Infinitus is a free, open-source menu bar app for macOS (and a tray daemon plus panel plugin for Linux) that manages a fleet of Claude Code accounts. It shows every account's 5-hour, weekly and per-model usage, rotates to the freshest account when a limit hits, and nudges stopped sessions back to work." } },
+        { "@type": "Question", "name": "Does Infinitus work with Claude Code?",
+          "acceptedAnswer": { "@type": "Answer", "text": "Yes. Infinitus reads Claude Code's own local files to show session progress and drives account switching through the claude-swap CLI. It never modifies Claude Code itself." } },
+        { "@type": "Question", "name": "Which platforms does Infinitus support?",
+          "acceptedAnswer": { "@type": "Answer", "text": "macOS 14 or newer on Apple silicon (menu bar app, Homebrew cask), and Linux — a static infinitus-tray binary for x86_64 and aarch64 with a Quickshell panel plugin for Omarchy / Arch, also on the AUR. An iOS companion app is in progress." } },
+        { "@type": "Question", "name": "Is Infinitus free?",
+          "acceptedAnswer": { "@type": "Answer", "text": "Yes. Infinitus is free and open source under the MIT license. Source code is on GitHub." } },
+        { "@type": "Question", "name": "How do I install Infinitus?",
+          "acceptedAnswer": { "@type": "Answer", "text": "On macOS: brew install --cask --no-quarantine deathemperor/tap/infinitus, or download Infinitus.app from the GitHub releases page. On Linux: download the infinitus-tray binary or the Omarchy tarball from the same release, or build with swift build. The claude-swap CLI must be on your PATH." } },
+        { "@type": "Question", "name": "Are the usage numbers Infinitus shows exact?",
+          "acceptedAnswer": { "@type": "Answer", "text": "Usage percentages come from Anthropic's own limits reporting; usage-cost figures in the app are estimates, never billing truth." } }
+      ]
+    }
+  ]
+}
+</script>
 </head>
 <body>
 
@@ -220,6 +309,7 @@
       <a href="#themes">Themes</a>
       <a href="#wall">The wall</a>
       <a href="#install">Install</a>
+      <a href="#faq">FAQ</a>
     </nav>
     <span class="tray">
       <a href="https://github.com/deathemperor/infinitus" style="color:var(--dim)">GitHub</a>
@@ -228,6 +318,7 @@
   </div>
 </div>
 
+<main>
 <header class="hero wrap">
   <p class="kicker">macOS menu bar · Linux panel</p>
   <h1>Your Claude fleet,<br><em>never</em> off the clock.</h1>
@@ -238,10 +329,15 @@
     so an agent run survives the five-hour wall without you.
   </p>
   <div class="cta">
-    <a class="btn primary" href="https://github.com/deathemperor/infinitus/releases/latest">Download for macOS</a>
+    <a class="btn primary" href="https://github.com/deathemperor/infinitus/releases/download/v0.3.0/Infinitus-0.3.0.zip">Download for macOS</a>
     <a class="btn" href="https://github.com/deathemperor/infinitus">Source on GitHub</a>
     <span class="note">v0.3 · Apple silicon · free &amp; open source</span>
   </div>
+  <p class="also">Also for
+    <a href="https://github.com/deathemperor/infinitus/releases/download/v0.3.0/infinitus-tray-linux-x86_64">Linux x86_64</a> ·
+    <a href="https://github.com/deathemperor/infinitus/releases/download/v0.3.0/infinitus-tray-linux-aarch64">Linux aarch64</a> ·
+    <a href="https://github.com/deathemperor/infinitus/releases/download/v0.3.0/infinitus-omarchy.tar.gz">Omarchy</a>
+    — or <a href="#install">brew / AUR / source</a>.</p>
 </header>
 
 <div class="fleet wrap" aria-hidden="true">
@@ -447,6 +543,36 @@
   </div>
 </section>
 
+<section id="faq">
+  <div class="wrap">
+    <h2>Questions</h2>
+    <dl class="faq">
+      <dt>What is Infinitus?</dt>
+      <dd>A free, open-source menu bar app (macOS) and tray daemon + panel
+        plugin (Linux) that manages a fleet of Claude Code accounts: every
+        account's 5-hour, weekly and per-model usage at a glance, automatic
+        rotation to the freshest account when a limit hits, and resume nudges
+        that put stopped sessions back to work.</dd>
+      <dt>Does it work with Claude Code?</dt>
+      <dd>Yes. It reads Claude Code's own local session files to show progress
+        and switches accounts through the <code>claude-swap</code> CLI. It
+        never modifies Claude Code.</dd>
+      <dt>Which platforms?</dt>
+      <dd>macOS 14+ on Apple silicon (Homebrew cask), and Linux — a static
+        <code>infinitus-tray</code> for x86_64 and aarch64 with a Quickshell
+        panel plugin for Omarchy / Arch (also on the AUR). An iOS companion is
+        in progress.</dd>
+      <dt>Is it free?</dt>
+      <dd>Free and open source, MIT licensed. Source is on
+        <a href="https://github.com/deathemperor/infinitus">GitHub</a>.</dd>
+      <dt>Are the numbers exact?</dt>
+      <dd>Usage percentages come from Anthropic's own limits reporting.
+        Usage-<em>cost</em> figures are estimates, never billing truth.</dd>
+    </dl>
+  </div>
+</section>
+</main>
+
 <footer>
   <div class="wrap">
     <span>♾ Infinitus — free &amp; open source, MIT-spirited.</span>
@@ -508,5 +634,6 @@
   }, 1400);
 })();
 </script>
+
 </body>
 </html>

@@ -1,0 +1,35 @@
+# Infinitus
+
+> Free, open-source mission control for a fleet of Claude Code accounts. A macOS menu bar app (plus a Linux tray daemon and Omarchy Quickshell panel plugin) that shows every account's 5-hour, weekly and per-model usage, rotates to the freshest account the moment a limit hits, and nudges stopped Claude Code sessions back to work.
+
+- Website: https://infinitus.run/
+- Source (MIT): https://github.com/deathemperor/infinitus
+- Releases: https://github.com/deathemperor/infinitus/releases
+- Issues / roadmap: https://github.com/deathemperor/infinitus/issues
+- Version: 0.3.0 (2026-09)
+
+## What it does
+
+- Watches every Claude Code account's usage windows (5-hour, weekly, per-model / scoped) with live gauges and reset countdowns.
+- Rotates to the best candidate account automatically when a limit binds, via the `claude-swap` CLI (`cswap`). Infinitus never modifies Claude Code and never reads the engine's internal files; every engine touchpoint is a `cswap … --json` subprocess.
+- Resume nudges: after a switch, stopped Claude Code sessions are nudged back to work (peer socket / PTY based, lives in Infinitus).
+- Session progress: what each running agent is doing right now, todo counts, retries, quiet minutes, the session's goal — parsed from Claude Code's own transcript files.
+- Fleet wall: a full-screen board with hero gauges for the active account, a session board, and a bench of every other account.
+- All-dead countdown: when every account is limited, a large countdown to the next recovery.
+- Usage history and utilization estimates (usage-cost figures are estimates, never billing truth).
+- 15 themes (Off, RPG, Cyber, MGS, Sci-fi, Cosmo, Ocean, Earth, Gothic, Hades, Movie, Musical, Agent, SWE, West) each renaming the windows and bringing its own intro, death and revival effects.
+- Playground window to audition themes and effects with a mock fleet.
+
+## Platforms
+
+- macOS 14+ (Apple silicon): `brew install --cask --no-quarantine deathemperor/tap/infinitus`, or download `Infinitus.app` from the latest release. Builds are unsigned: first launch is right-click → Open.
+- Linux: static `infinitus-tray` binaries for x86_64 and aarch64; Omarchy / Arch panel plugin for Quickshell (`packaging/omarchy/`), also on the AUR.
+- iOS companion app: in progress (mirror of the fleet state).
+
+## Requirements
+
+- Claude Code and the `claude-swap` CLI (`cswap`) on PATH. Infinitus walks you through first-account setup.
+
+## Pages
+
+- [Landing page](https://infinitus.run/): how it works, features, themes, wall, install, FAQ.
