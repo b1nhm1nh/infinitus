@@ -6,8 +6,8 @@ engine on/off, proxy setup, and starting a sign-in. It is bundled at
 `Infinitus.app/Contents/MacOS/infinitusctl`; symlink it onto `$PATH` or
 call it by that path.
 
-Talks to the app over `~/Library/Application Support/Infinitus/control.sock`
-(same-user socket, mode 0600 — that is the auth). The app must be running.
+Talks to the app over `~/Library/Application Support/Infinitus/control/control.sock`
+(a 0700 directory owned by you — that is the auth). The app must be running.
 
 ## The one rule
 

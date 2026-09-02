@@ -14,10 +14,11 @@ public enum ControlProtocol {
     /// to talk to a newer app so an agent never misreads a field.
     public static let schemaVersion = 1
 
-    /// `~/Library/Application Support/Infinitus/control.sock`.
+    /// `~/Library/Application Support/Infinitus/control/control.sock` —
+    /// the directory is 0700 (the app creates it before binding).
     public static func socketURL(home: String = NSHomeDirectory()) -> URL {
         URL(fileURLWithPath: home)
-            .appendingPathComponent("Library/Application Support/Infinitus/control.sock")
+            .appendingPathComponent("Library/Application Support/Infinitus/control/control.sock")
     }
 }
 
