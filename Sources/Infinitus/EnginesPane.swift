@@ -200,10 +200,6 @@ struct CLIProxyEnginePane: View {
     @State private var probe: String?
     @State private var probing = false
 
-    private var proxyFleets: [FleetState] {
-        model.fleets.filter { $0.engineID == CLIProxyEngine.engineID }
-    }
-
     var body: some View {
         Form {
             Section("Engines") {
@@ -256,18 +252,11 @@ struct CLIProxyEnginePane: View {
                         .font(.caption2).foregroundStyle(.tertiary)
                 }
             }
-            ForEach(proxyFleets) { fleet in
-                CLIProxyFleetSection(fleet: fleet, model: model)
-            }
-            if model.cliproxyEnabled, proxyFleets.isEmpty {
+            if model.cliproxyEnabled {
                 Section("Accounts") {
-                    Button("Add Claude account (sign in via browser)…") {
-                        model.addOAuthAccount(engineID: CLIProxyEngine.engineID, provider: .claude)
-                    }
-                    .disabled(model.addingFirstAccount)
-                    if let msg = model.firstAccountMessage {
-                        Text(msg).font(.caption).foregroundStyle(.orange)
-                    }
+                    Text("The proxy's credentials are managed in the Accounts tab, "
+                         + "next to cswap's.")
+                        .font(.caption).foregroundStyle(.secondary)
                 }
             }
         }
@@ -295,64 +284,3 @@ struct CLIProxyEnginePane: View {
     }
 }
 
-/// One proxy fleet's credentials with the full action set (hold,
-/// switch-as-priority, rename, remove, add) — the settings-side twin
-/// of the popup rows.
-struct CLIProxyFleetSection: View {
-    @ObservedObject var fleet: FleetState
-    @ObservedObject var model: AppModel
-
-    var body: some View {
-        Section("\(fleet.provider.displayName) — \(fleet.accounts.count) credential\(fleet.accounts.count == 1 ? "" : "s")") {
-            ForEach(fleet.accounts, id: \.number) { a in
-                HStack {
-                    Image(systemName: a.active ? "checkmark.circle.fill" : "circle")
-                        .foregroundStyle(a.active ? .green : .secondary)
-                    VStack(alignment: .leading) {
-                        Text(a.alias ?? a.email)
-                        Text(statusLine(a)).font(.caption).foregroundStyle(.secondary)
-                    }
-                    Spacer()
-                    if !a.active, fleet.capabilities.contains(.switch) {
-                        Button("Switch") { fleet.switchTo(a.number) }
-                            .help("Raise this credential to the top priority tier")
-                    }
-                    if fleet.capabilities.contains(.hold) {
-                        Button(a.disabled == true ? "Unhold" : "Hold") {
-                            fleet.setRotation(a.number, enabled: a.disabled == true)
-                        }
-                    }
-                    if a.usageStatus == "relogin_required", fleet.capabilities.contains(.addOAuth) {
-                        Button("Re-login…") { fleet.startRelogin(a) }
-                    }
-                    if fleet.capabilities.contains(.remove) {
-                        Button(role: .destructive) {
-                            fleet.remove(a.number)
-                        } label: { Image(systemName: "trash") }
-                            .buttonStyle(.borderless)
-                            .help("Delete this credential file from the proxy")
-                    }
-                }
-            }
-            if fleet.capabilities.contains(.addOAuth), fleet.provider == .claude || fleet.provider == .codex {
-                Button("Add \(fleet.provider.displayName) account (sign in via browser)…") {
-                    model.addOAuthAccount(engineID: fleet.engineID, provider: fleet.provider)
-                }
-                .disabled(model.addingFirstAccount)
-                if let msg = model.firstAccountMessage {
-                    Text(msg).font(.caption).foregroundStyle(.orange)
-                }
-            }
-        }
-    }
-
-    private func statusLine(_ a: Account) -> String {
-        var parts: [String] = []
-        if a.disabled == true { parts.append("held") }
-        parts.append(a.usageStatus == "relogin_required" ? "re-login needed" : a.usageStatus)
-        if let plan = a.plan { parts.append(plan) }
-        if let pct = a.usage?.fiveHour?.pct { parts.append("5h \(Int(pct))%") }
-        if let pct = a.usage?.sevenDay?.pct { parts.append("7d \(Int(pct))%") }
-        return parts.joined(separator: " · ")
-    }
-}

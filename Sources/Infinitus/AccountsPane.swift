@@ -569,134 +569,207 @@ private struct AuthWindowRoot: View {
 struct AccountsPane: View {
     @ObservedObject var model: AppModel
     @ObservedObject private var flow = TokenFlow.shared
-    @State private var confirmDelete: Account?
+    @State private var confirmDelete: (fleet: FleetState, account: Account)?
+
+    /// An engine that is on but holds no credential yet (a fresh proxy)
+    /// has no FleetState to list — it still gets a section with the
+    /// add button, so the first credential can be added from here.
+    private struct EngineRef: Identifiable { let id: String; let name: String }
+    private var fleetlessOAuthEngines: [EngineRef] {
+        model.registry.engines
+            .filter { e in e.capabilities.contains(.addOAuth)
+                && !model.fleets.contains { $0.engineID == e.id } }
+            .map { EngineRef(id: $0.id, name: $0.displayName) }
+    }
 
     var body: some View {
         Form {
-            Section("Accounts") {
-                // Order + rename live HERE now (user 2026-08-31: "move
-                // the account order and rename to Accounts tab") — one
-                // place owns the fleet: drag to reorder, type to
-                // rename, relogin and delete on every row.
-                Toggle("Keep accounts sorted by headroom",
-                       isOn: $model.autoOrder)
-                    .help(Self.autoOrderHelp)
-                // Display-only cousin of autoOrder (todo 2026-09-01):
-                // the popup shows headroom order with active + next on
-                // top; engine slot numbers stay put.
-                Toggle("Popup sorts rows by headroom (active and next first)",
-                       isOn: $model.sortByHeadroom)
-                    .help("Display only — the popup lists the active "
-                          + "account, then the next candidate, then most "
-                          + "headroom first. Slot numbers don't move; "
-                          + "this list keeps the engine's order.")
-                Text(orderCaption)
-                    .font(.caption).foregroundStyle(.secondary)
-                if model.accounts.isEmpty {
-                    Text("No accounts yet — add the first one below.")
-                        .foregroundStyle(.secondary)
-                }
-                List {
-                    ForEach(model.accounts, id: \.number) { a in
-                        HStack(spacing: 8) {
-                            Image(systemName: "line.3.horizontal")
-                                .foregroundStyle(.tertiary)
-                            Text("\(a.number)").monospacedDigit()
-                                .foregroundStyle(.secondary)
-                            RenameField(model: model, account: a)
-                            Text(a.email).lineLimit(1)
-                                .font(.caption).foregroundStyle(.secondary)
-                            if let plan = a.plan {
-                                Text(plan)
-                                    .font(.caption2)
-                                    .padding(.horizontal, 5).padding(.vertical, 1)
-                                    .background(Capsule()
-                                        .fill(Color.secondary.opacity(0.15)))
-                                    .foregroundStyle(.secondary)
-                            }
-                            statusChip(a)
-                            Spacer()
-                            // Rotation hold (todo 2026-09-01): engine
-                            // `disable`/`enable` — the row stays listed,
-                            // auto-rotation skips it.
-                            Button {
-                                model.setRotation(a.number,
-                                                  enabled: a.disabled ?? false)
-                            } label: {
-                                Image(systemName: (a.disabled ?? false)
-                                      ? "play.circle" : "pause.circle")
-                            }
-                            .buttonStyle(.borderless)
-                            .disabled(flow.running)
-                            .help((a.disabled ?? false)
-                                  ? "Return this account to rotation"
-                                  : "Hold this account out of rotation "
-                                    + "(it stays listed, rotate skips it)")
-                            Button("Relogin") {
-                                flow.start(model: model, relogin: a)
-                            }
-                            .disabled(flow.running)
-                            Button(role: .destructive) {
-                                confirmDelete = a
-                            } label: { Image(systemName: "trash") }
-                            .buttonStyle(.borderless)
-                            .disabled(flow.running)
-                            .help("Remove this account from the engine")
-                        }
-                        .moveDisabled(model.autoOrder)
-                    }
-                    .onMove { from, to in
-                        var order = model.accounts.map(\.number)
-                        order.move(fromOffsets: from, toOffset: to)
-                        model.reorder(order)
-                    }
-                }
-                .frame(minHeight: CGFloat(model.accounts.count) * 30 + 16)
-                if let err = model.reorderError {
-                    Text(err).font(.caption).foregroundStyle(.red)
+            // One section per fleet (user 2026-09-02: "cswap account
+            // management is under Accounts but CLIProxyAPI's is under
+            // CLIProxyAPI, revamp that") — same rows, same icons; each
+            // control shows only where the fleet's engine supports it.
+            ForEach(model.fleets) { fleet in
+                FleetAccountsSection(fleet: fleet, model: model, flow: flow,
+                                     confirmDelete: $confirmDelete)
+            }
+            ForEach(fleetlessOAuthEngines) { engine in
+                Section("Claude · \(engine.name)") {
+                    Text("No credentials yet.").foregroundStyle(.secondary)
+                    OAuthAddRow(model: model, engineID: engine.id,
+                                engineName: engine.name, provider: .claude)
                 }
             }
-            Section("Add account") {
-                flowView
+            if model.fleets.isEmpty && fleetlessOAuthEngines.isEmpty {
+                Section("Accounts") {
+                    Text("No engine is on \u{2014} turn one on in the CLIProxyAPI tab.")
+                        .foregroundStyle(.secondary)
+                }
             }
         }
         .formStyle(.grouped)
-        .alert("Remove \(confirmDelete?.alias ?? confirmDelete?.email ?? "account")?",
+        .alert("Remove \(confirmDelete?.account.alias ?? confirmDelete?.account.email ?? "account")?",
                isPresented: Binding(get: { confirmDelete != nil },
                                     set: { if !$0 { confirmDelete = nil } })) {
             Button("Remove", role: .destructive) {
-                if let a = confirmDelete { remove(a) }
+                if let d = confirmDelete { d.fleet.remove(d.account.number) }
                 confirmDelete = nil
             }
             Button("Cancel", role: .cancel) { confirmDelete = nil }
         } message: {
-            Text("The engine forgets its stored credential. The Claude "
-                 + "account itself is untouched — you can add it back "
-                 + "any time.")
+            Text("\(confirmDelete?.fleet.engine.displayName ?? "The engine") forgets its "
+                 + "stored credential. The Claude account itself is untouched "
+                 + "\u{2014} you can add it back any time.")
+        }
+    }
+}
+
+/// One fleet's rows in the Accounts tab. The row layout is shared by
+/// every engine; capabilities decide which controls appear (drag +
+/// sort toggles need `.reorder`, the name field `.rename`, and so on).
+private struct FleetAccountsSection: View {
+    @ObservedObject var fleet: FleetState
+    @ObservedObject var model: AppModel
+    @ObservedObject var flow: TokenFlow
+    @Binding var confirmDelete: (fleet: FleetState, account: Account)?
+
+    private var isCswap: Bool { fleet.engineID == CswapEngine.engineID }
+    private var caps: EngineCapabilities { fleet.capabilities }
+    private var canRelogin: Bool { isCswap || caps.contains(.addOAuth) }
+
+    var body: some View {
+        Section("\(fleet.provider.displayName) \u{00B7} \(fleet.engine.displayName)") {
+            if caps.contains(.reorder) {
+                Toggle("Keep accounts sorted by headroom", isOn: $model.autoOrder)
+                    .help(Self.autoOrderHelp)
+                // Display-only cousin of autoOrder (todo 2026-09-01): the
+                // popup shows headroom order with active + next on top;
+                // engine slot numbers stay put.
+                Toggle("Popup sorts rows by headroom (active and next first)",
+                       isOn: $model.sortByHeadroom)
+                    .help("Display only \u{2014} the popup lists the active "
+                          + "account, then the next candidate, then most "
+                          + "headroom first. Slot numbers don't move; "
+                          + "this list keeps the engine's order.")
+            }
+            Text(caption).font(.caption).foregroundStyle(.secondary)
+            if fleet.accounts.isEmpty {
+                Text("No accounts yet \u{2014} add the first one below.")
+                    .foregroundStyle(.secondary)
+            }
+            List {
+                ForEach(fleet.accounts, id: \.number) { a in
+                    row(a).moveDisabled(!caps.contains(.reorder) || model.autoOrder)
+                }
+                .onMove { from, to in
+                    guard caps.contains(.reorder) else { return }
+                    var order = fleet.accounts.map(\.number)
+                    order.move(fromOffsets: from, toOffset: to)
+                    fleet.reorder(order)
+                }
+            }
+            .frame(minHeight: CGFloat(fleet.accounts.count) * 30 + 16)
+            if let err = model.reorderError {
+                Text(err).font(.caption).foregroundStyle(.red)
+            }
+            if isCswap {
+                CswapAddFlow(model: model, flow: flow)
+            } else if caps.contains(.addOAuth) {
+                OAuthAddRow(model: model, engineID: fleet.engineID,
+                            engineName: fleet.engine.displayName, provider: fleet.provider)
+            }
+        }
+    }
+
+    @ViewBuilder private func row(_ a: Account) -> some View {
+        HStack(spacing: 8) {
+            if caps.contains(.reorder) {
+                Image(systemName: "line.3.horizontal")
+                    .foregroundStyle(.tertiary)
+            }
+            Text("\(a.number)").monospacedDigit()
+                .foregroundStyle(.secondary)
+            if caps.contains(.rename) {
+                RenameField(fleet: fleet, account: a)
+            }
+            Text(a.email).lineLimit(1)
+                .font(.caption).foregroundStyle(.secondary)
+            if let plan = a.plan {
+                Text(plan)
+                    .font(.caption2)
+                    .padding(.horizontal, 5).padding(.vertical, 1)
+                    .background(Capsule()
+                        .fill(Color.secondary.opacity(0.15)))
+                    .foregroundStyle(.secondary)
+            }
+            statusChip(a)
+            Spacer()
+            if caps.contains(.switch), !a.active {
+                Button { fleet.switchTo(a.number) } label: {
+                    Image(systemName: "arrow.right.circle")
+                }
+                .buttonStyle(.borderless)
+                .disabled(flow.running)
+                .help(isCswap ? "Switch to this account now"
+                              : "Make this the active credential (top priority tier)")
+            }
+            if caps.contains(.hold) {
+                // Rotation hold (todo 2026-09-01): the row stays listed,
+                // auto-rotation (or the proxy's routing) skips it.
+                Button {
+                    fleet.setRotation(a.number, enabled: a.disabled ?? false)
+                } label: {
+                    Image(systemName: (a.disabled ?? false)
+                          ? "play.circle" : "pause.circle")
+                }
+                .buttonStyle(.borderless)
+                .disabled(flow.running)
+                .help((a.disabled ?? false)
+                      ? "Return this account to rotation"
+                      : "Hold this account out of rotation "
+                        + "(it stays listed, rotation skips it)")
+            }
+            if canRelogin {
+                Button("Relogin") { fleet.startRelogin(a) }
+                    .disabled(flow.running)
+            }
+            if caps.contains(.remove) {
+                Button(role: .destructive) {
+                    confirmDelete = (fleet, a)
+                } label: { Image(systemName: "trash") }
+                .buttonStyle(.borderless)
+                .disabled(flow.running)
+                .help("Remove this account from \(fleet.engine.displayName)")
+            }
         }
     }
 
     private static let autoOrderHelp = "After every refresh, the fleet is reordered most headroom first (unknown, then out-of-limit by who recovers first, then disabled last). Slot numbers shift with it. Small differences don't move a row, so neighbours never flip-flop."
 
-    private var orderCaption: String {
-        let rename = "Type in the Name field to rename an account (sets its "
-            + "cswap alias, shown everywhere); clear it to go back to the email."
-        if model.autoOrder {
-            return "Sorted automatically — drag is off while this is on. " + rename
+    private var caption: String {
+        let rename = caps.contains(.rename)
+            ? " Type in the Name field to rename an account (shown everywhere); "
+              + "clear it to go back to the email."
+            : ""
+        guard caps.contains(.reorder) else {
+            return (isCswap ? "" : "The arrow makes a credential the proxy's "
+                    + "top priority; pause holds it out of routing.") + rename
         }
-        return "Drag rows to set the rotation order — Rotate cycles "
+        if model.autoOrder {
+            return "Sorted automatically \u{2014} drag is off while this is on." + rename
+        }
+        return "Drag rows to set the rotation order \u{2014} Rotate cycles "
             + "through them (aliases, backups, and history move with each "
-            + "account). " + rename
+            + "account)." + rename
     }
 
     @ViewBuilder private func statusChip(_ a: Account) -> some View {
         if a.disabled ?? false {
-            Text("disabled").font(.caption2)
+            Text("held").font(.caption2)
                 .padding(.horizontal, 5).padding(.vertical, 1)
                 .background(Capsule().fill(.gray.opacity(0.3)))
         } else if a.usageStatus != "ok" {
             Text(a.usageStatus == "relogin_required"
-                 ? "re-login needed" : a.usageStatus)
+                 ? "re-login needed" : a.usageStatus.replacingOccurrences(of: "_", with: " "))
                 .font(.caption2).foregroundStyle(.orange)
                 .padding(.horizontal, 5).padding(.vertical, 1)
                 .background(Capsule().fill(.orange.opacity(0.18)))
@@ -706,41 +779,66 @@ struct AccountsPane: View {
                 .background(Capsule().fill(.green.opacity(0.18)))
         }
     }
+}
 
-    @ViewBuilder private var flowView: some View {
-        if let p = model.primary, p.engineID != CswapEngine.engineID {
-            // The in-app login window feeds `cswap add`; other engines
-            // add accounts from their own settings tab.
-            Text("Adding accounts to \(p.engine.displayName) lives in its own settings tab.")
-                .font(.caption).foregroundStyle(.secondary)
-        } else {
-            cswapFlowView
+/// Add / re-login for an engine that signs in through a browser (the
+/// proxy): one button, the shared in-app sign-in chooser does the rest.
+private struct OAuthAddRow: View {
+    @ObservedObject var model: AppModel
+    @ObservedObject private var flow = TokenFlow.shared
+    let engineID: String
+    let engineName: String
+    let provider: Provider
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Button("Add \(provider.displayName) account\u{2026}") {
+                model.addOAuthAccount(engineID: engineID, provider: provider)
+            }
+            .disabled(model.addingFirstAccount || flow.running)
+            if model.addingFirstAccount {
+                ProgressView().controlSize(.small)
+                Text("Sign in in the window that opened\u{2026}")
+                    .font(.caption).foregroundStyle(.secondary)
+            } else if let msg = model.firstAccountMessage {
+                Text(msg).font(.caption).foregroundStyle(.orange)
+            } else {
+                Text("Same private in-app sign-in as cswap; \(engineName) "
+                     + "stores the credential.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
         }
     }
+}
 
-    @ViewBuilder private var cswapFlowView: some View {
+/// cswap's add-account flow, phase by phase (the PTY-hosted
+/// `claude auth login` + paste-back described on TokenFlow).
+private struct CswapAddFlow: View {
+    @ObservedObject var model: AppModel
+    @ObservedObject var flow: TokenFlow
+
+    var body: some View {
         if !flow.pasteCode && flow.running {
-            Text("A sign-in for another engine is in progress \u{2014} "
-                 + "see the CLIProxyAPI tab.")
+            Text("A sign-in for another engine is in progress.")
                 .font(.caption).foregroundStyle(.secondary)
         } else {
-            cswapFlowPhases
+            phases
         }
     }
 
-    @ViewBuilder private var cswapFlowPhases: some View {
+    @ViewBuilder private var phases: some View {
         switch flow.phase {
         case .idle:
             HStack {
-                Button("Add account…") { flow.start(model: model) }
-                Text("Opens Claude's login in a private in-app window — "
+                Button("Add account\u{2026}") { flow.start(model: model) }
+                Text("Opens Claude's login in a private in-app window \u{2014} "
                      + "your browser session is never touched.")
                     .font(.caption).foregroundStyle(.secondary)
             }
         case .launching:
             HStack(spacing: 8) {
                 ProgressView().controlSize(.small)
-                Text("Starting claude setup-token…")
+                Text("Starting claude setup-token\u{2026}")
                 Button("Cancel") { flow.cancel() }
             }
         case .awaitingLogin:
@@ -768,15 +866,15 @@ struct AccountsPane: View {
             HStack(spacing: 8) {
                 ProgressView().controlSize(.small)
                 Text(flow.phase == .registering
-                     ? "Handing the token to the engine…"
-                     : "Waiting for the token…")
+                     ? "Handing the token to the engine\u{2026}"
+                     : "Waiting for the token\u{2026}")
                 Button("Cancel") { flow.cancel() }
             }
         case .done:
             HStack(spacing: 8) {
                 Image(systemName: "checkmark.circle.fill")
                     .foregroundStyle(.green)
-                Text("Account captured — the engine holds its credential "
+                Text("Account captured \u{2014} the engine holds its credential "
                      + "and your previous active account is restored.")
                 Button("Add another") { flow.start(model: model) }
                 Button("Done") { flow.phase = .idle }
@@ -793,20 +891,13 @@ struct AccountsPane: View {
             }
         }
     }
-
-    /// Through the seam, never the cswap CLI directly: the list shows the
-    /// PRIMARY fleet's rows, and with cswap switched off that is the
-    /// proxy's fleet — `cswap remove N` would hit the wrong engine.
-    private func remove(_ a: Account) {
-        model.primary?.remove(a.number)
-    }
 }
 
 /// One account's editable display name. Local draft, committed on Enter or
 /// focus loss — never on every keystroke (each commit is a `cswap alias`
 /// subprocess + snapshot refresh).
 private struct RenameField: View {
-    @ObservedObject var model: AppModel
+    @ObservedObject var fleet: FleetState
     let account: Account
     @State private var draft = ""
     @FocusState private var focused: Bool
@@ -825,6 +916,6 @@ private struct RenameField: View {
     private func commit() {
         let trimmed = draft.trimmingCharacters(in: .whitespaces)
         guard trimmed != (account.alias ?? "") else { return }
-        model.rename(account.number, to: trimmed)
+        fleet.rename(account.number, to: trimmed)
     }
 }
