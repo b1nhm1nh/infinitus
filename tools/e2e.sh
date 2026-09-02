@@ -81,7 +81,9 @@ until "$CTL" status >/dev/null 2>&1; do
         # socket file exists, and where the app's threads are stuck.
         echo "--- last client attempt"; "$CTL" status 2>&1 | head -3 || true
         echo "--- socket"; ls -l "$SOCKDIR" 2>&1 || true
-        echo "--- threads"; sample "$APP_PID" 2 -file "$LOG.sample" >/dev/null 2>&1 && grep -A25 "Call graph" "$LOG.sample" | head -40 || true
+        echo "--- app log (all)"; cat "$LOG"
+        echo "--- threads"; sample "$APP_PID" 2 -file "$LOG.sample" >/dev/null 2>&1 \
+            && awk '/^Call graph/,/^Total number/' "$LOG.sample" | grep -E "Thread_|^\s*\+? *[0-9]+ [^ ]" | cut -c1-150 | head -150 || true
         fail "control socket never came up"
     fi
     sleep 1
