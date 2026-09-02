@@ -17,8 +17,13 @@ jobs:
       - uses: actions/cache@v4
         with:
           path: .build
-          key: spm-${{ github.repository }}-${{ runner.os }}-${{ hashFiles('Package.resolved', 'Package.swift') }}
-          restore-keys: spm-${{ github.repository }}-${{ runner.os }}-
+          # Per-commit key: actions/cache never overwrites an existing key,
+          # so a key on the manifest hash alone froze .build at its first
+          # save and every later run rebuilt from that (2026-09-03).
+          key: spm-${{ github.repository }}-${{ runner.os }}-${{ hashFiles('Package.resolved', 'Package.swift') }}-${{ github.sha }}
+          restore-keys: |
+            spm-${{ github.repository }}-${{ runner.os }}-${{ hashFiles('Package.resolved', 'Package.swift') }}-
+            spm-${{ github.repository }}-${{ runner.os }}-
       - run: swift build
       - run: swift test
   # End-to-end + performance gate (#18): the debug app against the demo
@@ -31,8 +36,13 @@ jobs:
       - uses: actions/cache@v4
         with:
           path: .build
-          key: spm-${{ github.repository }}-${{ runner.os }}-${{ hashFiles('Package.resolved', 'Package.swift') }}
-          restore-keys: spm-${{ github.repository }}-${{ runner.os }}-
+          # Per-commit key: actions/cache never overwrites an existing key,
+          # so a key on the manifest hash alone froze .build at its first
+          # save and every later run rebuilt from that (2026-09-03).
+          key: spm-${{ github.repository }}-${{ runner.os }}-${{ hashFiles('Package.resolved', 'Package.swift') }}-${{ github.sha }}
+          restore-keys: |
+            spm-${{ github.repository }}-${{ runner.os }}-${{ hashFiles('Package.resolved', 'Package.swift') }}-
+            spm-${{ github.repository }}-${{ runner.os }}-
       # Plain `swift build`: with two --product flags SwiftPM builds only
       # the LAST one, so the app binary here was the stale one from the
       # first cached .build on every run (2026-09-03).

@@ -40,6 +40,7 @@ ID="$(security find-identity -v -p codesigning 2>/dev/null | awk -F'"' '/Apple D
 SOCKDIR="/tmp/infinitus-e2e-$$"; mkdir -p "$SOCKDIR"
 export INFINITUS_CONTROL_SOCKET="$SOCKDIR/control.sock"
 export INFINITUS_CSWAP="$PWD/tools/demo-cswap"
+export INFINITUS_DEMO_STATE="$SOCKDIR/demo-state.json"   # not $TMPDIR: the bundled app in mock mode shares that one
 LOG="$(mktemp -t infinitus-e2e)"
 DOMAIN=Infinitus   # the unbundled debug binary's defaults domain
 

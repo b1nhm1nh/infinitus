@@ -6,7 +6,7 @@ for README recordings. Ships in the app bundle's Resources."""
 import json, sys, time, os, datetime
 
 # Not next to the script: Resources are sealed by the code signature.
-STATE = os.path.join(os.environ.get("TMPDIR", "/tmp"), "infinitus-demo-state.json")
+STATE = os.environ.get("INFINITUS_DEMO_STATE") or os.path.join(os.environ.get("TMPDIR", "/tmp"), "infinitus-demo-state.json")  # override: e2e keeps its fleet apart from the dev Mac's mock-mode app
 # Demo hook: `touch $TMPDIR/infinitus-demo-drop` makes alpha's 5h window
 # jump +25 points on the next refresh — replays the HP-drop drama on a
 # real row (rm the file to jump back, which replays the refill).
