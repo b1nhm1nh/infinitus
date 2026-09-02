@@ -354,6 +354,8 @@ final class AppModel: ObservableObject {
     let historyRecorder = UsageHistoryRecorder()
     let mirrorExporter = MirrorExporter()
     let mirrorServer = MirrorServer()
+    /// Agent CLI socket (ControlServer.swift); the real model only.
+    private(set) lazy var controlServer = ControlServer(model: self)
     let quickTunnel = QuickTunnel()
     private let awake = KeepAwake()
     private var pushTriggers = PushTriggers()
@@ -591,6 +593,7 @@ final class AppModel: ObservableObject {
         // The tunnel can only point at a bound port, which arrives later.
         mirrorServer.onReady = { [weak self] _ in self?.applyQuickTunnel() }
         applyMirrorLAN()
+        if !isPlayground { controlServer.start() }
         guard supervisor == nil, refreshTask == nil else { return }
         if let cswap, !isPlayground, cswapEnabled { startEngine(binary: cswap.binaryPath) }
         guard !registry.engines.isEmpty else { return }

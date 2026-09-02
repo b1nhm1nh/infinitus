@@ -1,0 +1,203 @@
+import Foundation
+
+// MARK: - Control protocol (agent CLI ↔ running app)
+//
+// One request line in, one reply line out, over a same-user UNIX
+// socket the app owns (mode 0600 — the socket's owner IS the auth).
+// The manifest below is the single table both sides read: the app
+// dispatches on it, the CLI prints help from it, and `infinitus
+// manifest` hands it to agents so a guide can never drift from the
+// code (user 2026-09-03: "so AI Agent can control it").
+
+public enum ControlProtocol {
+    /// Bumped when a reply shape changes incompatibly; the CLI refuses
+    /// to talk to a newer app so an agent never misreads a field.
+    public static let schemaVersion = 1
+
+    /// `~/Library/Application Support/Infinitus/control.sock`.
+    public static func socketURL(home: String = NSHomeDirectory()) -> URL {
+        URL(fileURLWithPath: home)
+            .appendingPathComponent("Library/Application Support/Infinitus/control.sock")
+    }
+}
+
+public struct ControlRequest: Codable, Sendable, Equatable {
+    public let command: String
+    public let args: [String]
+    /// Named options (`--yes`, `--timeout 300`) — keyed without dashes.
+    public let options: [String: String]
+    /// Secret material (the proxy management key) rides here, read from
+    /// the CLI's stdin — never argv.
+    public let secret: String?
+
+    public init(command: String, args: [String] = [], options: [String: String] = [:],
+                secret: String? = nil) {
+        self.command = command
+        self.args = args
+        self.options = options
+        self.secret = secret
+    }
+}
+
+public struct ControlReply: Codable, Sendable {
+    public let schemaVersion: Int
+    public let ok: Bool
+    /// Command result; shape per `ControlCommand.replyShape`.
+    public let result: JSONValue?
+    public let error: String?
+    /// The app is relaunching (engine flips, key save); the CLI waits
+    /// for the socket to return before it exits 0.
+    public let restarting: Bool
+
+    public init(ok: Bool, result: JSONValue? = nil, error: String? = nil,
+                restarting: Bool = false) {
+        self.schemaVersion = ControlProtocol.schemaVersion
+        self.ok = ok
+        self.result = result
+        self.error = error
+        self.restarting = restarting
+    }
+
+    enum CodingKeys: String, CodingKey { case schemaVersion, ok, result, error, restarting }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        schemaVersion = try c.decode(Int.self, forKey: .schemaVersion)
+        ok = try c.decode(Bool.self, forKey: .ok)
+        result = try c.decodeIfPresent(JSONValue.self, forKey: .result)
+        error = try c.decodeIfPresent(String.self, forKey: .error)
+        restarting = try c.decodeIfPresent(Bool.self, forKey: .restarting) ?? false
+    }
+
+    public static func failure(_ message: String) -> ControlReply {
+        ControlReply(ok: false, error: message)
+    }
+}
+
+/// What an agent needs to know to call a command without reading code.
+public struct ControlCommand: Codable, Sendable, Equatable {
+    public enum Effect: String, Codable, Sendable {
+        /// Reads state; always safe.
+        case read
+        /// Changes engine state; reversible.
+        case write
+        /// Deletes a credential; needs `--yes`.
+        case destructive
+        /// The app relaunches; the CLI waits for it.
+        case restart
+        /// Starts something a human must finish (OAuth in the app window).
+        case human
+    }
+
+    public let name: String
+    /// Positional args, in order. `<fleet>` is an `EngineFleet.key`
+    /// such as `cswap/claude`; `<n>` an account number in that fleet.
+    public let args: [String]
+    public let options: [String]
+    public let effect: Effect
+    /// Engine capability the fleet must have, when the command targets one.
+    public let requires: String?
+    public let summary: String
+    public let replyShape: String
+
+    public init(name: String, args: [String] = [], options: [String] = [],
+                effect: Effect, requires: String? = nil,
+                summary: String, replyShape: String) {
+        self.name = name
+        self.args = args
+        self.options = options
+        self.effect = effect
+        self.requires = requires
+        self.summary = summary
+        self.replyShape = replyShape
+    }
+
+    /// Every command the app answers. Order = help order.
+    public static let all: [ControlCommand] = [
+        ControlCommand(name: "manifest", effect: .read,
+                       summary: "This table as JSON, plus schemaVersion.",
+                       replyShape: "{schemaVersion, commands:[ControlCommand]}"),
+        ControlCommand(name: "status", effect: .read,
+                       summary: "App version, which engines are on, engine badge, whether a sign-in is running.",
+                       replyShape: "{version, sha, engines:{cswap:{enabled,registered}, cliproxy:{enabled,registered,keyPresent}}, badge, signInRunning, playground}"),
+        ControlCommand(name: "fleets", effect: .read,
+                       summary: "Every fleet with accounts, usage, active/next and the engine's capabilities.",
+                       replyShape: "[{key, engineID, provider, capabilities:[String], caveat?, activeNumber?, nextCandidate?, nextRecovery?, accounts:[Account]}]"),
+        ControlCommand(name: "refresh", effect: .write,
+                       summary: "Poll every engine now; replies like `fleets`.",
+                       replyShape: "same as fleets"),
+        ControlCommand(name: "switch", args: ["<fleet>", "<n>"], effect: .write, requires: "switch",
+                       summary: "Make account n the active one (proxy: top priority tier).",
+                       replyShape: "{fleet}"),
+        ControlCommand(name: "hold", args: ["<fleet>", "<n>"], effect: .write, requires: "hold",
+                       summary: "Take account n out of rotation.", replyShape: "{fleet}"),
+        ControlCommand(name: "unhold", args: ["<fleet>", "<n>"], effect: .write, requires: "hold",
+                       summary: "Return account n to rotation.", replyShape: "{fleet}"),
+        ControlCommand(name: "rename", args: ["<fleet>", "<n>", "<alias>"], effect: .write, requires: "rename",
+                       summary: "Set (empty string clears) the alias every frontend shows.",
+                       replyShape: "{fleet}"),
+        ControlCommand(name: "remove", args: ["<fleet>", "<n>"], options: ["--yes"],
+                       effect: .destructive, requires: "remove",
+                       summary: "Delete the credential from the engine. Refused without --yes.",
+                       replyShape: "{fleet}"),
+        ControlCommand(name: "add", args: ["<fleet>"], effect: .human, requires: "addOAuth|addToken",
+                       summary: "Open the in-app sign-in for this fleet. A human completes it in the Infinitus window; poll with wait-add.",
+                       replyShape: "{started:true}"),
+        ControlCommand(name: "wait-add", options: ["--timeout <seconds, default 300>"], effect: .read,
+                       summary: "Block until the running sign-in finishes.",
+                       replyShape: "{done:Bool, error?, fleets}"),
+        ControlCommand(name: "engine", args: ["cswap|cliproxy", "on|off"], effect: .restart,
+                       summary: "Turn an engine on or off. The app relaunches.",
+                       replyShape: "{restarting:true}"),
+        ControlCommand(name: "proxy", effect: .read,
+                       summary: "CLIProxyAPI settings: base URL, whether a key is stored, routing strategy.",
+                       replyShape: "{baseURL, keyPresent, routingStrategy?, error?}"),
+        ControlCommand(name: "proxy-key", options: ["--url <base URL, default http://127.0.0.1:8317>"],
+                       effect: .restart,
+                       summary: "Store the management key read from stdin in the keychain. Empty stdin clears it. The app relaunches.",
+                       replyShape: "{restarting:true}"),
+        ControlCommand(name: "proxy-routing", args: ["fill-first|round-robin|weighted-round-robin"],
+                       effect: .write,
+                       summary: "PUT the proxy's routing strategy.",
+                       replyShape: "{routingStrategy}"),
+    ]
+
+    public static func named(_ name: String) -> ControlCommand? {
+        all.first { $0.name == name }
+    }
+}
+
+// MARK: - JSONValue helpers (the Models.swift enum carries replies)
+
+public extension JSONValue {
+    /// Re-encode any Encodable as JSON (one hop through Data).
+    static func of<T: Encodable>(_ value: T) throws -> JSONValue {
+        let enc = JSONEncoder()
+        enc.dateEncodingStrategy = .iso8601
+        return try JSONDecoder().decode(JSONValue.self, from: enc.encode(value))
+    }
+
+    subscript(key: String) -> JSONValue? {
+        if case .object(let o) = self { return o[key] }
+        return nil
+    }
+}
+
+// MARK: - Line codec
+
+public enum ControlCodec {
+    public static func encode<T: Encodable>(_ value: T) throws -> Data {
+        let enc = JSONEncoder()
+        enc.dateEncodingStrategy = .iso8601
+        enc.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
+        var data = try enc.encode(value)
+        data.append(0x0A)
+        return data
+    }
+
+    public static func decode<T: Decodable>(_ type: T.Type, from line: Data) throws -> T {
+        let dec = JSONDecoder()
+        dec.dateDecodingStrategy = .iso8601
+        return try dec.decode(type, from: line)
+    }
+}

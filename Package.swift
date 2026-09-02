@@ -42,6 +42,14 @@ targets.append(.executableTarget(
     dependencies: ["InfinitusCore", "InfinitusUI"],
     path: "Sources/Infinitus"
 ))
+// Agent-facing control CLI: talks to the running app over its control
+// socket (ControlProtocol.swift); bundled into Infinitus.app/Contents/MacOS.
+targets.append(.executableTarget(
+    name: "InfinitusCLI",
+    dependencies: ["InfinitusCore"],
+    path: "Sources/InfinitusCLI"
+))
+products.append(.executable(name: "infinitus", targets: ["InfinitusCLI"]))
 #endif
 
 let package = Package(
