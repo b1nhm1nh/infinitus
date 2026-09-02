@@ -39,6 +39,8 @@ cat > "$APP/Contents/Info.plist" <<PLIST
     <key>CFBundleIconFile</key><string>AppIcon</string>
     <key>LSMinimumSystemVersion</key><string>14.0</string>
     <key>LSUIElement</key><true/>
+    <key>NSLocalNetworkUsageDescription</key><string>Infinitus advertises the fleet snapshot to the Infinitus iPhone app on your local network (Sync → Phone companion).</string>
+    <key>NSBonjourServices</key><array><string>_infinitus._tcp</string></array>
 </dict>
 </plist>
 PLIST
