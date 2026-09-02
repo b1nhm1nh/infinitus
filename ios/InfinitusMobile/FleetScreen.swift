@@ -1,52 +1,69 @@
 import SwiftUI
 import CswapCore
+import InfinitusUI
 
 struct FleetScreen: View {
     @ObservedObject var model: MirrorModel
+    @StateObject private var usage = MobileUsage()
+    @Environment(\.scenePhase) private var scenePhase
+    @State private var settingsShown = false
 
     var body: some View {
         NavigationStack {
-            List {
-                if let error = model.error {
-                    Label(error, systemImage: "exclamationmark.triangle")
-                        .font(.footnote)
-                        .foregroundStyle(.orange)
-                }
-                if model.snapshot == nil, model.error == nil {
-                    // First launch, no mirror yet — say so instead of a
-                    // blank list (flagged in the phase-2 report).
-                    ContentUnavailableView(
-                        "Waiting for the fleet",
-                        systemImage: "antenna.radiowaves.left.and.right",
-                        description: Text("No snapshot yet. The Mac app "
-                            + "exports one automatically; in the simulator, "
-                            + "launch with INFINITUS_MIRROR_PATH pointing at "
-                            + "its mirror-snapshot.json."))
-                }
-                if let snapshot = model.snapshot, isStale(snapshot.capturedAt) {
-                    StalenessBanner(capturedAt: snapshot.capturedAt)
-                }
-                if model.nextCandidate == nil, let rec = model.nextRecovery {
-                    Section {
-                        DeadHero(recovery: rec, accounts: model.accounts)
-                    }
-                }
-                if !model.accounts.isEmpty {
-                    Section("Accounts") {
-                        ForEach(model.accounts, id: \.number) { account in
-                            AccountRow(account: account, nextCandidate: model.nextCandidate)
+            GeometryReader { geo in
+                ScrollView {
+                    // The popup's own padding (AppModel-driven, like the
+                    // mac's MenuContent) — no List: grouped insets and
+                    // separators can't match the popover.
+                    VStack(alignment: .leading, spacing: 10) {
+                        if let error = model.error {
+                            Label(error, systemImage: "exclamationmark.triangle")
+                                .font(.footnote)
+                                .foregroundStyle(.orange)
+                        }
+                        if model.snapshot == nil, model.error == nil {
+                            // First launch, no mirror yet — say so instead of a
+                            // blank list (flagged in the phase-2 report).
+                            ContentUnavailableView(
+                                "Waiting for the fleet",
+                                systemImage: "antenna.radiowaves.left.and.right",
+                                description: Text("No snapshot yet. The Mac app "
+                                    + "exports one automatically; in the simulator, "
+                                    + "launch with INFINITUS_MIRROR_PATH pointing at "
+                                    + "its mirror-snapshot.json."))
+                        }
+                        if let snapshot = model.snapshot, isStale(snapshot.capturedAt) {
+                            StalenessBanner(capturedAt: snapshot.capturedAt)
+                        }
+                        // Placeholders until #9 phase B2 lands the shared
+                        // header / all-dead hero / sessions card — each is
+                        // then a one-line swap for the InfinitusUI view.
+                        if model.nextCandidate == nil, let rec = model.nextRecovery {
+                            DeadHero(recovery: rec, accounts: model.accounts)
+                        }
+                        accountArea
+                        if let sessions = model.snapshot?.sessions, !sessions.isEmpty {
+                            Text("Sessions").font(.caption).foregroundStyle(.secondary)
+                            ForEach(Array(sessions.enumerated()), id: \.offset) { _, row in
+                                SessionRow(row: row)
+                            }
                         }
                     }
+                    .padding(model.compactRows ? 8 : 10)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                if let sessions = model.snapshot?.sessions, !sessions.isEmpty {
-                    Section("Sessions") {
-                        ForEach(Array(sessions.enumerated()), id: \.offset) { _, row in
-                            SessionRow(row: row)
-                        }
+                .onAppear { model.isLandscape = geo.size.width > geo.size.height }
+                .onChange(of: geo.size) { _, size in
+                    withAnimation(.easeInOut(duration: 0.3)) {
+                        model.isLandscape = size.width > size.height
                     }
                 }
             }
             .navigationTitle(model.snapshot?.machineName ?? "Infinitus")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                Button { settingsShown = true } label: { Image(systemName: "gearshape") }
+            }
             .refreshable { await model.refresh() }
             .task {
                 while !Task.isCancelled {
@@ -54,7 +71,41 @@ struct FleetScreen: View {
                     try? await Task.sleep(nanoseconds: 10 * 1_000_000_000)
                 }
             }
+            .sheet(isPresented: $settingsShown) { SettingsScreen(model: model) }
         }
+        // ONE tip chip for the whole screen, drawn above every row —
+        // same plumbing the mac popup uses.
+        .overlayPreferenceValue(ActiveTipKey.self) { InstantTipCanvas(tips: $0) }
+        // The bars take their fill-up cue from the environment, not the
+        // model (GaugeBar has no model) — set it once, like MenuContent.
+        .environment(\.introTick, model.introTick)
+        .environment(\.introBarDelay, model.introBarDelay)
+        // The popup replays its intro when it opens; the phone's
+        // equivalent is coming back to the foreground. First launch is
+        // the first snapshot's replay, so it isn't doubled here.
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active, model.snapshotLoaded { model.replayIntro() }
+        }
+    }
+
+    /// The shared popup rows — cards in portrait, the wide grid in
+    /// landscape (MirrorModel.popupLayout). The grid measures itself at
+    /// the mac's point width, so landscape gets a horizontal scroller
+    /// for the fleets that overflow the phone; the cards stretch to the
+    /// screen and must NOT be fixedSize'd (they'd go ragged).
+    @ViewBuilder private var accountArea: some View {
+        Group {
+            if model.accounts.isEmpty {
+                EmptyView()
+            } else if model.popupLayout == "wide" {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    AccountRows(model: model, usage: usage).fixedSize()
+                }
+            } else {
+                AccountRows(model: model, usage: usage)
+            }
+        }
+        .introContent(model)
     }
 
     private func isStale(_ capturedAt: Date) -> Bool {
