@@ -4,6 +4,9 @@
 # network), drives it through infinitusctl on a private control socket,
 # and fails on:
 #   - any command that errors, a missing window, a wrong fleet shape
+#   - a switch/hold/unhold/rename that doesn't round-trip into `fleets`
+#   - the wall not taking over from the pop-out (and giving it back), or
+#     the all-dead scenario not producing the no-candidate fleet
 #   - idle CPU above IDLE_BUDGET_PCT with the pop-out open on the RPG
 #     theme (the worst case: every effect armed — the 2026-09-03
 #     regression idled at 39%)
@@ -41,6 +44,7 @@ DOMAIN=Infinitus   # the unbundled debug binary's defaults domain
 cleanup() {
     pkill -f "$APP" 2>/dev/null || true
     rm -f "$INFINITUS_CONTROL_SOCKET"
+    "$INFINITUS_CSWAP" reset >/dev/null 2>&1 || true
     # Leave the dev domain as we found it for the keys we touched.
     for k in popout_shown popover_pinned gamification_style burn_style mock_mode; do
         defaults delete "$DOMAIN" "$k" >/dev/null 2>&1 || true
@@ -50,6 +54,13 @@ trap cleanup EXIT
 
 fail() { echo "E2E FAIL: $*"; echo "--- app log"; tail -20 "$LOG"; exit 1; }
 json() { python3 -c "import json,sys; d=json.load(sys.stdin); print($1)"; }
+# expect <python-bool-over-d> — the reply on stdin must satisfy it.
+expect() { python3 -c "import json,sys; d=json.load(sys.stdin); sys.exit(0 if ($1) else 1)"; }
+acct() { echo "[a for a in d['fleet']['accounts'] if a['number']==$1][0]"; }
+popout_visible() { "$CTL" windows | expect "any(w['visible'] and w['content']=='GlassContainerView' for w in d)"; }
+wall_visible() { "$CTL" windows | expect "any(w['visible'] and 'WallRoot' in w['content'] for w in d)"; }
+
+"$INFINITUS_CSWAP" reset >/dev/null   # pristine demo fleet: account 1 active, nothing held or aliased
 
 # Worst-case prefs: pop-out restored on launch, RPG theme, ember burn.
 defaults write "$DOMAIN" popout_shown -bool true
@@ -77,12 +88,44 @@ N="$("$CTL" fleets | json "sum(len(f['accounts']) for f in d)")"
 "$CTL" switch nope/x 1 >/dev/null 2>&1 && fail "unknown fleet must be refused"
 "$CTL" prefer cswap/claude 2 on | json "'alpha' in ' '.join(d['preferred']) or d['preferred']" >/dev/null || fail "prefer"
 "$CTL" prefer cswap/claude 2 off >/dev/null || fail "unprefer"
-"$CTL" windows | json "any(w['visible'] and w['content']=='GlassContainerView' for w in d)" | grep -q True \
-    || fail "pop-out window not visible (popout_shown restore)"
+popout_visible || fail "pop-out window not visible (popout_shown restore)"
 echo "functional: ok ($N demo accounts, pop-out visible)"
 
+# --- state round-trips through the demo engine ---------------------------
+# Each write replies with the refreshed fleet; the change must be in it.
+"$CTL" switch cswap/claude 2 | expect "d['fleet']['activeNumber']==2 and $(acct 2)['active']" || fail "switch 2 didn't take"
+"$CTL" hold cswap/claude 3 | expect "$(acct 3).get('disabled')==True" || fail "hold 3 didn't take"
+"$CTL" unhold cswap/claude 3 | expect "not $(acct 3).get('disabled')" || fail "unhold 3 didn't take"
+"$CTL" rename cswap/claude 3 "E2E Alias" | expect "$(acct 3).get('alias')=='E2E Alias'" || fail "rename didn't take"
+"$CTL" rename cswap/claude 3 "" | expect "$(acct 3).get('alias')!='E2E Alias'" || fail "rename clear didn't take"   # demo accounts carry default aliases
+"$CTL" switch cswap/claude 1 | expect "d['fleet']['activeNumber']==1" || fail "switch back to 1"
+echo "round-trips: ok (switch, hold, unhold, rename)"
+
+# --- windows: the wall takes over from the pop-out and gives it back ----
+"$CTL" show wall | expect "d['shown']" || fail "show wall"
+sleep 2
+wall_visible || fail "wall window not visible after show wall"
+popout_visible && fail "pop-out still visible under the wall"
+"$CTL" show wall >/dev/null || fail "show wall (toggle off)"
+sleep 2
+wall_visible && fail "wall still visible after toggling off"
+popout_visible || fail "pop-out not restored after the wall closed"
+echo "windows: ok (wall over pop-out, restored)"
+
+# --- scenarios: all-dead (every window maxed, no candidate) --------------
+"$INFINITUS_CSWAP" simulate alldead >/dev/null
+"$CTL" refresh | expect "d[0].get('nextCandidate') is None and d[0].get('nextRecovery') is not None" \
+    || fail "all-dead scenario not reflected in fleets"
+sleep 2
+popout_visible || fail "pop-out lost during all-dead"
+"$INFINITUS_CSWAP" simulate off >/dev/null
+"$CTL" refresh | expect "d[0].get('nextCandidate') is not None" || fail "fleet didn't recover after simulate off"
+echo "scenarios: ok (all-dead and back)"
+
 # --- performance --------------------------------------------------------
-sleep 10  # intro animations settle, launch-time caches land
+# Sampled AFTER the churn above so a timer left behind by a closed wall
+# or a scenario swap shows up as idle cost.
+sleep 10  # animations settle, launch-time caches land
 A="$("$CTL" perf | json "d['cpuSeconds']")"
 HEAP_A="$("$CTL" perf | json "int(d['heapBytes']/1024)")"
 sleep "$WINDOW_S"

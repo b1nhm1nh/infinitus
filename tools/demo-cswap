@@ -179,6 +179,8 @@ elif cmd == "list":
             a["disabled"] = True
         elif n in st.get("enabled", []):
             a.pop("disabled", None)
+        if str(n) in st.get("aliases", {}):
+            a["alias"] = st["aliases"][str(n)]
     payload = {"schemaVersion": 1, "activeAccountNumber": st["active"],
                "nextCandidate": 4 if st["active"] != 4 else 1,
                "liveSessions": sessions(), "accounts": accounts}
@@ -202,6 +204,24 @@ elif cmd in ("disable", "enable"):
     st["disabled"] = sorted(dis); st["enabled"] = sorted(en)
     save(st)
     print(f"{cmd}d: {nums}")
+elif cmd == "alias":
+    # `alias <n> <name>` / `alias <n> --unset` — same verb shape as cswap.
+    st = state()
+    aliases = st.setdefault("aliases", {})
+    if "--unset" in args[2:]:
+        aliases.pop(args[1], None)
+    else:
+        aliases[args[1]] = " ".join(args[2:])
+    save(st)
+    print(json.dumps({"schemaVersion": 1, "aliases": aliases}))
+elif cmd == "reset":
+    # Back to the pristine fleet: tools/e2e.sh runs this before and after
+    # so a run never inherits (or leaves) staged state.
+    try:
+        os.remove(STATE)
+    except FileNotFoundError:
+        pass
+    print(json.dumps({"ok": True}))
 elif cmd == "reorder":
     st = state()
     st["order"] = [int(a) for a in args[1:] if a.isdigit()]

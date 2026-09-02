@@ -10,6 +10,9 @@ import InfinitusCore
 /// screen. Esc or a click on the corner ✕ closes it.
 @MainActor
 final class WallWindowController {
+    /// Kept across visits: a closed borderless NSWindow lingers in
+    /// AppKit's list anyway (probed 2026-09-03, content or no content),
+    /// so one window is reused rather than one leaked per visit.
     private var window: NSWindow?
     private var keyMonitor: Any?
     /// Wall-mode restore hook (user 2026-09-01: "fleet wall is a mode" —
@@ -17,10 +20,10 @@ final class WallWindowController {
     /// show, invoked on close to bring back what the wall displaced.
     var restore: (() -> Void)?
 
-    var isVisible: Bool { window != nil }
+    var isVisible: Bool { window?.isVisible == true }
 
     func toggle(model: AppModel, usage: UsageModel) {
-        if window != nil { close() } else { show(model: model, usage: usage) }
+        if isVisible { close() } else { show(model: model, usage: usage) }
     }
 
     /// Close without restoring — the popup is opening on its own.
@@ -41,13 +44,13 @@ final class WallWindowController {
     }
 
     func show(model: AppModel, usage: UsageModel) {
-        guard window == nil, let screen = Self.targetScreen() else { return }
+        guard !isVisible, let screen = Self.targetScreen() else { return }
         let root = WallRoot(model: model, usage: usage,
                             close: { [weak self] in self?.close() })
         let host = NSHostingController(rootView: root)
         host.sizingOptions = []
-        let w = NSWindow(contentRect: screen.frame, styleMask: [.borderless],
-                         backing: .buffered, defer: false, screen: screen)
+        let w = window ?? NSWindow(contentRect: screen.frame, styleMask: [.borderless],
+                                   backing: .buffered, defer: false, screen: screen)
         w.contentViewController = host
         w.setFrame(screen.frame, display: true)
         w.isOpaque = true
@@ -70,8 +73,11 @@ final class WallWindowController {
     func close() {
         if let keyMonitor { NSEvent.removeMonitor(keyMonitor) }
         keyMonitor = nil
+        // Detach the content, not just orderOut(): an ordered-out
+        // hosting view kept the wall's 15 fps sparks TimelineView ticking
+        // after every visit (~8% idle, caught by tools/e2e.sh 2026-09-03).
+        window?.contentViewController = nil
         window?.orderOut(nil)
-        window = nil
         restore?()
         restore = nil
     }

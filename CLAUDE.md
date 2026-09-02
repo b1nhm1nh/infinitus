@@ -84,6 +84,10 @@ Native macOS menu bar app for the claude-swap engine. Split out of
   A per-second `.contentTransition(.numericText)` grows the CG glyph
   cache ~2 MB/min for as long as it ticks (macOS 26) — never on a
   countdown; the e2e gate checks idle heap growth via `perf.heapBytes`.
+  An ordered-out window keeps its SwiftUI content ticking (the wall's
+  15 fps TimelineView cost ~8% idle after every visit): detach the
+  hosting controller on close, and reuse the NSWindow — a closed
+  borderless one lingers in AppKit's list regardless.
 - Dev instances: sign the debug binary `--identifier
   com.huuloc.limitless` (tools/e2e.sh does) or the keychain ACL prompt
   blocks AppModel.init forever (no socket, SecurityAgent spawns).
