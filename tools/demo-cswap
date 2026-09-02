@@ -216,7 +216,9 @@ elif cmd == "alias":
     print(json.dumps({"schemaVersion": 1, "aliases": aliases}))
 elif cmd == "reset":
     # Back to the pristine fleet: tools/e2e.sh runs this before and after
-    # so a run never inherits (or leaves) staged state.
+    # so a run never inherits (or leaves) staged state. The state file is
+    # per $TMPDIR, i.e. shared with the dev Mac's playground — an e2e run
+    # resets a staged playground scenario too.
     try:
         os.remove(STATE)
     except FileNotFoundError:
