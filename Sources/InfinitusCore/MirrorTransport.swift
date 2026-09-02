@@ -14,6 +14,18 @@ public enum MirrorTransport {
     public static let bonjourType = "_infinitus._tcp"
     /// The one route the server answers.
     public static let snapshotPath = "/snapshot"
+    /// The per-session feed route (#17 layer 1): `GET /sessions/<pid>/tail`.
+    public static func sessionTailPath(pid: Int32) -> String { "/sessions/\(pid)/tail" }
+    /// The `pid` out of a request path, when it matches
+    /// `/sessions/<pid>/tail` exactly — `nil` for anything else,
+    /// including a non-numeric pid.
+    public static func sessionTailPid(_ path: String) -> Int32? {
+        let parts = path.split(separator: "/", omittingEmptySubsequences: true)
+        guard parts.count == 3, parts[0] == "sessions", parts[2] == "tail" else { return nil }
+        return Int32(parts[1])
+    }
+    /// Query parameter carrying the item limit for the tail route.
+    public static let tailLimitQueryName = "n"
     /// Query parameter carrying the pairing token when a header can't
     /// (a QR-pasted URL opened in a browser, `curl "…?t=TOKEN"`).
     public static let tokenQueryName = "t"

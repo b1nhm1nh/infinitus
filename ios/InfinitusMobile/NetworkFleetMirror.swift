@@ -83,7 +83,8 @@ actor NetworkFleetMirror: FleetMirror {
                 host: NWEndpoint.Host(manual.host),
                 port: NWEndpoint.Port(rawValue: manual.port) ?? .any)
             do {
-                let (data, _) = try await fetch(endpoint, hostHeader: manual.host,
+                let (data, _) = try await fetch(endpoint, path: MirrorTransport.snapshotPath,
+                                                hostHeader: manual.host,
                                                 useTLS: manual.useTLS, token: token,
                                                 timeout: Self.candidateTimeout)
                 let snapshot = try Self.decode(data)
@@ -113,7 +114,8 @@ actor NetworkFleetMirror: FleetMirror {
             return cached
         }
         do {
-            let (data, remote) = try await fetch(discovered, hostHeader: "infinitus",
+            let (data, remote) = try await fetch(discovered, path: MirrorTransport.snapshotPath,
+                                                 hostHeader: "infinitus",
                                                  useTLS: false, token: token,
                                                  timeout: Self.candidateTimeout)
             let snapshot = try Self.decode(data)
@@ -135,10 +137,57 @@ actor NetworkFleetMirror: FleetMirror {
         }
     }
 
+    /// The session feed (#17 layer 1): same candidate/token/Host picking
+    /// logic as `latest()`, factored into `fetchFromStored` so both share
+    /// it — no snapshot-style caching here, a failed fetch just throws.
+    func sessionTail(pid: Int32, limit: Int) async throws -> SessionFeed {
+        let token = MirrorPairing.normalize(
+            UserDefaults.standard.string(forKey: Self.tokenKey) ?? "")
+        let path = MirrorTransport.sessionTailPath(pid: pid) + "?n=\(limit)"
+        if let data = try await fetchFromStored(path: path, token: token, timeout: Self.candidateTimeout) {
+            return try Self.decodeFeed(data)
+        }
+        startBrowsing()
+        guard let discovered = await firstEndpoint() else { throw MirrorTransportError.timedOut }
+        let (data, _) = try await fetch(discovered, path: path, hostHeader: "infinitus",
+                                        useTLS: false, token: token, timeout: Self.candidateTimeout)
+        return try Self.decodeFeed(data)
+    }
+
+    /// Tries every stored endpoint (last-good first), same as `latest()`'s
+    /// own loop — `nil` means none of them answered for network reasons;
+    /// a bad pairing token still throws, since that's equally actionable
+    /// for either caller.
+    private func fetchFromStored(path: String, token: String, timeout: TimeInterval) async throws -> Data? {
+        for text in candidateEndpoints() {
+            guard let manual = MirrorTransport.parseEndpoint(text) else { continue }
+            let endpoint = NWEndpoint.hostPort(
+                host: NWEndpoint.Host(manual.host),
+                port: NWEndpoint.Port(rawValue: manual.port) ?? .any)
+            do {
+                let (data, _) = try await fetch(endpoint, path: path, hostHeader: manual.host,
+                                                useTLS: manual.useTLS, token: token, timeout: timeout)
+                UserDefaults.standard.set(text, forKey: Self.lastGoodKey)
+                return data
+            } catch MirrorTransportError.http(401) {
+                throw MirrorTransportError.http(401)
+            } catch {
+                continue
+            }
+        }
+        return nil
+    }
+
     private static func decode(_ data: Data) throws -> MirrorSnapshot {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
         return try decoder.decode(MirrorSnapshot.self, from: data)
+    }
+
+    private static func decodeFeed(_ data: Data) throws -> SessionFeed {
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        return try decoder.decode(SessionFeed.self, from: data)
     }
 
     // MARK: - Discovery
@@ -187,7 +236,7 @@ actor NetworkFleetMirror: FleetMirror {
 
     /// Returns the response body and the resolved `host:port` it came
     /// from (the Bonjour endpoint alone never names a port).
-    private func fetch(_ endpoint: NWEndpoint, hostHeader: String, useTLS: Bool,
+    private func fetch(_ endpoint: NWEndpoint, path: String, hostHeader: String, useTLS: Bool,
                        token: String, timeout: TimeInterval = 5) async throws -> (Data, String) {
         let tcp = NWProtocolTCP.Options()
         tcp.connectionTimeout = Int(timeout)
@@ -210,7 +259,7 @@ actor NetworkFleetMirror: FleetMirror {
                 case .ready:
                     let remote = connection.currentPath?.remoteEndpoint
                         .map(String.init(describing:)) ?? String(describing: endpoint)
-                    let request = "GET \(MirrorTransport.snapshotPath) HTTP/1.1\r\n"
+                    let request = "GET \(path) HTTP/1.1\r\n"
                         + "Host: \(hostHeader)\r\n"
                         + "Authorization: Bearer \(token)\r\n"
                         + "Connection: close\r\n\r\n"

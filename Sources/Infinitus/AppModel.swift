@@ -634,6 +634,16 @@ final class AppModel: ObservableObject {
         Task { [mirrorExporter] in await mirrorExporter.attach(payload: payload) }
         mirrorServer.start(machineName: Host.current().localizedName ?? "Mac",
                            token: mirrorPairToken)
+        mirrorServer.sessionFeed.set { pid, limit in
+            let claudeDir = ClaudeSessions.configHome()
+            guard let record = ClaudeSessions.list(claudeDir: claudeDir).first(where: { $0.pid == pid })
+            else { return nil }
+            guard let feed = SessionFeedReader.read(record: record, claudeDir: claudeDir, limit: limit)
+            else { return nil }
+            let encoder = JSONEncoder()
+            encoder.dateEncodingStrategy = .iso8601
+            return try? encoder.encode(feed)
+        }
         applyQuickTunnel()
     }
 
