@@ -315,7 +315,12 @@ public actor CLIProxyEngine: AccountEngine {
         case .codex: path = "codex-auth-url"
         case .gemini, .other: throw EngineError.unsupported("addOAuth for \(fleet.rawValue)")
         }
-        let (_, data) = try await request("GET", path)
+        // is_webui: only then does the proxy open the local callback
+        // listener (port 54545 for Anthropic) that forwards the OAuth
+        // redirect to its own /anthropic/callback. Without it the
+        // redirect hits a closed port (user 2026-09-02:
+        // ERR_CONNECTION_REFUSED; auth_files_oauth_callback.go).
+        let (_, data) = try await request("GET", path, query: ["is_webui": "true"])
         let obj = try JSONSerialization.jsonObject(with: data) as? [String: Any]
         guard let urlString = obj?["url"] as? String, let url = URL(string: urlString),
               let state = obj?["state"] as? String else {

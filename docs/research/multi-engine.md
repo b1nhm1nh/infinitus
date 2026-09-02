@@ -301,3 +301,8 @@ ACL: the signed debug binary + Infinitus.app). Routing `fill-first`.
   `FleetState.remove`, and the in-app login flow is shown only when the
   primary fleet is cswap (with cswap off, the pane lists the proxy's rows
   and points to the CLIProxyAPI tab for adding).
+- **OAuth add needs `is_webui=true`** (live 2026-09-02): the proxy starts
+  the port-54545 callback forwarder (→ its own `/anthropic/callback`)
+  only under that flag; without it the browser redirect is refused.
+  The in-app chooser (system sheet / private window) then just has to
+  reach `localhost:54545`, which it does.

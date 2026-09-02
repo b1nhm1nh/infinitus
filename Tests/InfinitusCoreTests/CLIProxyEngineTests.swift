@@ -203,6 +203,8 @@ final class CLIProxyEngineTests: XCTestCase {
         ProxyStubProtocol.reset { req, _ in
             switch req.url!.path {
             case "/v0/management/anthropic-auth-url":
+                // The callback listener only starts under is_webui.
+                XCTAssertEqual(req.url?.query, "is_webui=true")
                 return (200, #"{"status":"ok","url":"https://claude.ai/oauth/authorize?x=1","state":"st8"}"#)
             case "/v0/management/get-auth-status":
                 polls += 1
