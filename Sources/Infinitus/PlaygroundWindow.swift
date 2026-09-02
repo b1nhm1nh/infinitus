@@ -102,6 +102,15 @@ import InfinitusUI
                 demoFlag("infinitus-demo-kill", on: true)
                 Task { await model.refreshSnapshot() }
             case "refresh": Task { await model.refreshSnapshot() }
+            // Multi-engine preview (#8): a second, relabeled copy of the
+            // demo fleet so the stacked fleet headers can be eyeballed.
+            case "fleets":
+                if arg == "2", let demo = model.registry.engine(id: CswapEngine.engineID) {
+                    model.registry.register(RelabeledEngine(
+                        base: demo, id: "cliproxy-demo", displayName: "CLIProxyAPI (demo)",
+                        capabilities: [.switch, .hold, .rename, .remove, .addOAuth, .costReport]))
+                }
+                Task { await model.refreshSnapshot() }
             // Recording helper: ScreenCaptureKit suspends windows on an
             // inactive Space, so the video tool needs the window brought
             // to the current one.
@@ -536,4 +545,26 @@ struct PlaygroundView: View {
             content()
         }
     }
+}
+
+
+/// Playground-only: the demo engine wearing another engine's badge, so
+/// the popup shows two fleets (#8). Forwards the actions it claims.
+private struct RelabeledEngine: AccountEngine {
+    let base: any AccountEngine
+    let id: String
+    let displayName: String
+    let capabilities: EngineCapabilities
+
+    func snapshot() async throws -> [EngineFleet] {
+        try await base.snapshot().map { f in
+            EngineFleet(engineID: id, provider: f.provider, accounts: f.accounts,
+                        activeNumber: f.activeNumber, nextCandidate: f.nextCandidate,
+                        nextRecovery: f.nextRecovery, liveSessions: nil, raw: nil)
+        }
+    }
+    func switchTo(fleet: Provider, number: Int) async throws { try await base.switchTo(fleet: fleet, number: number) }
+    func setHold(fleet: Provider, number: Int, held: Bool) async throws { try await base.setHold(fleet: fleet, number: number, held: held) }
+    func rename(fleet: Provider, number: Int, _ name: String) async throws { try await base.rename(fleet: fleet, number: number, name) }
+    func remove(fleet: Provider, number: Int) async throws { try await base.remove(fleet: fleet, number: number) }
 }

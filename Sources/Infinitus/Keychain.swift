@@ -5,7 +5,7 @@ import Security
 /// password, service = bundle-id-scoped, account = the proxy base URL,
 /// so two proxies could hold two keys. Never mirrored into defaults.
 enum Keychain {
-    static let service = "com.huuloc.limitless.cliproxy"
+    static let service = "com.huuloc.infinitus.cliproxy"
 
     static func read(account: String) -> String? {
         let query: [String: Any] = [
@@ -14,6 +14,10 @@ enum Keychain {
             kSecAttrAccount as String: account,
             kSecReturnData as String: true,
             kSecMatchLimit as String: kSecMatchLimitOne,
+            // Never block launch on an access prompt (an unsigned dev
+            // build hits one every rebuild): no grant = no key, and the
+            // pane says "enter the key" instead.
+            kSecUseAuthenticationUI as String: kSecUseAuthenticationUISkip,
         ]
         var item: CFTypeRef?
         guard SecItemCopyMatching(query as CFDictionary, &item) == errSecSuccess,

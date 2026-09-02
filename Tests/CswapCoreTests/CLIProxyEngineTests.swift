@@ -121,6 +121,29 @@ final class CLIProxyEngineTests: XCTestCase {
         XCTAssertEqual(strategy, "fill-first")
     }
 
+    func testExpiredIsStickyThroughA429AndFailedFetchIsNotOk() async throws {
+        ProxyStubProtocol.reset { [self] in route($0, body: $1) }
+        let engine = makeEngine()
+        _ = try await engine.snapshot()
+        // Second pass: Anthropic's usage budget is exhausted for both.
+        ProxyStubProtocol.reset { [self] req, body in
+            if req.url!.path.hasSuffix("/api-call") { return (200, envelope(429, "{}")) }
+            return route(req, body: body)
+        }
+        let fleet = try await engine.snapshot()[0]
+        XCTAssertEqual(fleet.accounts[1].usageStatus, "relogin_required", "401 seen earlier stays")
+        XCTAssertEqual(fleet.accounts[0].usageStatus, "usage_unavailable", "429 is not a healthy row")
+        XCTAssertNil(fleet.accounts[0].usage)
+        XCTAssertNil(fleet.nextCandidate)
+        // Third pass, usage back: the healthy row is healthy again.
+        // (The 429 backoff holds the credential for 5 minutes, so this
+        // pass sees no api-call for it — the row keeps usage_unavailable.)
+        ProxyStubProtocol.reset { [self] in route($0, body: $1) }
+        let again = try await engine.snapshot()[0]
+        XCTAssertEqual(again.accounts[0].usageStatus, "usage_unavailable")
+        XCTAssertEqual(again.accounts[1].usageStatus, "relogin_required")
+    }
+
     func testUnauthorizedWithoutKey() async {
         ProxyStubProtocol.reset { _, _ in (401, #"{"error":"unauthorized"}"#) }
         let engine = makeEngine()

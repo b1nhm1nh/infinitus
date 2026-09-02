@@ -41,6 +41,10 @@ public actor CLIProxyEngine: AccountEngine {
     private var profiles: [String: (profile: ProxyProfile, at: Date)] = [:]
     /// Per-credential usage backoff after a 429 (Retry-After or 5 min).
     private var usageBackoff: [String: Date] = [:]
+    /// Credentials whose token Anthropic rejected as expired — sticky
+    /// until a usage call succeeds again (a 429 in between says nothing
+    /// about the token).
+    private var expiredNames: Set<String> = []
     private var pendingOAuth: (state: String, provider: Provider)?
     /// `GET /routing/strategy` as of the last snapshot.
     public private(set) var routingStrategy: String?
@@ -55,7 +59,7 @@ public actor CLIProxyEngine: AccountEngine {
 
     // MARK: HTTP
 
-    private struct Envelope: Decodable {
+    struct Envelope: Decodable {
         let statusCode: Int
         let body: String
         enum CodingKeys: String, CodingKey { case statusCode = "status_code", body }
@@ -92,9 +96,12 @@ public actor CLIProxyEngine: AccountEngine {
         return (status, data)
     }
 
+    /// Test hook: one management GET, raw bytes.
+    func rawGet(_ path: String) async throws -> (Int, Data) { try await request("GET", path) }
+
     /// `POST /api-call`: the proxy substitutes `$TOKEN$` with the
     /// credential's access token, so the token never reaches us.
-    private func apiCall(authIndex: String, url: String) async throws -> Envelope {
+    func apiCall(authIndex: String, url: String) async throws -> Envelope {
         let (_, data) = try await request("POST", "api-call", json: [
             "auth_index": authIndex,
             "method": "GET",
@@ -145,7 +152,7 @@ public actor CLIProxyEngine: AccountEngine {
                 && (usageBackoff[$0.name].map { $0 <= now } ?? true)
         }
         var usage: [String: Usage] = [:]
-        var expired: Set<String> = []
+        var failed: Set<String> = []
         await withTaskGroup(of: (String, UsageOutcome, ProxyProfile?).self) { group in
             var pending = wanted.makeIterator()
             var inFlight = 0
@@ -181,9 +188,11 @@ public actor CLIProxyEngine: AccountEngine {
             for await (name, outcome, profile) in group {
                 inFlight -= 1
                 switch outcome {
-                case .ok(let u): if let u { usage[name] = u }
-                case .expired: expired.insert(name)
-                case .failed: break
+                case .ok(let u):
+                    expiredNames.remove(name)
+                    if let u { usage[name] = u }
+                case .expired: expiredNames.insert(name)
+                case .failed: failed.insert(name)
                 }
                 if let profile { profiles[name] = (profile, now) }
                 if let next = pending.next() { launch(next) }
@@ -201,17 +210,27 @@ public actor CLIProxyEngine: AccountEngine {
         await drainUsageQueue()
 
         // An expired token is a re-login, not an outage: the row gets the
-        // relogin action instead of an error line.
-        guard !expired.isEmpty else { return mapped.fleets }
+        // relogin action instead of an error line. A fetch that failed
+        // (429 budget, network) must not pose as a healthy row either.
+        let expired = expiredNames
+        // Skipped while backing off = still unknown, not healthy.
+        let backedOff = Set(files.filter { usageBackoff[$0.name].map { $0 > now } ?? false }.map(\.name))
+        let unavailable = failed.union(backedOff).subtracting(expired)
+        guard !expired.isEmpty || !unavailable.isEmpty else { return mapped.fleets }
         return mapped.fleets.map { fleet in
             let names = ordinals[fleet.provider] ?? []
             let accounts = fleet.accounts.map { a -> Account in
-                guard a.number - 1 < names.count, expired.contains(names[a.number - 1]) else { return a }
+                guard a.number - 1 < names.count, a.usageStatus == "ok" else { return a }
+                let name = names[a.number - 1]
+                let status: String
+                if expired.contains(name) { status = "relogin_required" }
+                else if unavailable.contains(name) && a.usage == nil { status = "usage_unavailable" }
+                else { return a }
                 return Account(number: a.number, email: a.email,
                                organizationName: a.organizationName,
                                organizationUuid: a.organizationUuid,
                                isOrganization: a.isOrganization, active: a.active,
-                               usageStatus: "relogin_required", usage: nil,
+                               usageStatus: status, usage: nil,
                                alias: a.alias, icon: a.icon, plan: a.plan,
                                disabled: a.disabled)
             }

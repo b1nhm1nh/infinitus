@@ -452,7 +452,10 @@ final class AppModel: ObservableObject {
            let key = Keychain.read(account: cliproxyBaseURL) {
             registry.register(CLIProxyEngine(
                 baseURL: url, managementKey: key, ledgerURL: Self.cliproxyLedgerURL))
+        } else if !playground, cliproxyEnabled {
+            lastError = "CLIProxyAPI is enabled but no management key is readable — enter it in Settings → CLIProxyAPI"
         }
+        NSLog("Infinitus engines: %@", registry.engines.map(\.id).joined(separator: ", "))
         // Last run's snapshot renders NOW — the popup otherwise opened
         // as an empty sliver and expanded seconds later when the first
         // `cswap list` returned, eating the intro (user 2026-08-30).
@@ -793,7 +796,9 @@ final class AppModel: ObservableObject {
         var anyChanged = false
         for r in results {
             guard let fleets = r.fleets else {
-                engineErrors[r.id] = "\(r.error!)"
+                let message = (r.error as? EngineError)?.errorDescription ?? "\(r.error!)"
+                if engineErrors[r.id] != message { NSLog("Infinitus engine %@: %@", r.id, message) }
+                engineErrors[r.id] = message
                 continue
             }
             engineErrors[r.id] = nil
