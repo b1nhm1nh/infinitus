@@ -19,6 +19,9 @@ public protocol FleetModel: ObservableObject {
     var popupLayout: String { get }
     var nextCandidate: Int? { get }
     var nextRecovery: NextRecovery? { get }
+    /// Limit-stopped sessions the resume nudge is holding — the all-dead
+    /// banner's suffix.
+    var waitingResume: Int? { get }
     /// Set by a row click; the host puts up its own confirmation.
     var pendingSwitch: Int? { get set }
     var switchFlashTick: Int { get }
@@ -44,6 +47,9 @@ public protocol FleetModel: ObservableObject {
 
 public extension FleetModel {
     func startRelogin(_ account: Account) {}
+    /// A host with no resume nudge (the phone) simply has no count —
+    /// the banner then drops its suffix.
+    var waitingResume: Int? { nil }
 }
 
 /// The cash column's source — the estimated-spend report the mac app

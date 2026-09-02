@@ -364,45 +364,6 @@ struct SettingsRoot: View {
     }
 }
 
-/// The "Infinitus" strip: app icon + name, tinted by the active theme
-/// (user request 2026-08-30). The pop-out wears it as its drag-strip
-/// title; the full popover shows it above the rows.
-struct InfinitusHeader: View {
-    @ObservedObject var model: AppModel
-
-    var body: some View {
-        HStack(spacing: 5) {
-            icon
-                .frame(width: 16, height: 16)
-            Text("Infinitus")
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(tint)
-        }
-        .introTitle(model)
-        .frame(maxWidth: .infinity)
-    }
-
-    /// Always the glyph, tinted like the title — never the app-icon
-    /// squircle: the header's icon must match the themed text ("before
-    /// that the icon color match the text", user 2026-09-01; the raw
-    /// icon only ever showed because bundled runs took a different
-    /// branch than the unbundled dev builds).
-    private var icon: some View {
-        Image(nsImage: MenuBarGlyph.image)
-            .renderingMode(.template)
-            .resizable()
-            .scaledToFit()
-            .foregroundStyle(tint)
-    }
-
-    private var tint: Color {
-        let theme = model.rowTheme
-        if theme.plain || theme.id == "off" { return .secondary }
-        return theme.flashColor.isEmpty ? .accentColor
-                                        : ThemeColor.resolve(theme.flashColor)
-    }
-}
-
 struct MenuContent: View {
     @ObservedObject var model: AppModel
     @ObservedObject var usage: UsageModel
@@ -831,36 +792,10 @@ struct MenuContent: View {
     }
 
     @ViewBuilder private var errorLines: some View {
-        // All-limited banner (todo 2026-09-01): names the first account
-        // to recover with a live one-second countdown, and counts the
-        // limit-stopped sessions waiting to be resumed. Rides the error
-        // slot so every layout carries it without four insert sites.
-        if model.nextCandidate == nil, let rec = model.nextRecovery,
-           let date = WeeklyRoll.parse(rec.at) {
-            let name = model.accounts.first { $0.number == rec.number }
-                .map { $0.alias ?? String($0.email.prefix(while: { $0 != "@" })) }
-                ?? "#\(rec.number)"
-            TimelineView(.periodic(from: .now, by: 1)) { ctx in
-                (Text(Image(systemName: "arrowtriangle.right"))
-                    .foregroundStyle(.orange)
-                 + Text(" All accounts limited — \(name) recovers in ")
-                 + Text(RecoveryCountdown.label(until: date, now: ctx.date))
-                    .bold().monospacedDigit().foregroundStyle(.orange)
-                 + Text(waitingResumeSuffix))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .fixedSize()
-            }
-        }
+        AllDeadBanner(model: model)
         if let err = model.lastError {
             Text(err).font(.caption).foregroundStyle(.red).lineLimit(2)
         }
-    }
-
-    private var waitingResumeSuffix: String {
-        guard let waiting = model.waitingResume else { return "" }
-        return " · \(waiting) session\(waiting == 1 ? "" : "s") waiting to resume"
     }
 
     /// Live Claude Code sessions on this machine — they all ride the

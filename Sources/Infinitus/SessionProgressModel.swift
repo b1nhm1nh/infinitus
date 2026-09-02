@@ -1,11 +1,12 @@
 import Foundation
 import CswapCore
+import InfinitusUI
 
 /// Feeds the sessions popover's mini progress rows (issue #13 step 2).
 /// Reads Claude Code's own session records + transcript tails — same
 /// engine-isolation rule as ResumeService (never touches the engine).
 @MainActor
-final class SessionProgressModel: ObservableObject {
+final class SessionProgressModel: SessionProgressSource {
     @Published private(set) var byPid: [Int: SessionProgress] = [:]
 
     private let claudeDir = ClaudeSessions.configHome()

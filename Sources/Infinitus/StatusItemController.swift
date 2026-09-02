@@ -2,6 +2,7 @@ import AppKit
 import SwiftUI
 import Combine
 import CswapCore
+import InfinitusUI
 
 /// The menu bar presence, owned directly as an NSStatusItem instead of a
 /// SwiftUI MenuBarExtra scene. Two hard-won reasons (2026-08-29, macOS 26,

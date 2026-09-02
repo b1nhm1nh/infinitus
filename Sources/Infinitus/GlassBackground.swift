@@ -335,17 +335,7 @@ struct ThemedGlassChrome: View {
                 FrameRetuner(paintAlpha: 0.2 * milk)
                 GlassBackground().opacity(1 - 0.75 * clarity)
             }
-            let theme = model.rowTheme
-            if !theme.plain, !theme.flashColor.isEmpty {
-                let tint = ThemeColor.resolve(theme.flashColor)
-                LinearGradient(
-                    colors: [tint.opacity(0.16 * milk),
-                             tint.opacity(0.04 * milk)],
-                    startPoint: .top, endPoint: .bottom)
-                RoundedRectangle(cornerRadius: 10)
-                    .strokeBorder(tint.opacity(0.35), lineWidth: 1.5)
-                    .padding(1)
-            }
+            ThemeWash(theme: model.rowTheme, milk: milk)
         }
         .ignoresSafeArea()
     }
