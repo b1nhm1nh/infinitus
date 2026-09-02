@@ -26,6 +26,41 @@ final class FleetMirrorTests: XCTestCase {
                        snapshot.capturedAt.timeIntervalSince1970, accuracy: 1)
     }
 
+    func testRoundTripWithPrefs() async throws {
+        let url = tempURL()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let prefs = FleetPrefs(themeID: "rpg", compactRows: true, popupLayout: "stacked",
+                                burnStyle: "ash", introStyle: "fade", introTitle: "slide",
+                                introSpeed: 1.5, customThemes: [.off])
+        let snapshot = MirrorSnapshot(
+            capturedAt: Date(),
+            machineName: "Test Mac",
+            listJSON: Data("{\"accounts\":[]}".utf8),
+            sessions: [],
+            prefs: prefs)
+        try MirrorWriter.write(snapshot, to: url)
+        let read = try await FileFleetMirror(url: url).latest()
+        let got = try XCTUnwrap(read)
+        XCTAssertEqual(got.prefs, prefs)
+    }
+
+    func testMissingPrefsDecodesToNil() async throws {
+        let url = tempURL()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        // Hand-written JSON matching a pre-#9-C1 snapshot (no "prefs" key)
+        // to prove old snapshots still decode.
+        let json = """
+        {"capturedAt":"2026-01-01T00:00:00Z","machineName":"Old Mac",
+         "listJSON":"e30=","sessions":[]}
+        """
+        try FileManager.default.createDirectory(
+            at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data(json.utf8).write(to: url)
+        let read = try await FileFleetMirror(url: url).latest()
+        let got = try XCTUnwrap(read)
+        XCTAssertNil(got.prefs)
+    }
+
     func testMissingFileReturnsNil() async throws {
         let url = tempURL()
         let read = try await FileFleetMirror(url: url).latest()

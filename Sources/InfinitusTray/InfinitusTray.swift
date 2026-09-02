@@ -154,7 +154,7 @@ struct InfinitusTray {
             // MirrorExporter). Own throttle, own demo-cswap gate.
             let claudeDir = ClaudeSessions.configHome()
             TrayMirror.export(raw: raw, sessions: sessionRows(claudeDir: claudeDir, now: Date()),
-                              enginePath: bin)
+                              enginePath: bin, prefs: FleetPrefs(themeID: theme.id))
             // Engine installed, fleet empty: a bare glyph with no
             // tooltip reads as broken — onboard instead.
             guard !list.accounts.isEmpty else {
@@ -396,7 +396,8 @@ struct InfinitusTray {
             let sessions = sessionRows(claudeDir: claudeDir, now: now)
             // Fleet mirror export (#9 phase 1 parity — macOS's
             // MirrorExporter). Shares the throttle sidecar with status().
-            TrayMirror.export(raw: raw, sessions: sessions, enginePath: bin, now: now)
+            TrayMirror.export(raw: raw, sessions: sessions, enginePath: bin,
+                              prefs: FleetPrefs(themeID: theme.id), now: now)
             emitPanel(PanelPayload(
                 schemaVersion: 1, themeId: theme.id,
                 title: list.accounts.isEmpty

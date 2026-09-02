@@ -14,7 +14,8 @@ enum TrayMirror {
     static var url: URL { stateDir.appendingPathComponent("mirror-snapshot.json") }
     static var stampURL: URL { stateDir.appendingPathComponent("mirror-snapshot.lastwrite") }
 
-    static func export(raw: Data, sessions: [SessionPanelRow], enginePath: String, now: Date = Date()) {
+    static func export(raw: Data, sessions: [SessionPanelRow], enginePath: String,
+                        prefs: FleetPrefs, now: Date = Date()) {
         // The demo engine's fabricated fleet must not reach the mobile
         // companion (same gate TrayHistory uses).
         guard !enginePath.hasSuffix("demo-cswap") else { return }
@@ -26,7 +27,8 @@ enum TrayMirror {
             capturedAt: now,
             machineName: ProcessInfo.processInfo.hostName,
             listJSON: raw,
-            sessions: sessions)
+            sessions: sessions,
+            prefs: prefs)
         guard (try? MirrorWriter.write(snapshot, to: url)) != nil else { return }
         try? String(now.timeIntervalSince1970).write(to: stampURL, atomically: true, encoding: .utf8)
     }

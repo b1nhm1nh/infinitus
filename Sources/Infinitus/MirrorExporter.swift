@@ -16,7 +16,7 @@ actor MirrorExporter {
             .appendingPathComponent("Infinitus/mirror-snapshot.json")
     }()
 
-    func record(listJSON: Data) {
+    func record(listJSON: Data, prefs: FleetPrefs) {
         guard Date().timeIntervalSince(lastWrite) > minInterval else { return }
         lastWrite = Date()
         let claudeDir = ClaudeSessions.configHome()
@@ -35,7 +35,8 @@ actor MirrorExporter {
             capturedAt: now,
             machineName: Host.current().localizedName ?? "Mac",
             listJSON: listJSON,
-            sessions: sessions)
+            sessions: sessions,
+            prefs: prefs)
         try? MirrorWriter.write(snapshot, to: Self.url)
     }
 }

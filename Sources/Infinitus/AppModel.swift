@@ -664,8 +664,16 @@ final class AppModel: ObservableObject {
                 }
                 // Fleet mirror (#9 phase 1): lets the mobile companion see
                 // this machine's last snapshot. Throttled inside the actor.
+                // Prefs (#9 phase C1: "Follow Mac") captured here on the
+                // main actor since AppModel's published properties aren't
+                // Sendable-safe to read from the detached task.
+                let prefs = FleetPrefs(
+                    themeID: gamification, compactRows: compactRows,
+                    popupLayout: popupLayout, burnStyle: burnStyle,
+                    introStyle: introStyle, introTitle: introTitle,
+                    introSpeed: introSpeed, customThemes: customThemes)
                 Task.detached(priority: .utility) { [mirrorExporter] in
-                    await mirrorExporter.record(listJSON: raw)
+                    await mirrorExporter.record(listJSON: raw, prefs: prefs)
                 }
             }
             // All-limited: count the limit-stopped sessions waiting to be

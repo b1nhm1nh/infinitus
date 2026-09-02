@@ -13,13 +13,44 @@ public struct MirrorSnapshot: Codable, Sendable {
     public let machineName: String
     public let listJSON: Data
     public let sessions: [SessionPanelRow]
+    /// Display prefs (#9 phase C1: "Follow Mac") — optional so snapshots
+    /// captured before this field existed still decode.
+    public let prefs: FleetPrefs?
 
     public init(capturedAt: Date, machineName: String, listJSON: Data,
-                sessions: [SessionPanelRow]) {
+                sessions: [SessionPanelRow], prefs: FleetPrefs? = nil) {
         self.capturedAt = capturedAt
         self.machineName = machineName
         self.listJSON = listJSON
         self.sessions = sessions
+        self.prefs = prefs
+    }
+}
+
+/// The Mac's display preferences, mirrored so "Follow Mac" can render
+/// the iOS popup exactly as the Mac shows it (#9 phase C1).
+public struct FleetPrefs: Codable, Sendable, Equatable {
+    public let themeID: String
+    public let compactRows: Bool
+    public let popupLayout: String  // "wide" / "stacked" / "hstack"
+    public let burnStyle: String
+    public let introStyle: String
+    public let introTitle: String
+    public let introSpeed: Double
+    public let customThemes: [RowTheme]
+
+    public init(themeID: String = "off", compactRows: Bool = false,
+                popupLayout: String = "wide", burnStyle: String = "ember",
+                introStyle: String = "top", introTitle: String = "zoom",
+                introSpeed: Double = 1.0, customThemes: [RowTheme] = []) {
+        self.themeID = themeID
+        self.compactRows = compactRows
+        self.popupLayout = popupLayout
+        self.burnStyle = burnStyle
+        self.introStyle = introStyle
+        self.introTitle = introTitle
+        self.introSpeed = introSpeed
+        self.customThemes = customThemes
     }
 }
 

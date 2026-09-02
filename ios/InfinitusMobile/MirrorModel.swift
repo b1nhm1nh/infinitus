@@ -10,6 +10,9 @@ final class MirrorModel: ObservableObject {
     @Published private(set) var nextRecovery: NextRecovery?
     @Published private(set) var nextCandidate: Int?
     @Published private(set) var error: String?
+    /// The Mac's display prefs (#9 phase C1: "Follow Mac"); `nil` for
+    /// snapshots captured before this field existed.
+    @Published private(set) var prefs: FleetPrefs?
 
     private let mirror: FleetMirror
 
@@ -38,6 +41,7 @@ final class MirrorModel: ObservableObject {
         do {
             guard let snapshot = try await mirror.latest() else {
                 self.snapshot = nil
+                prefs = nil
                 error = nil
                 return
             }
@@ -46,6 +50,7 @@ final class MirrorModel: ObservableObject {
                 return
             }
             self.snapshot = snapshot
+            prefs = snapshot.prefs
             let corrected = RecoveryMath.corrected(engine: list.nextRecovery, accounts: list.accounts)
             accounts = DisplayOrder.sort(list.accounts, active: list.activeAccountNumber,
                                          next: list.nextCandidate)
