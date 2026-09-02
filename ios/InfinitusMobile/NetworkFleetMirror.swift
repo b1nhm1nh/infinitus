@@ -189,20 +189,33 @@ actor NetworkFleetMirror: FleetMirror {
     /// terminal. Same candidate/token/discovery path as `sessionTail`;
     /// unlike the feed, a Mac that's simply offline has nothing sensible
     /// to fall back to, so every failure throws.
+    /// A POST is not idempotent: typing into a terminal twice is two
+    /// messages. So unlike the GETs this never falls through to another
+    /// stored route — it goes to the endpoint that last answered (the one
+    /// the feed on screen came from) with a timeout long enough for the
+    /// Mac's settle sleeps, and a failure is reported, not retried.
+    static let inputTimeout: TimeInterval = 15
+
     func sessionInput(pid: Int32, request: SessionInput.Request) async throws -> SessionInput.Reply {
         let token = MirrorPairing.normalize(
             UserDefaults.standard.string(forKey: Self.tokenKey) ?? "")
         let path = MirrorTransport.sessionInputPath(pid: pid)
         let body = try JSONEncoder().encode(request)
-        if let data = try await fetchFromStored(path: path, token: token, timeout: Self.candidateTimeout,
-                                                method: "POST", body: body) {
-            return try JSONDecoder().decode(SessionInput.Reply.self, from: data)
-        }
-        startBrowsing()
-        guard let discovered = await firstEndpoint() else { throw MirrorTransportError.timedOut }
-        let (data, _) = try await fetch(discovered, path: path, hostHeader: "infinitus",
-                                        useTLS: false, token: token, timeout: Self.candidateTimeout,
+        let data: Data
+        if let text = candidateEndpoints().first, let manual = MirrorTransport.parseEndpoint(text) {
+            let endpoint = NWEndpoint.hostPort(
+                host: NWEndpoint.Host(manual.host),
+                port: NWEndpoint.Port(rawValue: manual.port) ?? .any)
+            (data, _) = try await fetch(endpoint, path: path, hostHeader: manual.host,
+                                        useTLS: manual.useTLS, token: token,
+                                        timeout: Self.inputTimeout, method: "POST", body: body)
+        } else {
+            startBrowsing()
+            guard let discovered = await firstEndpoint() else { throw MirrorTransportError.timedOut }
+            (data, _) = try await fetch(discovered, path: path, hostHeader: "infinitus",
+                                        useTLS: false, token: token, timeout: Self.inputTimeout,
                                         method: "POST", body: body)
+        }
         return try JSONDecoder().decode(SessionInput.Reply.self, from: data)
     }
 

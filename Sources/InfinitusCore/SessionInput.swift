@@ -98,8 +98,12 @@ extension SessionInput {
             }
             var sawRunning = false
             var sawCaptured = false
+            // A terminal submits on every newline: one typed line, the
+            // socket keeps the message's own line breaks.
+            let typed = request.text.split(separator: "\n", omittingEmptySubsequences: true)
+                .joined(separator: " ")
             for host in hosts {
-                switch PtyNudge.nudge(host: host, pid: record.pid, text: request.text,
+                switch PtyNudge.nudge(host: host, pid: record.pid, text: typed,
                                       tty: tty, ancestors: ancestors, sleep: sleep) {
                 case .delivered, .typedUnverified:
                     return Reply(outcome: "delivered", channel: "pty")
