@@ -116,6 +116,13 @@ struct InfinitusApp: App {
         // by StatusItemController (see its header for why). Keep-alive with
         // zero windows comes from KeepAliveDelegate.
 
+        // macOS 26 puts this scene's window on screen by itself at launch
+        // — and SwiftUI keeps it non-resizable whatever .windowResizability
+        // says (it re-strips the .resizable bit on every update; probed
+        // 2026-09-02). StatusItemController hides it as it appears; the
+        // controller-owned window is the one Settings window.
+        // (.defaultLaunchBehavior(.suppressed) would be cleaner but is
+        // macOS 15+, and SceneBuilder takes no #available branch.)
         Settings {
             SettingsRoot(tabs: settingsTabs(
                 model: model, settingsModel: settingsModel,
@@ -254,7 +261,7 @@ struct SettingsRoot: View {
                 }
             }
         }
-        .frame(minWidth: 700, minHeight: 480)
+        .frame(minWidth: 700, idealWidth: 960, minHeight: 480, idealHeight: 640)
         .onAppear { if selection == nil { selection = tabs.first?.title } }
         // Dev harness: `playctl settings <Title>` lands on a named pane
         // (pane screenshots without synthetic sidebar clicks).

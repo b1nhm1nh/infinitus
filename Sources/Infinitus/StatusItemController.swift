@@ -110,6 +110,16 @@ final class StatusItemController {
                 DispatchQueue.main.async { self?.apply() }
             }
 
+        // macOS 26 shows the Settings scene by itself at launch, without
+        // making it key; its occlusion state flips as it lands on screen
+        // — hide it right there (see hideSceneSettingsWindow).
+        NotificationCenter.default.addObserver(
+            forName: NSWindow.didChangeOcclusionStateNotification, object: nil,
+            queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.hideSceneSettingsWindow() }
+        }
+        hideSceneSettingsWindow()
+
         // A pinned popup is a fixture, not a transient — bring it back on
         // launch (user report 2026-08-30: pinned, app restarted, gone).
         // Same for the pop-out window, at its saved position (user
@@ -517,21 +527,29 @@ final class StatusItemController {
     /// CodexBar-style chrome: searchable icon sidebar + detail pane
     /// (SettingsRoot), replacing the old toolbar-tab NSTabViewController.
     func showSettingsWindow() {
+        // Two Settings windows is how the user ended up resizing the
+        // wrong one (2026-09-02) — the scene's stays hidden.
+        hideSceneSettingsWindow()
         if settings == nil {
-            let host = NSHostingController(rootView: SettingsRoot(tabs: settingsTabs()))
-            // No sizing input from the content: .standardBounds constraints
+            let host = NSHostingView(rootView: SettingsRoot(tabs: settingsTabs()))
+            // No sizing input from the content: hosting-view constraints
             // pin the window to SwiftUI's ideal size and beat the
-            // .resizable style bit. Sized once, below; the user owns it
-            // from there.
+            // .resizable style bit — the window refused to grow even via
+            // AX (user 2026-09-02). A plain NSWindow with no
+            // contentViewController, an explicit content floor, and the
+            // frame autosaved: the user owns the size from there.
             host.sizingOptions = []
-            let w = NSWindow(contentViewController: host)
+            let w = NSWindow(
+                contentRect: NSRect(x: 0, y: 0, width: 960, height: 640),
+                styleMask: [.titled, .closable, .resizable],
+                backing: .buffered, defer: false)
             // Blur under the hosting view, outside SwiftUI (see the
-            // anchored panel note): swap the content view for a wrapped
-            // one; the controller stays retained by the window. The
-            // scrim keeps sidebar text readable over white apps.
-            w.contentView = GlassContainerView.wrap(host.view, scrim: true)
+            // anchored panel note): the wrapped view is the content view;
+            // it retains the hosting view. The scrim keeps sidebar text
+            // readable over white apps.
+            w.contentView = GlassContainerView.wrap(host, scrim: true)
+            w.contentMinSize = NSSize(width: 700, height: 480)
             w.title = "Infinitus"
-            w.styleMask = [.titled, .closable, .resizable]
             w.toolbarStyle = .unified
             w.isReleasedWhenClosed = false
             // Float only while KEY: opened from the floating pop-out it
@@ -545,7 +563,8 @@ final class StatusItemController {
             NotificationCenter.default.addObserver(
                 self, selector: #selector(settingsKeyChanged),
                 name: NSWindow.didResignKeyNotification, object: w)
-            w.setContentSize(NSSize(width: 780, height: 540))
+            w.center()
+            w.setFrameAutosaveName("InfinitusSettings")
             NotificationCenter.default.addObserver(
                 self, selector: #selector(settingsClosed),
                 name: NSWindow.willCloseNotification, object: w)
@@ -571,6 +590,18 @@ final class StatusItemController {
             if hadPinned { self?.showPinnedWindow() }
         }
         wall.show(model: model, usage: usage)
+    }
+
+    /// The SwiftUI Settings scene's window: macOS 26 shows it by itself
+    /// at launch, and SwiftUI keeps it non-resizable — it re-strips the
+    /// .resizable bit and resets contentMinSize on every update (probed
+    /// 2026-09-02), so it can't be adopted. It goes away; the
+    /// controller-owned window below is the one Settings window.
+    private func hideSceneSettingsWindow() {
+        for w in NSApp.windows where w.identifier?.rawValue == "com_apple_SwiftUI_Settings_window"
+            && w.isVisible {
+            w.orderOut(nil)
+        }
     }
 
     @objc private func settingsClosed() {
