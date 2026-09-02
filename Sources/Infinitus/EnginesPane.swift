@@ -299,10 +299,10 @@ struct RoutingNotes: View {
     var body: some View {
         Text(explainer).font(.caption).foregroundStyle(.secondary)
         if strategy != nil, strategy != "fill-first" {
-            Text("Turns on the proxy's session-affinity (its config, not this tab) so a "
-                 + "conversation stays on one credential: without it every request "
-                 + "lands on a different account and the prompt cache misses. Under "
-                 + "affinity, Switch only steers new sessions.")
+            Text("Turn on session-affinity in the proxy's config (no management route "
+                 + "for it yet) so a conversation stays on one credential: without it "
+                 + "every request lands on a different account and the prompt cache "
+                 + "misses. Under affinity, Switch only steers new sessions.")
                 .font(.caption).foregroundStyle(.orange)
         }
     }

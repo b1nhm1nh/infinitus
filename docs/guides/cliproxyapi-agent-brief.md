@@ -27,8 +27,9 @@ secrets; never edit files under `~/.cli-proxy-api/*.json`.
 
 3. **Generate two secrets** with `openssl rand -hex 24`: one management
    key, one API key. Write them to a mode-600 file the user chooses
-   (suggest `~/.cli-proxy-api/infinitus-secrets`, one per line,
-   labelled). Tell the user the file path; do not echo the values.
+   (suggest `~/.cli-proxy-api/infinitus-secrets`): line 1 the management
+   key, line 2 the API key, nothing else. Tell the user the file path;
+   do not echo the values.
 
 4. **Edit the config** (YAML, keep everything else intact):
    - `remote-management.allow-remote: false`

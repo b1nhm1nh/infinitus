@@ -114,7 +114,7 @@ Settings → CLIProxyAPI → **Routing**:
 
 | Strategy | What it does | Prompt cache |
 |---|---|---|
-| `fill-first` (Infinitus default) | Highest priority credential until it is rate-limited — cswap's consume-first. Switch works. | Fine: one account per conversation. |
+| `fill-first` (recommended) | Highest priority credential until it is rate-limited — cswap's consume-first. Switch works. | Fine: one account per conversation. |
 | `round-robin` (proxy default) | Every request goes to the next credential. | **Misses** unless session affinity is on. Switch is advisory. |
 | `weighted-round-robin` | Rotation proportional to each credential's `weight`. | Same as round-robin. |
 
