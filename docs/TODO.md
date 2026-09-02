@@ -160,9 +160,11 @@ file keeps the shipped log and the deferred-by-design notes.
   + one button per AskUserQuestion option. Phone POST is single-route with
   a 15 s timeout (a retry elsewhere would type twice); typed messages
   collapse newlines. Live: 400/404/rejected + a real message delivered
-  over the socket. Linux tray has neither /tail nor /input — `parity
-  pending`. Not yet: push when a session flips to waiting-on-you; multi-Mac
-  picker (#17 item 3).
+  over the socket. Linux tray parity landed the same day (6399a2a: POSIX
+  server reads bodies, /tail + /input routes, stderr input log; docker
+  200/404/400/404/200/noChannel) plus the #13 phase word in Panel.qml
+  (QML render unverified — the Omarchy VM would not boot). Not yet: push
+  when a session flips to waiting-on-you; multi-Mac picker (#17 item 3).
 - ~~Linux parity (#9)~~ → shipped 2026-09-03: panel footer chips (service
   status via cached Anthropic fetch, sessions, engine probe) and
   `infinitus-tray serve/pair` on a POSIX HTTP listener with the same
