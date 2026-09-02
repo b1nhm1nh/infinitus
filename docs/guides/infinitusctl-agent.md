@@ -8,6 +8,9 @@ call it by that path.
 
 Talks to the app over `~/Library/Application Support/Infinitus/control/control.sock`
 (a 0700 directory owned by you — that is the auth). The app must be running.
+`INFINITUS_CONTROL_SOCKET=<path>` overrides the socket on both ends — set it
+on a playground/dev instance and on `infinitusctl` to drive that instance
+instead of the real app (the playground opens no socket without it).
 
 ## The one rule
 

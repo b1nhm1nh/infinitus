@@ -100,6 +100,11 @@ jobs:
           cd tap
           sed -i '' -e "s/^  version \".*\"/  version \"${VERSION}\"/" \
                     -e "s/^  sha256 \".*\"/  sha256 \"${SHA}\"/" Casks/infinitus.rb
+          # infinitusctl (agent control CLI, bundled since 0.4) onto PATH —
+          # added once, on the first release that ships it; idempotent.
+          grep -q '^  binary ' Casks/infinitus.rb || perl -0pi -e \
+            's|^  app "Infinitus.app"\n|  app "Infinitus.app"\n  binary "#{appdir}/Infinitus.app/Contents/MacOS/infinitusctl"\n|m' \
+            Casks/infinitus.rb
           git -c user.name="infinitus-release" \
               -c user.email="actions@github.com" \
               commit -am "infinitus ${VERSION}"

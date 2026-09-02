@@ -593,7 +593,11 @@ final class AppModel: ObservableObject {
         // The tunnel can only point at a bound port, which arrives later.
         mirrorServer.onReady = { [weak self] _ in self?.applyQuickTunnel() }
         applyMirrorLAN()
-        if !isPlayground { controlServer.start() }
+        // The playground gets a socket only where INFINITUS_CONTROL_SOCKET
+        // points — never the real app's path.
+        if !isPlayground || ProcessInfo.processInfo.environment["INFINITUS_CONTROL_SOCKET"] != nil {
+            controlServer.start()
+        }
         guard supervisor == nil, refreshTask == nil else { return }
         if let cswap, !isPlayground, cswapEnabled { startEngine(binary: cswap.binaryPath) }
         guard !registry.engines.isEmpty else { return }
