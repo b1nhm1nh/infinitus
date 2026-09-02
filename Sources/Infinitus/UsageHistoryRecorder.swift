@@ -14,6 +14,7 @@ actor UsageHistoryRecorder {
     private var appended: [String: Double] = [:]
     private var lastMirror: Date = .distantPast
     private var prunedThisLaunch = false
+    private var seededWeeklyResetMemory = false
 
     /// Stable per-machine suffix so machines never write each other's
     /// files (merge happens at read time instead).
@@ -56,6 +57,17 @@ actor UsageHistoryRecorder {
             prunedThisLaunch = true
             try? UsageHistory.prune(url: Self.localURL,
                                     cutoff: Date().addingTimeInterval(-Self.retention))
+        }
+        // Issue #16: seed the ready-cell's weekly-reset memory from
+        // what a prior launch already saw, once per launch.
+        if !seededWeeklyResetMemory {
+            seededWeeklyResetMemory = true
+            WeeklyResetMemory.shared.seed(from: UsageHistory.load(url: Self.localURL))
+        }
+        for a in accounts {
+            guard let iso = a.usage?.sevenDay?.resetsAt,
+                  let date = UsageHistory.parseISO(iso) else { continue }
+            WeeklyResetMemory.shared.note(email: a.email, resetsAt: date)
         }
         let fresh = UsageHistory.samples(accounts: accounts).filter {
             $0.t > (appended[$0.email] ?? 0)

@@ -121,6 +121,11 @@ def fleet(active):
                 win(55.0, 90, "3d 18h", "Sep 3 15:59", 52.0, False),
                 [win(50.0, 90, "3d 18h", "Sep 3 15:59", 52.0, False, "Fable")],
                 71.5, active == 9),
+        # Untouched account (issue #16): the engine reports a never-used
+        # window as bare {"pct": 0} — no resetsAt/countdown/clock/pace —
+        # so the Ready cell's fallback wording has something to render.
+        account(10, "juliet", "Max 20x", {"pct": 0.0}, {"pct": 0.0}, [],
+                0.0, active == 10),
     ]
 
 def sessions():

@@ -254,8 +254,15 @@ struct AccountCells<M: FleetModel, U: UsageSource> {
                 .font(PopupFont.caption).foregroundStyle(.secondary)
             // The weekly clock keeps ticking on an untouched account —
             // show when it rolls ("full hp: also show 7d time", user
-            // 2026-09-02), same label the HP cell would carry.
-            if let weekly = account.usage?.sevenDay, let when = resetText(weekly) {
+            // 2026-09-02). The engine drops resetsAt at 0% (issue #16):
+            // fall back to a remembered one still in the future, else
+            // say the window hasn't started instead of showing nothing.
+            if let weekly = account.usage?.sevenDay,
+               let when = ReadyWeeklyCaption.text(
+                    pct: weekly.pct, resetsAt: weekly.resetsAt,
+                    countdown: weekly.countdown, clock: weekly.clock,
+                    remembered: WeeklyResetMemory.shared.futureReset(email: account.email),
+                    compact: compactText) {
                 Text("·").font(PopupFont.caption).foregroundStyle(.tertiary)
                 Text(when).font(PopupFont.caption).foregroundStyle(.tertiary)
             }
