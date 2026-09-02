@@ -40,7 +40,51 @@ the engine's internals.
 Every `status`/`panel` poll also mirrors the fleet snapshot to
 `$XDG_STATE_HOME/infinitus/mirror-snapshot.json` (fallback
 `~/.local/state/infinitus`), throttled to once per 30s — the seam the
-mobile companion (#9) will eventually read.
+mobile companion (#9) reads.
+
+The footer chips (service status, live-session count, auto-switch
+engine badge) come from the same poll: Anthropic's status page is
+fetched at most once every 5 minutes (cached under
+`$XDG_CACHE_HOME/infinitus`, falling back to "unknown" offline), and
+the engine badge just checks whether a `cswap auto` process is alive
+(`pgrep -f "cswap auto"`) — the Linux tray has no supervisor of its own
+to start or stop it.
+
+## Phone companion (#9)
+
+`infinitus-tray serve` is the Linux counterpart of the macOS app's
+mirror server: a long-running process that re-collects the fleet every
+30s and answers `GET /snapshot` over plain HTTP on `0.0.0.0:47824`,
+guarded by the same pairing-token contract as the Mac
+(`Authorization: Bearer <token>` or `?t=<token>`; anything else is 401).
+There's no Bonjour on this side — pair with an address instead of a scan.
+
+```sh
+infinitus-tray serve                     # loads/creates ~/.config/infinitus/pair-token
+infinitus-tray serve --port 9000 --token ABCD1234…
+infinitus-tray serve --token-file /run/secrets/infinitus-token
+```
+
+Run it under systemd (`packaging/omarchy/infinitus-serve.service`):
+
+```sh
+install -Dm644 packaging/omarchy/infinitus-serve.service \
+  ~/.config/systemd/user/infinitus-serve.service
+systemctl --user daemon-reload
+systemctl --user enable --now infinitus-serve
+```
+
+`infinitus-tray pair` prints the pairing URL for every reachable
+address (LAN + Tailscale, if either is up) and, when `qrencode` is on
+`PATH`, an ANSI QR to scan with the phone app:
+
+```sh
+infinitus-tray pair              # http://192.168.1.20:47824
+infinitus-tray pair --port 9000  # match a non-default serve port
+```
+
+Without `qrencode` installed it just prints the URL plus a note to
+install it for a QR.
 
 ## Omarchy 4+ (Quickshell bar)
 

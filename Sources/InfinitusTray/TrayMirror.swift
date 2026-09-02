@@ -16,6 +16,8 @@ enum TrayMirror {
 
     static func export(raw: Data, sessions: [SessionPanelRow], enginePath: String,
                         prefs: FleetPrefs,
+                        serviceStatus: ServiceStatusSummary? = nil,
+                        engine: EngineBadge? = nil,
                         progressByPid: [Int: SessionProgress]? = nil,
                         now: Date = Date()) {
         // The demo engine's fabricated fleet must not reach the mobile
@@ -34,12 +36,11 @@ enum TrayMirror {
             // No `cswap usage --json` cash cache on Linux today (#9
             // phase D1a) — TrayHistory only tracks headroom, not spend.
             usageJSON: nil,
-            // No status-page poller and no engine supervisor in the tray
-            // (#9 phase D2): it's a fresh process per Waybar tick, so the
-            // phone's footer simply drops those two chips for a Linux
-            // snapshot. The sessions card's progress the tray DOES have.
-            serviceStatus: nil,
-            engine: nil,
+            // Status-page poller + `cswap auto` probe (#9 phase D2 parity,
+            // TrayServiceStatus/EngineProbe) — the tray has no supervisor
+            // of its own, just a snapshot of what's true right now.
+            serviceStatus: serviceStatus,
+            engine: engine,
             progressByPid: progressByPid)
         guard (try? MirrorWriter.write(snapshot, to: url)) != nil else { return }
         try? String(now.timeIntervalSince1970).write(to: stampURL, atomically: true, encoding: .utf8)

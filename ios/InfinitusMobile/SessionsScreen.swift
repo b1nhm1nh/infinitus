@@ -9,12 +9,28 @@ import InfinitusUI
 struct SessionsScreen: View {
     @ObservedObject var model: MirrorModel
     @ObservedObject var progress: MobileSessionProgress
+    @State private var path = NavigationPath()
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $path) {
             content
                 .navigationTitle("Sessions")
                 .refreshable { await model.refresh() }
+                .navigationDestination(for: SessionDetail.self) { session in
+                    SessionFeedScreen(session: session)
+                }
+        }
+        // Same dev seam as `INFINITUS_TAB` — a headless simulator capture
+        // can't tap a row, so a pid named here pushes straight to its feed.
+        .onChange(of: fleetsWithSessions.isEmpty) { _, empty in
+            guard !empty, path.isEmpty,
+                  let pidText = ProcessInfo.processInfo.environment["INFINITUS_FEED_PID"],
+                  let pid = Int(pidText),
+                  let session = fleetsWithSessions
+                      .flatMap({ $0.liveSessions?.sessions ?? [] })
+                      .first(where: { $0.pid == pid })
+            else { return }
+            path.append(session)
         }
     }
 
@@ -32,7 +48,7 @@ struct SessionsScreen: View {
                     let live = fleet.liveSessions!
                     Section {
                         ForEach(live.sessions ?? [], id: \.pid) { session in
-                            row(session)
+                            NavigationLink(value: session) { row(session) }
                         }
                     } header: {
                         Text(model.fleets.count > 1

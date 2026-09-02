@@ -16,12 +16,13 @@ public enum ControlProtocol {
 
     /// `~/Library/Application Support/Infinitus/control/control.sock` —
     /// the directory is 0700 (the app creates it before binding).
-    /// `INFINITUS_CONTROL_SOCKET=<path>` overrides it for both the app and
-    /// the CLI, so a dev instance never steals the running app's socket.
+    /// `INFINITUS_CONTROL_SOCKET` overrides it on both ends, so a dev
+    /// instance (playground / shots) and `infinitusctl` can meet on a
+    /// private socket instead of the real app's.
     public static func socketURL(home: String = NSHomeDirectory(),
                                  environment: [String: String] = ProcessInfo.processInfo.environment) -> URL {
-        if let custom = environment["INFINITUS_CONTROL_SOCKET"], !custom.isEmpty {
-            return URL(fileURLWithPath: custom)
+        if let override = environment["INFINITUS_CONTROL_SOCKET"], !override.isEmpty {
+            return URL(fileURLWithPath: override)
         }
         return URL(fileURLWithPath: home)
             .appendingPathComponent("Library/Application Support/Infinitus/control/control.sock")

@@ -114,4 +114,18 @@ final class MirrorTransportTests: XCTestCase {
         XCTAssertEqual(tunnel?.urlText, "https://calm-fox.trycloudflare.com")
         XCTAssertEqual(lan?.urlText, "http://192.168.1.20:47824")
     }
+
+    // MARK: - Session feed route (#17 layer 1)
+
+    func testSessionTailPathRoundTrips() {
+        XCTAssertEqual(MirrorTransport.sessionTailPath(pid: 123), "/sessions/123/tail")
+        XCTAssertEqual(MirrorTransport.sessionTailPid("/sessions/123/tail"), 123)
+    }
+
+    func testSessionTailPidRejectsNonNumericOrWrongShape() {
+        XCTAssertNil(MirrorTransport.sessionTailPid("/sessions/x/tail"))
+        XCTAssertNil(MirrorTransport.sessionTailPid("/sessions/123"))
+        XCTAssertNil(MirrorTransport.sessionTailPid("/sessions/123/tail/extra"))
+        XCTAssertNil(MirrorTransport.sessionTailPid("/snapshot"))
+    }
 }

@@ -16,6 +16,11 @@ struct SyncPane: View {
     /// The quick tunnel publishes its URL the same way — the QR list
     /// grows a third entry the moment cloudflared names the hostname.
     @ObservedObject private var tunnel: QuickTunnel
+    @ObservedObject private var named: NamedTunnel
+    /// Typed hostname/token live here until Save: the model restarts the
+    /// tunnel on a hostname change, and a half-typed one shouldn't.
+    @State private var namedHost = ""
+    @State private var namedToken = ""
     /// The token is masked until asked for: settings panes get shared in
     /// screenshots, and this one is a read key.
     @State private var revealToken = false
@@ -32,6 +37,7 @@ struct SyncPane: View {
         self.app = app
         _server = ObservedObject(wrappedValue: app.mirrorServer)
         _tunnel = ObservedObject(wrappedValue: app.quickTunnel)
+        _named = ObservedObject(wrappedValue: app.namedTunnel)
     }
 
     var body: some View {
@@ -108,8 +114,10 @@ struct SyncPane: View {
                         .padding(.vertical, 2)
                         Text("One scan pairs every route. The phone tries them in "
                              + "this order and keeps whichever answers — a tunnel "
-                             + "URL that changes on restart just falls through to "
-                             + "Wi-Fi or Tailscale.")
+                             + "URL that changes on restart falls through to "
+                             + "Wi-Fi or Tailscale. Away from home with no "
+                             + "Tailscale on the phone, the tunnel is the only "
+                             + "route, so a restart means one more scan.")
                             .font(.caption).foregroundStyle(.secondary)
                     }
                 }
@@ -125,11 +133,13 @@ struct SyncPane: View {
                         if let status = tunnel.status {
                             Text(status).font(.caption).foregroundStyle(.secondary)
                         }
-                        Text("The URL is public and changes every start; the "
-                             + "pairing token is the only thing keeping the "
+                        Text("The URL is public and changes every start (a phone "
+                             + "that has no other route then needs a fresh scan); "
+                             + "the pairing token is the only thing keeping the "
                              + "snapshot private. Stops when you turn this off "
                              + "or quit.")
                             .font(.caption).foregroundStyle(.secondary)
+                        namedTunnelRows
                     } else {
                         LabeledContent("Cloudflare quick tunnel") {
                             Button("Copy install command") { copy("brew install cloudflared") }
@@ -140,7 +150,7 @@ struct SyncPane: View {
                             .font(.caption).foregroundStyle(.secondary)
                     }
                 }
-                .onAppear { probeTailscale() }
+                .onAppear { probeTailscale(); namedHost = app.mirrorNamedTunnelHost }
                 .onReceive(reprobe) { _ in probeTailscale() }
             }
             Section("iCloud") {
@@ -179,6 +189,52 @@ struct SyncPane: View {
         let title: String
         let detail: String
         let done: Bool
+    }
+
+    /// The restart-proof remote route: a Cloudflare tunnel the user owns.
+    /// Cloudflare holds the hostname → localhost:port mapping; this Mac
+    /// holds only the tunnel token, in the keychain.
+    @ViewBuilder private var namedTunnelRows: some View {
+        Toggle("Expose through your own Cloudflare tunnel",
+               isOn: $app.mirrorNamedTunnelEnabled)
+            .help("Runs `cloudflared tunnel run` with the token below. The "
+                  + "hostname is yours and never changes, so a paired phone "
+                  + "survives every restart.")
+        TextField("Hostname", text: $namedHost, prompt: Text("infinitus.example.com"))
+            .textFieldStyle(.roundedBorder)
+            .onSubmit { app.mirrorNamedTunnelHost = namedHost }
+        SecureField("Tunnel token", text: $namedToken,
+                    prompt: Text(app.namedTunnelTokenPresent
+                                 ? "•••••••• (stored in keychain)" : "eyJh… from the Cloudflare dashboard"))
+            .textFieldStyle(.roundedBorder)
+        HStack {
+            Button("Save") {
+                app.mirrorNamedTunnelHost = namedHost
+                if !namedToken.isEmpty { app.saveNamedTunnelToken(namedToken) }
+                namedToken = ""
+            }
+            .buttonStyle(.borderedProminent)
+            .disabled(NamedTunnel.normalizeHostname(namedHost).isEmpty)
+            if app.namedTunnelTokenPresent {
+                Button("Forget token") { app.saveNamedTunnelToken("") }
+            }
+        }
+        if let status = named.status {
+            Text(status).font(.caption)
+                .foregroundStyle(named.connected ? Color.secondary : Color.orange)
+        }
+        if app.mirrorNamedTunnelEnabled, let port = server.port,
+           port != MirrorTransport.defaultPort {
+            Text("This Mac is listening on port \(port), not \(MirrorTransport.defaultPort) — "
+                 + "the tunnel's public hostname in the Cloudflare dashboard must point at "
+                 + "http://localhost:\(port).")
+                .font(.caption).foregroundStyle(.orange)
+        }
+        Text("Once in the Cloudflare dashboard: Zero Trust → Networks → Tunnels → "
+             + "Create → Cloudflared, name it, copy the token; then Public hostname "
+             + "= the hostname above, service = http://localhost:\(MirrorTransport.defaultPort). "
+             + "Needs a Cloudflare account and a domain on it.")
+            .font(.caption).foregroundStyle(.secondary)
     }
 
     private var steps: [Step] {
@@ -293,8 +349,9 @@ struct SyncPane: View {
                 + "Tailscale from the App Store and sign into the same tailnet. Infinitus shows "
                 + "the tailnet route by itself.",
                 "   - Cloudflare quick tunnel: `brew install cloudflared`, then in Infinitus "
-                + "Settings → Devices → Anywhere turn on the tunnel (random public URL; the token "
-                + "is the only lock).",
+                + "Settings → Devices → Anywhere turn on the tunnel (random public URL that "
+                + "changes every Infinitus start — a phone with no other route rescans after a "
+                + "restart; the token is the only lock).",
                 "4. Pair: on the phone, Settings → Mac connection → Scan QR, pointing at "
                 + "Infinitus Settings → Devices → Pair a phone (one QR carries every route). "
                 + "Or enter a route address and the pairing token by hand in the same screen.",

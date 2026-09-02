@@ -366,6 +366,20 @@ final class AppModel: ObservableObject {
             applyQuickTunnel()
         }
     }
+    /// The named Cloudflare tunnel (#9, the restart-proof route): the
+    /// user's own hostname, the token in the keychain. Off by default.
+    @Published var mirrorNamedTunnelEnabled: Bool {
+        didSet {
+            defaults.set(mirrorNamedTunnelEnabled, forKey: NamedTunnel.enabledKey)
+            applyNamedTunnel()
+        }
+    }
+    @Published var mirrorNamedTunnelHost: String {
+        didSet {
+            defaults.set(mirrorNamedTunnelHost, forKey: NamedTunnel.hostnameKey)
+            applyNamedTunnel()
+        }
+    }
     let sync = SettingsSyncModel()
     let historyRecorder = UsageHistoryRecorder()
     let mirrorExporter = MirrorExporter()
@@ -373,6 +387,7 @@ final class AppModel: ObservableObject {
     /// Agent CLI socket (ControlServer.swift); the real model only.
     private(set) lazy var controlServer = ControlServer(model: self)
     let quickTunnel = QuickTunnel()
+    let namedTunnel = NamedTunnel()
     private let awake = KeepAwake()
     private var pushTriggers = PushTriggers()
     private let defaults: UserDefaults
@@ -473,6 +488,8 @@ final class AppModel: ObservableObject {
         sortByHeadroom = defaults.object(forKey: "sort_headroom") as? Bool ?? true
         mirrorLANEnabled = defaults.object(forKey: "mirror_lan_enabled") as? Bool ?? false
         mirrorTunnelEnabled = defaults.object(forKey: "mirror_tunnel_enabled") as? Bool ?? false
+        mirrorNamedTunnelEnabled = defaults.bool(forKey: NamedTunnel.enabledKey)
+        mirrorNamedTunnelHost = defaults.string(forKey: NamedTunnel.hostnameKey) ?? ""
         // One token per install, minted the first time anyone looks.
         let storedToken = defaults.string(forKey: "mirror_pair_token") ?? ""
         mirrorPairToken = storedToken.isEmpty ? MirrorPairing.generateToken() : storedToken
@@ -608,10 +625,18 @@ final class AppModel: ObservableObject {
             self.eventLog.append(EventEntry(icon: icon, text: text))
             if self.eventLog.count > 100 { self.eventLog.removeFirst(self.eventLog.count - 100) }
         }
-        // The tunnel can only point at a bound port, which arrives later.
-        mirrorServer.onReady = { [weak self] _ in self?.applyQuickTunnel() }
+        namedTunnel.log = quickTunnel.log
+        // The tunnels can only point at a bound port, which arrives later.
+        mirrorServer.onReady = { [weak self] _ in
+            self?.applyQuickTunnel()
+            self?.applyNamedTunnel()
+        }
         applyMirrorLAN()
-        if !isPlayground { controlServer.start() }
+        // The playground gets a socket only where INFINITUS_CONTROL_SOCKET
+        // points — never the real app's path.
+        if !isPlayground || ProcessInfo.processInfo.environment["INFINITUS_CONTROL_SOCKET"] != nil {
+            controlServer.start()
+        }
         guard supervisor == nil, refreshTask == nil else { return }
         if let cswap, !isPlayground, cswapEnabled { startEngine(binary: cswap.binaryPath) }
         guard !registry.engines.isEmpty else { return }
@@ -642,13 +667,25 @@ final class AppModel: ObservableObject {
         guard allowed, mirrorLANEnabled else {
             mirrorServer.stop()
             quickTunnel.stop()
+            namedTunnel.stop()
             return
         }
         let payload = mirrorServer.payload
         Task { [mirrorExporter] in await mirrorExporter.attach(payload: payload) }
         mirrorServer.start(machineName: Host.current().localizedName ?? "Mac",
                            token: mirrorPairToken)
+        mirrorServer.sessionFeed.set { pid, limit in
+            let claudeDir = ClaudeSessions.configHome()
+            guard let record = ClaudeSessions.list(claudeDir: claudeDir).first(where: { $0.pid == pid })
+            else { return nil }
+            guard let feed = SessionFeedReader.read(record: record, claudeDir: claudeDir, limit: limit)
+            else { return nil }
+            let encoder = JSONEncoder()
+            encoder.dateEncodingStrategy = .iso8601
+            return try? encoder.encode(feed)
+        }
         applyQuickTunnel()
+        applyNamedTunnel()
     }
 
     /// Starts or stops the Cloudflare quick tunnel (#9). It only ever
@@ -662,6 +699,35 @@ final class AppModel: ObservableObject {
         quickTunnel.start(port: port)
     }
 
+    /// Starts or stops the named tunnel (#9): needs the toggle, a
+    /// hostname, a token in the keychain and a bound port. A hostname
+    /// change while running restarts it — the token is per hostname.
+    private func applyNamedTunnel() {
+        let host = NamedTunnel.normalizeHostname(mirrorNamedTunnelHost)
+        if namedTunnel.isRunning, namedTunnel.hostname != host { namedTunnel.stop() }
+        guard mirrorNamedTunnelEnabled, mirrorLANEnabled, mirrorServer.port != nil,
+              !host.isEmpty, let token = NamedTunnel.token(for: host) else {
+            namedTunnel.stop()
+            return
+        }
+        namedTunnel.start(hostname: host, token: token)
+    }
+
+    var namedTunnelTokenPresent: Bool {
+        let host = NamedTunnel.normalizeHostname(mirrorNamedTunnelHost)
+        return !host.isEmpty && NamedTunnel.token(for: host) != nil
+    }
+
+    /// Stores (or, when empty, forgets) the tunnel token for the current
+    /// hostname and applies it at once.
+    func saveNamedTunnelToken(_ token: String) {
+        let host = NamedTunnel.normalizeHostname(mirrorNamedTunnelHost)
+        guard !host.isEmpty else { return }
+        NamedTunnel.setToken(token, for: host)
+        namedTunnel.stop()
+        applyNamedTunnel()
+    }
+
     /// A new pairing token: every phone must be re-paired, and the
     /// running listener picks it up without a restart.
     func regeneratePairToken() {
@@ -670,7 +736,7 @@ final class AppModel: ObservableObject {
     }
 
     /// Every way a phone can reach this Mac right now (#9 remote access):
-    /// lan, tailnet, tunnel, in that order — the order the single pair QR
+    /// lan, tailnet, named tunnel, quick tunnel, in that order — the order the single pair QR
     /// lists them in, and the order the phone tries them in.
     var pairRoutes: [PairRoute] {
         guard let port = mirrorServer.port else { return [] }
@@ -690,6 +756,11 @@ final class AppModel: ObservableObject {
                         + "tailnet. Nothing else to set up — this Mac already "
                         + "listens on every interface.",
                   endpoint: "http://\(tailnet):\(port)")
+        }
+        if let named = namedTunnel.endpoint {
+            route(id: "named", title: "Anywhere, your domain",
+                  detail: "Your Cloudflare tunnel hostname — the same every start.",
+                  endpoint: named)
         }
         if let tunnel = quickTunnel.url {
             route(id: "tunnel", title: "Anywhere, no account",
@@ -1175,8 +1246,9 @@ final class AppModel: ObservableObject {
     /// the child never outlives the app holding the mutex (the engine also
     /// watches its stdin pipe for EOF as the backstop against a hard kill).
     func shutdown() {
-        // The tunnel is a child process: it must not outlive the app.
+        // The tunnels are child processes: they must not outlive the app.
         quickTunnel.stop()
+        namedTunnel.stop()
         let supervisor = supervisor
         Task {
             await supervisor?.stop()

@@ -186,7 +186,7 @@ final class QuickTunnel: ObservableObject {
         kill(pid_t(pid), SIGTERM)
     }
 
-    private static func commandLine(of pid: Int) -> String? {
+    static func commandLine(of pid: Int) -> String? {
         let ps = Process()
         ps.executableURL = URL(fileURLWithPath: "/bin/ps")
         ps.arguments = ["-p", String(pid), "-o", "command="]

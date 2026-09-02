@@ -1,13 +1,16 @@
 import Foundation
 import Security
 
-/// The one keychain slot: CLIProxyAPI's management key (#8). Generic
+/// The keychain slots: CLIProxyAPI's management key (#8) — generic
 /// password, service = bundle-id-scoped, account = the proxy base URL,
-/// so two proxies could hold two keys. Never mirrored into defaults.
+/// so two proxies could hold two keys — and the Cloudflare named-tunnel
+/// token (#9), same shape under its own service. Never mirrored into
+/// defaults.
 enum Keychain {
     static let service = "com.huuloc.infinitus.cliproxy"
+    static let tunnelService = "com.huuloc.infinitus.cloudflare-tunnel"
 
-    static func read(account: String) -> String? {
+    static func read(account: String, service: String = Self.service) -> String? {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
@@ -25,8 +28,8 @@ enum Keychain {
         return String(data: data, encoding: .utf8)
     }
 
-    static func write(account: String, value: String) -> Bool {
-        delete(account: account)
+    static func write(account: String, value: String, service: String = Self.service) -> Bool {
+        delete(account: account, service: service)
         let add: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
@@ -36,7 +39,7 @@ enum Keychain {
         return SecItemAdd(add as CFDictionary, nil) == errSecSuccess
     }
 
-    static func delete(account: String) {
+    static func delete(account: String, service: String = Self.service) {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,

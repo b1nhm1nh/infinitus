@@ -37,6 +37,25 @@ final class MirrorTokenBox: @unchecked Sendable {
     }
 }
 
+/// The `/sessions/<pid>/tail` handler (#17 layer 1), boxed the same way
+/// as payload/token: AppModel sets it from the main actor, the
+/// connection handlers call it from the network queue. The closure does
+/// its own file read (`ClaudeSessions.list` + `SessionFeedReader.read`)
+/// on that queue — off the main actor, same as every other route here.
+final class MirrorSessionFeedBox: @unchecked Sendable {
+    private let lock = NSLock()
+    private var provider: (@Sendable (Int32, Int) -> Data?)?
+
+    func set(_ new: @escaping @Sendable (Int32, Int) -> Data?) {
+        lock.lock(); provider = new; lock.unlock()
+    }
+
+    func call(_ pid: Int32, _ limit: Int) -> Data? {
+        lock.lock(); let current = provider; lock.unlock()
+        return current?(pid, limit)
+    }
+}
+
 /// Serves the fleet snapshot to the phone (#9): one Bonjour advertised
 /// (`_infinitus._tcp`) TCP listener answering `GET /snapshot` with the
 /// exact bytes MirrorExporter wrote. Off by default behind the Sync
@@ -61,6 +80,8 @@ final class MirrorServer: ObservableObject {
     let payload = MirrorPayloadBox()
     /// Read by the connection handlers; written by AppModel on regenerate.
     let token = MirrorTokenBox()
+    /// Answers `/sessions/<pid>/tail`; set by AppModel once at start.
+    let sessionFeed = MirrorSessionFeedBox()
     /// Event-log sink (icon, text), set by AppModel.
     var log: ((String, String) -> Void)?
     /// Fires with the bound port once the listener is up — the quick
@@ -110,12 +131,13 @@ final class MirrorServer: ObservableObject {
                                               type: MirrorTransport.bonjourType)
         let payload = self.payload
         let token = self.token
+        let sessionFeed = self.sessionFeed
         let served: @Sendable () -> Void = { [weak self] in
             Task { @MainActor in self?.lastServed = Date() }
         }
         listener.newConnectionHandler = { [queue] connection in
-            Self.serve(connection, payload: payload, token: token, queue: queue,
-                       onServed: served)
+            Self.serve(connection, payload: payload, token: token, sessionFeed: sessionFeed,
+                       queue: queue, onServed: served)
         }
         listener.stateUpdateHandler = { [weak self] state in
             Task { @MainActor in self?.handle(state, wasFixedPort: rawPort != 0, name: name) }
@@ -157,16 +179,19 @@ final class MirrorServer: ObservableObject {
     private nonisolated static func serve(_ connection: NWConnection,
                                           payload: MirrorPayloadBox,
                                           token: MirrorTokenBox,
+                                          sessionFeed: MirrorSessionFeedBox,
                                           queue: DispatchQueue,
                                           onServed: @escaping @Sendable () -> Void) {
         connection.start(queue: queue)
-        receive(connection, buffer: Data(), payload: payload, token: token, onServed: onServed)
+        receive(connection, buffer: Data(), payload: payload, token: token,
+               sessionFeed: sessionFeed, onServed: onServed)
     }
 
     private nonisolated static func receive(_ connection: NWConnection,
                                             buffer: Data,
                                             payload: MirrorPayloadBox,
                                             token: MirrorTokenBox,
+                                            sessionFeed: MirrorSessionFeedBox,
                                             onServed: @escaping @Sendable () -> Void) {
         connection.receive(minimumIncompleteLength: 1, maximumLength: 4096) {
             data, _, isComplete, error in
@@ -184,6 +209,12 @@ final class MirrorServer: ObservableObject {
                     response = payload.latest.map(MirrorTransport.snapshotResponse)
                         ?? MirrorTransport.unavailableResponse()
                     onServed()
+                } else if request.method == "GET",
+                          let pid = MirrorTransport.sessionTailPid(request.path) {
+                    let limit = request.query(MirrorTransport.tailLimitQueryName).flatMap(Int.init) ?? 30
+                    response = sessionFeed.call(pid, limit).map(MirrorTransport.snapshotResponse)
+                        ?? MirrorTransport.notFoundResponse()
+                    onServed()
                 } else {
                     response = MirrorTransport.notFoundResponse()
                 }
@@ -197,7 +228,8 @@ final class MirrorServer: ObservableObject {
                 connection.cancel()
                 return
             }
-            receive(connection, buffer: buffer, payload: payload, token: token, onServed: onServed)
+            receive(connection, buffer: buffer, payload: payload, token: token,
+                   sessionFeed: sessionFeed, onServed: onServed)
         }
     }
 }

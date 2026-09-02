@@ -107,9 +107,77 @@ file keeps the shipped log and the deferred-by-design notes.
       screen picker, scaled popup body, Esc leaves)
 - ~~#12 Fleet wall layout~~ → shipped 2026-09-01 (mission-control
       hero/rail/bench; wall is a mode — popup/pop-out close)
+- Remote routes that survive an Infinitus restart (user 2026-09-03,
+  phone on 5G far from the Mac: Wi-Fi unreachable, no Tailscale on the
+  phone, quick tunnel gets a NEW random URL every launch → rescan per
+  restart). Every option, so the pick is recorded:
+  - Tailscale on the phone (zero code): the stored 100.x route then
+    outlives restarts. Needs the Tailscale app + same login on the phone.
+  - Tailscale Funnel route: `tailscale funnel 47824` → stable public
+    `https://<mac>.<tailnet>.ts.net`, nothing on the phone, no domain;
+    one-time Funnel enable in the tailnet admin. Infinitus offers it as
+    a route next to the quick tunnel (Tailscale.app bundles the CLI).
+  - Tailscale Serve (tailnet-only HTTPS `https://<mac>.<tailnet>.ts.net`
+    with a real cert) — only matters if the phone is on the tailnet
+    anyway; noted for completeness, not planned.
+  - Cloudflare NAMED tunnel (user has CF account + domain — the pick
+    2026-09-03): dashboard-managed tunnel (Zero Trust → Networks →
+    Tunnels → Cloudflared, public hostname `infinitus.<domain>` →
+    `http://localhost:47824`), Mac keeps only the tunnel token (keychain,
+    `TUNNEL_TOKEN` env to `cloudflared tunnel run`, never argv);
+    Devices pane "Your domain" row (hostname + masked token), supervised
+    child like the quick tunnel, route "Anywhere, your domain" ahead of
+    the quick tunnel in the QR. Alternative: locally-managed
+    (`cloudflared tunnel login/create/route dns` + config.yml) — more
+    steps, no dashboard visit. Linux tray: `parity pending`.
+  - Rendezvous for the quick tunnel: Mac publishes its current
+    trycloudflare URL to a KV on infinitus.run keyed by a hash of the
+    pairing token; phone looks it up when the stored tunnel dies. Keeps
+    "no account at all" but adds a service to run — fallback only.
+  - Phone fix regardless of route: a dead tunnel URL should be dropped
+    or demoted (not retried first every poll) once a sibling route
+    answers; and the Settings status should say WHICH route failed.
 - #13 Session progress tracking — watch agents, not accounts
       (zero-token transcript parsing + optional Claude narration;
       brainstorm in docs/research/session-progress.md)
+
+## Shipped 2026-09-02/03 (remote access, engine ranking, two-session flow)
+- ~~Backend-free remote access (#9)~~ → pairing token (24×base32,
+  `Authorization: Bearer` or `?t=`, 401 before routing), QR +
+  `infinitus://pair`, Tailscale route (100.64/10 detection; listener
+  forced IPv4 — the v6 wildcard was unreachable over the utun),
+  Cloudflare quick tunnel (cloudflared child + orphan reaper, verified
+  live end-to-end). One QR carries every route; the phone keeps the
+  list, last-good first, 3 s per try, falls through — a tunnel URL that
+  changes on restart no longer forces a rescan.
+- ~~Devices pane~~ (was Sync): "Set up your phone" walkthrough with live
+  checks (server records `lastServed`), "Copy for an AI agent" brief
+  (token only while revealed), Tailscale status row (get / open /
+  connected), cloudflared install hint. No auto-install by design.
+- ~~Settings window~~ → resizable 960×640 (min 700×480, frame
+  autosaved); macOS 26's launch-time SwiftUI Settings scene window is
+  hidden (it re-strips .resizable on every update); ⌘, routed to ours.
+- ~~#16 Weekly reset on full-HP rows~~ → Anthropic's weekly window is a
+  fixed per-account slot; the usage endpoint omits `resets_at` at 0 %
+  for some tokens. Infinitus remembers each account's last reset and
+  steps it by whole weeks; the ENGINE now carries the slot forward too
+  (claude-swap PR #309, cherry-picked into the deploy branch and
+  installed) — consume-first then ranks a 0 % account by its real
+  reset instead of "unknown → last" (the user's "why is P2 burning
+  while P5/P6 sit at 0 %"). 5h-dead rows keep their 7d reset.
+- ~~iOS multi-fleet~~ → one section per `MirrorSnapshot.fleets` entry
+  (keyed engineID/provider), listJSON fallback for older Macs.
+- ~~Two sessions, one checkout~~ → e2 works in ../limitless-e2 on
+  branch e2; main is merge-only, one build owner (CLAUDE.md).
+- ~~infinitusctl follow-ups~~ → `INFINITUS_CONTROL_SOCKET` (playground
+  + CLI converge), release bump adds the cask `binary` stanza once.
+- ~~Supervisor~~ → a refusal within 10 s of our own child's exit
+  retries in 3 s (engine restart for an upgrade sat "held elsewhere"
+  for a minute). Mock-mode instances no longer write usage history.
+- Queued (user 2026-09-03, autonomous run): #17 session feed +
+  reply/decide from the phone (layer 1 in progress), Linux parity
+  (footer chips, `infinitus-tray serve/pair`; in progress), hot reload
+  (InjectionIII download still awaiting permission), #15 pick-first.
 
 ## Shipped 2026-09-01/02 (session progress, site, mobile v0)
 - ~~#13 Session progress (layers 0+1)~~ → SessionProgress transcript
