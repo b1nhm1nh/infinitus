@@ -18,6 +18,9 @@ final class MirrorModel: ObservableObject, FleetModel {
     @Published private(set) var activeNumber: Int?
     @Published private(set) var nextRecovery: NextRecovery?
     @Published private(set) var nextCandidate: Int?
+    /// Live Claude Code sessions on the mirrored Mac — the footer's brain
+    /// chip and the sessions card both read it (#9 phase D2).
+    @Published private(set) var liveSessions: LiveSessions?
     @Published private(set) var error: String?
     /// The Mac's display prefs (#9 phase C1: "Follow Mac"); `nil` for
     /// snapshots captured before this field existed.
@@ -32,6 +35,9 @@ final class MirrorModel: ObservableObject, FleetModel {
     /// Set by the view from its geometry — portrait renders the mac's
     /// stacked cards, landscape its wide grid (user's fidelity rule).
     @Published var isLandscape = false
+
+    /// The sessions card's progress feed, filled from the snapshot.
+    let sessionProgress = MobileSessionProgress()
 
     private let mirror: FleetMirror
     private let defaults: UserDefaults
@@ -92,6 +98,7 @@ final class MirrorModel: ObservableObject, FleetModel {
             }
             self.snapshot = snapshot
             prefs = snapshot.prefs
+            sessionProgress.apply(snapshot.progressByPid ?? [:])
             apply(list)
             error = nil
         } catch {
@@ -122,6 +129,7 @@ final class MirrorModel: ObservableObject, FleetModel {
             nextCandidate = list.nextCandidate
             nextRecovery = RecoveryMath.corrected(engine: list.nextRecovery,
                                                   accounts: list.accounts)
+            liveSessions = list.liveSessions
         }
         if let now = list.activeAccountNumber, let previousActive,
            previousActive != now {
@@ -199,6 +207,30 @@ final class MirrorModel: ObservableObject, FleetModel {
         set { _ = newValue }
     }
 
+    /// The Mac's footer chips (#9 phase D2), straight off the snapshot.
+    /// The engine badge is informational here — `toggleEngine()` keeps
+    /// the protocol's no-op, the phone drives no engine.
+    var engineBadge: EngineBadge? { snapshot?.engine }
+    var serviceStatus: ServiceStatusSummary? { snapshot?.serviceStatus }
+
+    /// The card is rendered INLINE on the phone (the mac pops it over
+    /// the brain chip), so the chip's flag never goes up — same
+    /// write-it-away shape as `pendingSwitch`.
+    var sessionsShown: Bool {
+        get { false }
+        set { _ = newValue }
+    }
+
+    /// AppModel.popupScale's mapping, for the mirrored text-size pref.
+    var popupScale: CGFloat {
+        switch macPrefs?.popupTextSize ?? "default" {
+        case "large": return 1.15
+        case "xlarge": return 1.3
+        case "huge": return 1.5
+        default: return 1
+        }
+    }
+
     /// No engine to be missing: the phone reads a mirror, and "no
     /// snapshot yet" is the screen's own empty state.
     var engineMissing: Bool { false }
@@ -206,6 +238,20 @@ final class MirrorModel: ObservableObject, FleetModel {
     /// No transparency dial on the phone — fills render at full strength.
     var fillScale: Double { 1 }
     var isPlayground: Bool { false }
+}
+
+/// The sessions card's progress feed on the phone (#9 phase D2): the
+/// per-pid `SessionProgress` the Mac already read from its transcripts
+/// and put in the snapshot. No transcripts to read here, so `refresh`
+/// keeps the protocol's no-op.
+@MainActor
+final class MobileSessionProgress: ObservableObject, SessionProgressSource {
+    @Published private(set) var byPid: [Int: SessionProgress] = [:]
+
+    func apply(_ byPid: [Int: SessionProgress]) {
+        guard byPid != self.byPid else { return }
+        self.byPid = byPid
+    }
 }
 
 /// The cash column's source on the phone (#9 phase D1a): the estimated-

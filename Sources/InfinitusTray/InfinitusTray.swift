@@ -153,8 +153,10 @@ struct InfinitusTray {
             // Fleet mirror export (#9 phase 1 parity — macOS's
             // MirrorExporter). Own throttle, own demo-cswap gate.
             let claudeDir = ClaudeSessions.configHome()
-            TrayMirror.export(raw: raw, sessions: sessionRows(claudeDir: claudeDir, now: Date()),
-                              enginePath: bin, prefs: FleetPrefs(themeID: theme.id))
+            let session = sessionRows(claudeDir: claudeDir, now: Date())
+            TrayMirror.export(raw: raw, sessions: session.rows,
+                              enginePath: bin, prefs: FleetPrefs(themeID: theme.id),
+                              progressByPid: session.progressByPid)
             // Engine installed, fleet empty: a bare glyph with no
             // tooltip reads as broken — onboard instead.
             guard !list.accounts.isEmpty else {
@@ -250,12 +252,16 @@ struct InfinitusTray {
     /// Session progress rows shared by the panel and the fleet mirror
     /// export in `status()` (issue #13 step 4 / #9 parity): busy/waiting
     /// first, busy before waiting, capped at 6.
-    static func sessionRows(claudeDir: URL, now: Date) -> [SessionPanelRow] {
+    /// The panel rows plus the per-pid progress the mirror carries for
+    /// the phone's sessions card (#9 phase D2) — one read, two consumers.
+    static func sessionRows(claudeDir: URL, now: Date)
+        -> (rows: [SessionPanelRow], progressByPid: [Int: SessionProgress]) {
         let sessionRecords = ClaudeSessions.list(claudeDir: claudeDir)
             .filter { $0.status == "busy" || $0.status == "waiting" }
             .sorted { a, _ in a.status == "busy" }
         let selectedSessions = Array(sessionRecords.prefix(6))
         var progressCache = SessionProgressCache.load()
+        var progressByPid: [Int: SessionProgress] = [:]
         let sessions = selectedSessions.map { record -> SessionPanelRow in
             let stamp = SessionProgressCache.stamp(sessionId: record.sessionId,
                                                    cwd: record.cwd, claudeDir: claudeDir)
@@ -269,10 +275,11 @@ struct InfinitusTray {
                 progressCache[record.sessionId] = .init(size: stamp.size, mtime: stamp.mtime,
                                                         progress: progress)
             }
+            progressByPid[Int(record.pid)] = progress
             return SessionPanelRow.make(record: record, progress: progress, now: now)
         }
         SessionProgressCache.save(progressCache)
-        return sessions
+        return (sessions, progressByPid)
     }
 
     // MARK: panel
@@ -393,12 +400,12 @@ struct InfinitusTray {
             // capped at 6. No self-skip here — neither the macOS popover
             // nor the wall board excludes the tray's/app's own lineage,
             // so this doesn't invent one either (flagged as a concern).
-            let sessions = sessionRows(claudeDir: claudeDir, now: now)
+            let (sessions, progressByPid) = sessionRows(claudeDir: claudeDir, now: now)
             // Fleet mirror export (#9 phase 1 parity — macOS's
             // MirrorExporter). Shares the throttle sidecar with status().
             TrayMirror.export(raw: raw, sessions: sessions, enginePath: bin,
                               prefs: FleetPrefs(themeID: theme.id, sortByHeadroom: !engineOrder),
-                              now: now)
+                              progressByPid: progressByPid, now: now)
             emitPanel(PanelPayload(
                 schemaVersion: 1, themeId: theme.id,
                 title: list.accounts.isEmpty

@@ -87,6 +87,54 @@ final class FleetMirrorTests: XCTestCase {
         XCTAssertEqual(got.popupTextSize, "default")
     }
 
+    func testRoundTripWithFooterChipStateAndProgress() async throws {
+        let url = tempURL()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let progress = SessionProgress(nowDoing: "Edit FleetMirror.swift",
+                                       todos: .init(done: 1, total: 3, activeForm: "wiring"),
+                                       retrying: false)
+        let snapshot = MirrorSnapshot(
+            capturedAt: Date(),
+            machineName: "Test Mac",
+            listJSON: Data("{\"accounts\":[]}".utf8),
+            sessions: [],
+            serviceStatus: ServiceStatusSummary(indicator: "minor"),
+            engine: .backingOff(seconds: 12),
+            progressByPid: [4242: progress])
+        try MirrorWriter.write(snapshot, to: url)
+        let read = try await FileFleetMirror(url: url).latest()
+        let got = try XCTUnwrap(read)
+        XCTAssertEqual(got.serviceStatus, ServiceStatusSummary(indicator: "minor"))
+        XCTAssertEqual(got.engine, .backingOff(seconds: 12))
+        XCTAssertEqual(got.progressByPid?[4242]?.nowDoing, progress.nowDoing)
+        XCTAssertEqual(got.progressByPid?[4242]?.todos, progress.todos)
+    }
+
+    func testMissingFooterChipStateDecodesToNil() async throws {
+        let url = tempURL()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        // Hand-written JSON matching a pre-D2 snapshot (no serviceStatus /
+        // engine / progressByPid keys) to prove old snapshots still decode.
+        let json = """
+        {"capturedAt":"2026-01-01T00:00:00Z","machineName":"Old Mac",
+         "listJSON":"e30=","sessions":[]}
+        """
+        try FileManager.default.createDirectory(
+            at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data(json.utf8).write(to: url)
+        let read = try await FileFleetMirror(url: url).latest()
+        let got = try XCTUnwrap(read)
+        XCTAssertNil(got.serviceStatus)
+        XCTAssertNil(got.engine)
+        XCTAssertNil(got.progressByPid)
+    }
+
+    func testServiceStatusSummaryWording() {
+        XCTAssertEqual(ServiceStatusSummary(indicator: "none").shortText, "claude ok")
+        XCTAssertEqual(ServiceStatusSummary(indicator: "critical").shortText, "critical outage")
+        XCTAssertEqual(ServiceStatusSummary(indicator: nil).shortText, "status")
+    }
+
     func testMissingFileReturnsNil() async throws {
         let url = tempURL()
         let read = try await FileFleetMirror(url: url).latest()

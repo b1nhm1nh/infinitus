@@ -495,27 +495,17 @@ struct MenuContent: View {
                         }
                         Spacer()
                         HStack(spacing: 6) {
-                            serviceChip
-                            agentChip
-                            engineBadge
-                            Spacer().frame(width: 6)
-                            if model.appUpdatePending {
-                                Button {
-                                    model.relaunchApp()
-                                } label: {
-                                    Label("Restart to update",
-                                          systemImage: "arrow.triangle.2.circlepath")
-                                        .foregroundStyle(.orange)
-                                }
-                                .help("A newer build is on disk")
-                            }
-                            if let v = model.appUpdateVersion {
-                                Button { model.showSettings?() } label: {
-                                    Label("Update \(v)", systemImage: "arrow.down.circle.fill")
-                                        .foregroundStyle(.orange)
-                                }
-                                .help("Infinitus \(v) is out — About → Updates")
-                            }
+                            // The chips themselves are shared with the
+                            // phone (InfinitusUI/FooterChips, #9 phase
+                            // D2); only the AppKit-bound extras stay
+                            // here — the status hover card rides in as
+                            // a modifier, the action buttons below are
+                            // mac-only.
+                            FooterChips(
+                                model: model, progress: model.sessionProgress,
+                                status: ServiceStatusSummary(indicator: status.indicator),
+                                onStatusTap: { status.openPage() },
+                                serviceChrome: StatusHoverCard(status: status))
                             if !model.footerActionsHidden {
                                 if model.debugMenu {
                                     // Dev builds only (defaults write
@@ -858,33 +848,6 @@ struct MenuContent: View {
             Circle().fill(status.color).frame(width: 8, height: 8)
         }
         .modifier(StatusHoverCard(status: status))
-    }
-
-    private var serviceChip: some View {
-        Button { status.openPage() } label: {
-            HStack(spacing: 4) {
-                Circle().fill(status.color).frame(width: 7, height: 7)
-                Text(status.shortText).font(.caption).foregroundStyle(.secondary)
-            }
-        }
-        .buttonStyle(.plain)
-        .modifier(StatusHoverCard(status: status))
-    }
-
-    /// Clickable: running <-> stopped ("auto switch status is clickable
-    /// to toggle", user 2026-08-30). Other states stay informational.
-    @ViewBuilder private var engineBadge: some View {
-        Button { model.toggleEngine() } label: {
-            switch model.engineState {
-            case .running: Label("auto", systemImage: "bolt.fill").foregroundStyle(.green)
-            case .refused: Label("engine elsewhere", systemImage: "exclamationmark.triangle")
-            case .backingOff(let s): Label("retry \(Int(s))s", systemImage: "clock")
-            case .schemaMismatch: Label("update app", systemImage: "arrow.down.circle")
-            case .stopped: Label("off", systemImage: "pause").foregroundStyle(.secondary)
-            }
-        }
-        .buttonStyle(.plain)
-        .instantTip(engineTip, edge: .above)
     }
 
     private var engineTip: String {

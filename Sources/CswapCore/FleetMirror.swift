@@ -20,16 +20,64 @@ public struct MirrorSnapshot: Codable, Sendable {
     /// as `listJSON` — consumers re-decode with the existing `UsageReport`
     /// decoder. `nil` when the exporting side has no cash cache yet.
     public let usageJSON: Data?
+    /// Footer-chip state (#9 phase D2). Runtime, not prefs — hence
+    /// MirrorSnapshot rather than FleetPrefs. All optional: a pre-D2
+    /// snapshot simply decodes them as nil and the chips drop out.
+    public let serviceStatus: ServiceStatusSummary?
+    public let engine: EngineBadge?
+    /// Per-pid transcript progress for the sessions card, keyed by the
+    /// session record's pid (`SessionDetail.pid` in `listJSON`).
+    public let progressByPid: [Int: SessionProgress]?
 
     public init(capturedAt: Date, machineName: String, listJSON: Data,
                 sessions: [SessionPanelRow], prefs: FleetPrefs? = nil,
-                usageJSON: Data? = nil) {
+                usageJSON: Data? = nil,
+                serviceStatus: ServiceStatusSummary? = nil,
+                engine: EngineBadge? = nil,
+                progressByPid: [Int: SessionProgress]? = nil) {
         self.capturedAt = capturedAt
         self.machineName = machineName
         self.listJSON = listJSON
         self.sessions = sessions
         self.prefs = prefs
         self.usageJSON = usageJSON
+        self.serviceStatus = serviceStatus
+        self.engine = engine
+        self.progressByPid = progressByPid
+    }
+}
+
+/// The auto-switch engine's state as the footer badge shows it — the
+/// portable half of `EngineSupervisor.State`, which can't cross to iOS
+/// (the supervisor spawns a subprocess and is `#if !os(iOS)`).
+public enum EngineBadge: Codable, Sendable, Equatable {
+    case running
+    case refused              // another engine holds the mutex
+    case backingOff(seconds: Double)
+    case schemaMismatch
+    case stopped
+}
+
+/// Anthropic's status-page indicator, mirrored so the phone's footer
+/// chip says what the Mac's `ServiceStatusModel` fetched (the model
+/// itself is mac-only: URLSession polling + NSWorkspace).
+public struct ServiceStatusSummary: Codable, Sendable, Equatable {
+    /// none | minor | major | critical; nil before the first fetch.
+    public let indicator: String?
+
+    public init(indicator: String?) {
+        self.indicator = indicator
+    }
+
+    /// Same wording as ServiceStatusModel.shortText on the mac.
+    public var shortText: String {
+        switch indicator {
+        case "none": return "claude ok"
+        case "minor": return "minor outage"
+        case "major": return "major outage"
+        case "critical": return "critical outage"
+        default: return "status"
+        }
     }
 }
 

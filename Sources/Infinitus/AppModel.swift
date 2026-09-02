@@ -674,8 +674,15 @@ final class AppModel: ObservableObject {
                     introStyle: introStyle, introTitle: introTitle,
                     introSpeed: introSpeed, customThemes: customThemes,
                     sortByHeadroom: sortByHeadroom, popupTextSize: popupTextSize)
+                // Footer-chip state (#9 phase D2), captured here for the
+                // same main-actor reason as the prefs above.
+                let serviceStatus = ServiceStatusSummary(
+                    indicator: ServiceStatusModel.shared.indicator)
+                let engine = engineBadge ?? .stopped
                 Task.detached(priority: .utility) { [mirrorExporter] in
-                    await mirrorExporter.record(listJSON: raw, prefs: prefs)
+                    await mirrorExporter.record(listJSON: raw, prefs: prefs,
+                                                serviceStatus: serviceStatus,
+                                                engine: engine)
                 }
             }
             // All-limited: count the limit-stopped sessions waiting to be
@@ -955,4 +962,20 @@ extension AppModel: FleetModel {
     func startRelogin(_ account: Account) {
         TokenFlow.shared.start(model: self, relogin: account)
     }
+
+    /// The engine badge's portable half (#9 phase D2) — the supervisor's
+    /// own State can't cross to iOS, so the shared footer reads this.
+    var engineBadge: EngineBadge? {
+        switch engineState {
+        case .running: return .running
+        case .refused: return .refused
+        case .backingOff(let seconds): return .backingOff(seconds: seconds)
+        case .schemaMismatch: return .schemaMismatch
+        case .stopped: return .stopped
+        }
+    }
+
+    /// The footer's update chip opens Settings through the closure the
+    /// status item injects.
+    func openSettings() { showSettings?() }
 }

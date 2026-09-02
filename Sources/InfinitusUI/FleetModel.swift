@@ -31,6 +31,19 @@ public protocol FleetModel: ObservableObject {
     var fillScale: Double { get }
     var isPlayground: Bool { get }
 
+    // Footer chips (#9 phase D2) — what FooterChips reads.
+    /// Live Claude Code sessions on the host's machine (the brain chip).
+    var liveSessions: LiveSessions? { get }
+    /// The sessions card's presentation flag; a host that shows the card
+    /// some other way (the phone renders it inline) keeps it false.
+    var sessionsShown: Bool { get set }
+    /// The auto-switch engine's badge state — nil on a host that has no
+    /// engine reading to show.
+    var engineBadge: EngineBadge? { get }
+    /// Update chips: a newer build on disk / a newer release upstream.
+    var appUpdatePending: Bool { get }
+    var appUpdateVersion: String? { get }
+
     // Intro choreography (Animations.swift) — the entrance gates.
     var engineMissing: Bool { get }
     var snapshotLoaded: Bool { get }
@@ -43,10 +56,21 @@ public protocol FleetModel: ObservableObject {
     /// The one row ACTION beyond pendingSwitch: relogin_required starts
     /// the host's OAuth flow (mac-only; the phone can't drive it).
     func startRelogin(_ account: Account)
+    /// Footer-chip actions — all mac-only, all no-ops on a host that
+    /// only mirrors (same shape as startRelogin).
+    func toggleEngine()
+    func relaunchApp()
+    func openSettings()
 }
 
 public extension FleetModel {
     func startRelogin(_ account: Account) {}
+    func toggleEngine() {}
+    func relaunchApp() {}
+    func openSettings() {}
+    var engineBadge: EngineBadge? { nil }
+    var appUpdatePending: Bool { false }
+    var appUpdateVersion: String? { nil }
     /// A host with no resume nudge (the phone) simply has no count —
     /// the banner then drops its suffix.
     var waitingResume: Int? { nil }
