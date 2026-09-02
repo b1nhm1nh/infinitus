@@ -11,6 +11,11 @@ struct RootView: View {
     @ObservedObject var model: MirrorModel
     @StateObject private var usage = MobileUsage()
     @Environment(\.scenePhase) private var scenePhase
+    /// A launch can name the tab to open on — the same dev seam
+    /// `INFINITUS_MIRROR_PATH` is, so a headless simulator capture can
+    /// show a screen no one can tap to.
+    @State private var tab = ProcessInfo.processInfo
+        .environment["INFINITUS_TAB"] ?? "fleet"
 
     var body: some View {
         Group {
@@ -37,16 +42,19 @@ struct RootView: View {
     }
 
     private var tabs: some View {
-        TabView {
+        TabView(selection: $tab) {
             NativeFleetScreen(model: model, usage: usage)
                 .tabItem { Label("Fleet", systemImage: "gauge.with.dots.needle.67percent") }
+                .tag("fleet")
             SessionsScreen(model: model, progress: model.sessionProgress)
                 .tabItem { Label("Sessions", systemImage: "brain") }
+                .tag("sessions")
             NavigationStack {
                 SettingsForm(model: model)
                     .navigationTitle("Settings")
             }
             .tabItem { Label("Settings", systemImage: "gearshape") }
+            .tag("settings")
         }
     }
 }

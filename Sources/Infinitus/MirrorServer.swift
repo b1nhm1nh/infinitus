@@ -20,11 +20,33 @@ final class MirrorPayloadBox: @unchecked Sendable {
     }
 }
 
-/// Serves the fleet snapshot to the phone over the LAN (#9): one Bonjour
-/// advertised (`_infinitus._tcp`) TCP listener answering `GET /snapshot`
-/// with the exact bytes MirrorExporter wrote. Off by default behind the
-/// Sync pane's toggle; no auth beyond "you're on this network", which is
-/// what the toggle's help text says.
+/// The pairing token, shared the same way for the same reason: the
+/// connection handlers read it on the network queue, and "Regenerate"
+/// writes it from the main actor without restarting the listener.
+final class MirrorTokenBox: @unchecked Sendable {
+    private let lock = NSLock()
+    private var token = ""
+
+    var current: String {
+        lock.lock(); defer { lock.unlock() }
+        return token
+    }
+
+    func set(_ new: String) {
+        lock.lock(); token = new; lock.unlock()
+    }
+}
+
+/// Serves the fleet snapshot to the phone (#9): one Bonjour advertised
+/// (`_infinitus._tcp`) TCP listener answering `GET /snapshot` with the
+/// exact bytes MirrorExporter wrote. Off by default behind the Sync
+/// pane's toggle.
+///
+/// Every request must carry the pairing token — `Authorization: Bearer
+/// <token>` or `?t=<token>` — else 401, before routing. That is what
+/// makes the same listener safe to reach from a tailnet or a Cloudflare
+/// quick tunnel: it binds every interface either way, and the token is
+/// the only lock.
 @MainActor
 final class MirrorServer: ObservableObject {
     /// The bound port, once the listener is ready.
@@ -34,13 +56,19 @@ final class MirrorServer: ObservableObject {
 
     /// Handed to MirrorExporter so every export lands here too.
     let payload = MirrorPayloadBox()
+    /// Read by the connection handlers; written by AppModel on regenerate.
+    let token = MirrorTokenBox()
     /// Event-log sink (icon, text), set by AppModel.
     var log: ((String, String) -> Void)?
+    /// Fires with the bound port once the listener is up — the quick
+    /// tunnel can only be pointed at a port that exists.
+    var onReady: ((UInt16) -> Void)?
 
     private var listener: NWListener?
     private let queue = DispatchQueue(label: "com.huuloc.limitless.mirror-server")
 
-    func start(machineName: String) {
+    func start(machineName: String, token: String) {
+        self.token.set(token)
         guard listener == nil else { return }
         // The last export renders immediately: a phone that asks before
         // the first refresh of this launch still gets a fleet.
@@ -73,8 +101,9 @@ final class MirrorServer: ObservableObject {
         listener.service = NWListener.Service(name: name,
                                               type: MirrorTransport.bonjourType)
         let payload = self.payload
+        let token = self.token
         listener.newConnectionHandler = { [queue] connection in
-            Self.serve(connection, payload: payload, queue: queue)
+            Self.serve(connection, payload: payload, token: token, queue: queue)
         }
         listener.stateUpdateHandler = { [weak self] state in
             Task { @MainActor in self?.handle(state, wasFixedPort: rawPort != 0, name: name) }
@@ -90,6 +119,7 @@ final class MirrorServer: ObservableObject {
             port = bound
             status = "serving \(name) on port \(bound.map(String.init) ?? "?")"
             log?("📱", "phone companion listening on port \(bound.map(String.init) ?? "?")")
+            if let bound { onReady?(bound) }
         case .failed(let error):
             listener?.cancel()
             listener = nil
@@ -114,21 +144,29 @@ final class MirrorServer: ObservableObject {
 
     private nonisolated static func serve(_ connection: NWConnection,
                                           payload: MirrorPayloadBox,
+                                          token: MirrorTokenBox,
                                           queue: DispatchQueue) {
         connection.start(queue: queue)
-        receive(connection, buffer: Data(), payload: payload)
+        receive(connection, buffer: Data(), payload: payload, token: token)
     }
 
     private nonisolated static func receive(_ connection: NWConnection,
                                             buffer: Data,
-                                            payload: MirrorPayloadBox) {
+                                            payload: MirrorPayloadBox,
+                                            token: MirrorTokenBox) {
         connection.receive(minimumIncompleteLength: 1, maximumLength: 4096) {
             data, _, isComplete, error in
             var buffer = buffer
             if let data { buffer.append(data) }
-            if let target = MirrorTransport.requestTarget(buffer) {
+            // The whole head, not just the request line: the token may be
+            // in a header. Auth is checked before routing, so an unpaired
+            // caller can't even probe which routes exist.
+            if let request = MirrorTransport.parseRequest(buffer) {
                 let response: Data
-                if target.method == "GET", target.path == MirrorTransport.snapshotPath {
+                if !MirrorTransport.isAuthorized(request, token: token.current) {
+                    response = MirrorTransport.unauthorizedResponse()
+                } else if request.method == "GET",
+                          request.path == MirrorTransport.snapshotPath {
                     response = payload.latest.map(MirrorTransport.snapshotResponse)
                         ?? MirrorTransport.unavailableResponse()
                 } else {
@@ -144,7 +182,7 @@ final class MirrorServer: ObservableObject {
                 connection.cancel()
                 return
             }
-            receive(connection, buffer: buffer, payload: payload)
+            receive(connection, buffer: buffer, payload: payload, token: token)
         }
     }
 }

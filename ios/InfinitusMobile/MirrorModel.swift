@@ -66,6 +66,16 @@ final class MirrorModel: ObservableObject, FleetModel {
     @Published var manualEndpoint: String {
         didSet { defaults.set(manualEndpoint, forKey: NetworkFleetMirror.manualKey) }
     }
+    /// The Mac's pairing token (#9 remote access): without it every
+    /// request comes back 401, whether the Mac was found by Bonjour, by
+    /// address, or through a tunnel.
+    @Published var pairToken: String {
+        didSet {
+            let normalized = MirrorPairing.normalize(pairToken)
+            if normalized != pairToken { pairToken = normalized; return }
+            defaults.set(pairToken, forKey: NetworkFleetMirror.tokenKey)
+        }
+    }
     /// What the Settings screen shows about the connection.
     @Published private(set) var transportStatus = ""
 
@@ -75,6 +85,7 @@ final class MirrorModel: ObservableObject, FleetModel {
         usesLAN = mirror == nil && ProcessInfo.processInfo
             .environment["INFINITUS_MIRROR_PATH"] == nil
         manualEndpoint = defaults.string(forKey: NetworkFleetMirror.manualKey) ?? ""
+        pairToken = defaults.string(forKey: NetworkFleetMirror.tokenKey) ?? ""
         followMac = defaults.object(forKey: "follow_mac") as? Bool ?? true
         localThemeID = defaults.string(forKey: "gamification_style") ?? "off"
         localCompactRows = defaults.object(forKey: "compact_rows") as? Bool ?? false
@@ -83,6 +94,19 @@ final class MirrorModel: ObservableObject, FleetModel {
         localIntroTitle = defaults.string(forKey: "intro_title") ?? "zoom"
         localIntroSpeed = defaults.object(forKey: "intro_speed") as? Double ?? 1.0
         macPopupView = defaults.object(forKey: "mac_popup_view") as? Bool ?? false
+    }
+
+    /// Pairs with a Mac from a scanned QR or an `infinitus://pair?…`
+    /// deep link: the endpoint lands in the same address field a human
+    /// would type into, the token beside it. Returns false for anything
+    /// that isn't one of our pair URLs.
+    @discardableResult
+    func applyPairing(_ text: String) -> Bool {
+        guard let pairing = MirrorPairing.parsePairURL(text) else { return false }
+        if !pairing.endpoint.isEmpty { manualEndpoint = pairing.endpoint }
+        pairToken = pairing.token
+        Task { await refresh() }
+        return true
     }
 
     /// `INFINITUS_MIRROR_PATH` lets a simulator point at the Mac's live

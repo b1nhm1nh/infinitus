@@ -21,6 +21,13 @@ targets:
       properties:
         NSLocalNetworkUsageDescription: Infinitus finds the Mac running your fleet on this Wi-Fi and reads its latest snapshot.
         NSBonjourServices: [_infinitus._tcp]
+        # Scanning the Mac's pairing QR (#9 remote access).
+        NSCameraUsageDescription: Infinitus scans the pairing QR your Mac shows, to learn its address and pairing token.
+        # `infinitus://pair?url=…&token=…` — the same pair link, opened
+        # from a message or a browser instead of the camera.
+        CFBundleURLTypes:
+          - CFBundleURLName: com.huuloc.infinitus.mobile.pair
+            CFBundleURLSchemes: [infinitus]
     dependencies:
       - package: Infinitus
         product: InfinitusCore

@@ -13,9 +13,13 @@ import InfinitusCore
 actor NetworkFleetMirror: FleetMirror {
     static let shared = NetworkFleetMirror()
 
-    /// Manual `host:port` for networks where mDNS doesn't survive; read
-    /// fresh every fetch so the Settings field takes effect at once.
+    /// Manual `host:port` (or a whole `https://…` URL from a pairing QR)
+    /// for networks where mDNS doesn't survive; read fresh every fetch so
+    /// the Settings field takes effect at once.
     static let manualKey = "mirror_manual_endpoint"
+    /// The pairing token (#9 remote access) — every request carries it,
+    /// Bonjour-discovered Macs included.
+    static let tokenKey = "mirror_pair_token"
 
     /// One line for the Settings screen.
     private(set) var statusText = "looking for a Mac on this Wi-Fi…"
@@ -27,12 +31,20 @@ actor NetworkFleetMirror: FleetMirror {
     private var cached: MirrorSnapshot?
 
     func latest() async throws -> MirrorSnapshot? {
+        let token = MirrorPairing.normalize(
+            UserDefaults.standard.string(forKey: Self.tokenKey) ?? "")
         let manual = UserDefaults.standard.string(forKey: Self.manualKey)
             .flatMap(MirrorTransport.parseEndpoint)
         let endpoint: NWEndpoint
+        // Cloudflare routes on Host/SNI, so a tunnel needs the real
+        // hostname on the wire; a Bonjour endpoint has no name to send.
+        var hostHeader = "infinitus"
+        var useTLS = false
         if let manual {
             endpoint = .hostPort(host: NWEndpoint.Host(manual.host),
                                  port: NWEndpoint.Port(rawValue: manual.port) ?? .any)
+            hostHeader = manual.host
+            useTLS = manual.useTLS
         } else {
             startBrowsing()
             guard let discovered = await firstEndpoint() else {
@@ -42,13 +54,20 @@ actor NetworkFleetMirror: FleetMirror {
             endpoint = discovered
         }
         do {
-            let (data, remote) = try await fetch(endpoint)
+            let (data, remote) = try await fetch(endpoint, hostHeader: hostHeader,
+                                                 useTLS: useTLS, token: token)
             let decoder = JSONDecoder()
             decoder.dateDecodingStrategy = .iso8601
             let snapshot = try decoder.decode(MirrorSnapshot.self, from: data)
             cached = snapshot
             statusText = "\(snapshot.machineName) at \(remote)"
             return snapshot
+        } catch MirrorTransportError.http(401) {
+            // The Mac is right there and refusing us: that's a pairing
+            // problem, not a network one, and the fix is one field away.
+            statusText = "pairing token required — scan the QR in the Mac's "
+                + "Sync settings"
+            return cached
         } catch {
             statusText = cached == nil
                 ? "couldn't reach the Mac: \(error.localizedDescription)"
@@ -106,10 +125,14 @@ actor NetworkFleetMirror: FleetMirror {
 
     /// Returns the response body and the resolved `host:port` it came
     /// from (the Bonjour endpoint alone never names a port).
-    private func fetch(_ endpoint: NWEndpoint) async throws -> (Data, String) {
-        let params = NWParameters.tcp
-        (params.defaultProtocolStack.transportProtocol as? NWProtocolTCP.Options)?
-            .connectionTimeout = 5
+    private func fetch(_ endpoint: NWEndpoint, hostHeader: String,
+                       useTLS: Bool, token: String) async throws -> (Data, String) {
+        let tcp = NWProtocolTCP.Options()
+        tcp.connectionTimeout = 5
+        // A quick tunnel answers on 443 with a real certificate; the LAN
+        // and tailnet paths stay plain TCP.
+        let params = useTLS ? NWParameters(tls: NWProtocolTLS.Options(), tcp: tcp)
+            : NWParameters(tls: nil, tcp: tcp)
         let connection = NWConnection(to: endpoint, using: params)
         let queue = DispatchQueue(label: "com.huuloc.infinitus.mobile.mirror")
         let once = ContinuationOnce()
@@ -126,7 +149,9 @@ actor NetworkFleetMirror: FleetMirror {
                     let remote = connection.currentPath?.remoteEndpoint
                         .map(String.init(describing:)) ?? String(describing: endpoint)
                     let request = "GET \(MirrorTransport.snapshotPath) HTTP/1.1\r\n"
-                        + "Host: infinitus\r\nConnection: close\r\n\r\n"
+                        + "Host: \(hostHeader)\r\n"
+                        + "Authorization: Bearer \(token)\r\n"
+                        + "Connection: close\r\n\r\n"
                     connection.send(content: Data(request.utf8),
                                     completion: .contentProcessed { error in
                         if let error { once.finish(.failure(error)) }

@@ -12,6 +12,9 @@ import InfinitusUI
 /// choices, same values and same labels.
 struct SettingsForm: View {
     @ObservedObject var model: MirrorModel
+    /// The QR scanner (#9 remote access) is a sheet, not a screen: it
+    /// exists for the ten seconds it takes to pair.
+    @State private var scanning = false
 
     var body: some View {
         Form {
@@ -69,13 +72,25 @@ struct SettingsForm: View {
                     Button("Replay intro") { model.replayIntro() }
                 }
             }
-            // The LAN transport (#9): which Mac is being mirrored, and
-            // a way in for networks where Bonjour doesn't survive.
+            // The transport (#9 remote access): which Mac is being
+            // mirrored, the token that lets us read it, and the ways in
+            // when Bonjour doesn't survive the network.
             Section("Mac connection") {
                 Text(model.transportStatus.isEmpty
                      ? "looking for a Mac on this Wi-Fi…"
                      : model.transportStatus)
                     .font(.caption).foregroundStyle(.secondary)
+                if PairScanner.isSupported {
+                    Button {
+                        scanning = true
+                    } label: {
+                        Label("Scan QR", systemImage: "qrcode.viewfinder")
+                    }
+                } else {
+                    Text("Camera scanning isn't available here (it needs a "
+                         + "real device) — type the address and token below.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
                 LabeledContent("Address") {
                     TextField("auto (Bonjour)", text: $model.manualEndpoint)
                         .multilineTextAlignment(.trailing)
@@ -83,10 +98,20 @@ struct SettingsForm: View {
                         .textInputAutocapitalization(.never)
                         .keyboardType(.URL)
                 }
-                Text("Leave empty to find the Mac automatically. Set "
-                     + "host:port (the Mac's Sync settings show the port) "
-                     + "on networks that block Bonjour. Both devices must "
-                     + "be on the same Wi-Fi.")
+                LabeledContent("Pairing token") {
+                    TextField("from the Mac's Sync settings",
+                              text: $model.pairToken)
+                        .multilineTextAlignment(.trailing)
+                        .autocorrectionDisabled()
+                        .textInputAutocapitalization(.characters)
+                        .font(.system(.body, design: .monospaced))
+                }
+                Text("Scan the QR in the Mac's Settings → Sync to fill both "
+                     + "in at once. The token is required — every request "
+                     + "carries it, even one to a Mac found automatically. "
+                     + "Leave the address empty on the same Wi-Fi; set "
+                     + "host:port, or a tunnel's https:// URL, to reach the "
+                     + "Mac from anywhere.")
                     .font(.caption).foregroundStyle(.secondary)
             }
             // The 1:1 Mac rendering isn't lost, just off by default
@@ -99,6 +124,9 @@ struct SettingsForm: View {
                      + "stacked cards and landscape the wide rows.")
                     .font(.caption).foregroundStyle(.secondary)
             }
+        }
+        .sheet(isPresented: $scanning) {
+            PairScannerSheet { payload in model.applyPairing(payload) }
         }
     }
 }
