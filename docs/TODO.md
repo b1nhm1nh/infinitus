@@ -111,6 +111,44 @@ file keeps the shipped log and the deferred-by-design notes.
       (zero-token transcript parsing + optional Claude narration;
       brainstorm in docs/research/session-progress.md)
 
+## Shipped 2026-09-02/03 (remote access, engine ranking, two-session flow)
+- ~~Backend-free remote access (#9)~~ → pairing token (24×base32,
+  `Authorization: Bearer` or `?t=`, 401 before routing), QR +
+  `infinitus://pair`, Tailscale route (100.64/10 detection; listener
+  forced IPv4 — the v6 wildcard was unreachable over the utun),
+  Cloudflare quick tunnel (cloudflared child + orphan reaper, verified
+  live end-to-end). One QR carries every route; the phone keeps the
+  list, last-good first, 3 s per try, falls through — a tunnel URL that
+  changes on restart no longer forces a rescan.
+- ~~Devices pane~~ (was Sync): "Set up your phone" walkthrough with live
+  checks (server records `lastServed`), "Copy for an AI agent" brief
+  (token only while revealed), Tailscale status row (get / open /
+  connected), cloudflared install hint. No auto-install by design.
+- ~~Settings window~~ → resizable 960×640 (min 700×480, frame
+  autosaved); macOS 26's launch-time SwiftUI Settings scene window is
+  hidden (it re-strips .resizable on every update); ⌘, routed to ours.
+- ~~#16 Weekly reset on full-HP rows~~ → Anthropic's weekly window is a
+  fixed per-account slot; the usage endpoint omits `resets_at` at 0 %
+  for some tokens. Infinitus remembers each account's last reset and
+  steps it by whole weeks; the ENGINE now carries the slot forward too
+  (claude-swap PR #309, cherry-picked into the deploy branch and
+  installed) — consume-first then ranks a 0 % account by its real
+  reset instead of "unknown → last" (the user's "why is P2 burning
+  while P5/P6 sit at 0 %"). 5h-dead rows keep their 7d reset.
+- ~~iOS multi-fleet~~ → one section per `MirrorSnapshot.fleets` entry
+  (keyed engineID/provider), listJSON fallback for older Macs.
+- ~~Two sessions, one checkout~~ → e2 works in ../limitless-e2 on
+  branch e2; main is merge-only, one build owner (CLAUDE.md).
+- ~~infinitusctl follow-ups~~ → `INFINITUS_CONTROL_SOCKET` (playground
+  + CLI converge), release bump adds the cask `binary` stanza once.
+- ~~Supervisor~~ → a refusal within 10 s of our own child's exit
+  retries in 3 s (engine restart for an upgrade sat "held elsewhere"
+  for a minute). Mock-mode instances no longer write usage history.
+- Queued (user 2026-09-03, autonomous run): #17 session feed +
+  reply/decide from the phone (layer 1 in progress), Linux parity
+  (footer chips, `infinitus-tray serve/pair`; in progress), hot reload
+  (InjectionIII download still awaiting permission), #15 pick-first.
+
 ## Shipped 2026-09-01/02 (session progress, site, mobile v0)
 - ~~#13 Session progress (layers 0+1)~~ → SessionProgress transcript
   parser (todos, nowDoing, goal, retrying, quiet minutes), sessions
