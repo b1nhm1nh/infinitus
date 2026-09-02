@@ -71,10 +71,14 @@ public enum ReadyWeeklyCaption {
         }
         guard pct <= 0 else { return nil }
         if let remembered, remembered > now {
+            // Say it's memory, not measurement: the engine reports no
+            // window right now, and a 95%→0% flip with the old reset still
+            // ahead was read as live data (user 2026-09-03).
             let iso = ISO8601DateFormatter().string(from: remembered)
-            return compact
+            let when = compact
                 ? ResetLabel.compact(resetsAt: iso, countdown: nil, now: now)
                 : ResetLabel.label(resetsAt: iso, countdown: nil, clock: nil, now: now)
+            return when.map { (compact ? "last seen " : "7d last seen ") + $0 }
         }
         return compact ? "7d: first use" : "7d starts on first use"
     }

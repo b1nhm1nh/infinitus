@@ -23,6 +23,7 @@ final class ReadyWeeklyCaptionTests: XCTestCase {
                                            clock: nil, remembered: remembered, now: now)
         XCTAssertNotNil(text)
         XCTAssertTrue(text!.contains("2h"), "expected a 2h countdown, got \(text!)")
+        XCTAssertTrue(text!.hasPrefix("7d last seen "), "memory must announce itself, got \(text!)")
     }
 
     func testZeroPctWithPastRememberedResetFallsBack() {
