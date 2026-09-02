@@ -64,6 +64,10 @@ import InfinitusCore
     private var webDelegate: AuthWebDelegate?
     private var systemSession: ASWebAuthenticationSession?
     private var anchorProvider: AuthAnchorProvider?
+    /// Engine-driven variant (`.addOAuth`, the proxy): the poll task,
+    /// and whether the companion window needs the paste-code bar.
+    private var engineTask: Task<Void, Never>?
+    @Published var pasteCode = true
 
     var running: Bool {
         switch phase {
@@ -87,6 +91,7 @@ import InfinitusCore
         code = ""
         buffer = ""
         authURL = nil
+        pasteCode = true
         phase = .launching
         self.model = model
         do { try launch(model: model) } catch {
@@ -96,8 +101,73 @@ import InfinitusCore
 
     func cancel() {
         process?.terminate()
+        engineTask?.cancel()
         cleanup()
         phase = .idle
+    }
+
+    /// The same chooser for an engine that signs accounts in through a
+    /// browser (the proxy): its Management API hands us the login URL,
+    /// the OAuth redirect lands on the engine's own callback, and we
+    /// poll until it reports the credential — nothing to paste. Same
+    /// per-account cookie jar as the cswap flow (user 2026-09-02:
+    /// "share cookiejar with cswap"): a re-login for an address that
+    /// already has a jar opens signed in, whichever engine made it.
+    /// `onFinish` gets nil on success or cancel, else the error text.
+    func start(model: AppModel, engine: any AccountEngine, provider: Provider,
+               relogin: Account? = nil, onFinish: @escaping (String?) -> Void) {
+        guard !running else { return }
+        reloginTarget = relogin.map { ($0.alias?.isEmpty == false ? $0.alias! : $0.email) }
+        reloginEmail = relogin?.email
+        let fleetEmails = { (model: AppModel) -> Set<String> in
+            Set(model.registry.fleets
+                .first { $0.engineID == engine.id && $0.provider == provider }?
+                .accounts.map(\.email) ?? [])
+        }
+        preEmails = fleetEmails(model)
+        if let email = relogin?.email,
+           let saved = Self.storeMap()[email], let id = UUID(uuidString: saved) {
+            storeID = id
+        } else {
+            storeID = UUID()
+        }
+        code = ""
+        authURL = nil
+        pasteCode = false
+        phase = .launching
+        self.model = model
+        engineTask = Task { [weak self] in
+            guard let self else { return }
+            do {
+                let url = try await engine.beginOAuthAdd(fleet: provider)
+                self.authURL = url
+                self.phase = .awaitingLogin
+                self.openAuthWindow(url)
+                try await engine.awaitOAuthAdd()
+                self.phase = .registering
+                await model.refreshSnapshot()
+                if let email = self.reloginEmail {
+                    Self.bind(email: email, id: self.storeID)
+                } else {
+                    let new = fleetEmails(model).subtracting(self.preEmails)
+                    if let email = new.first, new.count == 1 {
+                        Self.bind(email: email, id: self.storeID)
+                    }
+                }
+                self.phase = .done("captured")
+                onFinish(nil)
+            } catch {
+                if Task.isCancelled {
+                    self.phase = .idle
+                    onFinish(nil)
+                } else {
+                    let msg = (error as? EngineError)?.errorDescription ?? "\(error)"
+                    self.phase = .failed(msg)
+                    onFinish(msg)
+                }
+            }
+            self.cleanup()
+        }
     }
 
     /// Paste-back: the code from the OAuth success page goes to the
@@ -269,6 +339,7 @@ import InfinitusCore
         shimDir = nil
         process = nil
         master = nil
+        engineTask = nil
     }
 
     // MARK: login windows
@@ -446,21 +517,38 @@ private struct AuthWindowRoot: View {
                 Text("Re-login for \(target) \u{2014} sign in as that account.")
                     .font(.caption).foregroundStyle(.orange)
             }
-            Text("1. Sign in and approve in the sign-in sheet or window "
-                 + "(the sheet is a fresh private session \u{2014} "
-                 + "passkeys and Touch ID work; it never remembers "
-                 + "another account).\n"
-                 + "2. Copy the code it shows and paste it here.")
-                .font(.caption).foregroundStyle(.secondary)
-            HStack(spacing: 8) {
-                TextField("Paste the code shown after approval",
-                          text: $flow.code)
-                    .textFieldStyle(.roundedBorder)
-                Button("Submit") { flow.submitCode() }
-                    .keyboardShortcut(.defaultAction)
-                    .disabled(flow.code.trimmingCharacters(
-                        in: .whitespaces).isEmpty)
-                Button("Cancel") { flow.cancel() }
+            if flow.pasteCode {
+                Text("1. Sign in and approve in the sign-in sheet or window "
+                     + "(the sheet is a fresh private session \u{2014} "
+                     + "passkeys and Touch ID work; it never remembers "
+                     + "another account).\n"
+                     + "2. Copy the code it shows and paste it here.")
+                    .font(.caption).foregroundStyle(.secondary)
+                HStack(spacing: 8) {
+                    TextField("Paste the code shown after approval",
+                              text: $flow.code)
+                        .textFieldStyle(.roundedBorder)
+                    Button("Submit") { flow.submitCode() }
+                        .keyboardShortcut(.defaultAction)
+                        .disabled(flow.code.trimmingCharacters(
+                            in: .whitespaces).isEmpty)
+                    Button("Cancel") { flow.cancel() }
+                }
+            } else {
+                Text("Sign in and approve in the sign-in sheet or window "
+                     + "(the sheet is a fresh private session \u{2014} "
+                     + "passkeys and Touch ID work). This closes by "
+                     + "itself once the engine holds the credential.")
+                    .font(.caption).foregroundStyle(.secondary)
+                HStack(spacing: 8) {
+                    if flow.phase == .registering {
+                        ProgressView().controlSize(.small)
+                        Text("Credential received \u{2014} refreshing…")
+                            .font(.caption)
+                    }
+                    Spacer()
+                    Button("Cancel") { flow.cancel() }
+                }
             }
             HStack(spacing: 6) {
                 Button("Reopen sign-in sheet") { flow.startSystemSheet() }
@@ -631,6 +719,16 @@ struct AccountsPane: View {
     }
 
     @ViewBuilder private var cswapFlowView: some View {
+        if !flow.pasteCode && flow.running {
+            Text("A sign-in for another engine is in progress \u{2014} "
+                 + "see the CLIProxyAPI tab.")
+                .font(.caption).foregroundStyle(.secondary)
+        } else {
+            cswapFlowPhases
+        }
+    }
+
+    @ViewBuilder private var cswapFlowPhases: some View {
         switch flow.phase {
         case .idle:
             HStack {

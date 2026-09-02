@@ -285,7 +285,7 @@ extension FleetState: FleetModel {
     func startRelogin(_ account: Account) {
         if engineID == CswapEngine.engineID { host.startRelogin(account) }
         else if capabilities.contains(.addOAuth) {
-            host.addOAuthAccount(engineID: engineID, provider: provider)
+            host.addOAuthAccount(engineID: engineID, provider: provider, relogin: account)
         }
     }
     func toggleEngine() { host.toggleEngine() }

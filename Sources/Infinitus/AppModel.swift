@@ -242,23 +242,20 @@ final class AppModel: ObservableObject {
             .appendingPathComponent("Infinitus/engines/cliproxy/usage.jsonl")
     }()
 
-    /// OAuth add for an engine that signs accounts in through a browser
-    /// (the proxy): open the URL it hands us, poll until it lands.
-    func addOAuthAccount(engineID: String, provider: Provider) {
+    /// OAuth add / re-login for an engine that signs accounts in through
+    /// a browser (the proxy): the same in-app sign-in chooser as cswap
+    /// (system sheet or per-account private window — never the user's
+    /// default browser), polling the engine until the credential lands.
+    func addOAuthAccount(engineID: String, provider: Provider, relogin: Account? = nil) {
         guard let engine = registry.engine(id: engineID),
-              engine.capabilities.contains(.addOAuth), !addingFirstAccount else { return }
+              engine.capabilities.contains(.addOAuth),
+              !addingFirstAccount, !TokenFlow.shared.running else { return }
         addingFirstAccount = true
         firstAccountMessage = nil
-        Task {
-            do {
-                let url = try await engine.beginOAuthAdd(fleet: provider)
-                NSWorkspace.shared.open(url)
-                try await engine.awaitOAuthAdd()
-                await refreshSnapshot()
-            } catch {
-                firstAccountMessage = (error as? EngineError)?.errorDescription ?? "\(error)"
-            }
-            addingFirstAccount = false
+        TokenFlow.shared.start(model: self, engine: engine, provider: provider,
+                               relogin: relogin) { [weak self] message in
+            self?.firstAccountMessage = message
+            self?.addingFirstAccount = false
         }
     }
 
@@ -317,10 +314,28 @@ final class AppModel: ObservableObject {
             applyMirrorLAN()
         }
     }
+    /// The pairing token every mirror request must carry (#9 remote
+    /// access). Not a credential to Anthropic — a read key for this
+    /// Mac's snapshot, which is why plain UserDefaults is its home.
+    @Published var mirrorPairToken: String {
+        didSet {
+            defaults.set(mirrorPairToken, forKey: "mirror_pair_token")
+            mirrorServer.token.set(mirrorPairToken)
+        }
+    }
+    /// "Expose through a Cloudflare quick tunnel" — off by default; a
+    /// public hostname, even a throwaway one, is never a default.
+    @Published var mirrorTunnelEnabled: Bool {
+        didSet {
+            defaults.set(mirrorTunnelEnabled, forKey: "mirror_tunnel_enabled")
+            applyQuickTunnel()
+        }
+    }
     let sync = SettingsSyncModel()
     let historyRecorder = UsageHistoryRecorder()
     let mirrorExporter = MirrorExporter()
     let mirrorServer = MirrorServer()
+    let quickTunnel = QuickTunnel()
     private let awake = KeepAwake()
     private var pushTriggers = PushTriggers()
     private let defaults: UserDefaults
@@ -419,6 +434,10 @@ final class AppModel: ObservableObject {
         autoOrder = defaults.object(forKey: "auto_order") as? Bool ?? false
         sortByHeadroom = defaults.object(forKey: "sort_headroom") as? Bool ?? true
         mirrorLANEnabled = defaults.object(forKey: "mirror_lan_enabled") as? Bool ?? false
+        mirrorTunnelEnabled = defaults.object(forKey: "mirror_tunnel_enabled") as? Bool ?? false
+        // One token per install, minted the first time anyone looks.
+        let storedToken = defaults.string(forKey: "mirror_pair_token") ?? ""
+        mirrorPairToken = storedToken.isEmpty ? MirrorPairing.generateToken() : storedToken
         // Push triggers default ON — they exist because they were asked for.
         pushSessionsDone = defaults.object(forKey: "push_sessions_done") as? Bool ?? true
         pushAllDead = defaults.object(forKey: "push_all_dead") as? Bool ?? true
@@ -443,6 +462,9 @@ final class AppModel: ObservableObject {
             cswap = nil
             lastError = "cswap not found — install it (uv tool install claude-swap)"
         }
+        // A freshly minted token has to survive the launch that made it:
+        // property initialisation doesn't run `didSet`.
+        if storedToken.isEmpty { defaults.set(mirrorPairToken, forKey: "mirror_pair_token") }
         if !playground { sync.attach(model: self) }
         if let cswap, cswapEnabled || playground { registry.register(CswapEngine(cli: cswap)) }
         // The proxy is never part of the playground (isolation contract)
@@ -542,6 +564,13 @@ final class AppModel: ObservableObject {
             self.eventLog.append(EventEntry(icon: icon, text: text))
             if self.eventLog.count > 100 { self.eventLog.removeFirst(self.eventLog.count - 100) }
         }
+        quickTunnel.log = { [weak self] icon, text in
+            guard let self else { return }
+            self.eventLog.append(EventEntry(icon: icon, text: text))
+            if self.eventLog.count > 100 { self.eventLog.removeFirst(self.eventLog.count - 100) }
+        }
+        // The tunnel can only point at a bound port, which arrives later.
+        mirrorServer.onReady = { [weak self] _ in self?.applyQuickTunnel() }
         applyMirrorLAN()
         guard supervisor == nil, refreshTask == nil else { return }
         if let cswap, !isPlayground, cswapEnabled { startEngine(binary: cswap.binaryPath) }
@@ -563,15 +592,74 @@ final class AppModel: ObservableObject {
     private func applyMirrorLAN() {
         // Mock mode only swaps the CLI — sessions/usage in the snapshot
         // are still this machine's real ones, so a dev instance must
-        // never advertise them on the LAN.
-        guard !isPlayground, !mockMode else { return }
-        guard mirrorLANEnabled else {
+        // never advertise them on the LAN. `mirror_lan_allow_mock` lifts
+        // that for a dev COPY of the binary only (the shipped process is
+        // named Infinitus), so the server can be exercised end to end.
+        let mockAllowed = mockMode
+            && ProcessInfo.processInfo.processName != "Infinitus"
+            && defaults.bool(forKey: "mirror_lan_allow_mock")
+        let allowed = !isPlayground && (!mockMode || mockAllowed)
+        guard allowed, mirrorLANEnabled else {
             mirrorServer.stop()
+            quickTunnel.stop()
             return
         }
         let payload = mirrorServer.payload
         Task { [mirrorExporter] in await mirrorExporter.attach(payload: payload) }
-        mirrorServer.start(machineName: Host.current().localizedName ?? "Mac")
+        mirrorServer.start(machineName: Host.current().localizedName ?? "Mac",
+                           token: mirrorPairToken)
+        applyQuickTunnel()
+    }
+
+    /// Starts or stops the Cloudflare quick tunnel (#9). It only ever
+    /// fronts the listener, so it follows the LAN toggle too.
+    private func applyQuickTunnel() {
+        guard mirrorTunnelEnabled, mirrorLANEnabled,
+              let port = mirrorServer.port else {
+            quickTunnel.stop()
+            return
+        }
+        quickTunnel.start(port: port)
+    }
+
+    /// A new pairing token: every phone must be re-paired, and the
+    /// running listener picks it up without a restart.
+    func regeneratePairToken() {
+        mirrorPairToken = MirrorPairing.generateToken()
+        eventLog.append(EventEntry(icon: "🔑", text: "phone pairing token regenerated"))
+    }
+
+    /// Every way a phone can reach this Mac right now, each with the QR
+    /// that pairs it (#9 remote access).
+    var pairRoutes: [PairRoute] {
+        guard let port = mirrorServer.port else { return [] }
+        var routes: [PairRoute] = []
+        let addresses = LocalAddresses.ipv4()
+        func route(id: String, title: String, detail: String, endpoint: String) {
+            routes.append(PairRoute(
+                id: id, title: title, detail: detail, endpoint: endpoint,
+                pairURL: MirrorPairing.pairURL(endpoint: endpoint,
+                                               token: mirrorPairToken)))
+        }
+        if let lan = MirrorPairing.lanAddress(in: addresses) {
+            route(id: "lan", title: "On this Wi-Fi",
+                  detail: "Both devices on the same network.",
+                  endpoint: "http://\(lan):\(port)")
+        }
+        if let tailnet = MirrorPairing.tailnetAddress(in: addresses) {
+            route(id: "tailnet", title: "Anywhere via Tailscale",
+                  detail: "The phone needs Tailscale, signed into the same "
+                        + "tailnet. Nothing else to set up — this Mac already "
+                        + "listens on every interface.",
+                  endpoint: "http://\(tailnet):\(port)")
+        }
+        if let tunnel = quickTunnel.url {
+            route(id: "tunnel", title: "Anywhere, no account",
+                  detail: "A random Cloudflare URL that changes every start; "
+                        + "the pairing token is the only lock.",
+                  endpoint: tunnel)
+        }
+        return routes
     }
 
     private func startEngine(binary: String) {
@@ -1015,6 +1103,8 @@ final class AppModel: ObservableObject {
     /// the child never outlives the app holding the mutex (the engine also
     /// watches its stdin pipe for EOF as the backstop against a hard kill).
     func shutdown() {
+        // The tunnel is a child process: it must not outlive the app.
+        quickTunnel.stop()
         let supervisor = supervisor
         Task {
             await supervisor?.stop()
