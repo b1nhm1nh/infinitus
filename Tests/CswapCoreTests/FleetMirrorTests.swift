@@ -46,6 +46,21 @@ final class FleetMirrorTests: XCTestCase {
         }
     }
 
+    func testShouldWriteThrottlesToOnePerInterval() {
+        let now = Date()
+        XCTAssertTrue(MirrorWriter.shouldWrite(lastWrite: nil, now: now))
+        XCTAssertFalse(MirrorWriter.shouldWrite(lastWrite: now, now: now.addingTimeInterval(10)))
+        XCTAssertTrue(MirrorWriter.shouldWrite(lastWrite: now, now: now.addingTimeInterval(31)))
+    }
+
+    func testLinuxStateDirPrefersXDGStateHome() {
+        let withXDG = MirrorWriter.linuxStateDir(
+            env: ["XDG_STATE_HOME": "/custom/state"], home: "/home/test")
+        XCTAssertEqual(withXDG.path, "/custom/state/infinitus")
+        let fallback = MirrorWriter.linuxStateDir(env: [:], home: "/home/test")
+        XCTAssertEqual(fallback.path, "/home/test/.local/state/infinitus")
+    }
+
     func testCloudKitFleetMirrorThrowsNotConfigured() async throws {
         do {
             _ = try await CloudKitFleetMirror().latest()

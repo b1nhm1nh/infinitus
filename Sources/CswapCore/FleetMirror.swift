@@ -58,6 +58,20 @@ public enum MirrorWriter {
         // isn't available everywhere.
         try data.write(to: url, options: .atomic)
     }
+
+    /// One export per 30s — the tray is a fresh process per poll, so
+    /// callers persist `lastWrite` in a sidecar file rather than memory.
+    public static func shouldWrite(lastWrite: Date?, now: Date, minInterval: TimeInterval = 30) -> Bool {
+        guard let lastWrite else { return true }
+        return now.timeIntervalSince(lastWrite) > minInterval
+    }
+
+    /// `$XDG_STATE_HOME/infinitus` (fallback `~/.local/state/infinitus`) —
+    /// same layout TrayHistory uses for usage history on Linux.
+    public static func linuxStateDir(env: [String: String], home: String) -> URL {
+        let base = env["XDG_STATE_HOME"] ?? home + "/.local/state"
+        return URL(fileURLWithPath: base).appendingPathComponent("infinitus")
+    }
 }
 
 public enum MirrorError: Error, Sendable {

@@ -37,6 +37,11 @@ stays behind `cswap … --json`, exactly like the app.
 Estimates shown are never billing truth; the module reads nothing of
 the engine's internals.
 
+Every `status`/`panel` poll also mirrors the fleet snapshot to
+`$XDG_STATE_HOME/infinitus/mirror-snapshot.json` (fallback
+`~/.local/state/infinitus`), throttled to once per 30s — the seam the
+mobile companion (#9) will eventually read.
+
 ## Omarchy 4+ (Quickshell bar)
 
 Newer Omarchy replaced Waybar with a Quickshell shell. The same
