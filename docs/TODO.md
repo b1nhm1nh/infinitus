@@ -81,6 +81,30 @@ file keeps the shipped log and the deferred-by-design notes.
       (zero-token transcript parsing + optional Claude narration;
       brainstorm in docs/research/session-progress.md)
 
+## Shipped 2026-09-01/02 (session progress, site, mobile v0)
+- ~~#13 Session progress (layers 0+1)~~ → SessionProgress transcript
+  parser (todos, nowDoing, goal, retrying, quiet minutes), sessions
+  popover rows, wall session board, Linux panel sessions section.
+- ~~#14 Landing page~~ → infinitus.run (Cloudflare Workers assets):
+  real captures, 1080p popup video, 15 full-popup theme images, brew
+  cask, subtle Linux/Omarchy downloads, SEO/agent pass (JSON-LD, FAQ,
+  OG card, llms.txt, sitemap).
+- ~~"loc recovers in" wrong reviver~~ → RecoveryMath corrects the
+  engine's next_recovery (which skips the active account), both OSes.
+- ~~#7 layer 1~~ → WindowTelemetry (5h window reconstruction, daily
+  rhythm) + Utilization "5h windows" section.
+- ~~#9 mobile v0 + fidelity plumbing~~ → FleetMirror seam (mac +
+  Linux tray exporters, FleetPrefs travel with the snapshot), iOS app
+  scaffold (XcodeGen), InfinitusUI shared target: gauges, burn, theme
+  colors, effects, rows/cards generic over FleetModel — pixel-verified
+  unchanged on mac. Directive: pixel-perfect; portrait = stacked
+  cards, landscape = wide list.
+- ~~Popup Rotate/Refresh buttons~~ → retired (obsolete with
+  auto-rotation); both stay in the status-item menu. Linux panel's
+  footer Rotate button dropped too (`r` key still rotates).
+- Omarchy aarch64 VM: built via chroot repairs; expect driver must
+  answer busybox ash's ESC[6n cursor query or sends get eaten.
+
 ## Shipped 2026-09-01 (second wave — the remote-control batch)
 
 - ~~Usage utilization history~~ → UsageHistory JSONL per machine
