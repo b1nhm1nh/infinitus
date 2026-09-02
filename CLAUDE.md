@@ -78,8 +78,9 @@ Native macOS menu bar app for the claude-swap engine. Split out of
   drag-region + tracking-area rebuild, a WindowServer fence — ~7 ms
   each, the same whether one leaf or the whole grid changed. Five RPG
   effects at 20 fps idled the pop-out at 43% CPU (#18, 2026-09-03);
-  as CAAnimations on a LayerEffect host they idle at 0.4%. Only
-  BurnOverlay still ticks (Canvas, 20 fps while a bar burns).
+  as CAAnimations on a LayerEffect host they idle at 0.4%, burn
+  overlays included (CAEmitterLayer sparks; a `.line` emitter's
+  emissionLongitude is a quarter turn off a `.point` one's: 0 = up).
 - Dev instances: sign the debug binary `--identifier
   com.huuloc.limitless` (tools/e2e.sh does) or the keychain ACL prompt
   blocks AppModel.init forever (no socket, SecurityAgent spawns).
