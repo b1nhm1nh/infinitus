@@ -1,11 +1,11 @@
 import SwiftUI
 import CswapCore
-import InfinitusUI
 
 // SwitchFlash, ValueChangedGlow, DeathFlash, ReviveFlash, LuckyRowBackground,
 // LuckySevens, LuckyName, PulseOpacity and CriticalPulse moved to
 // InfinitusUI/Effects.swift (#9 phase A) — they take no AppModel, so the
-// phone app renders them too. What's left here all reads AppModel.
+// phone app renders them too. What's left here all reads the host's
+// FleetModel (#9 phase B).
 
 /// One shared trigger for the fever: Fable (any scoped window) showing
 /// exactly 77 remaining, or the 5h AND 7d pair both at 77.
@@ -31,8 +31,8 @@ extension Account {
 // onAppear + firstLoad switchFlashTick) -> the Infinitus title lands
 // with an exaggerated flourish (several styles to audition).
 
-struct IntroSlideIn: ViewModifier {
-    @ObservedObject var model: AppModel
+struct IntroSlideIn<M: FleetModel>: ViewModifier {
+    @ObservedObject var model: M
     let fromLeft: Bool
     @State private var on = true
 
@@ -64,8 +64,8 @@ struct IntroSlideIn: ViewModifier {
     }
 }
 
-struct IntroContentReveal: ViewModifier {
-    @ObservedObject var model: AppModel
+struct IntroContentReveal<M: FleetModel>: ViewModifier {
+    @ObservedObject var model: M
     @State private var on = true
 
     /// "rows" hands the entrance to the per-row IntroRowSlide stagger —
@@ -112,8 +112,8 @@ struct IntroContentReveal: ViewModifier {
 /// modifier rides a Group INSIDE each GridRow — a Group distributes a
 /// modifier to each child, so the row's cells move as one without
 /// collapsing the GridRow (a modified GridRow is one cell).
-struct IntroRowSlide: ViewModifier {
-    @ObservedObject var model: AppModel
+struct IntroRowSlide<M: FleetModel>: ViewModifier {
+    @ObservedObject var model: M
     let index: Int
     @State private var on = true
 
@@ -146,8 +146,8 @@ struct IntroRowSlide: ViewModifier {
 ///  zoom  — grows from a dot with a big overshoot bounce
 ///  slam  — stamps down from 3.4x with a tilt, flash on impact
 ///  spin  — spins up two turns while growing
-struct IntroTitleFlourish: ViewModifier {
-    @ObservedObject var model: AppModel
+struct IntroTitleFlourish<M: FleetModel>: ViewModifier {
+    @ObservedObject var model: M
     @State private var on = true
     @State private var glow = 0.0
 
@@ -210,17 +210,17 @@ struct IntroTitleFlourish: ViewModifier {
     }
 }
 
-extension View {
-    func introSlide(_ model: AppModel, fromLeft: Bool) -> some View {
+public extension View {
+    func introSlide<M: FleetModel>(_ model: M, fromLeft: Bool) -> some View {
         modifier(IntroSlideIn(model: model, fromLeft: fromLeft))
     }
-    func introContent(_ model: AppModel) -> some View {
+    func introContent<M: FleetModel>(_ model: M) -> some View {
         modifier(IntroContentReveal(model: model))
     }
-    func introRow(_ model: AppModel, index: Int) -> some View {
+    func introRow<M: FleetModel>(_ model: M, index: Int) -> some View {
         modifier(IntroRowSlide(model: model, index: index))
     }
-    func introTitle(_ model: AppModel) -> some View {
+    func introTitle<M: FleetModel>(_ model: M) -> some View {
         modifier(IntroTitleFlourish(model: model))
     }
 }

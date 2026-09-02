@@ -1,42 +1,6 @@
 import SwiftUI
 import CswapCore
 
-/// One-line usage summary for a gauge's instant tooltip — the CodexBar
-/// vocabulary ("24% in reserve · lasts until reset" / "6% in deficit ·
-/// runs out in ~2d"), built from the engine's weekly pace fields.
-enum WindowSummary {
-    static func line(_ w: UsageWindow, kind: String) -> String {
-        let left = max(0, 100 - w.pct)
-        var parts = ["\(kind) \(Int(left))% left"]
-        if let expected = w.expectedPct {
-            let delta = Int((expected - w.pct).rounded())
-            if delta >= 1 {
-                parts.append("\(delta)% in reserve")
-            } else if delta <= -1 {
-                parts.append("\(-delta)% in deficit")
-            } else {
-                parts.append("on pace")
-            }
-        }
-        if w.willLastToReset == true {
-            parts.append("lasts until reset")
-        } else if let out = WeeklyRoll.parse(w.projectedExhaustionAt) {
-            parts.append("runs out \(out.formatted(.relative(presentation: .numeric)))")
-        }
-        if let reset = w.countdown ?? w.clock {
-            parts.append("resets \(reset)")
-        }
-        // CodexBar's quota math: how many 5h session windows fit in the
-        // time left on a weekly bar.
-        if kind.hasPrefix("Weekly"), let reset = WeeklyRoll.parse(w.resetsAt) {
-            let hoursLeft = max(0, reset.timeIntervalSinceNow / 3600)
-            parts.append(String(format: "%.0f session windows until reset",
-                                (hoursLeft / 5).rounded()))
-        }
-        return parts.joined(separator: " · ")
-    }
-}
-
 /// Instant hover card for the service-status chip: per-product rows,
 /// statuspage-style (user screenshot 2026-08-30). Click still opens the
 /// status page.

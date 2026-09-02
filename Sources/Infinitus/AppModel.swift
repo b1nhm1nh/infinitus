@@ -2,6 +2,7 @@ import Foundation
 import SwiftUI
 import AppKit
 import CswapCore
+import InfinitusUI
 
 /// Main-actor state the MenuBarExtra renders. Feeds per spec §2:
 /// snapshots from `cswap list --json` (timer + right after any switch
@@ -946,3 +947,11 @@ final class AppModel: ObservableObject {
     }
 }
 
+/// The shared fleet views (InfinitusUI, #9 phase B) render off this —
+/// every requirement is an existing member; only the relogin action is
+/// mac-only, so it lands here rather than in the protocol's no-op.
+extension AppModel: FleetModel {
+    func startRelogin(_ account: Account) {
+        TokenFlow.shared.start(model: self, relogin: account)
+    }
+}

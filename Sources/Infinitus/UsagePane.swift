@@ -1,6 +1,7 @@
 import SwiftUI
 import Charts
 import CswapCore
+import InfinitusUI
 
 /// Estimated spend dashboard (backlog item 4). The scan streams gigabytes
 /// of transcripts (~seconds), so it runs on demand — first tab open and
@@ -215,3 +216,7 @@ struct UsagePane: View {
         }
     }
 }
+
+/// The cash column in the shared fleet views (#9 phase B) reads the
+/// cached report through this.
+extension UsageModel: UsageSource {}
