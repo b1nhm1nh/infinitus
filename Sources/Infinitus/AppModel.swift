@@ -9,39 +9,79 @@ import InfinitusUI
 /// event), events from the supervised `cswap auto --json`.
 @MainActor
 final class AppModel: ObservableObject {
-    @Published var accounts: [Account] = []
-    @Published var activeNumber: Int?
-    @Published var nextCandidate: Int?
+    // MARK: fleets (#8 multi-engine seam)
+    //
+    // Every enabled engine's fleets live in the registry as FleetState
+    // objects — rows, ticks, pending switch. AppModel stays the popup
+    // chrome's model AND a FleetModel facade over the PRIMARY Claude
+    // fleet (cswap's on a cswap machine), so the mac-only panes, the
+    // title, resume nudges and push triggers keep reading `accounts`
+    // exactly as before.
+    private(set) lazy var registry = EngineRegistry(host: self)
+    var fleets: [FleetState] { registry.fleets }
+    var primary: FleetState? { registry.primary }
+    /// Per-engine last error (the primary's also lands in lastError).
+    @Published var engineErrors: [String: String] = [:]
+    private var forwardingFleetChange = false
+
+    var accounts: [Account] { primary?.accounts ?? [] }
+    var activeNumber: Int? { primary?.activeNumber }
+    var nextCandidate: Int? { primary?.nextCandidate }
     /// Limit-stopped sessions waiting to resume; non-nil only while
     /// every account is at a limit (rides the all-limited banner).
     @Published var waitingResume: Int?
     private var waitingScanAt: Date = .distantPast
-    @Published var nextRecovery: NextRecovery?
-    @Published var liveSessions: LiveSessions?
+    var nextRecovery: NextRecovery? { primary?.nextRecovery }
+    var liveSessions: LiveSessions? { primary?.liveSessions }
     /// Session-list popover (brain chip click) — popup-wide state so the
     /// wide chip and the rail badge share one popover.
     @Published var sessionsShown = false
     // Animation triggers. switchFlashTick fires the celebration sweep on
     // the (new) active row; dataPulseTick ripples the sync dot whenever a
     // snapshot actually changed something visible.
-    @Published var switchFlashTick = 0
+    var switchFlashTick: Int {
+        get { primary?.switchFlashTick ?? 0 }
+        set { primary?.switchFlashTick = newValue }
+    }
     /// Per-account death beats: bumped when a row flips alive -> dead
     /// in a snapshot (the celebration's mirror, user 2026-08-30).
-    @Published var deathTicks: [Int: Int] = [:]
+    var deathTicks: [Int: Int] {
+        get { primary?.deathTicks ?? [:] }
+        set { primary?.deathTicks = newValue }
+    }
     /// Rows currently DYING: dead in the data, but still rendered with
     /// their gauges for a beat so the killing-blow drama (drop plunge,
     /// shard finisher, death beat) plays out — the dead layout swap
     /// unmounted the bar instantly ("killed instantly", user
     /// 2026-08-31). Cleared a few seconds after each death.
-    @Published var dying: Set<Int> = []
+    var dying: Set<Int> {
+        get { primary?.dying ?? [] }
+        set { primary?.dying = newValue }
+    }
     /// Revival fanfares: bumped when a row flips dead -> alive (its
     /// window reset while drained) — the dramatic full-line glow
     /// (user 2026-08-31).
-    @Published var reviveTicks: [Int: Int] = [:]
+    var reviveTicks: [Int: Int] {
+        get { primary?.reviveTicks ?? [:] }
+        set { primary?.reviveTicks = newValue }
+    }
     /// Click-to-switch staging: the row sets this, the popup's
     /// confirmation alert commits or clears it.
-    @Published var pendingSwitch: Int?
+    var pendingSwitch: Int? {
+        get { primary?.pendingSwitch }
+        set { primary?.pendingSwitch = newValue }
+    }
     @Published var dataPulseTick = 0
+
+    /// A fleet's rows changed: whoever observes the host (title, popup
+    /// chrome, panes) re-renders. Guarded — FleetState forwards host
+    /// changes down, and this is the return trip.
+    func forwardFleetChange() {
+        guard !forwardingFleetChange else { return }
+        forwardingFleetChange = true
+        objectWillChange.send()
+        forwardingFleetChange = false
+    }
     /// Debug-only (defaults write … debug_menu -bool true): adds the
     /// Animations tab so every effect can be fired by hand.
     let debugMenu = UserDefaults.standard.bool(forKey: "debug_menu")
@@ -328,18 +368,17 @@ final class AppModel: ObservableObject {
             lastError = "cswap not found — install it (uv tool install claude-swap)"
         }
         if !playground { sync.attach(model: self) }
+        if let cli { registry.register(CswapEngine(cli: cli)) }
         // Last run's snapshot renders NOW — the popup otherwise opened
         // as an empty sliver and expanded seconds later when the first
         // `cswap list` returned, eating the intro (user 2026-08-30).
         // Live values roll in over it via the numeric transitions.
         if !playground,
            let data = try? Data(contentsOf: Self.snapshotCacheURL),
-           let cached = try? JSONDecoder().decode(AccountList.self, from: data) {
-            accounts = cached.accounts
-            activeNumber = cached.activeAccountNumber
-            nextCandidate = cached.nextCandidate
-            nextRecovery = RecoveryMath.corrected(engine: cached.nextRecovery, accounts: cached.accounts)
-            liveSessions = cached.liveSessions
+           let cached = try? JSONDecoder().decode([EngineFleet].self, from: data) {
+            for fleet in cached where registry.engine(id: fleet.engineID) != nil {
+                registry.state(for: fleet).seed(fleet)
+            }
         }
     }
 
@@ -417,8 +456,9 @@ final class AppModel: ObservableObject {
             if self.eventLog.count > 100 { self.eventLog.removeFirst(self.eventLog.count - 100) }
         }
         applyMirrorLAN()
-        guard let cli, supervisor == nil else { return }
-        if !isPlayground { startEngine(binary: cli.binaryPath) }
+        guard supervisor == nil, refreshTask == nil else { return }
+        if let cli, !isPlayground { startEngine(binary: cli.binaryPath) }
+        guard !registry.engines.isEmpty else { return }
         refreshTask = Task { [weak self] in
             while !Task.isCancelled {
                 await self?.refreshSnapshot()
@@ -529,7 +569,7 @@ final class AppModel: ObservableObject {
     @Published var firstAccountMessage: String?
     /// Set once a real snapshot decoded — gates the "no accounts" card
     /// so it can't flash during the first refresh.
-    @Published var snapshotLoaded = false
+    var snapshotLoaded: Bool { primary?.snapshotLoaded ?? false }
 
     func detectOnboarding() {
         Task.detached(priority: .utility) { [weak self] in
@@ -646,213 +686,190 @@ final class AppModel: ObservableObject {
         }
     }
 
+    /// One pass over every enabled engine: snapshots gathered
+    /// concurrently, applied per fleet, then the app-level hooks
+    /// (cache, history, mirror, notifications, resume, push, sync) run
+    /// off the PRIMARY Claude fleet exactly as they did when cswap was
+    /// the only engine. An engine that fails keeps its last good rows
+    /// (the rumps menubar's _worker policy) and records its error.
     func refreshSnapshot() async {
-        guard let cli else { return }
-        do {
-            let (list, raw) = try await cli.accountListRaw()
-            if !isPlayground {
+        let engines = registry.engines
+        guard !engines.isEmpty else { return }
+        var results: [(id: String, fleets: [EngineFleet]?, error: Error?)] = []
+        await withTaskGroup(of: (String, [EngineFleet]?, Error?).self) { group in
+            for engine in engines {
+                group.addTask {
+                    do { return (engine.id, try await engine.snapshot(), nil) }
+                    catch { return (engine.id, nil, error) }
+                }
+            }
+            for await r in group { results.append((r.0, r.1, r.2)) }
+        }
+        var primaryResult: (fleet: EngineFleet, change: FleetState.Change)?
+        var anyChanged = false
+        for r in results {
+            guard let fleets = r.fleets else {
+                engineErrors[r.id] = "\(r.error!)"
+                continue
+            }
+            engineErrors[r.id] = nil
+            for fleet in fleets {
+                let state = registry.state(for: fleet)
+                let change = state.apply(fleet)
+                anyChanged = anyChanged || change.changed
+                if state === primary { primaryResult = (fleet, change) }
+            }
+        }
+        if !isPlayground {
+            let cache = fleets.compactMap(\.lastFleet)
+            if let data = try? JSONEncoder().encode(cache) {
                 try? FileManager.default.createDirectory(
                     at: Self.snapshotCacheURL.deletingLastPathComponent(),
                     withIntermediateDirectories: true)
-                try? raw.write(to: Self.snapshotCacheURL, options: .atomic)
+                try? data.write(to: Self.snapshotCacheURL, options: .atomic)
             }
-            let previous = activeNumber
-            // withAnimation: the pct texts carry .contentTransition(.numericText)
-            // so a fresh snapshot rolls the digits (the token-burn feel)
-            // instead of snapping them.
-            let changed = !accountsVisuallyEqual(accounts, list.accounts)
-            let previousActive = activeNumber
-            let firstLoad = accounts.isEmpty && !list.accounts.isEmpty
-            // alive -> dead diff BEFORE the state swap. First load has no
-            // previous state, so nothing fires on launch by construction.
-            let wasAlive = Set(accounts.filter {
-                !AccountVitals.isDead($0.usage) }.map(\.number))
-            let newlyDead = list.accounts.filter {
-                AccountVitals.isDead($0.usage) && wasAlive.contains($0.number)
-            }.map(\.number)
-            let wasDead = Set(accounts.filter {
-                AccountVitals.isDead($0.usage) }.map(\.number))
-            let newlyAlive = list.accounts.filter {
-                !AccountVitals.isDead($0.usage) && wasDead.contains($0.number)
-            }.map(\.number)
-            snapshotLoaded = true
-            withAnimation(.easeInOut(duration: 0.6)) {
-                accounts = list.accounts
-                activeNumber = list.activeAccountNumber
-                nextCandidate = list.nextCandidate
-                nextRecovery = RecoveryMath.corrected(engine: list.nextRecovery, accounts: list.accounts)
-                liveSessions = list.liveSessions
+        }
+        if anyChanged { dataPulseTick += 1 }
+        guard let primary, let primaryResult else {
+            // The primary engine failed this pass (or there is none).
+            if let id = primary?.engineID, let err = engineErrors[id] {
+                lastError = err
             }
-            if let now = list.activeAccountNumber, let previousActive,
-               previousActive != now {
-                switchFlashTick += 1
+            return
+        }
+        let (fleet, change) = primaryResult
+        let list = AccountList(activeAccountNumber: fleet.activeNumber,
+                               accounts: fleet.accounts,
+                               nextCandidate: fleet.nextCandidate,
+                               nextRecovery: fleet.nextRecovery,
+                               liveSessions: fleet.liveSessions)
+        let raw = fleet.raw ?? (try? JSONEncoder().encode(list)) ?? Data()
+        let previous = change.previousActive
+        let firstLoad = change.firstLoad
+        // Utilization history (todo 2026-09-01): every real snapshot
+        // feeds the per-machine JSONL; the playground's fabricated
+        // fleet must never pollute it.
+        if !isPlayground {
+            let accts = list.accounts
+            let syncOn = sync.enabled
+            Task.detached(priority: .utility) { [historyRecorder] in
+                await historyRecorder.record(accounts: accts, syncEnabled: syncOn)
             }
-            // Utilization history (todo 2026-09-01): every real snapshot
-            // feeds the per-machine JSONL; the playground's fabricated
-            // fleet must never pollute it.
-            if !isPlayground {
-                let accts = list.accounts
-                let syncOn = sync.enabled
-                Task.detached(priority: .utility) { [historyRecorder] in
-                    await historyRecorder.record(accounts: accts, syncEnabled: syncOn)
-                }
-                // Fleet mirror (#9 phase 1): lets the mobile companion see
-                // this machine's last snapshot. Throttled inside the actor.
-                // Prefs (#9 phase C1: "Follow Mac") captured here on the
-                // main actor since AppModel's published properties aren't
-                // Sendable-safe to read from the detached task.
-                let prefs = FleetPrefs(
-                    themeID: gamification, compactRows: compactRows,
-                    popupLayout: popupLayout, burnStyle: burnStyle,
-                    introStyle: introStyle, introTitle: introTitle,
-                    introSpeed: introSpeed, customThemes: customThemes,
-                    sortByHeadroom: sortByHeadroom, popupTextSize: popupTextSize)
-                // Footer-chip state (#9 phase D2), captured here for the
-                // same main-actor reason as the prefs above.
-                let serviceStatus = ServiceStatusSummary(
-                    indicator: ServiceStatusModel.shared.indicator)
-                let engine = engineBadge ?? .stopped
-                Task.detached(priority: .utility) { [mirrorExporter] in
-                    await mirrorExporter.record(listJSON: raw, prefs: prefs,
-                                                serviceStatus: serviceStatus,
-                                                engine: engine)
-                }
+            // Fleet mirror (#9 phase 1): lets the mobile companion see
+            // this machine's last snapshot. Throttled inside the actor.
+            // Prefs (#9 phase C1: "Follow Mac") captured here on the
+            // main actor since AppModel's published properties aren't
+            // Sendable-safe to read from the detached task.
+            let prefs = FleetPrefs(
+                themeID: gamification, compactRows: compactRows,
+                popupLayout: popupLayout, burnStyle: burnStyle,
+                introStyle: introStyle, introTitle: introTitle,
+                introSpeed: introSpeed, customThemes: customThemes,
+                sortByHeadroom: sortByHeadroom, popupTextSize: popupTextSize)
+            // Footer-chip state (#9 phase D2), captured here for the
+            // same main-actor reason as the prefs above.
+            let serviceStatus = ServiceStatusSummary(
+                indicator: ServiceStatusModel.shared.indicator)
+            let engine = engineBadge ?? .stopped
+            Task.detached(priority: .utility) { [mirrorExporter] in
+                await mirrorExporter.record(listJSON: raw, prefs: prefs,
+                                            serviceStatus: serviceStatus,
+                                            engine: engine)
             }
-            // All-limited: count the limit-stopped sessions waiting to be
-            // resumed (todo 2026-09-01), reusing the resume mechanism's
-            // own detection — Claude Code's files, never engine internals.
-            // Throttled: the transcript tails re-read at most every 20s.
-            if list.nextCandidate == nil, list.nextRecovery != nil {
-                if Date().timeIntervalSince(waitingScanAt) > 20 {
-                    waitingScanAt = Date()
-                    Task.detached(priority: .utility) { [weak self] in
-                        let dir = ClaudeSessions.configHome()
-                        let stopped = Transcript.findStopped(
-                            sessions: ClaudeSessions.list(claudeDir: dir),
-                            claudeDir: dir)
-                        let count = stopped.count
-                        await MainActor.run { [weak self] in
-                            self?.waitingResume = count
-                        }
-                    }
-                }
-            } else {
-                waitingResume = nil
-            }
-            // The death sequence (user 2026-08-31: kill animation for
-            // the last drop of any kind, "still play dead animation
-            // after"): the row keeps its gauges while the killing
-            // drop plays (plunge 0-1.5s, shards+shake ~1.5-2.4s), the
-            // death beat lands AFTER the finisher, and only then does
-            // the layout flip to the dead presentation.
-            for n in newlyDead {
-                dying.insert(n)
-                DispatchQueue.main.asyncAfter(deadline: .now() + 2.3) {
-                    self.deathTicks[n, default: 0] += 1
-                }
-                DispatchQueue.main.asyncAfter(deadline: .now() + 3.9) {
-                    self.dying.remove(n)
-                    // The dead row keeps its place (and its skull is
-                    // held back) until the tragedy finishes; only now
-                    // does auto-order move it down (user 2026-08-31:
-                    // "delay moving the account until dead plays").
-                    withAnimation(.easeInOut(duration: 0.5)) {
-                        self.applyAutoOrder()
+        }
+        // All-limited: count the limit-stopped sessions waiting to be
+        // resumed (todo 2026-09-01), reusing the resume mechanism's
+        // own detection — Claude Code's files, never engine internals.
+        // Throttled: the transcript tails re-read at most every 20s.
+        if list.nextCandidate == nil, list.nextRecovery != nil {
+            if Date().timeIntervalSince(waitingScanAt) > 20 {
+                waitingScanAt = Date()
+                Task.detached(priority: .utility) { [weak self] in
+                    let dir = ClaudeSessions.configHome()
+                    let stopped = Transcript.findStopped(
+                        sessions: ClaudeSessions.list(claudeDir: dir),
+                        claudeDir: dir)
+                    let count = stopped.count
+                    await MainActor.run { [weak self] in
+                        self?.waitingResume = count
                     }
                 }
             }
-            for n in newlyAlive { reviveTicks[n, default: 0] += 1 }
-            // Launch greeting: once the first snapshot renders, the
-            // active row plays its sweep alongside the bars' fill-up
-            // (user 2026-08-30). Delayed so the popup has drawn.
-            // First snapshot = the intro's single clock: every entrance,
-            // the bars, the flash, and the title all key off this tick,
-            // so the sequence is identical run to run (title timing
-            // drifted when it ran from view-mount instead).
-            if firstLoad {
-                DispatchQueue.main.async { self.replayIntro() }
-            }
-            if changed { dataPulseTick += 1 }
-            lastError = nil
-            // Piggyback on the refresh tick: one cheap stat per pass.
-            if !appUpdatePending, let launched = launchExecutableDate,
-               let now = Self.executableDate(),
-               now > launched.addingTimeInterval(1) {
-                appUpdatePending = true
-            }
-            // Switch notifications come from this DISPLAY-feed diff, not the
-            // engine's `switch` events: our engine is parked whenever another
-            // host (rumps, cswap watch, cswap auto) holds the mutex, and a
-            // parked engine sees no events — the 2026-08-28 silent-switch
-            // bug. The diff sees every switch regardless of who executed it,
-            // manual ones included.
-            if !isPlayground, let current = list.activeAccountNumber,
-               let previous, previous != current, lastNotifiedActive != current {
-                lastNotifiedActive = current
-                let name = accounts.first(where: { $0.number == current })
-                    .map { $0.alias ?? String($0.email.prefix(while: { $0 != "@" })) } ?? "#\(current)"
-                Notifier.post(title: "claude-swap",
-                              body: "switched to account \(current) (\(name))")
-            }
-            if !isPlayground {
-                awake.update(wanted: keepAwake,
-                             busyCount: list.liveSessions?.busy ?? 0)
-            }
-            applyAutoOrder()
-            // Same display-feed vantage: a switch (manual or parked-engine)
-            // re-arms /rc; an active account that can work resumes stopped
-            // sessions. Detached, single-flight — never awaited here.
-            if !isPlayground {
-                let active = list.accounts.first { $0.number == list.activeAccountNumber }
-                resume.tick(switched: previous != nil && previous != list.activeAccountNumber,
-                            activeAlive: active.map { !AccountVitals.isDead($0.usage) } ?? false,
-                            activeNumber: list.activeAccountNumber,
-                            activeFetchedAt: active?.usageFetchedAt
-                                .flatMap(UsageHistory.parseISO))
-            }
-            // Same display-feed vantage as the switch diff above: these
-            // triggers fire even while the supervised engine is parked.
-            let health = list.accounts
-                .filter { !($0.disabled ?? false) && $0.usage != nil }
-                .map { a in PushTriggers.Account(
-                    number: a.number,
-                    name: a.alias ?? String(a.email.prefix(while: { $0 != "@" })),
-                    dead: AccountVitals.isDead(a.usage),
-                    worstPct: PushTriggers.worstPlanPct(a.usage)) }
-            let pushes = pushTriggers.tick(
-                busy: list.liveSessions?.busy, total: list.liveSessions?.total,
-                accounts: health,
-                flags: .init(sessionsDone: pushSessionsDone,
-                             allDead: pushAllDead, lastAlive: pushLastAlive))
-            for msg in pushes where !isPlayground {
-                Notifier.post(title: "claude-swap", body: msg)
-                // Text over stdin, matching the channel-setup commands;
-                // no channels configured is a quiet no-op (try?).
+        } else {
+            waitingResume = nil
+        }
+        // Death/revive ticks fired inside FleetState.apply.
+        // Launch greeting: once the first snapshot renders, the
+        // active row plays its sweep alongside the bars' fill-up
+        // (user 2026-08-30). Delayed so the popup has drawn.
+        // First snapshot = the intro's single clock: every entrance,
+        // the bars, the flash, and the title all key off this tick,
+        // so the sequence is identical run to run (title timing
+        // drifted when it ran from view-mount instead).
+        if firstLoad {
+            DispatchQueue.main.async { self.replayIntro() }
+        }
+        lastError = nil
+        // Piggyback on the refresh tick: one cheap stat per pass.
+        if !appUpdatePending, let launched = launchExecutableDate,
+           let now = Self.executableDate(),
+           now > launched.addingTimeInterval(1) {
+            appUpdatePending = true
+        }
+        // Switch notifications come from this DISPLAY-feed diff, not the
+        // engine's `switch` events: our engine is parked whenever another
+        // host (rumps, cswap watch, cswap auto) holds the mutex, and a
+        // parked engine sees no events — the 2026-08-28 silent-switch
+        // bug. The diff sees every switch regardless of who executed it,
+        // manual ones included.
+        if !isPlayground, let current = list.activeAccountNumber,
+           let previous, previous != current, lastNotifiedActive != current {
+            lastNotifiedActive = current
+            let name = accounts.first(where: { $0.number == current })
+                .map { $0.alias ?? String($0.email.prefix(while: { $0 != "@" })) } ?? "#\(current)"
+            Notifier.post(title: "claude-swap",
+                          body: "switched to account \(current) (\(name))")
+        }
+        if !isPlayground {
+            awake.update(wanted: keepAwake,
+                         busyCount: list.liveSessions?.busy ?? 0)
+        }
+        applyAutoOrder()
+        // Same display-feed vantage: a switch (manual or parked-engine)
+        // re-arms /rc; an active account that can work resumes stopped
+        // sessions. Detached, single-flight — never awaited here.
+        if !isPlayground {
+            let active = list.accounts.first { $0.number == list.activeAccountNumber }
+            resume.tick(switched: previous != nil && previous != list.activeAccountNumber,
+                        activeAlive: active.map { !AccountVitals.isDead($0.usage) } ?? false,
+                        activeNumber: list.activeAccountNumber,
+                        activeFetchedAt: active?.usageFetchedAt
+                            .flatMap(UsageHistory.parseISO))
+        }
+        // Same display-feed vantage as the switch diff above: these
+        // triggers fire even while the supervised engine is parked.
+        let health = list.accounts
+            .filter { !($0.disabled ?? false) && $0.usage != nil }
+            .map { a in PushTriggers.Account(
+                number: a.number,
+                name: a.alias ?? String(a.email.prefix(while: { $0 != "@" })),
+                dead: AccountVitals.isDead(a.usage),
+                worstPct: PushTriggers.worstPlanPct(a.usage)) }
+        let pushes = pushTriggers.tick(
+            busy: list.liveSessions?.busy, total: list.liveSessions?.total,
+            accounts: health,
+            flags: .init(sessionsDone: pushSessionsDone,
+                         allDead: pushAllDead, lastAlive: pushLastAlive))
+        for msg in pushes where !isPlayground {
+            Notifier.post(title: "claude-swap", body: msg)
+            // Text over stdin, matching the channel-setup commands;
+            // no channels configured is a quiet no-op (try?). The
+            // away-push channels are cswap's.
+            if let cli {
                 Task { _ = try? await cli.run(["notify", "push", "-"], stdin: msg) }
             }
-            if !isPlayground { await sync.tick() }
-        } catch {
-            // Keep the last good snapshot rather than blanking the menu —
-            // same policy as the rumps menubar's _worker.
-            lastError = "\(error)"
         }
-    }
-
-    /// "Did anything the popup RENDERS change?" — cheap positional
-    /// comparison of the fields the rows show.
-    private func accountsVisuallyEqual(_ a: [Account], _ b: [Account]) -> Bool {
-        guard a.count == b.count else { return false }
-        for (x, y) in zip(a, b) {
-            if x.number != y.number || x.active != y.active
-                || x.alias != y.alias || x.disabled != y.disabled
-                || x.usage?.fiveHour?.pct != y.usage?.fiveHour?.pct
-                || x.usage?.sevenDay?.pct != y.usage?.sevenDay?.pct
-                || x.usage?.spend?.pct != y.usage?.spend?.pct
-                || (x.usage?.scoped ?? []).map(\.pct) != (y.usage?.scoped ?? []).map(\.pct) {
-                return false
-            }
-        }
-        return true
+        if !isPlayground { await sync.tick() }
     }
 
     /// The badge click: running -> stop, stopped -> start ("auto switch
@@ -885,25 +902,10 @@ final class AppModel: ObservableObject {
         }
     }
 
-    func switchTo(_ number: Int) {
-        guard let cli else { return }
-        Task {
-            do {
-                try await cli.switchTo(number)
-                await refreshSnapshot()
-            } catch { lastError = "\(error)" }
-        }
-    }
-
-    func rotate() {
-        guard let cli else { return }
-        Task {
-            do {
-                try await cli.rotate()
-                await refreshSnapshot()
-            } catch { lastError = "\(error)" }
-        }
-    }
+    // Primary-fleet actions (the mac-only panes and the wall call these;
+    // the shared rows act on their own FleetState).
+    func switchTo(_ number: Int) { primary?.switchTo(number) }
+    func rotate() { primary?.rotate() }
 
     @Published var reorderError: String?
 
@@ -921,70 +923,15 @@ final class AppModel: ObservableObject {
         }
     }
 
-    /// Rename = set/clear the account's cswap alias, so every frontend
-    /// (TUI, CLI, popup) shows the same name.
-    func rename(_ number: Int, to name: String) {
-        guard let cli else { return }
-        Task {
-            do {
-                try await cli.setAlias(number, name)
-                reorderError = nil
-            } catch { reorderError = "\(error)" }
-            await refreshSnapshot()
-        }
-    }
-
-    /// One auto-order write at a time: reorder() refreshes the snapshot,
-    /// which lands back here — a no-op once the engine confirms the order.
-    private var autoOrderInFlight = false
-
-    /// Ask the engine for the policy's order when it differs from what the
-    /// snapshot shows. Skipped while a switch confirmation is up: reorder
-    /// renumbers occupants, and the pending number would point at a
-    /// different account by the time the user hits Switch.
-    func applyAutoOrder() {
-        guard autoOrder, cli != nil, !autoOrderInFlight,
-              pendingSwitch == nil, !accounts.isEmpty,
-              dying.isEmpty else { return }
-        let desired = AutoOrder.order(accounts)
-        guard desired != accounts.map(\.number) else { return }
-        autoOrderInFlight = true
-        reorder(desired) { [weak self] in self?.autoOrderInFlight = false }
-    }
-
-    /// What the popup rows iterate: raw engine order, or the headroom
-    /// sort with active + next pinned.
-    var displayAccounts: [Account] {
-        sortByHeadroom
-            ? DisplayOrder.sort(accounts, active: activeNumber, next: nextCandidate)
-            : accounts
-    }
-
-    /// Hold an account out of rotation / return it (engine-side flag;
-    /// the row renders as "disabled" either way).
+    func rename(_ number: Int, to name: String) { primary?.rename(number, to: name) }
+    func applyAutoOrder() { primary?.applyAutoOrder() }
+    var displayAccounts: [Account] { primary?.displayAccounts ?? [] }
     func setRotation(_ number: Int, enabled: Bool) {
-        guard let cli else { return }
-        Task {
-            do {
-                _ = try await cli.setRotation(number, enabled: enabled)
-                lastError = nil
-            } catch { lastError = "\(error)" }
-            await refreshSnapshot()
-        }
+        primary?.setRotation(number, enabled: enabled)
     }
-
     func reorder(_ order: [Int], done: (() -> Void)? = nil) {
-        guard let cli else { return }
-        let index = Dictionary(uniqueKeysWithValues: order.enumerated().map { ($1, $0) })
-        accounts.sort { (index[$0.number] ?? 0) < (index[$1.number] ?? 0) }
-        Task {
-            do {
-                _ = try await cli.reorder(order)
-                reorderError = nil
-            } catch { reorderError = "\(error)" }
-            await refreshSnapshot()
-            done?()
-        }
+        guard let primary else { done?(); return }
+        primary.reorder(order, done: done)
     }
 }
 
