@@ -196,7 +196,9 @@ struct InfinitusApp: App {
                                "threshold", "rotate", "claude", "provider",
                                "update", "upgrade", "pypi",
                                "nudge", "resume", "wake", "session"],
-                    provider: ProviderBadge(live: model.cswapState.isRunning),
+                    // "on" = the engine is enabled and found; whether its
+                    // auto-switch child runs is the tab's own business.
+                    provider: ProviderBadge(live: model.cswapRegistered),
                     view: AnyView(ClaudeEnginePane(model: model,
                                                    settings: settingsModel,
                                                    update: updateModel,
@@ -1078,8 +1080,7 @@ struct DetectionLines: View {
         if live { s += " (running)" }
         s += " — \(proxy.credentialFiles) credential file"
         if proxy.credentialFiles != 1 { s += "s" }
-        s += " in \(proxy.authDir). Proxy backend support is on the "
-        s += "roadmap; cswap manages accounts directly."
+        s += " in \(proxy.authDir). Turn the engine on to manage them here."
         return s
     }
 }

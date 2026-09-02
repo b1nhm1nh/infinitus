@@ -13,6 +13,8 @@ struct ClaudeEnginePane: View {
     var body: some View {
         Form {
             Section("Claude — cswap engine") {
+                Toggle("Engine on (credential swap under Claude Code)", isOn: $model.cswapEnabled)
+                EngineToggleNotes(model: model)
                 LabeledContent("Auto-switch") {
                     HStack {
                         stateText
@@ -202,20 +204,16 @@ struct CLIProxyEnginePane: View {
 
     var body: some View {
         Form {
-            Section("Engines") {
-                Toggle("cswap (credential swap under Claude Code)", isOn: $model.cswapEnabled)
-                Toggle("CLIProxyAPI (rotates behind its own endpoint)", isOn: $model.cliproxyEnabled)
+            Section("Claude — CLIProxyAPI engine") {
+                Toggle("Engine on (rotates behind its own endpoint)", isOn: $model.cliproxyEnabled)
                     .disabled(!model.cliproxyKeyPresent && !model.cliproxyEnabled)
-                if model.cswapEnabled && model.cliproxyEnabled {
-                    Text("Both engines are on. cswap swaps the credential under "
-                         + "Claude Code; the proxy rotates behind its own endpoint — "
-                         + "for the same accounts they fight. Run one per account set.")
-                        .font(.caption).foregroundStyle(.orange)
+                if !model.cliproxyKeyPresent && !model.cliproxyEnabled {
+                    Text("Save the management key below first.")
+                        .font(.caption).foregroundStyle(.secondary)
                 }
-                Text("Flipping an engine restarts the app.")
-                    .font(.caption).foregroundStyle(.secondary)
+                EngineToggleNotes(model: model)
             }
-            Section("CLIProxyAPI — management API") {
+            Section("Management API") {
                 TextField("Base URL", text: $baseURL, prompt: Text(CLIProxyEngine.defaultBaseURL.absoluteString))
                     .textFieldStyle(.roundedBorder)
                 SecureField("Management key", text: $key,
@@ -284,3 +282,19 @@ struct CLIProxyEnginePane: View {
     }
 }
 
+/// Under each engine's on/off toggle: the layer-fight warning when both
+/// engines are on, and the restart note.
+struct EngineToggleNotes: View {
+    @ObservedObject var model: AppModel
+
+    var body: some View {
+        if model.cswapEnabled && model.cliproxyEnabled {
+            Text("Both engines are on. cswap swaps the credential under "
+                 + "Claude Code; the proxy rotates behind its own endpoint \u{2014} "
+                 + "for the same accounts they fight. Run one per account set.")
+                .font(.caption).foregroundStyle(.orange)
+        }
+        Text("Flipping an engine restarts the app.")
+            .font(.caption).foregroundStyle(.secondary)
+    }
+}
