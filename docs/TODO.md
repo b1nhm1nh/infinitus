@@ -70,7 +70,17 @@ file keeps the shipped log and the deferred-by-design notes.
 - #6 Playground simulations (onboarding + auto-switch scenarios)
 - #7 Infinitus smart engine — reset battle plans, window-start
       scheduling, capacity advice ("the big Infinitus"; plan last)
-- #8 CLIProxyAPI alternate backend (mapping done, no blocking gaps)
+- ~~#8 CLIProxyAPI alternate backend~~ → shipped 2026-09-02 as the
+  multi-engine seam: `AccountEngine` + `EngineFleet` + capabilities in
+  CswapCore, `FleetState`/`EngineRegistry` in the app (AppModel stays a
+  FleetModel facade over the primary Claude fleet), `FleetStack` popup
+  sections, `CLIProxyEngine` over the Management API (keychain key,
+  hold/switch-as-priority/rename/remove/OAuth add/usage ledger), Engines
+  pane with both toggles + layer-fight warning; dev proxy installed via
+  brew (docs/research/multi-engine.md §6/§9). Follow-ups: Codex onto
+  AccountEngine, mirror carrying `[EngineFleet]` for the phone, Linux
+  tray, upstream quota endpoint PR, first browser sign-in on the dev
+  proxy.
 - #9 Mobile companion app (brainstorm done, user picks pending)
 - #10 Human handoffs: AUR publish, Linux real-account cswap, signing
 - ~~#11 Full-screen mode~~ → shipped 2026-09-01 (Display → Fleet wall,

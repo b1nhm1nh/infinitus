@@ -12,7 +12,7 @@
 
 ## Global constraints
 - Engine isolation: never read `~/.cli-proxy-api/*` contents or `~/.claude-swap-backup/*`; proxy = HTTP only, cswap = subprocess only.
-- Secrets never in argv, defaults, or logs; the management key lives in the keychain (`com.huuloc.limitless.cliproxy`).
+- Secrets never in argv, defaults, or logs; the management key lives in the keychain (`com.huuloc.infinitus.cliproxy`).
 - Bundle id `com.huuloc.limitless` untouched. Push nothing to any remote.
 - Surgical diffs, existing style, `swift test` green at every commit, popup pixel-identical on a cswap-only Mac after phase 1 (compare against `scratchpad/Infinitus-baseline.app`).
 - Another Claude session is active in this checkout (builds via make-app.sh, commits AppModel). `git status` before every commit; stage only own files.

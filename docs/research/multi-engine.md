@@ -124,7 +124,7 @@ public protocol AccountEngine: Sendable {
 
 Config: `baseURL` (default `http://127.0.0.1:8317`), `managementKey:
 String` injected at init. The app stores the key in the macOS keychain
-(`SecItem` generic password, service `com.huuloc.limitless.cliproxy`,
+(`SecItem` generic password, service `com.huuloc.infinitus.cliproxy`,
 account = base URL) and never writes it to defaults or logs. Requests
 carry `Authorization: Bearer <key>` and a 5s timeout. `config.yaml` and
 the auth files are never read (Onboarding.swift contract holds).
@@ -246,3 +246,48 @@ folds into the popup); mirror snapshot carrying `[EngineFleet]` for the
 phone; Linux tray (cswap-only until then); upstream PR for a server-side
 quota endpoint (cliproxyapi-backend.md candidate 1); push triggers /
 resume generalised beyond the primary Claude fleet.
+
+## 9. Verified live 2026-09-02 — drift vs the `81e1b53` reading
+
+Dev proxy: Homebrew `cliproxyapi` 7.2.145 (upstream latest 7.2.147),
+config at `/opt/homebrew/etc/cliproxyapi.conf` (the formula's
+DefaultConfigPath — not `~/.cli-proxy-api/config.yaml`; the original
+is kept as `cliproxyapi.conf.orig`), `brew services` unit, secret key
+in `~/.cli-proxy-api/infinitus-dev-management-key` (mode 600) and in
+the keychain (`com.huuloc.infinitus.cliproxy` / `http://127.0.0.1:8317`,
+ACL: the signed debug binary + Infinitus.app). Routing `fill-first`.
+
+- Management routes answer **401** without/with a wrong key once a key
+  is configured (the 404 in §3 is the no-key-configured case). Both map
+  to `EngineError.unauthorized`.
+- `GET /auth-files` entry keys seen live: account, account_type,
+  auth_index, created_at, disabled, email, failed, id, label, modtime,
+  name, path, provider, quota, recent_requests, runtime_only, size,
+  source, status, status_message, success, type, unavailable,
+  updated_at — `priority`/`note`/`weight` appear only when set.
+- `POST /api-call` relays Anthropic verbatim: the June credential
+  answered **401 "OAuth access token has expired"**, and after a few
+  probes **429** (the usage endpoint's budget, per cswap's poll_policy).
+  Engine rule: 401 marks the credential expired — sticky until a 200 —
+  and renders `relogin_required` with the browser re-login action; a
+  429/network failure or a credential in its 5-minute backoff renders
+  `usage_unavailable` (SentinelNotes falls back to "usage unavailable"),
+  never a healthy-looking row.
+- Request JSON is serialized without slash escaping (the proxy accepts
+  both; tests match on the URL).
+- Two fleets render as designed: `Claude · cswap` above `Claude ·
+  CLIProxyAPI`, verified in the Playground via `playctl fleets 2`
+  (a relabeled copy of the demo fleet). A single fleet is unchanged
+  (capture-compared against the pre-#8 bundle).
+- `oauth/profile`: cswap only reads uuid/email from it; `plan` is
+  derived the way the proxy's own management page does
+  (Max/Pro/Team/Free), coarser than cswap's local "Max 20x".
+- Unsigned dev builds trip a keychain ACL prompt on every rebuild;
+  `Keychain.read` skips UI (`kSecUseAuthenticationUISkip`) so launch
+  never blocks, and the dev loop signs the debug binary with the Apple
+  Development identity (stable designated requirement) —
+  `codesign --force --sign "<Apple Development…>" --identifier
+  com.huuloc.infinitus.dev .build/…/Infinitus`.
+- Still open: a fresh Claude sign-in through the pane's "Add account"
+  (needs a person in the browser); live fixtures are hand-written from
+  the upstream shapes above, not lifted from a redacted capture.

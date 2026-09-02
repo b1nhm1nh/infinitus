@@ -61,6 +61,18 @@ Native macOS menu bar app for the claude-swap engine. Split out of
   INSIDE it distributes the modifier to every cell — that's how the
   rows intro slides a whole grid row.
 
+- Multi-engine (#8): every engine is an `AccountEngine` yielding
+  `EngineFleet`s; the popup stacks one `FleetState` per fleet and
+  `AppModel` is only a FleetModel FACADE over the primary Claude fleet.
+  Gate UI on `capabilities`, never on engine identity.
+- The CLIProxyAPI key lives in the keychain (`com.huuloc.infinitus.cliproxy`,
+  account = base URL). Unsigned debug binaries trip an ACL prompt on
+  every rebuild — reads skip UI, and the dev loop codesigns the debug
+  binary with the Apple Development identity so the grant sticks.
+- Two Claude sessions may share this checkout: `git status` before
+  every commit, stage by path, build/test only your own targets
+  (`swift build --target X`, `swift test --skip-build --filter`).
+
 ## Build / run / test
 `./make-app.sh && open Infinitus.app` · `swift test` · `./dev.sh` (entr)
 · `./run-unbundled.sh` (menu bar wedge workaround).
