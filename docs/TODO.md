@@ -62,6 +62,16 @@ Open work lives at github.com/deathemperor/infinitus/issues (user
 2026-09-01: "move todo items to use github issues tracking"); this
 file keeps the shipped log and the deferred-by-design notes.
 
+- ~~infinitusctl~~ → shipped 2026-09-03: agent-facing control CLI.
+  `ControlProtocol` (InfinitusCore: request/reply, manifest table,
+  socket path), `ControlServer` (app: same-user UNIX socket in App
+  Support, one JSON line each way, dispatch on the manifest, every
+  action through the same FleetState/AppModel calls as the panes),
+  `infinitusctl` executable bundled in Infinitus.app/Contents/MacOS.
+  Verified live: status/fleets/proxy/manifest, rename + routing
+  round-trips, remove/--yes and bad-fleet guards. Not yet: a Homebrew
+  symlink for `infinitusctl` (release flow), socket round-trip test
+  against a fake model (live-verified only), `rotate`/`reorder` verbs.
 - #1 All-dead Live Activity (iOS + macOS equivalent)
 - #2 Working-sessions Live Activity design
 - #3 Slack push mirror to mobile

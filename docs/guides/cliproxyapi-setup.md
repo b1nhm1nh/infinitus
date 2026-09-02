@@ -62,6 +62,16 @@ You can use it alongside Infinitus; both speak the same Management API.
 
 ## 3. Connect Infinitus
 
+From a shell (or let an agent do it, `docs/guides/infinitusctl-agent.md`):
+
+```sh
+CTL=/Applications/Infinitus.app/Contents/MacOS/infinitusctl
+printf '%s' '<management key>' | $CTL proxy-key   # app restarts
+$CTL engine cliproxy on                           # app restarts
+```
+
+Or by hand:
+
 1. Open Infinitus → Settings → **CLIProxyAPI** tab.
 2. Base URL: leave empty for `http://127.0.0.1:8317`.
 3. Management key: paste the plaintext key → **Test connection** →

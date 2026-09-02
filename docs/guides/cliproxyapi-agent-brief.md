@@ -1,9 +1,8 @@
 # Agent brief: set up CLIProxyAPI for Infinitus
 
 Paste everything below into a coding agent (Claude Code, Codex, …)
-running on the machine where Infinitus lives. It does the parts that
-are safe to automate and stops where a human must sign in or paste a
-secret into the app.
+running on the machine where Infinitus lives. With `infinitusctl` the
+agent does everything except the OAuth click.
 
 ---
 
@@ -59,20 +58,29 @@ secrets; never edit files under `~/.cli-proxy-api/*.json`.
    through the proxy from now on; if cswap is their active engine, the
    two fight over the same accounts — ask first.
 
-7. **Hand off to the human.** Print these instructions verbatim:
-   - Infinitus → Settings → CLIProxyAPI: paste the management key from
-     `<secrets file>`, Test connection ("reachable — 0 credential
-     files, routing fill-first"), Save & restart, Engine on.
-   - Infinitus → Settings → Accounts → "Claude — CLIProxyAPI" → Add
-     account… → sign in per account (private in-app sheet or window;
-     never the default browser).
-   - Optional: Settings → CLIProxyAPI → Routing to change strategy.
+7. **Connect Infinitus** with its CLI (`Infinitus.app/Contents/MacOS/infinitusctl`;
+   run `infinitusctl manifest` first, see `docs/guides/infinitusctl-agent.md`):
+   ```sh
+   sed -n 1p <secrets file> | infinitusctl proxy-key     # app restarts
+   infinitusctl engine cliproxy on                        # app restarts
+   infinitusctl proxy                                     # keyPresent:true, enabled:true
+   ```
+   If `infinitusctl` exits 3, Infinitus is not running: ask the human to
+   open it, then retry.
 
-8. **Final check** after the human adds an account:
-   `.../v0/management/auth-files` lists it with `"status":"active"`,
-   and a new `claude` session works. Stop there; do not touch the
-   credential files, do not add accounts yourself (the OAuth flow needs
-   the human's browser session).
+8. **Start the sign-in and hand off.** Per account:
+   ```sh
+   infinitusctl add cliproxy/claude
+   ```
+   then tell the human: "Sign in inside the Infinitus window that just
+   opened (private sheet or window, never your default browser)." Run
+   `infinitusctl wait-add --timeout 300`; it returns the fleets when the
+   credential lands. Repeat for each account.
+
+9. **Final check.** `infinitusctl fleets` shows the `cliproxy/claude`
+   fleet with each account `"usageStatus":"ok"`, and a new `claude`
+   session works. Stop there; do not touch the credential files, and
+   never call `infinitusctl remove` without the human's explicit go-ahead.
 
 Reference: `docs/guides/cliproxyapi-setup.md` in the Infinitus repo for
 the human-facing walkthrough and the routing/caching notes.
