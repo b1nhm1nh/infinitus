@@ -47,6 +47,25 @@ struct PanelTheme: Encodable {
     let name: String
 }
 
+/// Footer chips (#9 parity — the macOS popup's FooterChips): Anthropic
+/// service status, live-session counts, the auto-switch engine badge.
+/// All optional on `PanelPayload` so an older panel that ignores them
+/// still decodes.
+struct PanelServiceStatus: Encodable {
+    let indicator: String   // none | minor | major | critical | unknown
+    let word: String
+}
+
+struct PanelSessionsChip: Encodable {
+    let busy: Int
+    let total: Int
+}
+
+struct PanelEngine: Encodable {
+    let running: Bool
+    let word: String   // "auto" | "off" — the mac's EngineBadgeText wording
+}
+
 /// Present only when EVERY account is at a limit: the account that
 /// recovers first (raw ISO instant — the panel ticks the countdown
 /// itself) and how many limit-stopped sessions wait to be resumed.
@@ -68,6 +87,10 @@ struct PanelPayload: Encodable {
     /// Compact session-progress rows (issue #13 step 4) — busy/waiting
     /// sessions, capped, additive field so older panels ignore it.
     let sessions: [SessionPanelRow]
+    /// Footer chips (#9 parity), all nil in the error path.
+    let serviceStatus: PanelServiceStatus?
+    let sessionsChip: PanelSessionsChip?
+    let engine: PanelEngine?
     let error: String?
 }
 
@@ -154,8 +177,10 @@ struct InfinitusTray {
             // MirrorExporter). Own throttle, own demo-cswap gate.
             let claudeDir = ClaudeSessions.configHome()
             let session = sessionRows(claudeDir: claudeDir, now: Date())
+            let footer = await FooterState.current()
             TrayMirror.export(raw: raw, sessions: session.rows,
                               enginePath: bin, prefs: FleetPrefs(themeID: theme.id),
+                              serviceStatus: footer.serviceStatus, engine: footer.engine,
                               progressByPid: session.progressByPid)
             // Engine installed, fleet empty: a bare glyph with no
             // tooltip reads as broken — onboard instead.
@@ -293,7 +318,8 @@ struct InfinitusTray {
                 schemaVersion: 1, themeId: theme.id,
                 title: "\(TitleFormatter.icon) \(message)", sessionsLine: nil,
                 activeNumber: nil, accounts: [], themes: themes,
-                nextRecovery: nil, sessions: [], error: message))
+                nextRecovery: nil, sessions: [],
+                serviceStatus: nil, sessionsChip: nil, engine: nil, error: message))
         }
         guard let bin = CswapLocator.locate() else {
             emitError("cswap not found")
@@ -403,8 +429,10 @@ struct InfinitusTray {
             let (sessions, progressByPid) = sessionRows(claudeDir: claudeDir, now: now)
             // Fleet mirror export (#9 phase 1 parity — macOS's
             // MirrorExporter). Shares the throttle sidecar with status().
+            let footer = await FooterState.current(now: now)
             TrayMirror.export(raw: raw, sessions: sessions, enginePath: bin,
                               prefs: FleetPrefs(themeID: theme.id, sortByHeadroom: !engineOrder),
+                              serviceStatus: footer.serviceStatus, engine: footer.engine,
                               progressByPid: progressByPid, now: now)
             emitPanel(PanelPayload(
                 schemaVersion: 1, themeId: theme.id,
@@ -413,7 +441,10 @@ struct InfinitusTray {
                     : TitleFormatter.format(account: active, prefs: prefs, now: now),
                 sessionsLine: list.liveSessions.map { SessionSummary.tooltip($0) },
                 activeNumber: active?.number, accounts: accounts,
-                themes: themes, nextRecovery: panelRecovery, sessions: sessions, error: nil))
+                themes: themes, nextRecovery: panelRecovery, sessions: sessions,
+                serviceStatus: footer.panelStatus,
+                sessionsChip: list.liveSessions.map { PanelSessionsChip(busy: $0.busy, total: $0.total) },
+                engine: footer.panelEngine, error: nil))
         } catch {
             emitError("engine error: \(error)")
         }

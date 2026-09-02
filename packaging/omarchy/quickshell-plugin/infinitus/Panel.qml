@@ -698,12 +698,98 @@ Panel {
             foreground: root.contentForeground
           }
 
-          // ---- Footer: theme stepper on the right. Rotate is no longer a
-          // button (obsolete with auto-rotation, user 2026-09-02) — the
-          // `r` key and the bar-widget activation still rotate.
+          // ---- Footer: status/sessions/engine chips on the left (#9
+          // parity with the macOS popup's FooterChips), theme stepper on
+          // the right. Rotate is no longer a button (obsolete with
+          // auto-rotation, user 2026-09-02) — the `r` key and the
+          // bar-widget activation still rotate.
           Item {
             width: parent.width
             height: themeNav.height
+
+            Row {
+              id: footerChips
+              anchors.left: parent.left
+              anchors.verticalCenter: parent.verticalCenter
+              spacing: Style.space(10)
+
+              // Anthropic service status: dot + word, same wording as
+              // the mac's ServiceStatusModel.shortText.
+              Row {
+                visible: !!(root.fleet && root.fleet.serviceStatus)
+                anchors.verticalCenter: parent.verticalCenter
+                spacing: Style.space(4)
+
+                Rectangle {
+                  width: Style.space(7)
+                  height: Style.space(7)
+                  radius: width / 2
+                  anchors.verticalCenter: parent.verticalCenter
+                  color: {
+                    var ind = root.fleet && root.fleet.serviceStatus ? root.fleet.serviceStatus.indicator : ""
+                    return ind === "none" ? "green"
+                         : ind === "minor" ? "yellow"
+                         : ind === "major" ? "orange"
+                         : ind === "critical" ? "red"
+                         : "gray"
+                  }
+                }
+
+                Text {
+                  textFormat: Text.PlainText
+                  anchors.verticalCenter: parent.verticalCenter
+                  text: root.fleet && root.fleet.serviceStatus ? root.fleet.serviceStatus.word : "status"
+                  color: root.mutedForeground
+                  font.family: root.contentFontFamily
+                  font.pixelSize: Style.font.caption
+                }
+              }
+
+              // Live Claude Code sessions: "N working · M" while busy,
+              // just the total otherwise (FooterChips' agentChip).
+              Row {
+                visible: !!(root.fleet && root.fleet.sessionsChip)
+                anchors.verticalCenter: parent.verticalCenter
+                spacing: Style.space(4)
+
+                Rectangle {
+                  width: Style.space(7)
+                  height: Style.space(7)
+                  radius: width / 2
+                  anchors.verticalCenter: parent.verticalCenter
+                  color: (root.fleet && root.fleet.sessionsChip && root.fleet.sessionsChip.busy > 0)
+                    ? "orange" : root.mutedForeground
+                }
+
+                Text {
+                  textFormat: Text.PlainText
+                  anchors.verticalCenter: parent.verticalCenter
+                  text: {
+                    var chip = root.fleet ? root.fleet.sessionsChip : null
+                    if (!chip) return ""
+                    return chip.busy > 0 ? (chip.busy + " working · " + chip.total) : String(chip.total)
+                  }
+                  color: (root.fleet && root.fleet.sessionsChip && root.fleet.sessionsChip.busy > 0)
+                    ? "orange" : root.mutedForeground
+                  font.family: root.contentFontFamily
+                  font.pixelSize: Style.font.caption
+                }
+              }
+
+              // Auto-switch engine badge: alive/not, mac's EngineBadgeText
+              // wording ("auto" / "off") — informational only here, the
+              // tray has no supervisor to toggle.
+              Text {
+                textFormat: Text.PlainText
+                visible: !!(root.fleet && root.fleet.engine)
+                anchors.verticalCenter: parent.verticalCenter
+                text: root.fleet && root.fleet.engine ? root.fleet.engine.word : ""
+                color: (root.fleet && root.fleet.engine && root.fleet.engine.running)
+                  ? "green" : root.mutedForeground
+                font.family: root.contentFontFamily
+                font.pixelSize: Style.font.caption
+              }
+            }
 
             Row {
               id: themeNav
