@@ -82,11 +82,15 @@ file keeps the shipped log and the deferred-by-design notes.
   chooser (`is_webui=true`, shared per-account cookie jar); Accounts tab
   lists every fleet with one row design; usage polled once per account
   (cache + per-email dedupe + `offerSharedUsage`). Verified live with two
-  credentials. Follow-ups: routing-strategy picker (+ session-affinity
-  note), switch/remove live round-trip on a throwaway credential,
-  fixtures from redacted live captures, mirror carrying `[EngineFleet]`
-  for the phone, Linux tray build check, upstream quota endpoint PR.
-  Codex onto AccountEngine parked (user 2026-09-02: focus on Claude).
+  credentials. Evening: routing picker on the CLIProxyAPI tab (PUT
+  `routing/strategy`, caching/affinity notes), switch + strategy live
+  round-trips (reversible; remove stays stub-only), redacted 7.2.145
+  live fixtures, `MirrorSnapshot.fleets` for the phone (iOS side still
+  to consume it), Linux docker build green (Core + Tray), guides in
+  docs/guides/ (human walkthrough + agent brief), upstream draft for a
+  session-affinity route (docs/research/, not posted). Still open:
+  upstream quota endpoint PR; iOS FleetScreen stacking `fleets`. Codex
+  onto AccountEngine parked (user 2026-09-02: focus on Claude).
 - #9 Mobile companion app (brainstorm done, user picks pending)
 - #10 Human handoffs: AUR publish, Linux real-account cswap, signing
 - ~~#11 Full-screen mode~~ → shipped 2026-09-01 (Display → Fleet wall,
