@@ -1,14 +1,14 @@
 import Foundation
 
-/// Cross-poll memory of each account's last-seen 7-day `resetsAt`
-/// (issue #16). The engine reports an untouched window as bare
-/// `"sevenDay": {"pct": 0}` for two different reasons it can't tell
-/// apart: the window has genuinely never started (no reset to show),
-/// or the window is mid-run and the engine just went quiet on the
-/// reset time. Remembering the last resetsAt this app itself observed
-/// lets the Ready cell tell them apart: still in the future -> the
-/// window is running, keep showing it; past or never seen -> nothing
-/// to show.
+/// Cross-poll memory of each account's 7-day reset slot (issue #16).
+/// Anthropic's weekly window resets at a FIXED time each week, assigned
+/// per account (support.claude.com "How do usage and length limits
+/// work"), but the usage endpoint reports no `resets_at` while the
+/// window's usage is 0 — so the engine shows an untouched account as
+/// bare `"sevenDay": {"pct": 0}`. Any resetsAt this app ever saw for the
+/// account pins its slot: the next reset is that instant stepped
+/// forward by whole weeks (user 2026-09-03: a fresh account's first
+/// message showed "Resets Fri 8:00 AM" — the very slot remembered).
 ///
 /// Fed by `UsageHistoryRecorder` (an actor) and read by MainActor
 /// SwiftUI views, so this is a lock, not actor isolation — reads from
@@ -31,12 +31,19 @@ public final class WeeklyResetMemory: @unchecked Sendable {
         byEmail[email] = resetsAt
     }
 
-    /// The remembered resetsAt for `email`, only if still in the future
-    /// (a past one means the window already rolled — nothing to show).
+    /// The next reset in `email`'s weekly slot: the remembered instant,
+    /// stepped forward by whole weeks until it's ahead of `now`.
     public func futureReset(email: String, now: Date = Date()) -> Date? {
         lock.lock(); defer { lock.unlock() }
-        guard let d = byEmail[email], d > now else { return nil }
-        return d
+        guard let d = byEmail[email] else { return nil }
+        return Self.nextInSlot(d, after: now)
+    }
+
+    static func nextInSlot(_ seen: Date, after now: Date) -> Date {
+        let week: TimeInterval = 7 * 24 * 3600
+        guard seen <= now else { return seen }
+        let weeks = ((now.timeIntervalSince(seen)) / week).rounded(.down) + 1
+        return seen.addingTimeInterval(weeks * week)
     }
 
     /// Seeds from history samples (the existing usage-history JSONL) so
@@ -71,15 +78,14 @@ public enum ReadyWeeklyCaption {
         }
         guard pct <= 0 else { return nil }
         if let remembered, remembered > now {
-            // Say it's memory, not measurement: the engine reports no
-            // window right now, and a 95%→0% flip with the old reset still
-            // ahead was read as live data (user 2026-09-03).
+            // The account's fixed weekly slot, from memory — as good as
+            // the engine's own figure, so it wears the same label.
             let iso = ISO8601DateFormatter().string(from: remembered)
-            let when = compact
+            return compact
                 ? ResetLabel.compact(resetsAt: iso, countdown: nil, now: now)
                 : ResetLabel.label(resetsAt: iso, countdown: nil, clock: nil, now: now)
-            return when.map { (compact ? "last seen " : "7d last seen ") + $0 }
         }
-        return compact ? "7d: first use" : "7d starts on first use"
+        // Never seen this account's slot: the first message reveals it.
+        return compact ? "7d: slot unknown" : "7d reset unknown until first use"
     }
 }
