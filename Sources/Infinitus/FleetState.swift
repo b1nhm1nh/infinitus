@@ -191,6 +191,11 @@ final class FleetState: ObservableObject, Identifiable {
         perform { try await engine.setHold(fleet: provider, number: number, held: !enabled) }
     }
 
+    func remove(_ number: Int) {
+        let engine = engine, provider = provider
+        perform { try await engine.remove(fleet: provider, number: number) }
+    }
+
     /// Rename = set/clear the account's alias, so every frontend
     /// (TUI, CLI, popup) shows the same name.
     func rename(_ number: Int, to name: String) {
@@ -275,7 +280,14 @@ extension FleetState: FleetModel {
     var introTitle: String { host.introTitle }
     var introBarDelay: Double { host.introBarDelay }
 
-    func startRelogin(_ account: Account) { host.startRelogin(account) }
+    /// cswap re-logins run the app's token flow; an OAuth engine (the
+    /// proxy) signs in through the browser instead.
+    func startRelogin(_ account: Account) {
+        if engineID == CswapEngine.engineID { host.startRelogin(account) }
+        else if capabilities.contains(.addOAuth) {
+            host.addOAuthAccount(engineID: engineID, provider: provider)
+        }
+    }
     func toggleEngine() { host.toggleEngine() }
     func relaunchApp() { host.relaunchApp() }
     func openSettings() { host.openSettings() }

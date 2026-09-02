@@ -199,6 +199,69 @@ final class AppModel: ObservableObject {
         }
     }
 
+    // MARK: engines (#8) — which engines the registry runs. Like
+    // mockMode, flipping one relaunches: the registry is built once at
+    // init and the restart IS the re-detect.
+    @Published var cswapEnabled: Bool {
+        didSet {
+            guard cswapEnabled != oldValue else { return }
+            defaults.set(cswapEnabled, forKey: "engine_cswap_enabled")
+            relaunchApp()
+        }
+    }
+    @Published var cliproxyEnabled: Bool {
+        didSet {
+            guard cliproxyEnabled != oldValue else { return }
+            defaults.set(cliproxyEnabled, forKey: "engine_cliproxy_enabled")
+            relaunchApp()
+        }
+    }
+    /// The proxy's management endpoint; the key lives in the keychain
+    /// under this string (Keychain.swift).
+    var cliproxyBaseURL: String {
+        defaults.string(forKey: "cliproxy_base_url") ?? CLIProxyEngine.defaultBaseURL.absoluteString
+    }
+    var cliproxyKeyPresent: Bool { Keychain.read(account: cliproxyBaseURL) != nil }
+
+    /// Pane "Save & restart": URL to defaults, key to the keychain
+    /// (empty key = clear), then relaunch so the registry rebuilds.
+    func saveCLIProxy(baseURL: String, key: String) {
+        let url = baseURL.trimmingCharacters(in: .whitespaces)
+        let old = cliproxyBaseURL
+        if old != url { Keychain.delete(account: old) }
+        defaults.set(url, forKey: "cliproxy_base_url")
+        let trimmed = key.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty { Keychain.delete(account: url) }
+        else { _ = Keychain.write(account: url, value: trimmed) }
+        relaunchApp()
+    }
+
+    static let cliproxyLedgerURL: URL = {
+        FileManager.default.urls(for: .applicationSupportDirectory,
+                                 in: .userDomainMask)[0]
+            .appendingPathComponent("Infinitus/engines/cliproxy/usage.jsonl")
+    }()
+
+    /// OAuth add for an engine that signs accounts in through a browser
+    /// (the proxy): open the URL it hands us, poll until it lands.
+    func addOAuthAccount(engineID: String, provider: Provider) {
+        guard let engine = registry.engine(id: engineID),
+              engine.capabilities.contains(.addOAuth), !addingFirstAccount else { return }
+        addingFirstAccount = true
+        firstAccountMessage = nil
+        Task {
+            do {
+                let url = try await engine.beginOAuthAdd(fleet: provider)
+                NSWorkspace.shared.open(url)
+                try await engine.awaitOAuthAdd()
+                await refreshSnapshot()
+            } catch {
+                firstAccountMessage = (error as? EngineError)?.errorDescription ?? "\(error)"
+            }
+            addingFirstAccount = false
+        }
+    }
+
     /// Intro phase timing: bars (and the active-row flash) hold until
     /// the content entrance has fully landed (user 2026-08-30: "only
     /// when content in full display -> play bar fills + flash").
@@ -350,6 +413,8 @@ final class AppModel: ObservableObject {
         // property is set (two-phase init forbids self.mockMode there).
         let mock = defaults.object(forKey: "mock_mode") as? Bool ?? false
         mockMode = mock
+        cswapEnabled = defaults.object(forKey: "engine_cswap_enabled") as? Bool ?? true
+        cliproxyEnabled = defaults.object(forKey: "engine_cliproxy_enabled") as? Bool ?? false
         keepAwake = defaults.object(forKey: "keep_awake") as? Bool ?? false
         autoOrder = defaults.object(forKey: "auto_order") as? Bool ?? false
         sortByHeadroom = defaults.object(forKey: "sort_headroom") as? Bool ?? true
@@ -379,7 +444,15 @@ final class AppModel: ObservableObject {
             lastError = "cswap not found — install it (uv tool install claude-swap)"
         }
         if !playground { sync.attach(model: self) }
-        if let cli { registry.register(CswapEngine(cli: cli)) }
+        if let cli, cswapEnabled || playground { registry.register(CswapEngine(cli: cli)) }
+        // The proxy is never part of the playground (isolation contract)
+        // and needs its key before it can be an engine at all.
+        if !playground, cliproxyEnabled,
+           let url = URL(string: cliproxyBaseURL),
+           let key = Keychain.read(account: cliproxyBaseURL) {
+            registry.register(CLIProxyEngine(
+                baseURL: url, managementKey: key, ledgerURL: Self.cliproxyLedgerURL))
+        }
         // Last run's snapshot renders NOW — the popup otherwise opened
         // as an empty sliver and expanded seconds later when the first
         // `cswap list` returned, eating the intro (user 2026-08-30).
@@ -468,7 +541,7 @@ final class AppModel: ObservableObject {
         }
         applyMirrorLAN()
         guard supervisor == nil, refreshTask == nil else { return }
-        if let cli, !isPlayground { startEngine(binary: cli.binaryPath) }
+        if let cli, !isPlayground, cswapEnabled { startEngine(binary: cli.binaryPath) }
         guard !registry.engines.isEmpty else { return }
         refreshTask = Task { [weak self] in
             while !Task.isCancelled {
@@ -730,6 +803,12 @@ final class AppModel: ObservableObject {
                 anyChanged = anyChanged || change.changed
                 if state === primary { primaryResult = (fleet, change) }
             }
+        }
+        if let proxy = registry.engine(id: CLIProxyEngine.engineID) as? CLIProxyEngine {
+            let strategy = await proxy.routingStrategy ?? ""
+            fleetCaveats[CLIProxyEngine.engineID] =
+                (strategy.isEmpty || strategy == "fill-first")
+                    ? nil : "\(strategy) routing ignores priority — switch is advisory"
         }
         if !isPlayground {
             let cache = fleets.compactMap(\.lastFleet)

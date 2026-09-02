@@ -190,3 +190,169 @@ extension EngineSupervisor.State {
         return false
     }
 }
+
+/// CLIProxyAPI provider pane (#8): the second engine. Talks only to the
+/// proxy's Management API with a keychain-held key; never its files.
+struct CLIProxyEnginePane: View {
+    @ObservedObject var model: AppModel
+    @State private var baseURL = ""
+    @State private var key = ""
+    @State private var probe: String?
+    @State private var probing = false
+
+    private var proxyFleets: [FleetState] {
+        model.fleets.filter { $0.engineID == CLIProxyEngine.engineID }
+    }
+
+    var body: some View {
+        Form {
+            Section("Engines") {
+                Toggle("cswap (credential swap under Claude Code)", isOn: $model.cswapEnabled)
+                Toggle("CLIProxyAPI (rotates behind its own endpoint)", isOn: $model.cliproxyEnabled)
+                    .disabled(!model.cliproxyKeyPresent && !model.cliproxyEnabled)
+                if model.cswapEnabled && model.cliproxyEnabled {
+                    Text("Both engines are on. cswap swaps the credential under "
+                         + "Claude Code; the proxy rotates behind its own endpoint — "
+                         + "for the same accounts they fight. Run one per account set.")
+                        .font(.caption).foregroundStyle(.orange)
+                }
+                Text("Flipping an engine restarts the app.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            Section("CLIProxyAPI — management API") {
+                TextField("Base URL", text: $baseURL, prompt: Text(CLIProxyEngine.defaultBaseURL.absoluteString))
+                    .textFieldStyle(.roundedBorder)
+                SecureField("Management key", text: $key,
+                            prompt: Text(model.cliproxyKeyPresent ? "•••••••• (stored in keychain)" : "remote-management.secret-key"))
+                    .textFieldStyle(.roundedBorder)
+                HStack {
+                    Button(probing ? "Testing…" : "Test connection") { test() }
+                        .disabled(probing)
+                    Button("Save & restart") {
+                        model.saveCLIProxy(baseURL: baseURL.isEmpty ? model.cliproxyBaseURL : baseURL,
+                                           key: key.isEmpty ? (Keychain.read(account: model.cliproxyBaseURL) ?? "") : key)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    if model.cliproxyKeyPresent {
+                        Button("Forget key") { model.saveCLIProxy(baseURL: model.cliproxyBaseURL, key: "") }
+                    }
+                }
+                if let probe {
+                    Text(probe).font(.caption).foregroundStyle(.secondary)
+                        .textSelection(.enabled)
+                }
+                if let err = model.engineErrors[CLIProxyEngine.engineID] {
+                    Text(err).font(.caption).foregroundStyle(.orange)
+                }
+                if let caveat = model.fleetCaveats[CLIProxyEngine.engineID] {
+                    Text(caveat).font(.caption).foregroundStyle(.orange)
+                }
+                Text("The key is the proxy's remote-management.secret-key; it is kept "
+                     + "in the keychain and sent as a bearer header. Infinitus never "
+                     + "reads the proxy's config or credential files.")
+                    .font(.caption).foregroundStyle(.secondary)
+                if let proxy = model.cliProxy {
+                    Text(DetectionLines.proxyLine(proxy, live: model.cliProxyLive))
+                        .font(.caption2).foregroundStyle(.tertiary)
+                }
+            }
+            ForEach(proxyFleets) { fleet in
+                CLIProxyFleetSection(fleet: fleet, model: model)
+            }
+            if model.cliproxyEnabled, proxyFleets.isEmpty {
+                Section("Accounts") {
+                    Button("Add Claude account (sign in via browser)…") {
+                        model.addOAuthAccount(engineID: CLIProxyEngine.engineID, provider: .claude)
+                    }
+                    .disabled(model.addingFirstAccount)
+                    if let msg = model.firstAccountMessage {
+                        Text(msg).font(.caption).foregroundStyle(.orange)
+                    }
+                }
+            }
+        }
+        .formStyle(.grouped)
+        .onAppear { baseURL = model.cliproxyBaseURL }
+    }
+
+    private func test() {
+        let urlString = baseURL.isEmpty ? model.cliproxyBaseURL : baseURL
+        guard let url = URL(string: urlString) else { probe = "bad URL"; return }
+        let k = key.isEmpty ? (Keychain.read(account: model.cliproxyBaseURL) ?? "") : key
+        guard !k.isEmpty else { probe = "enter the management key first"; return }
+        probing = true
+        Task {
+            let engine = CLIProxyEngine(baseURL: url, managementKey: k)
+            do {
+                let p = try await engine.probe()
+                probe = "reachable — \(p.credentialFiles) credential file\(p.credentialFiles == 1 ? "" : "s")"
+                    + (p.strategy.map { ", routing \($0)" } ?? "")
+            } catch {
+                probe = (error as? EngineError)?.errorDescription ?? "\(error)"
+            }
+            probing = false
+        }
+    }
+}
+
+/// One proxy fleet's credentials with the full action set (hold,
+/// switch-as-priority, rename, remove, add) — the settings-side twin
+/// of the popup rows.
+struct CLIProxyFleetSection: View {
+    @ObservedObject var fleet: FleetState
+    @ObservedObject var model: AppModel
+
+    var body: some View {
+        Section("\(fleet.provider.displayName) — \(fleet.accounts.count) credential\(fleet.accounts.count == 1 ? "" : "s")") {
+            ForEach(fleet.accounts, id: \.number) { a in
+                HStack {
+                    Image(systemName: a.active ? "checkmark.circle.fill" : "circle")
+                        .foregroundStyle(a.active ? .green : .secondary)
+                    VStack(alignment: .leading) {
+                        Text(a.alias ?? a.email)
+                        Text(statusLine(a)).font(.caption).foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    if !a.active, fleet.capabilities.contains(.switch) {
+                        Button("Switch") { fleet.switchTo(a.number) }
+                            .help("Raise this credential to the top priority tier")
+                    }
+                    if fleet.capabilities.contains(.hold) {
+                        Button(a.disabled == true ? "Unhold" : "Hold") {
+                            fleet.setRotation(a.number, enabled: a.disabled == true)
+                        }
+                    }
+                    if a.usageStatus == "relogin_required", fleet.capabilities.contains(.addOAuth) {
+                        Button("Re-login…") { fleet.startRelogin(a) }
+                    }
+                    if fleet.capabilities.contains(.remove) {
+                        Button(role: .destructive) {
+                            fleet.remove(a.number)
+                        } label: { Image(systemName: "trash") }
+                            .buttonStyle(.borderless)
+                            .help("Delete this credential file from the proxy")
+                    }
+                }
+            }
+            if fleet.capabilities.contains(.addOAuth), fleet.provider == .claude || fleet.provider == .codex {
+                Button("Add \(fleet.provider.displayName) account (sign in via browser)…") {
+                    model.addOAuthAccount(engineID: fleet.engineID, provider: fleet.provider)
+                }
+                .disabled(model.addingFirstAccount)
+                if let msg = model.firstAccountMessage {
+                    Text(msg).font(.caption).foregroundStyle(.orange)
+                }
+            }
+        }
+    }
+
+    private func statusLine(_ a: Account) -> String {
+        var parts: [String] = []
+        if a.disabled == true { parts.append("held") }
+        parts.append(a.usageStatus == "relogin_required" ? "re-login needed" : a.usageStatus)
+        if let plan = a.plan { parts.append(plan) }
+        if let pct = a.usage?.fiveHour?.pct { parts.append("5h \(Int(pct))%") }
+        if let pct = a.usage?.sevenDay?.pct { parts.append("7d \(Int(pct))%") }
+        return parts.joined(separator: " · ")
+    }
+}

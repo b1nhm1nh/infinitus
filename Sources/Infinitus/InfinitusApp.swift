@@ -201,6 +201,13 @@ struct InfinitusApp: App {
                                                    settings: settingsModel,
                                                    update: updateModel,
                                                    reliability: reliabilityModel))),
+        SettingsTab(title: "CLIProxyAPI", symbol: "network",
+                    keywords: ["proxy", "cliproxy", "router", "management",
+                               "key", "engine", "provider", "claude"],
+                    provider: ProviderBadge(live: model.cliproxyEnabled
+                                            && model.engineErrors[CLIProxyEngine.engineID] == nil
+                                            && model.fleets.contains { $0.engineID == CLIProxyEngine.engineID }),
+                    view: AnyView(CLIProxyEnginePane(model: model))),
         SettingsTab(title: "Codex", symbol: "circle.hexagongrid",
                     keywords: ["openai", "codex", "provider", "slots",
                                "accounts", "engine"],
@@ -1019,7 +1026,7 @@ struct FirstAccountCard: View {
 }
 
 /// Shared what-else-is-on-this-machine footnotes for both cards.
-private struct DetectionLines: View {
+struct DetectionLines: View {
     @ObservedObject var model: AppModel
     let afterInstall: Bool
 
