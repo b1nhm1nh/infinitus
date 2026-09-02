@@ -270,7 +270,7 @@ public enum JSONValue: Codable, Equatable, Sendable {
 /// `cswap usage --json` — estimated per-account token spend. The dollar
 /// figures are API-list-price estimates (the report's caveats say so);
 /// render them as estimates, never as a bill.
-public struct UsageReport: Decodable, Sendable {
+public struct UsageReport: Codable, Sendable {
     public let schemaVersion: Int
     public let days: Int
     public let estimatedTotalUSD: Double
@@ -283,12 +283,32 @@ public struct UsageReport: Decodable, Sendable {
     /// installed CLI simply yields no charts, never a decode failure.
     public let daily: [DailySlice]?
 
-    public struct PriceTable: Decodable, Sendable {
-        public let source: String
-        public let date: String
+    public init(schemaVersion: Int = 1, days: Int, estimatedTotalUSD: Double,
+                priceTable: PriceTable, accounts: [UsageBucket],
+                unattributed: UsageBucket? = nil, unpricedTokens: Int? = nil,
+                caveats: [String], daily: [DailySlice]? = nil) {
+        self.schemaVersion = schemaVersion
+        self.days = days
+        self.estimatedTotalUSD = estimatedTotalUSD
+        self.priceTable = priceTable
+        self.accounts = accounts
+        self.unattributed = unattributed
+        self.unpricedTokens = unpricedTokens
+        self.caveats = caveats
+        self.daily = daily
     }
 
-    public struct UsageBucket: Decodable, Sendable {
+    public struct PriceTable: Codable, Sendable {
+        public let source: String
+        public let date: String
+
+        public init(source: String, date: String) {
+            self.source = source
+            self.date = date
+        }
+    }
+
+    public struct UsageBucket: Codable, Sendable {
         public let number: Int?
         public let email: String?
         public let alias: String?
@@ -299,19 +319,48 @@ public struct UsageReport: Decodable, Sendable {
         public let cacheRead: Int
         public let cacheWrite: Int
         public let models: [ModelSlice]
+
+        public init(number: Int? = nil, email: String? = nil, alias: String? = nil,
+                    estimatedUSD: Double, messages: Int, input: Int, output: Int,
+                    cacheRead: Int, cacheWrite: Int, models: [ModelSlice]) {
+            self.number = number
+            self.email = email
+            self.alias = alias
+            self.estimatedUSD = estimatedUSD
+            self.messages = messages
+            self.input = input
+            self.output = output
+            self.cacheRead = cacheRead
+            self.cacheWrite = cacheWrite
+            self.models = models
+        }
     }
 
-    public struct DailySlice: Decodable, Sendable {
+    public struct DailySlice: Codable, Sendable {
         public let date: String        // "YYYY-MM-DD", local time
         public let account: Int?       // nil = unattributed
         public let estimatedUSD: Double
         public let messages: Int
+
+        public init(date: String, account: Int? = nil, estimatedUSD: Double,
+                    messages: Int) {
+            self.date = date
+            self.account = account
+            self.estimatedUSD = estimatedUSD
+            self.messages = messages
+        }
     }
 
-    public struct ModelSlice: Decodable, Sendable {
+    public struct ModelSlice: Codable, Sendable {
         public let model: String
         public let estimatedUSD: Double
         public let messages: Int
+
+        public init(model: String, estimatedUSD: Double, messages: Int) {
+            self.model = model
+            self.estimatedUSD = estimatedUSD
+            self.messages = messages
+        }
     }
 }
 
