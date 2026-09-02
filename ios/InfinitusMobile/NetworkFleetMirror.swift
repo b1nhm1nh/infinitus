@@ -77,6 +77,10 @@ actor NetworkFleetMirror: FleetMirror {
             UserDefaults.standard.string(forKey: Self.tokenKey) ?? "")
         let stored = candidateEndpoints()
         var lastError: Error?
+        // One short clause per route that failed, so the Settings line
+        // says WHICH way in is dead — "offline" alone sent the user
+        // rescanning when only the tunnel had changed.
+        var failures: [String] = []
         for text in stored {
             guard let manual = MirrorTransport.parseEndpoint(text) else { continue }
             let endpoint = NWEndpoint.hostPort(
@@ -101,6 +105,7 @@ actor NetworkFleetMirror: FleetMirror {
                 return cached
             } catch {
                 lastError = error
+                failures.append("\(Self.routeLabel(text)) \(Self.failureWord(error))")
             }
         }
         // No stored endpoint answered (or none is stored) — Bonjour is
@@ -109,7 +114,7 @@ actor NetworkFleetMirror: FleetMirror {
         guard let discovered = await firstEndpoint() else {
             statusText = stored.isEmpty
                 ? "no Mac found on this Wi-Fi"
-                : "couldn't reach any saved Mac"
+                : "couldn't reach any saved Mac — " + failures.joined(separator: " · ")
             if cached == nil, let lastError, lastError is DecodingError { throw lastError }
             return cached
         }
@@ -127,9 +132,9 @@ actor NetworkFleetMirror: FleetMirror {
                 + "Devices settings"
             return cached
         } catch {
-            statusText = cached == nil
-                ? "couldn't reach the Mac: \(error.localizedDescription)"
-                : "offline — showing the last snapshot"
+            failures.append("Wi-Fi discovery \(Self.failureWord(error))")
+            statusText = (cached == nil ? "couldn't reach the Mac — " : "offline — ")
+                + failures.joined(separator: " · ")
             // A decode failure is a real error; a network one just means
             // the Mac stepped away, and the cached fleet stays on screen.
             if cached == nil, error is DecodingError { throw error }
@@ -176,6 +181,23 @@ actor NetworkFleetMirror: FleetMirror {
             }
         }
         return nil
+    }
+
+    /// `192.168.2.36:47824` / `abc.trycloudflare.com` — the stored text
+    /// without its scheme, short enough for one status line.
+    private static func routeLabel(_ text: String) -> String {
+        guard let manual = MirrorTransport.parseEndpoint(text) else { return text }
+        let standardPort = manual.useTLS ? manual.port == 443 : manual.port == 80
+        return standardPort ? manual.host : "\(manual.host):\(manual.port)"
+    }
+
+    private static func failureWord(_ error: Error) -> String {
+        switch error {
+        case MirrorTransportError.http(let status): return "answered \(status)"
+        case MirrorTransportError.timedOut, MirrorTransportError.closed: return "didn't answer"
+        case is DecodingError: return "sent something unreadable"
+        default: return "unreachable"
+        }
     }
 
     private static func decode(_ data: Data) throws -> MirrorSnapshot {
