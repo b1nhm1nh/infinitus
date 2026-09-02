@@ -14,10 +14,11 @@ public enum ControlProtocol {
     /// to talk to a newer app so an agent never misreads a field.
     public static let schemaVersion = 1
 
-    /// `~/Library/Application Support/Infinitus/control.sock`.
+    /// `~/Library/Application Support/Infinitus/control/control.sock` —
+    /// the directory is 0700 (the app creates it before binding).
     public static func socketURL(home: String = NSHomeDirectory()) -> URL {
         URL(fileURLWithPath: home)
-            .appendingPathComponent("Library/Application Support/Infinitus/control.sock")
+            .appendingPathComponent("Library/Application Support/Infinitus/control/control.sock")
     }
 }
 
@@ -146,6 +147,9 @@ public struct ControlCommand: Codable, Sendable, Equatable {
         ControlCommand(name: "wait-add", options: ["--timeout <seconds, default 300>"], effect: .read,
                        summary: "Block until the running sign-in finishes.",
                        replyShape: "{done:Bool, error?, fleets}"),
+        ControlCommand(name: "show", args: ["popout|settings|wall"], effect: .write,
+                       summary: "Open a window: the pinned pop-out, Settings, or the wall (toggle).",
+                       replyShape: "{shown}"),
         ControlCommand(name: "engine", args: ["cswap|cliproxy", "on|off"], effect: .restart,
                        summary: "Turn an engine on or off. The app relaunches.",
                        replyShape: "{restarting:true}"),

@@ -21,7 +21,14 @@ final class ControlServer {
     func start() {
         let url = ControlProtocol.socketURL()
         let dir = url.deletingLastPathComponent()
-        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        // The socket lives in its own 0700 directory: NWListener binds
+        // asynchronously, so a mode set on the socket itself would leave
+        // a window another local user could connect in (push review
+        // 2026-09-03). The directory gate closes before the bind starts.
+        try? FileManager.default.createDirectory(
+            at: dir, withIntermediateDirectories: true,
+            attributes: [.posixPermissions: 0o700])
+        chmod(dir.path, 0o700)
         // A stale socket from a crashed instance must not block the bind.
         unlink(url.path)
         let params = NWParameters.tcp
@@ -153,6 +160,18 @@ final class ControlServer {
                 "error": error.map(JSONValue.string) ?? (stillRunning ? .string("timed out") : .null),
                 "fleets": try .of(fleetsPayload()),
             ] as [String: JSONValue]), error: stillRunning ? "timed out after \(Int(timeout))s" : error)
+
+        case "show":
+            guard let controller = AppDelegate.shared?.statusHolder?.controller else {
+                throw Fail("no status item yet")
+            }
+            switch r.args.first {
+            case "popout": controller.showPinnedWindow()
+            case "settings": controller.showSettingsWindow()
+            case "wall": controller.toggleWall()
+            default: throw Fail("usage: show popout|settings|wall")
+            }
+            return ControlReply(ok: true, result: .object(["shown": .string(r.args[0])]))
 
         case "engine":
             guard r.args.count == 2, ["on", "off"].contains(r.args[1]) else {
