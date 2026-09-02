@@ -142,6 +142,32 @@ file keeps the shipped log and the deferred-by-design notes.
       brainstorm in docs/research/session-progress.md)
 
 ## Shipped 2026-09-02/03 (remote access, engine ranking, two-session flow)
+- ~~#17 layer 1 session feed~~ → shipped 2026-09-03: `SessionFeed`
+  (InfinitusCore, zero-token parse of the session jsonl into
+  user/assistant/tool/question/permission/result/limit items,
+  consecutive-tool collapsing, `finalize` promotes an open tool call to
+  `permission` when the record says waiting), Mac `GET
+  /sessions/<pid>/tail?n=` (token-gated, 404 unknown pid, `n` clamped),
+  phone `SessionFeedScreen` (chat bubbles, tool chips, permission/question
+  cards, 5 s poll). Live: 200/404/401 verified on the bundled app.
+- ~~Linux parity (#9)~~ → shipped 2026-09-03: panel footer chips (service
+  status via cached Anthropic fetch, sessions, engine probe) and
+  `infinitus-tray serve/pair` on a POSIX HTTP listener with the same
+  token contract (docker: 401/401/200). Omarchy VM would not boot, so the
+  QML footer render is unverified.
+- ~~Named Cloudflare tunnel route~~ → shipped 2026-09-03: `NamedTunnel`
+  (`cloudflared tunnel run`, token in the keychain under
+  `com.huuloc.infinitus.cloudflare-tunnel`, `TUNNEL_TOKEN` env), Devices →
+  Anywhere → "Expose through your own Cloudflare tunnel" (hostname, masked
+  token, Save/Forget, port-mismatch warning), pair route "Anywhere, your
+  domain" ahead of the quick tunnel. Awaiting the user's hostname + token.
+  Linux tray: `parity pending`.
+- ~~Phone status names the failed route~~ → shipped 2026-09-03: "couldn't
+  reach any saved Mac — 192.168.2.36:47824 didn't answer · …trycloudflare.com
+  answered 530 · Wi-Fi discovery didn't answer" instead of "offline". The
+  5G "offline" was the phone's stale Bonjour result from the last Wi-Fi
+  session. Device builds need `CODE_SIGNING_ALLOWED=YES` on the xcodebuild
+  line (project.yml sets NO for the simulator).
 - ~~Backend-free remote access (#9)~~ → pairing token (24×base32,
   `Authorization: Bearer` or `?t=`, 401 before routing), QR +
   `infinitus://pair`, Tailscale route (100.64/10 detection; listener
