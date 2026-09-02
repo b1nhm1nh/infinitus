@@ -109,6 +109,8 @@ public protocol AccountEngine: Sendable {
 
     /// One fleet per provider the engine holds (the proxy pools several).
     func snapshot() async throws -> [EngineFleet]
+    /// Usage other engines fetched this refresh, by email (see SharedUsage).
+    func offerSharedUsage(_ byEmail: [String: SharedUsage]) async
 
     func switchTo(fleet: Provider, number: Int) async throws
     func rotate(fleet: Provider) async throws
@@ -126,7 +128,21 @@ public protocol AccountEngine: Sendable {
 
 /// Every action is opt-in: the defaults throw so a UI that ignored
 /// `capabilities` fails loudly instead of silently doing nothing.
+/// Usage another engine already fetched for an account, keyed by email
+/// when offered — so an engine holding the same account does not poll
+/// Anthropic's usage endpoint again (two fleets, one 429 budget).
+public struct SharedUsage: Sendable {
+    public let usage: Usage
+    public let at: Date
+    public init(usage: Usage, at: Date) {
+        self.usage = usage
+        self.at = at
+    }
+}
+
 public extension AccountEngine {
+    /// Default: engines that read usage from their own store ignore it.
+    func offerSharedUsage(_ byEmail: [String: SharedUsage]) async {}
     func switchTo(fleet: Provider, number: Int) async throws { throw EngineError.unsupported("switch") }
     func rotate(fleet: Provider) async throws { throw EngineError.unsupported("rotate") }
     func reorder(fleet: Provider, _ numbers: [Int]) async throws { throw EngineError.unsupported("reorder") }

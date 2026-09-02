@@ -44,6 +44,14 @@ public actor CLIProxyEngine: AccountEngine {
     private var profiles: [String: (profile: ProxyProfile, at: Date)] = [:]
     /// Per-credential usage backoff after a 429 (Retry-After or 5 min).
     private var usageBackoff: [String: Date] = [:]
+    /// Last good usage per credential, reused until `usageTTL` old: the
+    /// gauges refresh every minute, Anthropic's usage endpoint does not
+    /// take that per credential (429s, user 2026-09-02).
+    private var usageCache: [String: (usage: Usage, at: Date)] = [:]
+    private let usageTTL: TimeInterval
+    /// Usage another engine fetched for the same email this refresh —
+    /// the same account in two fleets gets one poll, not two.
+    private var sharedUsage: [String: SharedUsage] = [:]
     /// Credentials whose token Anthropic rejected as expired — sticky
     /// until a usage call succeeds again (a 429 in between says nothing
     /// about the token).
@@ -53,11 +61,18 @@ public actor CLIProxyEngine: AccountEngine {
     public private(set) var routingStrategy: String?
 
     public init(baseURL: URL = CLIProxyEngine.defaultBaseURL, managementKey: String,
-                session: URLSession = .shared, ledgerURL: URL? = nil) {
+                session: URLSession = .shared, ledgerURL: URL? = nil,
+                usageTTL: TimeInterval = 300) {
         self.baseURL = baseURL
         self.key = managementKey
         self.session = session
         self.ledger = ledgerURL.map { ProxyUsageLedger(url: $0) }
+        self.usageTTL = usageTTL
+    }
+
+    public func offerSharedUsage(_ byEmail: [String: SharedUsage]) async {
+        sharedUsage = Dictionary(byEmail.map { ($0.key.lowercased(), $0.value) },
+                                 uniquingKeysWith: { a, _ in a })
     }
 
     // MARK: HTTP
@@ -147,14 +162,38 @@ public actor CLIProxyEngine: AccountEngine {
         routingStrategy = try? await fetchStrategy()
 
         // Gauges: only Claude credentials expose oauth/usage; held ones
-        // are skipped (nothing routes to them, and the poll budget is
-        // per account — see cswap's poll_policy).
-        let wanted = files.filter {
-            ProxyMapping.provider(for: $0.provider ?? "") == .claude
-                && $0.disabled != true
-                && (usageBackoff[$0.name].map { $0 <= now } ?? true)
-        }
+        // are skipped (nothing routes to them). One Anthropic call per
+        // ACCOUNT per usageTTL, not per credential per refresh: a fresh
+        // cache entry, or usage another engine fetched for the same
+        // email, is reused, and two credentials with one email share a
+        // call — the 429 budget is per account (user 2026-09-02).
+        func fresh(_ at: Date) -> Bool { now.timeIntervalSince(at) < usageTTL }
         var usage: [String: Usage] = [:]
+        var wanted: [ProxyAuthFile] = []
+        var leaderByEmail: [String: String] = [:]
+        var followers: [String: [String]] = [:]
+        for f in files where ProxyMapping.provider(for: f.provider ?? "") == .claude && f.disabled != true {
+            let email = f.email?.lowercased()
+            if let email, let shared = sharedUsage[email], fresh(shared.at) {
+                usage[f.name] = shared.usage
+                continue
+            }
+            if let cached = usageCache[f.name], fresh(cached.at) {
+                usage[f.name] = cached.usage
+                continue
+            }
+            guard usageBackoff[f.name].map({ $0 <= now }) ?? true else { continue }
+            // An expired credential always probes itself (only a 200
+            // clears the sticky state); the rest share a leader per email.
+            if let email, !expiredNames.contains(f.name) {
+                if let leader = leaderByEmail[email] {
+                    followers[leader, default: []].append(f.name)
+                    continue
+                }
+                leaderByEmail[email] = f.name
+            }
+            wanted.append(f)
+        }
         var failed: Set<String> = []
         await withTaskGroup(of: (String, UsageOutcome, ProxyProfile?).self) { group in
             var pending = wanted.makeIterator()
@@ -193,9 +232,18 @@ public actor CLIProxyEngine: AccountEngine {
                 switch outcome {
                 case .ok(let u):
                     expiredNames.remove(name)
-                    if let u { usage[name] = u }
-                case .expired: expiredNames.insert(name)
-                case .failed: failed.insert(name)
+                    if let u {
+                        for n in [name] + (followers[name] ?? []) {
+                            usage[n] = u
+                            usageCache[n] = (u, now)
+                        }
+                    }
+                case .expired:
+                    expiredNames.insert(name)
+                    followers[name]?.forEach { failed.insert($0) }
+                case .failed:
+                    failed.insert(name)
+                    followers[name]?.forEach { failed.insert($0) }
                 }
                 if let profile { profiles[name] = (profile, now) }
                 if let next = pending.next() { launch(next) }

@@ -901,6 +901,23 @@ final class AppModel: ObservableObject {
                 if state === primary { primaryResult = (fleet, change) }
             }
         }
+        // The same account in two fleets: hand each engine the usage the
+        // others fetched, so Anthropic sees one usage poll per email,
+        // not one per engine (user 2026-09-02: 429s).
+        let stamp = Date()
+        for engine in engines {
+            var byEmail: [String: SharedUsage] = [:]
+            for r in results where r.id != engine.id {
+                for fleet in r.fleets ?? [] {
+                    for a in fleet.accounts where a.usageStatus == "ok" {
+                        if let u = a.usage, byEmail[a.email] == nil {
+                            byEmail[a.email] = SharedUsage(usage: u, at: stamp)
+                        }
+                    }
+                }
+            }
+            if !byEmail.isEmpty { await engine.offerSharedUsage(byEmail) }
+        }
         if let proxy = registry.engine(id: CLIProxyEngine.engineID) as? CLIProxyEngine {
             let strategy = await proxy.routingStrategy ?? ""
             fleetCaveats[CLIProxyEngine.engineID] =

@@ -306,3 +306,9 @@ ACL: the signed debug binary + Infinitus.app). Routing `fill-first`.
   only under that flag; without it the browser redirect is refused.
   The in-app chooser (system sheet / private window) then just has to
   reach `localhost:54545`, which it does.
+- **Usage poll budget is per account** (user 2026-09-02, 429s): the proxy
+  engine caches usage per credential for `usageTTL` (5 min), fetches once
+  per email when two credentials share one, and `AppModel.refreshSnapshot`
+  offers every engine the usage the others fetched (`offerSharedUsage`,
+  by email) so the same account in two fleets is polled once.
+

@@ -69,11 +69,14 @@ final class CLIProxyEngineTests: XCTestCase {
         return String(decoding: data, as: UTF8.self)
     }
 
-    private func makeEngine() -> CLIProxyEngine {
+    /// usageTTL 0 by default: the older tests count one usage call per
+    /// snapshot; the cache tests opt in.
+    private func makeEngine(usageTTL: TimeInterval = 0) -> CLIProxyEngine {
         let config = URLSessionConfiguration.ephemeral
         config.protocolClasses = [ProxyStubProtocol.self]
         return CLIProxyEngine(baseURL: URL(string: "http://proxy.test:8317")!,
-                              managementKey: "sekret", session: URLSession(configuration: config))
+                              managementKey: "sekret", session: URLSession(configuration: config),
+                              usageTTL: usageTTL)
     }
 
     private func route(_ req: URLRequest, body: String, expiredIndex: String = "12") -> (Int, String) {
@@ -224,6 +227,55 @@ final class CLIProxyEngineTests: XCTestCase {
         let engine = makeEngine()
         XCTAssertEqual(engine.capabilities, [.switch, .hold, .rename, .remove, .addOAuth, .costReport])
         XCTAssertFalse(engine.capabilities.contains(.autoSwitch))
+    }
+
+    private func usageCalls() -> Int {
+        ProxyStubProtocol.seen.filter {
+            $0.path.hasSuffix("/api-call") && ($0.body ?? "").contains("oauth/usage")
+        }.count
+    }
+
+    func testUsageIsCachedBetweenSnapshotsWithinTTL() async throws {
+        ProxyStubProtocol.reset { [self] in route($0, body: $1, expiredIndex: "none") }
+        let engine = makeEngine(usageTTL: 300)
+        _ = try await engine.snapshot()
+        _ = try await engine.snapshot()
+        let fleets = try await engine.snapshot()
+        XCTAssertEqual(usageCalls(), 2, "two credentials, one call each across three refreshes")
+        XCTAssertEqual(fleets[0].accounts[1].usage?.fiveHour?.pct, 63.2, "cached usage still shown")
+        XCTAssertEqual(fleets[0].accounts[1].usageStatus, "ok")
+    }
+
+    func testSharedUsageFromAnotherEngineSkipsTheFetch() async throws {
+        ProxyStubProtocol.reset { [self] in route($0, body: $1, expiredIndex: "none") }
+        let engine = makeEngine(usageTTL: 300)
+        let sharedBody = #"{"five_hour":{"utilization":12.5,"resets_at":"2026-09-03T10:00:00Z"}}"#
+        let shared = try XCTUnwrap(OAuthUsage.parse(Data(sharedBody.utf8), now: Date()))
+        // cswap already polled one@ this refresh — offered under a
+        // different case to prove the match is case-insensitive.
+        await engine.offerSharedUsage(["One@Example.com": SharedUsage(usage: shared, at: Date())])
+        let fleets = try await engine.snapshot()
+        XCTAssertEqual(usageCalls(), 1, "only two@ is fetched")
+        XCTAssertEqual(fleets[0].accounts[0].usage?.fiveHour?.pct, 12.5, "one@ shows the shared usage")
+        XCTAssertEqual(fleets[0].accounts[1].usage?.fiveHour?.pct, 63.2)
+    }
+
+    func testCredentialsSharingAnEmailFetchOnce() async throws {
+        let twins = """
+        {"files":[
+          {"id":"a1","auth_index":"11","name":"one.json","provider":"claude","status":"active",
+           "disabled":false,"unavailable":false,"email":"one@example.com"},
+          {"id":"a3","auth_index":"13","name":"one-again.json","provider":"claude","status":"active",
+           "disabled":false,"unavailable":false,"email":"one@example.com"}
+        ]}
+        """
+        ProxyStubProtocol.reset { [self] req, body in
+            req.url!.path == "/v0/management/auth-files" ? (200, twins) : route(req, body: body, expiredIndex: "none")
+        }
+        let engine = makeEngine(usageTTL: 300)
+        let fleets = try await engine.snapshot()
+        XCTAssertEqual(usageCalls(), 1, "one email, one call")
+        XCTAssertEqual(fleets[0].accounts.map { $0.usage?.fiveHour?.pct }, [63.2, 63.2])
     }
 }
 #endif
