@@ -1,7 +1,7 @@
 import XCTest
 @testable import InfinitusCore
 
-/// EngineSupervisor against a scripted fake `cswap` — real process spawning,
+/// CswapSupervisor against a scripted fake `cswap` — real process spawning,
 /// no real engine (running one here would fight the user's live menubar for
 /// the store mutex).
 final class SupervisorProcessTests: XCTestCase {
@@ -24,7 +24,7 @@ final class SupervisorProcessTests: XCTestCase {
         """)
         let gotPoll = expectation(description: "poll event")
         let backedOff = expectation(description: "backing off after exit")
-        let supervisor = EngineSupervisor(
+        let supervisor = CswapSupervisor(
             binaryPath: scriptURL.path,
             onLine: { line in
                 if case .event(let e) = line, e.kind == "poll" { gotPoll.fulfill() }
@@ -44,7 +44,7 @@ final class SupervisorProcessTests: XCTestCase {
         exit 1
         """)
         let refused = expectation(description: "refused state")
-        let supervisor = EngineSupervisor(
+        let supervisor = CswapSupervisor(
             binaryPath: scriptURL.path,
             onLine: { _ in },
             onState: { state in
@@ -60,7 +60,7 @@ final class SupervisorProcessTests: XCTestCase {
         try writeScript("sleep 30")
         let running = expectation(description: "running")
         let stopped = expectation(description: "stopped")
-        let supervisor = EngineSupervisor(
+        let supervisor = CswapSupervisor(
             binaryPath: scriptURL.path,
             onLine: { _ in },
             onState: { state in

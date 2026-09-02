@@ -5,7 +5,7 @@ Native macOS menu bar app for the claude-swap engine. Split out of
 
 ## Non-negotiables
 - **Everything is Swift; the engine is fully isolated.** Every engine
-  touchpoint is a `cswap … --json` subprocess (InfinitusCore/CswapCLI.swift).
+  touchpoint is a `cswap … --json` subprocess (InfinitusCore/Engines/Cswap/CswapCLI.swift).
   Never read engine internals (`~/.claude-swap-backup/*`). Reading
   Claude Code's own files is fine: `~/.claude/settings.json`,
   `~/.claude/sessions/*.json` (+ `.key`), `~/.claude/projects/*/*.jsonl`.

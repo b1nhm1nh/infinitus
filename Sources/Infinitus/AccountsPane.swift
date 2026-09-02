@@ -234,7 +234,7 @@ import InfinitusCore
         let restoreTo = previousActive
         Task {
             do {
-                guard let cli = model.cli else {
+                guard let cli = model.cswap else {
                     throw CLIError(message: "no engine")
                 }
                 // The blessed pair: capture the fresh credential into

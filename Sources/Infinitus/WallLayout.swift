@@ -178,7 +178,7 @@ struct WallLayout: View {
                     .foregroundStyle(status.indicator == "none" ? .green : .orange)
                 Label("auto", systemImage: "bolt.fill")
                     .font(.system(size: 20))
-                    .foregroundStyle(model.engineState.isRunning ? .green : .secondary)
+                    .foregroundStyle(model.cswapState.isRunning ? .green : .secondary)
             }
             if !model.eventLog.isEmpty {
                 VStack(alignment: .leading, spacing: 10) {

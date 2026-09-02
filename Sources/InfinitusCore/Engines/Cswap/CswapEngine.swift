@@ -4,7 +4,7 @@ import Foundation
 /// The claude-swap engine behind the `AccountEngine` seam (#8): one
 /// Claude fleet, every capability, `list --json` bytes kept verbatim
 /// for the mirror. The supervised `cswap auto` child stays
-/// EngineSupervisor's job — this is the one-shot command side only.
+/// CswapSupervisor's job — this is the one-shot command side only.
 public struct CswapEngine: AccountEngine {
     public static let engineID = "cswap"
     public let cli: CswapCLI

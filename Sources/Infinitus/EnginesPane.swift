@@ -102,7 +102,7 @@ struct ClaudeEnginePane: View {
 
     private var stateText: some View {
         Group {
-            switch model.engineState {
+            switch model.cswapState {
             case .running: Text("running").foregroundStyle(.green)
             case .stopped: Text("stopped").foregroundStyle(.secondary)
             case .refused: Text("held elsewhere").foregroundStyle(.orange)
@@ -113,13 +113,13 @@ struct ClaudeEnginePane: View {
     }
 
     private var toggleTitle: String {
-        if case .running = model.engineState { return "Stop" }
-        if case .backingOff = model.engineState { return "Stop" }
+        if case .running = model.cswapState { return "Stop" }
+        if case .backingOff = model.cswapState { return "Stop" }
         return "Start"
     }
 
     private var togglable: Bool {
-        switch model.engineState {
+        switch model.cswapState {
         case .running, .stopped, .backingOff: return true
         case .refused, .schemaMismatch: return false
         }
@@ -183,7 +183,7 @@ struct CodexEnginePane: View {
     }
 }
 
-extension EngineSupervisor.State {
+extension CswapSupervisor.State {
     /// Sidebar live-dot: only a genuinely running engine counts.
     var isRunning: Bool {
         if case .running = self { return true }

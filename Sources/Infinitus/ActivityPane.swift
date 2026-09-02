@@ -9,7 +9,7 @@ struct ActivityPane: View {
     var body: some View {
         Form {
             Section("Switch history") {
-                SwitchHistoryView(cli: model.cli, names: accountNames)
+                SwitchHistoryView(cli: model.cswap, names: accountNames)
             }
             Section("Engine events") {
                 if model.eventLog.isEmpty {

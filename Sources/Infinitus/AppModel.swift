@@ -96,7 +96,7 @@ final class AppModel: ObservableObject {
     /// Debug-only (defaults write … debug_menu -bool true): adds the
     /// Animations tab so every effect can be fired by hand.
     let debugMenu = UserDefaults.standard.bool(forKey: "debug_menu")
-    @Published var engineState: EngineSupervisor.State = .stopped
+    @Published var cswapState: CswapSupervisor.State = .stopped
     struct EventEntry: Identifiable {
         let id = UUID()
         let at = Date()
@@ -110,8 +110,8 @@ final class AppModel: ObservableObject {
     let sessionProgress = SessionProgressModel()
     @Published var lastError: String?
 
-    let cli: CswapCLI?
-    /// True for the Animation Playground's private model: cli is pinned
+    let cswap: CswapCLI?
+    /// True for the Animation Playground's private model: cswap is pinned
     /// to the bundled demo script and every outward side effect —
     /// snapshot cache, notifications, resume nudges, push, sync, power
     /// assertions, the engine supervisor — is suppressed, so nothing it
@@ -139,7 +139,7 @@ final class AppModel: ObservableObject {
     /// the check; the popup chip just points there).
     @Published var appUpdateVersion: String?
     private let launchExecutableDate = AppModel.executableDate()
-    private var supervisor: EngineSupervisor?
+    private var supervisor: CswapSupervisor?
     private var refreshTask: Task<Void, Never>?
     private var lastNotifiedActive: Int?
 
@@ -189,7 +189,7 @@ final class AppModel: ObservableObject {
     /// Pace fire on 7d/model bars ("off"/"ember"/"flame"/"limit").
     @Published var burnStyle: String { didSet { defaults.set(burnStyle, forKey: "burn_style") } }
     /// Mock mode (user 2026-08-31): the bundled demo fleet stands in
-    /// for the engine. Machine-local, deliberately never synced. cli
+    /// for the engine. Machine-local, deliberately never synced. cswap
     /// is a let, so flipping this relaunches — the restart IS the
     /// re-detect (installEngine precedent).
     @Published var mockMode: Bool {
@@ -427,24 +427,24 @@ final class AppModel: ObservableObject {
             // Isolation is the contract: no demo script, no data at all
             // (never fall back to the real engine here).
             if let demo = Self.demoScriptPath() {
-                cli = CswapCLI(binaryPath: demo)
+                cswap = CswapCLI(binaryPath: demo)
             } else {
-                cli = nil
+                cswap = nil
                 lastError = "demo script missing — playground has no data"
             }
         } else if mock, let demo = Self.demoScriptPath() {
-            cli = CswapCLI(binaryPath: demo)
+            cswap = CswapCLI(binaryPath: demo)
         } else if let path = CswapLocator.locate() {
-            cli = CswapCLI(binaryPath: path)
+            cswap = CswapCLI(binaryPath: path)
             if mock {
                 lastError = "demo script missing — running the real engine"
             }
         } else {
-            cli = nil
+            cswap = nil
             lastError = "cswap not found — install it (uv tool install claude-swap)"
         }
         if !playground { sync.attach(model: self) }
-        if let cli, cswapEnabled || playground { registry.register(CswapEngine(cli: cli)) }
+        if let cswap, cswapEnabled || playground { registry.register(CswapEngine(cli: cswap)) }
         // The proxy is never part of the playground (isolation contract)
         // and needs its key before it can be an engine at all.
         if !playground, cliproxyEnabled,
@@ -544,7 +544,7 @@ final class AppModel: ObservableObject {
         }
         applyMirrorLAN()
         guard supervisor == nil, refreshTask == nil else { return }
-        if let cli, !isPlayground, cswapEnabled { startEngine(binary: cli.binaryPath) }
+        if let cswap, !isPlayground, cswapEnabled { startEngine(binary: cswap.binaryPath) }
         guard !registry.engines.isEmpty else { return }
         refreshTask = Task { [weak self] in
             while !Task.isCancelled {
@@ -575,13 +575,13 @@ final class AppModel: ObservableObject {
     }
 
     private func startEngine(binary: String) {
-        let supervisor = EngineSupervisor(
+        let supervisor = CswapSupervisor(
             binaryPath: binary,
             onLine: { [weak self] line in
                 Task { @MainActor in self?.consume(line) }
             },
             onState: { [weak self] state in
-                Task { @MainActor in self?.engineState = state }
+                Task { @MainActor in self?.cswapState = state }
             }
         )
         self.supervisor = supervisor
@@ -608,7 +608,7 @@ final class AppModel: ObservableObject {
                 break
             }
         case .schemaMismatch(let version):
-            engineState = .schemaMismatch(version)
+            cswapState = .schemaMismatch(version)
         case .garbage:
             break  // logged upstream; never fatal (spec §2)
         }
@@ -641,9 +641,13 @@ final class AppModel: ObservableObject {
     /// Playground-only: pretend no engine was found, so the onboarding
     /// card is reachable without an env-var relaunch (issue #6).
     @Published var simulateNoEngine = false
-    /// True when no cswap binary was found at launch; the popup swaps
-    /// its rows for the onboarding card.
-    var engineMissing: Bool { cli == nil || simulateNoEngine }
+    /// True when no engine at all is configured (no cswap binary and no
+    /// proxy); the popup swaps its rows for the onboarding card. A
+    /// proxy-only setup is a working setup, not a missing engine.
+    var engineMissing: Bool { registry.engines.isEmpty || simulateNoEngine }
+    /// cswap is on and its binary was found — the only case the rail's
+    /// auto-switch toggle and badge mean anything.
+    var cswapRegistered: Bool { registry.engines.contains { $0.id == CswapEngine.engineID } }
 
     // MARK: onboarding — machine detection (todo 2026-09-01)
 
@@ -685,12 +689,12 @@ final class AppModel: ObservableObject {
     /// `cswap add` registers whichever account Claude Code is signed in
     /// as — the "adopt the current login" onboarding path.
     func addFirstAccount() {
-        guard let cli, !addingFirstAccount else { return }
+        guard let cswap, !addingFirstAccount else { return }
         addingFirstAccount = true
         firstAccountMessage = nil
         Task {
             do {
-                _ = try await cli.run(["add"])
+                _ = try await cswap.run(["add"])
                 await refreshSnapshot()
             } catch {
                 firstAccountMessage = (error as? CLIError)?.message ?? "\(error)"
@@ -703,7 +707,7 @@ final class AppModel: ObservableObject {
 
     /// Button-triggered only — never auto-installs. Runs
     /// `uv tool install claude-swap`, then relaunches so init re-runs
-    /// the locator (cli stays a let; the restart IS the re-detect).
+    /// the locator (cswap stays a let; the restart IS the re-detect).
     func installEngine() {
         guard !installingEngine else { return }
         let uv = CswapLocator.locate(candidates: [
@@ -960,8 +964,8 @@ final class AppModel: ObservableObject {
             // Text over stdin, matching the channel-setup commands;
             // no channels configured is a quiet no-op (try?). The
             // away-push channels are cswap's.
-            if let cli {
-                Task { _ = try? await cli.run(["notify", "push", "-"], stdin: msg) }
+            if let cswap {
+                Task { _ = try? await cswap.run(["notify", "push", "-"], stdin: msg) }
             }
         }
         if !isPlayground { await sync.tick() }
@@ -971,15 +975,15 @@ final class AppModel: ObservableObject {
     /// status is clickable to toggle", user 2026-08-30). Deliberate states
     /// only — refused/backing-off/mismatch stay informational.
     func toggleEngine() {
-        switch engineState {
+        switch cswapState {
         case .running, .backingOff:
             let supervisor = supervisor
             self.supervisor = nil
-            engineState = .stopped
+            cswapState = .stopped
             Task { await supervisor?.stop() }
         case .stopped:
-            guard let cli else { return }
-            startEngine(binary: cli.binaryPath)
+            guard let cswap, cswapRegistered else { return }
+            startEngine(binary: cswap.binaryPath)
         case .refused, .schemaMismatch:
             break
         }
@@ -988,12 +992,12 @@ final class AppModel: ObservableObject {
     /// Bounce the supervised engine — after a cswap upgrade the child is
     /// still the OLD binary until respawned.
     func restartEngine() {
-        guard let cli else { return }
+        guard let cswap else { return }
         let old = supervisor
         supervisor = nil
         Task {
             await old?.stop()
-            await MainActor.run { self.startEngine(binary: cli.binaryPath) }
+            await MainActor.run { self.startEngine(binary: cswap.binaryPath) }
         }
     }
 
@@ -1041,7 +1045,10 @@ extension AppModel: FleetModel {
     /// The engine badge's portable half (#9 phase D2) — the supervisor's
     /// own State can't cross to iOS, so the shared footer reads this.
     var engineBadge: EngineBadge? {
-        switch engineState {
+        // The badge is the cswap child's state; with cswap off there is
+        // nothing to report and the footer hides the chip.
+        guard cswapRegistered else { return nil }
+        switch cswapState {
         case .running: return .running
         case .refused: return .refused
         case .backingOff(let seconds): return .backingOff(seconds: seconds)

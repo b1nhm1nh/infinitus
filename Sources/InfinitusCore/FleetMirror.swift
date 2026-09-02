@@ -48,7 +48,7 @@ public struct MirrorSnapshot: Codable, Sendable {
 }
 
 /// The auto-switch engine's state as the footer badge shows it — the
-/// portable half of `EngineSupervisor.State`, which can't cross to iOS
+/// portable half of `CswapSupervisor.State`, which can't cross to iOS
 /// (the supervisor spawns a subprocess and is `#if !os(iOS)`).
 public enum EngineBadge: Codable, Sendable, Equatable {
     case running

@@ -25,15 +25,16 @@ private final class LineAssembler: @unchecked Sendable {
     var sawRefusal: Bool { lock.lock(); defer { lock.unlock() }; return refused }
 }
 
-/// Supervises the one engine: `cswap auto --json` as a child process
-/// (spec §2 — the app hosts no engine of its own).
+/// Supervises the cswap engine's auto-switch child, `cswap auto --json`
+/// (spec §2 — the app hosts no engine of its own; other engines, like
+/// the CLIProxy, run as their own service and need no supervisor).
 ///
 /// Restarts on exit with SupervisorBackoff. Lines stream to `onLine` on an
 /// arbitrary thread; the UI layer marshals. `engine-refused` means another
 /// host (TUI, a stray `cswap auto`) already owns the store's engine mutex —
 /// surfaced as a state, not retried hot, since the refusal is instant and
 /// hammering it would spin.
-public actor EngineSupervisor {
+public actor CswapSupervisor {
     public enum State: Sendable, Equatable {
         case stopped
         case running(pid: Int32)

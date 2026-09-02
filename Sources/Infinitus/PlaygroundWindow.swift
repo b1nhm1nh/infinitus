@@ -142,7 +142,7 @@ import InfinitusUI
                 } else {
                     model.simulateNoEngine = false
                     Task {
-                        _ = try? await model.cli?.run(["simulate", arg])
+                        _ = try? await model.cswap?.run(["simulate", arg])
                         await model.refreshSnapshot()
                     }
                 }
@@ -258,7 +258,7 @@ struct PlaygroundView: View {
     private func setScenario(_ mode: String) {
         model.simulateNoEngine = false
         Task {
-            _ = try? await model.cli?.run(["simulate", mode])
+            _ = try? await model.cswap?.run(["simulate", mode])
             await model.refreshSnapshot()
         }
     }

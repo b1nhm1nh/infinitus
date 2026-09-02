@@ -147,7 +147,7 @@ final class SettingsSyncModel: ObservableObject {
             }
         }
         var engine: [String: String] = [:]
-        if let cli = model?.cli, let cfg = try? await cli.configList() {
+        if let cli = model?.cswap, let cfg = try? await cli.configList() {
             for entry in cfg.settings where entry.isSet {
                 engine[entry.key] = entry.value.editableText
             }
@@ -173,7 +173,7 @@ final class SettingsSyncModel: ObservableObject {
         }
         // Engine settings: set what differs, unset what the snapshot lost —
         // without the unset leg two Macs ping-pong a removed key forever.
-        if let cli = model?.cli, let current = try? await cli.configList() {
+        if let cli = model?.cswap, let current = try? await cli.configList() {
             for entry in current.settings {
                 let want = snap.engine[entry.key]
                 let have = entry.isSet ? entry.value.editableText : nil

@@ -66,16 +66,16 @@ struct InfinitusApp: App {
         RenameMigration.run()   // before anything reads App Support
         let model = AppModel()
         _model = StateObject(wrappedValue: model)
-        let settingsModel = SettingsModel(cli: model.cli)
+        let settingsModel = SettingsModel(cli: model.cswap)
         _settingsModel = StateObject(wrappedValue: settingsModel)
-        let notifyModel = NotifyModel(cli: model.cli)
+        let notifyModel = NotifyModel(cli: model.cswap)
         _notifyModel = StateObject(wrappedValue: notifyModel)
-        let usage = UsageModel(cli: model.cli)
+        let usage = UsageModel(cli: model.cswap)
         _usageModel = StateObject(wrappedValue: usage)
         model.usageModel = usage   // the cswap fleet's cash column
         let utilization = UtilizationModel()
         _utilizationModel = StateObject(wrappedValue: utilization)
-        let update = UpdateModel(cli: model.cli)
+        let update = UpdateModel(cli: model.cswap)
         _updateModel = StateObject(wrappedValue: update)
         update.restartEngine = { [weak model] in model?.restartEngine() }
         update.startAutoCheck()
@@ -196,7 +196,7 @@ struct InfinitusApp: App {
                                "threshold", "rotate", "claude", "provider",
                                "update", "upgrade", "pypi",
                                "nudge", "resume", "wake", "session"],
-                    provider: ProviderBadge(live: model.engineState.isRunning),
+                    provider: ProviderBadge(live: model.cswapState.isRunning),
                     view: AnyView(ClaudeEnginePane(model: model,
                                                    settings: settingsModel,
                                                    update: updateModel,
@@ -657,7 +657,7 @@ struct MenuContent: View {
             }
             .instantTip("Infinitus \(v) is out — About → Updates")
         }
-        engineBadgeIcon
+        if model.cswapRegistered { engineBadgeIcon }
         if !model.footerActionsHidden {
         Button { model.relaunchApp() } label: {
             Image(systemName: "arrow.trianglehead.clockwise")
@@ -701,7 +701,8 @@ struct MenuContent: View {
     /// How many icons compactControls will actually emit — must mirror
     /// its conditionals so the rail's column math stays honest.
     private var compactRailItemCount: Int {
-        var n = 2                                   // serviceDot + engineBadgeIcon
+        var n = 1                                   // serviceDot
+        if model.cswapRegistered { n += 1 }         // engineBadgeIcon
         if !model.footerActionsHidden {
             n += 7                                  // 5 actions + restart + quit
             if model.debugMenu { n += 1 }           // playground wand (dev)
@@ -755,7 +756,7 @@ struct MenuContent: View {
             }
             .instantTip("Infinitus \(v) is out — About → Updates")
         }
-        engineBadgeIcon
+        if model.cswapRegistered { engineBadgeIcon }
         if !model.footerActionsHidden {
         Button { model.relaunchApp() } label: {
             Image(systemName: "arrow.trianglehead.clockwise")
@@ -860,7 +861,7 @@ struct MenuContent: View {
     }
 
     private var engineTip: String {
-        switch model.engineState {
+        switch model.cswapState {
         case .running: return "auto-switch running — click to stop"
         case .refused: return "Another auto-switch engine (TUI or cswap auto) holds the mutex."
         case .backingOff(let s): return "engine retrying in \(Int(s))s — click to stop"
@@ -871,7 +872,7 @@ struct MenuContent: View {
 
     @ViewBuilder private var engineBadgeIcon: some View {
         Button { model.toggleEngine() } label: {
-            switch model.engineState {
+            switch model.cswapState {
             case .running: Image(systemName: "bolt.fill").foregroundStyle(.green)
             case .refused: Image(systemName: "exclamationmark.triangle")
             case .backingOff: Image(systemName: "clock")
