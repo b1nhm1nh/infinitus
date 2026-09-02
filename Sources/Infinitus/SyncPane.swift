@@ -19,9 +19,6 @@ struct SyncPane: View {
     /// The token is masked until asked for: settings panes get shared in
     /// screenshots, and this one is a read key.
     @State private var revealToken = false
-    /// One QR at a time: a phone camera locks onto whichever code it sees
-    /// first, so two side by side scan the wrong one (user 2026-09-02).
-    @State private var pickedRoute = "lan"
     /// Tailscale coming up (or going away) changes nothing the models
     /// publish — the utun address just appears. Re-probe while the pane
     /// is up so the status row and the route list follow it.
@@ -81,17 +78,39 @@ struct SyncPane: View {
                     if app.pairRoutes.isEmpty {
                         Text("Waiting for the listener to come up…")
                             .font(.caption).foregroundStyle(.secondary)
-                    }
-                    if app.pairRoutes.count > 1 {
-                        Picker("Route", selection: $pickedRoute) {
-                            ForEach(app.pairRoutes) { Text($0.title).tag($0.id) }
+                    } else {
+                        HStack(alignment: .top, spacing: 12) {
+                            if let image = PairQR.image(for: app.pairURL) {
+                                Image(nsImage: image)
+                                    .interpolation(.none)
+                                    .resizable()
+                                    .frame(width: 110, height: 110)
+                                    .padding(4)
+                                    .background(.white)
+                                    .clipShape(RoundedRectangle(cornerRadius: 4))
+                            }
+                            VStack(alignment: .leading, spacing: 6) {
+                                ForEach(app.pairRoutes) { route in
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(route.title).font(.callout).bold()
+                                        HStack {
+                                            Text(route.endpoint)
+                                                .font(.system(.caption, design: .monospaced))
+                                                .textSelection(.enabled)
+                                            Button("Copy") { copy(route.endpoint) }
+                                        }
+                                    }
+                                }
+                                Button("Copy pair link") { copy(app.pairURL) }
+                            }
+                            Spacer(minLength: 0)
                         }
-                        .pickerStyle(.segmented)
-                        .labelsHidden()
-                    }
-                    if let route = app.pairRoutes.first(where: { $0.id == pickedRoute })
-                        ?? app.pairRoutes.first {
-                        pairRow(route)
+                        .padding(.vertical, 2)
+                        Text("One scan pairs every route. The phone tries them in "
+                             + "this order and keeps whichever answers — a tunnel "
+                             + "URL that changes on restart just falls through to "
+                             + "Wi-Fi or Tailscale.")
+                            .font(.caption).foregroundStyle(.secondary)
                     }
                 }
                 Section("Anywhere") {
@@ -183,8 +202,9 @@ struct SyncPane: View {
                       + "quick tunnel.",
                  done: !routes.isEmpty),
             Step(id: 4, title: "Scan the QR from the phone",
-                 detail: "On the phone: Settings → Mac connection → Scan QR. "
-                       + "Pick the route under Pair a phone first.",
+                 detail: "On the phone: Settings → Mac connection → Scan QR, "
+                       + "pointing at Pair a phone below — one QR carries "
+                       + "every route.",
                  done: server.lastServed != nil),
         ]
     }
@@ -276,8 +296,8 @@ struct SyncPane: View {
                 + "Settings → Devices → Anywhere turn on the tunnel (random public URL; the token "
                 + "is the only lock).",
                 "4. Pair: on the phone, Settings → Mac connection → Scan QR, pointing at "
-                + "Infinitus Settings → Devices → Pair a phone (pick the route first). Or enter the "
-                + "route address and the pairing token by hand in the same screen.",
+                + "Infinitus Settings → Devices → Pair a phone (one QR carries every route). "
+                + "Or enter a route address and the pairing token by hand in the same screen.",
                 "", "## Verify",
                 "curl -s -o /dev/null -w '%{http_code}\\n' -H 'Authorization: Bearer <token>' "
                 + "http://<host>:\(port)/snapshot   # 200 = paired route works; 401 = wrong token",
@@ -334,36 +354,6 @@ struct SyncPane: View {
                  + "Tailscale too, signed into the same tailnet.")
                 .font(.caption).foregroundStyle(.secondary)
         }
-    }
-
-    /// One way in: its QR, its address, and what it costs to use.
-    @ViewBuilder
-    private func pairRow(_ route: PairRoute) -> some View {
-        HStack(alignment: .top, spacing: 12) {
-            if let image = PairQR.image(for: route.pairURL) {
-                Image(nsImage: image)
-                    .interpolation(.none)
-                    .resizable()
-                    .frame(width: 110, height: 110)
-                    .padding(4)
-                    .background(.white)
-                    .clipShape(RoundedRectangle(cornerRadius: 4))
-            }
-            VStack(alignment: .leading, spacing: 4) {
-                Text(route.title).font(.callout).bold()
-                Text(route.endpoint)
-                    .font(.system(.caption, design: .monospaced))
-                    .textSelection(.enabled)
-                Text(route.detail).font(.caption).foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                HStack {
-                    Button("Copy address") { copy(route.endpoint) }
-                    Button("Copy pair link") { copy(route.pairURL) }
-                }
-            }
-            Spacer(minLength: 0)
-        }
-        .padding(.vertical, 2)
     }
 
     private func copy(_ text: String) {

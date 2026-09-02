@@ -15,6 +15,10 @@ struct SettingsForm: View {
     /// The QR scanner (#9 remote access) is a sheet, not a screen: it
     /// exists for the ten seconds it takes to pair.
     @State private var scanning = false
+    /// Staged text for the "add an address" field — submitting it grows
+    /// the endpoint list rather than replacing it (#9 pair once, every
+    /// route).
+    @State private var newEndpoint = ""
 
     var body: some View {
         Form {
@@ -91,12 +95,22 @@ struct SettingsForm: View {
                          + "real device) — type the address and token below.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
-                LabeledContent("Address") {
-                    TextField("auto (Bonjour)", text: $model.manualEndpoint)
+                ForEach(Array(model.manualEndpoints.enumerated()), id: \.element) { _, endpoint in
+                    Text(endpoint)
+                        .font(.system(.caption, design: .monospaced))
+                        .textSelection(.enabled)
+                }
+                .onDelete { model.removeManualEndpoint(at: $0) }
+                LabeledContent("Add address") {
+                    TextField("host:port, or a tunnel's https:// URL", text: $newEndpoint)
                         .multilineTextAlignment(.trailing)
                         .autocorrectionDisabled()
                         .textInputAutocapitalization(.never)
                         .keyboardType(.URL)
+                        .onSubmit {
+                            model.addManualEndpoint(newEndpoint)
+                            newEndpoint = ""
+                        }
                 }
                 LabeledContent("Pairing token") {
                     TextField("from the Mac's Devices settings",
@@ -106,12 +120,13 @@ struct SettingsForm: View {
                         .textInputAutocapitalization(.characters)
                         .font(.system(.body, design: .monospaced))
                 }
-                Text("Scan the QR in the Mac's Settings → Devices to fill both "
-                     + "in at once. The token is required — every request "
+                Text("Scan the QR in the Mac's Settings → Devices to add every "
+                     + "route at once. The token is required — every request "
                      + "carries it, even one to a Mac found automatically. "
-                     + "Leave the address empty on the same Wi-Fi; set "
-                     + "host:port, or a tunnel's https:// URL, to reach the "
-                     + "Mac from anywhere.")
+                     + "With no address saved the phone falls back to "
+                     + "Bonjour on the same Wi-Fi; a saved address is tried "
+                     + "first, in the order added, and the one that answers "
+                     + "is tried first next time.")
                     .font(.caption).foregroundStyle(.secondary)
             }
             // The 1:1 Mac rendering isn't lost, just off by default

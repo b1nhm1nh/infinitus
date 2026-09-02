@@ -55,30 +55,48 @@ public enum MirrorPairing {
 
     // MARK: - Pair URLs (what a QR encodes)
 
-    /// `infinitus://pair?url=http://192.168.1.20:47824&token=ABC…`
-    public static func pairURL(endpoint: String, token: String) -> String {
+    /// `infinitus://pair?url=http://192.168.1.20:47824&url=http://100.x…&token=ABC…`
+    /// One QR carries every route the Mac currently offers, in order — the
+    /// phone tries them in that order and keeps whichever answers, so a
+    /// tunnel URL that changes on restart just falls through to the next
+    /// one instead of forcing a rescan (#9 pair once, every route).
+    public static func pairURL(endpoints: [String], token: String) -> String {
         var allowed = CharacterSet.alphanumerics
         allowed.insert(charactersIn: "-._~")
-        let escaped = endpoint.addingPercentEncoding(withAllowedCharacters: allowed)
-            ?? endpoint
-        return "\(urlScheme)://\(pairHost)?url=\(escaped)&token=\(normalize(token))"
+        let parts = endpoints.map { endpoint -> String in
+            let escaped = endpoint.addingPercentEncoding(withAllowedCharacters: allowed)
+                ?? endpoint
+            return "url=\(escaped)"
+        }
+        return "\(urlScheme)://\(pairHost)?\((parts + ["token=\(normalize(token))"]).joined(separator: "&"))"
+    }
+
+    /// Convenience for the single-route call sites (tests, ad-hoc links).
+    public static func pairURL(endpoint: String, token: String) -> String {
+        pairURL(endpoints: [endpoint], token: token)
     }
 
     public struct Pairing: Sendable, Equatable {
-        /// The endpoint text, exactly as it should land in the phone's
-        /// address field (MirrorTransport.parseEndpoint understands it).
-        public let endpoint: String
+        /// Every endpoint the QR carried, in order, de-duplicated — the
+        /// phone tries them in this order (MirrorTransport.parseEndpoint
+        /// understands each one) and keeps whichever answers.
+        public let endpoints: [String]
         public let token: String
 
-        public init(endpoint: String, token: String) {
-            self.endpoint = endpoint
+        public init(endpoints: [String], token: String) {
+            self.endpoints = endpoints
             self.token = token
         }
+
+        /// The route a caller only wants one address from.
+        public var endpoint: String { endpoints.first ?? "" }
     }
 
     /// Reads a scanned or deep-linked pair URL. Tolerates the token
-    /// riding as `t=` (the same name the HTTP query uses) and a missing
-    /// endpoint (then the phone keeps whatever it had and only re-pairs).
+    /// riding as `t=` (the same name the HTTP query uses), and accepts
+    /// either a single `url=` (older Macs) or several repeated ones.
+    /// `nil` if there's no token or no endpoint at all — a pairing needs
+    /// both.
     public static func parsePairURL(_ text: String) -> Pairing? {
         guard let components = URLComponents(
             string: text.trimmingCharacters(in: .whitespacesAndNewlines)) else { return nil }
@@ -91,9 +109,14 @@ public enum MirrorPairing {
         let token = normalize(items.first { $0.name == "token" || $0.name == "t" }?
             .value ?? "")
         guard !token.isEmpty else { return nil }
-        let endpoint = (items.first { $0.name == "url" || $0.name == "endpoint" }?
-            .value ?? "").trimmingCharacters(in: .whitespaces)
-        return Pairing(endpoint: endpoint, token: token)
+        var endpoints: [String] = []
+        for item in items where item.name == "url" || item.name == "endpoint" {
+            let endpoint = (item.value ?? "").trimmingCharacters(in: .whitespaces)
+            guard !endpoint.isEmpty, !endpoints.contains(endpoint) else { continue }
+            endpoints.append(endpoint)
+        }
+        guard !endpoints.isEmpty else { return nil }
+        return Pairing(endpoints: endpoints, token: token)
     }
 
     // MARK: - Which addresses to offer

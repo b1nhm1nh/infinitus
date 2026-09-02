@@ -13,13 +13,24 @@ import InfinitusCore
 actor NetworkFleetMirror: FleetMirror {
     static let shared = NetworkFleetMirror()
 
-    /// Manual `host:port` (or a whole `https://…` URL from a pairing QR)
-    /// for networks where mDNS doesn't survive; read fresh every fetch so
-    /// the Settings field takes effect at once.
-    static let manualKey = "mirror_manual_endpoint"
+    /// Every endpoint a QR or the Settings field has ever added (#9 pair
+    /// once, every route) — read fresh every fetch so a Settings edit
+    /// takes effect at once. Replaces the old single `mirror_manual_endpoint`
+    /// string (migrated below).
+    static let manualKey = "mirror_manual_endpoints"
+    /// The old single-endpoint key, migrated into `manualKey` once.
+    static let legacyManualKey = "mirror_manual_endpoint"
+    /// Whichever endpoint last answered — tried first next time, so a
+    /// dead tunnel URL from a restarted Mac doesn't cost a timeout on
+    /// every single refresh.
+    static let lastGoodKey = "mirror_last_good_endpoint"
     /// The pairing token (#9 remote access) — every request carries it,
     /// Bonjour-discovered Macs included.
     static let tokenKey = "mirror_pair_token"
+    /// Per-candidate connect timeout: several stored endpoints may be
+    /// dead (a Mac off, a tunnel gone), so trying them all still has to
+    /// land well inside one refresh.
+    static let candidateTimeout: TimeInterval = 3
 
     /// One line for the Settings screen.
     private(set) var statusText = "looking for a Mac on this Wi-Fi…"
@@ -30,41 +41,86 @@ actor NetworkFleetMirror: FleetMirror {
     /// staleness banner instead of falling back to "Waiting for the fleet".
     private var cached: MirrorSnapshot?
 
+    /// Migrates the old single-endpoint string into the list, once. Both
+    /// this actor and `MirrorModel` read defaults independently, so they
+    /// share this one entry point rather than each rolling its own.
+    static func migrateManualEndpointIfNeeded(_ defaults: UserDefaults = .standard) {
+        guard let old = defaults.string(forKey: legacyManualKey), !old.isEmpty else { return }
+        if ((defaults.array(forKey: manualKey) as? [String]) ?? []).isEmpty {
+            defaults.set([old], forKey: manualKey)
+        }
+        defaults.removeObject(forKey: legacyManualKey)
+    }
+
+    /// The stored endpoint list, in the order the user (or a pairing QR)
+    /// added them — migrating the legacy key first.
+    static func storedEndpoints(_ defaults: UserDefaults = .standard) -> [String] {
+        migrateManualEndpointIfNeeded(defaults)
+        return (defaults.array(forKey: manualKey) as? [String]) ?? []
+    }
+
+    /// Stored endpoints with the last-successful one moved to the front —
+    /// the order candidates are tried in, so a Mac that answered last
+    /// time answers first this time.
+    private func candidateEndpoints() -> [String] {
+        var list = Self.storedEndpoints()
+        if let lastGood = UserDefaults.standard.string(forKey: Self.lastGoodKey),
+           let index = list.firstIndex(of: lastGood), index != 0 {
+            list.remove(at: index)
+            list.insert(lastGood, at: 0)
+        }
+        return list
+    }
+
     func latest() async throws -> MirrorSnapshot? {
         let token = MirrorPairing.normalize(
             UserDefaults.standard.string(forKey: Self.tokenKey) ?? "")
-        let manual = UserDefaults.standard.string(forKey: Self.manualKey)
-            .flatMap(MirrorTransport.parseEndpoint)
-        let endpoint: NWEndpoint
-        // Cloudflare routes on Host/SNI, so a tunnel needs the real
-        // hostname on the wire; a Bonjour endpoint has no name to send.
-        var hostHeader = "infinitus"
-        var useTLS = false
-        if let manual {
-            endpoint = .hostPort(host: NWEndpoint.Host(manual.host),
-                                 port: NWEndpoint.Port(rawValue: manual.port) ?? .any)
-            hostHeader = manual.host
-            useTLS = manual.useTLS
-        } else {
-            startBrowsing()
-            guard let discovered = await firstEndpoint() else {
-                statusText = "no Mac found on this Wi-Fi"
+        let stored = candidateEndpoints()
+        var lastError: Error?
+        for text in stored {
+            guard let manual = MirrorTransport.parseEndpoint(text) else { continue }
+            let endpoint = NWEndpoint.hostPort(
+                host: NWEndpoint.Host(manual.host),
+                port: NWEndpoint.Port(rawValue: manual.port) ?? .any)
+            do {
+                let (data, _) = try await fetch(endpoint, hostHeader: manual.host,
+                                                useTLS: manual.useTLS, token: token,
+                                                timeout: Self.candidateTimeout)
+                let snapshot = try Self.decode(data)
+                cached = snapshot
+                UserDefaults.standard.set(text, forKey: Self.lastGoodKey)
+                statusText = "\(snapshot.machineName) at \(text)"
+                return snapshot
+            } catch MirrorTransportError.http(401) {
+                // The Mac is right there and refusing us: that's a pairing
+                // problem, not a network one, and the fix is one field
+                // away — stop trying the rest, they'd only repeat it.
+                statusText = "pairing token required — scan the QR in the Mac's "
+                    + "Devices settings"
                 return cached
+            } catch {
+                lastError = error
             }
-            endpoint = discovered
+        }
+        // No stored endpoint answered (or none is stored) — Bonjour is
+        // the last resort, and only worth trying while on the LAN.
+        startBrowsing()
+        guard let discovered = await firstEndpoint() else {
+            statusText = stored.isEmpty
+                ? "no Mac found on this Wi-Fi"
+                : "couldn't reach any saved Mac"
+            if cached == nil, let lastError, lastError is DecodingError { throw lastError }
+            return cached
         }
         do {
-            let (data, remote) = try await fetch(endpoint, hostHeader: hostHeader,
-                                                 useTLS: useTLS, token: token)
-            let decoder = JSONDecoder()
-            decoder.dateDecodingStrategy = .iso8601
-            let snapshot = try decoder.decode(MirrorSnapshot.self, from: data)
+            let (data, remote) = try await fetch(discovered, hostHeader: "infinitus",
+                                                 useTLS: false, token: token,
+                                                 timeout: Self.candidateTimeout)
+            let snapshot = try Self.decode(data)
             cached = snapshot
             statusText = "\(snapshot.machineName) at \(remote)"
             return snapshot
         } catch MirrorTransportError.http(401) {
-            // The Mac is right there and refusing us: that's a pairing
-            // problem, not a network one, and the fix is one field away.
             statusText = "pairing token required — scan the QR in the Mac's "
                 + "Devices settings"
             return cached
@@ -77,6 +133,12 @@ actor NetworkFleetMirror: FleetMirror {
             if cached == nil, error is DecodingError { throw error }
             return cached
         }
+    }
+
+    private static func decode(_ data: Data) throws -> MirrorSnapshot {
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        return try decoder.decode(MirrorSnapshot.self, from: data)
     }
 
     // MARK: - Discovery
@@ -125,10 +187,10 @@ actor NetworkFleetMirror: FleetMirror {
 
     /// Returns the response body and the resolved `host:port` it came
     /// from (the Bonjour endpoint alone never names a port).
-    private func fetch(_ endpoint: NWEndpoint, hostHeader: String,
-                       useTLS: Bool, token: String) async throws -> (Data, String) {
+    private func fetch(_ endpoint: NWEndpoint, hostHeader: String, useTLS: Bool,
+                       token: String, timeout: TimeInterval = 5) async throws -> (Data, String) {
         let tcp = NWProtocolTCP.Options()
-        tcp.connectionTimeout = 5
+        tcp.connectionTimeout = Int(timeout)
         // A quick tunnel answers on 443 with a real certificate; the LAN
         // and tailnet paths stay plain TCP.
         let params = useTLS ? NWParameters(tls: NWProtocolTLS.Options(), tcp: tcp)
@@ -140,7 +202,7 @@ actor NetworkFleetMirror: FleetMirror {
             once.attach(continuation) { connection.cancel() }
             // Belt and braces: a half-open TCP connection can otherwise
             // hang past the connect timeout with no bytes ever arriving.
-            queue.asyncAfter(deadline: .now() + 8) {
+            queue.asyncAfter(deadline: .now() + timeout + 2) {
                 once.finish(.failure(MirrorTransportError.timedOut))
             }
             connection.stateUpdateHandler = { state in

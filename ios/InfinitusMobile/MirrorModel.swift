@@ -55,10 +55,11 @@ final class MirrorModel: ObservableObject, FleetModel {
 
     // MARK: LAN transport (#9)
 
-    /// Manual `host:port` for networks that block mDNS — empty means
-    /// "use Bonjour". The mirror reads it straight from UserDefaults.
-    @Published var manualEndpoint: String {
-        didSet { defaults.set(manualEndpoint, forKey: NetworkFleetMirror.manualKey) }
+    /// Every `host:port` (or pairing-QR URL) the phone will try, in order
+    /// — empty means "use Bonjour only". The mirror reads the same list
+    /// straight from UserDefaults (#9 pair once, every route).
+    @Published var manualEndpoints: [String] {
+        didSet { defaults.set(manualEndpoints, forKey: NetworkFleetMirror.manualKey) }
     }
     /// The Mac's pairing token (#9 remote access): without it every
     /// request comes back 401, whether the Mac was found by Bonjour, by
@@ -82,7 +83,7 @@ final class MirrorModel: ObservableObject, FleetModel {
         self.defaults = defaults
         usesLAN = mirror == nil && ProcessInfo.processInfo
             .environment["INFINITUS_MIRROR_PATH"] == nil
-        manualEndpoint = defaults.string(forKey: NetworkFleetMirror.manualKey) ?? ""
+        manualEndpoints = NetworkFleetMirror.storedEndpoints(defaults)
         pairToken = defaults.string(forKey: NetworkFleetMirror.tokenKey) ?? ""
         followMac = defaults.object(forKey: "follow_mac") as? Bool ?? true
         localThemeID = defaults.string(forKey: "gamification_style") ?? "off"
@@ -94,17 +95,31 @@ final class MirrorModel: ObservableObject, FleetModel {
         macPopupView = defaults.object(forKey: "mac_popup_view") as? Bool ?? false
     }
 
-    /// Pairs with a Mac from a scanned QR or an `infinitus://pair?…`
-    /// deep link: the endpoint lands in the same address field a human
-    /// would type into, the token beside it. Returns false for anything
-    /// that isn't one of our pair URLs.
+    /// Pairs with a Mac from a scanned QR or an `infinitus://pair?…` deep
+    /// link: every route the QR carries replaces the stored list (#9 pair
+    /// once, every route) — a fresh scan is meant to reset, not append —
+    /// the token beside it. Returns false for anything that isn't one of
+    /// our pair URLs.
     @discardableResult
     func applyPairing(_ text: String) -> Bool {
         guard let pairing = MirrorPairing.parsePairURL(text) else { return false }
-        if !pairing.endpoint.isEmpty { manualEndpoint = pairing.endpoint }
+        manualEndpoints = pairing.endpoints
         pairToken = pairing.token
         Task { await refresh() }
         return true
+    }
+
+    /// Adds an endpoint typed into Settings, de-duplicated — the field
+    /// grows the list rather than replacing it (#9 pair once, every
+    /// route: a phone paired on Wi-Fi can add a tunnel URL beside it).
+    func addManualEndpoint(_ text: String) {
+        let endpoint = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !endpoint.isEmpty, !manualEndpoints.contains(endpoint) else { return }
+        manualEndpoints.append(endpoint)
+    }
+
+    func removeManualEndpoint(at offsets: IndexSet) {
+        manualEndpoints.remove(atOffsets: offsets)
     }
 
     /// `INFINITUS_MIRROR_PATH` lets a simulator point at the Mac's live

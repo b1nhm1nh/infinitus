@@ -41,15 +41,44 @@ final class MirrorPairingTests: XCTestCase {
         // can't be read as another query parameter.
         XCTAssertFalse(url.contains("http://192.168.1.20:47824"))
         let pairing = MirrorPairing.parsePairURL(url)
+        XCTAssertEqual(pairing?.endpoints, ["http://192.168.1.20:47824"])
         XCTAssertEqual(pairing?.endpoint, "http://192.168.1.20:47824")
         XCTAssertEqual(pairing?.token, "ABCD2345")
+    }
+
+    /// One QR, every route (#9 pair once, every route) — repeated `url=`
+    /// in order, so a tunnel that changes on restart just falls through
+    /// to the next one instead of forcing a rescan.
+    func testPairURLCarriesEveryRouteInOrder() {
+        let url = MirrorPairing.pairURL(
+            endpoints: ["http://192.168.1.20:47824", "http://100.90.1.2:47824",
+                        "https://calm-fox.trycloudflare.com"],
+            token: "abcd2345")
+        XCTAssertEqual(url.components(separatedBy: "url=").count - 1, 3)
+        let pairing = MirrorPairing.parsePairURL(url)
+        XCTAssertEqual(pairing?.endpoints, [
+            "http://192.168.1.20:47824", "http://100.90.1.2:47824",
+            "https://calm-fox.trycloudflare.com",
+        ])
+        XCTAssertEqual(pairing?.token, "ABCD2345")
+    }
+
+    /// Duplicate `url=` values collapse to one, keeping the first
+    /// occurrence's position.
+    func testPairURLDeduplicatesEndpoints() {
+        let pairing = MirrorPairing.parsePairURL(
+            "infinitus://pair?url=http://a&url=http://b&url=http://a&token=AB")
+        XCTAssertEqual(pairing?.endpoints, ["http://a", "http://b"])
     }
 
     func testParsePairURLRejectsAnythingElse() {
         XCTAssertNil(MirrorPairing.parsePairURL("https://evil.example/pair?token=AB"))
         XCTAssertNil(MirrorPairing.parsePairURL("infinitus://other?token=AB"))
-        // No token, no pairing — the endpoint alone is useless now.
+        // No token, no pairing.
         XCTAssertNil(MirrorPairing.parsePairURL("infinitus://pair?url=http://x"))
+        // A token with no endpoint at all is useless too — a pairing
+        // needs at least one route to try.
+        XCTAssertNil(MirrorPairing.parsePairURL("infinitus://pair?token=AB"))
         // A tunnel QR carries an https endpoint and no port.
         let tunnel = MirrorPairing.parsePairURL(
             MirrorPairing.pairURL(endpoint: "https://calm-fox.trycloudflare.com",

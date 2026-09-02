@@ -64,7 +64,6 @@ struct PairRoute: Identifiable {
     let detail: String
     /// `http://192.168.1.20:47824` — what the phone's address field takes.
     let endpoint: String
-    let pairURL: String
 }
 
 /// Where the tailnet route comes from: a Tailscale client on this Mac.

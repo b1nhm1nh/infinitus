@@ -648,17 +648,15 @@ final class AppModel: ObservableObject {
         eventLog.append(EventEntry(icon: "🔑", text: "phone pairing token regenerated"))
     }
 
-    /// Every way a phone can reach this Mac right now, each with the QR
-    /// that pairs it (#9 remote access).
+    /// Every way a phone can reach this Mac right now (#9 remote access):
+    /// lan, tailnet, tunnel, in that order — the order the single pair QR
+    /// lists them in, and the order the phone tries them in.
     var pairRoutes: [PairRoute] {
         guard let port = mirrorServer.port else { return [] }
         var routes: [PairRoute] = []
         let addresses = LocalAddresses.ipv4()
         func route(id: String, title: String, detail: String, endpoint: String) {
-            routes.append(PairRoute(
-                id: id, title: title, detail: detail, endpoint: endpoint,
-                pairURL: MirrorPairing.pairURL(endpoint: endpoint,
-                                               token: mirrorPairToken)))
+            routes.append(PairRoute(id: id, title: title, detail: detail, endpoint: endpoint))
         }
         if let lan = MirrorPairing.lanAddress(in: addresses) {
             route(id: "lan", title: "On this Wi-Fi",
@@ -679,6 +677,16 @@ final class AppModel: ObservableObject {
                   endpoint: tunnel)
         }
         return routes
+    }
+
+    /// The one QR a phone ever needs to scan (#9 pair once, every route):
+    /// every current route's endpoint, in `pairRoutes` order, plus the
+    /// token. Empty until at least one route is up, so the pane can hide
+    /// the QR instead of encoding a useless link.
+    var pairURL: String {
+        let endpoints = pairRoutes.map(\.endpoint)
+        guard !endpoints.isEmpty else { return "" }
+        return MirrorPairing.pairURL(endpoints: endpoints, token: mirrorPairToken)
     }
 
     private func startEngine(binary: String) {
