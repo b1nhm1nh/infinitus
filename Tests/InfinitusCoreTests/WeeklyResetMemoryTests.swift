@@ -23,26 +23,27 @@ final class ReadyWeeklyCaptionTests: XCTestCase {
                                            clock: nil, remembered: remembered, now: now)
         XCTAssertNotNil(text)
         XCTAssertTrue(text!.contains("2h"), "expected a 2h countdown, got \(text!)")
-    }
+            }
 
-    func testZeroPctWithPastRememberedResetFallsBack() {
-        // The remembered window already rolled over — nothing to show.
-        let remembered = now.addingTimeInterval(-3600)
-        let text = ReadyWeeklyCaption.text(pct: 0, resetsAt: nil, countdown: nil,
-                                           clock: nil, remembered: remembered, now: now)
-        XCTAssertEqual(text, "7d starts on first use")
+    func testZeroPctWithPastRememberedResetStepsToNextWeek() {
+        // Fixed weekly slot: a reset seen 10 days ago means the next one
+        // is 4 days ahead, not "nothing to show".
+        let memory = WeeklyResetMemory()
+        memory.note(email: "a@x", resetsAt: now.addingTimeInterval(-10 * 86400))
+        let next = memory.futureReset(email: "a@x", now: now)
+        XCTAssertEqual(next, now.addingTimeInterval(4 * 86400))
     }
 
     func testZeroPctWithNoRememberedResetFallsBack() {
         let text = ReadyWeeklyCaption.text(pct: 0, resetsAt: nil, countdown: nil,
                                            clock: nil, remembered: nil, now: now)
-        XCTAssertEqual(text, "7d starts on first use")
+        XCTAssertEqual(text, "7d reset unknown until first use")
     }
 
     func testCompactUsesShortFallback() {
         let text = ReadyWeeklyCaption.text(pct: 0, resetsAt: nil, countdown: nil,
                                            clock: nil, remembered: nil, now: now, compact: true)
-        XCTAssertEqual(text, "7d: first use")
+        XCTAssertEqual(text, "7d: slot unknown")
     }
 
     func testPositivePctWithNoResetInfoStaysNil() {
@@ -63,13 +64,13 @@ final class WeeklyResetMemoryTests: XCTestCase {
         XCTAssertNotNil(mem.futureReset(email: "a@example.com", now: now))
     }
 
-    func testPastResetIsNotReturned() {
-        let mem = WeeklyResetMemory()
+    func testPastResetStepsForwardByWholeWeeks() {
+        let memory = WeeklyResetMemory()
         let now = Date(timeIntervalSince1970: 1_000_000)
-        mem.note(email: "a@example.com", resetsAt: now.addingTimeInterval(-3600))
-        XCTAssertNil(mem.futureReset(email: "a@example.com", now: now))
+        memory.note(email: "a@x", resetsAt: now.addingTimeInterval(-16 * 86400))
+        XCTAssertEqual(memory.futureReset(email: "a@x", now: now),
+                       now.addingTimeInterval(5 * 86400))
     }
-
     func testNoteNeverRegressesToAnOlderTimestamp() {
         let mem = WeeklyResetMemory()
         let now = Date(timeIntervalSince1970: 1_000_000)

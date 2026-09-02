@@ -131,6 +131,15 @@ struct InfinitusApp: App {
                 utilizationModel: utilizationModel,
                 updateModel: updateModel, appRelease: appRelease))
         }
+        // ⌘, would raise that hidden scene window (and the controller
+        // would hide it again — "opened and closed immediately", user
+        // 2026-09-03). Route the standard Settings command to ours.
+        .commands {
+            CommandGroup(replacing: .appSettings) {
+                Button("Settings…") { model.showSettings?() }
+                    .keyboardShortcut(",", modifiers: .command)
+            }
+        }
     }
 }
 
