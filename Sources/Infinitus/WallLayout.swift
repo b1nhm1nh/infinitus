@@ -1,6 +1,7 @@
 import SwiftUI
 import Charts
 import CswapCore
+import InfinitusUI
 
 // The wall's own layout (issue #12) — not the scaled popup. Read at
 // 2–4 m: hero zone for the active account (or the revival countdown

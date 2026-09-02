@@ -16,6 +16,8 @@ targets:
     dependencies:
       - package: Infinitus
         product: CswapCore
+      - package: Infinitus
+        product: InfinitusUI
     settings:
       base:
         # Mobile has its own id — the mac app's com.huuloc.limitless is

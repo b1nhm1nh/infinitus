@@ -1,5 +1,6 @@
 import SwiftUI
 import CswapCore
+import InfinitusUI
 
 /// Theme picking, promoted out of the Display pane (user 2026-08-30:
 /// "revamp theme selection to adapt with the richful themes and future

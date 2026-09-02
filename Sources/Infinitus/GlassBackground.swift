@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import InfinitusUI
 
 /// macOS glass for the popover and the pop-out window: NSGlassEffectView
 /// in EVERY state. The round-7 focus-swap rested on a false observation —

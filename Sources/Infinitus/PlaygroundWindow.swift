@@ -1,5 +1,6 @@
 import SwiftUI
 import CswapCore
+import InfinitusUI
 
 /// Standalone "Animation Playground" window (user 2026-08-31: "you need
 /// a window playground to test everything else"; "same UI as production,

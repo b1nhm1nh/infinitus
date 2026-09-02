@@ -1,5 +1,6 @@
 import SwiftUI
 import CswapCore
+import InfinitusUI
 
 /// Debug-only Settings tab (defaults write <bundle-id> debug_menu -bool
 /// true): fire every popup animation on demand, without waiting for a

@@ -23,10 +23,23 @@ var targets: [Target] = [
         resources: [.copy("Fixtures")]
     ),
 ]
+var products: [Product] = [
+    .executable(name: "infinitus-tray", targets: ["InfinitusTray"]),
+    .library(name: "CswapCore", targets: ["CswapCore"]),
+]
 #if os(macOS)
+// Shared SwiftUI components (gauges, burn effects, theme colors) the
+// phone app renders too — SwiftUI doesn't exist on Linux, so this stays
+// fenced with the AppKit app target above.
+targets.append(.target(
+    name: "InfinitusUI",
+    dependencies: ["CswapCore"],
+    path: "Sources/InfinitusUI"
+))
+products.append(.library(name: "InfinitusUI", targets: ["InfinitusUI"]))
 targets.append(.executableTarget(
     name: "Infinitus",
-    dependencies: ["CswapCore"],
+    dependencies: ["CswapCore", "InfinitusUI"],
     path: "Sources/Infinitus"
 ))
 #endif
@@ -34,9 +47,6 @@ targets.append(.executableTarget(
 let package = Package(
     name: "Infinitus",
     platforms: [.macOS(.v14), .iOS(.v17)],
-    products: [
-        .executable(name: "infinitus-tray", targets: ["InfinitusTray"]),
-        .library(name: "CswapCore", targets: ["CswapCore"]),
-    ],
+    products: products,
     targets: targets
 )
