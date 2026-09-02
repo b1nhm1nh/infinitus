@@ -36,14 +36,16 @@ CTL="$BIN/infinitusctl"
 ID="$(security find-identity -v -p codesigning 2>/dev/null | awk -F'"' '/Apple Development/{print $2; exit}')"
 [ -z "$ID" ] || codesign --force --sign "$ID" --identifier com.huuloc.limitless "$APP" 2>/dev/null || true
 
-export INFINITUS_CONTROL_SOCKET="/tmp/infinitus-e2e-$$.sock"
+# Its own directory: the server chmods the socket's parent to 0700.
+SOCKDIR="/tmp/infinitus-e2e-$$"; mkdir -p "$SOCKDIR"
+export INFINITUS_CONTROL_SOCKET="$SOCKDIR/control.sock"
 export INFINITUS_CSWAP="$PWD/tools/demo-cswap"
 LOG="$(mktemp -t infinitus-e2e)"
 DOMAIN=Infinitus   # the unbundled debug binary's defaults domain
 
 cleanup() {
     pkill -f "$APP" 2>/dev/null || true
-    rm -f "$INFINITUS_CONTROL_SOCKET"
+    rm -rf "$SOCKDIR"
     "$INFINITUS_CSWAP" reset >/dev/null 2>&1 || true
     # Leave the dev domain as we found it for the keys we touched.
     for k in popout_shown popover_pinned gamification_style burn_style mock_mode; do
@@ -70,9 +72,18 @@ defaults write "$DOMAIN" burn_style ember
 defaults write "$DOMAIN" mock_mode -bool true
 
 "$APP" >"$LOG" 2>&1 &
+APP_PID=$!
 i=0
 until "$CTL" status >/dev/null 2>&1; do
-    i=$((i + 1)); [ "$i" -lt 60 ] || fail "control socket never came up"
+    i=$((i + 1))
+    if [ "$i" -ge 60 ]; then
+        # What CI can't show otherwise: the client's error, whether the
+        # socket file exists, and where the app's threads are stuck.
+        echo "--- last client attempt"; "$CTL" status 2>&1 | head -3 || true
+        echo "--- socket"; ls -l "$SOCKDIR" 2>&1 || true
+        echo "--- threads"; sample "$APP_PID" 2 -file "$LOG.sample" >/dev/null 2>&1 && grep -A25 "Call graph" "$LOG.sample" | head -40 || true
+        fail "control socket never came up"
+    fi
     sleep 1
 done
 echo "app up after ${i}s"

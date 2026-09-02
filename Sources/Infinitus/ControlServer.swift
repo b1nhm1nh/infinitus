@@ -50,7 +50,16 @@ final class ControlServer {
             Task { @MainActor in self.serve(conn) }
         }
         listener.stateUpdateHandler = { state in
-            if case .ready = state { chmod(url.path, 0o600) }
+            switch state {
+            case .ready:
+                chmod(url.path, 0o600)
+                NSLog("Infinitus control: listening at %@", url.path)
+            case .failed(let error), .waiting(let error):
+                // CI's e2e job sat on "socket never came up" with nothing
+                // in the log (2026-09-03) — the bind's own verdict belongs there.
+                NSLog("Infinitus control: listener %@: %@", "\(state)".hasPrefix("failed") ? "failed" : "waiting", "\(error)")
+            default: break
+            }
         }
         listener.start(queue: queue)
         self.listener = listener
