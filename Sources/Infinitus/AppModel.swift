@@ -684,8 +684,34 @@ final class AppModel: ObservableObject {
             encoder.dateEncodingStrategy = .iso8601
             return try? encoder.encode(feed)
         }
+        mirrorServer.sessionInput.set { [weak self] pid, request in
+            let claudeDir = ClaudeSessions.configHome()
+            guard let record = ClaudeSessions.list(claudeDir: claudeDir).first(where: { $0.pid == pid })
+            else {
+                Task { @MainActor in self?.logMirrorInput("⚠️", "phone input not delivered: unknown session") }
+                return nil
+            }
+            let reply = SessionInput.deliver(request: request, record: record,
+                                             hosts: PtyHosts.available(), claudeDir: claudeDir)
+            let label = URL(fileURLWithPath: record.cwd).lastPathComponent
+            Task { @MainActor in
+                if reply.outcome == "delivered" {
+                    let preview = String(request.text.prefix(60))
+                    self?.logMirrorInput("📲", "phone → \(label): \"\(preview)\" (\(reply.channel ?? "?"))")
+                } else {
+                    self?.logMirrorInput("⚠️", "phone input not delivered: \(reply.outcome)")
+                }
+            }
+            return reply
+        }
         applyQuickTunnel()
         applyNamedTunnel()
+    }
+
+    /// Every phone-injected input is logged, per #17 — success or not.
+    private func logMirrorInput(_ icon: String, _ text: String) {
+        eventLog.append(EventEntry(icon: icon, text: text))
+        if eventLog.count > 100 { eventLog.removeFirst(eventLog.count - 100) }
     }
 
     /// Starts or stops the Cloudflare quick tunnel (#9). It only ever

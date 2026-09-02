@@ -56,6 +56,25 @@ final class MirrorSessionFeedBox: @unchecked Sendable {
     }
 }
 
+/// The `POST /sessions/<pid>/input` handler (#17 layer 2), boxed the
+/// same way as `sessionFeed`: AppModel sets it once from the main actor,
+/// the connection handlers call it from the network queue. `nil` means
+/// "no such pid" (404); the closure itself does the PTY/socket delivery
+/// and its own logging.
+final class MirrorSessionInputBox: @unchecked Sendable {
+    private let lock = NSLock()
+    private var provider: (@Sendable (Int32, SessionInput.Request) -> SessionInput.Reply?)?
+
+    func set(_ new: @escaping @Sendable (Int32, SessionInput.Request) -> SessionInput.Reply?) {
+        lock.lock(); provider = new; lock.unlock()
+    }
+
+    func call(_ pid: Int32, _ request: SessionInput.Request) -> SessionInput.Reply? {
+        lock.lock(); let current = provider; lock.unlock()
+        return current?(pid, request)
+    }
+}
+
 /// Serves the fleet snapshot to the phone (#9): one Bonjour advertised
 /// (`_infinitus._tcp`) TCP listener answering `GET /snapshot` with the
 /// exact bytes MirrorExporter wrote. Off by default behind the Sync
@@ -82,6 +101,9 @@ final class MirrorServer: ObservableObject {
     let token = MirrorTokenBox()
     /// Answers `/sessions/<pid>/tail`; set by AppModel once at start.
     let sessionFeed = MirrorSessionFeedBox()
+    /// Answers `POST /sessions/<pid>/input` (#17 layer 2); set by AppModel
+    /// once at start.
+    let sessionInput = MirrorSessionInputBox()
     /// Event-log sink (icon, text), set by AppModel.
     var log: ((String, String) -> Void)?
     /// Fires with the bound port once the listener is up — the quick
@@ -132,12 +154,13 @@ final class MirrorServer: ObservableObject {
         let payload = self.payload
         let token = self.token
         let sessionFeed = self.sessionFeed
+        let sessionInput = self.sessionInput
         let served: @Sendable () -> Void = { [weak self] in
             Task { @MainActor in self?.lastServed = Date() }
         }
         listener.newConnectionHandler = { [queue] connection in
             Self.serve(connection, payload: payload, token: token, sessionFeed: sessionFeed,
-                       queue: queue, onServed: served)
+                       sessionInput: sessionInput, queue: queue, onServed: served)
         }
         listener.stateUpdateHandler = { [weak self] state in
             Task { @MainActor in self?.handle(state, wasFixedPort: rawPort != 0, name: name) }
@@ -180,11 +203,12 @@ final class MirrorServer: ObservableObject {
                                           payload: MirrorPayloadBox,
                                           token: MirrorTokenBox,
                                           sessionFeed: MirrorSessionFeedBox,
+                                          sessionInput: MirrorSessionInputBox,
                                           queue: DispatchQueue,
                                           onServed: @escaping @Sendable () -> Void) {
         connection.start(queue: queue)
         receive(connection, buffer: Data(), payload: payload, token: token,
-               sessionFeed: sessionFeed, onServed: onServed)
+               sessionFeed: sessionFeed, sessionInput: sessionInput, onServed: onServed)
     }
 
     private nonisolated static func receive(_ connection: NWConnection,
@@ -192,15 +216,18 @@ final class MirrorServer: ObservableObject {
                                             payload: MirrorPayloadBox,
                                             token: MirrorTokenBox,
                                             sessionFeed: MirrorSessionFeedBox,
+                                            sessionInput: MirrorSessionInputBox,
                                             onServed: @escaping @Sendable () -> Void) {
         connection.receive(minimumIncompleteLength: 1, maximumLength: 4096) {
             data, _, isComplete, error in
             var buffer = buffer
             if let data { buffer.append(data) }
-            // The whole head, not just the request line: the token may be
-            // in a header. Auth is checked before routing, so an unpaired
-            // caller can't even probe which routes exist.
-            if let request = MirrorTransport.parseRequest(buffer) {
+            // The whole head AND, when there is one, the whole body — the
+            // token may be in a header, and the input route's JSON body
+            // arrives in arbitrary chunks just like everything else. Auth
+            // is checked before routing, so an unpaired caller can't even
+            // probe which routes exist.
+            if let request = MirrorTransport.parseRequestWithBody(buffer) {
                 let response: Data
                 if !MirrorTransport.isAuthorized(request, token: token.current) {
                     response = MirrorTransport.unauthorizedResponse()
@@ -215,6 +242,19 @@ final class MirrorServer: ObservableObject {
                     response = sessionFeed.call(pid, limit).map(MirrorTransport.snapshotResponse)
                         ?? MirrorTransport.notFoundResponse()
                     onServed()
+                } else if request.method == "POST",
+                          let pid = MirrorTransport.sessionInputPid(request.path) {
+                    if let decoded = try? JSONDecoder().decode(SessionInput.Request.self, from: request.body) {
+                        if let reply = sessionInput.call(pid, decoded),
+                           let encoded = try? JSONEncoder().encode(reply) {
+                            response = MirrorTransport.jsonResponse(encoded)
+                        } else {
+                            response = MirrorTransport.notFoundResponse()
+                        }
+                        onServed()
+                    } else {
+                        response = MirrorTransport.badRequestResponse()
+                    }
                 } else {
                     response = MirrorTransport.notFoundResponse()
                 }
@@ -224,12 +264,12 @@ final class MirrorServer: ObservableObject {
             }
             // Nothing to answer yet — and nothing ever will be if the peer
             // hung up or is spraying bytes without a request line.
-            guard error == nil, !isComplete, buffer.count < 8192 else {
+            guard error == nil, !isComplete, buffer.count < 16 * 1024 else {
                 connection.cancel()
                 return
             }
             receive(connection, buffer: buffer, payload: payload, token: token,
-                   sessionFeed: sessionFeed, onServed: onServed)
+                   sessionFeed: sessionFeed, sessionInput: sessionInput, onServed: onServed)
         }
     }
 }

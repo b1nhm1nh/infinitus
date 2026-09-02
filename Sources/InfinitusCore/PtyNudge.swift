@@ -71,6 +71,30 @@ public enum PtyNudge {
         return seen.contains(flat(String(text.prefix(40)))) || seen != screen ? .delivered : .typedUnverified
     }
 
+    /// Presses one key into the session's terminal — the menu-answering
+    /// counterpart to `nudge`, which must NEVER be reused here: `nudge`
+    /// dismisses a captured menu with one Esc before typing, but a key
+    /// press's whole point is to answer that very menu. Running is still
+    /// left alone; anything else is sent straight through. `enter` is an
+    /// empty line (Claude Code's menus select on Enter alone), `esc` is
+    /// the terminal's escape, everything else is typed as a line (a digit
+    /// selects an option, the trailing Enter confirms it).
+    public static func press(host: any PtyHost, pid: Int32, key: String, tty: String?,
+                             ancestors: [Int32], sleep: (TimeInterval) -> Void) -> Status {
+        guard let surface = locate(host, pid: pid, tty: tty, ancestors: ancestors) else { return .noSurface }
+        let screen = flat((try? host.readScreen(surface.ref, lines: screenLines)) ?? "")
+        if isRunning(screen) { return .running }
+        do {
+            switch key {
+            case "enter": try host.sendLine(surface.ref, "")
+            case "esc": try host.sendEsc(surface.ref)
+            default: try host.sendLine(surface.ref, key)
+            }
+        } catch { return .noSurface }
+        sleep(settle)
+        return (try? host.readScreen(surface.ref, lines: screenLines)) == nil ? .typedUnverified : .delivered
+    }
+
     // MARK: - /rc re-arm
 
     public struct SweepResult: Equatable, Sendable {

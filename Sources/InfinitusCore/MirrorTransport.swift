@@ -24,6 +24,15 @@ public enum MirrorTransport {
         guard parts.count == 3, parts[0] == "sessions", parts[2] == "tail" else { return nil }
         return Int32(parts[1])
     }
+    /// The per-session input route (#17 layer 2): `POST /sessions/<pid>/input`.
+    public static func sessionInputPath(pid: Int32) -> String { "/sessions/\(pid)/input" }
+    /// The `pid` out of a request path, when it matches
+    /// `/sessions/<pid>/input` exactly.
+    public static func sessionInputPid(_ path: String) -> Int32? {
+        let parts = path.split(separator: "/", omittingEmptySubsequences: true)
+        guard parts.count == 3, parts[0] == "sessions", parts[2] == "input" else { return nil }
+        return Int32(parts[1])
+    }
     /// Query parameter carrying the item limit for the tail route.
     public static let tailLimitQueryName = "n"
     /// Query parameter carrying the pairing token when a header can't
@@ -56,11 +65,15 @@ public enum MirrorTransport {
         public let target: String
         /// Header names lowercased; HTTP says they're case-insensitive.
         public let headers: [String: String]
+        /// The request body, once fully received (#17 layer 2's `POST
+        /// /sessions/<pid>/input`). Empty for every route that has none.
+        public let body: Data
 
-        public init(method: String, target: String, headers: [String: String]) {
+        public init(method: String, target: String, headers: [String: String], body: Data = Data()) {
             self.method = method
             self.target = target
             self.headers = headers
+            self.body = body
         }
 
         /// The target with any `?query` stripped — what routing compares.
@@ -83,7 +96,11 @@ public enum MirrorTransport {
         }
     }
 
-    public static func parseRequest(_ data: Data) -> Request? {
+    /// The head (request line + headers) and the index where the body
+    /// starts, once the head has fully arrived. Shared by `parseRequest`
+    /// (which never waits for a body) and `parseRequestWithBody` (which
+    /// does).
+    private static func parseHead(_ data: Data) -> (Request, Data.Index)? {
         guard let split = data.range(of: Data("\r\n\r\n".utf8)) else { return nil }
         let head = String(decoding: data[data.startIndex..<split.lowerBound], as: UTF8.self)
         var lines = head.components(separatedBy: "\r\n")
@@ -98,8 +115,31 @@ public enum MirrorTransport {
             headers[halves[0].trimmingCharacters(in: .whitespaces).lowercased()] =
                 halves[1].trimmingCharacters(in: .whitespaces)
         }
-        return Request(method: String(request[0]), target: String(request[1]),
-                       headers: headers)
+        return (Request(method: String(request[0]), target: String(request[1]), headers: headers),
+                split.upperBound)
+    }
+
+    public static func parseRequest(_ data: Data) -> Request? {
+        parseHead(data)?.0
+    }
+
+    /// A whole request, body included: `nil` while the head or (when
+    /// `Content-Length` says there's more) the body is still arriving.
+    /// A request with no `Content-Length` is complete as soon as the head
+    /// is — GETs never carry a body. `bodyCap` guards a runaway
+    /// `Content-Length`: once that many body bytes have arrived the
+    /// request is treated as complete, its body silently truncated,
+    /// leaving the route's own decode to reject it.
+    public static func parseRequestWithBody(_ data: Data, bodyCap: Int = 16 * 1024) -> Request? {
+        guard let (head, bodyStart) = parseHead(data) else { return nil }
+        guard let lengthText = head.headers["content-length"], let length = Int(lengthText), length > 0
+        else { return head }
+        let want = min(length, bodyCap)
+        let available = data.distance(from: bodyStart, to: data.endIndex)
+        guard available >= want else { return nil }
+        let bodyEnd = data.index(bodyStart, offsetBy: want)
+        return Request(method: head.method, target: head.target, headers: head.headers,
+                       body: data[bodyStart..<bodyEnd])
     }
 
     // MARK: - Pairing check (#9 remote access)
@@ -145,9 +185,22 @@ public enum MirrorTransport {
         response(status: 200, reason: "OK", contentType: "application/json", body: body)
     }
 
+    /// Any 200 JSON body (#17 layer 2's `SessionInput.Reply`) — same
+    /// shape as `snapshotResponse`, named for what it's generically used
+    /// for now that there's more than one JSON route.
+    public static func jsonResponse(_ body: Data) -> Data {
+        response(status: 200, reason: "OK", contentType: "application/json", body: body)
+    }
+
     public static func notFoundResponse() -> Data {
         response(status: 404, reason: "Not Found", contentType: "text/plain",
                  body: Data("no such route\n".utf8))
+    }
+
+    /// A `POST` body that didn't parse as the route's expected JSON.
+    public static func badRequestResponse() -> Data {
+        response(status: 400, reason: "Bad Request", contentType: "text/plain",
+                 body: Data("bad request body\n".utf8))
     }
 
     /// No pairing token, or the wrong one (#9 remote access). The realm

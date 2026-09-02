@@ -163,7 +163,8 @@ actor NetworkFleetMirror: FleetMirror {
     /// own loop — `nil` means none of them answered for network reasons;
     /// a bad pairing token still throws, since that's equally actionable
     /// for either caller.
-    private func fetchFromStored(path: String, token: String, timeout: TimeInterval) async throws -> Data? {
+    private func fetchFromStored(path: String, token: String, timeout: TimeInterval,
+                                 method: String = "GET", body: Data? = nil) async throws -> Data? {
         for text in candidateEndpoints() {
             guard let manual = MirrorTransport.parseEndpoint(text) else { continue }
             let endpoint = NWEndpoint.hostPort(
@@ -171,7 +172,8 @@ actor NetworkFleetMirror: FleetMirror {
                 port: NWEndpoint.Port(rawValue: manual.port) ?? .any)
             do {
                 let (data, _) = try await fetch(endpoint, path: path, hostHeader: manual.host,
-                                                useTLS: manual.useTLS, token: token, timeout: timeout)
+                                                useTLS: manual.useTLS, token: token, timeout: timeout,
+                                                method: method, body: body)
                 UserDefaults.standard.set(text, forKey: Self.lastGoodKey)
                 return data
             } catch MirrorTransportError.http(401) {
@@ -181,6 +183,27 @@ actor NetworkFleetMirror: FleetMirror {
             }
         }
         return nil
+    }
+
+    /// Layer 2 of #17: posts a reply or a key press into a session's
+    /// terminal. Same candidate/token/discovery path as `sessionTail`;
+    /// unlike the feed, a Mac that's simply offline has nothing sensible
+    /// to fall back to, so every failure throws.
+    func sessionInput(pid: Int32, request: SessionInput.Request) async throws -> SessionInput.Reply {
+        let token = MirrorPairing.normalize(
+            UserDefaults.standard.string(forKey: Self.tokenKey) ?? "")
+        let path = MirrorTransport.sessionInputPath(pid: pid)
+        let body = try JSONEncoder().encode(request)
+        if let data = try await fetchFromStored(path: path, token: token, timeout: Self.candidateTimeout,
+                                                method: "POST", body: body) {
+            return try JSONDecoder().decode(SessionInput.Reply.self, from: data)
+        }
+        startBrowsing()
+        guard let discovered = await firstEndpoint() else { throw MirrorTransportError.timedOut }
+        let (data, _) = try await fetch(discovered, path: path, hostHeader: "infinitus",
+                                        useTLS: false, token: token, timeout: Self.candidateTimeout,
+                                        method: "POST", body: body)
+        return try JSONDecoder().decode(SessionInput.Reply.self, from: data)
     }
 
     /// `192.168.2.36:47824` / `abc.trycloudflare.com` — the stored text
@@ -257,9 +280,12 @@ actor NetworkFleetMirror: FleetMirror {
     // MARK: - Fetch
 
     /// Returns the response body and the resolved `host:port` it came
-    /// from (the Bonjour endpoint alone never names a port).
+    /// from (the Bonjour endpoint alone never names a port). `method`/
+    /// `body` default to a plain `GET` (#17 layer 2's `POST
+    /// /sessions/<pid>/input` is the only other caller).
     private func fetch(_ endpoint: NWEndpoint, path: String, hostHeader: String, useTLS: Bool,
-                       token: String, timeout: TimeInterval = 5) async throws -> (Data, String) {
+                       token: String, timeout: TimeInterval = 5,
+                       method: String = "GET", body: Data? = nil) async throws -> (Data, String) {
         let tcp = NWProtocolTCP.Options()
         tcp.connectionTimeout = Int(timeout)
         // A quick tunnel answers on 443 with a real certificate; the LAN
@@ -281,11 +307,17 @@ actor NetworkFleetMirror: FleetMirror {
                 case .ready:
                     let remote = connection.currentPath?.remoteEndpoint
                         .map(String.init(describing:)) ?? String(describing: endpoint)
-                    let request = "GET \(path) HTTP/1.1\r\n"
+                    var head = "\(method) \(path) HTTP/1.1\r\n"
                         + "Host: \(hostHeader)\r\n"
                         + "Authorization: Bearer \(token)\r\n"
-                        + "Connection: close\r\n\r\n"
-                    connection.send(content: Data(request.utf8),
+                    if let body {
+                        head += "Content-Type: application/json\r\n"
+                        head += "Content-Length: \(body.count)\r\n"
+                    }
+                    head += "Connection: close\r\n\r\n"
+                    var request = Data(head.utf8)
+                    if let body { request.append(body) }
+                    connection.send(content: request,
                                     completion: .contentProcessed { error in
                         if let error { once.finish(.failure(error)) }
                     })

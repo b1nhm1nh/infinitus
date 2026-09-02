@@ -128,4 +128,49 @@ final class MirrorTransportTests: XCTestCase {
         XCTAssertNil(MirrorTransport.sessionTailPid("/sessions/123/tail/extra"))
         XCTAssertNil(MirrorTransport.sessionTailPid("/snapshot"))
     }
+
+    // MARK: - Session input route (#17 layer 2)
+
+    func testSessionInputPathRoundTrips() {
+        XCTAssertEqual(MirrorTransport.sessionInputPath(pid: 123), "/sessions/123/input")
+        XCTAssertEqual(MirrorTransport.sessionInputPid("/sessions/123/input"), 123)
+        XCTAssertNil(MirrorTransport.sessionInputPid("/sessions/123/tail"))
+        XCTAssertNil(MirrorTransport.sessionInputPid("/sessions/x/input"))
+    }
+
+    func testJsonAndBadRequestResponses() {
+        let body = Data(#"{"outcome":"delivered"}"#.utf8)
+        let ok = MirrorTransport.parseResponse(MirrorTransport.jsonResponse(body))
+        XCTAssertEqual(ok, MirrorTransport.HTTPResponse(status: 200, body: body))
+        XCTAssertEqual(MirrorTransport.parseResponse(MirrorTransport.badRequestResponse())?.status, 400)
+    }
+
+    // MARK: - Request body parsing (#17 layer 2)
+
+    func testParseRequestWithBodyWaitsForTheWholeBody() {
+        let head = "POST /sessions/1/input HTTP/1.1\r\nContent-Length: 10\r\n\r\n"
+        // Head only, body not arrived yet.
+        XCTAssertNil(MirrorTransport.parseRequestWithBody(Data(head.utf8)))
+        // Body arriving in pieces.
+        XCTAssertNil(MirrorTransport.parseRequestWithBody(Data((head + "12345").utf8)))
+        let whole = MirrorTransport.parseRequestWithBody(Data((head + "1234567890").utf8))
+        XCTAssertEqual(whole?.body, Data("1234567890".utf8))
+        XCTAssertEqual(whole?.method, "POST")
+    }
+
+    func testParseRequestWithBodyCompletesImmediatelyWithoutContentLength() {
+        let request = MirrorTransport.parseRequestWithBody(
+            Data("GET /snapshot HTTP/1.1\r\nHost: x\r\n\r\n".utf8))
+        XCTAssertEqual(request?.body, Data())
+    }
+
+    func testParseRequestWithBodyTruncatesPastTheCap() {
+        let head = "POST /sessions/1/input HTTP/1.1\r\nContent-Length: 100\r\n\r\n"
+        let payload = String(repeating: "x", count: 100)
+        // With a 10-byte cap, only 10 bytes are ever awaited — the
+        // truncated body is returned as complete, leaving the route's
+        // JSON decode to reject it.
+        let request = MirrorTransport.parseRequestWithBody(Data((head + payload).utf8), bodyCap: 10)
+        XCTAssertEqual(request?.body, Data(String(repeating: "x", count: 10).utf8))
+    }
 }

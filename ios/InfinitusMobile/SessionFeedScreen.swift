@@ -1,15 +1,20 @@
 import SwiftUI
 import InfinitusCore
 
-/// One session's recent important messages (#17 layer 1), chat-style and
-/// read-only — `GET /sessions/<pid>/tail` polled every 5s while this
-/// screen is on screen. Layer 2 turns the question/permission cards into
-/// buttons; for now they're just shown.
+/// One session's recent important messages (#17), chat-style — `GET
+/// /sessions/<pid>/tail` polled every 5s while this screen is on screen,
+/// with a bottom composer and per-card action buttons (layer 2) that
+/// `POST /sessions/<pid>/input`.
 struct SessionFeedScreen: View {
     let session: SessionDetail
 
     @State private var feed: SessionFeed?
     @State private var errorText: String?
+    @State private var draft = ""
+    @State private var sendingMessage = false
+    @State private var messageResult: String?
+    @State private var actionSending = false
+    @State private var actionResult: String?
     private let pollInterval: UInt64 = 5 * 1_000_000_000
 
     var body: some View {
@@ -21,10 +26,15 @@ struct SessionFeedScreen: View {
                         .listRowSeparator(.hidden)
                 }
                 ForEach(Array((feed?.items ?? []).enumerated()), id: \.offset) { index, item in
-                    row(item)
-                        .id(index)
-                        .listRowSeparator(.hidden)
-                        .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
+                    VStack(alignment: .leading, spacing: 6) {
+                        row(item)
+                        if index == (feed?.items.count ?? 0) - 1 {
+                            actionRow(item)
+                        }
+                    }
+                    .id(index)
+                    .listRowSeparator(.hidden)
+                    .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
                 }
                 if let errorText {
                     Text(errorText)
@@ -38,6 +48,7 @@ struct SessionFeedScreen: View {
                 withAnimation { proxy.scrollTo(last, anchor: .bottom) }
             }
         }
+        .safeAreaInset(edge: .bottom) { composer }
         .navigationTitle(repoName(session.cwd))
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -65,6 +76,117 @@ struct SessionFeedScreen: View {
         } catch {
             errorText = feed == nil ? "couldn't reach the Mac: \(error.localizedDescription)"
                 : "offline — showing the last feed"
+        }
+    }
+
+    // MARK: - Layer 2: sending in
+
+    private var composer: some View {
+        VStack(spacing: 4) {
+            if let messageResult {
+                Text(messageResult).font(.caption).foregroundStyle(.secondary)
+                    .padding(.horizontal)
+            }
+            HStack(spacing: 8) {
+                TextField("Reply…", text: $draft, axis: .vertical)
+                    .textFieldStyle(.roundedBorder)
+                    .disabled(sendingMessage)
+                Button(action: sendMessage) {
+                    if sendingMessage {
+                        ProgressView()
+                    } else {
+                        Image(systemName: "arrow.up.circle.fill").font(.title2)
+                    }
+                }
+                .disabled(sendingMessage
+                          || draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+            .padding(.horizontal)
+            .padding(.vertical, 8)
+        }
+        .background(.bar)
+    }
+
+    @ViewBuilder private func actionRow(_ item: SessionFeedItem) -> some View {
+        switch item.kind {
+        case .permission:
+            HStack(spacing: 8) {
+                Button("Yes") { sendKey("1") }.buttonStyle(.borderedProminent)
+                Button("No") { sendKey("3") }.buttonStyle(.bordered)
+                if actionSending { ProgressView() }
+            }
+            .disabled(actionSending)
+            if let actionResult { Text(actionResult).font(.caption).foregroundStyle(.secondary) }
+        case .question:
+            VStack(alignment: .leading, spacing: 6) {
+                ForEach(Array((item.options ?? []).enumerated()), id: \.offset) { i, option in
+                    Button(option) { sendKey(String(i + 1)) }.buttonStyle(.bordered)
+                }
+                if actionSending { ProgressView() }
+            }
+            .disabled(actionSending)
+            if let actionResult { Text(actionResult).font(.caption).foregroundStyle(.secondary) }
+        default:
+            EmptyView()
+        }
+    }
+
+    private func sendMessage() {
+        let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return }
+        sendingMessage = true
+        messageResult = nil
+        Task {
+            await send(.init(kind: .message, text: text)) { reply in
+                if reply.outcome == "delivered" {
+                    draft = ""
+                    messageResult = reply.channel == "socket" ? "sent as a message (no terminal)" : nil
+                } else {
+                    messageResult = Self.describe(reply.outcome)
+                }
+            } onFailure: {
+                messageResult = "couldn't reach the Mac"
+            } finished: {
+                sendingMessage = false
+            }
+        }
+    }
+
+    private func sendKey(_ key: String) {
+        actionSending = true
+        actionResult = nil
+        Task {
+            await send(.init(kind: .key, text: key)) { reply in
+                actionResult = reply.outcome == "delivered" ? nil : Self.describe(reply.outcome)
+            } onFailure: {
+                actionResult = "couldn't reach the Mac"
+            } finished: {
+                actionSending = false
+            }
+        }
+    }
+
+    private func send(_ request: SessionInput.Request, onReply: @escaping (SessionInput.Reply) -> Void,
+                      onFailure: @escaping () -> Void, finished: @escaping () -> Void) async {
+        do {
+            let reply = try await NetworkFleetMirror.shared.sessionInput(pid: Int32(session.pid),
+                                                                         request: request)
+            onReply(reply)
+        } catch {
+            onFailure()
+        }
+        finished()
+        await load()
+    }
+
+    private static func describe(_ outcome: String) -> String {
+        switch outcome {
+        case "running": return "session is mid-turn — try again when it's waiting"
+        case "noSurface": return "no terminal found for this session"
+        case "noChannel": return "no terminal or messaging channel for this session"
+        case "captured": return "a menu is on screen — try again"
+        case "rejected": return "that wasn't a valid reply"
+        default: return outcome
         }
     }
 
