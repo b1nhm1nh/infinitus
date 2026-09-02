@@ -7,7 +7,7 @@ import qs.Ui
 // The Infinitus fleet popup — the Omarchy counterpart of the macOS
 // menu-bar app's popup. Per-account rows with usage gauges, themed by
 // the same RowTheme vocabulary; click a row to switch to that account,
-// rotate and theme cycling live in the footer.
+// theme cycling lives in the footer.
 //
 // Data comes from `infinitus-tray panel --theme <id>` (structured JSON,
 // themed strings rendered Swift-side); the engine stays behind
@@ -698,22 +698,12 @@ Panel {
             foreground: root.contentForeground
           }
 
-          // ---- Footer: rotate on the left, theme stepper on the right.
+          // ---- Footer: theme stepper on the right. Rotate is no longer a
+          // button (obsolete with auto-rotation, user 2026-09-02) — the
+          // `r` key and the bar-widget activation still rotate.
           Item {
             width: parent.width
-            height: Math.max(rotateButton.height, themeNav.height)
-
-            PanelActionButton {
-              id: rotateButton
-              anchors.left: parent.left
-              anchors.leftMargin: -Style.space(8)
-              anchors.verticalCenter: parent.verticalCenter
-              iconText: "󰑖"
-              tooltipText: "Rotate to the next account"
-              foreground: root.contentForeground
-              fontFamily: root.contentFontFamily
-              onClicked: root.rotate()
-            }
+            height: themeNav.height
 
             Row {
               id: themeNav
