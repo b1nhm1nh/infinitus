@@ -188,7 +188,7 @@ public struct GaugeBar: View {
                 LuckySevens(text: "\(Int(remaining))%")
             } else {
                 Text("\(Int(remaining))%")
-                    .font(.caption).monospacedDigit()
+                    .font(PopupFont.caption).monospacedDigit()
                     .contentTransition(animated ? .numericText(value: remaining)
                                                 : .identity)
                     .foregroundStyle(remaining <= 0 ? Color.red : color.opacity(0.9))

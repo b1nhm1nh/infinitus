@@ -342,7 +342,7 @@ struct LuckySevens: View {
         TimelineView(.periodic(from: .now, by: 0.14)) { ctx in
             let frame = Int(ctx.date.timeIntervalSinceReferenceDate / 0.14)
             Text(text)
-                .font(.caption).bold().monospacedDigit()
+                .font(PopupFont.caption).bold().monospacedDigit()
                 .foregroundStyle(Self.steps[frame % Self.steps.count])
                 .scaleEffect(frame % 2 == 0 ? 1.0 : 1.12)
         }
@@ -352,10 +352,10 @@ struct LuckySevens: View {
 
 public struct LuckyName: View {
     let text: String
-    var font: Font = .body
+    var font: Font = PopupFont.body
     var bold = true
 
-    public init(text: String, font: Font = .body, bold: Bool = true) {
+    public init(text: String, font: Font = PopupFont.body, bold: Bool = true) {
         self.text = text
         self.font = font
         self.bold = bold

@@ -31,7 +31,7 @@ public struct SessionListCard<P: SessionProgressSource>: View {
     public var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(SessionSummary.tooltip(live))
-                .font(.caption).foregroundStyle(.secondary)
+                .font(PopupFont.caption).foregroundStyle(.secondary)
             if let sessions = live.sessions, !sessions.isEmpty {
                 Divider()
                 ForEach(sessions, id: \.pid) { s in
@@ -41,14 +41,14 @@ public struct SessionListCard<P: SessionProgressSource>: View {
                                 .fill(color(for: s.status))
                                 .frame(width: 7, height: 7)
                             Text(shortCwd(s.cwd))
-                                .font(.caption)
+                                .font(PopupFont.caption)
                                 .lineLimit(1)
                                 .truncationMode(.head)
                             Spacer(minLength: 12)
                             Text(s.status)
-                                .font(.caption).foregroundStyle(.secondary)
+                                .font(PopupFont.caption).foregroundStyle(.secondary)
                             Text(age(s.startedAt))
-                                .font(.caption2).foregroundStyle(.tertiary)
+                                .font(PopupFont.caption2).foregroundStyle(.tertiary)
                                 .monospacedDigit()
                         }
                         if let p = progress.byPid[s.pid], p.hasProgressSignal {
@@ -59,7 +59,7 @@ public struct SessionListCard<P: SessionProgressSource>: View {
                 }
             } else {
                 Text("Session detail needs a newer cswap engine.")
-                    .font(.caption2).foregroundStyle(.tertiary)
+                    .font(PopupFont.caption2).foregroundStyle(.tertiary)
             }
         }
         .padding(12)
@@ -123,12 +123,12 @@ private struct SessionProgressLine: View {
             if let todos = progress.todos {
                 TodoCapsule(done: todos.done, total: todos.total)
                 Text(todoLabel(todos))
-                    .font(.caption2).foregroundStyle(.secondary)
+                    .font(PopupFont.caption2).foregroundStyle(.secondary)
                     .lineLimit(1).truncationMode(.tail)
             }
             if let quiet = quietMinutes {
                 Text("quiet \(quiet)m")
-                    .font(.caption2).foregroundStyle(.tertiary)
+                    .font(PopupFont.caption2).foregroundStyle(.tertiary)
             }
         }
     }
@@ -137,10 +137,10 @@ private struct SessionProgressLine: View {
     private var statusText: some View {
         if progress.retrying {
             Text("retrying")
-                .font(.caption2).foregroundStyle(.orange)
+                .font(PopupFont.caption2).foregroundStyle(.orange)
         } else if let nowDoing = progress.nowDoing {
             Text(nowDoing)
-                .font(.caption2).foregroundStyle(.secondary)
+                .font(PopupFont.caption2).foregroundStyle(.secondary)
                 .lineLimit(1).truncationMode(.head)
         }
     }

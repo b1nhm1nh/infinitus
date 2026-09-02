@@ -25,7 +25,7 @@ public struct AllDeadBanner<M: FleetModel>: View {
                  + Text(RecoveryCountdown.label(until: date, now: ctx.date))
                     .bold().monospacedDigit().foregroundStyle(.orange)
                  + Text(waitingResumeSuffix))
-                    .font(.caption)
+                    .font(PopupFont.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                     .fixedSize()

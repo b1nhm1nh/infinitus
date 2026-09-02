@@ -83,7 +83,7 @@ struct AccountGrid<M: FleetModel, U: UsageSource>: View {
                     .frame(minWidth: 110, maxWidth: 230, alignment: .leading)
                     .activeBand(account.active)
                     Text(cells.planText ?? "")
-                        .font(.caption)
+                        .font(PopupFont.caption)
                         .foregroundStyle(.secondary)
                         .fixedSize()
                         .instantTip("Subscription: \(account.plan ?? "?")")
@@ -314,10 +314,10 @@ struct AccountStack<M: FleetModel, U: UsageSource>: View {
                 cells.deadCell
             } else if let (label, pct) = bindingWindow(account) {
                 Text(label)
-                    .font(.caption).bold()
+                    .font(PopupFont.caption).bold()
                     .foregroundStyle(.secondary)
                 Text("\(Int(pct))%")
-                    .font(.caption).monospacedDigit()
+                    .font(PopupFont.caption).monospacedDigit()
                     .foregroundStyle(pct >= 90 ? .orange : .secondary)
             }
         }
@@ -386,7 +386,7 @@ struct AccountStack<M: FleetModel, U: UsageSource>: View {
                                              ? .secondary : .primary)
                             .lineLimit(1)
                         if let plan = cells.planText {
-                            Text(plan).font(.caption).foregroundStyle(.secondary)
+                            Text(plan).font(PopupFont.caption).foregroundStyle(.secondary)
                                 .instantTip("Subscription: \(account.plan ?? "?")")
                         }
                         Spacer(minLength: 0)
@@ -491,13 +491,13 @@ struct SentinelActionText<M: FleetModel>: View {
                     Text(label)
                     Image(systemName: "arrow.right.circle")
                 }
-                .font(.caption)
+                .font(PopupFont.caption)
                 .foregroundStyle(.orange)
             }
             .buttonStyle(.plain)
         } else {
             Text(label)
-                .font(.caption)
+                .font(PopupFont.caption)
                 .foregroundStyle(.secondary)
         }
     }

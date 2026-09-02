@@ -103,7 +103,7 @@ private struct TipChip: View {
         // 20pt icon and wraps one char per line, the 'vertical strip'
         // bug). Long tips get a FIXED width, which is also honored.
         let chip = Text(text)
-            .font(.caption)
+            .font(PopupFont.caption)
             .padding(.horizontal, 7)
             .padding(.vertical, 3)
             .background(
