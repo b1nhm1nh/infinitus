@@ -8,3 +8,5 @@ ios/*.xcodeproj
 
 # wrangler local cache (site/, and site/public/ if deploy is run from there)
 .wrangler/
+build-*/
+ios/build/
