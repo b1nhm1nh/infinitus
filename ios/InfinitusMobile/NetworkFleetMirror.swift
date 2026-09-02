@@ -66,7 +66,7 @@ actor NetworkFleetMirror: FleetMirror {
             // The Mac is right there and refusing us: that's a pairing
             // problem, not a network one, and the fix is one field away.
             statusText = "pairing token required — scan the QR in the Mac's "
-                + "Sync settings"
+                + "Devices settings"
             return cached
         } catch {
             statusText = cached == nil

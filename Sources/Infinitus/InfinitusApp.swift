@@ -179,9 +179,12 @@ struct InfinitusApp: App {
         SettingsTab(title: "Activity", symbol: "clock.arrow.circlepath", tint: .teal,
                     keywords: ["history", "switches", "log", "events"],
                     view: AnyView(ActivityPane(model: model))),
-        SettingsTab(title: "Sync", symbol: "icloud", tint: .cyan,
+        // "Sync" until 2026-09-02: the pane grew the phone companion and
+        // its routes, and syncing settings is now the smaller half.
+        SettingsTab(title: "Devices", symbol: "iphone.and.arrow.right.inward", tint: .cyan,
                     keywords: ["icloud", "sync", "settings", "drive", "devices",
-                               "phone", "iphone", "lan", "bonjour", "companion"],
+                               "phone", "iphone", "lan", "bonjour", "companion",
+                               "tailscale", "cloudflare", "tunnel", "pair", "qr"],
                     view: AnyView(SyncPane(sync: model.sync, app: model))),
     ]
     + (model.debugMenu

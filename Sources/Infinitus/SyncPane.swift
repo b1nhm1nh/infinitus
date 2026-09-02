@@ -3,7 +3,8 @@ import AppKit
 import UniformTypeIdentifiers
 import InfinitusCore
 
-/// iCloud settings sync, in its own pane — it lived in Display, which is
+/// Devices: the phone companion and its routes, plus settings sync across
+/// Macs (iCloud, file). Was "Sync" — it lived in Display before, which is
 /// the wrong home (user report 2026-08-30): it syncs notify flags and
 /// engine config too, not just display prefs.
 struct SyncPane: View {
@@ -25,6 +26,8 @@ struct SyncPane: View {
     /// publish — the utun address just appears. Re-probe while the pane
     /// is up so the status row and the route list follow it.
     @State private var tailscale = TailscaleStatus.notInstalled
+    /// Open until every step is ticked; closes itself once paired.
+    @State private var walkthroughOpen = true
     private let reprobe = Timer.publish(every: 3, on: .main, in: .common).autoconnect()
 
     init(sync: SettingsSyncModel, app: AppModel) {
@@ -36,20 +39,11 @@ struct SyncPane: View {
 
     var body: some View {
         Form {
-            Section("iCloud") {
-                Toggle("Sync settings via iCloud Drive", isOn: $sync.enabled)
-                    .help("Display prefs, custom themes, and set cswap "
-                          + "engine settings travel through one JSON file "
-                          + "in iCloud Drive/Infinitus. Never credentials "
-                          + "or push secrets. Last writer wins.")
-                if let status = sync.status {
-                    Text(status).font(.caption).foregroundStyle(.secondary)
-                }
-            }
             // The phone companion's transport (#9): this Mac serves its
             // last fleet snapshot to InfinitusMobile — on the LAN, over a
             // tailnet, or through a throwaway Cloudflare tunnel. No
             // backend of ours anywhere; the pairing token is the lock.
+            walkthrough
             Section("Phone companion") {
                 Toggle("Serve the fleet to my phone",
                        isOn: $app.mirrorLANEnabled)
@@ -130,6 +124,16 @@ struct SyncPane: View {
                 .onAppear { probeTailscale() }
                 .onReceive(reprobe) { _ in probeTailscale() }
             }
+            Section("iCloud") {
+                Toggle("Sync settings via iCloud Drive", isOn: $sync.enabled)
+                    .help("Display prefs, custom themes, and set cswap "
+                          + "engine settings travel through one JSON file "
+                          + "in iCloud Drive/Infinitus. Never credentials "
+                          + "or push secrets. Last writer wins.")
+                if let status = sync.status {
+                    Text(status).font(.caption).foregroundStyle(.secondary)
+                }
+            }
             // Manual path for machines outside the iCloud account
             // (user request 2026-08-30). Same snapshot, same scope.
             Section("File") {
@@ -146,6 +150,147 @@ struct SyncPane: View {
             }
         }
         .formStyle(.grouped)
+    }
+
+    // MARK: - Walkthrough
+
+    /// One step of "Set up your phone": live state, not a static how-to.
+    private struct Step: Identifiable {
+        let id: Int
+        let title: String
+        let detail: String
+        let done: Bool
+    }
+
+    private var steps: [Step] {
+        let serving = app.mirrorLANEnabled && server.port != nil
+        let routes = app.pairRoutes
+        let remote = routes.contains { $0.id != "lan" }
+        return [
+            Step(id: 1, title: "Serve the fleet to my phone",
+                 detail: "The toggle below. This Mac answers with its fleet "
+                       + "snapshot; nothing leaves the machine otherwise.",
+                 done: serving),
+            Step(id: 2, title: "Put Infinitus on the phone",
+                 detail: "The iOS companion is in the repo under ios/ (build "
+                       + "it in Xcode until it reaches TestFlight).",
+                 done: server.lastServed != nil),
+            Step(id: 3, title: "Pick how the phone reaches this Mac",
+                 detail: remote
+                    ? "Same Wi-Fi works already; a remote route is up too."
+                    : "Same Wi-Fi needs nothing. From anywhere: Tailscale "
+                      + "on both devices (see Anywhere), or a Cloudflare "
+                      + "quick tunnel.",
+                 done: !routes.isEmpty),
+            Step(id: 4, title: "Scan the QR from the phone",
+                 detail: "On the phone: Settings → Mac connection → Scan QR. "
+                       + "Pick the route under Pair a phone first.",
+                 done: server.lastServed != nil),
+        ]
+    }
+
+    private var walkthrough: some View {
+        let steps = self.steps
+        let doneCount = steps.filter(\.done).count
+        return Section {
+            DisclosureGroup(isExpanded: $walkthroughOpen) {
+                ForEach(steps) { step in
+                    HStack(alignment: .top, spacing: 8) {
+                        Image(systemName: step.done ? "checkmark.circle.fill" : "\(step.id).circle")
+                            .foregroundStyle(step.done ? .green : .secondary)
+                            .frame(width: 16)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(step.title).strikethrough(step.done, color: .secondary)
+                            Text(step.detail).font(.caption).foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.vertical, 2)
+                }
+                if let when = server.lastServed {
+                    Text("Phone last fetched the fleet \(when.formatted(date: .omitted, time: .shortened)).")
+                        .font(.caption).foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                // Hand the rest to an agent (user 2026-09-02): the same
+                // state as the checklist, plus the exact commands, as one
+                // pasteable brief. The token rides along only while it's
+                // revealed above — a masked pane copies a masked brief.
+                HStack {
+                    Button("Copy for an AI agent") { copy(agentBrief(steps)) }
+                    Text(revealToken
+                         ? "Includes the pairing token."
+                         : "Token left out — Reveal it below to include it.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.top, 4)
+            } label: {
+                LabeledContent("Set up your phone") {
+                    Text(doneCount == steps.count ? "all set" : "\(doneCount) of \(steps.count)")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+            }
+        }
+        .onAppear { walkthroughOpen = doneCount < steps.count }
+    }
+
+    /// Markdown a coding agent can act on: what's done, what's left, and
+    /// the commands for each remaining step. Everything here is derived
+    /// from the live state so it never disagrees with the checklist.
+    private func agentBrief(_ steps: [Step]) -> String {
+        let routes = app.pairRoutes
+        let token = revealToken ? app.mirrorPairToken
+            : "<hidden — in Infinitus: Settings → Devices → Pairing token → Reveal/Copy>"
+        let port = server.port.map(String.init) ?? "?"
+        var out = ["# Infinitus — set up the phone companion (agent brief)",
+                   "Generated by Infinitus on \(Host.current().localizedName ?? "this Mac") "
+                   + "at \(Date().formatted(date: .abbreviated, time: .shortened)). "
+                   + "Source: https://github.com/deathemperor/infinitus", "",
+                   "## State"]
+        for step in steps { out.append("- [\(step.done ? "x" : " ")] \(step.id). \(step.title)") }
+        out.append("- Listener: \(app.mirrorLANEnabled ? "on, port \(port)" : "off")")
+        for r in routes { out.append("- Route \"\(r.title)\": \(r.endpoint)") }
+        out.append("- Pairing token: \(token)")
+        out.append("- Tailscale on this Mac: \(tailscaleLine)")
+        out.append("- cloudflared on this Mac: \(QuickTunnel.binaryPath ?? "not installed")")
+        out += ["", "## Do the unticked steps, in order",
+                "1. Serving: a toggle in the Infinitus menu bar app (Settings → Devices → "
+                + "\"Serve the fleet to my phone\"). No shell equivalent — ask the user to flip it.",
+                "2. Phone app: the iOS companion lives in ios/ of the repo. From a clone:",
+                "   cd ios && xcodegen generate",
+                "   xcrun devicectl list devices            # find the phone's UDID",
+                "   xcodebuild -project InfinitusMobile.xcodeproj -scheme InfinitusMobile "
+                + "-configuration Debug -destination 'id=<UDID>' -derivedDataPath build "
+                + "-allowProvisioningUpdates DEVELOPMENT_TEAM=<team id> CODE_SIGN_STYLE=Automatic build",
+                "   xcrun devicectl device install app --device <UDID> "
+                + "build/Build/Products/Debug-iphoneos/InfinitusMobile.app",
+                "   (a free personal team works; the user trusts the profile once on the phone)",
+                "3. A route. Same Wi-Fi needs nothing. From anywhere, either:",
+                "   - Tailscale: `brew install --cask tailscale-app` (the pkg asks for an admin "
+                + "password — the user types it), open Tailscale, sign in; on the phone install "
+                + "Tailscale from the App Store and sign into the same tailnet. Infinitus shows "
+                + "the tailnet route by itself.",
+                "   - Cloudflare quick tunnel: `brew install cloudflared`, then in Infinitus "
+                + "Settings → Devices → Anywhere turn on the tunnel (random public URL; the token "
+                + "is the only lock).",
+                "4. Pair: on the phone, Settings → Mac connection → Scan QR, pointing at "
+                + "Infinitus Settings → Devices → Pair a phone (pick the route first). Or enter the "
+                + "route address and the pairing token by hand in the same screen.",
+                "", "## Verify",
+                "curl -s -o /dev/null -w '%{http_code}\\n' -H 'Authorization: Bearer <token>' "
+                + "http://<host>:\(port)/snapshot   # 200 = paired route works; 401 = wrong token",
+                "Infinitus ticks step 4 the moment the phone fetches with the right token."]
+        return out.joined(separator: "\n")
+    }
+
+    private var tailscaleLine: String {
+        switch tailscale {
+        case .notInstalled: return "not installed"
+        case .installed: return "installed, not connected"
+        case .connected(let ip): return "connected, \(ip)"
+        }
     }
 
     private func probeTailscale() {

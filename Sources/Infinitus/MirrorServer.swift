@@ -53,6 +53,9 @@ final class MirrorServer: ObservableObject {
     @Published private(set) var port: UInt16?
     /// One line for the Settings pane.
     @Published private(set) var status: String?
+    /// When a phone last fetched with the right token — the walkthrough's
+    /// "paired" check. Session-only; a relaunch starts unpaired.
+    @Published private(set) var lastServed: Date?
 
     /// Handed to MirrorExporter so every export lands here too.
     let payload = MirrorPayloadBox()
@@ -107,8 +110,12 @@ final class MirrorServer: ObservableObject {
                                               type: MirrorTransport.bonjourType)
         let payload = self.payload
         let token = self.token
+        let served: @Sendable () -> Void = { [weak self] in
+            Task { @MainActor in self?.lastServed = Date() }
+        }
         listener.newConnectionHandler = { [queue] connection in
-            Self.serve(connection, payload: payload, token: token, queue: queue)
+            Self.serve(connection, payload: payload, token: token, queue: queue,
+                       onServed: served)
         }
         listener.stateUpdateHandler = { [weak self] state in
             Task { @MainActor in self?.handle(state, wasFixedPort: rawPort != 0, name: name) }
@@ -150,15 +157,17 @@ final class MirrorServer: ObservableObject {
     private nonisolated static func serve(_ connection: NWConnection,
                                           payload: MirrorPayloadBox,
                                           token: MirrorTokenBox,
-                                          queue: DispatchQueue) {
+                                          queue: DispatchQueue,
+                                          onServed: @escaping @Sendable () -> Void) {
         connection.start(queue: queue)
-        receive(connection, buffer: Data(), payload: payload, token: token)
+        receive(connection, buffer: Data(), payload: payload, token: token, onServed: onServed)
     }
 
     private nonisolated static func receive(_ connection: NWConnection,
                                             buffer: Data,
                                             payload: MirrorPayloadBox,
-                                            token: MirrorTokenBox) {
+                                            token: MirrorTokenBox,
+                                            onServed: @escaping @Sendable () -> Void) {
         connection.receive(minimumIncompleteLength: 1, maximumLength: 4096) {
             data, _, isComplete, error in
             var buffer = buffer
@@ -174,6 +183,7 @@ final class MirrorServer: ObservableObject {
                           request.path == MirrorTransport.snapshotPath {
                     response = payload.latest.map(MirrorTransport.snapshotResponse)
                         ?? MirrorTransport.unavailableResponse()
+                    onServed()
                 } else {
                     response = MirrorTransport.notFoundResponse()
                 }
@@ -187,7 +197,7 @@ final class MirrorServer: ObservableObject {
                 connection.cancel()
                 return
             }
-            receive(connection, buffer: buffer, payload: payload, token: token)
+            receive(connection, buffer: buffer, payload: payload, token: token, onServed: onServed)
         }
     }
 }

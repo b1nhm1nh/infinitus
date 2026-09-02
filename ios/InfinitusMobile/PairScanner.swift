@@ -2,7 +2,7 @@ import SwiftUI
 import VisionKit
 import InfinitusCore
 
-/// Scans the pairing QR the Mac's Sync settings show (#9 remote access).
+/// Scans the pairing QR the Mac's Devices settings show (#9 remote access).
 /// VisionKit does the whole job — camera, focus, detection — so the app
 /// only has to hand the payload back and dismiss.
 struct PairScanner: UIViewControllerRepresentable {
@@ -82,7 +82,7 @@ struct PairScannerSheet: View {
                 }
                 .ignoresSafeArea()
                 Text(failed ? "That QR isn't an Infinitus pairing code."
-                     : "Point at the QR in the Mac's Settings → Sync.")
+                     : "Point at the QR in the Mac's Settings → Devices.")
                     .font(.callout)
                     .padding(12)
                     .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 10))

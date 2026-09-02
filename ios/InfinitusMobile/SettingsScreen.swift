@@ -99,14 +99,14 @@ struct SettingsForm: View {
                         .keyboardType(.URL)
                 }
                 LabeledContent("Pairing token") {
-                    TextField("from the Mac's Sync settings",
+                    TextField("from the Mac's Devices settings",
                               text: $model.pairToken)
                         .multilineTextAlignment(.trailing)
                         .autocorrectionDisabled()
                         .textInputAutocapitalization(.characters)
                         .font(.system(.body, design: .monospaced))
                 }
-                Text("Scan the QR in the Mac's Settings → Sync to fill both "
+                Text("Scan the QR in the Mac's Settings → Devices to fill both "
                      + "in at once. The token is required — every request "
                      + "carries it, even one to a Mac found automatically. "
                      + "Leave the address empty on the same Wi-Fi; set "
