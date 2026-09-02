@@ -163,8 +163,12 @@ file keeps the shipped log and the deferred-by-design notes.
   over the socket. Linux tray parity landed the same day (6399a2a: POSIX
   server reads bodies, /tail + /input routes, stderr input log; docker
   200/404/400/404/200/noChannel) plus the #13 phase word in Panel.qml
-  (QML render unverified — the Omarchy VM would not boot). Not yet: push
-  when a session flips to waiting-on-you; multi-Mac picker (#17 item 3).
+  (QML render unverified — the Omarchy VM would not boot). Push when a
+  session flips to waiting-on-you shipped the same night (PushTriggers
+  `sessions:` — once per pid, re-arms when answered, seeded silently at
+  launch so a relaunch never re-pushes stale prompts; Notify → "A session
+  waits on you"; the Linux tray has no push loop — `parity pending`).
+  Not yet: multi-Mac picker (#17 item 3).
 - ~~Linux parity (#9)~~ → shipped 2026-09-03: panel footer chips (service
   status via cached Anthropic fetch, sessions, engine probe) and
   `infinitus-tray serve/pair` on a POSIX HTTP listener with the same
