@@ -344,14 +344,14 @@ struct AccountStack<M: FleetModel, U: UsageSource>: View {
         let theme = model.rowTheme
         var all: [(String, Double)] = []
         if let w = u.fiveHour {
-            all.append((theme.plain ? "5h" : theme.sessionLabel, w.pct))
+            all.append((theme.plain ? "5h" : PopupGlyph.text(theme.sessionLabel), w.pct))
         }
         if let w = u.sevenDay {
-            all.append((theme.plain ? "7d" : theme.weeklyLabel, w.pct))
+            all.append((theme.plain ? "7d" : PopupGlyph.text(theme.weeklyLabel), w.pct))
         }
         for w in u.scoped ?? [] {
             let name = w.name ?? "?"
-            all.append((theme.plain ? name : theme.scopedPrefix + name, w.pct))
+            all.append((theme.plain ? name : PopupGlyph.text(theme.scopedPrefix) + name, w.pct))
         }
         return all.max { $0.1 < $1.1 }
     }

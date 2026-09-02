@@ -151,7 +151,7 @@ struct AccountCells<M: FleetModel, U: UsageSource> {
     /// tooltips and identifies the row for switching.
     var slotText: String {
         theme.plain ? "\(account.number)"
-                    : theme.slotPrefix + "\(account.number)"
+                    : PopupGlyph.text(theme.slotPrefix) + "\(account.number)"
     }
 
     /// What the number cell SHOWS: the themed next-candidate icon
@@ -161,11 +161,11 @@ struct AccountCells<M: FleetModel, U: UsageSource> {
         // Active outranks next: the engine never proposes the active
         // account, but "you are here" would beat "up next" if it did.
         if account.active, !theme.plain, !theme.activeIcon.isEmpty {
-            return theme.activeIcon
+            return PopupGlyph.text(theme.activeIcon)
         }
         if model.nextCandidate == account.number,
            !theme.plain, !theme.nextIcon.isEmpty {
-            return theme.nextIcon
+            return PopupGlyph.text(theme.nextIcon)
         }
         return slotText
     }
@@ -182,8 +182,8 @@ struct AccountCells<M: FleetModel, U: UsageSource> {
     var displayName: String {
         // The pause mark leads: a long alias truncates the tail, so a
         // suffix-only tag vanished on real fleets (user 2026-09-01).
-        let name = [(account.disabled ?? false) ? "⏸" : nil,
-                    showAsDead ? theme.deadMarker : nil,
+        let name = [(account.disabled ?? false) ? PopupGlyph.text("⏸") : nil,
+                    showAsDead ? PopupGlyph.text(theme.deadMarker) : nil,
                     account.icon, account.alias ?? account.email]
             .compactMap { $0 }.joined(separator: " ")
         return (account.disabled ?? false) ? "\(name)  (disabled)" : name
@@ -199,7 +199,7 @@ struct AccountCells<M: FleetModel, U: UsageSource> {
     func resetText(_ w: UsageWindow) -> String? {
         guard let when = compactText
             ? ResetLabel.compact(w) : ResetLabel.label(w) else { return nil }
-        return (w.pct >= 100 ? theme.revivePrefix : "") + when
+        return (w.pct >= 100 ? PopupGlyph.text(theme.revivePrefix) : "") + when
     }
 
     /// Reset label that goes LIVE under ten minutes: a per-second m:ss
@@ -212,7 +212,7 @@ struct AccountCells<M: FleetModel, U: UsageSource> {
                 let left = date.timeIntervalSince(ctx.date)
                 if left <= 0 {
                     Text(theme.plain || theme.resetWord.isEmpty
-                         ? "resetting…" : theme.resetWord)
+                         ? "resetting…" : PopupGlyph.text(theme.resetWord))
                         .font(PopupFont.caption).bold().foregroundStyle(.green)
                         .opacity(0.35 + 0.65 * abs(sin(
                             ctx.date.timeIntervalSinceReferenceDate * 2.5)))
@@ -250,7 +250,7 @@ struct AccountCells<M: FleetModel, U: UsageSource> {
         HStack(spacing: 3) {
             Image(systemName: "checkmark.circle.fill")
                 .font(PopupFont.caption).foregroundStyle(.green)
-            Text(theme.plain ? "ready" : theme.readyLabel)
+            Text(theme.plain ? "ready" : PopupGlyph.text(theme.readyLabel))
                 .font(PopupFont.caption).foregroundStyle(.secondary)
             // The weekly clock keeps ticking on an untouched account —
             // show when it rolls ("full hp: also show 7d time", user
@@ -261,7 +261,7 @@ struct AccountCells<M: FleetModel, U: UsageSource> {
             }
             if spent {
                 Text("·").font(PopupFont.caption).foregroundStyle(.tertiary)
-                Text("\(theme.creditLabel) spent")
+                Text("\(PopupGlyph.text(theme.creditLabel)) spent")
                     .font(PopupFont.caption).foregroundStyle(.tertiary)
             }
         }
@@ -283,7 +283,7 @@ struct AccountCells<M: FleetModel, U: UsageSource> {
                 // the plain-English translation either way.
                 Text(theme.plain
                      ? "\(causeWord(cause)) out"
-                     : "\(causeLabel(cause)) \(theme.deadVerb)")
+                     : "\(causeLabel(cause)) \(PopupGlyph.text(theme.deadVerb))")
                     .font(PopupFont.caption).bold()
                     .foregroundStyle(ThemeColor.resolve(causeColor(cause)))
                 Text("·").font(PopupFont.caption).foregroundStyle(.tertiary)
@@ -296,7 +296,7 @@ struct AccountCells<M: FleetModel, U: UsageSource> {
                     // Themed revival word ("🩸", "re-release", "💊") in the
                     // cause's color; plain keeps "back" ("themify all
                     // info", user 2026-08-30).
-                    let revive = theme.revivePrefix
+                    let revive = PopupGlyph.text(theme.revivePrefix)
                         .trimmingCharacters(in: .whitespaces)
                     Text(theme.plain || revive.isEmpty ? "back" : revive)
                         .font(PopupFont.caption)
@@ -319,10 +319,10 @@ struct AccountCells<M: FleetModel, U: UsageSource> {
 
     private func causeLabel(_ cause: AccountVitals.DeadCause) -> String {
         switch cause.kind {
-        case .session: return theme.sessionLabel
-        case .weekly: return theme.weeklyLabel
-        case .scoped: return theme.scopedPrefix + theme.modelName(cause.name)
-        case .credit: return theme.creditLabel
+        case .session: return PopupGlyph.text(theme.sessionLabel)
+        case .weekly: return PopupGlyph.text(theme.weeklyLabel)
+        case .scoped: return PopupGlyph.text(theme.scopedPrefix) + theme.modelName(cause.name)
+        case .credit: return PopupGlyph.text(theme.creditLabel)
         }
     }
 
@@ -419,7 +419,7 @@ struct AccountCells<M: FleetModel, U: UsageSource> {
                             .monospacedDigit()
                             .contentTransition(.numericText(value: w.pct))
                     } else {
-                        Text(session ? theme.sessionLabel : theme.weeklyLabel)
+                        Text(PopupGlyph.text(session ? theme.sessionLabel : theme.weeklyLabel))
                             .font(PopupFont.caption).bold()
                             .foregroundStyle(ThemeColor.resolve(
                                 session ? theme.sessionColor : theme.weeklyColor))
@@ -477,7 +477,7 @@ struct AccountCells<M: FleetModel, U: UsageSource> {
             // invisible pace slot keeps it aligned with the gauge lines
             // in the stacked cards.
             HStack(spacing: 3) {
-                Text("\(theme.creditLabel) spent")
+                Text("\(PopupGlyph.text(theme.creditLabel)) spent")
             }
                 .font(PopupFont.caption).foregroundStyle(.tertiary)
                 .help(String(format: "usage credit exhausted: %.2f of %.0f %@ — "
@@ -487,7 +487,7 @@ struct AccountCells<M: FleetModel, U: UsageSource> {
                 .activeBand(banded && account.active)
         } else if let spend = account.usage?.spend, !hiddenInCompact(spend.pct) {
             HStack(spacing: 3) {
-                Text(theme.creditLabel)
+                Text(PopupGlyph.text(theme.creditLabel))
                     .font(theme.plain ? PopupFont.body : PopupFont.caption.bold())
                     .foregroundStyle(theme.plain
                                      ? Color.secondary
@@ -553,7 +553,7 @@ struct AccountCells<M: FleetModel, U: UsageSource> {
                                 .monospacedDigit()
                                 .contentTransition(.numericText(value: w.pct))
                         } else {
-                            Text(theme.scopedPrefix + theme.modelName(w.name))
+                            Text(PopupGlyph.text(theme.scopedPrefix) + theme.modelName(w.name))
                                 .font(PopupFont.caption).bold()
                                 .foregroundStyle(ThemeColor.resolve(theme.scopedColor))
                             GaugeBar(remaining: GaugeMath.remaining(usedPct: w.pct),
@@ -592,7 +592,7 @@ struct AccountCells<M: FleetModel, U: UsageSource> {
             // The report loads seconds after launch; an empty cell here
             // made the popup visibly expand when the numbers landed
             // (user 2026-08-30) — hold a representative width.
-            Text(verbatim: "\(theme.cashIcon)8,888")
+            Text(verbatim: "\(PopupGlyph.text(theme.cashIcon))8,888")
                 .font(PopupFont.caption)
                 .fixedSize()
                 .opacity(0)
@@ -600,8 +600,8 @@ struct AccountCells<M: FleetModel, U: UsageSource> {
            let row = usage.report?.accounts.first(where: { $0.number == account.number }) {
             let usd = Int(row.estimatedUSD)
             Text(verbatim: model.compactRows && usd >= 1000
-                 ? "\(theme.cashIcon)\(Int((Double(usd) / 1000).rounded()))k"
-                 : "\(theme.cashIcon)\(usd.formatted())")
+                 ? "\(PopupGlyph.text(theme.cashIcon))\(Int((Double(usd) / 1000).rounded()))k"
+                 : "\(PopupGlyph.text(theme.cashIcon))\(usd.formatted())")
                 .font(PopupFont.caption).foregroundStyle(.yellow)
                 .instantTip("Estimated API-price spend, last "
                             + "\(usage.report?.days ?? 7) days — an estimate, "
