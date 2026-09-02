@@ -251,6 +251,15 @@ struct CLIProxyEnginePane: View {
                 }
             }
             if model.cliproxyEnabled {
+                Section("Routing") {
+                    Picker("Strategy", selection: Binding(
+                        get: { model.proxyRoutingStrategy ?? "fill-first" },
+                        set: { model.setProxyRoutingStrategy($0) })) {
+                        ForEach(CLIProxyEngine.routingStrategies, id: \.self) { Text($0) }
+                    }
+                    .disabled(model.proxyRoutingStrategy == nil)
+                    RoutingNotes(strategy: model.proxyRoutingStrategy)
+                }
                 Section("Accounts") {
                     Text("The proxy's credentials are managed in the Accounts tab, "
                          + "next to cswap's.")
@@ -278,6 +287,37 @@ struct CLIProxyEnginePane: View {
                 probe = (error as? EngineError)?.errorDescription ?? "\(error)"
             }
             probing = false
+        }
+    }
+}
+
+/// Under the routing picker: what each proxy mode does to prompt caching
+/// and to the Accounts tab's Switch (config_basic.go / selector.go).
+struct RoutingNotes: View {
+    let strategy: String?
+
+    var body: some View {
+        Text(explainer).font(.caption).foregroundStyle(.secondary)
+        if strategy != nil, strategy != "fill-first" {
+            Text("Turns on the proxy's session-affinity (its config, not this tab) so a "
+                 + "conversation stays on one credential: without it every request "
+                 + "lands on a different account and the prompt cache misses. Under "
+                 + "affinity, Switch only steers new sessions.")
+                .font(.caption).foregroundStyle(.orange)
+        }
+    }
+
+    private var explainer: String {
+        switch strategy {
+        case "round-robin":
+            return "Each request goes to the next credential in turn."
+        case "weighted-round-robin":
+            return "Requests rotate in proportion to each credential's priority."
+        case nil:
+            return "Read from the proxy on the next refresh."
+        default:
+            return "Highest priority wins until it is rate-limited \u{2014} cswap's "
+                + "consume-first. Switch in the Accounts tab raises a credential to the top."
         }
     }
 }

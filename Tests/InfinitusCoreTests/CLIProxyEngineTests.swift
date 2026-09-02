@@ -223,6 +223,19 @@ final class CLIProxyEngineTests: XCTestCase {
         XCTAssertTrue(ProxyStubProtocol.seen.contains { ($0.query ?? "").contains("state=st8") })
     }
 
+    func testSetRoutingStrategyPutsTheValueBody() async throws {
+        ProxyStubProtocol.reset { req, _ in
+            req.url!.path == "/v0/management/routing/strategy" ? (200, "{}") : (404, "")
+        }
+        let engine = makeEngine()
+        try await engine.setRoutingStrategy("round-robin")
+        let put = try XCTUnwrap(ProxyStubProtocol.seen.first { $0.method == "PUT" })
+        XCTAssertEqual(put.path, "/v0/management/routing/strategy")
+        XCTAssertEqual(put.body, #"{"value":"round-robin"}"#)
+        let strategy = await engine.routingStrategy
+        XCTAssertEqual(strategy, "round-robin")
+    }
+
     func testCapabilitiesAreTheProxySet() {
         let engine = makeEngine()
         XCTAssertEqual(engine.capabilities, [.switch, .hold, .rename, .remove, .addOAuth, .costReport])

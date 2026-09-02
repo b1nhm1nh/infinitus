@@ -259,6 +259,25 @@ final class AppModel: ObservableObject {
         }
     }
 
+    /// `GET /routing/strategy` as of the last refresh (proxy engine only).
+    @Published var proxyRoutingStrategy: String?
+
+    /// The CLIProxyAPI tab's routing picker: PUT, then a refresh so the
+    /// caveat line and the mapped fleet follow the new mode.
+    func setProxyRoutingStrategy(_ strategy: String) {
+        guard let proxy = registry.engine(id: CLIProxyEngine.engineID) as? CLIProxyEngine else { return }
+        Task {
+            do {
+                try await proxy.setRoutingStrategy(strategy)
+                engineErrors[CLIProxyEngine.engineID] = nil
+            } catch {
+                engineErrors[CLIProxyEngine.engineID] =
+                    (error as? EngineError)?.errorDescription ?? "\(error)"
+            }
+            await refreshSnapshot()
+        }
+    }
+
     /// Intro phase timing: bars (and the active-row flash) hold until
     /// the content entrance has fully landed (user 2026-08-30: "only
     /// when content in full display -> play bar fills + flash").
@@ -920,6 +939,7 @@ final class AppModel: ObservableObject {
         }
         if let proxy = registry.engine(id: CLIProxyEngine.engineID) as? CLIProxyEngine {
             let strategy = await proxy.routingStrategy ?? ""
+            proxyRoutingStrategy = strategy.isEmpty ? nil : strategy
             fleetCaveats[CLIProxyEngine.engineID] =
                 (strategy.isEmpty || strategy == "fill-first")
                     ? nil : "\(strategy) routing ignores priority — switch is advisory"

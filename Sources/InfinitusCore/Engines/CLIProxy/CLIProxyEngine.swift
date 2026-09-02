@@ -153,6 +153,18 @@ public actor CLIProxyEngine: AccountEngine {
         return (obj?["strategy"] as? String) ?? ""
     }
 
+    /// The proxy's selector modes (config_basic.go `normalizeRoutingStrategy`).
+    public static let routingStrategies = ["fill-first", "round-robin", "weighted-round-robin"]
+
+    /// `PUT /routing/strategy {"value": …}` — the proxy persists it to
+    /// its config and hot-reloads. Session affinity (config only, no
+    /// management route) is what keeps a conversation on one credential
+    /// under the round-robin modes.
+    public func setRoutingStrategy(_ strategy: String) async throws {
+        _ = try await request("PUT", "routing/strategy", json: ["value": strategy])
+        routingStrategy = strategy
+    }
+
     private enum UsageOutcome { case ok(Usage?), expired, failed }
 
     public func snapshot() async throws -> [EngineFleet] {
