@@ -60,6 +60,56 @@ final class PosixHTTPServerTests: XCTestCase {
         return MirrorTransport.parseResponse(buffer)
     }
 
+    /// Same as `fetch`, but a POST carrying a JSON body with a
+    /// `Content-Length` header — exercises `handle`'s body-reading path
+    /// (#17 layer 2 parity, `MirrorTransport.parseRequestWithBody`).
+    func post(port: UInt16, path: String, body: Data,
+             headers: [String: String] = [:]) -> MirrorTransport.HTTPResponse? {
+        let fd = socket(AF_INET, Int32(SOCK_STREAM.rawValue), 0)
+        guard fd >= 0 else { return nil }
+        defer { close(fd) }
+        var addr = sockaddr_in()
+        addr.sin_family = sa_family_t(AF_INET)
+        addr.sin_port = port.bigEndian
+        addr.sin_addr = in_addr(s_addr: inet_addr("127.0.0.1"))
+        let connected = withUnsafePointer(to: &addr) { ptr in
+            ptr.withMemoryRebound(to: sockaddr.self, capacity: 1) { sa in
+                connect(fd, sa, socklen_t(MemoryLayout<sockaddr_in>.size))
+            }
+        }
+        guard connected == 0 else { return nil }
+        var head = "POST \(path) HTTP/1.1\r\nHost: 127.0.0.1\r\nContent-Length: \(body.count)\r\n"
+        for (name, value) in headers { head += "\(name): \(value)\r\n" }
+        head += "\r\n"
+        var request = Data(head.utf8)
+        request.append(body)
+        request.withUnsafeBytes { raw in
+            _ = send(fd, raw.baseAddress, raw.count, 0)
+        }
+        var buffer = Data()
+        var chunk = [UInt8](repeating: 0, count: 4096)
+        while true {
+            let n = chunk.withUnsafeMutableBytes { raw in read(fd, raw.baseAddress, raw.count) }
+            guard n > 0 else { break }
+            buffer.append(contentsOf: chunk[0..<n])
+            if let response = MirrorTransport.parseResponse(buffer) { return response }
+        }
+        return MirrorTransport.parseResponse(buffer)
+    }
+
+    func testPostBodyIsDeliveredWholeToTheHandler() throws {
+        let server = PosixHTTPServer { request in
+            guard request.method == "POST" else { return MirrorTransport.notFoundResponse() }
+            return MirrorTransport.jsonResponse(request.body)
+        }
+        let port = try server.start(port: 0)
+        defer { server.stop() }
+        let body = Data(#"{"kind":"message","text":"hi"}"#.utf8)
+        let response = post(port: port, path: "/echo", body: body)
+        XCTAssertEqual(response?.status, 200)
+        XCTAssertEqual(response?.body, body)
+    }
+
     func testNoTokenIsUnauthorized() throws {
         let (server, port) = try startServer()
         defer { server.stop() }

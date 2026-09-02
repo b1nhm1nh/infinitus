@@ -557,13 +557,51 @@ struct InfinitusTray {
             guard MirrorTransport.isAuthorized(request, token: resolved) else {
                 return MirrorTransport.unauthorizedResponse()
             }
-            guard request.method == "GET", request.path == MirrorTransport.snapshotPath else {
-                return MirrorTransport.notFoundResponse()
+            if request.method == "GET", request.path == MirrorTransport.snapshotPath {
+                guard let data = try? Data(contentsOf: TrayMirror.url) else {
+                    return MirrorTransport.unavailableResponse()
+                }
+                return MirrorTransport.snapshotResponse(data)
             }
-            guard let data = try? Data(contentsOf: TrayMirror.url) else {
-                return MirrorTransport.unavailableResponse()
+            // #17 layer 1 parity: GET /sessions/<pid>/tail.
+            if request.method == "GET", let pid = MirrorTransport.sessionTailPid(request.path) {
+                let claudeDir = ClaudeSessions.configHome()
+                let limit = max(0, request.query(MirrorTransport.tailLimitQueryName).flatMap(Int.init) ?? 30)
+                guard let record = ClaudeSessions.list(claudeDir: claudeDir).first(where: { $0.pid == pid }),
+                      let feed = SessionFeedReader.read(record: record, claudeDir: claudeDir, limit: limit)
+                else {
+                    return MirrorTransport.notFoundResponse()
+                }
+                let encoder = JSONEncoder()
+                encoder.dateEncodingStrategy = .iso8601
+                guard let encoded = try? encoder.encode(feed) else { return MirrorTransport.notFoundResponse() }
+                return MirrorTransport.snapshotResponse(encoded)
             }
-            return MirrorTransport.snapshotResponse(data)
+            // #17 layer 2 parity: POST /sessions/<pid>/input.
+            if request.method == "POST", let pid = MirrorTransport.sessionInputPid(request.path) {
+                guard let decoded = try? JSONDecoder().decode(SessionInput.Request.self, from: request.body)
+                else {
+                    return MirrorTransport.badRequestResponse()
+                }
+                let claudeDir = ClaudeSessions.configHome()
+                guard let record = ClaudeSessions.list(claudeDir: claudeDir).first(where: { $0.pid == pid })
+                else {
+                    logPhoneInput("⚠️ phone input not delivered: unknown session")
+                    return MirrorTransport.notFoundResponse()
+                }
+                let reply = SessionInput.deliver(request: decoded, record: record,
+                                                 hosts: PtyHosts.available(), claudeDir: claudeDir)
+                if reply.outcome == "delivered" {
+                    let label = URL(fileURLWithPath: record.cwd).lastPathComponent
+                    let preview = String(decoded.text.prefix(60))
+                    logPhoneInput("📲 phone → \(label): \"\(preview)\" (\(reply.channel ?? "?"))")
+                } else {
+                    logPhoneInput("⚠️ phone input not delivered: \(reply.outcome)")
+                }
+                guard let encoded = try? JSONEncoder().encode(reply) else { return MirrorTransport.notFoundResponse() }
+                return MirrorTransport.jsonResponse(encoded)
+            }
+            return MirrorTransport.notFoundResponse()
         }
         let bound: UInt16
         do {
@@ -640,6 +678,13 @@ struct InfinitusTray {
                                     percentage: payload.percentage)
         let data = (try? JSONEncoder().encode(escaped)) ?? Data("{}".utf8)
         print(String(decoding: data, as: UTF8.self))
+    }
+
+    /// The tray's stand-in for the Mac's event log (#17): every phone
+    /// input delivery/failure, timestamped, to stderr.
+    static func logPhoneInput(_ text: String) {
+        let stamp = ISO8601DateFormatter().string(from: Date())
+        FileHandle.standardError.write(Data("[\(stamp)] \(text)\n".utf8))
     }
 
     static func fail(_ message: String) -> Never {

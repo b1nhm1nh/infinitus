@@ -97,7 +97,12 @@ public final class PosixHTTPServer: @unchecked Sendable {
         setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, socklen_t(MemoryLayout<timeval>.size))
         var buffer = Data()
         var chunk = [UInt8](repeating: 0, count: 8192)
-        while buffer.count < 8192 {
+        // Head allowance on top of the 16 KiB body cap (same as the Mac's
+        // `parseRequestWithBody`) — `POST /sessions/<pid>/input` carries a
+        // JSON body, everything else is headers-only.
+        let bodyCap = 16 * 1024
+        let readCap = bodyCap + 4096
+        while buffer.count < readCap {
             let n = chunk.withUnsafeMutableBytes { raw -> Int in
                 var got: Int
                 repeat {
@@ -107,12 +112,13 @@ public final class PosixHTTPServer: @unchecked Sendable {
             }
             guard n > 0 else { return }   // closed, timed out, or errored
             buffer.append(contentsOf: chunk[0..<n])
-            if let request = MirrorTransport.parseRequest(buffer) {
+            if let request = MirrorTransport.parseRequestWithBody(buffer, bodyCap: bodyCap) {
                 writeAll(handler(request), to: fd)
                 return
             }
         }
-        // 8 KB of nothing that parses as a request head — nothing sane to
+        // A head (plus, when Content-Length says there's one, a body)
+        // that never finished arriving within the cap — nothing sane to
         // answer; let the connection drop.
     }
 

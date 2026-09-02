@@ -662,12 +662,21 @@ Panel {
                     anchors.rightMargin: Style.space(8)
                     anchors.verticalCenter: parent.verticalCenter
                     elide: Text.ElideRight
-                    text: sessionRow.modelData.retrying ? "retrying"
-                        : sessionRow.modelData.nowDoing ? sessionRow.modelData.nowDoing
-                        : sessionRow.modelData.todosTotal
-                          ? (sessionRow.modelData.todosDone + "/" + sessionRow.modelData.todosTotal
-                             + (sessionRow.modelData.activeForm ? " · " + sessionRow.modelData.activeForm : ""))
-                          : ""
+                    text: {
+                      var base = sessionRow.modelData.retrying ? "retrying"
+                          : sessionRow.modelData.nowDoing ? sessionRow.modelData.nowDoing
+                          : sessionRow.modelData.todosTotal
+                            ? (sessionRow.modelData.todosDone + "/" + sessionRow.modelData.todosTotal
+                               + (sessionRow.modelData.activeForm ? " · " + sessionRow.modelData.activeForm : ""))
+                            : ""
+                      // Phase word (#13 layer 1): co-displays with
+                      // retrying/nowDoing, same as the macOS
+                      // SessionProgressLine's HStack — shown only when
+                      // there's no TodoWrite report to prefer instead.
+                      var phase = (!sessionRow.modelData.todosTotal && sessionRow.modelData.phase)
+                          ? sessionRow.modelData.phase : ""
+                      return base && phase ? base + " · " + phase : (base || phase)
+                    }
                     color: sessionRow.modelData.retrying ? Color.urgent : root.mutedForeground
                     font.family: root.contentFontFamily
                     font.pixelSize: Style.font.caption
