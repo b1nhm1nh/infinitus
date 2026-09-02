@@ -107,6 +107,36 @@ file keeps the shipped log and the deferred-by-design notes.
       screen picker, scaled popup body, Esc leaves)
 - ~~#12 Fleet wall layout~~ → shipped 2026-09-01 (mission-control
       hero/rail/bench; wall is a mode — popup/pop-out close)
+- Remote routes that survive an Infinitus restart (user 2026-09-03,
+  phone on 5G far from the Mac: Wi-Fi unreachable, no Tailscale on the
+  phone, quick tunnel gets a NEW random URL every launch → rescan per
+  restart). Every option, so the pick is recorded:
+  - Tailscale on the phone (zero code): the stored 100.x route then
+    outlives restarts. Needs the Tailscale app + same login on the phone.
+  - Tailscale Funnel route: `tailscale funnel 47824` → stable public
+    `https://<mac>.<tailnet>.ts.net`, nothing on the phone, no domain;
+    one-time Funnel enable in the tailnet admin. Infinitus offers it as
+    a route next to the quick tunnel (Tailscale.app bundles the CLI).
+  - Tailscale Serve (tailnet-only HTTPS `https://<mac>.<tailnet>.ts.net`
+    with a real cert) — only matters if the phone is on the tailnet
+    anyway; noted for completeness, not planned.
+  - Cloudflare NAMED tunnel (user has CF account + domain — the pick
+    2026-09-03): dashboard-managed tunnel (Zero Trust → Networks →
+    Tunnels → Cloudflared, public hostname `infinitus.<domain>` →
+    `http://localhost:47824`), Mac keeps only the tunnel token (keychain,
+    `TUNNEL_TOKEN` env to `cloudflared tunnel run`, never argv);
+    Devices pane "Your domain" row (hostname + masked token), supervised
+    child like the quick tunnel, route "Anywhere, your domain" ahead of
+    the quick tunnel in the QR. Alternative: locally-managed
+    (`cloudflared tunnel login/create/route dns` + config.yml) — more
+    steps, no dashboard visit. Linux tray: `parity pending`.
+  - Rendezvous for the quick tunnel: Mac publishes its current
+    trycloudflare URL to a KV on infinitus.run keyed by a hash of the
+    pairing token; phone looks it up when the stored tunnel dies. Keeps
+    "no account at all" but adds a service to run — fallback only.
+  - Phone fix regardless of route: a dead tunnel URL should be dropped
+    or demoted (not retried first every poll) once a sibling route
+    answers; and the Settings status should say WHICH route failed.
 - #13 Session progress tracking — watch agents, not accounts
       (zero-token transcript parsing + optional Claude narration;
       brainstorm in docs/research/session-progress.md)
