@@ -33,7 +33,10 @@ jobs:
           path: .build
           key: spm-${{ github.repository }}-${{ runner.os }}-${{ hashFiles('Package.resolved', 'Package.swift') }}
           restore-keys: spm-${{ github.repository }}-${{ runner.os }}-
-      - run: swift build --product Infinitus --product infinitusctl
+      # Plain `swift build`: with two --product flags SwiftPM builds only
+      # the LAST one, so the app binary here was the stale one from the
+      # first cached .build on every run (2026-09-03).
+      - run: swift build
       - run: tools/e2e.sh
   # The Omarchy/Waybar face (packaging/omarchy): core + tray must keep
   # building on Linux. Same plain invocations — the manifest gates the

@@ -29,7 +29,7 @@ WINDOW_S="${WINDOW_S:-30}"   # long enough for the growth rate to mean something
 BIN="$(swift build --show-bin-path)"
 APP="$BIN/Infinitus"
 CTL="$BIN/infinitusctl"
-[ -x "$APP" ] && [ -x "$CTL" ] || { echo "build first: swift build --product Infinitus --product infinitusctl"; exit 2; }
+[ -x "$APP" ] && [ -x "$CTL" ] || { echo "build first: swift build"; exit 2; }
 # A dev Mac holds the CLIProxyAPI key under the bundle id's ACL: sign the
 # debug binary AS that identifier so the launch never blocks on a keychain
 # prompt (ci: no identity, no key, nothing to prompt for).
