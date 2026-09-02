@@ -182,8 +182,12 @@ public struct SessionProgress: Sendable, Equatable, Codable {
     }
 
     /// Neutral tools (TodoWrite, AskUserQuestion, messaging, unknown Bash)
-    /// are uncounted. Edits made through sed/heredocs read as nothing —
-    /// accepted; detecting shell edits isn't worth the false positives.
+    /// are uncounted. A compound Bash command takes the latest phase of any
+    /// of its `&&` segments — "git add … && git commit" is the universal
+    /// commit idiom. Read-only shell (cat/sed/grep/git log…) counts as
+    /// exploring because bypass-mode sessions do all their reading through
+    /// Bash; edits made through sed/heredocs still read as nothing —
+    /// accepted, detecting shell edits isn't worth the false positives.
     private static func classify(_ toolUse: [String: Any]) -> Phase? {
         let name = toolUse["name"] as? String ?? ""
         switch name {
@@ -193,18 +197,28 @@ public struct SessionProgress: Sendable, Equatable, Codable {
             return .building
         case "Bash":
             let input = toolUse["input"] as? [String: Any] ?? [:]
-            let words = leadWords(input["command"] as? String ?? "")
-            guard let head = words.first else { return nil }
-            if head == "git", words.dropFirst().first.map({ ["commit", "push"].contains($0) }) == true { return .wrappingUp }
-            if head == "gh", words.dropFirst().first == "pr" { return .wrappingUp }
-            let runners: Set<String> = ["pytest", "xcodebuild", "make", "ctest", "tsc", "jest", "vitest", "eslint", "swiftlint"]
-            if runners.contains(head) { return .verifying }
-            let verbs: Set<String> = ["test", "build", "check", "lint", "typecheck"]
-            if words.prefix(3).contains(where: verbs.contains) { return .verifying }
-            return nil
+            let command = input["command"] as? String ?? ""
+            return command.split(separator: "&&")
+                .compactMap { classify(shell: $0.split(separator: " ").map(String.init)) }
+                .max()
         default:
             return nil
         }
+    }
+
+    private static func classify(shell words: [String]) -> Phase? {
+        guard let head = words.first else { return nil }
+        let sub = words.dropFirst().first ?? ""
+        if head == "git", ["commit", "push"].contains(sub) { return .wrappingUp }
+        if head == "gh", sub == "pr", ["create", "ready", "merge"].contains(words.dropFirst(2).first ?? "") { return .wrappingUp }
+        let runners: Set<String> = ["pytest", "xcodebuild", "make", "ctest", "tsc", "jest", "vitest", "eslint", "swiftlint"]
+        if runners.contains(head) { return .verifying }
+        let verbs: Set<String> = ["test", "build", "check", "lint", "typecheck"]
+        if words.prefix(3).contains(where: verbs.contains) { return .verifying }
+        let readers: Set<String> = ["cat", "head", "tail", "sed", "grep", "rg", "ls", "find", "stat"]
+        if readers.contains(head) { return .exploring }
+        if head == "git", ["log", "diff", "show", "status", "blame"].contains(sub) { return .exploring }
+        return nil
     }
 
     /// The first real user prompt at the HEAD of the transcript (oldest→

@@ -292,8 +292,11 @@ final class SessionProgressTests: XCTestCase {
         }
         XCTAssertEqual(phase(["pytest -q", "npm run test", "cargo build", "xcodebuild -scheme X"]), "verifying")
         XCTAssertEqual(phase(["gh pr create --draft", "git status"]), "wrapping up")
-        // Generic shell is neutral: three edits + two ls never reach four signals.
-        XCTAssertNil(phase(["ls -la", "cat foo | grep bar"]))
+        XCTAssertEqual(phase(["cd /x && git add A B && git commit -q -m x"]), "wrapping up")
+        // Generic shell is neutral: three edits + two of these never reach four signals.
+        XCTAssertNil(phase(["python3 - <<EOF", "gh pr view 12", "open x"]))
+        // Read-only shell is exploring: bypass-mode sessions read through Bash.
+        XCTAssertEqual(phase(["cat a", "sed -n 1,5p b", "git diff", "rg foo"]), "exploring")
         XCTAssertEqual(phase(["git log", "git diff", "swift build", "swift test"]), "verifying")
     }
 
