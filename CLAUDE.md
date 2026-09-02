@@ -91,7 +91,9 @@ Native macOS menu bar app for the claude-swap engine. Split out of
 - Dev instances: sign the debug binary `--identifier
   com.huuloc.limitless` (tools/e2e.sh does) or the keychain ACL prompt
   blocks AppModel.init forever (no socket, SecurityAgent spawns).
-  `swift build --target X` may not relink — use `--product`.
+  `swift build --target X` may not relink — use `--product`, ONE per
+  invocation: with two `--product` flags SwiftPM builds only the last
+  (CI's e2e ran a stale app binary for a day, 2026-09-03).
 - Two Claude sessions work this repo (since 2026-09-02 evening): the
   second one lives in its OWN worktree `../limitless-e2` on branch `e2`
   (one `cd` there; separate `.build`). Main (`~/death/limitless`) is
