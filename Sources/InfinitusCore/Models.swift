@@ -33,7 +33,7 @@ public struct AccountList: Codable, Sendable {
     }
 }
 
-public struct NextRecovery: Codable, Sendable {
+public struct NextRecovery: Codable, Sendable, Equatable {
     public let number: Int
     /// ISO-8601 instant the account is fully usable again.
     public let at: String
@@ -44,7 +44,7 @@ public struct NextRecovery: Codable, Sendable {
     }
 }
 
-public struct LiveSessions: Codable, Sendable {
+public struct LiveSessions: Codable, Sendable, Equatable {
     public let busy: Int
     public let total: Int
     /// Additive breakdown (an older engine omits them; the chip tooltip

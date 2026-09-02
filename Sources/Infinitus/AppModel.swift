@@ -937,11 +937,15 @@ final class AppModel: ObservableObject {
         for r in results {
             guard let fleets = r.fleets else {
                 let message = (r.error as? EngineError)?.errorDescription ?? "\(r.error!)"
-                if engineErrors[r.id] != message { NSLog("Infinitus engine %@: %@", r.id, message) }
-                engineErrors[r.id] = message
+                if engineErrors[r.id] != message {
+                    NSLog("Infinitus engine %@: %@", r.id, message)
+                    engineErrors[r.id] = message
+                }
                 continue
             }
-            engineErrors[r.id] = nil
+            // Only publish a change: every @Published set re-runs each
+            // observer's body, once per refresh, even for an identical value (#18).
+            if engineErrors[r.id] != nil { engineErrors[r.id] = nil }
             for fleet in fleets {
                 let state = registry.state(for: fleet)
                 let change = state.apply(fleet)

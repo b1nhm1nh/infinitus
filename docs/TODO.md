@@ -258,3 +258,17 @@ file keeps the shipped log and the deferred-by-design notes.
   honestly; engine CLI on Arch/Omarchy highlighted instead.
 - Open: Developer ID/notarization for quarantine-free installs;
   release workflow doesn't auto-bump the tap cask (manual sha step).
+
+## Performance (#18, 2026-09-03)
+- ~~RPG effects idle the pop-out at 43% CPU~~ → every effect is a
+  CAAnimation on a `LayerEffect` host (render-server driven): 0.4%.
+  Theme off was 15% from the "resetting…" pulse — now a CA mask, 0.3%.
+- Burn overlays (ember/flame/limit) still tick a Canvas at 20 fps while a
+  bar burns: ~11% with several bars ablaze — pure commit overhead, the
+  drawing is free. Port ember/flame to CAEmitterLayer, limit to a discrete
+  CA gradient keyframe → 0%.
+- `Infinitus-feed` (the supervised cswap feed, other session's) sat at
+  25-34% CPU on 2026-09-03 while the app itself idled — worth its own look.
+- CI: `e2e` job (tools/e2e.sh) gates idle CPU ≤ 25% / RSS ≤ 220 MB with
+  the demo fleet, rpg + ember; tighten after the burn port.
+

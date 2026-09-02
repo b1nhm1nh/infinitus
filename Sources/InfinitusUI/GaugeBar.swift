@@ -144,20 +144,7 @@ public struct GaugeBar: View {
             // calmer than the burn: reserve is good news, not drama.
             .overlay {
                 if animated, burnArmed, chill > 0, burnStyle != "off" {
-                    TimelineView(.animation(minimumInterval: 1.0 / 30)) { ctx in
-                        let phase = (sin(ctx.date.timeIntervalSinceReferenceDate
-                                         * 2 * .pi / 2.4) + 1) / 2
-                        // Deep breath: mostly-off at the trough so the
-                        // pulse reads as motion, not a painted border.
-                        let strength = (0.35 + 0.65 * chill) * (0.15 + 0.85 * phase)
-                        let tint = Color(red: 0.35, green: 0.95, blue: 0.75)
-                        Capsule()
-                            .strokeBorder(tint.opacity(0.85 * strength),
-                                          lineWidth: 1)
-                            .shadow(color: tint.opacity(strength),
-                                    radius: 2 + 5 * strength)
-                    }
-                    .allowsHitTesting(false)
+                    ChillHalo(chill: chill)
                 }
             }
             // Shard burst on a killing blow — above the bar, zooming
@@ -339,5 +326,34 @@ extension EnvironmentValues {
     public var introBarDelay: Double {
         get { self[IntroBarDelayKey.self] }
         set { self[IntroBarDelayKey.self] = newValue }
+    }
+}
+
+/// The chill halo's breath as one repeatForever opacity (2.4s period,
+/// trough at 0.15 of the peak) — a per-frame TimelineView here cost a
+/// full pop-out layout per tick (#18). Radius sits at the mid-breath.
+private struct ChillHalo: View {
+    let chill: Double
+
+    var body: some View {
+        let peak = 0.35 + 0.65 * chill
+        LayerEffect { host, bounds in
+            let ring = CAShapeLayer()
+            ring.frame = bounds
+            ring.path = CGPath(roundedRect: bounds.insetBy(dx: 0.5, dy: 0.5),
+                               cornerWidth: bounds.height / 2, cornerHeight: bounds.height / 2,
+                               transform: nil)
+            ring.fillColor = nil
+            ring.strokeColor = rgb(0.35, 0.95, 0.75, 0.85 * peak)
+            ring.lineWidth = 1
+            ring.shadowColor = rgb(0.35, 0.95, 0.75)
+            ring.shadowOpacity = Float(peak)
+            ring.shadowRadius = 2 + 5 * peak * 0.6
+            ring.shadowOffset = .zero
+            ring.add(CABasicAnimation.loop("opacity", from: 1, to: 0.15, duration: 1.2,
+                                           autoreverses: true, easeInOut: true), forKey: "breath")
+            host.addSublayer(ring)
+        }
+        .allowsHitTesting(false)
     }
 }

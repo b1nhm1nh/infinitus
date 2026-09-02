@@ -240,83 +240,95 @@ public struct LuckyRowBackground: View {
         self.cornerRadius = cornerRadius
     }
 
-    private static let rainbow: [Color] = [
-        Color(red: 1.0, green: 0.2, blue: 0.2),
-        Color(red: 1.0, green: 0.6, blue: 0.1),
-        Color(red: 1.0, green: 0.95, blue: 0.2),
-        Color(red: 0.3, green: 1.0, blue: 0.35),
-        Color(red: 0.25, green: 0.9, blue: 1.0),
-        Color(red: 0.4, green: 0.45, blue: 1.0),
-        Color(red: 0.85, green: 0.4, blue: 1.0),
-        Color(red: 1.0, green: 0.2, blue: 0.2),
+    private static let rainbow: [CGColor] = [
+        rgb(1.0, 0.2, 0.2), rgb(1.0, 0.6, 0.1), rgb(1.0, 0.95, 0.2),
+        rgb(0.3, 1.0, 0.35), rgb(0.25, 0.9, 1.0), rgb(0.4, 0.45, 1.0),
+        rgb(0.85, 0.4, 1.0), rgb(1.0, 0.2, 0.2),
     ]
 
+    // Pure Core Animation (see LayerEffect): the wash cycles its colour
+    // stops, the comet is a run of trimmed strokes sliding along the
+    // outline. A SwiftUI TimelineView/Canvas here cost a full pop-out
+    // commit per frame — 20+% idle CPU per effect (#18).
     public var body: some View {
-        TimelineView(.animation) { ctx in
-            let t = ctx.date.timeIntervalSinceReferenceDate
-            let shape = RoundedRectangle(cornerRadius: cornerRadius)
-            ZStack {
-                // Steady wash; the slow hue cycle keeps it alive
-                // without any brightness change (no flash).
-                shape.fill(LinearGradient(colors: Self.rainbow,
-                                          startPoint: .leading,
-                                          endPoint: .trailing))
-                    .opacity(0.18)
-                    .hueRotation(.degrees(t * 40))
-                // The neon border, Gemini-style (user 2026-08-31
-                // screenshot): ONE luminous comet arc orbiting the
-                // outline — a bright head with a soft blurred tail
-                // fading behind it, hue drifting as it travels. Canvas
-                // + trimmedPath; hard segments read as a picket fence.
-                Canvas { c, size in
-                    let rect = CGRect(origin: .zero, size: size)
-                        .insetBy(dx: 1.5, dy: 1.5)
-                    let path = Path(roundedRect: rect,
-                                    cornerRadius: cornerRadius)
-                    let phase = (t * 0.16).truncatingRemainder(dividingBy: 1)
-                    let hue = (t * 0.06).truncatingRemainder(dividingBy: 1)
-                    func seg(_ f0: Double, _ f1: Double, _ color: Color,
-                             _ w: Double, _ ctx: GraphicsContext) {
-                        let a = f0.truncatingRemainder(dividingBy: 1)
-                        let b = a + (f1 - f0)
-                        let style = StrokeStyle(lineWidth: w, lineCap: .round)
-                        if b <= 1 {
-                            ctx.stroke(path.trimmedPath(from: a, to: b),
-                                       with: .color(color), style: style)
-                        } else {
-                            ctx.stroke(path.trimmedPath(from: a, to: 1),
-                                       with: .color(color), style: style)
-                            ctx.stroke(path.trimmedPath(from: 0, to: b - 1),
-                                       with: .color(color), style: style)
-                        }
-                    }
-                    let tailN = 14
-                    let segLen = 0.012
-                    // Soft outer glow pass, then the bright core.
-                    var glow = c
-                    glow.addFilter(.blur(radius: 4))
-                    for k in 0..<tailN {
-                        let fade = pow(1 - Double(k) / Double(tailN), 2)
-                        let f0 = phase - Double(k + 1) * segLen
-                        let color = Color(hue: (hue + Double(k) * 0.015)
-                            .truncatingRemainder(dividingBy: 1),
-                            saturation: 0.9, brightness: 1.0)
-                        seg(f0 + 1, f0 + 1 + segLen,
-                            color.opacity(0.8 * fade), 4.5, glow)
-                    }
-                    for k in 0..<tailN {
-                        let fade = pow(1 - Double(k) / Double(tailN), 2)
-                        let f0 = phase - Double(k + 1) * segLen
-                        let color = Color(hue: (hue + Double(k) * 0.015)
-                            .truncatingRemainder(dividingBy: 1),
-                            saturation: 0.75, brightness: 1.0)
-                        seg(f0 + 1, f0 + 1 + segLen,
-                            color.opacity(fade), 1.8, c)
-                    }
-                }
-            }
+        LayerEffect { host, bounds in
+            let radius = cornerRadius
+            // Steady wash; the slow colour walk keeps it alive without
+            // any brightness change (no flash).
+            let wash = CAGradientLayer()
+            wash.frame = bounds
+            wash.cornerRadius = radius
+            wash.startPoint = CGPoint(x: 0, y: 0.5)
+            wash.endPoint = CGPoint(x: 1, y: 0.5)
+            wash.colors = Self.rainbow
+            wash.opacity = 0.18
+            let n = Self.rainbow.count - 1   // last == first
+            wash.add(CAKeyframeAnimation.cycle(
+                "colors",
+                values: (0...n).map { k in (0...n).map { Self.rainbow[(($0 - k) % n + n) % n] } },
+                duration: 9), forKey: "walk")
+            host.addSublayer(wash)
+            // The neon border, Gemini-style (user 2026-08-31
+            // screenshot): ONE luminous comet orbiting the outline — a
+            // bright head with a soft tail fading behind it; the glow
+            // pass is the same comet, wider and blurred.
+            host.addSublayer(Self.comet(bounds: bounds, radius: radius, width: 4.5, glow: true))
+            host.addSublayer(Self.comet(bounds: bounds, radius: radius, width: 1.8, glow: false))
         }
         .allowsHitTesting(false)
+    }
+
+    private static func comet(bounds: CGRect, radius: Double, width: Double, glow: Bool) -> CALayer {
+        let box = CALayer()
+        box.frame = bounds
+        // The comet is a run of short trimmed strokes (bright head,
+        // fading tail) sliding along the outline via strokeStart/End —
+        // a fixed ARC LENGTH, so it reads the same on a wide row as on
+        // a card. The path is laid twice so the wrap at 1 → 0 is a
+        // seamless second lap. Same 14 × 1.2% geometry as the Canvas
+        // original, hue drifting as it travels.
+        let rect = CGPath(roundedRect: bounds.insetBy(dx: 1.5, dy: 1.5),
+                          cornerWidth: radius, cornerHeight: radius, transform: nil)
+        let twice = CGMutablePath()
+        twice.addPath(rect)
+        twice.addPath(rect)
+        let tailN = 14
+        let segLen = 0.012 / 2   // fractions of the doubled path
+        for k in 0..<tailN {
+            let fade = pow(1 - Double(k) / Double(tailN), 2)
+            let seg = CAShapeLayer()
+            seg.frame = bounds
+            seg.path = twice
+            seg.fillColor = nil
+            seg.lineWidth = width
+            seg.lineCap = .round
+            seg.opacity = Float(glow ? 0.8 * fade : fade)
+            let hueOffset = Double(k) * 0.015
+            seg.strokeColor = hsb(hueOffset, glow ? 0.9 : 0.75, 1)
+            seg.add(CAKeyframeAnimation.cycle(
+                "strokeColor", values: (0...6).map { hsb(Double($0) / 6 + hueOffset, glow ? 0.9 : 0.75, 1) },
+                duration: 16.7), forKey: "drift")
+            // One lap of the real outline = 0.5 of the doubled path.
+            let from = 0.5 - Double(k + 1) * segLen
+            seg.strokeStart = from
+            seg.strokeEnd = from + segLen
+            seg.add(CABasicAnimation.loop("strokeStart", from: from, to: from + 0.5, duration: 6.25),
+                    forKey: "orbitStart")
+            seg.add(CABasicAnimation.loop("strokeEnd", from: from + segLen, to: from + segLen + 0.5,
+                                          duration: 6.25), forKey: "orbitEnd")
+            box.addSublayer(seg)
+        }
+        if glow {
+            #if os(macOS)
+            if let blur = CIFilter(name: "CIGaussianBlur") {
+                blur.setValue(4, forKey: "inputRadius")
+                box.filters = [blur]
+            }
+            #else
+            box.opacity = 0.4
+            #endif
+        }
+        return box
     }
 }
 
@@ -327,25 +339,31 @@ public struct LuckyRowBackground: View {
 struct LuckySevens: View {
     let text: String
 
-    private static let steps: [Color] = [
-        Color(red: 1.00, green: 0.85, blue: 0.20), .white,
-        Color(red: 1.00, green: 0.85, blue: 0.20), .white,
-        Color(red: 1.00, green: 0.25, blue: 0.25),
-        Color(red: 1.00, green: 0.60, blue: 0.10),
-        Color(red: 1.00, green: 0.95, blue: 0.20),
-        Color(red: 0.30, green: 1.00, blue: 0.35),
-        Color(red: 0.25, green: 0.90, blue: 1.00),
-        Color(red: 0.85, green: 0.40, blue: 1.00),
+    private static let steps: [CGColor] = [
+        rgb(1.00, 0.85, 0.20), rgb(1, 1, 1),
+        rgb(1.00, 0.85, 0.20), rgb(1, 1, 1),
+        rgb(1.00, 0.25, 0.25), rgb(1.00, 0.60, 0.10), rgb(1.00, 0.95, 0.20),
+        rgb(0.30, 1.00, 0.35), rgb(0.25, 0.90, 1.00), rgb(0.85, 0.40, 1.00),
     ]
 
     var body: some View {
-        TimelineView(.periodic(from: .now, by: 0.14)) { ctx in
-            let frame = Int(ctx.date.timeIntervalSinceReferenceDate / 0.14)
-            Text(text)
-                .font(PopupFont.caption).bold().monospacedDigit()
-                .foregroundStyle(Self.steps[frame % Self.steps.count])
-                .scaleEffect(frame % 2 == 0 ? 1.0 : 1.12)
-        }
+        // The PSX palette flip as a discrete CA colour keyframe under a
+        // text mask: hard 0.14s steps, nothing per frame in-process.
+        Text(text)
+            .font(PopupFont.caption).bold().monospacedDigit()
+            .foregroundStyle(.clear)
+            .overlay {
+                LayerEffect { host, bounds in
+                    let g = CAGradientLayer()
+                    g.frame = bounds
+                    g.colors = [Self.steps[0], Self.steps[0]]
+                    g.add(CAKeyframeAnimation.cycle(
+                        "colors", values: Self.steps.map { [$0, $0] },
+                        duration: 0.14 * Double(Self.steps.count), discrete: true), forKey: "flash")
+                    host.addSublayer(g)
+                }
+                .mask(Text(text).font(PopupFont.caption).bold().monospacedDigit())
+            }
         .help("All Lucky 7s!")
     }
 }
@@ -362,41 +380,51 @@ public struct LuckyName: View {
     }
 
     public var body: some View {
-        TimelineView(.periodic(from: .now, by: 0.12)) { ctx in
-            // Step, not smooth time: the PSX palette-cycles per frame.
-            let step = Int(ctx.date.timeIntervalSinceReferenceDate / 0.12)
-            Text(attributed(step))
-                .font(font)
-                .fontWeight(bold ? .bold : .regular)
-        }
-        .help("All Lucky 7s!")
-    }
-
-    private func attributed(_ step: Int) -> AttributedString {
-        var out = AttributedString()
-        for (i, ch) in text.enumerated() {
-            var run = AttributedString(String(ch))
-            // Colors travel letter-to-letter: index minus step.
-            let hue = (Double(i) * 0.13 - Double(step) * 0.045)
-                .truncatingRemainder(dividingBy: 1)
-            run.foregroundColor = Color(
-                hue: hue < 0 ? hue + 1 : hue,
-                saturation: 0.85, brightness: 1.0)
-            out += run
-        }
-        return out
+        // The glyphs are a SwiftUI Text mask (exact metrics) over a CA
+        // gradient marquee: rainbow twice across, sliding one period
+        // per 2.67s (the old 0.045 hue per 0.12s step). Per-letter
+        // colours travel letter-to-letter, nothing per frame in-process.
+        let glyphs = Text(text).font(font).fontWeight(bold ? .bold : .regular)
+        glyphs
+            .foregroundStyle(.clear)
+            .overlay {
+                LayerEffect { host, bounds in
+                    let g = CAGradientLayer()
+                    g.startPoint = CGPoint(x: 0, y: 0.5)
+                    g.endPoint = CGPoint(x: 1, y: 0.5)
+                    // Old spacing: 0.13 hue per letter ≈ one wheel per
+                    // ~8 letters; scale the period to the text width.
+                    let period = max(24, bounds.width / max(1, Double(text.count)) * 7.7)
+                    let copies = Int((bounds.width / period).rounded(.up)) + 1
+                    g.frame = CGRect(x: 0, y: 0, width: period * Double(copies), height: bounds.height)
+                    let wheel: [CGColor] = (0...8).map { hsb(Double($0) / 8, 0.85, 1) }
+                    g.colors = Array((0..<copies).map { _ in wheel.dropLast() }.joined()) + [wheel[0]]
+                    g.add(CABasicAnimation.loop("position.x", from: g.position.x,
+                                                to: g.position.x - period, duration: 2.67),
+                          forKey: "marquee")
+                    host.masksToBounds = true
+                    host.addSublayer(g)
+                }
+                .mask(glyphs)
+            }
+            .help("All Lucky 7s!")
     }
 }
 
 /// The "resetting…" pulse as a reusable modifier (debug pane demo).
 private struct PulseOpacity: ViewModifier {
     func body(content: Content) -> some View {
-        // .animation = every frame; the 0.05s periodic tick rendered a
-        // choppy ~20fps pulse (user: "low laggy", 2026-08-30). Faster
-        // sine too — reads as a flash, not a slow breath.
-        TimelineView(.animation) { ctx in
-            content.opacity(0.35 + 0.65 * abs(sin(
-                ctx.date.timeIntervalSinceReferenceDate * 4.0)))
+        // |sin 4t|: 0.35→1 every 0.39s, as a CA opacity loop on the
+        // mask — the content fades with it, nothing per frame (#18).
+        content.mask {
+            LayerEffect { host, bounds in
+                let sheet = CALayer()
+                sheet.frame = bounds
+                sheet.backgroundColor = rgb(0, 0, 0)
+                sheet.add(CABasicAnimation.loop("opacity", from: 1, to: 0.35, duration: 0.39,
+                                                autoreverses: true, easeInOut: true), forKey: "pulse")
+                host.addSublayer(sheet)
+            }
         }
     }
 }
@@ -414,18 +442,19 @@ public struct CriticalPulse: View {
     public init() {}
 
     public var body: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 20)) { ctx in
-            let t = ctx.date.timeIntervalSinceReferenceDate
-            // 1.6s period, eased by sin^2 so the off-beat rests longer.
-            let raw = sin(t * .pi / 0.8)
-            let phase = raw * raw
-            RoundedRectangle(cornerRadius: 4)
-                .fill(Color.red.opacity(0.05 + 0.13 * phase))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 4)
-                        .strokeBorder(Color.red.opacity(0.15 + 0.35 * phase),
-                                      lineWidth: 1)
-                )
+        // 1.6s breath: the peak look (fill 0.18, rim 0.50) fading to
+        // ~0.29 of itself (0.05 / 0.15) — one CA opacity animation,
+        // nothing per frame in-process (#18, see LayerEffect).
+        LayerEffect { host, bounds in
+            let band = CALayer()
+            band.frame = bounds
+            band.cornerRadius = 4
+            band.backgroundColor = CGColor(red: 1, green: 0, blue: 0, alpha: 0.18)
+            band.borderWidth = 1
+            band.borderColor = CGColor(red: 1, green: 0, blue: 0, alpha: 0.50)
+            band.add(CABasicAnimation.loop("opacity", from: 1, to: 0.29, duration: 0.8,
+                           autoreverses: true, easeInOut: true), forKey: "breath")
+            host.addSublayer(band)
         }
         .allowsHitTesting(false)
     }

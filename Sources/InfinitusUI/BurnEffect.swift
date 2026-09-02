@@ -8,8 +8,12 @@ import SwiftUI
 /// speed and brightness: low heat burns near the fill tip, heat ≈ 1
 /// sets the whole fill ablaze.
 ///
-/// TimelineView(.animation) exists ONLY while something burns (the
-/// caller gates on heat > 0 and style) so idle popups pay nothing.
+/// TimelineView exists ONLY while something burns (the caller gates on
+/// heat > 0 and style) so idle popups pay nothing. Capped at 20 fps:
+/// the ember gradients and the limit marquee redraw a Canvas per frame,
+/// and at display rate an RPG popup idled at ~25% CPU (#18, measured
+/// 2026-09-03: rpg+burn 39% → capped 2-3%). The limit style is a
+/// stepped PSX palette flip anyway; ember/flame flicker reads the same.
 /// All flicker derives from the timeline date + hashed seeds — never
 /// Double.random per frame (that strobes instead of flickering).
 struct BurnOverlay: View {
@@ -25,7 +29,7 @@ struct BurnOverlay: View {
     private let rise: Double = 11
 
     var body: some View {
-        TimelineView(.animation) { ctx in
+        TimelineView(.animation(minimumInterval: 1.0 / 20)) { ctx in
             Canvas { c, size in
                 guard fillFraction > 0.03, heat > 0 else { return }
                 let t = ctx.date.timeIntervalSinceReferenceDate
@@ -252,8 +256,28 @@ struct BurnOverlay: View {
 struct KillBurst: View {
     let tick: Int
     @State private var start: Date?
+    /// The TimelineView exists only during the 0.9s burst: an always-on
+    /// .animation timeline on EVERY bar re-rendered the row tree at
+    /// display rate for nothing (#18).
+    @State private var live = false
 
     var body: some View {
+        Group {
+            if live {
+                burst
+            } else {
+                Color.clear
+            }
+        }
+        .onChange(of: tick) { _, _ in
+            start = Date()
+            live = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { live = false }
+        }
+        .allowsHitTesting(false)
+    }
+
+    private var burst: some View {
         TimelineView(.animation) { ctx in
             Canvas { c, size in
                 guard let start else { return }
@@ -280,8 +304,6 @@ struct KillBurst: View {
                 }
             }
         }
-        .onChange(of: tick) { _, _ in start = Date() }
-        .allowsHitTesting(false)
     }
 
     private func n(_ i: Double) -> Double {

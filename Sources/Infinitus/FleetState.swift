@@ -105,14 +105,19 @@ final class FleetState: ObservableObject, Identifiable {
         let newlyAlive = list.filter {
             !AccountVitals.isDead($0.usage) && wasDead.contains($0.number)
         }.map(\.number)
-        snapshotLoaded = true
+        if !snapshotLoaded { snapshotLoaded = true }
         lastFleet = fleet
+        // Each @Published set synchronously re-runs every observer's body
+        // (#18): assign only what actually differs. `accounts` nearly
+        // always does (usage age, countdown strings) — that one render
+        // per refresh is the price of live labels.
         withAnimation(.easeInOut(duration: 0.6)) {
             accounts = list
-            activeNumber = fleet.activeNumber
-            nextCandidate = fleet.nextCandidate
-            nextRecovery = RecoveryMath.corrected(engine: fleet.nextRecovery, accounts: list)
-            liveSessions = fleet.liveSessions
+            if activeNumber != fleet.activeNumber { activeNumber = fleet.activeNumber }
+            if nextCandidate != fleet.nextCandidate { nextCandidate = fleet.nextCandidate }
+            let recovery = RecoveryMath.corrected(engine: fleet.nextRecovery, accounts: list)
+            if nextRecovery != recovery { nextRecovery = recovery }
+            if liveSessions != fleet.liveSessions { liveSessions = fleet.liveSessions }
         }
         if let now = fleet.activeNumber, let previousActive,
            previousActive != now {

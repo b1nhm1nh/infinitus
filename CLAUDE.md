@@ -26,6 +26,11 @@ Native macOS menu bar app for the claude-swap engine. Split out of
 - Secrets (webhook URLs, bot tokens) travel over stdin, never argv; shown
   masked only. Usage-cost figures are estimates, never billing truth.
 - Surgical changes; match existing style; no speculative abstractions.
+- **Keep performance in check with every feature** (user 2026-09-03):
+  idle CPU with the pop-out open must stay near 0% (`infinitusctl perf`
+  twice, 15s apart; `tools/e2e.sh` gates it in CI). Any continuous
+  motion goes through Core Animation (`LayerEffect`), never a
+  TimelineView / repeatForever `.animation` — see the hard-won fact.
 
 ## Hard-won facts
 - NSPopover measures content once; wholesale content-shape swaps must go
@@ -68,6 +73,17 @@ Native macOS menu bar app for the claude-swap engine. Split out of
   account = base URL). Unsigned debug binaries trip an ACL prompt on
   every rebuild — reads skip UI, and the dev loop codesigns the debug
   binary with the Apple Development identity so the grant sticks.
+- Every SwiftUI-driven frame (TimelineView tick, repeatForever
+  `.animation`) commits a CA transaction: display-list diff, AppKit
+  drag-region + tracking-area rebuild, a WindowServer fence — ~7 ms
+  each, the same whether one leaf or the whole grid changed. Five RPG
+  effects at 20 fps idled the pop-out at 43% CPU (#18, 2026-09-03);
+  as CAAnimations on a LayerEffect host they idle at 0.4%. Only
+  BurnOverlay still ticks (Canvas, 20 fps while a bar burns).
+- Dev instances: sign the debug binary `--identifier
+  com.huuloc.limitless` (tools/e2e.sh does) or the keychain ACL prompt
+  blocks AppModel.init forever (no socket, SecurityAgent spawns).
+  `swift build --target X` may not relink — use `--product`.
 - Two Claude sessions work this repo (since 2026-09-02 evening): the
   second one lives in its OWN worktree `../limitless-e2` on branch `e2`
   (one `cd` there; separate `.build`). Main (`~/death/limitless`) is
