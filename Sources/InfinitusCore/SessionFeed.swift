@@ -231,7 +231,7 @@ public enum SessionFeedReader {
             return SessionFeedItem(kind: run.item.kind, text: "\(run.item.text) (\u{00d7}\(run.count))",
                                    at: run.item.at, toolName: run.item.toolName, options: run.item.options)
         }
-        return Array(items.suffix(limit))
+        return Array(items.suffix(max(0, limit)))
     }
 
     private static func errorSummary(_ block: [String: Any]) -> String {

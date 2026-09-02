@@ -25,7 +25,9 @@ final class NamedTunnel: ObservableObject {
     private static let pidKey = "mirror_named_tunnel_pid"
 
     private var process: Process?
-    private var hostname = ""
+    private(set) var hostname = ""
+
+    var isRunning: Bool { process != nil }
 
     init() {
         reapOrphan()
@@ -139,7 +141,8 @@ final class NamedTunnel: ObservableObject {
         process = nil
         UserDefaults.standard.removeObject(forKey: Self.pidKey)
         connected = false
-        status = "the named tunnel stopped"
+        // A rejected token already explains the exit; keep that line.
+        if status?.hasPrefix("Cloudflare rejected") != true { status = "the named tunnel stopped" }
         log?("⚠️", "named tunnel stopped")
     }
 }

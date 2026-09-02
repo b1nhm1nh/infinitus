@@ -16,6 +16,11 @@ struct SyncPane: View {
     /// The quick tunnel publishes its URL the same way — the QR list
     /// grows a third entry the moment cloudflared names the hostname.
     @ObservedObject private var tunnel: QuickTunnel
+    @ObservedObject private var named: NamedTunnel
+    /// Typed hostname/token live here until Save: the model restarts the
+    /// tunnel on a hostname change, and a half-typed one shouldn't.
+    @State private var namedHost = ""
+    @State private var namedToken = ""
     /// The token is masked until asked for: settings panes get shared in
     /// screenshots, and this one is a read key.
     @State private var revealToken = false
@@ -32,6 +37,7 @@ struct SyncPane: View {
         self.app = app
         _server = ObservedObject(wrappedValue: app.mirrorServer)
         _tunnel = ObservedObject(wrappedValue: app.quickTunnel)
+        _named = ObservedObject(wrappedValue: app.namedTunnel)
     }
 
     var body: some View {
@@ -133,6 +139,7 @@ struct SyncPane: View {
                              + "snapshot private. Stops when you turn this off "
                              + "or quit.")
                             .font(.caption).foregroundStyle(.secondary)
+                        namedTunnelRows
                     } else {
                         LabeledContent("Cloudflare quick tunnel") {
                             Button("Copy install command") { copy("brew install cloudflared") }
@@ -143,7 +150,7 @@ struct SyncPane: View {
                             .font(.caption).foregroundStyle(.secondary)
                     }
                 }
-                .onAppear { probeTailscale() }
+                .onAppear { probeTailscale(); namedHost = app.mirrorNamedTunnelHost }
                 .onReceive(reprobe) { _ in probeTailscale() }
             }
             Section("iCloud") {
@@ -182,6 +189,52 @@ struct SyncPane: View {
         let title: String
         let detail: String
         let done: Bool
+    }
+
+    /// The restart-proof remote route: a Cloudflare tunnel the user owns.
+    /// Cloudflare holds the hostname → localhost:port mapping; this Mac
+    /// holds only the tunnel token, in the keychain.
+    @ViewBuilder private var namedTunnelRows: some View {
+        Toggle("Expose through your own Cloudflare tunnel",
+               isOn: $app.mirrorNamedTunnelEnabled)
+            .help("Runs `cloudflared tunnel run` with the token below. The "
+                  + "hostname is yours and never changes, so a paired phone "
+                  + "survives every restart.")
+        TextField("Hostname", text: $namedHost, prompt: Text("infinitus.example.com"))
+            .textFieldStyle(.roundedBorder)
+            .onSubmit { app.mirrorNamedTunnelHost = namedHost }
+        SecureField("Tunnel token", text: $namedToken,
+                    prompt: Text(app.namedTunnelTokenPresent
+                                 ? "•••••••• (stored in keychain)" : "eyJh… from the Cloudflare dashboard"))
+            .textFieldStyle(.roundedBorder)
+        HStack {
+            Button("Save") {
+                app.mirrorNamedTunnelHost = namedHost
+                if !namedToken.isEmpty { app.saveNamedTunnelToken(namedToken) }
+                namedToken = ""
+            }
+            .buttonStyle(.borderedProminent)
+            .disabled(NamedTunnel.normalizeHostname(namedHost).isEmpty)
+            if app.namedTunnelTokenPresent {
+                Button("Forget token") { app.saveNamedTunnelToken("") }
+            }
+        }
+        if let status = named.status {
+            Text(status).font(.caption)
+                .foregroundStyle(named.connected ? Color.secondary : Color.orange)
+        }
+        if app.mirrorNamedTunnelEnabled, let port = server.port,
+           port != MirrorTransport.defaultPort {
+            Text("This Mac is listening on port \(port), not \(MirrorTransport.defaultPort) — "
+                 + "the tunnel's public hostname in the Cloudflare dashboard must point at "
+                 + "http://localhost:\(port).")
+                .font(.caption).foregroundStyle(.orange)
+        }
+        Text("Once in the Cloudflare dashboard: Zero Trust → Networks → Tunnels → "
+             + "Create → Cloudflared, name it, copy the token; then Public hostname "
+             + "= the hostname above, service = http://localhost:\(MirrorTransport.defaultPort). "
+             + "Needs a Cloudflare account and a domain on it.")
+            .font(.caption).foregroundStyle(.secondary)
     }
 
     private var steps: [Step] {
