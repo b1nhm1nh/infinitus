@@ -172,8 +172,9 @@ struct InfinitusApp: App {
                     keywords: ["history", "switches", "log", "events"],
                     view: AnyView(ActivityPane(model: model))),
         SettingsTab(title: "Sync", symbol: "icloud", tint: .cyan,
-                    keywords: ["icloud", "sync", "settings", "drive", "devices"],
-                    view: AnyView(SyncPane(sync: model.sync))),
+                    keywords: ["icloud", "sync", "settings", "drive", "devices",
+                               "phone", "iphone", "lan", "bonjour", "companion"],
+                    view: AnyView(SyncPane(sync: model.sync, app: model))),
     ]
     + (model.debugMenu
        ? [SettingsTab(title: "Animations", symbol: "sparkles", tint: .pink,

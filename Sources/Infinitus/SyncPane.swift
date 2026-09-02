@@ -7,6 +7,16 @@ import UniformTypeIdentifiers
 /// engine config too, not just display prefs.
 struct SyncPane: View {
     @ObservedObject var sync: SettingsSyncModel
+    @ObservedObject var app: AppModel
+    /// The LAN server publishes its own state (port, failures), so the
+    /// pane observes it directly — AppModel doesn't republish it.
+    @ObservedObject private var server: MirrorServer
+
+    init(sync: SettingsSyncModel, app: AppModel) {
+        self.sync = sync
+        self.app = app
+        _server = ObservedObject(wrappedValue: app.mirrorServer)
+    }
 
     var body: some View {
         Form {
@@ -19,6 +29,22 @@ struct SyncPane: View {
                 if let status = sync.status {
                     Text(status).font(.caption).foregroundStyle(.secondary)
                 }
+            }
+            // The phone companion's transport (#9): this Mac serves its
+            // last fleet snapshot to InfinitusMobile over the LAN.
+            Section("Phone companion (LAN)") {
+                Toggle("Serve the fleet to my phone on this network",
+                       isOn: $app.mirrorLANEnabled)
+                    .help("Advertises this Mac as _infinitus._tcp and answers "
+                          + "GET /snapshot with the same fleet snapshot the "
+                          + "menu bar shows.")
+                if let status = server.status {
+                    Text(status).font(.caption).foregroundStyle(.secondary)
+                }
+                Text("Anyone on this network can read the snapshot — there "
+                     + "is no password. It carries account aliases, emails "
+                     + "and usage estimates; never tokens or push secrets.")
+                    .font(.caption).foregroundStyle(.secondary)
             }
             // Manual path for machines outside the iCloud account
             // (user request 2026-08-30). Same snapshot, same scope.

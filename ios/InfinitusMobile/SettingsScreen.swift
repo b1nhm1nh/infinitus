@@ -66,6 +66,26 @@ struct SettingsScreen: View {
                         Button("Replay intro") { model.replayIntro() }
                     }
                 }
+                // The LAN transport (#9): which Mac is being mirrored, and
+                // a way in for networks where Bonjour doesn't survive.
+                Section("Mac connection") {
+                    Text(model.transportStatus.isEmpty
+                         ? "looking for a Mac on this Wi-Fi…"
+                         : model.transportStatus)
+                        .font(.caption).foregroundStyle(.secondary)
+                    LabeledContent("Address") {
+                        TextField("auto (Bonjour)", text: $model.manualEndpoint)
+                            .multilineTextAlignment(.trailing)
+                            .autocorrectionDisabled()
+                            .textInputAutocapitalization(.never)
+                            .keyboardType(.URL)
+                    }
+                    Text("Leave empty to find the Mac automatically. Set "
+                         + "host:port (the Mac's Sync settings show the port) "
+                         + "on networks that block Bonjour. Both devices must "
+                         + "be on the same Wi-Fi.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
                 Section {
                     Text("Portrait shows the Mac's stacked cards, landscape "
                          + "its wide rows — rotate to switch.")

@@ -10,3 +10,4 @@ ios/*.xcodeproj
 .wrangler/
 build-*/
 ios/build/
+ios/InfinitusMobile/Info.plist

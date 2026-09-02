@@ -41,6 +41,9 @@ final class MirrorModel: ObservableObject, FleetModel {
 
     private let mirror: FleetMirror
     private let defaults: UserDefaults
+    /// Whether the LAN transport is in play (it isn't when the simulator
+    /// is pointed at a file with INFINITUS_MIRROR_PATH).
+    private let usesLAN: Bool
 
     // MARK: display prefs — Follow Mac, or local overrides
 
@@ -53,9 +56,22 @@ final class MirrorModel: ObservableObject, FleetModel {
     @Published var localIntroTitle: String { didSet { defaults.set(localIntroTitle, forKey: "intro_title") } }
     @Published var localIntroSpeed: Double { didSet { defaults.set(localIntroSpeed, forKey: "intro_speed") } }
 
+    // MARK: LAN transport (#9)
+
+    /// Manual `host:port` for networks that block mDNS — empty means
+    /// "use Bonjour". The mirror reads it straight from UserDefaults.
+    @Published var manualEndpoint: String {
+        didSet { defaults.set(manualEndpoint, forKey: NetworkFleetMirror.manualKey) }
+    }
+    /// What the Settings screen shows about the connection.
+    @Published private(set) var transportStatus = ""
+
     init(mirror: FleetMirror? = nil, defaults: UserDefaults = .standard) {
         self.mirror = mirror ?? Self.makeMirror()
         self.defaults = defaults
+        usesLAN = mirror == nil && ProcessInfo.processInfo
+            .environment["INFINITUS_MIRROR_PATH"] == nil
+        manualEndpoint = defaults.string(forKey: NetworkFleetMirror.manualKey) ?? ""
         followMac = defaults.object(forKey: "follow_mac") as? Bool ?? true
         localThemeID = defaults.string(forKey: "gamification_style") ?? "off"
         localCompactRows = defaults.object(forKey: "compact_rows") as? Bool ?? false
@@ -66,7 +82,9 @@ final class MirrorModel: ObservableObject, FleetModel {
     }
 
     /// `INFINITUS_MIRROR_PATH` lets a simulator point at the Mac's live
-    /// export; otherwise the app keeps its own copy in Documents.
+    /// export; otherwise the LAN transport (#9) fetches the snapshot from
+    /// whichever Mac advertises `_infinitus._tcp`, with the app's own
+    /// Documents copy as the offline fallback.
     /// `fileprivate`, not `private`: `MobileUsage` below reuses it to read
     /// the same snapshot independently (#9 phase D1a).
     fileprivate static func makeMirror() -> FleetMirror {
@@ -74,7 +92,10 @@ final class MirrorModel: ObservableObject, FleetModel {
             return FileFleetMirror(url: URL(fileURLWithPath: path))
         }
         let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-        return FileFleetMirror(url: documents.appendingPathComponent("mirror-snapshot.json"))
+        return ChainFleetMirror(mirrors: [
+            NetworkFleetMirror.shared,
+            FileFleetMirror(url: documents.appendingPathComponent("mirror-snapshot.json")),
+        ])
     }
 
     /// Pure decode of the mirror's `listJSON` payload — same `AccountList`
@@ -90,6 +111,7 @@ final class MirrorModel: ObservableObject, FleetModel {
                 self.snapshot = nil
                 prefs = nil
                 error = nil
+                if usesLAN { transportStatus = await NetworkFleetMirror.shared.statusText }
                 return
             }
             guard let list = Self.decodeList(snapshot.listJSON) else {
@@ -98,6 +120,7 @@ final class MirrorModel: ObservableObject, FleetModel {
             }
             self.snapshot = snapshot
             prefs = snapshot.prefs
+            if usesLAN { transportStatus = await NetworkFleetMirror.shared.statusText }
             sessionProgress.apply(snapshot.progressByPid ?? [:])
             apply(list)
             error = nil

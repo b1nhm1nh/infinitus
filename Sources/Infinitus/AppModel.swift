@@ -195,9 +195,18 @@ final class AppModel: ObservableObject {
     @Published var pushSessionsDone: Bool { didSet { defaults.set(pushSessionsDone, forKey: "push_sessions_done") } }
     @Published var pushAllDead: Bool { didSet { defaults.set(pushAllDead, forKey: "push_all_dead") } }
     @Published var pushLastAlive: Bool { didSet { defaults.set(pushLastAlive, forKey: "push_last_alive") } }
+    // Phone companion (#9): serve the mirror snapshot over the LAN when
+    // the Sync pane's toggle is on. Off by default — it's an open port.
+    @Published var mirrorLANEnabled: Bool {
+        didSet {
+            defaults.set(mirrorLANEnabled, forKey: "mirror_lan_enabled")
+            applyMirrorLAN()
+        }
+    }
     let sync = SettingsSyncModel()
     let historyRecorder = UsageHistoryRecorder()
     let mirrorExporter = MirrorExporter()
+    let mirrorServer = MirrorServer()
     private let awake = KeepAwake()
     private var pushTriggers = PushTriggers()
     private let defaults: UserDefaults
@@ -293,6 +302,7 @@ final class AppModel: ObservableObject {
         keepAwake = defaults.object(forKey: "keep_awake") as? Bool ?? false
         autoOrder = defaults.object(forKey: "auto_order") as? Bool ?? false
         sortByHeadroom = defaults.object(forKey: "sort_headroom") as? Bool ?? true
+        mirrorLANEnabled = defaults.object(forKey: "mirror_lan_enabled") as? Bool ?? false
         // Push triggers default ON — they exist because they were asked for.
         pushSessionsDone = defaults.object(forKey: "push_sessions_done") as? Bool ?? true
         pushAllDead = defaults.object(forKey: "push_all_dead") as? Bool ?? true
@@ -401,6 +411,12 @@ final class AppModel: ObservableObject {
             self.eventLog.append(EventEntry(icon: icon, text: text))
             if self.eventLog.count > 100 { self.eventLog.removeFirst(self.eventLog.count - 100) }
         }
+        mirrorServer.log = { [weak self] icon, text in
+            guard let self else { return }
+            self.eventLog.append(EventEntry(icon: icon, text: text))
+            if self.eventLog.count > 100 { self.eventLog.removeFirst(self.eventLog.count - 100) }
+        }
+        applyMirrorLAN()
         guard let cli, supervisor == nil else { return }
         if !isPlayground { startEngine(binary: cli.binaryPath) }
         refreshTask = Task { [weak self] in
@@ -412,6 +428,20 @@ final class AppModel: ObservableObject {
                 try? await Task.sleep(nanoseconds: UInt64(seconds) * 1_000_000_000)
             }
         }
+    }
+
+    /// Starts or stops the phone companion's LAN listener (#9). Never in
+    /// the playground: it seeds from the real defaults and would
+    /// advertise a second service with the same machine name.
+    private func applyMirrorLAN() {
+        guard !isPlayground else { return }
+        guard mirrorLANEnabled else {
+            mirrorServer.stop()
+            return
+        }
+        let payload = mirrorServer.payload
+        Task { [mirrorExporter] in await mirrorExporter.attach(payload: payload) }
+        mirrorServer.start(machineName: Host.current().localizedName ?? "Mac")
     }
 
     private func startEngine(binary: String) {

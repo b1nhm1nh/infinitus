@@ -13,6 +13,14 @@ targets:
     type: application
     platform: iOS
     sources: [InfinitusMobile]
+    # NSBonjourServices / NSLocalNetworkUsageDescription have no
+    # INFOPLIST_KEY_ equivalent, so the target gets a real (generated,
+    # untracked) Info.plist that Xcode merges the keys above into.
+    info:
+      path: InfinitusMobile/Info.plist
+      properties:
+        NSLocalNetworkUsageDescription: Infinitus finds the Mac running your fleet on this Wi-Fi and reads its latest snapshot.
+        NSBonjourServices: [_infinitus._tcp]
     dependencies:
       - package: Infinitus
         product: CswapCore

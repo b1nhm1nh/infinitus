@@ -9,6 +9,13 @@ import CswapCore
 actor MirrorExporter {
     private let minInterval: TimeInterval = 30
     private var lastWrite: Date = .distantPast
+    /// The LAN server's payload slot (#9), when the phone companion is
+    /// on — it serves the very bytes written here, never a re-encode.
+    private var payload: MirrorPayloadBox?
+
+    func attach(payload: MirrorPayloadBox) {
+        self.payload = payload
+    }
 
     static let url: URL = {
         FileManager.default.urls(for: .applicationSupportDirectory,
@@ -51,6 +58,14 @@ actor MirrorExporter {
             serviceStatus: serviceStatus,
             engine: engine,
             progressByPid: progressByPid)
-        try? MirrorWriter.write(snapshot, to: Self.url)
+        // Encoded once here rather than inside MirrorWriter so the LAN
+        // server hands out the same bytes the file holds.
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        guard let data = try? encoder.encode(snapshot) else { return }
+        payload?.set(data)
+        try? FileManager.default.createDirectory(
+            at: Self.url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try? data.write(to: Self.url, options: .atomic)
     }
 }
