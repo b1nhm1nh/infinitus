@@ -620,6 +620,17 @@ struct AccountsPane: View {
     }
 
     @ViewBuilder private var flowView: some View {
+        if let p = model.primary, p.engineID != CswapEngine.engineID {
+            // The in-app login window feeds `cswap add`; other engines
+            // add accounts from their own settings tab.
+            Text("Adding accounts to \(p.engine.displayName) lives in its own settings tab.")
+                .font(.caption).foregroundStyle(.secondary)
+        } else {
+            cswapFlowView
+        }
+    }
+
+    @ViewBuilder private var cswapFlowView: some View {
         switch flow.phase {
         case .idle:
             HStack {
@@ -685,16 +696,11 @@ struct AccountsPane: View {
         }
     }
 
+    /// Through the seam, never the cswap CLI directly: the list shows the
+    /// PRIMARY fleet's rows, and with cswap switched off that is the
+    /// proxy's fleet — `cswap remove N` would hit the wrong engine.
     private func remove(_ a: Account) {
-        Task {
-            guard let cli = model.cli else { return }
-            do {
-                try await cli.removeAccount(a.number)
-                await model.refreshSnapshot()
-            } catch {
-                model.lastError = "\(error)"
-            }
-        }
+        model.primary?.remove(a.number)
     }
 }
 

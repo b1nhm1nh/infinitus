@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(FoundationNetworking)
+import FoundationNetworking   // URLSession lives here on Linux
+#endif
 
 // MARK: - CLIProxyAPI behind the AccountEngine seam (#8)
 //
@@ -266,7 +269,8 @@ public actor CLIProxyEngine: AccountEngine {
 
     // MARK: actions
 
-    private func name(_ provider: Provider, _ number: Int) throws -> String {
+    /// Internal for the live round-trip test.
+    func name(_ provider: Provider, _ number: Int) throws -> String {
         let names = ordinals[provider] ?? []
         guard number >= 1, number <= names.count else {
             throw EngineError.remote(status: 0, body: "no account #\(number) in the last snapshot")

@@ -32,4 +32,41 @@ final class CLIProxyLiveTests: XCTestCase {
             print("LIVE api-call status=\(env.statusCode) body=\(env.body.prefix(200))")
         }
     }
+
+    /// Reversible PATCH round-trip on credential #1: hold → restore,
+    /// note → restore. Proves the body shapes the stubs assume
+    /// (`{name, disabled}` / `{name, note}`) against the real proxy.
+    func testLiveHoldAndNoteRoundTrip() async throws {
+        let env = ProcessInfo.processInfo.environment
+        guard let key = env["INFINITUS_LIVE_PROXY_KEY"], !key.isEmpty else {
+            throw XCTSkip("INFINITUS_LIVE_PROXY_KEY not set")
+        }
+        let base = URL(string: env["INFINITUS_LIVE_PROXY_URL"] ?? "http://127.0.0.1:8317")!
+        let engine = CLIProxyEngine(baseURL: base, managementKey: key)
+        guard let fleet = try await engine.snapshot().first, !fleet.accounts.isEmpty else {
+            throw XCTSkip("no credential on the live proxy")
+        }
+        let provider = fleet.provider
+        let target = try await engine.name(provider, 1)
+        func fetch() async throws -> ProxyAuthFile {
+            let (_, data) = try await engine.rawGet("auth-files")
+            let files = try JSONDecoder().decode(ProxyAuthFileList.self, from: data).files
+            return try XCTUnwrap(files.first { $0.name == target })
+        }
+        let before = try await fetch()
+
+        try await engine.setHold(fleet: provider, number: 1, held: true)
+        let held = try await fetch()
+        XCTAssertEqual(held.disabled, true)
+        try await engine.setHold(fleet: provider, number: 1, held: before.disabled ?? false)
+        let restored = try await fetch()
+        XCTAssertEqual(restored.disabled ?? false, before.disabled ?? false)
+
+        try await engine.rename(fleet: provider, number: 1, "infinitus-smoke")
+        let noted = try await fetch()
+        XCTAssertEqual(noted.note, "infinitus-smoke")
+        try await engine.rename(fleet: provider, number: 1, before.note ?? "")
+        let cleared = try await fetch()
+        XCTAssertEqual(cleared.note ?? "", before.note ?? "")
+    }
 }

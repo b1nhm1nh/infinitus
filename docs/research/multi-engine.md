@@ -291,3 +291,13 @@ ACL: the signed debug binary + Infinitus.app). Routing `fill-first`.
 - Still open: a fresh Claude sign-in through the pane's "Add account"
   (needs a person in the browser); live fixtures are hand-written from
   the upstream shapes above, not lifted from a redacted capture.
+
+- **Live PATCH round-trip verified 2026-09-02** (`CLIProxyLiveTests.testLiveHoldAndNoteRoundTrip`,
+  reversible): `PATCH auth-files/status {name, disabled}` and
+  `PATCH auth-files/fields {name, note}` read back exactly as the stubs
+  assume. `switchTo` (priority) and `remove` are still stub-only —
+  they would leave a permanent mark on the dev proxy.
+- **Accounts pane routes through the seam**: remove goes via
+  `FleetState.remove`, and the in-app login flow is shown only when the
+  primary fleet is cswap (with cswap off, the pane lists the proxy's rows
+  and points to the CLIProxyAPI tab for adding).

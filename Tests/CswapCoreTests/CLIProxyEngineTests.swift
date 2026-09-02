@@ -1,3 +1,4 @@
+#if !os(Linux)   // URLProtocol stubbing is unverified on corelibs-foundation
 import XCTest
 @testable import CswapCore
 
@@ -223,3 +224,4 @@ final class CLIProxyEngineTests: XCTestCase {
         XCTAssertFalse(engine.capabilities.contains(.autoSwitch))
     }
 }
+#endif
