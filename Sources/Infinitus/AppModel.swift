@@ -315,6 +315,22 @@ final class AppModel: ObservableObject {
             if autoOrder { applyAutoOrder() }
         }
     }
+    /// Pick-first accounts (#15, interim): starred emails lead the
+    /// auto-order so the engine's slot-order tie-break favours them.
+    /// Keyed by email, not slot — auto-order itself moves slots.
+    @Published var preferredEmails: Set<String> {
+        didSet {
+            defaults.set(Array(preferredEmails).sorted(), forKey: "preferred_emails")
+            if autoOrder { applyAutoOrder() }
+        }
+    }
+    func setPreferred(_ email: String, _ on: Bool) {
+        if on { preferredEmails.insert(email.lowercased()) }
+        else { preferredEmails.remove(email.lowercased()) }
+    }
+    func isPreferred(_ account: Account) -> Bool {
+        preferredEmails.contains(account.email.lowercased())
+    }
     @Published var keepAwake: Bool {
         didSet {
             defaults.set(keepAwake, forKey: "keep_awake")
@@ -453,6 +469,7 @@ final class AppModel: ObservableObject {
         cliproxyEnabled = defaults.object(forKey: "engine_cliproxy_enabled") as? Bool ?? false
         keepAwake = defaults.object(forKey: "keep_awake") as? Bool ?? false
         autoOrder = defaults.object(forKey: "auto_order") as? Bool ?? false
+        preferredEmails = Set((defaults.stringArray(forKey: "preferred_emails") ?? []).map { $0.lowercased() })
         sortByHeadroom = defaults.object(forKey: "sort_headroom") as? Bool ?? true
         mirrorLANEnabled = defaults.object(forKey: "mirror_lan_enabled") as? Bool ?? false
         mirrorTunnelEnabled = defaults.object(forKey: "mirror_tunnel_enabled") as? Bool ?? false
@@ -551,6 +568,7 @@ final class AppModel: ObservableObject {
         glassFocused = defaults.object(forKey: "glass_focused") as? Double ?? 0.7
         keepAwake = defaults.object(forKey: "keep_awake") as? Bool ?? false
         autoOrder = defaults.object(forKey: "auto_order") as? Bool ?? false
+        preferredEmails = Set((defaults.stringArray(forKey: "preferred_emails") ?? []).map { $0.lowercased() })
         sortByHeadroom = defaults.object(forKey: "sort_headroom") as? Bool ?? true
         pushSessionsDone = defaults.object(forKey: "push_sessions_done") as? Bool ?? true
         pushAllDead = defaults.object(forKey: "push_all_dead") as? Bool ?? true

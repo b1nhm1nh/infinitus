@@ -48,7 +48,10 @@ final class ControlProtocolTests: XCTestCase {
     }
 
     func testSocketPathIsUnderAppSupport() {
-        XCTAssertEqual(ControlProtocol.socketURL(home: "/Users/x").path,
+        XCTAssertEqual(ControlProtocol.socketURL(home: "/Users/x", environment: [:]).path,
                        "/Users/x/Library/Application Support/Infinitus/control/control.sock")
+        XCTAssertEqual(ControlProtocol.socketURL(home: "/Users/x",
+                                                 environment: ["INFINITUS_CONTROL_SOCKET": "/tmp/dev.sock"]).path,
+                       "/tmp/dev.sock")
     }
 }

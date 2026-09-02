@@ -16,8 +16,14 @@ public enum ControlProtocol {
 
     /// `~/Library/Application Support/Infinitus/control/control.sock` —
     /// the directory is 0700 (the app creates it before binding).
-    public static func socketURL(home: String = NSHomeDirectory()) -> URL {
-        URL(fileURLWithPath: home)
+    /// `INFINITUS_CONTROL_SOCKET=<path>` overrides it for both the app and
+    /// the CLI, so a dev instance never steals the running app's socket.
+    public static func socketURL(home: String = NSHomeDirectory(),
+                                 environment: [String: String] = ProcessInfo.processInfo.environment) -> URL {
+        if let custom = environment["INFINITUS_CONTROL_SOCKET"], !custom.isEmpty {
+            return URL(fileURLWithPath: custom)
+        }
+        return URL(fileURLWithPath: home)
             .appendingPathComponent("Library/Application Support/Infinitus/control/control.sock")
     }
 }
@@ -137,6 +143,9 @@ public struct ControlCommand: Codable, Sendable, Equatable {
         ControlCommand(name: "rename", args: ["<fleet>", "<n>", "<alias>"], effect: .write, requires: "rename",
                        summary: "Set (empty string clears) the alias every frontend shows.",
                        replyShape: "{fleet}"),
+        ControlCommand(name: "prefer", args: ["<fleet>", "<n>", "on|off"], effect: .write, requires: "reorder",
+                       summary: "Star/unstar an account: starred ones lead the auto-order so rotation picks them first.",
+                       replyShape: "{preferred:[String]}"),
         ControlCommand(name: "remove", args: ["<fleet>", "<n>"], options: ["--yes"],
                        effect: .destructive, requires: "remove",
                        summary: "Delete the credential from the engine. Refused without --yes.",

@@ -8,6 +8,7 @@ call it by that path.
 
 Talks to the app over `~/Library/Application Support/Infinitus/control/control.sock`
 (a 0700 directory owned by you — that is the auth). The app must be running.
+`INFINITUS_CONTROL_SOCKET=<path>` on both sides points at a dev instance instead.
 
 ## The one rule
 
@@ -41,9 +42,11 @@ infinitusctl switch  <fleet> <n>
 infinitusctl hold    <fleet> <n>
 infinitusctl unhold  <fleet> <n>
 infinitusctl rename  <fleet> <n> <alias>     "" clears
+infinitusctl prefer  <fleet> <n> on|off        star: auto-order keeps it on top
 infinitusctl remove  <fleet> <n> --yes
 infinitusctl add     <fleet>                 opens the in-app sign-in; human finishes it
 infinitusctl wait-add [--timeout 300]        blocks until that sign-in ends
+infinitusctl show    popout|settings|wall
 infinitusctl engine  cswap|cliproxy on|off   restarts the app
 infinitusctl proxy                           base URL, key stored?, routing strategy
 infinitusctl proxy-key [--url U] < keyfile   key from stdin, never argv; restarts the app

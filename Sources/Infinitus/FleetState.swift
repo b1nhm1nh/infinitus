@@ -238,7 +238,8 @@ final class FleetState: ObservableObject, Identifiable {
         guard host.autoOrder, capabilities.contains(.reorder), !autoOrderInFlight,
               pendingSwitch == nil, !accounts.isEmpty,
               dying.isEmpty else { return }
-        let desired = AutoOrder.order(accounts)
+        let preferred = Set(accounts.filter { host.isPreferred($0) }.map(\.number))
+        let desired = AutoOrder.order(accounts, preferred: preferred)
         guard desired != accounts.map(\.number) else { return }
         autoOrderInFlight = true
         reorder(desired) { [weak self] in self?.autoOrderInFlight = false }

@@ -701,6 +701,20 @@ private struct FleetAccountsSection: View {
             }
             statusChip(a)
             Spacer()
+            if caps.contains(.reorder) {
+                // Pick-first (#15): starred accounts lead the auto-order,
+                // and the engine's tie-break by slot favours them.
+                let starred = model.isPreferred(a)
+                Button { model.setPreferred(a.email, !starred) } label: {
+                    Image(systemName: starred ? "star.fill" : "star")
+                        .foregroundStyle(starred ? Color.yellow : Color.secondary)
+                }
+                .buttonStyle(.borderless)
+                .help(starred
+                      ? "Preferred: auto-rotation picks this account first while it has headroom"
+                      : "Prefer this account: with \"Keep accounts sorted\" on, it is moved "
+                        + "to the top slots so auto-rotation picks it first")
+            }
             if caps.contains(.switch), !a.active {
                 Button { fleet.switchTo(a.number) } label: {
                     Image(systemName: "arrow.right.circle")
@@ -741,7 +755,7 @@ private struct FleetAccountsSection: View {
         }
     }
 
-    private static let autoOrderHelp = "After every refresh, the fleet is reordered most headroom first (unknown, then out-of-limit by who recovers first, then disabled last). Slot numbers shift with it. Small differences don't move a row, so neighbours never flip-flop."
+    private static let autoOrderHelp = "After every refresh, the fleet is reordered most headroom first (unknown, then out-of-limit by who recovers first, then disabled last); starred accounts lead. Slot numbers shift with it. Small differences don't move a row, so neighbours never flip-flop."
 
     /// Same sentences in every section, each present only when the
     /// fleet has the control it describes (user 2026-09-02: "make sure
@@ -752,6 +766,9 @@ private struct FleetAccountsSection: View {
             parts.append(model.autoOrder
                 ? "Sorted automatically \u{2014} drag is off while this is on."
                 : "Drag rows to set the rotation order \u{2014} Rotate cycles through them.")
+            parts.append(model.autoOrder
+                ? "Starred accounts stay on top, so auto-rotation picks them first."
+                : "Star an account and turn sorting on to have auto-rotation pick it first.")
         }
         if caps.contains(.switch) || caps.contains(.hold) {
             parts.append("The arrow switches to that account; pause holds it "

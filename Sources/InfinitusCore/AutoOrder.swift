@@ -92,6 +92,25 @@ public enum AutoOrder {
     public static func order(_ accounts: [Account]) -> [Int] {
         order(accounts.map(row))
     }
+
+    /// Pick-first (#15, interim): the starred accounts lead the order —
+    /// among themselves by the policy above, the rest after them, also
+    /// by the policy. Starred accounts that are dead or disabled still
+    /// sink to their rank: a star is a preference, not a resurrection.
+    /// Why slot order: the engine's strategies break ties by sequence
+    /// (`consume-first`: soonest reset, then headroom, then slot;
+    /// `best`: headroom, then slot), so the lowest slots are the only
+    /// preference the engine honours today without an upstream change.
+    public static func order(_ rows: [Row], preferred: Set<Int>) -> [Int] {
+        guard !preferred.isEmpty else { return order(rows) }
+        let alivePreferred = rows.filter { preferred.contains($0.number) && $0.rank == .alive }
+        let rest = rows.filter { !alivePreferred.contains($0) }
+        return order(alivePreferred) + order(rest)
+    }
+
+    public static func order(_ accounts: [Account], preferred: Set<Int>) -> [Int] {
+        order(accounts.map(row), preferred: preferred)
+    }
 }
 
 /// Display-only ordering (todo 2026-09-01: "sorted by headroom but put

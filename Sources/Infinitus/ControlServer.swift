@@ -20,6 +20,12 @@ final class ControlServer {
 
     func start() {
         let url = ControlProtocol.socketURL()
+        // sun_path is 104 bytes on Darwin; a longer path fails the bind
+        // silently inside NWListener.
+        guard url.path.utf8.count < 104 else {
+            NSLog("Infinitus control: socket path too long (%d bytes): %@", url.path.utf8.count, url.path)
+            return
+        }
         let dir = url.deletingLastPathComponent()
         // The socket lives in its own 0700 directory: NWListener binds
         // asynchronously, so a mode set on the socket itself would leave
@@ -129,6 +135,14 @@ final class ControlServer {
             }
             await model.refreshSnapshot()
             return ControlReply(ok: true, result: try .of(["fleet": fleetPayload(fleet)]))
+
+        case "prefer":
+            let (fleet, n) = try target(r)
+            guard fleet.capabilities.contains(.reorder) else { throw Fail("\(fleet.id) has no rotation order") }
+            guard r.args.count >= 3, ["on", "off"].contains(r.args[2]) else { throw Fail("usage: prefer <fleet> <n> on|off") }
+            guard let account = fleet.accounts.first(where: { $0.number == n }) else { throw Fail("no account #\(n) in \(fleet.id)") }
+            model.setPreferred(account.email, r.args[2] == "on")
+            return ControlReply(ok: true, result: try .of(["preferred": Array(model.preferredEmails).sorted()]))
 
         case "add":
             guard let key = r.args.first,
