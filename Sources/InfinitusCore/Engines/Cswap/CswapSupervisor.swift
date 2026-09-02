@@ -49,6 +49,9 @@ public actor CswapSupervisor {
     private var process: Process?
     private var backoff = SupervisorBackoff()
     private var stopping = false
+    /// When our own child last exited: a refusal right after that is the
+    /// dying child's mutex not yet released, not a foreign holder.
+    private var lastOwnExit: Date = .distantPast
 
     public init(
         binaryPath: String,
@@ -123,14 +126,20 @@ public actor CswapSupervisor {
             // away, and the 2026-08-28 orphan did exactly that: the fresh
             // app sat refused forever while nobody held a live engine. A
             // slow paced retry (60s) self-heals without spinning on the
-            // instant refusal.
+            // instant refusal. Within seconds of our OWN child's exit the
+            // holder is that child still letting go of the mutex (seen
+            // 2026-09-03 restarting the engine for an upgrade: a minute
+            // of "held elsewhere" for a lock that freed in under a
+            // second) — retry fast then.
+            let ownHandoff = Date().timeIntervalSince(lastOwnExit) < 10
             onState(.refused)
             Task { [weak self] in
-                try? await Task.sleep(nanoseconds: 60 * 1_000_000_000)
+                try? await Task.sleep(nanoseconds: (ownHandoff ? 3 : 60) * 1_000_000_000)
                 await self?.spawn()
             }
             return
         }
+        lastOwnExit = Date()
         backoff.noteExit(afterCleanSeconds: cleanSeconds)
         onState(.backingOff(seconds: scheduleRespawn()))
     }
