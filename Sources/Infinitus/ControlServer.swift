@@ -1,5 +1,6 @@
 import Foundation
 import Network
+import AppKit
 import InfinitusCore
 
 /// The agent-facing control socket (user 2026-09-03). A same-user UNIX
@@ -10,6 +11,7 @@ import InfinitusCore
 /// here answers "not implemented" rather than silently succeeding.
 @MainActor
 final class ControlServer {
+    private let launchedAt = Date()
     private unowned let model: AppModel
     private var listener: NWListener?
     private let queue = DispatchQueue(label: "infinitus.control")
@@ -174,6 +176,50 @@ final class ControlServer {
                 "error": error.map(JSONValue.string) ?? (stillRunning ? .string("timed out") : .null),
                 "fleets": try .of(fleetsPayload()),
             ] as [String: JSONValue]), error: stillRunning ? "timed out after \(Int(timeout))s" : error)
+
+        case "windows":
+            struct Win: Encodable {
+                let number: Int, title: String, `class`: String
+                let visible: Bool, occluded: Bool, level: Int
+                let size: [Double], content: String
+            }
+            let rows = NSApp.windows.map { w in
+                Win(number: w.windowNumber, title: w.title,
+                    class: String(describing: type(of: w)),
+                    visible: w.isVisible,
+                    occluded: !w.occlusionState.contains(.visible),
+                    level: w.level.rawValue,
+                    size: [w.frame.width, w.frame.height],
+                    content: w.contentView.map { String(describing: type(of: $0)) } ?? "-")
+            }
+            return ControlReply(ok: true, result: try .of(rows))
+
+        case "perf":
+            var usage = rusage()
+            getrusage(RUSAGE_SELF, &usage)
+            let cpu = Double(usage.ru_utime.tv_sec + usage.ru_stime.tv_sec)
+                + Double(usage.ru_utime.tv_usec + usage.ru_stime.tv_usec) / 1_000_000
+            var info = mach_task_basic_info()
+            var count = mach_msg_type_number_t(MemoryLayout<mach_task_basic_info>.size / MemoryLayout<natural_t>.size)
+            let kr = withUnsafeMutablePointer(to: &info) {
+                $0.withMemoryRebound(to: integer_t.self, capacity: Int(count)) {
+                    task_info(mach_task_self_, task_flavor_t(MACH_TASK_BASIC_INFO), $0, &count)
+                }
+            }
+            let rss = kr == KERN_SUCCESS ? Double(info.resident_size) : -1
+            var threadList: thread_act_array_t?
+            var threadCount = mach_msg_type_number_t(0)
+            task_threads(mach_task_self_, &threadList, &threadCount)
+            if let threadList {
+                vm_deallocate(mach_task_self_, vm_address_t(bitPattern: threadList),
+                              vm_size_t(threadCount) * vm_size_t(MemoryLayout<thread_t>.size))
+            }
+            return ControlReply(ok: true, result: .object([
+                "cpuSeconds": .number(cpu),
+                "rssBytes": .number(rss),
+                "threads": .number(Double(threadCount)),
+                "uptimeSeconds": .number(Date().timeIntervalSince(launchedAt)),
+            ]))
 
         case "show":
             guard let controller = AppDelegate.shared?.statusHolder?.controller else {

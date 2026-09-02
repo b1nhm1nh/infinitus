@@ -47,6 +47,8 @@ infinitusctl remove  <fleet> <n> --yes
 infinitusctl add     <fleet>                 opens the in-app sign-in; human finishes it
 infinitusctl wait-add [--timeout 300]        blocks until that sign-in ends
 infinitusctl show    popout|settings|wall
+infinitusctl windows                         every app window: visible? size, content class
+infinitusctl perf                            cpuSeconds/rssBytes/threads — sample twice for an idle %
 infinitusctl engine  cswap|cliproxy on|off   restarts the app
 infinitusctl proxy                           base URL, key stored?, routing strategy
 infinitusctl proxy-key [--url U] < keyfile   key from stdin, never argv; restarts the app

@@ -21,6 +21,20 @@ jobs:
           restore-keys: spm-${{ github.repository }}-${{ runner.os }}-
       - run: swift build
       - run: swift test
+  # End-to-end + performance gate (#18): the debug app against the demo
+  # engine, driven through infinitusctl; fails on a broken command, a
+  # missing pop-out, or idle CPU / RSS over budget (tools/e2e.sh).
+  e2e:
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/cache@v4
+        with:
+          path: .build
+          key: spm-${{ github.repository }}-${{ runner.os }}-${{ hashFiles('Package.resolved', 'Package.swift') }}
+          restore-keys: spm-${{ github.repository }}-${{ runner.os }}-
+      - run: swift build --product Infinitus --product infinitusctl
+      - run: tools/e2e.sh
   # The Omarchy/Waybar face (packaging/omarchy): core + tray must keep
   # building on Linux. Same plain invocations — the manifest gates the
   # AppKit target off non-macOS hosts.
