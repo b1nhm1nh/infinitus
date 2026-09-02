@@ -1,5 +1,5 @@
 import SwiftUI
-import CswapCore
+import InfinitusCore
 
 /// The sessions card's progress feed — the host reads Claude Code's own
 /// session records + transcript tails (mac: SessionProgressModel). A host
@@ -95,10 +95,12 @@ public struct SessionListCard<P: SessionProgressSource>: View {
     }
 }
 
-private extension SessionProgress {
+public extension SessionProgress {
     /// False for the all-nil value `SessionProgress.read` returns when a
     /// transcript can't be matched or opened — that case keeps the row's
     /// existing single-line rendering, no placeholder second line.
+    /// `public` (#9 native shell): the phone's Sessions tab gates its own
+    /// native rows on the same signal.
     var hasProgressSignal: Bool {
         nowDoing != nil || todos != nil || retrying
             || (lastActivityAt.map { -$0.timeIntervalSinceNow > 120 } ?? false)
@@ -107,8 +109,12 @@ private extension SessionProgress {
 
 /// The row's second line: what a session is doing right now, per
 /// `SessionProgress` — zero-token, read from the transcript tail.
-private struct SessionProgressLine: View {
+/// `public` (#9 native shell): the phone's Sessions tab puts this exact
+/// line inside its own native rows.
+public struct SessionProgressLine: View {
     let progress: SessionProgress
+
+    public init(progress: SessionProgress) { self.progress = progress }
 
     private var quietMinutes: Int? {
         guard let last = progress.lastActivityAt else { return nil }
@@ -117,7 +123,7 @@ private struct SessionProgressLine: View {
         return Int(idle / 60)
     }
 
-    var body: some View {
+    public var body: some View {
         HStack(spacing: 4) {
             statusText
             if let todos = progress.todos {
@@ -153,16 +159,22 @@ private struct SessionProgressLine: View {
 }
 
 /// Tiny (~40pt) progress capsule for a session's TodoWrite completion.
-private struct TodoCapsule: View {
+/// `public` (#9 native shell) — same capsule in the phone's session rows.
+public struct TodoCapsule: View {
     let done: Int
     let total: Int
+
+    public init(done: Int, total: Int) {
+        self.done = done
+        self.total = total
+    }
 
     private var fraction: CGFloat {
         guard total > 0 else { return 0 }
         return CGFloat(done) / CGFloat(total)
     }
 
-    var body: some View {
+    public var body: some View {
         ZStack(alignment: .leading) {
             Capsule().fill(Color.secondary.opacity(0.25))
             Capsule().fill(Color.accentColor)

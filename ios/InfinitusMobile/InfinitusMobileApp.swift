@@ -6,12 +6,10 @@ struct InfinitusMobileApp: App {
 
     var body: some Scene {
         WindowGroup {
-            FleetScreen(model: model)
-                // Dark only (#9 phase D2): the Mac popup renders on dark
-                // glass in every capture, and the shared views' .primary
-                // / .secondary text is picked for that — under a light
-                // scheme they go dark on the same dark chrome.
-                .preferredColorScheme(.dark)
+            // The native shell (#9): tabs by default, the Mac popup on
+            // request. RootView owns the polling and the color scheme —
+            // only the Mac-popup branch forces dark.
+            RootView(model: model)
         }
     }
 }

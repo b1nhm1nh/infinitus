@@ -1,5 +1,5 @@
 import SwiftUI
-import CswapCore
+import InfinitusCore
 import InfinitusUI
 
 /// The Mac popup, on the phone (#9 phase D2): the same shared views in
@@ -9,10 +9,12 @@ import InfinitusUI
 /// its popover. The mac's action buttons (pin, layout, quit…) have no
 /// phone equivalent; Settings rides a small overlay button instead of a
 /// navigation bar, so the header stays the centered "∞ Infinitus".
+///
+/// Since the native shell landed (#9), this is the "Show as Mac popup"
+/// view — kept 1:1, one Settings toggle away.
 struct FleetScreen: View {
     @ObservedObject var model: MirrorModel
     @StateObject private var usage = MobileUsage()
-    @Environment(\.scenePhase) private var scenePhase
     @State private var settingsShown = false
 
     var body: some View {
@@ -42,12 +44,8 @@ struct FleetScreen: View {
             }
         }
         .background(Color.black.ignoresSafeArea())
-        .task {
-            while !Task.isCancelled {
-                await model.refresh()
-                try? await Task.sleep(nanoseconds: 10 * 1_000_000_000)
-            }
-        }
+        // Polling and the foreground intro replay live in RootView — the
+        // native shell needs them too, and only one shell is on screen.
         .sheet(isPresented: $settingsShown) { SettingsScreen(model: model) }
         // ONE tip chip for the whole screen, drawn above every row —
         // same plumbing the mac popup uses.
@@ -56,12 +54,6 @@ struct FleetScreen: View {
         // model (GaugeBar has no model) — set it once, like MenuContent.
         .environment(\.introTick, model.introTick)
         .environment(\.introBarDelay, model.introBarDelay)
-        // The popup replays its intro when it opens; the phone's
-        // equivalent is coming back to the foreground. First launch is
-        // the first snapshot's replay, so it isn't doubled here.
-        .onChange(of: scenePhase) { _, phase in
-            if phase == .active, model.snapshotLoaded { model.replayIntro() }
-        }
     }
 
     /// MenuContent's wide branch, minus the mac-only action buttons: the

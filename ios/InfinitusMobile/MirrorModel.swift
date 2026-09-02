@@ -1,6 +1,6 @@
 import Foundation
 import SwiftUI
-import CswapCore
+import InfinitusCore
 import InfinitusUI
 
 /// Reads the fleet mirror a Mac already captured (#9 phase 1's
@@ -55,6 +55,9 @@ final class MirrorModel: ObservableObject, FleetModel {
     @Published var localIntroStyle: String { didSet { defaults.set(localIntroStyle, forKey: "intro_style") } }
     @Published var localIntroTitle: String { didSet { defaults.set(localIntroTitle, forKey: "intro_title") } }
     @Published var localIntroSpeed: Double { didSet { defaults.set(localIntroSpeed, forKey: "intro_speed") } }
+    /// "Show as Mac popup" (#9 native shell): the 1:1 rendering is kept,
+    /// one toggle away — the native tab shell is the default.
+    @Published var macPopupView: Bool { didSet { defaults.set(macPopupView, forKey: "mac_popup_view") } }
 
     // MARK: LAN transport (#9)
 
@@ -79,6 +82,7 @@ final class MirrorModel: ObservableObject, FleetModel {
         localIntroStyle = defaults.string(forKey: "intro_style") ?? "top"
         localIntroTitle = defaults.string(forKey: "intro_title") ?? "zoom"
         localIntroSpeed = defaults.object(forKey: "intro_speed") as? Double ?? 1.0
+        macPopupView = defaults.object(forKey: "mac_popup_view") as? Bool ?? false
     }
 
     /// `INFINITUS_MIRROR_PATH` lets a simulator point at the Mac's live
