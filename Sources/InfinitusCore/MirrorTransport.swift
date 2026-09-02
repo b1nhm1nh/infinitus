@@ -6,7 +6,7 @@ import Foundation
 // one Bonjour-advertised TCP listener speaking the smallest possible
 // HTTP/1.1 — `GET /snapshot` → the exact bytes MirrorExporter wrote.
 // Network.framework is Apple-only, so only the wire format lives here
-// (CswapCore also compiles for the Linux tray); the listener is in
+// (InfinitusCore also compiles for the Linux tray); the listener is in
 // Sources/Infinitus/MirrorServer.swift and the client in ios/.
 
 public enum MirrorTransport {

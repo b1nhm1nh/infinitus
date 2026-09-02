@@ -1,5 +1,5 @@
 import SwiftUI
-import CswapCore
+import InfinitusCore
 
 /// Claude provider pane: auto-switch control + the spec-driven cswap
 /// settings. A top-level sidebar row, CodexBar-style (user 2026-08-30 —

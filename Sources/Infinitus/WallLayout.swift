@@ -1,6 +1,6 @@
 import SwiftUI
 import Charts
-import CswapCore
+import InfinitusCore
 import InfinitusUI
 
 // The wall's own layout (issue #12) — not the scaled popup. Read at

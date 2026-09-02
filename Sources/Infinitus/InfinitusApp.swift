@@ -1,6 +1,6 @@
 import SwiftUI
 import AppKit
-import CswapCore
+import InfinitusCore
 import InfinitusUI
 
 /// The one AppKit knob that lets a popover-only accessory app live with no

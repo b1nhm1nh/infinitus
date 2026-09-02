@@ -1,6 +1,6 @@
 import Foundation
 import Combine
-import CswapCore
+import InfinitusCore
 
 /// The enabled engines and the fleets they last reported (#8). One
 /// FleetState per (engine, provider), created on first sight and kept

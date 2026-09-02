@@ -1,5 +1,5 @@
 import XCTest
-@testable import CswapCore
+@testable import InfinitusCore
 
 final class PackageVersionTests: XCTestCase {
     private func v(_ s: String) -> PackageVersion { PackageVersion(s)! }

@@ -1,5 +1,5 @@
 import SwiftUI
-import CswapCore
+import InfinitusCore
 
 /// The resume-nudge mechanism, app-side (user 2026-08-30: "move all the
 /// nudge mechanism to Infinitus" — upstream never merged the engine's

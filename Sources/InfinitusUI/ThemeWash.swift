@@ -1,5 +1,5 @@
 import SwiftUI
-import CswapCore
+import InfinitusCore
 
 /// The popup background's portable half: the theme-tinted wash and the
 /// themed border glow (#9 phase B2). The glass UNDER it is AppKit only

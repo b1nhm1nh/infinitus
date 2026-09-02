@@ -1,5 +1,5 @@
 import SwiftUI
-import CswapCore
+import InfinitusCore
 
 /// All-limited banner (todo 2026-09-01): names the first account
 /// to recover with a live one-second countdown, and counts the

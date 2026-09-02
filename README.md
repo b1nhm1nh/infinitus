@@ -133,7 +133,7 @@ travel over stdin and render masked.
 ./make-app.sh && open Infinitus.app
 ```
 
-`swift test` runs the CswapCore unit tests. `dev.sh` is a rebuild-on-save
+`swift test` runs the InfinitusCore unit tests. `dev.sh` is a rebuild-on-save
 loop (needs `entr`). `run-unbundled.sh` runs the executable outside the
 bundle — a workaround for a login session whose menu bar stops adopting
 new bundled apps (see the script header).
@@ -284,7 +284,7 @@ wide layout; charlie is out of their weekly window).
 
 ![Ocean — tides & deep water](docs/themes/ocean.png)
 
-Built-in row themes live in `Sources/CswapCore/RowTheme.swift`; add your
+Built-in row themes live in `Sources/InfinitusCore/RowTheme.swift`; add your
 own in `~/Library/Application Support/Infinitus/themes.json`, or share one
 through [`themes/`](themes/README.md) with a pull request.
 

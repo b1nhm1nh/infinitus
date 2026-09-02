@@ -1,5 +1,5 @@
 import XCTest
-import CswapCore
+import InfinitusCore
 
 private func account(_ json: String) throws -> Account {
     try JSONDecoder().decode(Account.self, from: Data(json.utf8))

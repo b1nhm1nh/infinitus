@@ -8,24 +8,24 @@ import PackageDescription
 var targets: [Target] = [
     // Pure layer: models, feed decoding, supervisor state machine.
     // No AppKit import — everything here runs under `swift test`.
-    .target(name: "CswapCore", path: "Sources/CswapCore"),
+    .target(name: "InfinitusCore", path: "Sources/InfinitusCore"),
     // Linux/Omarchy frontend: a Waybar custom module over the same core
     // (packaging/omarchy). The engine stays behind `cswap … --json`.
     .executableTarget(
         name: "InfinitusTray",
-        dependencies: ["CswapCore"],
+        dependencies: ["InfinitusCore"],
         path: "Sources/InfinitusTray"
     ),
     .testTarget(
-        name: "CswapCoreTests",
-        dependencies: ["CswapCore"],
-        path: "Tests/CswapCoreTests",
+        name: "InfinitusCoreTests",
+        dependencies: ["InfinitusCore"],
+        path: "Tests/InfinitusCoreTests",
         resources: [.copy("Fixtures")]
     ),
 ]
 var products: [Product] = [
     .executable(name: "infinitus-tray", targets: ["InfinitusTray"]),
-    .library(name: "CswapCore", targets: ["CswapCore"]),
+    .library(name: "InfinitusCore", targets: ["InfinitusCore"]),
 ]
 #if os(macOS)
 // Shared SwiftUI components (gauges, burn effects, theme colors) the
@@ -33,13 +33,13 @@ var products: [Product] = [
 // fenced with the AppKit app target above.
 targets.append(.target(
     name: "InfinitusUI",
-    dependencies: ["CswapCore"],
+    dependencies: ["InfinitusCore"],
     path: "Sources/InfinitusUI"
 ))
 products.append(.library(name: "InfinitusUI", targets: ["InfinitusUI"]))
 targets.append(.executableTarget(
     name: "Infinitus",
-    dependencies: ["CswapCore", "InfinitusUI"],
+    dependencies: ["InfinitusCore", "InfinitusUI"],
     path: "Sources/Infinitus"
 ))
 #endif

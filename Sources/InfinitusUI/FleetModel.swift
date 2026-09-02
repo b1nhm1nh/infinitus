@@ -1,5 +1,5 @@
 import SwiftUI
-import CswapCore
+import InfinitusCore
 
 /// What the fleet rows/cards read from their host's model (#9 phase B).
 /// The mac app's AppModel conforms; the phone app has its own store —

@@ -1,7 +1,7 @@
 import AppKit
 import SwiftUI
 import Combine
-import CswapCore
+import InfinitusCore
 import InfinitusUI
 
 /// The menu bar presence, owned directly as an NSStatusItem instead of a

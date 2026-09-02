@@ -1,6 +1,6 @@
 #if !os(Linux)   // URLProtocol stubbing is unverified on corelibs-foundation
 import XCTest
-@testable import CswapCore
+@testable import InfinitusCore
 
 /// Records every request and answers by path — no proxy, no network.
 final class ProxyStubProtocol: URLProtocol {

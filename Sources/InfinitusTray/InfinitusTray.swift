@@ -1,8 +1,8 @@
 import Foundation
-import CswapCore
+import InfinitusCore
 
 // The Omarchy/Linux face of Infinitus: a Waybar `custom` module
-// (`return-type: json`) over the same CswapCore the macOS app uses.
+// (`return-type: json`) over the same InfinitusCore the macOS app uses.
 // Everything engine-side stays behind `cswap … --json` subprocesses —
 // the architecture rule holds on both OSes. packaging/omarchy carries
 // the module config; `status` is the interval exec, `rotate` the click.

@@ -1,5 +1,5 @@
 import SwiftUI
-import CswapCore
+import InfinitusCore
 import InfinitusUI
 
 /// Debug-only Settings tab (defaults write <bundle-id> debug_menu -bool

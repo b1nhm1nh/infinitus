@@ -23,7 +23,7 @@ targets:
         NSBonjourServices: [_infinitus._tcp]
     dependencies:
       - package: Infinitus
-        product: CswapCore
+        product: InfinitusCore
       - package: Infinitus
         product: InfinitusUI
     settings:

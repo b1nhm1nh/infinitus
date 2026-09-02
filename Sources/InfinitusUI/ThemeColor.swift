@@ -1,5 +1,5 @@
 import SwiftUI
-import CswapCore
+import InfinitusCore
 
 /// Maps a theme color string — named or "#rrggbb" — to a SwiftUI Color.
 public enum ThemeColor {

@@ -1,5 +1,5 @@
 import XCTest
-@testable import CswapCore
+@testable import InfinitusCore
 
 /// A read-only engine: declares nothing beyond snapshots.
 private struct StubEngine: AccountEngine {

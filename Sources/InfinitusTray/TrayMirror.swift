@@ -1,5 +1,5 @@
 import Foundation
-import CswapCore
+import InfinitusCore
 
 /// Linux side of the fleet mirror (#9 phase 1 parity — macOS has
 /// `MirrorExporter`). The tray is a fresh process per poll, so the last

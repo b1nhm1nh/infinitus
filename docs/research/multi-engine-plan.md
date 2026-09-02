@@ -4,7 +4,7 @@
 
 **Goal:** Infinitus renders every enabled account engine as its own popup fleet, with CLIProxyAPI as the first non-cswap engine at full parity.
 
-**Architecture:** `AccountEngine` protocol + `EngineFleet` snapshot in CswapCore; `FleetState` (one per fleet, conforms to `FleetModel` + `UsageSource`) and `EngineRegistry` in the mac app; `AppModel` stays a `FleetModel` facade over the primary Claude fleet. `CLIProxyEngine` talks HTTP to the proxy's Management API with a keychain-held key.
+**Architecture:** `AccountEngine` protocol + `EngineFleet` snapshot in InfinitusCore; `FleetState` (one per fleet, conforms to `FleetModel` + `UsageSource`) and `EngineRegistry` in the mac app; `AppModel` stays a `FleetModel` facade over the primary Claude fleet. `CLIProxyEngine` talks HTTP to the proxy's Management API with a keychain-held key.
 
 **Tech stack:** Swift 5.9 package, SwiftUI/AppKit, XCTest, URLSession, Security.framework (keychain), Homebrew `cliproxyapi`.
 
@@ -22,12 +22,12 @@
 ## Phase 1 — seam extraction (cswap only, behaviour-identical)
 
 ### Task 1: Models become Codable with public inits
-Files: `Sources/CswapCore/Models.swift`, `Tests/CswapCoreTests/ModelsTests.swift`
+Files: `Sources/InfinitusCore/Models.swift`, `Tests/InfinitusCoreTests/ModelsTests.swift`
 - `AccountList`, `NextRecovery`, `LiveSessions`, `SessionDetail`, `Account`, `Usage`, `UsageWindow`, `Spend` → `Codable` + `public init(...)` with defaults for optionals.
 - Test: decode `list.json` → encode → decode again; first account equal field-by-field; `Account(number:email:...)` init compiles with only required args.
 
 ### Task 2: AccountEngine protocol, capabilities, EngineFleet, CswapEngine
-Files: create `Sources/CswapCore/AccountEngine.swift`, `Sources/CswapCore/Engines/CswapEngine.swift`; test `Tests/CswapCoreTests/AccountEngineTests.swift`
+Files: create `Sources/InfinitusCore/AccountEngine.swift`, `Sources/InfinitusCore/Engines/CswapEngine.swift`; test `Tests/InfinitusCoreTests/AccountEngineTests.swift`
 - `Provider`, `EngineCapabilities` (`.all`), `EngineFleet: Codable`, `EngineError`, `AccountEngine` protocol with throwing defaults, `EngineDescriptor` (id, displayName).
 - `CswapEngine(cli:)` (`#if !os(iOS)`): `snapshot()` → `[EngineFleet]` from `accountListRaw()`; every action forwards to `CswapCLI`.
 - Tests: default impls throw `.unsupported`; a stub engine's fleet round-trips through JSON; `CswapEngine.capabilities == .all`.
@@ -53,18 +53,18 @@ Files: create `Sources/InfinitusUI/FleetStack.swift`; modify `Sources/InfinitusU
 ## Phase 2 — CLIProxyEngine
 
 ### Task 6: ProxyMapping (pure) + fixtures
-Files: create `Sources/CswapCore/Engines/ProxyMapping.swift`, fixtures `Tests/CswapCoreTests/Fixtures/cliproxy/{auth-files,oauth-usage,oauth-profile,usage-queue}.json` (hand-written from upstream shapes now, replaced by redacted live captures in Task 11), test `ProxyMappingTests.swift`
+Files: create `Sources/InfinitusCore/Engines/ProxyMapping.swift`, fixtures `Tests/InfinitusCoreTests/Fixtures/cliproxy/{auth-files,oauth-usage,oauth-profile,usage-queue}.json` (hand-written from upstream shapes now, replaced by redacted live captures in Task 11), test `ProxyMappingTests.swift`
 - `ProxyAuthFile: Decodable` (id, authIndex, name, provider, label, status, statusMessage, disabled, unavailable, email, accountType, priority, note, nextRetryAfter, quota.signals).
 - `OAuthUsage.parse(Data) -> Usage?` — cswap's `build_usage_result` in Swift (five_hour/seven_day/extra_usage/limits).
 - `ProxyMapping.fleets(files:, usage: [String: Usage?], profiles: [String: Profile], strategy:) -> [EngineFleet]` + `ordinals: [Provider: [String]]`; active = highest priority; status derivation.
 
 ### Task 7: CLIProxyEngine HTTP client
-Files: create `Sources/CswapCore/Engines/CLIProxyEngine.swift`, test `CLIProxyEngineTests.swift` (URLProtocol stub)
+Files: create `Sources/InfinitusCore/Engines/CLIProxyEngine.swift`, test `CLIProxyEngineTests.swift` (URLProtocol stub)
 - `init(baseURL:, managementKey:, session:)`; `snapshot()` (auth-files → fan-out ≤4 → mapping); `setHold`, `switchTo` (priority), `rename` (note), `remove`, `beginOAuthAdd`/`awaitOAuthAdd`, `routingStrategy()`, `drainUsageQueue()`.
 - Errors: 401 → `.unauthorized`; 404 on `/auth-files` → `.unauthorized` (no key configured); connection error → `.unreachable`.
 
 ### Task 8: Usage ledger + static price table
-Files: create `Sources/CswapCore/Engines/ProxyUsageLedger.swift`, test `ProxyUsageLedgerTests.swift`
+Files: create `Sources/InfinitusCore/Engines/ProxyUsageLedger.swift`, test `ProxyUsageLedgerTests.swift`
 - Append records to JSONL; `report(days:, ordinals:) -> UsageReport` priced by `StaticPriceTable`.
 
 ### Task 9: Keychain + Engines pane + registry wiring

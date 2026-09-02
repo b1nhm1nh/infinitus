@@ -1,5 +1,5 @@
 import SwiftUI
-import CswapCore
+import InfinitusCore
 
 /// The "Infinitus" strip: app icon + name, tinted by the active theme
 /// (user request 2026-08-30). The pop-out wears it as its drag-strip

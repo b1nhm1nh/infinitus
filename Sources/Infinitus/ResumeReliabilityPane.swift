@@ -1,5 +1,5 @@
 import SwiftUI
-import CswapCore
+import InfinitusCore
 
 /// Backlog item 6 addendum: surface the two Claude Code settings the resume
 /// flow depends on — explain, show the EFFECTIVE value, offer the write.

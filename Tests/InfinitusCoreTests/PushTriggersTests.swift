@@ -1,5 +1,5 @@
 import XCTest
-@testable import CswapCore
+@testable import InfinitusCore
 
 final class LiveSessionsDecodeTests: XCTestCase {
     func testBreakdownDecodes() throws {

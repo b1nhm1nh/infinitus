@@ -1,5 +1,5 @@
 import SwiftUI
-import CswapCore
+import InfinitusCore
 
 /// The cswap settings pane, rendered from the SettingSpec metadata that
 /// `cswap config list --json` exports (spec §3.1). No per-key widgets: a new

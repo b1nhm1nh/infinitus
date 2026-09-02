@@ -1,5 +1,5 @@
 import XCTest
-@testable import CswapCore
+@testable import InfinitusCore
 
 /// Live smoke against a real CLIProxyAPI — skipped unless
 /// INFINITUS_LIVE_PROXY_KEY is set (the dev proxy on this machine,

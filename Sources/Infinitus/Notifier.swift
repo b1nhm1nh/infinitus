@@ -1,6 +1,6 @@
 import Foundation
 import UserNotifications
-import CswapCore
+import InfinitusCore
 
 /// User notifications for switch / quota-restored / session-resumed
 /// (backlog item 5, v1 scope).

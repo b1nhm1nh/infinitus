@@ -1,5 +1,5 @@
 import XCTest
-@testable import CswapCore
+@testable import InfinitusCore
 
 /// Decoding is tested against fixtures captured from the real CLI
 /// (sanitized: emails and org UUIDs replaced), so the Swift models can only

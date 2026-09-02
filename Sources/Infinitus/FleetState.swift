@@ -1,6 +1,6 @@
 import SwiftUI
 import Combine
-import CswapCore
+import InfinitusCore
 import InfinitusUI
 
 /// One fleet's live state (#8 multi-engine seam): the accounts one

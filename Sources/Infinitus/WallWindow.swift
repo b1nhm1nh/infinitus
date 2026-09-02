@@ -1,6 +1,6 @@
 import SwiftUI
 import AppKit
-import CswapCore
+import InfinitusCore
 
 /// Full-screen fleet wall (issue #11): the popup body blown up to fill a
 /// whole display — for the spare screen that exists "just to look at".

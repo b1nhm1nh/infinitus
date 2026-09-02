@@ -1,5 +1,5 @@
 import Foundation
-import CswapCore
+import InfinitusCore
 
 /// Cheap-skip cache for `SessionProgress.read` across tray invocations
 /// (issue #13 step 4). The tray is a fresh process every poll (Waybar

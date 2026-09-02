@@ -1,5 +1,5 @@
 import Foundation
-import CswapCore
+import InfinitusCore
 
 /// Writes a `MirrorSnapshot` after every live refresh so the (future)
 /// mobile companion has something to read (#9 phase 1). Off the main

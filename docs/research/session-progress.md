@@ -102,12 +102,12 @@ For the AFK case: a one-line human summary better than tool names —
   mobile app's second screen. AFK push: "agent finished / agent stuck"
   from the trouble signals — that's the notification actually worth
   sending.
-- **Linux**: same parser in CswapCore; the Quickshell panel gains a
+- **Linux**: same parser in InfinitusCore; the Quickshell panel gains a
   sessions section (parity note — tray reads the same ~/.claude).
 
 ## Build order (proposed)
 
-1. `SessionProgress` parser in CswapCore + tests (fixtures from real
+1. `SessionProgress` parser in InfinitusCore + tests (fixtures from real
    transcript shapes) — todos, now-doing, rhythm, trouble.
 2. Popup sessions popover upgrade (smallest surface, proves the data).
 3. Wall session board (the payoff surface).

@@ -1,7 +1,7 @@
 import SwiftUI
 import WebKit
 import AuthenticationServices
-import CswapCore
+import InfinitusCore
 
 /// Native account management (user 2026-08-31: "add new account,
 /// relogin, delete. do not reuse cswap['s login flow]"). The app hosts

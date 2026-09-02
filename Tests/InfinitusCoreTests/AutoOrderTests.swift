@@ -1,5 +1,5 @@
 import XCTest
-@testable import CswapCore
+@testable import InfinitusCore
 
 final class AutoOrderTests: XCTestCase {
     typealias Row = AutoOrder.Row

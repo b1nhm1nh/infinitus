@@ -1,5 +1,5 @@
 import Foundation
-import CswapCore
+import InfinitusCore
 
 /// Linux-side utilization history (todo 2026-09-01, same shape as the
 /// macOS recorder): each Waybar status poll appends fresh samples to

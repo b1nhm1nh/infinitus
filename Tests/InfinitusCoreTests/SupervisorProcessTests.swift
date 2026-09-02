@@ -1,5 +1,5 @@
 import XCTest
-@testable import CswapCore
+@testable import InfinitusCore
 
 /// EngineSupervisor against a scripted fake `cswap` — real process spawning,
 /// no real engine (running one here would fight the user's live menubar for

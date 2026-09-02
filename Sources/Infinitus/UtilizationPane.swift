@@ -1,6 +1,6 @@
 import SwiftUI
 import Charts
-import CswapCore
+import InfinitusCore
 
 /// Utilization-over-time dashboard (todo 2026-09-01): charts the recorded
 /// 5h/7d/per-model percentages for the whole fleet or one account, plus

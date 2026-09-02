@@ -1,5 +1,5 @@
 import SwiftUI
-import CswapCore
+import InfinitusCore
 
 /// The account rows as a real Grid — the alignment the rumps menubar had to
 /// fake with monospaced padding (spec §4). The active row gets a contiguous

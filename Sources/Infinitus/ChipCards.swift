@@ -1,5 +1,5 @@
 import SwiftUI
-import CswapCore
+import InfinitusCore
 
 /// Instant hover card for the service-status chip: per-product rows,
 /// statuspage-style (user screenshot 2026-08-30). Click still opens the

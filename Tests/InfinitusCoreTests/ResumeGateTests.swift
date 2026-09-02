@@ -1,5 +1,5 @@
 import XCTest
-@testable import CswapCore
+@testable import InfinitusCore
 
 final class ResumeGateTests: XCTestCase {
     let stop = Date(timeIntervalSince1970: 1000)

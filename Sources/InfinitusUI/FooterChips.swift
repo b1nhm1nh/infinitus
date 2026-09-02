@@ -1,5 +1,5 @@
 import SwiftUI
-import CswapCore
+import InfinitusCore
 
 /// The popup footer's trailing group (#9 phase D2): Claude service
 /// status, the agent/brain chip with its sessions card, the engine

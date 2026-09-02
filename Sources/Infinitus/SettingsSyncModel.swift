@@ -1,5 +1,5 @@
 import SwiftUI
-import CswapCore
+import InfinitusCore
 
 /// File-based settings sync through iCloud Drive (SyncSnapshot has the
 /// scope and the why-not-KVS note). One file, deterministic tick, last

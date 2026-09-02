@@ -1,6 +1,6 @@
 import SwiftUI
 import AppKit
-import CswapCore
+import InfinitusCore
 
 /// Update state: engine version vs the latest claude-swap on PyPI.
 /// The check is cheap (one JSON fetch, cached PyPI-side); the upgrade runs

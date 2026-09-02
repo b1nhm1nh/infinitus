@@ -14,7 +14,7 @@ Upstream facts below were read from router-for-me/CLIProxyAPI @ `81e1b53`
 are re-verified against the installed release during phase 3 and any
 drift is recorded here.
 
-## 1. Engine protocol (CswapCore, portable, no AppKit)
+## 1. Engine protocol (InfinitusCore, portable, no AppKit)
 
 ```swift
 public enum Provider: String, Codable, Sendable { case claude, codex, gemini, other }
@@ -120,7 +120,7 @@ public protocol AccountEngine: Sendable {
   `primaryClaude` in v1 (they reason about the credential Claude Code
   is using, which only cswap controls). Documented, not generalised.
 
-## 3. CLIProxyEngine (CswapCore, URLSession; iOS-capable by construction)
+## 3. CLIProxyEngine (InfinitusCore, URLSession; iOS-capable by construction)
 
 Config: `baseURL` (default `http://127.0.0.1:8317`), `managementKey:
 String` injected at init. The app stores the key in the macOS keychain
@@ -142,7 +142,7 @@ Endpoints (all under `/v0/management`):
 | Rename | `PATCH /auth-files/fields` `{name, note}` | `Account.alias` ← `note`; empty string clears. |
 | Remove | `DELETE /auth-files?name=` | |
 | Add (OAuth) | `GET /anthropic-auth-url` → `{status, url, state}`; poll `GET /get-auth-status?state=` every 2s → `{status: "ok"\|"wait"\|"error", error?}` for up to 5 min | The proxy runs its own callback server; the app only opens `url`. Codex fleets use `/codex-auth-url`. |
-| Cost | `GET /usage-queue?count=500` → `[record]` (destructive pop, 60s retention) | record: `timestamp`, `auth_index`, `provider`, `model`, `token_breakdown{total_tokens, input{total_tokens,uncached_tokens,cache_read_tokens,cache_write_tokens}, output{total_tokens,…}}`. Drained every poll into `App Support/Infinitus/engines/cliproxy/usage.jsonl` (one line per record, newest appended). `usageReport(days:)` aggregates the ledger per `auth_index` → `UsageBucket` and prices with `PriceTable` in CswapCore (static list-price table, `source: "infinitus-static"`); caveats: estimate, 60s drain window, drain conflicts with CPAMC if both poll. |
+| Cost | `GET /usage-queue?count=500` → `[record]` (destructive pop, 60s retention) | record: `timestamp`, `auth_index`, `provider`, `model`, `token_breakdown{total_tokens, input{total_tokens,uncached_tokens,cache_read_tokens,cache_write_tokens}, output{total_tokens,…}}`. Drained every poll into `App Support/Infinitus/engines/cliproxy/usage.jsonl` (one line per record, newest appended). `usageReport(days:)` aggregates the ledger per `auth_index` → `UsageBucket` and prices with `PriceTable` in InfinitusCore (static list-price table, `source: "infinitus-static"`); caveats: estimate, 60s drain window, drain conflicts with CPAMC if both poll. |
 
 Derived fields:
 - `usageStatus`: `"ok"` when usage parsed; `"limited"` when any window
@@ -203,7 +203,7 @@ the upgrade path.
 
 ## 7. Testing
 
-CswapCoreTests (`swift test`):
+InfinitusCoreTests (`swift test`):
 - `EngineCapabilitiesTests`: defaults throw `unsupported`; cswap declares
   all; proxy declares `[hold, switch, rename, remove, addOAuth,
   costReport]`.

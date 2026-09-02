@@ -1,5 +1,5 @@
 import SwiftUI
-import CswapCore
+import InfinitusCore
 
 // SwitchFlash, ValueChangedGlow, DeathFlash, ReviveFlash, LuckyRowBackground,
 // LuckySevens, LuckyName, PulseOpacity and CriticalPulse moved to

@@ -1,6 +1,6 @@
 import SwiftUI
 import Charts
-import CswapCore
+import InfinitusCore
 import InfinitusUI
 
 /// Estimated spend dashboard (backlog item 4). The scan streams gigabytes

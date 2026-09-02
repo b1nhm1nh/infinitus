@@ -1,5 +1,5 @@
 import SwiftUI
-import CswapCore
+import InfinitusCore
 
 /// App-local display preferences — the rumps Settings menu's four display
 /// items (menubar.py `MenuBarSettings`), same choices and defaults.

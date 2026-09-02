@@ -1,5 +1,5 @@
 import SwiftUI
-import CswapCore
+import InfinitusCore
 import InfinitusUI
 
 /// The Mac popup's chrome, rebuilt in plain SwiftUI (#9 phase D2). The

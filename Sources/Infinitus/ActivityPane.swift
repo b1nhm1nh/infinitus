@@ -1,5 +1,5 @@
 import SwiftUI
-import CswapCore
+import InfinitusCore
 
 /// Switch history + the live engine event log — moved here from the popup
 /// footer so the popup stays about the accounts.

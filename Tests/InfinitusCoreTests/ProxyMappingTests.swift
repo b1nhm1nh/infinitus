@@ -1,5 +1,5 @@
 import XCTest
-@testable import CswapCore
+@testable import InfinitusCore
 
 final class ProxyMappingTests: XCTestCase {
     func fixture(_ name: String) throws -> Data {

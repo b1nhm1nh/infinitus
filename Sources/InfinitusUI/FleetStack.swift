@@ -1,5 +1,5 @@
 import SwiftUI
-import CswapCore
+import InfinitusCore
 
 /// Every enabled engine's fleet, stacked (#8 multi-engine). With one
 /// fleet nothing is added around the rows, so a single-engine popup is

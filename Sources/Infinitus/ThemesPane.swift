@@ -1,5 +1,5 @@
 import SwiftUI
-import CswapCore
+import InfinitusCore
 import InfinitusUI
 
 /// Theme picking, promoted out of the Display pane (user 2026-08-30:

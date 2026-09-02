@@ -1,5 +1,5 @@
 import SwiftUI
-import CswapCore
+import InfinitusCore
 import InfinitusUI
 
 /// Standalone "Animation Playground" window (user 2026-08-31: "you need

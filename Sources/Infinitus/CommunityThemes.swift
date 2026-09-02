@@ -1,5 +1,5 @@
 import SwiftUI
-import CswapCore
+import InfinitusCore
 
 /// The shared theme gallery: a JSON index in the claude-swap repo that
 /// anyone can PR a theme into (themes/README.md documents the format and

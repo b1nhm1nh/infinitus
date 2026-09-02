@@ -1,5 +1,5 @@
 import SwiftUI
-import CswapCore
+import InfinitusCore
 
 /// One-line usage summary for a gauge's instant tooltip — the CodexBar
 /// vocabulary ("24% in reserve · lasts until reset" / "6% in deficit ·

@@ -1,5 +1,5 @@
 import XCTest
-import CswapCore
+import InfinitusCore
 
 /// The notification text comes from cswap's event stream — hostile input
 /// must stay inside the AppleScript string literal.

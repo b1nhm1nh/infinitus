@@ -1,5 +1,5 @@
 import Foundation
-import CswapCore
+import InfinitusCore
 
 /// Feeds UsageHistory from the snapshot loop: appends new samples to the
 /// per-machine JSONL in App Support and, when iCloud settings sync is on,

@@ -45,7 +45,7 @@ phone subscribes (CKQuerySubscription → APNs push, silent + alert).
 - No server to run, no accounts beyond the user's iCloud, transport
   encrypted and scoped to the Apple ID. The app already has an iCloud
   sync pane (SettingsSyncModel) — same mental model.
-- CswapCore is pure Swift: Models/DisplayLogic/GaugeMath/AutoOrder/
+- InfinitusCore is pure Swift: Models/DisplayLogic/GaugeMath/AutoOrder/
   RecoveryCountdown compile for iOS as-is. The phone app is mostly
   SwiftUI over code we already ship. GaugeBar & friends are macOS-
   flavored but small.
@@ -87,7 +87,7 @@ MVP cut for A:
 1. Mac: `CloudKitMirror` service — snapshot upsert on refresh + event
    records on switch/all-exhausted/recovery (reuses the event feed).
 2. iOS app: single fleet screen (rows ≈ popup rows), pull-to-refresh
-   reads CloudKit, push renders from payload. CswapCore via SPM.
+   reads CloudKit, push renders from payload. InfinitusCore via SPM.
 3. Live Activity: recovery countdown when all accounts are limited.
 4. TestFlight distribution (personal use; no App Store review fight).
 

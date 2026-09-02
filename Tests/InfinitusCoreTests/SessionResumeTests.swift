@@ -8,7 +8,7 @@ import Glibc
 private let sysBind = Glibc.bind
 private let sysSockStream = Int32(SOCK_STREAM.rawValue)   // Glibc enum
 #endif
-@testable import CswapCore
+@testable import InfinitusCore
 
 /// A scripted multiplexer: one surface, a queue of screens to hand back,
 /// and every command recorded in order.

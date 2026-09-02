@@ -1,6 +1,6 @@
 import Foundation
 import Network
-import CswapCore
+import InfinitusCore
 
 /// The latest encoded snapshot, shared between the exporter actor (which
 /// writes it) and the NWConnection handlers on the network queue (which

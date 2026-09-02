@@ -1,6 +1,6 @@
 import SwiftUI
 import AppKit
-import CswapCore
+import InfinitusCore
 
 /// Recent account switches via `cswap history --json` — the engine parses
 /// its own log; this view never touches engine-internal files (the log

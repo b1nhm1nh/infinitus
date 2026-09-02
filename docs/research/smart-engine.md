@@ -51,14 +51,14 @@ engine internals touched.
 
 Three layers, shipped in order; each is useful without the next.
 
-### 1. Window telemetry (deterministic, CswapCore)
+### 1. Window telemetry (deterministic, InfinitusCore)
 Extend UsageHistory/WasteMath to 5h windows: reconstruct each window
 (start, end, peak pct) from samples. Surfaces: per-account "window
 utilization" stat in the Utilization pane; the day's window map as a
 timeline strip. This is also the planner's training data and the
 simulator's ground truth.
 
-### 2. The planner (deterministic, CswapCore `WindowPlanner`)
+### 2. The planner (deterministic, InfinitusCore `WindowPlanner`)
 Inputs: fleet snapshot + live SessionProgress + window telemetry.
 Core decision, evaluated each poll:
 

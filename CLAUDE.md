@@ -5,12 +5,12 @@ Native macOS menu bar app for the claude-swap engine. Split out of
 
 ## Non-negotiables
 - **Everything is Swift; the engine is fully isolated.** Every engine
-  touchpoint is a `cswap … --json` subprocess (CswapCore/CswapCLI.swift).
+  touchpoint is a `cswap … --json` subprocess (InfinitusCore/CswapCLI.swift).
   Never read engine internals (`~/.claude-swap-backup/*`). Reading
   Claude Code's own files is fine: `~/.claude/settings.json`,
   `~/.claude/sessions/*.json` (+ `.key`), `~/.claude/projects/*/*.jsonl`.
 - **The resume-nudge mechanism lives HERE, not in the engine** (user
-  2026-08-30; upstream never merged PR #250's copy). CswapCore
+  2026-08-30; upstream never merged PR #250's copy). InfinitusCore
   ClaudeSessions/Transcript/PeerSocket/PtyHosts/PtyNudge/SessionResume
   + ResumeService. Never rebuild it engine-side.
 - **Bundle id is `com.huuloc.limitless`** — the one deliberate change,

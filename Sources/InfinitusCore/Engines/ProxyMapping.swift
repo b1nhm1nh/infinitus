@@ -1,6 +1,6 @@
 import Foundation
 
-// MARK: - CLIProxyAPI wire shapes → CswapCore models
+// MARK: - CLIProxyAPI wire shapes → InfinitusCore models
 //
 // Pure mapping layer for the CLIProxyAPI Management API (upstream
 // router-for-me/CLIProxyAPI @ 81e1b53) — no networking, no Process. The

@@ -1,7 +1,7 @@
 import Foundation
 import SwiftUI
 import AppKit
-import CswapCore
+import InfinitusCore
 import InfinitusUI
 
 /// Main-actor state the MenuBarExtra renders. Feeds per spec §2:
@@ -286,7 +286,7 @@ final class AppModel: ObservableObject {
     @Published var popoverPinned: Bool { didSet { defaults.set(popoverPinned, forKey: "popover_pinned") } }
     /// Hold a power assertion while any session is mid-turn (KeepAwake).
     /// Keep the fleet sorted (most headroom first) through `cswap reorder`
-    /// after every snapshot — see CswapCore.AutoOrder for the policy.
+    /// after every snapshot — see InfinitusCore.AutoOrder for the policy.
     /// Display-only: rows sorted most-headroom-first with the active
     /// account and the next candidate pinned on top (todo 2026-09-01).
     /// Engine slots never move — unlike autoOrder, nothing is written.

@@ -1,5 +1,5 @@
 import SwiftUI
-import CswapCore
+import InfinitusCore
 
 /// Away-push channel settings (backlog item 7): the GUI face of
 /// `cswap notify`. Secrets go to the CLI over STDIN (`notify slack -`) —

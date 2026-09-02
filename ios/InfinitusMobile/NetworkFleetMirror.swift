@@ -1,6 +1,6 @@
 import Foundation
 import Network
-import CswapCore
+import InfinitusCore
 
 /// The LAN transport (#9): finds the Mac's `_infinitus._tcp`
 /// advertisement and fetches `GET /snapshot` over it. A free personal

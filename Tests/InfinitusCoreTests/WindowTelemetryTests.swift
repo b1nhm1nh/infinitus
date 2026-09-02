@@ -1,5 +1,5 @@
 import XCTest
-@testable import CswapCore
+@testable import InfinitusCore
 
 final class WindowTelemetryTests: XCTestCase {
     private func win(_ pct: Double, resetsAt: Double?) -> UsageSample.Window {

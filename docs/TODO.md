@@ -72,7 +72,7 @@ file keeps the shipped log and the deferred-by-design notes.
       scheduling, capacity advice ("the big Infinitus"; plan last)
 - ~~#8 CLIProxyAPI alternate backend~~ → shipped 2026-09-02 as the
   multi-engine seam: `AccountEngine` + `EngineFleet` + capabilities in
-  CswapCore, `FleetState`/`EngineRegistry` in the app (AppModel stays a
+  InfinitusCore, `FleetState`/`EngineRegistry` in the app (AppModel stays a
   FleetModel facade over the primary Claude fleet), `FleetStack` popup
   sections, `CLIProxyEngine` over the Management API (keychain key,
   hold/switch-as-priority/rename/remove/OAuth add/usage ledger), Engines

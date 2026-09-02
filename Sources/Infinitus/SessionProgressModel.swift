@@ -1,5 +1,5 @@
 import Foundation
-import CswapCore
+import InfinitusCore
 import InfinitusUI
 
 /// Feeds the sessions popover's mini progress rows (issue #13 step 2).
