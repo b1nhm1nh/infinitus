@@ -18,20 +18,31 @@ struct SessionsScreen: View {
         }
     }
 
+    /// One section per fleet that has sessions to show — in practice
+    /// only cswap's `liveSessions` is ever populated, but a fleet with
+    /// none simply contributes no section.
+    private var fleetsWithSessions: [MirrorFleetModel] {
+        model.fleets.filter { !($0.liveSessions?.sessions?.isEmpty ?? true) }
+    }
+
     @ViewBuilder private var content: some View {
-        if let live = model.liveSessions, let sessions = live.sessions,
-           !sessions.isEmpty {
+        if !fleetsWithSessions.isEmpty {
             List {
-                Section {
-                    ForEach(sessions, id: \.pid) { session in
-                        row(session)
+                ForEach(fleetsWithSessions) { fleet in
+                    let live = fleet.liveSessions!
+                    Section {
+                        ForEach(live.sessions ?? [], id: \.pid) { session in
+                            row(session)
+                        }
+                    } header: {
+                        Text(model.fleets.count > 1
+                             ? "\(fleet.fleetLabel?.engineName ?? fleet.engineID) — \(SessionSummary.tooltip(live))"
+                             : SessionSummary.tooltip(live))
                     }
-                } header: {
-                    Text(SessionSummary.tooltip(live))
                 }
             }
             .listStyle(.insetGrouped)
-        } else if model.liveSessions != nil {
+        } else if !model.fleets.isEmpty {
             ContentUnavailableView("No live sessions",
                                    systemImage: "brain",
                                    description: Text("Nothing is running on the "

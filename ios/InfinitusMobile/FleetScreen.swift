@@ -14,7 +14,6 @@ import InfinitusUI
 /// view — kept 1:1, one Settings toggle away.
 struct FleetScreen: View {
     @ObservedObject var model: MirrorModel
-    @StateObject private var usage = MobileUsage()
     @State private var settingsShown = false
 
     var body: some View {
@@ -102,15 +101,16 @@ struct FleetScreen: View {
         }
     }
 
-    /// The shared popup rows — cards in portrait, the wide grid in
-    /// landscape (MirrorModel.popupLayout). Both render at their natural
-    /// width now; PopupFit scales the whole popup to the screen.
+    /// The shared popup rows — one section per engine fleet (#9 issue 9),
+    /// cards in portrait, the wide grid in landscape
+    /// (MirrorModel.popupLayout). Both render at their natural width now;
+    /// PopupFit scales the whole popup to the screen.
     @ViewBuilder private var accountArea: some View {
         Group {
-            if model.accounts.isEmpty {
+            if model.fleets.allSatisfy({ $0.accounts.isEmpty }) {
                 EmptyView()
             } else {
-                AccountRows(model: model, usage: usage)
+                FleetStack(fleets: model.fleets)
             }
         }
         .introContent(model)

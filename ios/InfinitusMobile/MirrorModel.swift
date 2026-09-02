@@ -1,36 +1,30 @@
 import Foundation
 import SwiftUI
+import Combine
 import InfinitusCore
 import InfinitusUI
 
 /// Reads the fleet mirror a Mac already captured (#9 phase 1's
 /// `FleetMirror` seam) and republishes it as view-ready state.
 ///
-/// Conforms to `FleetModel` (#9 phase C2) so the shared popup rows —
-/// the very same `AccountRows` the mac renders — draw here too. Every
-/// member reproduces `AppModel`'s semantics, derived from successive
-/// mirror snapshots instead of live `cswap` calls.
+/// Coordinates one `MirrorFleetModel` per `EngineFleet` in the snapshot
+/// (#9 issue 9), stable instances keyed by engineID across refreshes —
+/// same split as the Mac's `EngineRegistry` / `FleetState`. Also
+/// conforms to `FleetModel` itself (#9 phase C2), as a FACADE over the
+/// primary (first Claude) fleet — same shape as the Mac's `AppModel` —
+/// so the shared single-fleet views (header, all-dead banner, footer
+/// chips) keep reading `model` directly on the "Show as Mac popup" view.
 @MainActor
 final class MirrorModel: ObservableObject, FleetModel {
     @Published private(set) var snapshot: MirrorSnapshot?
-    /// Raw engine order, exactly as the snapshot listed it.
-    @Published private(set) var accounts: [Account] = []
-    @Published private(set) var activeNumber: Int?
-    @Published private(set) var nextRecovery: NextRecovery?
-    @Published private(set) var nextCandidate: Int?
-    /// Live Claude Code sessions on the mirrored Mac — the footer's brain
-    /// chip and the sessions card both read it (#9 phase D2).
-    @Published private(set) var liveSessions: LiveSessions?
+    /// One engine's fleet per element, in the Mac's popup order.
+    @Published private(set) var fleets: [MirrorFleetModel] = []
+    private var fleetSinks: [String: AnyCancellable] = [:]
     @Published private(set) var error: String?
     /// The Mac's display prefs (#9 phase C1: "Follow Mac"); `nil` for
     /// snapshots captured before this field existed.
     @Published private(set) var prefs: FleetPrefs?
 
-    // Animation triggers — same names, same meaning as AppModel's.
-    @Published private(set) var switchFlashTick = 0
-    @Published private(set) var deathTicks: [Int: Int] = [:]
-    @Published private(set) var dying: Set<Int> = []
-    @Published private(set) var reviveTicks: [Int: Int] = [:]
     @Published private(set) var introTick = 0
     /// Set by the view from its geometry — portrait renders the mac's
     /// stacked cards, landscape its wide grid (user's fidelity rule).
@@ -143,69 +137,81 @@ final class MirrorModel: ObservableObject, FleetModel {
                 self.snapshot = nil
                 prefs = nil
                 error = nil
+                fleets = []
+                fleetSinks = [:]
                 if usesLAN { transportStatus = await NetworkFleetMirror.shared.statusText }
                 return
             }
-            guard let list = Self.decodeList(snapshot.listJSON) else {
-                error = "couldn't read the mirrored fleet data"
-                return
+            let engineFleets: [EngineFleet]
+            if let snapshotFleets = snapshot.fleets {
+                // Newer Mac: one EngineFleet per engine, already in
+                // popup order — listJSON is cswap's `raw` bytes under
+                // this roof, so it's never re-decoded here.
+                engineFleets = snapshotFleets
+            } else {
+                // Older Mac: the only fleet is the legacy listJSON one,
+                // wrapped as an EngineFleet so `apply` stays one path.
+                guard let list = Self.decodeList(snapshot.listJSON) else {
+                    error = "couldn't read the mirrored fleet data"
+                    return
+                }
+                engineFleets = [EngineFleet(
+                    engineID: MirrorFleetModel.cswapEngineID, provider: .claude,
+                    accounts: list.accounts, activeNumber: list.activeAccountNumber,
+                    nextCandidate: list.nextCandidate, nextRecovery: list.nextRecovery,
+                    liveSessions: list.liveSessions, raw: snapshot.listJSON)]
             }
             self.snapshot = snapshot
             prefs = snapshot.prefs
             if usesLAN { transportStatus = await NetworkFleetMirror.shared.statusText }
             sessionProgress.apply(snapshot.progressByPid ?? [:])
-            apply(list)
+            let firstLoad = reconcile(engineFleets)
             error = nil
+            if firstLoad {
+                DispatchQueue.main.async { self.replayIntro() }
+            }
         } catch {
             self.error = error.localizedDescription
         }
     }
 
-    /// The snapshot diff, AppModel.refreshSnapshot's rules exactly: the
-    /// alive/dead comparison happens BEFORE the state swap (so first load
-    /// fires nothing by construction), and the swap itself is animated so
-    /// the pct texts' `.contentTransition(.numericText)` rolls its digits.
-    private func apply(_ list: AccountList) {
-        let previousActive = activeNumber
-        let firstLoad = accounts.isEmpty && !list.accounts.isEmpty
-        let wasAlive = Set(accounts.filter {
-            !AccountVitals.isDead($0.usage) }.map(\.number))
-        let newlyDead = list.accounts.filter {
-            AccountVitals.isDead($0.usage) && wasAlive.contains($0.number)
-        }.map(\.number)
-        let wasDead = Set(accounts.filter {
-            AccountVitals.isDead($0.usage) }.map(\.number))
-        let newlyAlive = list.accounts.filter {
-            !AccountVitals.isDead($0.usage) && wasDead.contains($0.number)
-        }.map(\.number)
-        withAnimation(.easeInOut(duration: 0.6)) {
-            accounts = list.accounts
-            activeNumber = list.activeAccountNumber
-            nextCandidate = list.nextCandidate
-            nextRecovery = RecoveryMath.corrected(engine: list.nextRecovery,
-                                                  accounts: list.accounts)
-            liveSessions = list.liveSessions
-        }
-        if let now = list.activeAccountNumber, let previousActive,
-           previousActive != now {
-            switchFlashTick += 1
-        }
-        // The death sequence: the row keeps its gauges while the killing
-        // drop plays, the death beat lands after the finisher, and only
-        // then does the dead presentation take over.
-        for n in newlyDead {
-            dying.insert(n)
-            DispatchQueue.main.asyncAfter(deadline: .now() + 2.3) {
-                self.deathTicks[n, default: 0] += 1
+    /// Find-or-create one `MirrorFleetModel` per reported fleet — stable
+    /// instances keyed by engineID across refreshes, same as the Mac's
+    /// `EngineRegistry.state(for:)`, so each fleet's ticks/animations
+    /// survive the next snapshot. Returns whether the PRIMARY fleet
+    /// (first Claude fleet, else the first) just loaded its first
+    /// snapshot — `refresh` uses that to decide whether to replay the
+    /// intro, exactly as `AppModel.refreshSnapshot` does off `primary`.
+    private func reconcile(_ engineFleets: [EngineFleet]) -> Bool {
+        var existing = Dictionary(uniqueKeysWithValues: fleets.map { ($0.engineID, $0) })
+        var changesByID: [String: MirrorFleetModel.Change] = [:]
+        var newFleets: [MirrorFleetModel] = []
+        for ef in engineFleets {
+            let fleet: MirrorFleetModel
+            if let found = existing.removeValue(forKey: ef.engineID) {
+                fleet = found
+            } else {
+                fleet = MirrorFleetModel(engineID: ef.engineID, provider: ef.provider, host: self)
+                // Delayed mutations (death/revive ticks, the switch
+                // flash) land on the fleet with no coincident publish
+                // here — forward them so every observer of `self`
+                // (haptics, the facade) still sees them.
+                fleetSinks[ef.engineID] = fleet.objectWillChange
+                    .sink { [weak self] _ in self?.objectWillChange.send() }
             }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 3.9) {
-                self.dying.remove(n)
-            }
+            changesByID[ef.engineID] = fleet.apply(ef)
+            newFleets.append(fleet)
         }
-        for n in newlyAlive { reviveTicks[n, default: 0] += 1 }
-        if firstLoad {
-            DispatchQueue.main.async { self.replayIntro() }
-        }
+        for goneID in existing.keys { fleetSinks.removeValue(forKey: goneID) }
+        fleets = newFleets
+        let primaryID = (newFleets.first { $0.provider == .claude } ?? newFleets.first)?.engineID
+        return primaryID.flatMap { changesByID[$0] }?.firstLoad ?? false
+    }
+
+    /// The primary Claude fleet — cswap's, on a cswap machine — the
+    /// facade below reads (`AppModel`'s exact rule).
+    var primary: MirrorFleetModel? {
+        fleets.first { $0.provider == .claude } ?? fleets.first
     }
 
     /// Intro phase timing, AppModel's formulas: bars (and the active-row
@@ -214,26 +220,34 @@ final class MirrorModel: ObservableObject, FleetModel {
     var introBarDelay: Double { introContentDuration + 0.25 }
 
     /// The whole sequence, not just the entrances — the bars replay via
-    /// the introTick environment and the flash fires after the fill.
+    /// the introTick environment and the flash fires after the fill, on
+    /// the PRIMARY fleet only (AppModel.replayIntro's exact rule).
     func replayIntro() {
         introTick += 1
         DispatchQueue.main.asyncAfter(deadline: .now() + introBarDelay + 0.5) {
-            self.switchFlashTick += 1
+            self.primary?.bumpSwitchFlash()
         }
     }
 
-    // MARK: - FleetModel
+    // MARK: - FleetModel (facade over the primary fleet — AppModel's shape)
 
-    /// What the rows iterate: the headroom sort with active + next
-    /// pinned, unless Follow Mac carries a mirrored `sortByHeadroom ==
-    /// false` (#9 phase D1a). No local override exists for this pref —
-    /// with Follow Mac off (or on a pre-D1a snapshot) the phone always
-    /// sorts, same as before.
-    var displayAccounts: [Account] {
-        (macPrefs?.sortByHeadroom ?? true)
-            ? DisplayOrder.sort(accounts, active: activeNumber, next: nextCandidate)
-            : accounts
-    }
+    var accounts: [Account] { primary?.accounts ?? [] }
+    var activeNumber: Int? { primary?.activeNumber }
+    var nextCandidate: Int? { primary?.nextCandidate }
+    var nextRecovery: NextRecovery? { primary?.nextRecovery }
+    /// Live Claude Code sessions on the mirrored Mac — the footer's brain
+    /// chip and the sessions card both read it (#9 phase D2).
+    var liveSessions: LiveSessions? { primary?.liveSessions }
+    var switchFlashTick: Int { primary?.switchFlashTick ?? 0 }
+    var deathTicks: [Int: Int] { primary?.deathTicks ?? [:] }
+    var dying: Set<Int> { primary?.dying ?? [] }
+    var reviveTicks: [Int: Int] { primary?.reviveTicks ?? [:] }
+    var displayAccounts: [Account] { primary?.displayAccounts ?? [] }
+
+    /// What every fleet's `displayAccounts` sorts by (#9 phase D1a):
+    /// Follow Mac's mirrored `sortByHeadroom`, else always-on. No local
+    /// override exists for this pref.
+    var sortByHeadroom: Bool { macPrefs?.sortByHeadroom ?? true }
 
     /// Custom skins ride in the snapshot — the phone has no themes.json.
     var availableThemes: [RowTheme] { RowTheme.builtins + (prefs?.customThemes ?? []) }

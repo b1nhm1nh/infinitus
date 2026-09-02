@@ -3,11 +3,12 @@ import InfinitusCore
 import InfinitusUI
 
 /// The Fleet tab (#9 native shell): a real inset-grouped `List` of the
-/// mirrored accounts. The SHELL is iOS — navigation stack, large title,
-/// pull-to-refresh, row taps into a sheet, context menu, haptics — while
-/// every gauge, marker, label and effect inside a row is the shared
-/// vocabulary (`AccountHeaderLine` / `AccountUsageLines` over
-/// `AccountCells`), in the Mac's own order.
+/// mirrored accounts, one section per engine fleet (#9 issue 9). The
+/// SHELL is iOS — navigation stack, large title, pull-to-refresh, row
+/// taps into a sheet, context menu, haptics — while every gauge, marker,
+/// label and effect inside a row is the shared vocabulary
+/// (`AccountHeaderLine` / `AccountUsageLines` over `AccountCells`), in
+/// the Mac's own order.
 struct NativeFleetScreen: View {
     @ObservedObject var model: MirrorModel
     @ObservedObject var usage: MobileUsage
@@ -19,9 +20,14 @@ struct NativeFleetScreen: View {
     /// large title (it collapsed to an inline one, first run).
     @State private var width: CGFloat = 0
 
-    /// `.sheet(item:)` needs identity and `Account` is a plain Codable —
-    /// the number is the fleet's identity everywhere else too.
-    private struct AccountRef: Identifiable { let id: Int }
+    /// `.sheet(item:)` needs identity; an account number alone collides
+    /// across fleets (two engines can both have a #1), so the ref also
+    /// carries which fleet it came from.
+    private struct AccountRef: Identifiable {
+        let engineID: String
+        let number: Int
+        var id: String { "\(engineID)/\(number)" }
+    }
 
     var body: some View {
         NavigationStack {
@@ -45,8 +51,9 @@ struct NativeFleetScreen: View {
         .sensoryFeedback(.success, trigger: model.activeNumber)
         .sensoryFeedback(.warning, trigger: deathCount)
         .sheet(item: $detail) { ref in
-            if let account = model.accounts.first(where: { $0.number == ref.id }) {
-                AccountDetailSheet(model: model, usage: usage, account: account)
+            if let fleet = model.fleets.first(where: { $0.engineID == ref.engineID }),
+               let account = fleet.accounts.first(where: { $0.number == ref.number }) {
+                AccountDetailSheet(fleet: fleet, usage: usage, account: account)
             }
         }
         // The bars take their fill-up cue from the environment, not the
@@ -56,7 +63,7 @@ struct NativeFleetScreen: View {
     }
 
     @ViewBuilder private func content(wide: Bool) -> some View {
-        if model.accounts.isEmpty {
+        if model.fleets.allSatisfy({ $0.accounts.isEmpty }) {
             ContentUnavailableView {
                 Label("Waiting for the fleet", systemImage: "antenna.radiowaves.left.and.right")
             } description: {
@@ -67,7 +74,9 @@ struct NativeFleetScreen: View {
         } else {
             List {
                 allDeadSection
-                accountSection(wide: wide)
+                ForEach(model.fleets) { fleet in
+                    accountSection(fleet, isFirst: fleet.id == model.fleets.first?.id, wide: wide)
+                }
             }
             .listStyle(.insetGrouped)
         }
@@ -75,7 +84,7 @@ struct NativeFleetScreen: View {
 
     /// The large title's subtitle line — `.navigationSubtitle` is macOS
     /// only, so the machine/as-of caption (and the staleness capsule)
-    /// ride the accounts section's header.
+    /// ride the first fleet section's header.
     @ViewBuilder private var statusHeader: some View {
         VStack(alignment: .leading, spacing: 6) {
             if let snapshot = model.snapshot {
@@ -123,27 +132,42 @@ struct NativeFleetScreen: View {
         }
     }
 
-    private func accountSection(wide: Bool) -> some View {
+    /// One fleet's rows, headed by the machine/as-of caption (first
+    /// fleet only) and — when more than one fleet is on screen — a slim
+    /// "provider · engine" line, the native equivalent of the Mac
+    /// popup's `FleetHeader`.
+    private func accountSection(_ fleet: MirrorFleetModel, isFirst: Bool, wide: Bool) -> some View {
         Section {
-            ForEach(Array(model.displayAccounts.enumerated()),
+            ForEach(Array(fleet.displayAccounts.enumerated()),
                     id: \.element.number) { index, account in
-                row(account, index: index, wide: wide)
+                row(account, fleet: fleet, index: index, wide: wide)
             }
         } header: {
-            statusHeader
+            VStack(alignment: .leading, spacing: 6) {
+                if isFirst { statusHeader }
+                if model.fleets.count > 1, let label = fleet.fleetLabel {
+                    HStack(spacing: 6) {
+                        Text(label.provider.displayName).fontWeight(.semibold)
+                        Text("·").foregroundStyle(.tertiary)
+                        Text(label.engineName).foregroundStyle(.secondary)
+                    }
+                    .font(.subheadline)
+                    .textCase(nil)
+                }
+            }
         }
     }
 
-    private func row(_ account: Account, index: Int, wide: Bool) -> some View {
+    private func row(_ account: Account, fleet: MirrorFleetModel, index: Int, wide: Bool) -> some View {
         // A Button, not an onTapGesture: inside a List that's the tap
         // target that actually fires (and gets the press highlight for
         // free) — a gesture on the row content never did.
         Button {
-            detail = AccountRef(id: account.number)
+            detail = AccountRef(engineID: fleet.engineID, number: account.number)
         } label: {
             VStack(alignment: .leading, spacing: 8) {
-                AccountHeaderLine(model: model, usage: usage, account: account)
-                AccountUsageLines(model: model, usage: usage,
+                AccountHeaderLine(model: fleet, usage: usage, account: account)
+                AccountUsageLines(model: fleet, usage: usage,
                                   account: account, wide: wide)
                     // The gauges carry no tap of their own on a phone;
                     // the whole row is the target.
@@ -164,32 +188,32 @@ struct NativeFleetScreen: View {
                 Label("Copy email", systemImage: "doc.on.doc")
             }
         }
-        .listRowBackground(rowBackground(account))
+        .listRowBackground(rowBackground(account, fleet: fleet))
         // The Mac's dying alarm, over the row's own bounds.
         .overlay {
             if AccountRowVitals.isCritical(account) { CriticalPulse() }
         }
         // Same effect chain, same order as the Mac's stacked cards.
-        .switchFlash(account.active ? model.switchFlashTick : 0,
-                     color: ThemeColor.flash(model.rowTheme))
-        .deathFlash(model.deathTicks[account.number] ?? 0)
-        .reviveFlash(model.reviveTicks[account.number] ?? 0)
-        .introRow(model, index: index)
+        .switchFlash(account.active ? fleet.switchFlashTick : 0,
+                     color: ThemeColor.flash(fleet.rowTheme))
+        .deathFlash(fleet.deathTicks[account.number] ?? 0)
+        .reviveFlash(fleet.reviveTicks[account.number] ?? 0)
+        .introRow(fleet, index: index)
     }
 
     /// The Mac's active band, as a native row fill: the theme's flash
     /// tint (the app accent when the theme sets none).
-    @ViewBuilder private func rowBackground(_ account: Account) -> some View {
+    @ViewBuilder private func rowBackground(_ account: Account, fleet: MirrorFleetModel) -> some View {
         ZStack {
             // The list's own row fill, explicitly: a listRowBackground
             // replaces it, so without this the rows read as holes in the
             // grouped card (first run, light mode).
             Color(.secondarySystemGroupedBackground)
-            if AccountRowVitals.isLucky(account, theme: model.rowTheme) {
+            if AccountRowVitals.isLucky(account, theme: fleet.rowTheme) {
                 LuckyRowBackground(cornerRadius: 0)
             }
             if account.active {
-                ThemeColor.flash(model.rowTheme).opacity(0.22)
+                ThemeColor.flash(fleet.rowTheme).opacity(0.22)
             }
         }
     }
@@ -201,7 +225,7 @@ struct NativeFleetScreen: View {
     }
 
     private var deathCount: Int {
-        model.deathTicks.values.reduce(0, +)
+        model.fleets.reduce(0) { $0 + $1.deathTicks.values.reduce(0, +) }
     }
 
     private func isStale(_ capturedAt: Date) -> Bool {
@@ -213,7 +237,7 @@ struct NativeFleetScreen: View {
 /// gauges, percentages, absolute reset times), plus the plan and the
 /// cash estimate. Read-only by design — the phone drives no engine.
 private struct AccountDetailSheet: View {
-    @ObservedObject var model: MirrorModel
+    @ObservedObject var fleet: MirrorFleetModel
     @ObservedObject var usage: MobileUsage
     let account: Account
     @Environment(\.dismiss) private var dismiss
@@ -232,9 +256,12 @@ private struct AccountDetailSheet: View {
                     Text("Account")
                 }
                 Section("Windows") {
-                    AccountWindowDetails(model: model, account: account)
+                    AccountWindowDetails(model: fleet, account: account)
                 }
-                if let report = usage.report,
+                // usage.report is cswap-only data (the mirror carries no
+                // other engine's cash cache) — gated so a same-numbered
+                // account on another fleet never borrows cswap's figure.
+                if fleet.engineID == MirrorFleetModel.cswapEngineID, let report = usage.report,
                    let row = report.accounts.first(where: { $0.number == account.number }) {
                     Section("Estimated spend") {
                         LabeledContent("Last \(report.days) days",
@@ -258,7 +285,7 @@ private struct AccountDetailSheet: View {
         if account.active { return "active" }
         if account.disabled ?? false { return "disabled" }
         if AccountRowVitals.isDead(account) { return "at a limit" }
-        if model.nextCandidate == account.number { return "next up" }
+        if fleet.nextCandidate == account.number { return "next up" }
         return "standby"
     }
 }
