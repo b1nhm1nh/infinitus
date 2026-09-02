@@ -22,6 +22,17 @@ final class AppModel: ObservableObject {
     var primary: FleetState? { registry.primary }
     /// Per-engine last error (the primary's also lands in lastError).
     @Published var engineErrors: [String: String] = [:]
+    /// Per-engine honesty note for the fleet header (proxy: routing
+    /// strategy that ignores priority tiers).
+    @Published var fleetCaveats: [String: String] = [:]
+    /// The cswap cash column's source (UsagePane.swift owns the scan);
+    /// the cswap fleet mirrors it, other engines report their own.
+    var usageModel: UsageModel? {
+        didSet {
+            guard let usageModel else { return }
+            for f in fleets where f.engineID == CswapEngine.engineID { f.follow(usageModel) }
+        }
+    }
     private var forwardingFleetChange = false
 
     var accounts: [Account] { primary?.accounts ?? [] }
@@ -958,4 +969,7 @@ extension AppModel: FleetModel {
     /// The footer's update chip opens Settings through the closure the
     /// status item injects.
     func openSettings() { showSettings?() }
+
+    /// The primary fleet's engine decides what the mac-only panes may do.
+    var capabilities: EngineCapabilities { primary?.capabilities ?? .all }
 }

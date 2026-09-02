@@ -36,6 +36,9 @@ final class EngineRegistry: ObservableObject {
             preconditionFailure("fleet from unregistered engine \(fleet.engineID)")
         }
         let state = FleetState(fleet: fleet, engine: engine, host: host)
+        if fleet.engineID == CswapEngine.engineID, let usage = host.usageModel {
+            state.follow(usage)
+        }
         // Row changes must re-render whoever observes the host (the
         // popup chrome, the title); the host guards the return trip.
         sinks[state.id] = state.objectWillChange.sink { [weak self] _ in

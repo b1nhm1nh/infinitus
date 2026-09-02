@@ -72,6 +72,7 @@ struct InfinitusApp: App {
         _notifyModel = StateObject(wrappedValue: notifyModel)
         let usage = UsageModel(cli: model.cli)
         _usageModel = StateObject(wrappedValue: usage)
+        model.usageModel = usage   // the cswap fleet's cash column
         let utilization = UtilizationModel()
         _utilizationModel = StateObject(wrappedValue: utilization)
         let update = UpdateModel(cli: model.cli)
@@ -589,13 +590,13 @@ struct MenuContent: View {
                 OnboardingCard(model: model)
             } else if model.accounts.isEmpty && model.snapshotLoaded {
                 FirstAccountCard(model: model)
-            } else if model.accounts.count > 10 {
+            } else if model.fleets.reduce(0, { $0 + $1.accounts.count }) > 10 {
                 ScrollView(showsIndicators: false) {
-                    AccountRows(model: model, usage: usage)
+                    FleetStack(fleets: model.fleets)
                 }
                 .frame(maxHeight: 560)
             } else {
-                AccountRows(model: model, usage: usage)
+                FleetStack(fleets: model.fleets)
             }
         }
         .introContent(model)

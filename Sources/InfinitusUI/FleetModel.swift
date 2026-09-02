@@ -40,6 +40,12 @@ public protocol FleetModel: ObservableObject {
     /// The auto-switch engine's badge state — nil on a host that has no
     /// engine reading to show.
     var engineBadge: EngineBadge? { get }
+    /// Multi-engine (#8): what this fleet's engine can do — rows hide
+    /// the affordances it can't. A single-engine host keeps `.all`.
+    var capabilities: EngineCapabilities { get }
+    /// Multi-engine (#8): the section header when several fleets stack;
+    /// nil on a host that shows one fleet.
+    var fleetLabel: FleetLabel? { get }
     /// Update chips: a newer build on disk / a newer release upstream.
     var appUpdatePending: Bool { get }
     var appUpdateVersion: String? { get }
@@ -63,7 +69,22 @@ public protocol FleetModel: ObservableObject {
     func openSettings()
 }
 
+/// One fleet's header line in a multi-fleet popup.
+public struct FleetLabel: Sendable, Equatable {
+    public let engineName: String
+    public let provider: Provider
+    /// Engine-side honesty note ("round-robin ignores priority tiers").
+    public let caveat: String?
+    public init(engineName: String, provider: Provider, caveat: String? = nil) {
+        self.engineName = engineName
+        self.provider = provider
+        self.caveat = caveat
+    }
+}
+
 public extension FleetModel {
+    var capabilities: EngineCapabilities { .all }
+    var fleetLabel: FleetLabel? { nil }
     func startRelogin(_ account: Account) {}
     func toggleEngine() {}
     func relaunchApp() {}

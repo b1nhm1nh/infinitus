@@ -66,7 +66,7 @@ struct AccountGrid<M: FleetModel, U: UsageSource>: View {
                     Button(action: {
                         // disabled rows stay clickable, like rumps; the
                         // popup-level alert asks before committing
-                        if !account.active { model.pendingSwitch = account.number }
+                        if !account.active, model.capabilities.contains(.switch) { model.pendingSwitch = account.number }
                     }, label: { cells.nameLabel })
                     .buttonStyle(.plain)
                     .fontWeight(account.active ? .bold : .regular)
@@ -302,7 +302,7 @@ struct AccountStack<M: FleetModel, U: UsageSource>: View {
                 .foregroundStyle(account.active ? Color.accentColor : Color.secondary)
                 .instantTip(cells.slotTip)
             Button(action: {
-                if !account.active { model.pendingSwitch = account.number }
+                if !account.active, model.capabilities.contains(.switch) { model.pendingSwitch = account.number }
             }, label: { cells.nameLabel })
             .buttonStyle(.plain)
             .fontWeight(account.active ? .bold : .regular)
@@ -378,7 +378,7 @@ struct AccountStack<M: FleetModel, U: UsageSource>: View {
                             .foregroundStyle(account.active ? Color.accentColor : Color.secondary)
                             .instantTip(cells.slotTip)
                         Button(action: {
-                            if !account.active { model.pendingSwitch = account.number }
+                            if !account.active, model.capabilities.contains(.switch) { model.pendingSwitch = account.number }
                         }, label: { cells.nameLabel })
                             .buttonStyle(.plain)
                             .fontWeight(account.active ? .bold : .regular)
@@ -480,6 +480,7 @@ struct SentinelActionText<M: FleetModel>: View {
     }
     private var actionable: Bool {
         account.usageStatus == "relogin_required" && !model.isPlayground
+            && !model.capabilities.isDisjoint(with: [.addToken, .addOAuth])
     }
 
     var body: some View {

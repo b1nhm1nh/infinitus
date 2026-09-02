@@ -262,6 +262,10 @@ extension FleetState: FleetModel {
         set { host.sessionsShown = newValue }
     }
     var engineBadge: EngineBadge? { host.engineBadge }
+    var fleetLabel: FleetLabel? {
+        FleetLabel(engineName: engine.displayName, provider: provider,
+                   caveat: host.fleetCaveats[engineID])
+    }
     var appUpdatePending: Bool { host.appUpdatePending }
     var appUpdateVersion: String? { host.appUpdateVersion }
     var engineMissing: Bool { host.engineMissing }
