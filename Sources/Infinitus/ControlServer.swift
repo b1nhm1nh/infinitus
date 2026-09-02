@@ -161,6 +161,18 @@ final class ControlServer {
                 "fleets": try .of(fleetsPayload()),
             ] as [String: JSONValue]), error: stillRunning ? "timed out after \(Int(timeout))s" : error)
 
+        case "show":
+            guard let controller = AppDelegate.shared?.statusHolder?.controller else {
+                throw Fail("no status item yet")
+            }
+            switch r.args.first {
+            case "popout": controller.showPinnedWindow()
+            case "settings": controller.showSettingsWindow()
+            case "wall": controller.toggleWall()
+            default: throw Fail("usage: show popout|settings|wall")
+            }
+            return ControlReply(ok: true, result: .object(["shown": .string(r.args[0])]))
+
         case "engine":
             guard r.args.count == 2, ["on", "off"].contains(r.args[1]) else {
                 throw Fail("usage: engine cswap|cliproxy on|off")

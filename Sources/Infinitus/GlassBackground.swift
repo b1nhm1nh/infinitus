@@ -218,19 +218,29 @@ final class BackdropGlassNSView: NSVisualEffectView {
 /// behind the window. Static — never focus-driven (glass runs in all
 /// states).
 final class GlassScrimView: NSView {
-    /// Wash opacity. Settings keeps the light 0.5 wash; the popup and
-    /// pop-out lay 0.85 — a window capture (CleanShot, `screencapture
-    /// -l`) can't sample the backdrop and renders the blur layer as flat
-    /// mid-gray, so at 0.5 the captured popup came out olive/washed
-    /// ("still looks nothing like" the live window, user 2026-09-02).
-    /// At 0.85 the window's own pixels carry the dark look, so live and
-    /// captured match; the backdrop still tints the last 15%.
-    let strength: CGFloat
+    /// Wash opacity. Settings keeps the light 0.5 wash. The popup and
+    /// pop-out DRIVE it from the transparency dial (see `follow`): a
+    /// fixed 0.85 fixed window captures (a per-window capture can't
+    /// sample the backdrop, so the window's own pixels must carry the
+    /// dark look) but killed the live glass at every dial setting —
+    /// 15% of the backdrop reads as a solid slab (user 2026-09-03:
+    /// "the liquid glass effect is gone AGAIN", after d5fe8f2).
+    var strength: CGFloat {
+        didSet { if strength != oldValue { needsDisplay = true } }
+    }
 
     init(frame: NSRect, strength: CGFloat = 0.5) {
         self.strength = strength
         super.init(frame: frame)
         wantsLayer = true
+    }
+
+    /// Dial → scrim: frosty (0) lays 0.85 so captures match the live
+    /// window; clear (1) lays 0.25, enough for legibility over a white
+    /// app with the backdrop obviously present. One monotone ramp, so
+    /// the dial is the only knob.
+    static func strength(forClarity clarity: Double) -> CGFloat {
+        CGFloat(0.85 - 0.60 * min(max(clarity, 0), 1))
     }
 
     required init?(coder: NSCoder) { fatalError() }
@@ -292,6 +302,16 @@ final class GlassContainerView: NSView {
 
     deinit { tokens.forEach(NotificationCenter.default.removeObserver) }
 
+    /// The dial-driven scrim, when this container wraps the popup or
+    /// pop-out; Settings' fixed wash leaves it nil.
+    private(set) var scrim: GlassScrimView?
+
+    /// Re-tune the wash from the transparency dial (ThemedGlassChrome
+    /// calls this whenever the model's dial changes).
+    func follow(clarity: Double) {
+        scrim?.strength = GlassScrimView.strength(forClarity: clarity)
+    }
+
     static func wrap(_ hosted: NSView, scrim: Bool = false,
                      scrimStrength: CGFloat = 0.5) -> GlassContainerView {
         let container = GlassContainerView(frame: hosted.frame)
@@ -312,6 +332,7 @@ final class GlassContainerView: NSView {
                 let wash = GlassScrimView(frame: container.bounds, strength: scrimStrength)
                 wash.autoresizingMask = [.width, .height]
                 container.addSubview(wash)
+                container.scrim = wash
             }
         }
         hosted.frame = container.bounds
@@ -336,9 +357,12 @@ struct ThemedGlassChrome: View {
         let milk = 1 - clarity
         ZStack {
             if BackdropGlassNSView.available {
-                // The blur itself lives under the hosting view
-                // (GlassContainerView); here only the dial's frost.
-                Color.black.opacity(0.30 * milk)
+                // The blur and the scrim live under the hosting view
+                // (GlassContainerView); the scrim IS the frost, so
+                // nothing is layered here — a second black wash on top
+                // was what buried the backdrop. ScrimFollower pushes the
+                // dial down to the container.
+                ScrimFollower(clarity: clarity)
             } else if #available(macOS 26.0, *) {
                 FrameRetuner(paintAlpha: 0.2 * milk)
                 GlassEffectLayer().opacity(1 - 0.75 * clarity)
@@ -350,6 +374,30 @@ struct ThemedGlassChrome: View {
         }
         .ignoresSafeArea()
     }
+}
+
+/// Bridges the SwiftUI dial to the AppKit scrim under the hosting view.
+/// Draws nothing; walks up to the GlassContainerView once attached.
+private struct ScrimFollower: NSViewRepresentable {
+    var clarity: Double
+
+    final class Probe: NSView {
+        var clarity: Double = 0.7 { didSet { push() } }
+        override func viewDidMoveToWindow() { super.viewDidMoveToWindow(); push() }
+        func push() {
+            var v: NSView? = self
+            while let cur = v, !(cur is GlassContainerView) { v = cur.superview }
+            (v as? GlassContainerView)?.follow(clarity: clarity)
+        }
+        override func hitTest(_ point: NSPoint) -> NSView? { nil }
+    }
+
+    func makeNSView(context: Context) -> Probe {
+        let p = Probe()
+        p.clarity = clarity
+        return p
+    }
+    func updateNSView(_ view: Probe, context: Context) { view.clarity = clarity }
 }
 
 /// AppKit Liquid Glass (macOS 26): the genuine article, live in every
