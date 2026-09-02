@@ -49,7 +49,7 @@ targets.append(.executableTarget(
     dependencies: ["InfinitusCore"],
     path: "Sources/InfinitusCLI"
 ))
-products.append(.executable(name: "infinitus", targets: ["InfinitusCLI"]))
+products.append(.executable(name: "infinitusctl", targets: ["InfinitusCLI"]))
 #endif
 
 let package = Package(

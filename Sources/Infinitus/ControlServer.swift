@@ -64,7 +64,7 @@ final class ControlServer {
         do { request = try ControlCodec.decode(ControlRequest.self, from: line) }
         catch { return .failure("bad request: \(error)") }
         guard ControlCommand.named(request.command) != nil else {
-            return .failure("unknown command \(request.command); run `infinitus manifest`")
+            return .failure("unknown command \(request.command); run `infinitusctl manifest`")
         }
         guard !busy else { return .failure("busy: another control command is running") }
         busy = true

@@ -15,7 +15,7 @@ SHA="$(git rev-parse --short HEAD 2>/dev/null || echo dev)"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN" "$APP/Contents/MacOS/Infinitus"
-cp "$(dirname "$BIN")/infinitus" "$APP/Contents/MacOS/infinitus"
+cp "$(dirname "$BIN")/infinitusctl" "$APP/Contents/MacOS/infinitusctl"
 [ -f AppIcon.icns ] || ./make-icon.sh
 cp AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
 cp tools/demo-cswap "$APP/Contents/Resources/demo-cswap"

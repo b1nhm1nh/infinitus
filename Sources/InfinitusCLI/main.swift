@@ -9,7 +9,7 @@ import InfinitusCore
 let args = Array(CommandLine.arguments.dropFirst())
 
 func usage() -> String {
-    var out = "usage: infinitus <command> [args] [--option value]\n\n"
+    var out = "usage: infinitusctl <command> [args] [--option value]\n\n"
     let width = ControlCommand.all.map { ($0.name + " " + $0.args.joined(separator: " ")).count }.max() ?? 20
     for c in ControlCommand.all {
         let head = (c.name + " " + c.args.joined(separator: " ")).padding(toLength: width + 2, withPad: " ", startingAt: 0)
@@ -17,7 +17,7 @@ func usage() -> String {
         if !c.options.isEmpty { out += "  [\(c.options.joined(separator: ", "))]" }
         out += "\n"
     }
-    out += "\nFleet keys come from `infinitus fleets` (e.g. cswap/claude, cliproxy/claude).\n"
+    out += "\nFleet keys come from `infinitusctl fleets` (e.g. cswap/claude, cliproxy/claude).\n"
     out += "proxy-key reads the management key from stdin.\n"
     out += "Socket: \(ControlProtocol.socketURL().path)\n"
     return out
