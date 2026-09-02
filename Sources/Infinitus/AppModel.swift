@@ -672,7 +672,8 @@ final class AppModel: ObservableObject {
                     themeID: gamification, compactRows: compactRows,
                     popupLayout: popupLayout, burnStyle: burnStyle,
                     introStyle: introStyle, introTitle: introTitle,
-                    introSpeed: introSpeed, customThemes: customThemes)
+                    introSpeed: introSpeed, customThemes: customThemes,
+                    sortByHeadroom: sortByHeadroom, popupTextSize: popupTextSize)
                 Task.detached(priority: .utility) { [mirrorExporter] in
                     await mirrorExporter.record(listJSON: raw, prefs: prefs)
                 }

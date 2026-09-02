@@ -31,12 +31,16 @@ actor MirrorExporter {
                                                 cwd: record.cwd, claudeDir: claudeDir)
             return SessionPanelRow.make(record: record, progress: progress, now: now)
         }
+        // Cash column (#9 phase D1a): the cache UsagePane.swift's refresh
+        // already writes, verbatim — no new subprocess, no engine call.
+        let usageJSON = try? Data(contentsOf: UsageModel.cacheURL)
         let snapshot = MirrorSnapshot(
             capturedAt: now,
             machineName: Host.current().localizedName ?? "Mac",
             listJSON: listJSON,
             sessions: sessions,
-            prefs: prefs)
+            prefs: prefs,
+            usageJSON: usageJSON)
         try? MirrorWriter.write(snapshot, to: Self.url)
     }
 }

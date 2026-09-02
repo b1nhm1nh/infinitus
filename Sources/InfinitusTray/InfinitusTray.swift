@@ -397,7 +397,8 @@ struct InfinitusTray {
             // Fleet mirror export (#9 phase 1 parity — macOS's
             // MirrorExporter). Shares the throttle sidecar with status().
             TrayMirror.export(raw: raw, sessions: sessions, enginePath: bin,
-                              prefs: FleetPrefs(themeID: theme.id), now: now)
+                              prefs: FleetPrefs(themeID: theme.id, sortByHeadroom: !engineOrder),
+                              now: now)
             emitPanel(PanelPayload(
                 schemaVersion: 1, themeId: theme.id,
                 title: list.accounts.isEmpty

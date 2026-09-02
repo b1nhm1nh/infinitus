@@ -16,14 +16,20 @@ public struct MirrorSnapshot: Codable, Sendable {
     /// Display prefs (#9 phase C1: "Follow Mac") — optional so snapshots
     /// captured before this field existed still decode.
     public let prefs: FleetPrefs?
+    /// Verbatim `cswap usage --json` bytes (#9 phase D1a), same philosophy
+    /// as `listJSON` — consumers re-decode with the existing `UsageReport`
+    /// decoder. `nil` when the exporting side has no cash cache yet.
+    public let usageJSON: Data?
 
     public init(capturedAt: Date, machineName: String, listJSON: Data,
-                sessions: [SessionPanelRow], prefs: FleetPrefs? = nil) {
+                sessions: [SessionPanelRow], prefs: FleetPrefs? = nil,
+                usageJSON: Data? = nil) {
         self.capturedAt = capturedAt
         self.machineName = machineName
         self.listJSON = listJSON
         self.sessions = sessions
         self.prefs = prefs
+        self.usageJSON = usageJSON
     }
 }
 
@@ -38,11 +44,16 @@ public struct FleetPrefs: Codable, Sendable, Equatable {
     public let introTitle: String
     public let introSpeed: Double
     public let customThemes: [RowTheme]
+    /// Popup sort + text scale (#9 phase D1a) — same defaults as AppModel's
+    /// `sort_headroom` / `popup_text_size`.
+    public let sortByHeadroom: Bool
+    public let popupTextSize: String
 
     public init(themeID: String = "off", compactRows: Bool = false,
                 popupLayout: String = "wide", burnStyle: String = "ember",
                 introStyle: String = "top", introTitle: String = "zoom",
-                introSpeed: Double = 1.0, customThemes: [RowTheme] = []) {
+                introSpeed: Double = 1.0, customThemes: [RowTheme] = [],
+                sortByHeadroom: Bool = true, popupTextSize: String = "default") {
         self.themeID = themeID
         self.compactRows = compactRows
         self.popupLayout = popupLayout
@@ -51,6 +62,30 @@ public struct FleetPrefs: Codable, Sendable, Equatable {
         self.introTitle = introTitle
         self.introSpeed = introSpeed
         self.customThemes = customThemes
+        self.sortByHeadroom = sortByHeadroom
+        self.popupTextSize = popupTextSize
+    }
+
+    // Custom Decodable: sortByHeadroom/popupTextSize are non-optional, so
+    // synthesized decode would throw keyNotFound on a pre-D1a snapshot
+    // that lacks them. Encode stays synthesized (Codable = both halves).
+    enum CodingKeys: String, CodingKey {
+        case themeID, compactRows, popupLayout, burnStyle, introStyle,
+             introTitle, introSpeed, customThemes, sortByHeadroom, popupTextSize
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        themeID = try c.decode(String.self, forKey: .themeID)
+        compactRows = try c.decode(Bool.self, forKey: .compactRows)
+        popupLayout = try c.decode(String.self, forKey: .popupLayout)
+        burnStyle = try c.decode(String.self, forKey: .burnStyle)
+        introStyle = try c.decode(String.self, forKey: .introStyle)
+        introTitle = try c.decode(String.self, forKey: .introTitle)
+        introSpeed = try c.decode(Double.self, forKey: .introSpeed)
+        customThemes = try c.decode([RowTheme].self, forKey: .customThemes)
+        sortByHeadroom = try c.decodeIfPresent(Bool.self, forKey: .sortByHeadroom) ?? true
+        popupTextSize = try c.decodeIfPresent(String.self, forKey: .popupTextSize) ?? "default"
     }
 }
 

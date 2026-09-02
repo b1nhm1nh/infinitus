@@ -61,7 +61,9 @@ final class MirrorModel: ObservableObject, FleetModel {
 
     /// `INFINITUS_MIRROR_PATH` lets a simulator point at the Mac's live
     /// export; otherwise the app keeps its own copy in Documents.
-    private static func makeMirror() -> FleetMirror {
+    /// `fileprivate`, not `private`: `MobileUsage` below reuses it to read
+    /// the same snapshot independently (#9 phase D1a).
+    fileprivate static func makeMirror() -> FleetMirror {
         if let path = ProcessInfo.processInfo.environment["INFINITUS_MIRROR_PATH"] {
             return FileFleetMirror(url: URL(fileURLWithPath: path))
         }
@@ -160,10 +162,14 @@ final class MirrorModel: ObservableObject, FleetModel {
     // MARK: - FleetModel
 
     /// What the rows iterate: the headroom sort with active + next
-    /// pinned. (The mirror carries no `sortByHeadroom` pref, so the
-    /// phone always sorts — see the phase-C2 report.)
+    /// pinned, unless Follow Mac carries a mirrored `sortByHeadroom ==
+    /// false` (#9 phase D1a). No local override exists for this pref —
+    /// with Follow Mac off (or on a pre-D1a snapshot) the phone always
+    /// sorts, same as before.
     var displayAccounts: [Account] {
-        DisplayOrder.sort(accounts, active: activeNumber, next: nextCandidate)
+        (macPrefs?.sortByHeadroom ?? true)
+            ? DisplayOrder.sort(accounts, active: activeNumber, next: nextCandidate)
+            : accounts
     }
 
     /// Custom skins ride in the snapshot — the phone has no themes.json.
@@ -202,10 +208,31 @@ final class MirrorModel: ObservableObject, FleetModel {
     var isPlayground: Bool { false }
 }
 
-/// The cash column's source on the phone: there is none. The mirror
-/// carries no estimated-spend report (it needs the Mac's local Claude
-/// files), so every cash cell renders empty.
+/// The cash column's source on the phone (#9 phase D1a): the estimated-
+/// spend report the mirror carries verbatim as `usageJSON`, decoded the
+/// same way UsageModel's own cache read does on the mac. On-demand, not
+/// tied to MirrorModel's snapshot polling — same fidelity as the mac's
+/// own cash column, which is a `loadIfNeeded()` cache read too.
 @MainActor
 final class MobileUsage: ObservableObject, UsageSource {
-    let report: UsageReport? = nil
+    @Published private(set) var report: UsageReport?
+
+    private let mirror: FleetMirror
+    private var capturedAt: Date?
+
+    init(mirror: FleetMirror? = nil) {
+        self.mirror = mirror ?? MirrorModel.makeMirror()
+    }
+
+    func loadIfNeeded() {
+        Task { await refresh() }
+    }
+
+    private func refresh() async {
+        guard let snapshot = try? await mirror.latest(),
+              snapshot.capturedAt != capturedAt,
+              let data = snapshot.usageJSON else { return }
+        capturedAt = snapshot.capturedAt
+        report = try? JSONDecoder().decode(UsageReport.self, from: data)
+    }
 }

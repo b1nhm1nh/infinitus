@@ -31,17 +31,21 @@ final class FleetMirrorTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
         let prefs = FleetPrefs(themeID: "rpg", compactRows: true, popupLayout: "stacked",
                                 burnStyle: "ash", introStyle: "fade", introTitle: "slide",
-                                introSpeed: 1.5, customThemes: [.off])
+                                introSpeed: 1.5, customThemes: [.off],
+                                sortByHeadroom: false, popupTextSize: "large")
+        let usageJSON = Data("{\"days\":7,\"totalCost\":1.5}".utf8)
         let snapshot = MirrorSnapshot(
             capturedAt: Date(),
             machineName: "Test Mac",
             listJSON: Data("{\"accounts\":[]}".utf8),
             sessions: [],
-            prefs: prefs)
+            prefs: prefs,
+            usageJSON: usageJSON)
         try MirrorWriter.write(snapshot, to: url)
         let read = try await FileFleetMirror(url: url).latest()
         let got = try XCTUnwrap(read)
         XCTAssertEqual(got.prefs, prefs)
+        XCTAssertEqual(got.usageJSON, usageJSON)
     }
 
     func testMissingPrefsDecodesToNil() async throws {
@@ -59,6 +63,28 @@ final class FleetMirrorTests: XCTestCase {
         let read = try await FileFleetMirror(url: url).latest()
         let got = try XCTUnwrap(read)
         XCTAssertNil(got.prefs)
+        XCTAssertNil(got.usageJSON)
+    }
+
+    func testPrefsWithoutNewFieldsDefaultsToHeadroomSortAndDefaultTextSize() async throws {
+        let url = tempURL()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        // Hand-written JSON matching a pre-D1a prefs object (only the
+        // original eight keys) to prove old snapshots still decode.
+        let json = """
+        {"capturedAt":"2026-01-01T00:00:00Z","machineName":"Old Mac",
+         "listJSON":"e30=","sessions":[],
+         "prefs":{"themeID":"off","compactRows":false,"popupLayout":"wide",
+         "burnStyle":"ember","introStyle":"top","introTitle":"zoom",
+         "introSpeed":1.0,"customThemes":[]}}
+        """
+        try FileManager.default.createDirectory(
+            at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data(json.utf8).write(to: url)
+        let read = try await FileFleetMirror(url: url).latest()
+        let got = try XCTUnwrap(read?.prefs)
+        XCTAssertEqual(got.sortByHeadroom, true)
+        XCTAssertEqual(got.popupTextSize, "default")
     }
 
     func testMissingFileReturnsNil() async throws {

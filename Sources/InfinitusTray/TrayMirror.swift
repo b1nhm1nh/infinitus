@@ -28,7 +28,10 @@ enum TrayMirror {
             machineName: ProcessInfo.processInfo.hostName,
             listJSON: raw,
             sessions: sessions,
-            prefs: prefs)
+            prefs: prefs,
+            // No `cswap usage --json` cash cache on Linux today (#9
+            // phase D1a) — TrayHistory only tracks headroom, not spend.
+            usageJSON: nil)
         guard (try? MirrorWriter.write(snapshot, to: url)) != nil else { return }
         try? String(now.timeIntervalSince1970).write(to: stampURL, atomically: true, encoding: .utf8)
     }
