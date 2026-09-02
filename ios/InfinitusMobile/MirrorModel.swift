@@ -183,12 +183,12 @@ final class MirrorModel: ObservableObject, FleetModel {
     /// snapshot — `refresh` uses that to decide whether to replay the
     /// intro, exactly as `AppModel.refreshSnapshot` does off `primary`.
     private func reconcile(_ engineFleets: [EngineFleet]) -> Bool {
-        var existing = Dictionary(uniqueKeysWithValues: fleets.map { ($0.engineID, $0) })
+        var existing = Dictionary(uniqueKeysWithValues: fleets.map { ($0.id, $0) })
         var changesByID: [String: MirrorFleetModel.Change] = [:]
         var newFleets: [MirrorFleetModel] = []
         for ef in engineFleets {
             let fleet: MirrorFleetModel
-            if let found = existing.removeValue(forKey: ef.engineID) {
+            if let found = existing.removeValue(forKey: ef.key) {
                 fleet = found
             } else {
                 fleet = MirrorFleetModel(engineID: ef.engineID, provider: ef.provider, host: self)
@@ -196,15 +196,15 @@ final class MirrorModel: ObservableObject, FleetModel {
                 // flash) land on the fleet with no coincident publish
                 // here — forward them so every observer of `self`
                 // (haptics, the facade) still sees them.
-                fleetSinks[ef.engineID] = fleet.objectWillChange
+                fleetSinks[ef.key] = fleet.objectWillChange
                     .sink { [weak self] _ in self?.objectWillChange.send() }
             }
-            changesByID[ef.engineID] = fleet.apply(ef)
+            changesByID[ef.key] = fleet.apply(ef)
             newFleets.append(fleet)
         }
         for goneID in existing.keys { fleetSinks.removeValue(forKey: goneID) }
         fleets = newFleets
-        let primaryID = (newFleets.first { $0.provider == .claude } ?? newFleets.first)?.engineID
+        let primaryID = (newFleets.first { $0.provider == .claude } ?? newFleets.first)?.id
         return primaryID.flatMap { changesByID[$0] }?.firstLoad ?? false
     }
 

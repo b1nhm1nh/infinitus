@@ -31,7 +31,8 @@ final class MirrorFleetModel: ObservableObject, Identifiable {
     private var usageCapturedAt: Date?
 
     init(engineID: String, provider: Provider, host: MirrorModel) {
-        self.id = engineID
+        // EngineRegistry's key: an engine may yield one fleet per provider.
+        self.id = "\(engineID)/\(provider.rawValue)"
         self.engineID = engineID
         self.provider = provider
         self.host = host
