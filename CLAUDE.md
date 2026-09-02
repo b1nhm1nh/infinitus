@@ -81,6 +81,9 @@ Native macOS menu bar app for the claude-swap engine. Split out of
   as CAAnimations on a LayerEffect host they idle at 0.4%, burn
   overlays included (CAEmitterLayer sparks; a `.line` emitter's
   emissionLongitude is a quarter turn off a `.point` one's: 0 = up).
+  A per-second `.contentTransition(.numericText)` grows the CG glyph
+  cache ~2 MB/min for as long as it ticks (macOS 26) — never on a
+  countdown; the e2e gate checks idle heap growth via `perf.heapBytes`.
 - Dev instances: sign the debug binary `--identifier
   com.huuloc.limitless` (tools/e2e.sh does) or the keychain ACL prompt
   blocks AppModel.init forever (no socket, SecurityAgent spawns).

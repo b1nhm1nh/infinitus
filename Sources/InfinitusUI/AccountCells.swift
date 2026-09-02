@@ -204,7 +204,11 @@ struct AccountCells<M: FleetModel, U: UsageSource> {
 
     /// Reset label that goes LIVE under ten minutes: a per-second m:ss
     /// countdown, then a pulsing "resetting…" until the next snapshot
-    /// replaces the data.
+    /// replaces the data. No numericText roll here: on macOS 26 a
+    /// per-second `.contentTransition(.numericText)` grows the CG glyph
+    /// cache ~2 MB/min for as long as it ticks (#18, measured
+    /// 2026-09-03: with it 2.1 MB/min, without 0). Fine on the pct
+    /// texts, which change once a minute at most.
     @ViewBuilder func resetLabelView(resetsAt: String?, staticText: String?) -> some View {
         if let date = WeeklyRoll.parse(resetsAt),
            date.timeIntervalSinceNow < 600 {
@@ -220,7 +224,6 @@ struct AccountCells<M: FleetModel, U: UsageSource> {
                     Text(String(format: "%d:%02d", Int(left) / 60, Int(left) % 60))
                         .font(PopupFont.caption).bold().monospacedDigit()
                         .foregroundStyle(.orange)
-                        .contentTransition(.numericText(countsDown: true))
                 }
             }
         } else if let staticText {

@@ -214,9 +214,14 @@ final class ControlServer {
                 vm_deallocate(mach_task_self_, vm_address_t(bitPattern: threadList),
                               vm_size_t(threadCount) * vm_size_t(MemoryLayout<thread_t>.size))
             }
+            // Live malloc bytes: RSS swings with page-ins and caches, the
+            // heap is what a leak actually moves (the e2e growth gate).
+            var stats = malloc_statistics_t()
+            malloc_zone_statistics(nil, &stats)
             return ControlReply(ok: true, result: .object([
                 "cpuSeconds": .number(cpu),
                 "rssBytes": .number(rss),
+                "heapBytes": .number(Double(stats.size_in_use)),
                 "threads": .number(Double(threadCount)),
                 "uptimeSeconds": .number(Date().timeIntervalSince(launchedAt)),
             ]))

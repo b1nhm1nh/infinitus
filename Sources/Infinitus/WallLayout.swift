@@ -145,10 +145,11 @@ struct WallLayout: View {
                 .foregroundStyle(.secondary)
             if let until = UsageHistory.parseISO(rec.at) {
                 TimelineView(.periodic(from: .now, by: 1)) { ctx in
+                    // No numericText roll: per-second it grows the CG
+                    // glyph cache without bound (#18, see AccountCells).
                     Text(RecoveryCountdown.label(until: until, now: ctx.date))
                         .font(.system(size: 120, weight: .heavy, design: .monospaced))
                         .foregroundStyle(.orange)
-                        .contentTransition(.numericText(countsDown: true))
                 }
             }
             if let waiting = model.waitingResume, waiting > 0 {

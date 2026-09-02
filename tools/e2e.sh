@@ -7,7 +7,10 @@
 #   - idle CPU above IDLE_BUDGET_PCT with the pop-out open on the RPG
 #     theme (the worst case: every effect armed — the 2026-09-03
 #     regression idled at 39%)
-#   - RSS above RSS_BUDGET_MB
+#   - RSS above RSS_BUDGET_MB, or the live heap growing faster than
+#     GROWTH_BUDGET_KB_MIN while idle (the 2026-09-03 per-second
+#     numericText countdown grew the glyph cache ~2 MB/min for as long
+#     as it ticked)
 # Runs on a dev Mac (`tools/e2e.sh`) and in CI (ci.yml e2e job). The
 # real app, if running, is untouched: separate socket, separate defaults
 # suite (the executable name "Infinitus" from .build → domain "Infinitus",
@@ -17,7 +20,8 @@ cd "$(dirname "$0")/.."
 
 IDLE_BUDGET_PCT="${IDLE_BUDGET_PCT:-8}"   # measured 0.3-0.5% on every theme/burn combo (2026-09-03, all effects on CA); loaded CI runners add noise, not tens of points
 RSS_BUDGET_MB="${RSS_BUDGET_MB:-220}"
-WINDOW_S="${WINDOW_S:-15}"
+GROWTH_BUDGET_KB_MIN="${GROWTH_BUDGET_KB_MIN:-768}"   # idle heap growth; ~80 KB/min after the fix, 2.1 MB/min before
+WINDOW_S="${WINDOW_S:-30}"   # long enough for the growth rate to mean something
 
 BIN="$(swift build --show-bin-path)"
 APP="$BIN/Infinitus"
@@ -78,13 +82,17 @@ N="$("$CTL" fleets | json "sum(len(f['accounts']) for f in d)")"
 echo "functional: ok ($N demo accounts, pop-out visible)"
 
 # --- performance --------------------------------------------------------
-sleep 6   # intro animations settle
+sleep 10  # intro animations settle, launch-time caches land
 A="$("$CTL" perf | json "d['cpuSeconds']")"
+HEAP_A="$("$CTL" perf | json "int(d['heapBytes']/1024)")"
 sleep "$WINDOW_S"
 B="$("$CTL" perf | json "d['cpuSeconds']")"
+HEAP_B="$("$CTL" perf | json "int(d['heapBytes']/1024)")"
 RSS="$("$CTL" perf | json "int(d['rssBytes']/1048576)")"
 PCT="$(python3 -c "print(round(($B-$A)/$WINDOW_S*100,1))")"
-echo "idle CPU with pop-out open (rpg + ember): ${PCT}%  rss: ${RSS} MB  (budgets ${IDLE_BUDGET_PCT}% / ${RSS_BUDGET_MB} MB)"
+GROWTH="$(python3 -c "print(int(($HEAP_B-$HEAP_A)*60/$WINDOW_S))")"
+echo "idle CPU with pop-out open (rpg + ember): ${PCT}%  rss: ${RSS} MB  heap growth: ${GROWTH} KB/min  (budgets ${IDLE_BUDGET_PCT}% / ${RSS_BUDGET_MB} MB / ${GROWTH_BUDGET_KB_MIN} KB/min)"
 python3 -c "import sys; sys.exit(0 if $PCT <= $IDLE_BUDGET_PCT else 1)" || fail "idle CPU ${PCT}% over budget ${IDLE_BUDGET_PCT}%"
 [ "$RSS" -le "$RSS_BUDGET_MB" ] || fail "RSS ${RSS} MB over budget ${RSS_BUDGET_MB} MB"
+[ "$GROWTH" -le "$GROWTH_BUDGET_KB_MIN" ] || fail "idle heap growth ${GROWTH} KB/min over budget ${GROWTH_BUDGET_KB_MIN} KB/min"
 echo "E2E PASS"

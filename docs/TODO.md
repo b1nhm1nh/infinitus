@@ -376,6 +376,16 @@ file keeps the shipped log and the deferred-by-design notes.
   stepped gradient sliding in 2pt keyframes): ember/flame/limit all 0.3-0.5%.
 - ~~`Infinitus-feed` at 25-34% CPU~~ — was the bundled app's own BurnOverlay
   tick, seen from the supervisor; gone with the port (other session, 2026-09-03).
-- CI: `e2e` job (tools/e2e.sh) gates idle CPU ≤ 8% / RSS ≤ 220 MB with the
-  demo fleet, rpg + ember.
+- ~~Heap grows ~2 MB/min for as long as a bar shows the under-10-minute
+  countdown~~ → the per-second `.contentTransition(.numericText)` on the
+  m:ss label (and the wall's big countdown) grew the CG glyph cache
+  without bound on macOS 26; dropped (0.08 MB/min after). `perf` now
+  reports `heapBytes`.
+- CI: `e2e` job (tools/e2e.sh) gates idle CPU ≤ 8% / RSS ≤ 220 MB / heap
+  growth ≤ 768 KB/min with the demo fleet, rpg + ember.
+- RSS itself (~140-160 MB) is mostly file-backed and system caches:
+  footprint 81 MB = 59 MB malloc (SwiftUI attribute graph + view tree for
+  a 12-row grid, 13 MB ColorSync transform cache, fonts) + CoreAnimation;
+  the 192/160 MB single "allocations" are mmapped font/CoreUI assets.
+  Nothing app-owned left that a change would move much.
 
