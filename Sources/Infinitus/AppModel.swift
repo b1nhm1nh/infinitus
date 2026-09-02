@@ -434,7 +434,10 @@ final class AppModel: ObservableObject {
     /// the playground: it seeds from the real defaults and would
     /// advertise a second service with the same machine name.
     private func applyMirrorLAN() {
-        guard !isPlayground else { return }
+        // Mock mode only swaps the CLI — sessions/usage in the snapshot
+        // are still this machine's real ones, so a dev instance must
+        // never advertise them on the LAN.
+        guard !isPlayground, !mockMode else { return }
         guard mirrorLANEnabled else {
             mirrorServer.stop()
             return
