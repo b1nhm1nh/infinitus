@@ -108,8 +108,10 @@ struct SyncPane: View {
                         .padding(.vertical, 2)
                         Text("One scan pairs every route. The phone tries them in "
                              + "this order and keeps whichever answers — a tunnel "
-                             + "URL that changes on restart just falls through to "
-                             + "Wi-Fi or Tailscale.")
+                             + "URL that changes on restart falls through to "
+                             + "Wi-Fi or Tailscale. Away from home with no "
+                             + "Tailscale on the phone, the tunnel is the only "
+                             + "route, so a restart means one more scan.")
                             .font(.caption).foregroundStyle(.secondary)
                     }
                 }
@@ -125,8 +127,9 @@ struct SyncPane: View {
                         if let status = tunnel.status {
                             Text(status).font(.caption).foregroundStyle(.secondary)
                         }
-                        Text("The URL is public and changes every start; the "
-                             + "pairing token is the only thing keeping the "
+                        Text("The URL is public and changes every start (a phone "
+                             + "that has no other route then needs a fresh scan); "
+                             + "the pairing token is the only thing keeping the "
                              + "snapshot private. Stops when you turn this off "
                              + "or quit.")
                             .font(.caption).foregroundStyle(.secondary)
@@ -293,8 +296,9 @@ struct SyncPane: View {
                 + "Tailscale from the App Store and sign into the same tailnet. Infinitus shows "
                 + "the tailnet route by itself.",
                 "   - Cloudflare quick tunnel: `brew install cloudflared`, then in Infinitus "
-                + "Settings → Devices → Anywhere turn on the tunnel (random public URL; the token "
-                + "is the only lock).",
+                + "Settings → Devices → Anywhere turn on the tunnel (random public URL that "
+                + "changes every Infinitus start — a phone with no other route rescans after a "
+                + "restart; the token is the only lock).",
                 "4. Pair: on the phone, Settings → Mac connection → Scan QR, pointing at "
                 + "Infinitus Settings → Devices → Pair a phone (one QR carries every route). "
                 + "Or enter a route address and the pairing token by hand in the same screen.",
