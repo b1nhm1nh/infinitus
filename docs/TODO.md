@@ -77,10 +77,16 @@ file keeps the shipped log and the deferred-by-design notes.
   sections, `CLIProxyEngine` over the Management API (keychain key,
   hold/switch-as-priority/rename/remove/OAuth add/usage ledger), Engines
   pane with both toggles + layer-fight warning; dev proxy installed via
-  brew (docs/research/multi-engine.md §6/§9). Follow-ups: Codex onto
-  AccountEngine, mirror carrying `[EngineFleet]` for the phone, Linux
-  tray, upstream quota endpoint PR, first browser sign-in on the dev
-  proxy.
+  brew (docs/research/multi-engine.md §6/§9). Same day: module renamed
+  InfinitusCore with per-engine dirs; proxy sign-in through the in-app
+  chooser (`is_webui=true`, shared per-account cookie jar); Accounts tab
+  lists every fleet with one row design; usage polled once per account
+  (cache + per-email dedupe + `offerSharedUsage`). Verified live with two
+  credentials. Follow-ups: routing-strategy picker (+ session-affinity
+  note), switch/remove live round-trip on a throwaway credential,
+  fixtures from redacted live captures, mirror carrying `[EngineFleet]`
+  for the phone, Linux tray build check, upstream quota endpoint PR.
+  Codex onto AccountEngine parked (user 2026-09-02: focus on Claude).
 - #9 Mobile companion app (brainstorm done, user picks pending)
 - #10 Human handoffs: AUR publish, Linux real-account cswap, signing
 - ~~#11 Full-screen mode~~ → shipped 2026-09-01 (Display → Fleet wall,
