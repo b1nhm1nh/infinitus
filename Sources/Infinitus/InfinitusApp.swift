@@ -505,21 +505,11 @@ struct MenuContent: View {
                         // footerActionsHidden strips the buttons but the
                         // status chips stay — their actions all live in
                         // the status item's right-click menu.
+                        // Rotate/Refresh buttons retired 2026-09-02
+                        // ("looks obsolete" with auto-rotation) — both
+                        // stay in the status item's right-click menu.
                         if !model.footerActionsHidden {
                         HStack(spacing: 6) {
-                            Button {
-                                model.rotate()
-                            } label: {
-                                Label("Rotate", systemImage: "arrow.2.circlepath")
-                            }
-                            .instantTip("Rotate to the next account", edge: .above)
-                            Button {
-                                Task { await model.refreshSnapshot() }
-                            } label: {
-                                Label("Refresh", systemImage: "arrow.clockwise")
-                            }
-                            .instantTip("Refresh usage now", edge: .above)
-                            Spacer().frame(width: 6)
                             Button {
                                 model.popoverPinned.toggle()
                             } label: {
@@ -661,17 +651,9 @@ struct MenuContent: View {
 
     /// Stacked layout's control rail: the footer's actions as a vertical
     /// icon column beside the cards. Unlike compactControls it keeps
-    /// Rotate/Refresh and the Compact (compress) toggle.
+    /// the Compact (compress) toggle.
     @ViewBuilder private var stackedRail: some View {
         if !model.footerActionsHidden {
-        Button { model.rotate() } label: {
-            Image(systemName: "arrow.2.circlepath")
-        }
-        .instantTip("Rotate to next account")
-        Button { Task { await model.refreshSnapshot() } } label: {
-            Image(systemName: "arrow.clockwise")
-        }
-        .instantTip("Refresh usage")
         if model.debugMenu {
             Button { Playground.show(usage: usage) } label: {
                 Image(systemName: "wand.and.stars")
