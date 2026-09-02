@@ -933,44 +933,67 @@ struct OnboardingCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Welcome to Infinitus")
-                .font(.headline)
-            Text("The claude-swap engine isn't installed — it does the "
-                 + "account switching and usage reading. Infinitus is "
-                 + "the cockpit; cswap is the engine.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .frame(maxWidth: 300, alignment: .leading)
-                .fixedSize(horizontal: false, vertical: true)
-            HStack(spacing: 8) {
+            if model.cswap != nil {
+                // Installed, but every engine is switched off (cswap
+                // toggled off, no proxy key) — nothing to install.
+                Text("All engines are off")
+                    .font(.headline)
+                Text("cswap is installed but switched off, and no "
+                     + "CLIProxyAPI key is saved. Turn one on to see "
+                     + "your accounts.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: 300, alignment: .leading)
+                    .fixedSize(horizontal: false, vertical: true)
                 Button {
-                    model.installEngine()
+                    model.openSettings()
                 } label: {
-                    if model.installingEngine {
-                        HStack(spacing: 5) {
-                            ProgressView().controlSize(.small)
-                            Text("Installing…")
-                        }
-                    } else {
-                        Label("Install engine", systemImage: "arrow.down.circle")
-                    }
+                    Label("Engine settings", systemImage: "switch.2")
                 }
-                .disabled(model.installingEngine)
-                Text("or run: uv tool install claude-swap")
-                    .font(.caption).monospaced()
-                    .foregroundStyle(.tertiary)
-                    .textSelection(.enabled)
+            } else {
+                installCopy
             }
-            if let msg = model.installMessage {
-                Text(msg).font(.caption).foregroundStyle(.secondary)
+        }
+        .padding(6)
+    }
+
+    @ViewBuilder private var installCopy: some View {
+        Text("Welcome to Infinitus")
+            .font(.headline)
+        Text("The claude-swap engine isn't installed — it does the "
+             + "account switching and usage reading. Infinitus is "
+             + "the cockpit; cswap is the engine.")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .frame(maxWidth: 300, alignment: .leading)
+            .fixedSize(horizontal: false, vertical: true)
+        HStack(spacing: 8) {
+            Button {
+                model.installEngine()
+            } label: {
+                if model.installingEngine {
+                    HStack(spacing: 5) {
+                        ProgressView().controlSize(.small)
+                        Text("Installing…")
+                    }
+                } else {
+                    Label("Install engine", systemImage: "arrow.down.circle")
+                }
             }
-            Text("Then add your first account:  cswap add")
+            .disabled(model.installingEngine)
+            Text("or run: uv tool install claude-swap")
                 .font(.caption).monospaced()
                 .foregroundStyle(.tertiary)
                 .textSelection(.enabled)
-            DetectionLines(model: model, afterInstall: true)
         }
-        .padding(6)
+        if let msg = model.installMessage {
+            Text(msg).font(.caption).foregroundStyle(.secondary)
+        }
+        Text("Then add your first account:  cswap add")
+            .font(.caption).monospaced()
+            .foregroundStyle(.tertiary)
+            .textSelection(.enabled)
+        DetectionLines(model: model, afterInstall: true)
     }
 }
 
