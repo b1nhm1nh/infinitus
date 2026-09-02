@@ -68,9 +68,14 @@ Native macOS menu bar app for the claude-swap engine. Split out of
   account = base URL). Unsigned debug binaries trip an ACL prompt on
   every rebuild — reads skip UI, and the dev loop codesigns the debug
   binary with the Apple Development identity so the grant sticks.
-- Two Claude sessions may share this checkout: `git status` before
-  every commit, stage by path, build/test only your own targets
-  (`swift build --target X`, `swift test --skip-build --filter`).
+- Two Claude sessions work this repo (since 2026-09-02 evening): the
+  second one lives in its OWN worktree `../limitless-e2` on branch `e2`
+  (one `cd` there; separate `.build`). Main (`~/death/limitless`) is
+  merge-only and owned by the first session, which also owns
+  `Infinitus.app` rebuild/relaunch (always from a clean worktree at a
+  main sha) and pushes. Ship flow: e2 commits → "merge e2 at <sha>" →
+  `git merge` into main → rebuild → relaunch → push. Never edit the
+  other session's tree; in either tree stage by explicit path.
 
 ## Build / run / test
 `./make-app.sh && open Infinitus.app` · `swift test` · `./dev.sh` (entr)
