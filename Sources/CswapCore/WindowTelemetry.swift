@@ -15,7 +15,7 @@ import Foundation
 // window is also emitted, marked `closed: false`, since the planner
 // (layer 2) needs to know about the account's current window too.
 
-public struct FiveHourWindow: Sendable, Equatable {
+public struct FiveHourWindow: Sendable, Equatable, Identifiable {
     public let email: String
     public let number: Int?
     public let start: Double
@@ -23,6 +23,9 @@ public struct FiveHourWindow: Sendable, Equatable {
     public let peakPct: Double
     public let samples: Int
     public let closed: Bool
+
+    /// Stable identity for lists: two accounts can share a `resetsAt`.
+    public var id: String { "\(email)|\(resetsAt)" }
 
     public init(email: String, number: Int?, start: Double, resetsAt: Double,
                 peakPct: Double, samples: Int, closed: Bool) {

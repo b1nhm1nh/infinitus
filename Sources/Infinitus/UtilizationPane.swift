@@ -202,7 +202,7 @@ struct UtilizationPane: View {
         let windows = selectedWindows()
         if !windows.isEmpty {
             Section {
-                ForEach(Array(windows.prefix(10)), id: \.resetsAt) { w in
+                ForEach(Array(windows.prefix(10))) { w in
                     HStack {
                         if model.account == nil {
                             Text(shortName(w.email))
