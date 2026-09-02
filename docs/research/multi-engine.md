@@ -65,11 +65,11 @@ public protocol AccountEngine: Sendable {
   `capabilities`, never on engine identity.
 - `Account`, `Usage`, `UsageWindow`, `Spend`, `NextRecovery`,
   `LiveSessions`, `AccountList` gain public memberwise inits and
-  `Encodable`. `Account` gains `id: String` — engine-stable identity
-  (cswap: `String(number)` via a decode default; proxy: the auth file
-  `id`). `number` stays the per-fleet ordinal the UI keys ticks,
-  `pendingSwitch` and drag-reorder on. The `Account.number` ordinal is
-  1-based within its fleet.
+  `Encodable`. `number` stays the per-fleet ordinal (1-based) the UI
+  keys ticks, `pendingSwitch` and drag-reorder on; an adapter that has
+  its own identities (the proxy's auth-file names) keeps an
+  ordinal→identity map from its last snapshot — no `id` on `Account`
+  (amended 2026-09-02 during planning: YAGNI, the map is adapter-local).
 - `CswapEngine` wraps `CswapCLI` and declares every capability. It
   yields exactly one fleet (`.claude`) whose `raw` is the `list --json`
   bytes. `CswapCLI` stays public for the cswap-only panes (settings
@@ -101,11 +101,16 @@ public protocol AccountEngine: Sendable {
   refresh timer. `refreshSnapshot` becomes: for each enabled engine
   `snapshot()` concurrently (TaskGroup, failures per engine into
   `engineErrors[engineID]`), then `fleetState.apply` per fleet.
-  `AppModel` no longer conforms to `FleetModel`; `AccountsPane`,
+  `AppModel` KEEPS conforming to `FleetModel` as a facade over the
+  primary Claude fleet (`accounts`, `activeNumber`, ticks, `pendingSwitch`
+  … are computed pass-throughs to `primary`, with objectWillChange
+  forwarded both ways behind a re-entrancy guard) — so `AccountsPane`,
   `WallLayout`, `MirrorExporter`, `PushTriggers`, `UsageHistoryRecorder`
-  consumers read `registry.primaryClaude` (first Claude fleet) where they
-  read `model.accounts` today — behaviour-identical for a cswap-only
-  machine.
+  and the popup chrome keep compiling unchanged and stay
+  behaviour-identical on a cswap-only machine (amended 2026-09-02 during
+  planning: the facade removes ~40 consumer edits from phase 1). Each
+  `FleetState` also conforms to `UsageSource` so the cash column is
+  per-fleet (numbers collide across fleets).
 - Launch cache: `snapshotCacheURL` stores `[EngineFleet]` JSON (keyed by
   engineID+provider). Decoding failure = cold start, as today.
 - Mirror exporter: sends `primaryClaude.raw` when present (cswap), else
