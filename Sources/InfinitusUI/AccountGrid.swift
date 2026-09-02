@@ -112,13 +112,15 @@ struct AccountGrid<M: FleetModel, U: UsageSource>: View {
                               account.usage?.sevenDay != nil {
                         // Dead on the 5h window ONLY (user 2026-09-01):
                         // the weekly and per-model quotas still carry real
-                        // signal — gauges shown, their timers skipped; the
-                        // 5h cause line keeps its own countdown.
+                        // signal — gauges shown WITH their reset times
+                        // ("all accounts need to show 7d reset time no
+                        // matter what status", user 2026-09-03); the 5h
+                        // cause line keeps its own countdown.
                         if model.compactRows {
                             HStack(spacing: 12) {
                                 cells.deadCell
                                 cells.windowCell(account.usage?.sevenDay,
-                                                 session: false, timer: false)
+                                                 session: false)
                                 cells.spendCell
                                 cells.scopedCells
                             }
@@ -129,7 +131,7 @@ struct AccountGrid<M: FleetModel, U: UsageSource>: View {
                         } else {
                             cells.deadCell
                             cells.windowCell(account.usage?.sevenDay,
-                                             session: false, timer: false)
+                                             session: false)
                             cells.spendCell
                             cells.scopedCells
                             cells.cashCell
@@ -404,10 +406,10 @@ struct AccountStack<M: FleetModel, U: UsageSource>: View {
                               cells.deadCause?.kind == .session,
                               account.usage?.sevenDay != nil {
                         // 5h-only death: weekly + per-model still shown,
-                        // timers skipped (user 2026-09-01).
+                        // with their reset times (user 2026-09-03).
                         cells.deadCell
                         cells.windowCell(account.usage?.sevenDay,
-                                         session: false, timer: false)
+                                         session: false)
                         cells.spendCell
                         cells.scopedCells
                     } else if cells.showAsDead {

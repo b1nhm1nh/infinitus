@@ -92,9 +92,9 @@ public struct AccountUsageLines<M: FleetModel, U: UsageSource>: View {
             } else if cells.showAsDead, cells.deadCause?.kind == .session,
                       account.usage?.sevenDay != nil {
                 // 5h-only death (user 2026-09-01): the weekly and
-                // per-model quotas still carry signal, timers skipped.
+                // per-model quotas still carry signal, reset times shown.
                 cells.deadCell
-                cells.windowCell(account.usage?.sevenDay, session: false, timer: false)
+                cells.windowCell(account.usage?.sevenDay, session: false)
                 cells.spendCell
                 cells.scopedCells
             } else if cells.showAsDead {
