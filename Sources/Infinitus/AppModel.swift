@@ -983,8 +983,9 @@ final class AppModel: ObservableObject {
         let firstLoad = change.firstLoad
         // Utilization history (todo 2026-09-01): every real snapshot
         // feeds the per-machine JSONL; the playground's fabricated
-        // fleet must never pollute it.
-        if !isPlayground {
+        // fleet must never pollute it — nor a mock-mode dev instance's
+        // (four demo-cast files turned up in App Support, 2026-09-03).
+        if !isPlayground, !mockMode {
             let accts = list.accounts
             let syncOn = sync.enabled
             Task.detached(priority: .utility) { [historyRecorder] in
