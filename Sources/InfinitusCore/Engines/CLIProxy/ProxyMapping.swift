@@ -118,10 +118,12 @@ public struct ProxyProfile: Sendable, Equatable {
             let name: String?
             let organizationType: String?
             let subscriptionStatus: String?
+            let rateLimitTier: String?
             enum CodingKeys: String, CodingKey {
                 case uuid, name
                 case organizationType = "organization_type"
                 case subscriptionStatus = "subscription_status"
+                case rateLimitTier = "rate_limit_tier"
             }
         }
         let account: Account?
@@ -139,16 +141,25 @@ public struct ProxyProfile: Sendable, Equatable {
             organizationUuid: wire.organization?.uuid,
             plan: planLabel(hasMax: wire.account?.hasClaudeMax, hasPro: wire.account?.hasClaudePro,
                             orgType: wire.organization?.organizationType,
-                            subscriptionStatus: wire.organization?.subscriptionStatus)
+                            subscriptionStatus: wire.organization?.subscriptionStatus,
+                            rateLimitTier: wire.organization?.rateLimitTier)
         )
     }
 
     /// Port of CPAMC's `nw()`: has_claude_max wins outright, then
     /// has_claude_pro, then an active Claude Team org, then both max/pro
     /// false reads as Free; anything else is unknown.
+    /// `rateLimitTier` ("default_claude_max_20x", live 2026-09-02) adds
+    /// the multiplier so the chip reads "Max 20x" like cswap's.
     static func planLabel(hasMax: Bool?, hasPro: Bool?, orgType: String?,
-                          subscriptionStatus: String?) -> String? {
-        if hasMax == true { return "Max" }
+                          subscriptionStatus: String?, rateLimitTier: String? = nil) -> String? {
+        if hasMax == true {
+            if let tier = rateLimitTier,
+               let r = tier.range(of: #"[0-9]+x$"#, options: .regularExpression) {
+                return "Max \(tier[r])"
+            }
+            return "Max"
+        }
         if hasPro == true { return "Pro" }
         if orgType?.lowercased() == "claude_team", subscriptionStatus?.lowercased() == "active" {
             return "Team"

@@ -183,4 +183,18 @@ final class ProxyMappingTests: XCTestCase {
         XCTAssertEqual(claude.nextRecovery?.number, 1)  // acct-a recovers first
         XCTAssertEqual(claude.nextRecovery?.at, "2026-09-02T12:00:00Z")
     }
+
+    func testPlanLabelCarriesTheTierMultiplier() {
+        XCTAssertEqual(ProxyProfile.planLabel(hasMax: true, hasPro: false, orgType: "claude_max",
+                                              subscriptionStatus: "active",
+                                              rateLimitTier: "default_claude_max_20x"), "Max 20x")
+        XCTAssertEqual(ProxyProfile.planLabel(hasMax: true, hasPro: false, orgType: "claude_max",
+                                              subscriptionStatus: "active",
+                                              rateLimitTier: "default_claude_max_5x"), "Max 5x")
+        XCTAssertEqual(ProxyProfile.planLabel(hasMax: true, hasPro: false, orgType: nil,
+                                              subscriptionStatus: nil, rateLimitTier: nil), "Max")
+        XCTAssertEqual(ProxyProfile.planLabel(hasMax: false, hasPro: true, orgType: nil,
+                                              subscriptionStatus: nil,
+                                              rateLimitTier: "default_claude_pro"), "Pro")
+    }
 }

@@ -595,8 +595,7 @@ struct AccountsPane: View {
             ForEach(fleetlessOAuthEngines) { engine in
                 Section("Claude · \(engine.name)") {
                     Text("No credentials yet.").foregroundStyle(.secondary)
-                    OAuthAddRow(model: model, engineID: engine.id,
-                                engineName: engine.name, provider: .claude)
+                    OAuthAddRow(model: model, engineID: engine.id, provider: .claude)
                 }
             }
             if model.fleets.isEmpty && fleetlessOAuthEngines.isEmpty {
@@ -674,8 +673,7 @@ private struct FleetAccountsSection: View {
             if isCswap {
                 CswapAddFlow(model: model, flow: flow)
             } else if caps.contains(.addOAuth) {
-                OAuthAddRow(model: model, engineID: fleet.engineID,
-                            engineName: fleet.engine.displayName, provider: fleet.provider)
+                OAuthAddRow(model: model, engineID: fleet.engineID, provider: fleet.provider)
             }
         }
     }
@@ -745,24 +743,36 @@ private struct FleetAccountsSection: View {
 
     private static let autoOrderHelp = "After every refresh, the fleet is reordered most headroom first (unknown, then out-of-limit by who recovers first, then disabled last). Slot numbers shift with it. Small differences don't move a row, so neighbours never flip-flop."
 
+    /// Same sentences in every section, each present only when the
+    /// fleet has the control it describes (user 2026-09-02: "make sure
+    /// 2 sections saying same things").
     private var caption: String {
-        let rename = caps.contains(.rename)
-            ? " Type in the Name field to rename an account (shown everywhere); "
-              + "clear it to go back to the email."
-            : ""
-        guard caps.contains(.reorder) else {
-            return (isCswap ? "" : "The arrow makes a credential the proxy's "
-                    + "top priority; pause holds it out of routing.") + rename
+        var parts: [String] = []
+        if caps.contains(.reorder) {
+            parts.append(model.autoOrder
+                ? "Sorted automatically \u{2014} drag is off while this is on."
+                : "Drag rows to set the rotation order \u{2014} Rotate cycles through them.")
         }
-        if model.autoOrder {
-            return "Sorted automatically \u{2014} drag is off while this is on." + rename
+        if caps.contains(.switch) || caps.contains(.hold) {
+            parts.append("The arrow switches to that account; pause holds it "
+                         + "out of rotation (it stays listed).")
         }
-        return "Drag rows to set the rotation order \u{2014} Rotate cycles "
-            + "through them (aliases, backups, and history move with each "
-            + "account)." + rename
+        if caps.contains(.rename) {
+            parts.append("Type in the Name field to rename an account (shown "
+                         + "everywhere); clear it to go back to the email.")
+        }
+        return parts.joined(separator: " ")
     }
 
+    /// Active and health are separate facts, so both chips can show:
+    /// the proxy's active credential with a stalled usage read is still
+    /// the active one.
     @ViewBuilder private func statusChip(_ a: Account) -> some View {
+        if a.active {
+            Text("active").font(.caption2).foregroundStyle(.green)
+                .padding(.horizontal, 5).padding(.vertical, 1)
+                .background(Capsule().fill(.green.opacity(0.18)))
+        }
         if a.disabled ?? false {
             Text("held").font(.caption2)
                 .padding(.horizontal, 5).padding(.vertical, 1)
@@ -773,10 +783,6 @@ private struct FleetAccountsSection: View {
                 .font(.caption2).foregroundStyle(.orange)
                 .padding(.horizontal, 5).padding(.vertical, 1)
                 .background(Capsule().fill(.orange.opacity(0.18)))
-        } else if a.active {
-            Text("active").font(.caption2).foregroundStyle(.green)
-                .padding(.horizontal, 5).padding(.vertical, 1)
-                .background(Capsule().fill(.green.opacity(0.18)))
         }
     }
 }
@@ -787,12 +793,11 @@ private struct OAuthAddRow: View {
     @ObservedObject var model: AppModel
     @ObservedObject private var flow = TokenFlow.shared
     let engineID: String
-    let engineName: String
     let provider: Provider
 
     var body: some View {
         HStack(spacing: 8) {
-            Button("Add \(provider.displayName) account\u{2026}") {
+            Button("Add account\u{2026}") {
                 model.addOAuthAccount(engineID: engineID, provider: provider)
             }
             .disabled(model.addingFirstAccount || flow.running)
@@ -803,8 +808,8 @@ private struct OAuthAddRow: View {
             } else if let msg = model.firstAccountMessage {
                 Text(msg).font(.caption).foregroundStyle(.orange)
             } else {
-                Text("Same private in-app sign-in as cswap; \(engineName) "
-                     + "stores the credential.")
+                Text("Opens Claude's login in a private in-app window \u{2014} "
+                     + "your browser session is never touched.")
                     .font(.caption).foregroundStyle(.secondary)
             }
         }
