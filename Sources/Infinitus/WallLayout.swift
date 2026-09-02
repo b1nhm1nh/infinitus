@@ -320,6 +320,11 @@ struct WallLayout: View {
                 .font(.system(size: 15))
                 .foregroundStyle(.tertiary)
                 .monospacedDigit()
+            if progress?.todos == nil, let phase = progress?.phase {
+                Text(phase)   // layer-1 heuristic, todos win when present (#13)
+                    .font(.system(size: 15))
+                    .foregroundStyle(.tertiary)
+            }
             if let quiet = quietMinutes(progress) {
                 Text("quiet \(quiet)m")
                     .font(.system(size: 15))

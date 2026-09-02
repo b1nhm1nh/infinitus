@@ -222,6 +222,11 @@ file keeps the shipped log and the deferred-by-design notes.
 - ~~#13 Session progress (layers 0+1)~~ → SessionProgress transcript
   parser (todos, nowDoing, goal, retrying, quiet minutes), sessions
   popover rows, wall session board, Linux panel sessions section.
+  2026-09-03: layer-1 phase word (exploring / building / verifying /
+  wrapping up) from the recency-weighted tool mix; shown only when the
+  session has no TodoWrite report (open question 1 resolved that way —
+  todos are the agent's own report, the heuristic fills in). Row JSON
+  carries `phase`; Panel.qml doesn't render it yet.
 - ~~#14 Landing page~~ → infinitus.run (Cloudflare Workers assets):
   real captures, 1080p popup video, 15 full-popup theme images, brew
   cask, subtle Linux/Omarchy downloads, SEO/agent pass (JSON-LD, FAQ,

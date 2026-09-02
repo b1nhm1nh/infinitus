@@ -31,6 +31,16 @@ public struct SessionProgress: Sendable, Equatable, Codable {
     /// entry (or wasn't read). New optional field; absent in old cached
     /// JSON, which still decodes fine.
     public let goal: String?
+    /// Layer 1 (docs/research/session-progress.md): "exploring" /
+    /// "building" / "verifying" / "wrapping up", inferred from the tool
+    /// mix over the tail's last `phaseWindow` classifiable tool calls,
+    /// recency-weighted so explore→edit→test drift lands on the latest
+    /// phase rather than the tail's plurality. A heuristic — the UI shows
+    /// it only when there's no TodoWrite self-report to show instead —
+    /// and nil below `phaseMinimumSignals` calls so a fresh session
+    /// doesn't read "exploring" off a single Read. New optional field;
+    /// absent in old cached JSON, which still decodes fine.
+    public let phase: String?
     /// Sum of `message.usage.output_tokens` across the tail.
     public let outputTokens: Int
     /// True when the last entry that decides whether work has stopped
@@ -38,12 +48,14 @@ public struct SessionProgress: Sendable, Equatable, Codable {
     public let retrying: Bool
 
     public init(lastActivityAt: Date? = nil, nowDoing: String? = nil, todos: Todos? = nil,
-                title: String? = nil, goal: String? = nil, outputTokens: Int = 0, retrying: Bool = false) {
+                title: String? = nil, goal: String? = nil, phase: String? = nil,
+                outputTokens: Int = 0, retrying: Bool = false) {
         self.lastActivityAt = lastActivityAt
         self.nowDoing = nowDoing
         self.todos = todos
         self.title = title
         self.goal = goal
+        self.phase = phase
         self.outputTokens = outputTokens
         self.retrying = retrying
     }
@@ -125,8 +137,74 @@ public struct SessionProgress: Sendable, Equatable, Codable {
             && (lastDecisive?["isApiErrorMessage"] as? Bool) == true
 
         return SessionProgress(lastActivityAt: lastActivityAt, nowDoing: nowDoing, todos: todos,
-                                title: title, goal: goal(lines: lines), outputTokens: outputTokens,
-                                retrying: retrying)
+                                title: title, goal: goal(lines: lines), phase: phase(entries: entries),
+                                outputTokens: outputTokens, retrying: retrying)
+    }
+
+    static let phaseWindow = 24
+    static let phaseMinimumSignals = 4
+
+    /// Later phases win ties, and "wrapping up" is decisive on its own:
+    /// commits and pushes are sparse, so one in the last three calls
+    /// outranks the weighted mix.
+    private enum Phase: Int, Comparable {
+        case exploring, building, verifying, wrappingUp
+        static func < (a: Phase, b: Phase) -> Bool { a.rawValue < b.rawValue }
+        var label: String {
+            switch self {
+            case .exploring: return "exploring"
+            case .building: return "building"
+            case .verifying: return "verifying"
+            case .wrappingUp: return "wrapping up"
+            }
+        }
+    }
+
+    private static func phase(entries: [[String: Any]]) -> String? {
+        var calls: [Phase] = []
+        for entry in entries {
+            guard let message = entry["message"] as? [String: Any],
+                  let content = message["content"] as? [[String: Any]] else { continue }
+            for block in content where (block["type"] as? String) == "tool_use" {
+                if let phase = classify(block) { calls.append(phase) }
+            }
+        }
+        let recent = Array(calls.suffix(phaseWindow))
+        guard recent.count >= phaseMinimumSignals else { return nil }
+        if recent.suffix(3).contains(.wrappingUp) { return Phase.wrappingUp.label }
+        // Half-life of three calls: a lone Read mid-edit doesn't flip the
+        // word, three test runs after a run of edits does.
+        var score: [Phase: Double] = [:]
+        for (i, phase) in recent.enumerated() where phase != .wrappingUp {
+            score[phase, default: 0] += pow(2, Double(i + 1 - recent.count) / 3)
+        }
+        return score.max { ($0.value, $0.key) < ($1.value, $1.key) }?.key.label
+    }
+
+    /// Neutral tools (TodoWrite, AskUserQuestion, messaging, unknown Bash)
+    /// are uncounted. Edits made through sed/heredocs read as nothing —
+    /// accepted; detecting shell edits isn't worth the false positives.
+    private static func classify(_ toolUse: [String: Any]) -> Phase? {
+        let name = toolUse["name"] as? String ?? ""
+        switch name {
+        case "Read", "Grep", "Glob", "LS", "WebFetch", "WebSearch", "Agent", "Task":
+            return .exploring
+        case "Edit", "Write", "MultiEdit", "NotebookEdit":
+            return .building
+        case "Bash":
+            let input = toolUse["input"] as? [String: Any] ?? [:]
+            let words = leadWords(input["command"] as? String ?? "")
+            guard let head = words.first else { return nil }
+            if head == "git", words.dropFirst().first.map({ ["commit", "push"].contains($0) }) == true { return .wrappingUp }
+            if head == "gh", words.dropFirst().first == "pr" { return .wrappingUp }
+            let runners: Set<String> = ["pytest", "xcodebuild", "make", "ctest", "tsc", "jest", "vitest", "eslint", "swiftlint"]
+            if runners.contains(head) { return .verifying }
+            let verbs: Set<String> = ["test", "build", "check", "lint", "typecheck"]
+            if words.prefix(3).contains(where: verbs.contains) { return .verifying }
+            return nil
+        default:
+            return nil
+        }
     }
 
     /// The first real user prompt at the HEAD of the transcript (oldest→
@@ -172,8 +250,8 @@ public struct SessionProgress: Sendable, Equatable, Codable {
         func withGoal(_ progress: SessionProgress) -> SessionProgress {
             SessionProgress(lastActivityAt: progress.lastActivityAt, nowDoing: progress.nowDoing,
                              todos: progress.todos, title: progress.title,
-                             goal: headGoal ?? progress.goal, outputTokens: progress.outputTokens,
-                             retrying: progress.retrying)
+                             goal: headGoal ?? progress.goal, phase: progress.phase,
+                             outputTokens: progress.outputTokens, retrying: progress.retrying)
         }
         guard let handle = try? FileHandle(forReadingFrom: url) else { return withGoal(parse(lines: [])) }
         defer { try? handle.close() }
@@ -208,6 +286,16 @@ public struct SessionProgress: Sendable, Equatable, Codable {
         return sessions.compactMap { s in byPid[s.pid].map { (s, $0) } }
     }
 
+    /// Words of the first `&&` segment that isn't a cd/env preamble —
+    /// compound commands open with plumbing ("cd x && swift build").
+    private static func leadWords(_ command: String) -> [String] {
+        let plumbing: Set<String> = ["cd", "export", "source", "set"]
+        let segments = command.split(separator: "&&")
+            .map { $0.split(separator: " ").map(String.init) }
+            .filter { !$0.isEmpty }
+        return segments.first { !plumbing.contains($0[0]) } ?? segments.first ?? []
+    }
+
     private static func describe(_ toolUse: [String: Any]) -> String {
         let name = toolUse["name"] as? String ?? ""
         let input = toolUse["input"] as? [String: Any] ?? [:]
@@ -217,14 +305,8 @@ public struct SessionProgress: Sendable, Equatable, Codable {
             let path = input["file_path"] as? String ?? ""
             return "\(verb) \(URL(fileURLWithPath: path).lastPathComponent)"
         case "Bash":
-            // Compound commands open with plumbing ("cd x && swift build");
-            // report the first segment that isn't a cd/env preamble.
             let command = input["command"] as? String ?? ""
-            let plumbing: Set<String> = ["cd", "export", "source", "set"]
-            let words = command.split(separator: "&&")
-                .compactMap { $0.split(separator: " ").first.map(String.init) }
-            let first = words.first { !plumbing.contains($0) } ?? words.first ?? command
-            return "Running \(first)"
+            return "Running \(leadWords(command).first ?? command)"
         case "Grep":
             let pattern = input["pattern"] as? String ?? ""
             return "Searching \(pattern.prefix(40))"
@@ -248,10 +330,11 @@ public struct SessionPanelRow: Sendable, Equatable, Codable {
     public let retrying: Bool
     public let quietMinutes: Int?
     public let goal: String?
+    public let phase: String?
 
     public init(repo: String, status: String, nowDoing: String? = nil, todosDone: Int? = nil,
                 todosTotal: Int? = nil, activeForm: String? = nil, retrying: Bool = false,
-                quietMinutes: Int? = nil, goal: String? = nil) {
+                quietMinutes: Int? = nil, goal: String? = nil, phase: String? = nil) {
         self.repo = repo
         self.status = status
         self.nowDoing = nowDoing
@@ -261,6 +344,7 @@ public struct SessionPanelRow: Sendable, Equatable, Codable {
         self.retrying = retrying
         self.quietMinutes = quietMinutes
         self.goal = goal
+        self.phase = phase
     }
 
     /// `repo` is the last path component of the record's cwd. `quietMinutes`
@@ -281,6 +365,7 @@ public struct SessionPanelRow: Sendable, Equatable, Codable {
             activeForm: progress.todos?.activeForm,
             retrying: progress.retrying,
             quietMinutes: quietMinutes,
-            goal: progress.goal)
+            goal: progress.goal,
+            phase: progress.phase)
     }
 }

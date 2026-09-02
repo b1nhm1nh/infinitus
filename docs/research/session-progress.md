@@ -118,8 +118,10 @@ For the AFK case: a one-line human summary better than tool names —
 
 ## Open questions for the user
 
-1. Todo-based progress only appears when agents use TodoWrite — fine,
-   or should the phase heuristic (layer 1) fill in always?
+1. ~~Todo-based progress only appears when agents use TodoWrite — fine,
+   or should the phase heuristic (layer 1) fill in always?~~ Shipped
+   2026-09-03 as fill-in: the phase word shows only when the tail has
+   no TodoWrite report (`SessionProgress.phase`).
 2. Is `claude -p` on the plan acceptable for narration, or should
    layer 2 wait for an API-key option (billed, not plan quota)?
 3. Wall: session board replaces the hero while working, or splits the

@@ -131,6 +131,11 @@ public struct SessionProgressLine: View {
                 Text(todoLabel(todos))
                     .font(PopupFont.caption2).foregroundStyle(.secondary)
                     .lineLimit(1).truncationMode(.tail)
+            } else if let phase = progress.phase {
+                // Layer-1 heuristic; the agent's own todo list is the
+                // better self-report whenever it exists (#13).
+                Text(phase)
+                    .font(PopupFont.caption2).foregroundStyle(.tertiary)
             }
             if let quiet = quietMinutes {
                 Text("quiet \(quiet)m")

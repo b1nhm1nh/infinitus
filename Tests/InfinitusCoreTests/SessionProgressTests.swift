@@ -256,12 +256,54 @@ final class SessionProgressTests: XCTestCase {
         XCTAssertEqual(SessionProgress.goal(lines: lines), String(long.prefix(100)))
     }
 
+    private func toolLine(_ name: String, _ input: String = "{}") -> String {
+        """
+        {"type":"assistant","timestamp":"2026-09-01T10:00:00.000Z",\
+        "message":{"content":[{"type":"tool_use","name":"\(name)","input":\(input)}]}}
+        """
+    }
+    private func bash(_ command: String) -> String { toolLine("Bash", #"{"command":"\#(command)"}"#) }
+
+    func testPhaseNilBelowMinimumSignals() {
+        let three = Array(repeating: toolLine("Read", #"{"file_path":"/a"}"#), count: 3)
+        XCTAssertNil(SessionProgress.parse(lines: three).phase)
+        XCTAssertNil(SessionProgress.parse(lines: [toolLine("TodoWrite"), toolLine("AskUserQuestion"), bash("ls"), bash("cat x")]).phase)
+        XCTAssertEqual(SessionProgress.parse(lines: three + [toolLine("Grep", #"{"pattern":"x"}"#)]).phase, "exploring")
+    }
+
+    func testPhaseOnePerClassAndDriftFavoursTheRecentClass() {
+        let reads = Array(repeating: toolLine("Read", #"{"file_path":"/a"}"#), count: 5)
+        let edits = Array(repeating: toolLine("Edit", #"{"file_path":"/a"}"#), count: 5)
+        let tests = Array(repeating: bash("cd /x && swift test --filter Y"), count: 3)
+        XCTAssertEqual(SessionProgress.parse(lines: reads).phase, "exploring")
+        XCTAssertEqual(SessionProgress.parse(lines: reads + edits).phase, "building")
+        XCTAssertEqual(SessionProgress.parse(lines: reads + edits + tests).phase, "verifying")
+        // A lone Read mid-edit doesn't flip the word.
+        XCTAssertEqual(SessionProgress.parse(lines: edits + [reads[0]]).phase, "building")
+        // Commit/push in the last three calls is decisive.
+        XCTAssertEqual(SessionProgress.parse(lines: reads + edits + [bash("git commit -m x"), bash("git status")]).phase, "wrapping up")
+        XCTAssertEqual(SessionProgress.parse(lines: [bash("git push")] + edits).phase, "building")
+    }
+
+    func testPhaseBashClassification() {
+        let edits = Array(repeating: toolLine("Edit", #"{"file_path":"/a"}"#), count: 3)
+        func phase(_ commands: [String]) -> String? {
+            SessionProgress.parse(lines: edits + commands.map(bash)).phase
+        }
+        XCTAssertEqual(phase(["pytest -q", "npm run test", "cargo build", "xcodebuild -scheme X"]), "verifying")
+        XCTAssertEqual(phase(["gh pr create --draft", "git status"]), "wrapping up")
+        // Generic shell is neutral: three edits + two ls never reach four signals.
+        XCTAssertNil(phase(["ls -la", "cat foo | grep bar"]))
+        XCTAssertEqual(phase(["git log", "git diff", "swift build", "swift test"]), "verifying")
+    }
+
     func testSessionPanelRowMapsRepoAndProgressFields() {
         let record = ClaudeSessionRecord(pid: 1, sessionId: "s1",
                                          cwd: "/Users/x/death/limitless", status: "busy")
         let progress = SessionProgress(
             nowDoing: "Reading Foo.swift",
             todos: .init(done: 1, total: 3, activeForm: "Doing b"),
+            phase: "building",
             retrying: false)
         let row = SessionPanelRow.make(record: record, progress: progress)
         XCTAssertEqual(row.repo, "limitless")
@@ -270,6 +312,7 @@ final class SessionProgressTests: XCTestCase {
         XCTAssertEqual(row.todosDone, 1)
         XCTAssertEqual(row.todosTotal, 3)
         XCTAssertEqual(row.activeForm, "Doing b")
+        XCTAssertEqual(row.phase, "building")
         XCTAssertFalse(row.retrying)
     }
 
