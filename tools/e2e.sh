@@ -15,7 +15,7 @@
 set -eu
 cd "$(dirname "$0")/.."
 
-IDLE_BUDGET_PCT="${IDLE_BUDGET_PCT:-25}"   # rpg+ember measured 11-15% (2026-09-03); rpg alone 0.4%. Catches the 40%-class regressions, not noise
+IDLE_BUDGET_PCT="${IDLE_BUDGET_PCT:-8}"   # measured 0.3-0.5% on every theme/burn combo (2026-09-03, all effects on CA); loaded CI runners add noise, not tens of points
 RSS_BUDGET_MB="${RSS_BUDGET_MB:-220}"
 WINDOW_S="${WINDOW_S:-15}"
 
