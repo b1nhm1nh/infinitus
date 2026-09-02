@@ -150,6 +150,19 @@ file keeps the shipped log and the deferred-by-design notes.
   /sessions/<pid>/tail?n=` (token-gated, 404 unknown pid, `n` clamped),
   phone `SessionFeedScreen` (chat bubbles, tool chips, permission/question
   cards, 5 s poll). Live: 200/404/401 verified on the bundled app.
+- ~~#17 layer 2 reply/decide~~ → shipped 2026-09-03: `SessionInput`
+  (kinds `message`/`key`; keys y/n/1-9/enter/esc, PTY only via new
+  `PtyNudge.press` which never Esc-dismisses the menu it answers; messages
+  try the PTY then the peer socket), `MirrorTransport` request bodies
+  (Content-Length, 16 KiB cap), Mac `POST /sessions/<pid>/input`
+  (400/404/200 JSON reply), every attempt in Activity (`📲 phone → repo:
+  "…" (pty|socket)`), phone composer + Yes/No on a trailing permission card
+  + one button per AskUserQuestion option. Phone POST is single-route with
+  a 15 s timeout (a retry elsewhere would type twice); typed messages
+  collapse newlines. Live: 400/404/rejected + a real message delivered
+  over the socket. Linux tray has neither /tail nor /input — `parity
+  pending`. Not yet: push when a session flips to waiting-on-you; multi-Mac
+  picker (#17 item 3).
 - ~~Linux parity (#9)~~ → shipped 2026-09-03: panel footer chips (service
   status via cached Anthropic fetch, sessions, engine probe) and
   `infinitus-tray serve/pair` on a POSIX HTTP listener with the same
