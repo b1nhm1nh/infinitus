@@ -7,7 +7,7 @@ import Foundation
 // Optionality mirrors the emitter: sub-keys appear only when the API sent
 // them, and `usage` is null for sentinel rows (no credentials, expired…).
 
-public struct AccountList: Decodable, Sendable {
+public struct AccountList: Codable, Sendable {
     public let schemaVersion: Int
     public let activeAccountNumber: Int?
     public let accounts: [Account]
@@ -19,9 +19,21 @@ public struct AccountList: Decodable, Sendable {
     /// Live Claude Code sessions on this machine (they all ride the
     /// active account's credential). busy = mid-turn right now.
     public let liveSessions: LiveSessions?
+
+    public init(schemaVersion: Int = 1, activeAccountNumber: Int?,
+                accounts: [Account], nextCandidate: Int? = nil,
+                nextRecovery: NextRecovery? = nil,
+                liveSessions: LiveSessions? = nil) {
+        self.schemaVersion = schemaVersion
+        self.activeAccountNumber = activeAccountNumber
+        self.accounts = accounts
+        self.nextCandidate = nextCandidate
+        self.nextRecovery = nextRecovery
+        self.liveSessions = liveSessions
+    }
 }
 
-public struct NextRecovery: Decodable, Sendable {
+public struct NextRecovery: Codable, Sendable {
     public let number: Int
     /// ISO-8601 instant the account is fully usable again.
     public let at: String
@@ -32,7 +44,7 @@ public struct NextRecovery: Decodable, Sendable {
     }
 }
 
-public struct LiveSessions: Decodable, Sendable {
+public struct LiveSessions: Codable, Sendable {
     public let busy: Int
     public let total: Int
     /// Additive breakdown (an older engine omits them; the chip tooltip
@@ -44,17 +56,38 @@ public struct LiveSessions: Decodable, Sendable {
     public let unknown: Int?
     /// Additive per-session detail (busy first, capped engine-side).
     public let sessions: [SessionDetail]?
+
+    public init(busy: Int, total: Int, idle: Int? = nil, waiting: Int? = nil,
+                shell: Int? = nil, unknown: Int? = nil,
+                sessions: [SessionDetail]? = nil) {
+        self.busy = busy
+        self.total = total
+        self.idle = idle
+        self.waiting = waiting
+        self.shell = shell
+        self.unknown = unknown
+        self.sessions = sessions
+    }
 }
 
-public struct SessionDetail: Decodable, Sendable, Hashable {
+public struct SessionDetail: Codable, Sendable, Hashable {
     public let pid: Int
     public let cwd: String
     public let status: String
     public let kind: String
     public let startedAt: Double   // epoch milliseconds
+
+    public init(pid: Int, cwd: String, status: String, kind: String,
+                startedAt: Double) {
+        self.pid = pid
+        self.cwd = cwd
+        self.status = status
+        self.kind = kind
+        self.startedAt = startedAt
+    }
 }
 
-public struct Account: Decodable, Sendable {
+public struct Account: Codable, Sendable {
     public let number: Int
     public let email: String
     public let organizationName: String
@@ -75,16 +108,53 @@ public struct Account: Decodable, Sendable {
     public let lastGoodUsage: Usage?
     public let lastGoodFetchedAt: String?
     public let lastGoodAgeSeconds: Double?
+
+    /// Memberwise, for engines that build accounts directly instead of
+    /// decoding `cswap list --json` (multi-engine seam, #8).
+    public init(number: Int, email: String, organizationName: String = "",
+                organizationUuid: String = "", isOrganization: Bool = false,
+                active: Bool = false, usageStatus: String = "ok",
+                usage: Usage? = nil, alias: String? = nil, icon: String? = nil,
+                plan: String? = nil, disabled: Bool? = nil,
+                usageFetchedAt: String? = nil, usageAgeSeconds: Double? = nil,
+                lastGoodUsage: Usage? = nil, lastGoodFetchedAt: String? = nil,
+                lastGoodAgeSeconds: Double? = nil) {
+        self.number = number
+        self.email = email
+        self.organizationName = organizationName
+        self.organizationUuid = organizationUuid
+        self.isOrganization = isOrganization
+        self.active = active
+        self.usageStatus = usageStatus
+        self.usage = usage
+        self.alias = alias
+        self.icon = icon
+        self.plan = plan
+        self.disabled = disabled
+        self.usageFetchedAt = usageFetchedAt
+        self.usageAgeSeconds = usageAgeSeconds
+        self.lastGoodUsage = lastGoodUsage
+        self.lastGoodFetchedAt = lastGoodFetchedAt
+        self.lastGoodAgeSeconds = lastGoodAgeSeconds
+    }
 }
 
-public struct Usage: Decodable, Sendable {
+public struct Usage: Codable, Sendable {
     public let fiveHour: UsageWindow?
     public let sevenDay: UsageWindow?
     public let scoped: [UsageWindow]?
     public let spend: Spend?
+
+    public init(fiveHour: UsageWindow? = nil, sevenDay: UsageWindow? = nil,
+                scoped: [UsageWindow]? = nil, spend: Spend? = nil) {
+        self.fiveHour = fiveHour
+        self.sevenDay = sevenDay
+        self.scoped = scoped
+        self.spend = spend
+    }
 }
 
-public struct UsageWindow: Decodable, Sendable {
+public struct UsageWindow: Codable, Sendable {
     public let pct: Double
     public let resetsAt: String?
     public let countdown: String?
@@ -96,9 +166,25 @@ public struct UsageWindow: Decodable, Sendable {
     public let aheadOfPace: Bool?
     public let projectedExhaustionAt: String?
     public let willLastToReset: Bool?
+
+    public init(pct: Double, resetsAt: String? = nil, countdown: String? = nil,
+                clock: String? = nil, name: String? = nil,
+                expectedPct: Double? = nil, aheadOfPace: Bool? = nil,
+                projectedExhaustionAt: String? = nil,
+                willLastToReset: Bool? = nil) {
+        self.pct = pct
+        self.resetsAt = resetsAt
+        self.countdown = countdown
+        self.clock = clock
+        self.name = name
+        self.expectedPct = expectedPct
+        self.aheadOfPace = aheadOfPace
+        self.projectedExhaustionAt = projectedExhaustionAt
+        self.willLastToReset = willLastToReset
+    }
 }
 
-public struct Spend: Decodable, Sendable {
+public struct Spend: Codable, Sendable {
     public let used: Double
     public let limit: Double
     public let pct: Double
@@ -106,6 +192,18 @@ public struct Spend: Decodable, Sendable {
     public let resetsAt: String?
     public let countdown: String?
     public let clock: String?
+
+    public init(used: Double, limit: Double, pct: Double, currency: String,
+                resetsAt: String? = nil, countdown: String? = nil,
+                clock: String? = nil) {
+        self.used = used
+        self.limit = limit
+        self.pct = pct
+        self.currency = currency
+        self.resetsAt = resetsAt
+        self.countdown = countdown
+        self.clock = clock
+    }
 }
 
 // MARK: - cswap config list --json (the spec-driven settings feed)

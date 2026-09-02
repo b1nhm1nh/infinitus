@@ -97,3 +97,37 @@ final class ChillDepthTests: XCTestCase {
         XCTAssertEqual(GaugeMath.chillDepth(usedPct: 50, expectedPct: 40, ahead: false), 0)
     }
 }
+
+/// Multi-engine seam (#8): engines that aren't cswap build these models
+/// directly and the app caches them re-encoded, so they must round-trip.
+final class ModelsCodableTests: XCTestCase {
+    func fixture(_ name: String) throws -> Data {
+        let url = Bundle.module.url(forResource: "Fixtures/\(name)", withExtension: nil)!
+        return try Data(contentsOf: url)
+    }
+
+    func testAccountListRoundTripsThroughJSON() throws {
+        let list = try JSONDecoder().decode(AccountList.self, from: fixture("list.json"))
+        let again = try JSONDecoder().decode(
+            AccountList.self, from: JSONEncoder().encode(list))
+        XCTAssertEqual(again.accounts.count, list.accounts.count)
+        XCTAssertEqual(again.activeAccountNumber, list.activeAccountNumber)
+        XCTAssertEqual(again.liveSessions?.busy, list.liveSessions?.busy)
+        let a = list.accounts[0], b = again.accounts[0]
+        XCTAssertEqual(a.email, b.email)
+        XCTAssertEqual(a.usage?.sevenDay?.pct, b.usage?.sevenDay?.pct)
+        XCTAssertEqual(a.usage?.sevenDay?.resetsAt, b.usage?.sevenDay?.resetsAt)
+        XCTAssertEqual(a.usage?.scoped?.first?.name, b.usage?.scoped?.first?.name)
+        XCTAssertEqual(a.usage?.sevenDay?.aheadOfPace, b.usage?.sevenDay?.aheadOfPace)
+    }
+
+    func testMemberwiseInitNeedsOnlyIdentity() {
+        let account = Account(number: 3, email: "x@example.com",
+                              usage: Usage(fiveHour: UsageWindow(pct: 12)))
+        XCTAssertEqual(account.usageStatus, "ok")
+        XCTAssertNil(account.disabled)
+        XCTAssertEqual(account.usage?.fiveHour?.pct, 12)
+        let list = AccountList(activeAccountNumber: 3, accounts: [account])
+        XCTAssertEqual(list.schemaVersion, 1)
+    }
+}
