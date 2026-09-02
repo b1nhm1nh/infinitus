@@ -114,6 +114,10 @@ struct NotifyPane: View {
                        isOn: $app.pushLastAlive)
                     .help("Warns once when only one account still has "
                           + "quota and it crosses \(Int(PushTriggers.warnPct))%.")
+                Toggle("A session waits on you", isOn: $app.pushWaiting)
+                    .help("Fires once per session when it stops at a "
+                          + "permission prompt or a question — answer it "
+                          + "from the phone's session feed.")
             }
             Section("Slack") {
                 LabeledContent("Configured", value: model.slackStatus ?? "no")

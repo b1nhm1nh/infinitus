@@ -15,6 +15,9 @@ import Foundation
 ///    last-alive warning re-arms below `rearmBelowPct`, hysteresis).
 ///  - flags are applied at emit time, but state advances regardless — so
 ///    toggling a trigger on later never fires a stale episode.
+///  - "waiting on you" (#17) fires once per session when its status flips
+///    to `waiting` (a permission prompt or a question) and re-arms when it
+///    leaves that state.
 public struct PushTriggers: Sendable {
     public struct Account: Sendable {
         public let number: Int
@@ -35,11 +38,13 @@ public struct PushTriggers: Sendable {
         public var sessionsDone: Bool
         public var allDead: Bool
         public var lastAlive: Bool
+        public var waiting: Bool
         public init(sessionsDone: Bool = true, allDead: Bool = true,
-                    lastAlive: Bool = true) {
+                    lastAlive: Bool = true, waiting: Bool = true) {
             self.sessionsDone = sessionsDone
             self.allDead = allDead
             self.lastAlive = lastAlive
+            self.waiting = waiting
         }
     }
 
@@ -50,6 +55,8 @@ public struct PushTriggers: Sendable {
     private var quietTicks = 0
     private var allDeadAnnounced = false
     private var warnedLastAlive: Int?
+    private var announcedWaiting: Set<Int> = []
+    private var seededWaiting = false
 
     public init() {}
 
@@ -63,8 +70,26 @@ public struct PushTriggers: Sendable {
     }
 
     public mutating func tick(busy: Int?, total: Int?,
-                              accounts: [Account], flags: Flags) -> [String] {
+                              accounts: [Account], flags: Flags,
+                              sessions: [SessionDetail]? = nil) -> [String] {
         var out: [String] = []
+
+        if let sessions {
+            let waiting = sessions.filter { $0.status == "waiting" }
+            // The first look seeds silently: a session that was already
+            // waiting when the app launched is not news, and a relaunch
+            // must not re-push every stale prompt.
+            let seeded = seededWaiting
+            seededWaiting = true
+            for session in waiting where !announcedWaiting.contains(session.pid) {
+                announcedWaiting.insert(session.pid)
+                if flags.waiting, seeded {
+                    let repo = URL(fileURLWithPath: session.cwd).lastPathComponent
+                    out.append("waiting on you — \(repo) needs an answer")
+                }
+            }
+            announcedWaiting = announcedWaiting.intersection(waiting.map(\.pid))
+        }
 
         if let busy {
             if busy > 0 {

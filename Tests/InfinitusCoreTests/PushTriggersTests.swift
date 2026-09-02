@@ -104,6 +104,49 @@ final class PushTriggersTests: XCTestCase {
         XCTAssertEqual(t.tick(busy: 0, total: 5, accounts: [], flags: all).count, 1)
     }
 
+    private func session(_ pid: Int, _ status: String) -> SessionDetail {
+        SessionDetail(pid: pid, cwd: "/Users/me/repo\(pid)", status: status, kind: "cli",
+                      startedAt: 0)
+    }
+
+    func testWaitingFiresOncePerSessionAndRearmsWhenItLeavesWaiting() {
+        var t = PushTriggers()
+        XCTAssertEqual(t.tick(busy: 1, total: 2, accounts: [], flags: all,
+                              sessions: [session(1, "busy"), session(2, "idle")]), [])
+        XCTAssertEqual(t.tick(busy: 1, total: 2, accounts: [], flags: all,
+                              sessions: [session(1, "waiting"), session(2, "idle")]),
+                       ["waiting on you — repo1 needs an answer"])
+        // Still waiting: silent.
+        XCTAssertEqual(t.tick(busy: 1, total: 2, accounts: [], flags: all,
+                              sessions: [session(1, "waiting")]), [])
+        // Answered, then waits again later: fires again.
+        XCTAssertEqual(t.tick(busy: 1, total: 2, accounts: [], flags: all,
+                              sessions: [session(1, "busy")]), [])
+        XCTAssertEqual(t.tick(busy: 1, total: 2, accounts: [], flags: all,
+                              sessions: [session(1, "waiting")]).count, 1)
+    }
+
+    func testWaitingAtLaunchIsSeededSilently() {
+        var t = PushTriggers()
+        XCTAssertEqual(t.tick(busy: 0, total: 1, accounts: [], flags: all,
+                              sessions: [session(3, "waiting")]), [])
+        XCTAssertEqual(t.tick(busy: 0, total: 1, accounts: [], flags: all,
+                              sessions: [session(3, "waiting")]), [])
+        _ = t.tick(busy: 0, total: 1, accounts: [], flags: all, sessions: [session(3, "idle")])
+        XCTAssertEqual(t.tick(busy: 0, total: 1, accounts: [], flags: all,
+                              sessions: [session(3, "waiting")]).count, 1)
+    }
+
+    func testWaitingFlagOffStillAdvancesState() {
+        var t = PushTriggers()
+        var off = all; off.waiting = false
+        XCTAssertEqual(t.tick(busy: 1, total: 1, accounts: [], flags: off,
+                              sessions: [session(7, "waiting")]), [])
+        // Turning the flag on later never fires the stale episode.
+        XCTAssertEqual(t.tick(busy: 1, total: 1, accounts: [], flags: all,
+                              sessions: [session(7, "waiting")]), [])
+    }
+
     func testSingleTickDipBetweenTurnsStaysSilent() {
         var t = PushTriggers()
         for (busy, expect) in [(3, 0), (0, 0), (2, 0), (0, 0), (0, 1)] {

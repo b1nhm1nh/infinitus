@@ -341,6 +341,7 @@ final class AppModel: ObservableObject {
     @Published var pushSessionsDone: Bool { didSet { defaults.set(pushSessionsDone, forKey: "push_sessions_done") } }
     @Published var pushAllDead: Bool { didSet { defaults.set(pushAllDead, forKey: "push_all_dead") } }
     @Published var pushLastAlive: Bool { didSet { defaults.set(pushLastAlive, forKey: "push_last_alive") } }
+    @Published var pushWaiting: Bool { didSet { defaults.set(pushWaiting, forKey: "push_waiting") } }
     // Phone companion (#9): serve the mirror snapshot over the LAN when
     // the Sync pane's toggle is on. Off by default — it's an open port.
     @Published var mirrorLANEnabled: Bool {
@@ -497,6 +498,7 @@ final class AppModel: ObservableObject {
         pushSessionsDone = defaults.object(forKey: "push_sessions_done") as? Bool ?? true
         pushAllDead = defaults.object(forKey: "push_all_dead") as? Bool ?? true
         pushLastAlive = defaults.object(forKey: "push_last_alive") as? Bool ?? true
+        pushWaiting = defaults.object(forKey: "push_waiting") as? Bool ?? true
         if playground {
             // Isolation is the contract: no demo script, no data at all
             // (never fall back to the real engine here).
@@ -590,6 +592,7 @@ final class AppModel: ObservableObject {
         pushSessionsDone = defaults.object(forKey: "push_sessions_done") as? Bool ?? true
         pushAllDead = defaults.object(forKey: "push_all_dead") as? Bool ?? true
         pushLastAlive = defaults.object(forKey: "push_last_alive") as? Bool ?? true
+        pushWaiting = defaults.object(forKey: "push_waiting") as? Bool ?? true
     }
 
     /// Playground reset (user 2026-08-31): wipe the sandbox suite so
@@ -1215,7 +1218,9 @@ final class AppModel: ObservableObject {
             busy: list.liveSessions?.busy, total: list.liveSessions?.total,
             accounts: health,
             flags: .init(sessionsDone: pushSessionsDone,
-                         allDead: pushAllDead, lastAlive: pushLastAlive))
+                         allDead: pushAllDead, lastAlive: pushLastAlive,
+                         waiting: pushWaiting),
+            sessions: list.liveSessions?.sessions)
         for msg in pushes where !isPlayground {
             Notifier.post(title: "claude-swap", body: msg)
             // Text over stdin, matching the channel-setup commands;
