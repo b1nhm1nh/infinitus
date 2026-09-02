@@ -67,6 +67,38 @@ struct PairRoute: Identifiable {
     let pairURL: String
 }
 
+/// Where the tailnet route comes from: a Tailscale client on this Mac.
+/// Infinitus never installs it — Tailscale needs an account, a browser
+/// sign-in and a VPN-configuration grant, none of which an app can do on
+/// the user's behalf — it points the way and notices when it's there.
+enum TailscaleStatus: Equatable {
+    case notInstalled
+    /// App present, no tailnet address: not running, or signed out.
+    case installed(URL)
+    case connected(String)
+
+    static let downloadURL = URL(string: "https://tailscale.com/download/mac")!
+
+    /// The Mac App Store and the standalone builds carry different ids;
+    /// the Homebrew formula is CLI-only and lives in the prefix.
+    static var appURL: URL? {
+        for id in ["io.tailscale.ipn.macos", "io.tailscale.ipn.macsys"] {
+            if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: id) {
+                return url
+            }
+        }
+        return ["/opt/homebrew/bin/tailscale", "/usr/local/bin/tailscale"]
+            .first { FileManager.default.isExecutableFile(atPath: $0) }
+            .map { URL(fileURLWithPath: $0) }
+    }
+
+    static func probe(addresses: [String]) -> TailscaleStatus {
+        if let ip = MirrorPairing.tailnetAddress(in: addresses) { return .connected(ip) }
+        if let app = appURL { return .installed(app) }
+        return .notInstalled
+    }
+}
+
 /// Runs `cloudflared tunnel --url http://127.0.0.1:<port>` (#9): a
 /// throwaway public hostname, no Cloudflare account, no backend of ours.
 /// The URL changes every start and the pairing token is the only lock,

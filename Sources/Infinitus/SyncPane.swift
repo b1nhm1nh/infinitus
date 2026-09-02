@@ -21,6 +21,11 @@ struct SyncPane: View {
     /// One QR at a time: a phone camera locks onto whichever code it sees
     /// first, so two side by side scan the wrong one (user 2026-09-02).
     @State private var pickedRoute = "lan"
+    /// Tailscale coming up (or going away) changes nothing the models
+    /// publish — the utun address just appears. Re-probe while the pane
+    /// is up so the status row and the route list follow it.
+    @State private var tailscale = TailscaleStatus.notInstalled
+    private let reprobe = Timer.publish(every: 3, on: .main, in: .common).autoconnect()
 
     init(sync: SettingsSyncModel, app: AppModel) {
         self.sync = sync
@@ -96,6 +101,7 @@ struct SyncPane: View {
                     }
                 }
                 Section("Anywhere") {
+                    tailscaleRow
                     if QuickTunnel.binaryPath != nil {
                         Toggle("Expose through a Cloudflare quick tunnel",
                                isOn: $app.mirrorTunnelEnabled)
@@ -112,14 +118,17 @@ struct SyncPane: View {
                              + "or quit.")
                             .font(.caption).foregroundStyle(.secondary)
                     } else {
-                        Text("Install cloudflared (`brew install cloudflared`) "
-                             + "to expose this Mac through a random "
-                             + "trycloudflare.com URL without any account. "
-                             + "Tailscale works too — with it running, the "
-                             + "tailnet address shows up above.")
+                        LabeledContent("Cloudflare quick tunnel") {
+                            Button("Copy install command") { copy("brew install cloudflared") }
+                        }
+                        Text("Not installed. `brew install cloudflared` adds it; "
+                             + "a toggle appears here to expose this Mac through "
+                             + "a random trycloudflare.com URL, no account needed.")
                             .font(.caption).foregroundStyle(.secondary)
                     }
                 }
+                .onAppear { probeTailscale() }
+                .onReceive(reprobe) { _ in probeTailscale() }
             }
             // Manual path for machines outside the iCloud account
             // (user request 2026-08-30). Same snapshot, same scope.
@@ -137,6 +146,49 @@ struct SyncPane: View {
             }
         }
         .formStyle(.grouped)
+    }
+
+    private func probeTailscale() {
+        let now = TailscaleStatus.probe(addresses: LocalAddresses.ipv4())
+        if now != tailscale { tailscale = now }
+    }
+
+    /// Guide, don't install: see TailscaleStatus.
+    @ViewBuilder
+    private var tailscaleRow: some View {
+        switch tailscale {
+        case .notInstalled:
+            LabeledContent("Tailscale") {
+                Button("Get Tailscale…") { NSWorkspace.shared.open(TailscaleStatus.downloadURL) }
+            }
+            Text("Free for personal use. Install it here and on the phone, "
+                 + "sign both into the same tailnet, and a Tailscale route "
+                 + "appears under Pair a phone by itself — reachable from "
+                 + "anywhere, no port forwarding, no public URL.")
+                .font(.caption).foregroundStyle(.secondary)
+        case .installed(let app):
+            LabeledContent("Tailscale") {
+                if app.pathExtension == "app" {
+                    Button("Open Tailscale") {
+                        NSWorkspace.shared.openApplication(at: app, configuration: .init())
+                    }
+                } else {
+                    Text("installed, not connected").font(.caption)
+                }
+            }
+            Text("Installed but not connected — open it and sign in; the "
+                 + "route shows up under Pair a phone once it is.")
+                .font(.caption).foregroundStyle(.secondary)
+        case .connected(let ip):
+            LabeledContent("Tailscale") {
+                Text("connected · \(ip)")
+                    .font(.system(.caption, design: .monospaced))
+                    .textSelection(.enabled)
+            }
+            Text("The Tailscale route is under Pair a phone. The phone needs "
+                 + "Tailscale too, signed into the same tailnet.")
+                .font(.caption).foregroundStyle(.secondary)
+        }
     }
 
     /// One way in: its QR, its address, and what it costs to use.
