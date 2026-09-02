@@ -71,9 +71,10 @@ final class MirrorModel: ObservableObject, FleetModel {
     /// address, or through a tunnel.
     @Published var pairToken: String {
         didSet {
-            // Persist FIRST: assigning inside `didSet` doesn't re-enter it,
-            // so a token typed with lowercase or dashes would otherwise be
-            // tidied on screen and never reach UserDefaults.
+            // What's stored is always the normalised token, so a token
+            // typed with lowercase or dashes still matches; assigning
+            // back to `pairToken` re-enters `didSet` (Swift does fire it
+            // for a nested assignment) and only tidies the field.
             let normalized = MirrorPairing.normalize(pairToken)
             defaults.set(normalized, forKey: NetworkFleetMirror.tokenKey)
             if normalized != pairToken { pairToken = normalized }
