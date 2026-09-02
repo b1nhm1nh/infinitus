@@ -22,6 +22,7 @@ final class ControlServer {
 
     func start() {
         let url = ControlProtocol.socketURL()
+        NSLog("Infinitus control: starting at %@", url.path)
         // sun_path is 104 bytes on Darwin; a longer path fails the bind
         // silently inside NWListener.
         guard url.path.utf8.count < 104 else {
@@ -58,7 +59,8 @@ final class ControlServer {
                 // CI's e2e job sat on "socket never came up" with nothing
                 // in the log (2026-09-03) — the bind's own verdict belongs there.
                 NSLog("Infinitus control: listener %@: %@", "\(state)".hasPrefix("failed") ? "failed" : "waiting", "\(error)")
-            default: break
+            default:
+                NSLog("Infinitus control: listener %@", "\(state)")
             }
         }
         listener.start(queue: queue)
