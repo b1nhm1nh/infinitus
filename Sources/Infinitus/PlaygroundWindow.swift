@@ -111,6 +111,10 @@ import InfinitusUI
                     w.collectionBehavior.insert(.moveToActiveSpace)
                     w.makeKeyAndOrderFront(nil)
                 }
+            // The real pop-out window — capture-quality checks (#4)
+            // need the genuine glass stack, not the playground preview.
+            case "popout":
+                AppDelegate.shared?.statusHolder?.controller.showPinnedWindow()
             // The real app's Settings window (not playground state) —
             // lets the dev loop check its chrome without a click.
             case "settings":

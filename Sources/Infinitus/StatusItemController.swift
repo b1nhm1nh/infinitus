@@ -161,7 +161,7 @@ final class StatusItemController {
             // silently breaks CABackdropLayer capture (user 2026-08-30:
             // "no blur, just alpha") — the same layer blurs fine as a
             // plain sibling under the hosting view.
-            panel.contentView = GlassContainerView.wrap(host.view, scrim: true)
+            panel.contentView = GlassContainerView.wrap(host.view, scrim: true, scrimStrength: 0.85)
             anchoredHost = host
             panel.isOpaque = false
             panel.backgroundColor = .clear
@@ -401,7 +401,7 @@ final class StatusItemController {
             // Blur under the hosting view, outside SwiftUI (see the
             // anchored panel note): swap the content view for a wrapped
             // one; the controller stays retained by the window.
-            w.contentView = GlassContainerView.wrap(host.view, scrim: true)
+            w.contentView = GlassContainerView.wrap(host.view, scrim: true, scrimStrength: 0.85)
             w.title = "Infinitus"
             // Full-size content + hidden system title: the centered
             // "Infinitus" header is drawn by PinnedRoot instead (the

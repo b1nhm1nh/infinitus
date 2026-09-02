@@ -218,7 +218,17 @@ final class BackdropGlassNSView: NSVisualEffectView {
 /// behind the window. Static — never focus-driven (glass runs in all
 /// states).
 final class GlassScrimView: NSView {
-    override init(frame: NSRect) {
+    /// Wash opacity. Settings keeps the light 0.5 wash; the popup and
+    /// pop-out lay 0.85 — a window capture (CleanShot, `screencapture
+    /// -l`) can't sample the backdrop and renders the blur layer as flat
+    /// mid-gray, so at 0.5 the captured popup came out olive/washed
+    /// ("still looks nothing like" the live window, user 2026-09-02).
+    /// At 0.85 the window's own pixels carry the dark look, so live and
+    /// captured match; the backdrop still tints the last 15%.
+    let strength: CGFloat
+
+    init(frame: NSRect, strength: CGFloat = 0.5) {
+        self.strength = strength
         super.init(frame: frame)
         wantsLayer = true
     }
@@ -229,8 +239,8 @@ final class GlassScrimView: NSView {
         super.updateLayer()
         let dark = effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
         layer?.backgroundColor = dark
-            ? NSColor.black.withAlphaComponent(0.5).cgColor
-            : NSColor.white.withAlphaComponent(0.55).cgColor
+            ? NSColor.black.withAlphaComponent(strength).cgColor
+            : NSColor.white.withAlphaComponent(strength + 0.05).cgColor
     }
 
     override func viewDidChangeEffectiveAppearance() {
@@ -282,7 +292,8 @@ final class GlassContainerView: NSView {
 
     deinit { tokens.forEach(NotificationCenter.default.removeObserver) }
 
-    static func wrap(_ hosted: NSView, scrim: Bool = false) -> GlassContainerView {
+    static func wrap(_ hosted: NSView, scrim: Bool = false,
+                     scrimStrength: CGFloat = 0.5) -> GlassContainerView {
         let container = GlassContainerView(frame: hosted.frame)
         container.autoresizesSubviews = true
         container.wantsLayer = true
@@ -298,7 +309,7 @@ final class GlassContainerView: NSView {
             // what sits behind. Settings only: the popup/pop-out carry
             // ThemedGlassChrome's wash and the transparency dial.
             if scrim {
-                let wash = GlassScrimView(frame: container.bounds)
+                let wash = GlassScrimView(frame: container.bounds, strength: scrimStrength)
                 wash.autoresizingMask = [.width, .height]
                 container.addSubview(wash)
             }
