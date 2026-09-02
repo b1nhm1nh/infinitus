@@ -60,7 +60,6 @@ Native macOS menu bar app for the claude-swap engine. Split out of
 - A GridRow can't wear a modifier (collapses to one cell), but a Group
   INSIDE it distributes the modifier to every cell — that's how the
   rows intro slides a whole grid row.
-
 - Multi-engine (#8): every engine is an `AccountEngine` yielding
   `EngineFleet`s; the popup stacks one `FleetState` per fleet and
   `AppModel` is only a FleetModel FACADE over the primary Claude fleet.
