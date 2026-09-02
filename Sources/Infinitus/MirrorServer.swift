@@ -92,6 +92,11 @@ final class MirrorServer: ObservableObject {
         // Toggling the server off and on shouldn't trip over TIME_WAIT.
         params.allowLocalEndpointReuse = true
         params.includePeerToPeer = false
+        // IPv4 socket, not the dual-stack IPv6 wildcard: a connection to
+        // this Mac's own tailnet address never reached the v6 socket
+        // (Tailscale's utun hands IPv4 to IPv4 sockets only — probed
+        // 2026-09-02, LAN fine both ways, 100.x only with v4).
+        (params.defaultProtocolStack.internetProtocol as? NWProtocolIP.Options)?.version = .v4
         let endpointPort = rawPort == 0 ? NWEndpoint.Port.any
             : NWEndpoint.Port(rawValue: rawPort) ?? .any
         guard let listener = try? NWListener(using: params, on: endpointPort) else {
