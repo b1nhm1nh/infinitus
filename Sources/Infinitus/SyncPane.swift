@@ -18,6 +18,9 @@ struct SyncPane: View {
     /// The token is masked until asked for: settings panes get shared in
     /// screenshots, and this one is a read key.
     @State private var revealToken = false
+    /// One QR at a time: a phone camera locks onto whichever code it sees
+    /// first, so two side by side scan the wrong one (user 2026-09-02).
+    @State private var pickedRoute = "lan"
 
     init(sync: SettingsSyncModel, app: AppModel) {
         self.sync = sync
@@ -80,7 +83,15 @@ struct SyncPane: View {
                         Text("Waiting for the listener to come up…")
                             .font(.caption).foregroundStyle(.secondary)
                     }
-                    ForEach(app.pairRoutes) { route in
+                    if app.pairRoutes.count > 1 {
+                        Picker("Route", selection: $pickedRoute) {
+                            ForEach(app.pairRoutes) { Text($0.title).tag($0.id) }
+                        }
+                        .pickerStyle(.segmented)
+                        .labelsHidden()
+                    }
+                    if let route = app.pairRoutes.first(where: { $0.id == pickedRoute })
+                        ?? app.pairRoutes.first {
                         pairRow(route)
                     }
                 }
