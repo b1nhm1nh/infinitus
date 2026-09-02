@@ -102,6 +102,9 @@ struct InfinitusTray {
         var themeID = "off"
         var remaining = false
         var engineOrder = false
+        var port: UInt16 = MirrorTransport.defaultPort
+        var token: String?
+        var tokenFile: String?
         var positional: [String] = []
         var i = 0
         while i < args.count {
@@ -113,6 +116,16 @@ struct InfinitusTray {
                 remaining = true
             case "--engine-order":
                 engineOrder = true
+            case "--port" where i + 1 < args.count:
+                guard let parsed = UInt16(args[i + 1]) else { fail("--port needs a number") }
+                port = parsed
+                i += 1
+            case "--token" where i + 1 < args.count:
+                token = args[i + 1]
+                i += 1
+            case "--token-file" where i + 1 < args.count:
+                tokenFile = args[i + 1]
+                i += 1
             case let a where !a.hasPrefix("-"):
                 positional.append(a)
             default:
@@ -135,6 +148,10 @@ struct InfinitusTray {
             for theme in RowTheme.builtins {
                 print("\(theme.id)\t\(theme.name)")
             }
+        case "serve":
+            await serve(port: port, token: token, tokenFile: tokenFile, themeID: themeID)
+        case "pair":
+            pair(port: port)
         case "help", "--help", "-h":
             print(help)
         default:
@@ -151,6 +168,10 @@ struct InfinitusTray {
       switch <n>                          switch to account n
       disable <n> / enable <n>            hold an account out of rotation / return it
       themes                              list built-in theme ids
+      serve [--port N] [--token T|--token-file PATH]
+                                           phone companion: serve the fleet snapshot
+                                           over HTTP (Linux only)
+      pair [--port N]                     print the pair URL (+ QR if qrencode is on PATH)
 
     Wire-up (packaging/omarchy/waybar-infinitus.jsonc):
       "custom/infinitus": exec `infinitus-tray status --theme rpg`,
@@ -488,6 +509,119 @@ struct InfinitusTray {
         } catch {
             fail("rotate failed: \(error)")
         }
+    }
+
+    // MARK: serve / pair (#9 phone companion, Linux side)
+
+    /// One collection pass, independent of `panel`/`status`'s stdout
+    /// paths — always produces *some* snapshot, even with no `cswap` on
+    /// the box: `serve` in a container with no engine installed answers
+    /// `/snapshot` with an empty fleet rather than crashing.
+    static func collectAndExport(themeID: String, now: Date = Date()) async {
+        var raw = Data(#"{"schemaVersion":1,"accounts":[]}"#.utf8)
+        var sessions: [SessionPanelRow] = []
+        var progressByPid: [Int: SessionProgress] = [:]
+        let bin = CswapLocator.locate()
+        if let bin, let (_, fetched) = try? await CswapCLI(binaryPath: bin).accountListRaw() {
+            raw = fetched
+            let claudeDir = ClaudeSessions.configHome()
+            let collected = sessionRows(claudeDir: claudeDir, now: now)
+            sessions = collected.rows
+            progressByPid = collected.progressByPid
+        }
+        let footer = await FooterState.current(now: now)
+        TrayMirror.export(raw: raw, sessions: sessions, enginePath: bin ?? "",
+                          prefs: FleetPrefs(themeID: themeID),
+                          serviceStatus: footer.serviceStatus, engine: footer.engine,
+                          progressByPid: progressByPid, now: now)
+    }
+
+    static func serve(port: UInt16, token: String?, tokenFile: String?, themeID: String) async {
+        #if canImport(Glibc)
+        let resolved: String
+        if let token, !token.isEmpty {
+            resolved = MirrorPairing.normalize(token)
+        } else if let tokenFile {
+            guard let contents = try? String(contentsOfFile: tokenFile, encoding: .utf8) else {
+                fail("--token-file \(tokenFile): couldn't read")
+            }
+            resolved = MirrorPairing.normalize(contents)
+        } else {
+            resolved = PairingStore.loadOrCreate()
+        }
+        guard !resolved.isEmpty else { fail("serve: empty pairing token") }
+        // The first request must not 503 while the first 30s tick is
+        // still pending.
+        await collectAndExport(themeID: themeID)
+        let server = PosixHTTPServer { request in
+            guard MirrorTransport.isAuthorized(request, token: resolved) else {
+                return MirrorTransport.unauthorizedResponse()
+            }
+            guard request.method == "GET", request.path == MirrorTransport.snapshotPath else {
+                return MirrorTransport.notFoundResponse()
+            }
+            guard let data = try? Data(contentsOf: TrayMirror.url) else {
+                return MirrorTransport.unavailableResponse()
+            }
+            return MirrorTransport.snapshotResponse(data)
+        }
+        let bound: UInt16
+        do {
+            bound = try server.start(port: port)
+        } catch {
+            fail("serve: couldn't bind port \(port): \(error)")
+        }
+        print("infinitus-tray serve: listening on 0.0.0.0:\(bound), "
+            + "pairing token \(MirrorPairing.mask(resolved))")
+        while true {
+            // MirrorWriter.shouldWrite needs a strict `>` on the 30s
+            // interval — sleep a touch over it so this loop's own tick
+            // never gets throttled away by itself.
+            try? await Task.sleep(nanoseconds: 31_000_000_000)
+            await collectAndExport(themeID: themeID)
+        }
+        #else
+        fail("serve is Linux-only (no POSIX HTTP listener on this platform)")
+        #endif
+    }
+
+    static func pair(port: UInt16) {
+        #if canImport(Glibc)
+        let token = PairingStore.loadOrCreate()
+        let addresses = PosixInterfaceAddresses.ipv4()
+        var endpoints: [String] = []
+        if let lan = MirrorPairing.lanAddress(in: addresses) {
+            endpoints.append("http://\(lan):\(port)")
+        }
+        if let tailnet = MirrorPairing.tailnetAddress(in: addresses) {
+            endpoints.append("http://\(tailnet):\(port)")
+        }
+        guard !endpoints.isEmpty else {
+            fail("pair: no non-loopback IPv4 address found — connect to a network first")
+        }
+        let url = MirrorPairing.pairURL(endpoints: endpoints, token: token)
+        print(url)
+        if let qrencode = which("qrencode") {
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: qrencode)
+            process.arguments = ["-t", "ANSIUTF8", url]
+            try? process.run()
+            process.waitUntilExit()
+        } else {
+            print("install qrencode for a QR")
+        }
+        #else
+        fail("pair is Linux-only")
+        #endif
+    }
+
+    /// PATH lookup for an optional external tool (qrencode) — no shell,
+    /// no `which` subprocess.
+    static func which(_ name: String) -> String? {
+        let path = ProcessInfo.processInfo.environment["PATH"] ?? ""
+        return path.split(separator: ":")
+            .map { "\($0)/\(name)" }
+            .first { FileManager.default.isExecutableFile(atPath: $0) }
     }
 
     // MARK: plumbing
