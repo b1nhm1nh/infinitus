@@ -141,6 +141,38 @@ final class ProxyMappingTests: XCTestCase {
         XCTAssertEqual(profile.plan, "Max")
     }
 
+    // MARK: - Live captures (CLIProxyAPI 7.2.145, 2026-09-02, identities redacted)
+
+    /// The hand-written fixtures pin the mapping; these pin the wire
+    /// shape the installed proxy actually emits, so drift shows up here
+    /// before it shows up in the popup.
+    func testLiveAuthFilesDecodeAndMap() throws {
+        let list = try JSONDecoder().decode(ProxyAuthFileList.self, from: fixture("live-auth-files.json"))
+        XCTAssertEqual(list.files.count, 2)
+        XCTAssertEqual(list.files.map(\.provider), ["claude", "claude"])
+        XCTAssertEqual(list.files.map(\.email), ["live1@example.com", "live2@example.com"])
+        XCTAssertEqual(list.files[0].disabled, false)
+        XCTAssertEqual(list.files[0].status, "active")
+        XCTAssertNil(list.files[0].priority, "7.2.145 omits priority until it is set")
+    }
+
+    func testLiveUsageDecodes() throws {
+        guard let usage = OAuthUsage.parse(try fixture("live-oauth-usage.json")) else {
+            return XCTFail("expected usage")
+        }
+        XCTAssertEqual(usage.fiveHour?.pct, 100.0)
+        XCTAssertEqual(usage.sevenDay?.pct, 52.0)
+        XCTAssertNil(usage.spend, "null limit_dollars → no spend row")
+    }
+
+    func testLiveProfileDecodesTier() throws {
+        guard let profile = ProxyProfile.parse(try fixture("live-oauth-profile.json")) else {
+            return XCTFail("expected profile")
+        }
+        XCTAssertEqual(profile.organizationName, "Live User's Organization")
+        XCTAssertEqual(profile.plan, "Max 20x")
+    }
+
     // MARK: - ResetFormat, pinned against `oauth.format_reset` (TZ=UTC)
 
     private func date(_ iso: String) -> Date { ISO8601DateFormatter().date(from: iso)! }

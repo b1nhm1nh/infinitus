@@ -348,6 +348,14 @@ public actor CLIProxyEngine: AccountEngine {
         priorityByName[target] = top + 1
     }
 
+    /// Internal: the live switch test puts the priority back.
+    func setPriority(fleet: Provider, number: Int, _ priority: Int) async throws {
+        let target = try name(fleet, number)
+        _ = try await request("PATCH", "auth-files/fields",
+                              json: ["name": target, "priority": priority])
+        priorityByName[target] = priority
+    }
+
     public func setHold(fleet: Provider, number: Int, held: Bool) async throws {
         let target = try name(fleet, number)
         _ = try await request("PATCH", "auth-files/status",

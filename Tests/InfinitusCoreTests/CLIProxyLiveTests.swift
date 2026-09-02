@@ -69,4 +69,57 @@ final class CLIProxyLiveTests: XCTestCase {
         let cleared = try await fetch()
         XCTAssertEqual(cleared.note ?? "", before.note ?? "")
     }
+
+    /// Reversible switch: #2 goes to the top priority tier, then its
+    /// priority is put back. Proves the `{name, priority}` PATCH the
+    /// stub assumes lands on the real proxy. Needs two credentials.
+    /// Remove stays stub-only: DELETE is not reversible.
+    func testLiveSwitchRoundTrip() async throws {
+        let env = ProcessInfo.processInfo.environment
+        guard let key = env["INFINITUS_LIVE_PROXY_KEY"], !key.isEmpty else {
+            throw XCTSkip("INFINITUS_LIVE_PROXY_KEY not set")
+        }
+        let base = URL(string: env["INFINITUS_LIVE_PROXY_URL"] ?? "http://127.0.0.1:8317")!
+        let engine = CLIProxyEngine(baseURL: base, managementKey: key)
+        guard let fleet = try await engine.snapshot().first, fleet.accounts.count >= 2 else {
+            throw XCTSkip("needs two credentials on the live proxy")
+        }
+        let provider = fleet.provider
+        let target = try await engine.name(provider, 2)
+        func fetchAll() async throws -> [ProxyAuthFile] {
+            let (_, data) = try await engine.rawGet("auth-files")
+            return try JSONDecoder().decode(ProxyAuthFileList.self, from: data).files
+        }
+        let before = try await fetchAll()
+        let mine = try XCTUnwrap(before.first { $0.name == target })
+        let topBefore = before.map { $0.priority ?? 0 }.max() ?? 0
+
+        try await engine.switchTo(fleet: provider, number: 2)
+        let after = try await fetchAll()
+        let switched = try XCTUnwrap(after.first { $0.name == target })
+        XCTAssertEqual(switched.priority, topBefore + 1)
+        XCTAssertEqual(after.map { $0.priority ?? 0 }.max(), switched.priority, "now the top tier")
+
+        try await engine.setPriority(fleet: provider, number: 2, mine.priority ?? 0)
+        let restored = try await fetchAll()
+        XCTAssertEqual(restored.first { $0.name == target }?.priority ?? 0, mine.priority ?? 0)
+    }
+
+    /// Reversible strategy PUT: flip to round-robin and back.
+    func testLiveRoutingStrategyRoundTrip() async throws {
+        let env = ProcessInfo.processInfo.environment
+        guard let key = env["INFINITUS_LIVE_PROXY_KEY"], !key.isEmpty else {
+            throw XCTSkip("INFINITUS_LIVE_PROXY_KEY not set")
+        }
+        let base = URL(string: env["INFINITUS_LIVE_PROXY_URL"] ?? "http://127.0.0.1:8317")!
+        let engine = CLIProxyEngine(baseURL: base, managementKey: key)
+        let before = try await engine.probe().strategy ?? "fill-first"
+        let other = before == "round-robin" ? "fill-first" : "round-robin"
+        try await engine.setRoutingStrategy(other)
+        let flipped = try await engine.probe().strategy
+        XCTAssertEqual(flipped, other)
+        try await engine.setRoutingStrategy(before)
+        let restored = try await engine.probe().strategy
+        XCTAssertEqual(restored, before)
+    }
 }
