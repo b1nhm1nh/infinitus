@@ -252,6 +252,13 @@ struct AccountCells<M: FleetModel, U: UsageSource> {
                 .font(.caption).foregroundStyle(.green)
             Text(theme.plain ? "ready" : theme.readyLabel)
                 .font(.caption).foregroundStyle(.secondary)
+            // The weekly clock keeps ticking on an untouched account —
+            // show when it rolls ("full hp: also show 7d time", user
+            // 2026-09-02), same label the HP cell would carry.
+            if let weekly = account.usage?.sevenDay, let when = resetText(weekly) {
+                Text("·").font(.caption).foregroundStyle(.tertiary)
+                Text(when).font(.caption).foregroundStyle(.tertiary)
+            }
             if spent {
                 Text("·").font(.caption).foregroundStyle(.tertiary)
                 Text("\(theme.creditLabel) spent")
