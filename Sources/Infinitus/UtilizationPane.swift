@@ -11,6 +11,7 @@ import CswapCore
 final class UtilizationModel: ObservableObject {
     @Published var samples: [UsageSample] = []
     @Published var generations: [WindowGeneration] = []
+    @Published var fiveHourWindows: [FiveHourWindow] = []
     @Published var loading = false
     @Published var rangeDays = 7 { didSet { if rangeDays != oldValue { refresh() } } }
     /// "7d", "5h", or a scoped model name.
@@ -44,9 +45,12 @@ final class UtilizationModel: ObservableObject {
         Task.detached(priority: .utility) {
             let urls = UsageHistoryRecorder.readableURLs()
             let merged = UsageHistory.merge(urls.map { UsageHistory.load(url: $0) })
-            // Waste generations need the FULL history (a reset may predate
-            // the chart range); the chart gets the trimmed, thinned slice.
+            // Waste generations and 5h windows need the FULL history (a
+            // reset may predate the chart range); the chart gets the
+            // trimmed, thinned slice.
             let gens = WasteMath.generations(merged)
+            let windows = WindowTelemetry.fiveHourWindows(
+                merged, now: Date().timeIntervalSince1970)
             let cutoff = Date().addingTimeInterval(-Double(days) * 86400)
                 .timeIntervalSince1970
             let bucket: TimeInterval = days <= 1 ? 300 : days <= 7 ? 1800 : 7200
@@ -56,6 +60,7 @@ final class UtilizationModel: ObservableObject {
                 guard let self else { return }
                 self.samples = thin
                 self.generations = gens
+                self.fiveHourWindows = windows
                 self.loading = false
             }
         }
@@ -87,6 +92,7 @@ struct UtilizationPane: View {
                     .foregroundStyle(.secondary)
             } else {
                 utilizationSection
+                fiveHourSection
                 wasteSection
             }
         }
@@ -173,6 +179,86 @@ struct UtilizationPane: View {
             }
         }
         return out
+    }
+
+    // MARK: 5h windows
+
+    private struct RhythmBar: Identifiable {
+        let id: Int
+        var hour: Int { id }
+        let count: Int
+    }
+
+    /// Reconstructed windows for the selected account, or every account
+    /// overlaid — newest first, so `.prefix(10)` is "the last 10".
+    private func selectedWindows() -> [FiveHourWindow] {
+        let windows = model.account.map { email in
+            model.fiveHourWindows.filter { $0.email == email }
+        } ?? model.fiveHourWindows
+        return windows.sorted { $0.start > $1.start }
+    }
+
+    @ViewBuilder private var fiveHourSection: some View {
+        let windows = selectedWindows()
+        if !windows.isEmpty {
+            Section {
+                ForEach(Array(windows.prefix(10)), id: \.resetsAt) { w in
+                    HStack {
+                        if model.account == nil {
+                            Text(shortName(w.email))
+                                .font(.caption).foregroundStyle(.secondary)
+                                .frame(width: 70, alignment: .leading)
+                        }
+                        Text(clockLabel(w.start)).monospacedDigit()
+                        Spacer()
+                        Text(String(format: "%.0f%% peak", w.peakPct))
+                            .monospacedDigit()
+                            .foregroundStyle(.secondary)
+                        if w.closed && w.peakPct < 5 {
+                            Text("unused")
+                                .font(.caption2)
+                                .padding(.horizontal, 6).padding(.vertical, 2)
+                                .background(.orange.opacity(0.2), in: Capsule())
+                                .foregroundStyle(.orange)
+                        } else if !w.closed {
+                            Text("open")
+                                .font(.caption2).foregroundStyle(.secondary)
+                        }
+                    }
+                }
+                let s = WindowTelemetry.summary(windows)
+                Text("\(s.count) window\(s.count == 1 ? "" : "s")"
+                     + " · mean peak " + String(format: "%.0f%%", s.meanPeak)
+                     + " · \(s.unusedWindows) unused")
+                    .font(.caption).foregroundStyle(.secondary)
+                Chart(rhythmBars(windows)) { b in
+                    BarMark(x: .value("Hour", b.hour), y: .value("Windows", b.count))
+                }
+                .frame(height: 80)
+                .padding(.vertical, 4)
+            } header: {
+                Text(model.account.map { "5h windows — \(shortName($0))" }
+                     ?? "5h windows")
+            } footer: {
+                Text("Peak % observed inside each reconstructed 5h window "
+                     + "(windows are use-it-or-lose-it, so peak is what "
+                     + "\"used\" means). Bars: how many windows have "
+                     + "started at each hour of day — the sprint rhythm.")
+                    .font(.caption2).foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private func rhythmBars(_ windows: [FiveHourWindow]) -> [RhythmBar] {
+        let hist = WindowTelemetry.dailyRhythm(windows)
+        return (0..<24).map { RhythmBar(id: $0, count: hist[$0] ?? 0) }
+    }
+
+    private func clockLabel(_ t: Double) -> String {
+        let f = DateFormatter()
+        f.dateStyle = .none
+        f.timeStyle = .short
+        return f.string(from: Date(timeIntervalSince1970: t))
     }
 
     // MARK: waste
