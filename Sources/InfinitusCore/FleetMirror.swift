@@ -28,13 +28,18 @@ public struct MirrorSnapshot: Codable, Sendable {
     /// Per-pid transcript progress for the sessions card, keyed by the
     /// session record's pid (`SessionDetail.pid` in `listJSON`).
     public let progressByPid: [Int: SessionProgress]?
+    /// Every engine's last fleet (#8 multi-engine), in popup order —
+    /// `listJSON` stays the primary cswap fleet for older phones; a
+    /// phone that knows this field stacks one section per fleet.
+    public let fleets: [EngineFleet]?
 
     public init(capturedAt: Date, machineName: String, listJSON: Data,
                 sessions: [SessionPanelRow], prefs: FleetPrefs? = nil,
                 usageJSON: Data? = nil,
                 serviceStatus: ServiceStatusSummary? = nil,
                 engine: EngineBadge? = nil,
-                progressByPid: [Int: SessionProgress]? = nil) {
+                progressByPid: [Int: SessionProgress]? = nil,
+                fleets: [EngineFleet]? = nil) {
         self.capturedAt = capturedAt
         self.machineName = machineName
         self.listJSON = listJSON
@@ -44,6 +49,7 @@ public struct MirrorSnapshot: Codable, Sendable {
         self.serviceStatus = serviceStatus
         self.engine = engine
         self.progressByPid = progressByPid
+        self.fleets = fleets
     }
 }
 

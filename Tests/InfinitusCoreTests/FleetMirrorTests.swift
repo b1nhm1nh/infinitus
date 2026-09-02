@@ -129,6 +129,40 @@ final class FleetMirrorTests: XCTestCase {
         XCTAssertNil(got.progressByPid)
     }
 
+    func testRoundTripWithEveryFleet() async throws {
+        let url = tempURL()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let account = Account(number: 1, email: "one@example.com", organizationName: "One",
+                              active: true)
+        let fleet = EngineFleet(engineID: "cliproxy", provider: .claude, accounts: [account],
+                                activeNumber: 1)
+        let snapshot = MirrorSnapshot(
+            capturedAt: Date(), machineName: "Test Mac",
+            listJSON: Data("{\"accounts\":[]}".utf8), sessions: [], fleets: [fleet])
+        try MirrorWriter.write(snapshot, to: url)
+        let read = try await FileFleetMirror(url: url).latest()
+        let got = try XCTUnwrap(read)
+        XCTAssertEqual(got.fleets?.count, 1)
+        XCTAssertEqual(got.fleets?[0].engineID, "cliproxy")
+        XCTAssertEqual(got.fleets?[0].accounts.first?.email, "one@example.com")
+        XCTAssertEqual(got.fleets?[0].activeNumber, 1)
+    }
+
+    func testMissingFleetsDecodesToNil() async throws {
+        let url = tempURL()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let json = """
+        {"capturedAt":"2026-01-01T00:00:00Z","machineName":"Old Mac",
+         "listJSON":"e30=","sessions":[]}
+        """
+        try FileManager.default.createDirectory(
+            at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data(json.utf8).write(to: url)
+        let read = try await FileFleetMirror(url: url).latest()
+        let got = try XCTUnwrap(read)
+        XCTAssertNil(got.fleets)
+    }
+
     func testServiceStatusSummaryWording() {
         XCTAssertEqual(ServiceStatusSummary(indicator: "none").shortText, "claude ok")
         XCTAssertEqual(ServiceStatusSummary(indicator: "critical").shortText, "critical outage")

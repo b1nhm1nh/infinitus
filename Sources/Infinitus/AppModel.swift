@@ -995,10 +995,11 @@ final class AppModel: ObservableObject {
             let serviceStatus = ServiceStatusSummary(
                 indicator: ServiceStatusModel.shared.indicator)
             let engine = engineBadge ?? .stopped
+            let allFleets = fleets.compactMap(\.lastFleet)
             Task.detached(priority: .utility) { [mirrorExporter] in
                 await mirrorExporter.record(listJSON: raw, prefs: prefs,
                                             serviceStatus: serviceStatus,
-                                            engine: engine)
+                                            engine: engine, fleets: allFleets)
             }
         }
         // All-limited: count the limit-stopped sessions waiting to be
