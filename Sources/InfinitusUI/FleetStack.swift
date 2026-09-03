@@ -7,6 +7,9 @@ import InfinitusCore
 /// each naming the provider and engine.
 public struct FleetStack<F: FleetModel & UsageSource & Identifiable>: View {
     let fleets: [F]
+    /// Max reported width per column key across every fleet's grid —
+    /// see ColumnAlignment.swift.
+    @State private var columnWidths: [String: CGFloat] = [:]
 
     public init(fleets: [F]) { self.fleets = fleets }
 
@@ -19,6 +22,14 @@ public struct FleetStack<F: FleetModel & UsageSource & Identifiable>: View {
                 AccountRows(model: fleet, usage: fleet)
             }
         }
+        .environment(\.sharedColumnWidths, fleets.count > 1 ? columnWidths : [:])
+        .onPreferenceChange(ColumnWidths.self) { reported in
+            guard fleets.count > 1 else { return }
+            var next = columnWidths
+            next.merge(reported, uniquingKeysWith: max)
+            if next != columnWidths { columnWidths = next }
+        }
+        .onChange(of: fleets.count) { _, _ in columnWidths = [:] }
     }
 }
 

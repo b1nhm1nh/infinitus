@@ -643,6 +643,7 @@ struct AccountCells<M: FleetModel, U: UsageSource> {
             }
             .fixedSize()
             .glowOnChange(of: w.pct, color: ThemeColor.flash(theme))
+            .alignedColumn(banded ? "scoped:\(w.name ?? "?")" : "")
             .activeBand(banded && account.active)
         }
     }

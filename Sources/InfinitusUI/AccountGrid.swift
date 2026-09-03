@@ -57,6 +57,7 @@ struct AccountGrid<M: FleetModel, U: UsageSource>: View {
                             .foregroundStyle(account.active ? Color.accentColor : Color.primary)
                             .instantTip(cells.slotTip)
                     }
+                    .alignedColumn("slot")
                     .activeBand(account.active)
                     // One cell per row reports its bounds for the death
                     // band — threading a number through every activeBand
@@ -81,12 +82,14 @@ struct AccountGrid<M: FleetModel, U: UsageSource>: View {
                     // The one deliberately flexible column: emails truncate,
                     // usage numbers and reset times never do.
                     .frame(minWidth: 110, maxWidth: 230, alignment: .leading)
+                    .alignedColumn("name")
                     .activeBand(account.active)
                     Text(cells.planText ?? "")
                         .font(PopupFont.caption)
                         .foregroundStyle(.secondary)
                         .fixedSize()
                         .instantTip("Subscription: \(account.plan ?? "?")")
+                        .alignedColumn("plan")
                         .activeBand(account.active)
                     if let note = SentinelNotes.note(for: account.usageStatus) {
                         // Short one-liner like deadCell — the full note
@@ -125,16 +128,18 @@ struct AccountGrid<M: FleetModel, U: UsageSource>: View {
                                 cells.scopedCells
                             }
                             .fixedSize()
+                            .alignedColumn("usage")
                             .activeBand(account.active)
                             .gridCellColumns(usageColumns)
-                            cells.cashCell
+                            cells.cashCell.alignedColumn("cash")
                         } else {
-                            cells.deadCell
+                            cells.deadCell.alignedColumn("5h")
                             cells.windowCell(account.usage?.sevenDay,
                                              session: false)
-                            cells.spendCell
+                                .alignedColumn("7d")
+                            cells.spendCell.alignedColumn("spend")
                             cells.scopedCells
-                            cells.cashCell
+                            cells.cashCell.alignedColumn("cash")
                         }
                     } else if cells.showAsDead {
                         // A dead row shows ONLY what blocks it — a full MP
@@ -142,14 +147,14 @@ struct AccountGrid<M: FleetModel, U: UsageSource>: View {
                         cells.deadCell
                             .gridCellUnsizedAxes(anyGauged ? .horizontal : [])
                         oneLineFillers
-                        cells.cashCell
+                        cells.cashCell.alignedColumn("cash")
                     } else if cells.allFresh {
                         // A fully-available account carries no signal worth
                         // five gauges — one "ready" line in every mode.
                         cells.readyCell
                             .gridCellUnsizedAxes(anyGauged ? .horizontal : [])
                         oneLineFillers
-                        cells.cashCell
+                        cells.cashCell.alignedColumn("cash")
                     } else if model.compactRows {
                         // Compact hides empty/exhausted cells, which makes
                         // per-cell grid columns meaningless — a row whose 5h
@@ -163,15 +168,16 @@ struct AccountGrid<M: FleetModel, U: UsageSource>: View {
                             cells.scopedCells
                         }
                         .fixedSize()
+                        .alignedColumn("usage")
                         .activeBand(account.active)
                         .gridCellColumns(usageColumns)
-                        cells.cashCell
+                        cells.cashCell.alignedColumn("cash")
                     } else {
-                        cells.windowCell(account.usage?.fiveHour, session: true)
-                        cells.windowCell(account.usage?.sevenDay, session: false)
-                        cells.spendCell
+                        cells.windowCell(account.usage?.fiveHour, session: true).alignedColumn("5h")
+                        cells.windowCell(account.usage?.sevenDay, session: false).alignedColumn("7d")
+                        cells.spendCell.alignedColumn("spend")
                         cells.scopedCells
-                        cells.cashCell
+                        cells.cashCell.alignedColumn("cash")
                     }
                     }
                     .introRow(model, index: rowIndex)
