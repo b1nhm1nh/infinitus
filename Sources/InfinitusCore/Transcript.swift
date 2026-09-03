@@ -157,6 +157,8 @@ public enum ResumeGate {
     /// happens — new stop entries included (each burned retry mints a
     /// fresh stopUuid, which is exactly how the loop ran away).
     public static let cooldown: TimeInterval = 600
+    /// How long before a stop a usage poll still counts as fresh.
+    public static let freshBeforeStop: TimeInterval = 60
 
     /// - stoppedAt: when the limit stop landed (nil = unknown).
     /// - firstSeenActive: the active account number when THIS stop was
@@ -181,8 +183,14 @@ public enum ResumeGate {
             return true
         }
         // Same account: the alive verdict must postdate the stop, or it
-        // is the exact stale read that caused the burn loop.
-        if let stoppedAt, let activeFetchedAt, activeFetchedAt > stoppedAt {
+        // is the exact stale read that caused the burn loop — except a
+        // verdict from moments BEFORE the stop: an account polled alive
+        // seconds earlier cannot have died in between, so that stop is
+        // the old token failing right after a switch (2026-09-03: P5→P6
+        // at :37, the stop at :56, held until the next poll while the
+        // user retyped by hand).
+        if let stoppedAt, let activeFetchedAt,
+           stoppedAt.timeIntervalSince(activeFetchedAt) < freshBeforeStop {
             return true
         }
         // Unknown stop time with no switch: hold. The cooldown alone

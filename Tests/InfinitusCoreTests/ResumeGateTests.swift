@@ -13,6 +13,19 @@ final class ResumeGateTests: XCTestCase {
             lastNudge: nil, now: now))
     }
 
+    func testAliveVerdictMomentsBeforeStopNudges() {
+        // 2026-09-03: switch + fresh poll at :37, the old token's stop at
+        // :56 — the account cannot have died in 19 s; nudge.
+        XCTAssertTrue(ResumeGate.allows(
+            stoppedAt: stop, firstSeenActive: 6, currentActive: 6,
+            activeFetchedAt: Date(timeIntervalSince1970: 981),
+            lastNudge: nil, now: now))
+        XCTAssertFalse(ResumeGate.allows(
+            stoppedAt: stop, firstSeenActive: 6, currentActive: 6,
+            activeFetchedAt: Date(timeIntervalSince1970: 1000 - ResumeGate.freshBeforeStop - 1),
+            lastNudge: nil, now: now))
+    }
+
     func testFreshAliveVerdictAfterStopNudges() {
         XCTAssertTrue(ResumeGate.allows(
             stoppedAt: stop, firstSeenActive: 1, currentActive: 1,
