@@ -26,6 +26,7 @@ struct SessionFeedScreen: View {
     @State private var showFileImporter = false
     @State private var showPhotoPicker = false
     @State private var showCamera = false
+    @FocusState private var composerFocused: Bool
     @State private var previewing: PendingAttachment?
     @State private var attachmentError: String?
 
@@ -65,6 +66,10 @@ struct SessionFeedScreen: View {
                 }
             }
             .listStyle(.plain)
+            // Dragging the feed tucks the keyboard away; so does a tap on
+            // it (user 2026-09-03 from the phone: "I can't hide keyboard").
+            .scrollDismissesKeyboard(.interactively)
+            .simultaneousGesture(TapGesture().onEnded { composerFocused = false })
             .onChange(of: feed?.items.count) { _, _ in
                 guard let last = feed?.items.indices.last else { return }
                 withAnimation { proxy.scrollTo(last, anchor: .bottom) }
@@ -184,7 +189,14 @@ struct SessionFeedScreen: View {
                 .disabled(sendingMessage || attachments.count >= SessionInput.maxAttachments)
                 TextField("Reply…", text: $draft, axis: .vertical)
                     .textFieldStyle(.roundedBorder)
+                    .focused($composerFocused)
                     .disabled(sendingMessage)
+                if composerFocused {
+                    Button { composerFocused = false } label: {
+                        Image(systemName: "keyboard.chevron.compact.down").font(.title3)
+                    }
+                    .accessibilityLabel("Hide keyboard")
+                }
                 Button(action: sendMessage) {
                     if sendingMessage {
                         ProgressView()
