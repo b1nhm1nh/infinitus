@@ -52,6 +52,13 @@ GitHub release body.
   phone through the engine's own push channels and `notify-send`.
 
 ### Fixes
+- **The popup no longer pegs the main thread while an account is in
+  the 90s.** The critical-row pulse re-ran the whole headroom sort on
+  every frame, and each sort built fresh ISO date formatters (an ICU
+  calendar per parse). With one such account the app sat at 80% CPU,
+  the control socket stopped answering and `infinitusctl switch` hung
+  — the e2e's "switch didn't take" flake was this. The sort now runs
+  once per fleet change, and date parsing uses cached formatters.
 - **A refused engine no longer reads as a crash.** The supervisor
   decided crash-vs-refused when the child exited, which could beat the
   pipe delivering its last line under load; it now waits for the pipe

@@ -39,12 +39,12 @@ public enum WeeklyRoll {
     static let periodSeconds: TimeInterval = 7 * 24 * 3600
 
     public static func parse(_ iso: String?) -> Date? {
-        guard let iso else { return nil }
-        let f = ISO8601DateFormatter()
-        f.formatOptions = [.withInternetDateTime]
-        if let d = f.date(from: iso) { return d }
-        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return f.date(from: iso)
+        // Cached formatters: a fresh ISO8601DateFormatter builds an ICU
+        // calendar (~ms), and this runs per account per sort comparison
+        // per frame under the critical overlay — the e2e's demo fleet
+        // saturated the main thread at 80% and starved the control
+        // socket for 15 min (2026-09-03).
+        iso.flatMap(UsageHistory.parseISO)
     }
 
     /// The pct a weekly window should DISPLAY at `now`: 0 once its stored
