@@ -29,7 +29,7 @@ actor MirrorExporter {
     func record(listJSON: Data, prefs: FleetPrefs,
                 serviceStatus: ServiceStatusSummary, engine: EngineBadge,
                 fleets: [EngineFleet] = [], forecast: UsageForecast? = nil,
-                plan: WindowPlanner.Plan? = nil) {
+                plan: WindowPlanner.Plan? = nil, awsLogins: [AwsLogin.Item] = []) {
         guard Date().timeIntervalSince(lastWrite) > minInterval else { return }
         lastWrite = Date()
         let claudeDir = ClaudeSessions.configHome()
@@ -68,7 +68,8 @@ actor MirrorExporter {
             progressByPid: progressByPid,
             fleets: fleets.isEmpty ? nil : fleets,
             tokenRate: TokenRate(perMinute: perMinute, peakPerMinute: tokenPeak),
-            forecast: forecast, plan: plan)
+            forecast: forecast, plan: plan,
+            awsLogins: awsLogins.isEmpty ? nil : awsLogins)
         // Encoded once here rather than inside MirrorWriter so the LAN
         // server hands out the same bytes the file holds.
         let encoder = JSONEncoder()

@@ -59,11 +59,16 @@ public struct SessionProgress: Sendable, Equatable, Codable {
     /// True when the last entry that decides whether work has stopped
     /// (Transcript's notion) is an assistant API-error message.
     public let retrying: Bool
+    /// The AWS profile whose sign-in lapsed, read off the newest tool
+    /// results (`AwsLogin.profile(in:)`); nil when the tail's recent
+    /// results carry no such signature. New optional field.
+    public let awsLoginProfile: String?
 
     public init(lastActivityAt: Date? = nil, nowDoing: String? = nil, todos: Todos? = nil,
                 title: String? = nil, goal: String? = nil, phase: String? = nil,
                 name: String? = nil, gitBranch: String? = nil, model: String? = nil,
-                outputTokens: Int = 0, recentOutputTokens: Int? = nil, retrying: Bool = false) {
+                outputTokens: Int = 0, recentOutputTokens: Int? = nil, retrying: Bool = false,
+                awsLoginProfile: String? = nil) {
         self.lastActivityAt = lastActivityAt
         self.nowDoing = nowDoing
         self.todos = todos
@@ -76,6 +81,7 @@ public struct SessionProgress: Sendable, Equatable, Codable {
         self.outputTokens = outputTokens
         self.recentOutputTokens = recentOutputTokens
         self.retrying = retrying
+        self.awsLoginProfile = awsLoginProfile
     }
 
     /// Parses a tail of JSONL lines (oldest→newest). Tolerant of a torn
@@ -173,11 +179,51 @@ public struct SessionProgress: Sendable, Equatable, Codable {
             if gitBranch != nil, model != nil { break }
         }
 
+        // AWS sign-in lapsed? Only the newest tool results count: once the
+        // session moves on the signature scrolls out and the need clears.
+        // The session need not call `aws login` in any particular way: any
+        // aws command that fails with the CLI's expired-session error (or
+        // the cred broker's "Fix:" line) is the signal. When the error
+        // names no profile, the failed command's own --profile /
+        // AWS_PROFILE does (found by tool_use_id).
+        var awsLoginProfile: String?
+        let recent = Array(entries.suffix(awsLoginScanEntries))
+        func command(forToolUse id: String) -> String? {
+            for entry in recent {
+                guard let message = entry["message"] as? [String: Any],
+                      let content = message["content"] as? [[String: Any]] else { continue }
+                for block in content where (block["type"] as? String) == "tool_use" && (block["id"] as? String) == id {
+                    return (block["input"] as? [String: Any])?["command"] as? String
+                }
+            }
+            return nil
+        }
+        scan: for entry in recent.reversed() {
+            guard let message = entry["message"] as? [String: Any],
+                  let content = message["content"] as? [[String: Any]] else { continue }
+            for block in content where (block["type"] as? String) == "tool_result" {
+                let text: String
+                if let s = block["content"] as? String {
+                    text = s
+                } else if let parts = block["content"] as? [[String: Any]] {
+                    text = parts.compactMap { $0["text"] as? String }.joined(separator: "\n")
+                } else { continue }
+                guard let profile = AwsLogin.profile(in: text) else { continue }
+                if profile == "default", let id = block["tool_use_id"] as? String,
+                   let cmd = command(forToolUse: id), let named = AwsLogin.profile(inCommand: cmd) {
+                    awsLoginProfile = named
+                } else {
+                    awsLoginProfile = profile
+                }
+                break scan
+            }
+        }
+
         return SessionProgress(lastActivityAt: lastActivityAt, nowDoing: nowDoing, todos: todos,
                                 title: title, goal: goal(lines: lines), phase: phase(entries: entries),
                                 gitBranch: gitBranch, model: model,
                                 outputTokens: outputTokens, recentOutputTokens: recentOutputTokens,
-                                retrying: retrying)
+                                retrying: retrying, awsLoginProfile: awsLoginProfile)
     }
 
     static let phaseWindow = 24
@@ -296,6 +342,9 @@ public struct SessionProgress: Sendable, Equatable, Codable {
     /// Reads the tail of `<claudeDir>/projects/<slug>/<sessionId>.jsonl`
     /// (same path and tail-read approach as `Transcript.lastTurnEntry`)
     /// and parses it.
+    /// How many tail entries the AWS sign-in signature is looked for in.
+    static let awsLoginScanEntries = 12
+
     public static func read(sessionId: String, cwd: String, claudeDir: URL,
                              name: String? = nil, maxBytes: Int = 512 * 1024) -> SessionProgress {
         let url = Transcript.path(cwd: cwd, sessionId: sessionId, claudeDir: claudeDir)
@@ -306,7 +355,8 @@ public struct SessionProgress: Sendable, Equatable, Codable {
                              goal: headGoal ?? progress.goal, phase: progress.phase, name: name,
                              gitBranch: progress.gitBranch, model: progress.model,
                              outputTokens: progress.outputTokens,
-                             recentOutputTokens: progress.recentOutputTokens, retrying: progress.retrying)
+                             recentOutputTokens: progress.recentOutputTokens, retrying: progress.retrying,
+                             awsLoginProfile: progress.awsLoginProfile)
         }
         guard let handle = try? FileHandle(forReadingFrom: url) else { return withGoal(parse(lines: [])) }
         defer { try? handle.close() }

@@ -41,6 +41,25 @@ GitHub release body.
   Kiro connections goes through 9Router's priority like Claude's, though
   9Router routes Kiro traffic itself — the row is there for the stats.
 
+### AWS sign-in from the phone
+- **Sessions that need `aws login` get one.** When a session's newest
+  tool result carries the expired-session signature ("Please
+  reauthenticate using 'aws login'", the cred broker's "Fix: aws login
+  --profile …"), the popup shows "🔐 <session> needs AWS login
+  (<profile>)" and the phone gets the same item. Start it from the
+  phone: Infinitus runs `aws login` on the Mac with the phone as the
+  browser — the phone's web view intercepts the CLI's localhost
+  callback and hands it back, so there is no code to read or type
+  (SSO profiles take the device-code flow; `aws login --remote` with a
+  pasted code stays as a fallback). Once the CLI reports success the
+  session gets "AWS login for profile … completed, retry and continue"
+  over the same channel the phone's replies use. Any failing aws
+  command is the trigger; sessions need not call `aws login` at all.
+  "Log in here" on the Mac runs the normal browser flow instead. The
+  code goes straight into the CLI's stdin — never logged or stored;
+  Infinitus never reads the AWS credential caches. `infinitusctl
+  aws-logins` / `aws-login <profile> [--local]` / `aws-login-code`.
+
 ### Prediction model
 - **"At this pace" line in the popup.** Below the account rows: when
   each window of the active account hits its limit at the measured burn

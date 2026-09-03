@@ -41,6 +41,9 @@ public struct MirrorSnapshot: Codable, Sendable {
     /// phone's store hands it straight to the shared BattlePlanLine.
     public let forecast: UsageForecast?
     public let plan: WindowPlanner.Plan?
+    /// Sessions whose AWS sign-in lapsed, with any login in flight
+    /// (AwsLogin.swift, 2026-09-03). Additive optional.
+    public let awsLogins: [AwsLogin.Item]?
 
     public init(capturedAt: Date, machineName: String, listJSON: Data,
                 sessions: [SessionPanelRow], prefs: FleetPrefs? = nil,
@@ -51,7 +54,8 @@ public struct MirrorSnapshot: Codable, Sendable {
                 fleets: [EngineFleet]? = nil,
                 tokenRate: TokenRate? = nil,
                 forecast: UsageForecast? = nil,
-                plan: WindowPlanner.Plan? = nil) {
+                plan: WindowPlanner.Plan? = nil,
+                awsLogins: [AwsLogin.Item]? = nil) {
         self.capturedAt = capturedAt
         self.machineName = machineName
         self.listJSON = listJSON
@@ -65,6 +69,7 @@ public struct MirrorSnapshot: Codable, Sendable {
         self.tokenRate = tokenRate
         self.forecast = forecast
         self.plan = plan
+        self.awsLogins = awsLogins
     }
 }
 

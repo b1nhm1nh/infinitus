@@ -60,6 +60,10 @@ public protocol FleetModel: ObservableObject {
     /// Run-rate projection (when each window of the active account hits
     /// its limit, when the fleet is out); nil on a host without one.
     var forecast: UsageForecast? { get }
+    /// AWS sign-ins sessions are waiting on (AwsLogin.swift); the popup
+    /// line offers this host's own browser flow.
+    var awsLogins: [AwsLogin.Item] { get }
+    func startAwsLogin(profile: String, pid: Int?, local: Bool)
     /// Open the full forecast (the Mac's Utilization pane, the phone's
     /// Outlook screen) — the "at this pace" line is a link to it.
     func openForecast()
@@ -118,6 +122,8 @@ public extension FleetModel {
     var igniting: Int? { nil }
     var canIgnite: Bool { false }
     var forecast: UsageForecast? { nil }
+    var awsLogins: [AwsLogin.Item] { [] }
+    func startAwsLogin(profile: String, pid: Int?, local: Bool) {}
     func openForecast() {}
     func ignite(_ number: Int) {}
     func addAccount() {}

@@ -80,6 +80,42 @@ final class MirrorActivityTokenBox: @unchecked Sendable {
 /// the connection handlers call it from the network queue. `nil` means
 /// "no such pid" (404); the closure itself does the PTY/socket delivery
 /// and its own logging.
+/// AWS sign-in from the phone (AwsLogin.swift): start / code handlers.
+final class MirrorAwsLoginBox: @unchecked Sendable {
+    private let lock = NSLock()
+    private var start: (@Sendable (AwsLogin.StartRequest) async -> AwsLogin.Reply)?
+    private var code: (@Sendable (AwsLogin.CodeRequest) async -> AwsLogin.Reply)?
+    private var callback: (@Sendable (AwsLogin.CallbackRequest) async -> AwsLogin.Reply)?
+
+    func set(start: @escaping @Sendable (AwsLogin.StartRequest) async -> AwsLogin.Reply,
+             code: @escaping @Sendable (AwsLogin.CodeRequest) async -> AwsLogin.Reply,
+             callback: @escaping @Sendable (AwsLogin.CallbackRequest) async -> AwsLogin.Reply) {
+        lock.lock(); self.start = start; self.code = code; self.callback = callback; lock.unlock()
+    }
+
+    private func handlers() -> ((@Sendable (AwsLogin.StartRequest) async -> AwsLogin.Reply)?,
+                                (@Sendable (AwsLogin.CodeRequest) async -> AwsLogin.Reply)?,
+                                (@Sendable (AwsLogin.CallbackRequest) async -> AwsLogin.Reply)?) {
+        lock.lock(); defer { lock.unlock() }
+        return (start, code, callback)
+    }
+
+    func callCallback(_ r: AwsLogin.CallbackRequest) async -> AwsLogin.Reply? {
+        guard let f = handlers().2 else { return nil }
+        return await f(r)
+    }
+
+    func callStart(_ r: AwsLogin.StartRequest) async -> AwsLogin.Reply? {
+        guard let f = handlers().0 else { return nil }
+        return await f(r)
+    }
+
+    func callCode(_ r: AwsLogin.CodeRequest) async -> AwsLogin.Reply? {
+        guard let f = handlers().1 else { return nil }
+        return await f(r)
+    }
+}
+
 final class MirrorSessionInputBox: @unchecked Sendable {
     private let lock = NSLock()
     private var provider: (@Sendable (Int32, SessionInput.Request) -> SessionInput.Reply?)?
@@ -128,6 +164,7 @@ final class MirrorServer: ObservableObject {
     /// Answers `POST /sessions/<pid>/input` (#17 layer 2); set by AppModel
     /// once at start.
     let sessionInput = MirrorSessionInputBox()
+    let awsLogin = MirrorAwsLoginBox()
     /// Event-log sink (icon, text), set by AppModel.
     var log: ((String, String) -> Void)?
     /// Fires with the bound port once the listener is up — the quick
@@ -180,6 +217,7 @@ final class MirrorServer: ObservableObject {
         let sessionFeed = self.sessionFeed
         let sessionInput = self.sessionInput
         let activityTokens = self.activityTokens
+        let awsLogin = self.awsLogin
         let served: @Sendable (MirrorTransport.Request) -> Void = { [weak self] request in
             let client = MirrorClient(request: request)
             Task { @MainActor in
@@ -191,7 +229,7 @@ final class MirrorServer: ObservableObject {
         listener.newConnectionHandler = { [queue] connection in
             Self.serve(connection, payload: payload, token: token, sessionFeed: sessionFeed,
                        sessionInput: sessionInput, activityTokens: activityTokens,
-                       queue: queue, onServed: served)
+                       awsLogin: awsLogin, queue: queue, onServed: served)
         }
         listener.stateUpdateHandler = { [weak self] state in
             Task { @MainActor in self?.handle(state, wasFixedPort: rawPort != 0, name: name) }
@@ -236,12 +274,13 @@ final class MirrorServer: ObservableObject {
                                           sessionFeed: MirrorSessionFeedBox,
                                           sessionInput: MirrorSessionInputBox,
                                           activityTokens: MirrorActivityTokenBox,
+                                          awsLogin: MirrorAwsLoginBox,
                                           queue: DispatchQueue,
                                           onServed: @escaping @Sendable (MirrorTransport.Request) -> Void) {
         connection.start(queue: queue)
         receive(connection, buffer: Data(), payload: payload, token: token,
                sessionFeed: sessionFeed, sessionInput: sessionInput,
-               activityTokens: activityTokens, onServed: onServed)
+               activityTokens: activityTokens, awsLogin: awsLogin, onServed: onServed)
     }
 
     private nonisolated static func receive(_ connection: NWConnection,
@@ -251,6 +290,7 @@ final class MirrorServer: ObservableObject {
                                             sessionFeed: MirrorSessionFeedBox,
                                             sessionInput: MirrorSessionInputBox,
                                             activityTokens: MirrorActivityTokenBox,
+                                            awsLogin: MirrorAwsLoginBox,
                                             onServed: @escaping @Sendable (MirrorTransport.Request) -> Void) {
         connection.receive(minimumIncompleteLength: 1, maximumLength: 4096) {
             data, _, isComplete, error in
@@ -322,6 +362,33 @@ final class MirrorServer: ObservableObject {
                         response = MirrorTransport.badRequestResponse()
                     }
                 } else if request.method == "POST",
+                          [AwsLogin.startPath, AwsLogin.codePath, AwsLogin.callbackPath].contains(request.path) {
+                    // The code / callback never leaves this path: decoded,
+                    // handed to the runner, gone. Async: the reply waits
+                    // for the runner actor, so it runs off this queue.
+                    let decoder = JSONDecoder()
+                    let startBody = request.path == AwsLogin.startPath ? try? decoder.decode(AwsLogin.StartRequest.self, from: request.body) : nil
+                    let codeBody = request.path == AwsLogin.codePath ? try? decoder.decode(AwsLogin.CodeRequest.self, from: request.body) : nil
+                    let callbackBody = request.path == AwsLogin.callbackPath ? try? decoder.decode(AwsLogin.CallbackRequest.self, from: request.body) : nil
+                    guard startBody != nil || codeBody != nil || callbackBody != nil else {
+                        connection.send(content: MirrorTransport.badRequestResponse(),
+                                        completion: .contentProcessed { _ in connection.cancel() })
+                        return
+                    }
+                    Task {
+                        let reply: AwsLogin.Reply?
+                        if let startBody { reply = await awsLogin.callStart(startBody) }
+                        else if let codeBody { reply = await awsLogin.callCode(codeBody) }
+                        else if let callbackBody { reply = await awsLogin.callCallback(callbackBody) }
+                        else { reply = nil }
+                        let response = reply.flatMap { try? JSONEncoder().encode($0) }
+                            .map(MirrorTransport.jsonResponse) ?? MirrorTransport.notFoundResponse()
+                        onServed(request)
+                        connection.send(content: response,
+                                        completion: .contentProcessed { _ in connection.cancel() })
+                    }
+                    return
+                } else if request.method == "POST",
                           request.path == MirrorTransport.activityTokenPath {
                     let decoder = JSONDecoder()
                     decoder.dateDecodingStrategy = .iso8601
@@ -348,7 +415,7 @@ final class MirrorServer: ObservableObject {
             }
             receive(connection, buffer: buffer, payload: payload, token: token,
                    sessionFeed: sessionFeed, sessionInput: sessionInput,
-                   activityTokens: activityTokens, onServed: onServed)
+                   activityTokens: activityTokens, awsLogin: awsLogin, onServed: onServed)
         }
     }
 }

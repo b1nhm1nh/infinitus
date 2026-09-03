@@ -1,4 +1,5 @@
 import Foundation
+import Combine
 import SwiftUI
 import AppKit
 import InfinitusCore
@@ -119,6 +120,13 @@ final class AppModel: ObservableObject {
     /// limits and when the fleet is out, at the measured pace (nil until
     /// there is an active account). The planner reads the same rates.
     @Published var forecast: UsageForecast?
+    /// Sessions whose AWS sign-in lapsed + logins in flight (AwsLogin.swift).
+    @Published var awsLogins: [AwsLogin.Item] = []
+    private var awsLoginStates: [AwsLogin.State] = []
+    private var awsLoginNeedsWatch: AnyCancellable?
+    private(set) lazy var awsLoginRunner = AwsLoginRunner(
+        onChange: { [weak self] states in Task { @MainActor in self?.awsLoginStates = states; self?.rebuildAwsLogins() } },
+        onDone: { [weak self] state in Task { @MainActor in self?.awsLoginLanded(state) } })
     /// Last 24h of usage samples, the burn-rate input (5h pace over the
     /// last hour, weekly pace over the day). Seeded from this machine's
     /// history file at launch so the first plan doesn't wait ten minutes
@@ -850,6 +858,23 @@ final class AppModel: ObservableObject {
             encoder.dateEncodingStrategy = .iso8601
             return try? encoder.encode(feed)
         }
+        mirrorServer.awsLogin.set(
+            start: { [weak self] request in
+                guard let self else { return AwsLogin.Reply(ok: false, error: "app gone") }
+                return await self.startAwsLogin(profile: request.profile, pid: request.pid,
+                                                local: request.local ?? false, remote: request.remote ?? false)
+            },
+            code: { [weak self] request in
+                guard let self else { return AwsLogin.Reply(ok: false, error: "app gone") }
+                return await self.submitAwsLoginCode(profile: request.profile, code: request.code)
+            },
+            callback: { [weak self] request in
+                guard let self else { return AwsLogin.Reply(ok: false, error: "app gone") }
+                return await self.awsLoginRunner.relay(profile: request.profile, url: request.url)
+            })
+        awsLoginNeedsWatch = sessionProgress.$byPid
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in self?.rebuildAwsLogins() }
         mirrorServer.sessionInput.set { [weak self] pid, request in
             let claudeDir = ClaudeSessions.configHome()
             guard let record = ClaudeSessions.list(claudeDir: claudeDir).first(where: { $0.pid == pid })
@@ -876,6 +901,74 @@ final class AppModel: ObservableObject {
     }
 
     /// Every phone-injected input is logged, per #17 — success or not.
+    // MARK: AWS sign-in from the phone (AwsLogin.swift)
+
+    /// Needs come from the sessions' transcript tails (SessionProgress
+    /// .awsLoginProfile); a finished login for a profile that no session
+    /// needs any more is dropped so the line clears itself.
+    private func rebuildAwsLogins() {
+        let configText = (try? String(contentsOf: AwsLogin.defaultConfigURL(), encoding: .utf8)) ?? ""
+        let byProfile = Dictionary(awsLoginStates.map { ($0.profile, $0) }, uniquingKeysWith: { a, _ in a })
+        var items: [AwsLogin.Item] = []
+        var needed = Set<String>()
+        for (pid, progress) in sessionProgress.byPid.sorted(by: { $0.key < $1.key }) {
+            guard let profile = progress.awsLoginProfile else { continue }
+            needed.insert(profile)
+            let label = progress.name ?? liveSessions?.sessions?.first { $0.pid == pid }
+                .map { URL(fileURLWithPath: $0.cwd).lastPathComponent }
+            items.append(AwsLogin.Item(profile: profile,
+                                       flow: AwsLogin.flow(profile: profile, configText: configText),
+                                       pid: pid, sessionLabel: label, state: byProfile[profile]))
+        }
+        // Logins started by hand (no session asked) still show while they run.
+        for state in awsLoginStates where !needed.contains(state.profile) && state.phase != .done {
+            items.append(AwsLogin.Item(profile: state.profile, flow: state.flow, pid: state.pid,
+                                       sessionLabel: nil, state: state))
+        }
+        if items != awsLogins { awsLogins = items }
+    }
+
+    func startAwsLogin(profile: String, pid: Int?, local: Bool, remote: Bool = false) async -> AwsLogin.Reply {
+        guard !isPlayground, !mockMode else { return AwsLogin.Reply(ok: false, error: "not in a demo instance") }
+        let configText = (try? String(contentsOf: AwsLogin.defaultConfigURL(), encoding: .utf8)) ?? ""
+        var flow: AwsLogin.Flow = local ? .local : AwsLogin.flow(profile: profile, configText: configText)
+        if remote, flow == .relay { flow = .remote }
+        let reply = await awsLoginRunner.start(profile: profile, flow: flow, pid: pid)
+        logMirrorInput(reply.ok ? "🔐" : "⚠️",
+                       reply.ok ? "aws login started for \(profile) (\(flow.rawValue))"
+                                : "aws login for \(profile): \(reply.error ?? "failed")")
+        return reply
+    }
+
+    /// FleetModel's fire-and-forget form (the popup button).
+    func startAwsLogin(profile: String, pid: Int?, local: Bool) {
+        Task { _ = await startAwsLogin(profile: profile, pid: pid, local: local) }
+    }
+
+    func submitAwsLoginCode(profile: String, code: String) async -> AwsLogin.Reply {
+        await awsLoginRunner.submit(profile: profile, code: code)
+    }
+
+    /// The login landed: tell the session that needed it to carry on —
+    /// the phone's own message path, so it works wherever replies do.
+    private func awsLoginLanded(_ state: AwsLogin.State) {
+        logMirrorInput("🔐", "aws login for \(state.profile) signed in")
+        guard let pid = state.pid ?? sessionProgress.byPid.first(where: { $0.value.awsLoginProfile == state.profile })?.key
+        else { return }
+        let text = AwsLogin.continueMessage(profile: state.profile, fromPhone: state.flow != .local)
+        let request = SessionInput.Request(kind: .message, text: text)
+        Task.detached(priority: .utility) { [weak self] in
+            let claudeDir = ClaudeSessions.configHome()
+            guard let record = ClaudeSessions.list(claudeDir: claudeDir).first(where: { Int($0.pid) == pid }) else { return }
+            let reply = SessionInput.deliver(request: request, record: record,
+                                             hosts: PtyHosts.available(), claudeDir: claudeDir)
+            await MainActor.run { [weak self] in
+                self?.logMirrorInput(reply.outcome == "delivered" ? "📲" : "⚠️",
+                                     "session \(pid) nudged after aws login: \(reply.outcome)")
+            }
+        }
+    }
+
     private func logMirrorInput(_ icon: String, _ text: String) {
         eventLog.append(EventEntry(icon: icon, text: text))
         if eventLog.count > 100 { eventLog.removeFirst(eventLog.count - 100) }
@@ -1369,6 +1462,7 @@ final class AppModel: ObservableObject {
             let allFleets = fleets.compactMap(\.lastFleet)
             let forecast = forecast
             let plan = battlePlan
+            let awsLogins = awsLogins
             // The footer's ⚡ tokens/minute needs the transcripts read even
             // with the sessions card closed (user 2026-09-03 "display
             // toks/m on bottom right status"): busy sessions only, and
@@ -1387,7 +1481,8 @@ final class AppModel: ObservableObject {
                 await mirrorExporter.record(listJSON: raw, prefs: prefs,
                                             serviceStatus: serviceStatus,
                                             engine: engine, fleets: allFleets,
-                                            forecast: forecast, plan: plan)
+                                            forecast: forecast, plan: plan,
+                                            awsLogins: awsLogins)
             }
         }
         // All-limited: count the limit-stopped sessions waiting to be
