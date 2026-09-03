@@ -103,6 +103,11 @@ Native macOS menu bar app for the claude-swap engine. Split out of
   `git merge` into main → rebuild → relaunch → push. Never edit the
   other session's tree; in either tree stage by explicit path.
 
+## Release
+- Every release updates **site/** (infinitus.run) and the **GitHub
+  README** with the new features so app, site and README stay in sync
+  (user 2026-09-03). Do it in the release commit, not after.
+
 ## Build / run / test
 `./make-app.sh && open Infinitus.app` · `swift test` · `./dev.sh` (entr)
 · `./run-unbundled.sh` (menu bar wedge workaround).

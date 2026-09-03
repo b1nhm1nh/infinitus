@@ -138,6 +138,23 @@ file keeps the shipped log and the deferred-by-design notes.
   - Phone fix regardless of route: a dead tunnel URL should be dropped
     or demoted (not retried first every poll) once a sibling route
     answers; and the Settings status should say WHICH route failed.
+- Phone session screen asks (user 2026-09-03 evening, after the first
+  real 5G use — "session communications on iOS work great"):
+  - ~~tool chips combined into one~~ → 5cf4bbf; ~~mid-turn prompts
+    missing~~ → 9bba207; ~~cross-session tag shown raw~~ → a73219b;
+    ~~markdown bubbles~~ → 1328cec; ~~session names~~ + metadata line →
+    af6aa53.
+  - Attachments: phone sends an image/file with a message (design: POST
+    body carries `attachments: [{name, mime, base64}]`, Mac saves under
+    App Support/Infinitus/attachments/<uuid>.<ext> and appends the path
+    to the typed/socketed message so Claude Code reads it; size cap).
+  - Feed header: which account is active for the session (cswap: the
+    fleet's active account; CLIProxyAPI: per-request routing, so show the
+    strategy + the accounts it can land on), its 5h/7d limits, and a
+    detail screen on tapping the title (session metadata + account/limits).
+- Release process (user 2026-09-03): every release must update the
+  website (site/) and the GitHub README with the new features so the
+  three stay in sync — added to CLAUDE.md as a rule.
 - #13 Session progress tracking — watch agents, not accounts
       (zero-token transcript parsing + optional Claude narration;
       brainstorm in docs/research/session-progress.md)
