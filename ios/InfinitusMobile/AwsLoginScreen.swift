@@ -27,6 +27,8 @@ final class AwsLoginFlow: ObservableObject {
     @Published var busy = false
     /// Relay: the callback was posted; the CLI is finishing.
     @Published var relayed = false
+    /// Relay: the page asked for a passkey the web view can't serve.
+    @Published var passkeyWall = false
     private var poll: Task<Void, Never>?
 
     init(item: AwsLogin.Item) {
@@ -41,10 +43,15 @@ final class AwsLoginFlow: ObservableObject {
     var flow: AwsLogin.Flow { state?.flow ?? item.flow }
     var finished: Bool { state?.phase == .done || state?.phase == .failed }
 
-    func start(remote: Bool = false) {
+    /// The code flow is the phone's default: the relay's WKWebView has
+    /// no WebAuthn (that needs the web-browser entitlement), so a
+    /// passkey MFA can never finish in it — the user hit exactly that
+    /// (2026-09-03). Safari handles passkeys; the code is one paste.
+    func start(remote: Bool = true) {
         busy = true
         error = nil
         relayed = false
+        passkeyWall = false
         Task {
             await post(AwsLogin.StartRequest(profile: profile, pid: item.pid, remote: remote ? true : nil))
             busy = false
@@ -161,6 +168,12 @@ struct AwsLoginScreen: View {
                     Text(flowBlurb)
                         .font(.footnote).foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
+                    if flow.item.flow == .relay {
+                        Button("Sign in here instead (no code, but no passkeys)") {
+                            flow.start(remote: false)
+                        }
+                        .font(.footnote)
+                    }
                 }
                 errorLine
             }
@@ -178,10 +191,10 @@ struct AwsLoginScreen: View {
     }
 
     private var flowBlurb: String {
-        switch flow.flow {
-        case .relay, .local: return "The sign-in page opens right here; nothing to copy."
+        switch flow.item.flow {
         case .deviceCode: return "You'll get a short code to enter on the AWS page."
-        case .remote: return "After signing in, AWS shows a code to paste back here."
+        case .relay, .local, .remote:
+            return "The AWS page opens in Safari (passkeys work there); it ends with a code to paste back here."
         }
     }
 
@@ -218,21 +231,33 @@ struct AwsLoginScreen: View {
                 .frame(maxWidth: .infinity)
                 .padding(10)
                 .background(.thinMaterial)
+            } else if flow.passkeyWall {
+                HStack(spacing: 8) {
+                    Image(systemName: "person.badge.key.fill").foregroundStyle(.orange)
+                    Text("This sign-in needs a passkey, which only Safari can do here.")
+                        .font(.footnote)
+                    Spacer(minLength: 8)
+                    Button("Use a code") { flow.start(remote: true) }
+                        .buttonStyle(.borderedProminent).controlSize(.small)
+                }
+                .padding(10)
+                .background(Color.orange.opacity(0.15))
             } else {
                 HStack(spacing: 8) {
-                    Text("Sign in below. The final redirect goes to the Mac automatically.")
+                    Text("Sign in below; the final redirect goes to the Mac by itself. "
+                         + "Passkey or trouble? Switch to Safari and a code.")
                         .font(.footnote).foregroundStyle(.secondary)
                     Spacer(minLength: 8)
-                    Button("Trouble? Use a code") { flow.start(remote: true) }
+                    Button("Use a code") { flow.start(remote: true) }
                         .font(.footnote)
                 }
                 .padding(10)
                 .background(.thinMaterial)
             }
             errorLine.padding(.horizontal)
-            RelayWebView(url: url, callbackPort: state.callbackPort) { intercepted in
-                flow.relay(intercepted)
-            }
+            RelayWebView(url: url, callbackPort: state.callbackPort,
+                         onCallback: { flow.relay($0) },
+                         onPasskeyWall: { flow.passkeyWall = true })
             .opacity(flow.relayed ? 0.35 : 1)
         }
     }
@@ -267,7 +292,7 @@ struct AwsLoginScreen: View {
 
     private func remoteView(state: AwsLogin.State, url: URL) -> some View {
         VStack(spacing: 18) {
-            Text("Sign in on the AWS page; it ends with an authorization code. Paste it here.")
+            Text("Sign in on the AWS page (it opens in Safari, so passkeys work); it ends with an authorization code. Paste it here.")
                 .multilineTextAlignment(.center)
             Button { showSafari = true } label: {
                 Label("Open sign-in page", systemImage: "safari")
@@ -301,6 +326,8 @@ private struct RelayWebView: UIViewRepresentable {
     let url: URL
     let callbackPort: Int?
     let onCallback: (URL) -> Void
+    /// The page reports a passkey step the web view cannot serve.
+    let onPasskeyWall: () -> Void
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
 
@@ -334,6 +361,20 @@ private struct RelayWebView: UIViewRepresentable {
                 return
             }
             decisionHandler(.allow)
+        }
+
+        /// Passkey walls read like "canceled the passkey authentication
+        /// process" / "Additional verification required" — the WebAuthn
+        /// call fails at once without the browser entitlement.
+        func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+            webView.evaluateJavaScript("document.body ? document.body.innerText : ''") { [weak self] result, _ in
+                guard let text = (result as? String)?.lowercased() else { return }
+                if text.contains("canceled the passkey") || text.contains("cancelled the passkey")
+                    || text.contains("passkey authentication process")
+                    || text.contains("additional verification required") {
+                    self?.parent.onPasskeyWall()
+                }
+            }
         }
 
         private func isCallback(_ url: URL) -> Bool {
