@@ -154,6 +154,21 @@ public enum AwsLogin {
         "fix: aws login",
         "run: aws login",
         "please run: aws login",
+        // A login attempt that lapsed before it finished, and a login-
+        // session token past its life (past transcripts, 2026-09-03).
+        "pending authorization to retrieve an sso token has expired",
+        "the security token included in the request is expired",
+    ]
+
+    /// The failure must OPEN an output line: the CLI and the broker print
+    /// theirs at column 0, while the same words quoted from a source file,
+    /// a grep hit or a Read (line-numbered, indented) don't — the sessions
+    /// working on this very feature lit up as needing a login (2026-09-03).
+    static let expiredLineStarts = [
+        "aws: [error]",
+        "[aws-cred-broker]",
+        "error when retrieving token from sso",
+        "the sso session",
     ]
 
     /// The profile a transcript excerpt says needs a login, or nil when
@@ -161,7 +176,10 @@ public enum AwsLogin {
     /// signature names no profile.
     public static func profile(in text: String) -> String? {
         let lower = text.lowercased()
-        guard expiredMarkers.contains(where: { lower.contains($0) }) else { return nil }
+        guard expiredMarkers.contains(where: { lower.contains($0) }),
+              lower.split(separator: "\n", omittingEmptySubsequences: true).contains(where: { line in
+                  expiredLineStarts.contains { line.hasPrefix($0) }
+              }) else { return nil }
         let pattern = #"aws (?:sso )?login(?: --remote)?(?: --profile[ =]([A-Za-z0-9._-]+))"#
         if let re = try? NSRegularExpression(pattern: pattern),
            let m = re.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)),
@@ -248,7 +266,25 @@ public enum AwsLogin {
         public var wantsCode = false
         /// The CLI printed its success line.
         public var succeeded = false
+        /// The CLI is asking whether to rebind the profile to the account
+        /// the browser signed into (`Profile X is already configured to
+        /// use session <arn>. Do you want to overwrite it … (y/n)`). The
+        /// runner answers no — a silent rebind is how a profile ends up
+        /// on the wrong account (the user's standing rule) — and fails
+        /// the login with this message.
+        public var rebindRefusal: String?
         public init() {}
+    }
+
+    static func rebindRefusal(line: String) -> String {
+        let accounts = (try? NSRegularExpression(pattern: #"arn:aws:iam::(\d+):"#))
+            .map { re in re.matches(in: line, range: NSRange(line.startIndex..., in: line))
+                .compactMap { Range($0.range(at: 1), in: line).map { String(line[$0]) } } } ?? []
+        let profile = line.split(separator: " ").dropFirst().first.map(String.init) ?? "the profile"
+        if accounts.count >= 2 {
+            return "\(profile) is bound to account \(accounts[0]) but you signed in to \(accounts[1]) — not rebound; sign in to the right account and retry"
+        }
+        return "\(profile) is bound to another account — not rebound; sign in to the right account and retry"
     }
 
     public static func parseOutput(_ text: String) -> Prompt {
@@ -266,6 +302,10 @@ public enum AwsLogin {
             if line.lowercased().hasPrefix("enter the authorization code") { p.wantsCode = true }
             if line.hasPrefix("Updated profile") || line.lowercased().hasPrefix("successfully logged into") {
                 p.succeeded = true
+            }
+            if p.rebindRefusal == nil, line.lowercased().contains("already configured to use session"),
+               line.lowercased().contains("overwrite") {
+                p.rebindRefusal = rebindRefusal(line: line)
             }
         }
         return p

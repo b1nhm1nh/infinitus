@@ -1471,10 +1471,14 @@ final class AppModel: ObservableObject {
             let awsLogins = awsLogins
             // The footer's ⚡ tokens/minute needs the transcripts read even
             // with the sessions card closed (user 2026-09-03 "display
-            // toks/m on bottom right status"): busy sessions only, and
-            // the model skips any transcript whose size+mtime held still.
+            // toks/m on bottom right status"). Every listed session, not
+            // just the busy ones: a session that hit the expired AWS
+            // sign-in has STOPPED on it and is idle by the time the scan
+            // runs (the aws-login sim never surfaced, 2026-09-03). Idle
+            // ones cost a stat each — the model skips any transcript
+            // whose size+mtime held still.
             if let live = primary.lastFleet?.liveSessions?.sessions {
-                sessionProgress.refresh(sessions: live.filter { $0.status == "busy" })
+                sessionProgress.refresh(sessions: live)
             }
             if let primaryFleet = primary.lastFleet {
                 liveActivityPusher.tick(fleet: primaryFleet,
