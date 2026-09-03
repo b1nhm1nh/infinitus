@@ -18,7 +18,7 @@ func usage() -> String {
         out += "\n"
     }
     out += "\nFleet keys come from `infinitusctl fleets` (e.g. cswap/claude, cliproxy/claude).\n"
-    out += "proxy-key reads the management key from stdin.\n"
+    out += "proxy-key and 9router-password read their secret from stdin.\n"
     out += "Socket: \(ControlProtocol.socketURL().path)\n"
     return out
 }
@@ -53,7 +53,7 @@ while i < args.count {
 }
 
 var secret: String?
-if command == "proxy-key" {
+if command == "proxy-key" || command == "9router-password" {
     let data = FileHandle.standardInput.readDataToEndOfFile()
     secret = String(decoding: data, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
 }
