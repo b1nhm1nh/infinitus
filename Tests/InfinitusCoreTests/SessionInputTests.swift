@@ -81,7 +81,15 @@ final class SessionInputTests: XCTestCase {
         XCTAssertEqual(reply, .init(outcome: "delivered", channel: "pty"))
     }
 
-    func testMessageFallsToSocketWhenNoSurface() {
+    func testMessageWithASocketIsNeverTyped() {
+        let h = host(["> ", "> hi there"])
+        let reply = deliver(.init(kind: .message, text: "hi\nthere"), hosts: [h],
+                            socket: "/tmp/x.sock", socketSend: { _, text in text == "hi\nthere" })
+        XCTAssertEqual(reply, .init(outcome: "delivered", channel: "socket"))
+        XCTAssertEqual(h.commands, [], "line breaks kept, terminal untouched")
+    }
+
+    func testMessageGoesToSocketWhenNoSurface() {
         var sent: (ClaudeSessionRecord, String)?
         let reply = deliver(.init(kind: .message, text: "hi there"), hosts: [],
                             socket: "/tmp/x.sock", socketSend: { record, text in

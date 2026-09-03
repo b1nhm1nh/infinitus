@@ -154,8 +154,14 @@ public struct CmuxHost: PtyHost {
         }
     }
 
+    /// Text and Enter as two calls, like the tmux/herdr hosts: a CR
+    /// inside `send` text reaches the app as pasted input, and Claude
+    /// Code runs with bracketed paste on, so the CR lands as a newline in
+    /// the prompt instead of submitting it (#5: nudge typed, never sent).
+    /// `send-key enter` is a key event, delivered outside the paste.
     public func sendLine(_ ref: String, _ text: String) throws {
-        _ = try runner(binary, ["send", "--surface", ref, "--", text + "\r"])
+        _ = try runner(binary, ["send", "--surface", ref, "--", text])
+        _ = try runner(binary, ["send-key", "--surface", ref, "enter"])
     }
 
     public func sendEsc(_ ref: String) throws {

@@ -54,9 +54,9 @@ extension SessionInput {
         return true
     }
 
-    /// Delivers one phone-sent input into the session's terminal (or, for
-    /// a message, its peer socket) — the send side of layer 1's read-only
-    /// feed. `hosts`/`claudeDir` come from the same `PtyHosts.available()`
+    /// Delivers one phone-sent input: a message to the session's peer
+    /// socket (its terminal when there is none), a key into its terminal
+    /// — the send side of layer 1's read-only feed. `hosts`/`claudeDir` come from the same `PtyHosts.available()`
     /// / `ClaudeSessions.configHome()` call `ResumeService` makes.
     public static func deliver(
         request: Request,
@@ -96,10 +96,15 @@ extension SessionInput {
             guard isValidMessage(request.text) else {
                 return Reply(outcome: "rejected", detail: "invalid message")
             }
+            // Claude Code's own inbox first — a message, line breaks kept,
+            // rather than keystrokes (user 2026-09-03). The terminal is
+            // the fallback for a record without a socket or a dead one.
+            if !record.messagingSocketPath.isEmpty, socketSend(record, request.text) {
+                return Reply(outcome: "delivered", channel: "socket")
+            }
             var sawRunning = false
             var sawCaptured = false
-            // A terminal submits on every newline: one typed line, the
-            // socket keeps the message's own line breaks.
+            // A terminal submits on every newline: one typed line.
             let typed = request.text.split(separator: "\n", omittingEmptySubsequences: true)
                 .joined(separator: " ")
             for host in hosts {
@@ -114,9 +119,6 @@ extension SessionInput {
                 case .noSurface:
                     continue
                 }
-            }
-            if !record.messagingSocketPath.isEmpty, socketSend(record, request.text) {
-                return Reply(outcome: "delivered", channel: "socket")
             }
             if sawRunning { return Reply(outcome: "running") }
             if sawCaptured { return Reply(outcome: "captured") }
