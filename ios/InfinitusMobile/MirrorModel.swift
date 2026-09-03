@@ -261,6 +261,10 @@ final class MirrorModel: ObservableObject, FleetModel {
     /// Live Claude Code sessions on the mirrored Mac — the footer's brain
     /// chip and the sessions card both read it (#9 phase D2).
     var liveSessions: LiveSessions? { primary?.liveSessions }
+    /// #7 on the phone: the Mac's projection and plan, verbatim from the
+    /// snapshot — the shared AllDeadBanner renders both lines.
+    var forecast: UsageForecast? { snapshot?.forecast }
+    var battlePlan: WindowPlanner.Plan? { snapshot?.plan }
     var switchFlashTick: Int { primary?.switchFlashTick ?? 0 }
     var deathTicks: [Int: Int] { primary?.deathTicks ?? [:] }
     var dying: Set<Int> { primary?.dying ?? [] }

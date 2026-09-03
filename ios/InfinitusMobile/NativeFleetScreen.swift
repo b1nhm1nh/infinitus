@@ -74,6 +74,7 @@ struct NativeFleetScreen: View {
         } else {
             List {
                 allDeadSection
+                outlookSection
                 ForEach(model.fleets) { fleet in
                     accountSection(fleet, isFirst: fleet.id == model.fleets.first?.id, wide: wide)
                 }
@@ -128,6 +129,23 @@ struct NativeFleetScreen: View {
                 }
                 .padding(.vertical, 4)
                 .listRowBackground(ThemeColor.flash(model.rowTheme).opacity(0.18))
+            }
+        }
+    }
+
+    /// #7 on the phone: the Mac's run-rate projection and battle plan
+    /// (the popup's error-slot lines), when the fleet isn't all-dead —
+    /// the all-dead card already carries them via AllDeadBanner.
+    @ViewBuilder private var outlookSection: some View {
+        if model.nextCandidate != nil, model.forecast != nil || model.battlePlan != nil {
+            Section {
+                VStack(alignment: .leading, spacing: 4) {
+                    UsageForecastLine(model: model)
+                    BattlePlanLine(model: model)
+                }
+                .padding(.vertical, 2)
+            } header: {
+                Text("Outlook").textCase(nil)
             }
         }
     }
