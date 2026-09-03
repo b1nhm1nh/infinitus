@@ -156,6 +156,11 @@ final class ControlServer {
             await model.refreshSnapshot()
             return ControlReply(ok: true, result: try .of(["fleet": fleetPayload(fleet)]))
 
+        case "auto-order":
+            guard let arg = r.args.first, ["on", "off"].contains(arg) else { throw Fail("usage: auto-order on|off") }
+            model.autoOrder = arg == "on"
+            return ControlReply(ok: true, result: .object(["autoOrder": .bool(model.autoOrder)]))
+
         case "reorder":
             let fleet = try fleet(r)
             guard fleet.capabilities.contains(.reorder) else { throw Fail("\(fleet.id) has no rotation order") }
@@ -367,6 +372,7 @@ final class ControlServer {
         let badge: String
         let signInRunning: Bool
         let playground: Bool
+        let autoOrder: Bool
         let socket: String
     }
 
@@ -385,6 +391,7 @@ final class ControlServer {
             badge: model.engineBadge.map { "\($0)" } ?? "none",
             signInRunning: TokenFlow.shared.running || model.addingFirstAccount,
             playground: model.isPlayground,
+            autoOrder: model.autoOrder,
             socket: ControlProtocol.socketURL().path)
     }
 
