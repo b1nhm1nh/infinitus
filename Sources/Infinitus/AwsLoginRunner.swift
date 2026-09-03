@@ -16,6 +16,23 @@ actor AwsLoginRunner {
 
     private var runs: [String: Run] = [:]
     private var finished: [String: AwsLogin.State] = [:]
+    /// Every CLI still running, reachable without hopping onto the actor:
+    /// app quit is synchronous, and a CLI left behind keeps its localhost
+    /// listener (and a half-done sign-in) alive (2026-09-03).
+    private let live = LiveProcesses()
+    private final class LiveProcesses: @unchecked Sendable {
+        private let lock = NSLock()
+        private var processes: [Process] = []
+        func add(_ p: Process) { lock.lock(); processes.append(p); lock.unlock() }
+        func remove(_ p: Process) { lock.lock(); processes.removeAll { $0 === p }; lock.unlock() }
+        func killAll() {
+            lock.lock(); let all = processes; processes = []; lock.unlock()
+            for p in all where p.isRunning { p.terminate() }
+        }
+    }
+
+    /// Terminates every login in flight; for app quit.
+    nonisolated func killAll() { live.killAll() }
     private let onChange: @Sendable ([AwsLogin.State]) -> Void
     /// Called once per login that ends in `.done`.
     private let onDone: @Sendable (AwsLogin.State) -> Void
@@ -41,7 +58,16 @@ actor AwsLoginRunner {
     /// Starts the flow, or returns the login already in flight for that
     /// profile. `pid` is the session to nudge when it lands.
     func start(profile: String, flow: AwsLogin.Flow, pid: Int?) -> AwsLogin.Reply {
-        if let run = runs[profile] { return AwsLogin.Reply(ok: true, state: run.state) }
+        if let run = runs[profile] {
+            // Same flow: the login already in flight. Another flow (the
+            // phone's "Use a code" after the relay page couldn't do a
+            // passkey, 2026-09-03): drop the old CLI and start over.
+            if run.state.flow == flow { return AwsLogin.Reply(ok: true, state: run.state) }
+            runs[profile] = nil
+            run.process.terminationHandler = nil
+            run.process.terminate()
+            live.remove(run.process)
+        }
         guard let aws = Subprocess.find(Self.awsCandidates) else {
             return AwsLogin.Reply(ok: false, error: "aws CLI not found")
         }
@@ -66,18 +92,19 @@ actor AwsLoginRunner {
             let data = handle.availableData
             guard !data.isEmpty, let self else { return }
             let chunk = String(decoding: data, as: UTF8.self)
-            Task { await self.consume(profile: profile, chunk: chunk) }
+            Task { await self.consume(profile: profile, process: process, chunk: chunk) }
         }
         process.terminationHandler = { [weak self] proc in
             out.fileHandleForReading.readabilityHandler = nil
             guard let self else { return }
-            Task { await self.ended(profile: profile, status: proc.terminationStatus) }
+            Task { await self.ended(profile: profile, process: proc, status: proc.terminationStatus) }
         }
         do {
             try process.run()
         } catch {
             return AwsLogin.Reply(ok: false, error: "could not start aws: \(error.localizedDescription)")
         }
+        live.add(process)
         runs[profile] = Run(process: process, stdin: stdin, state: state)
         finished[profile] = nil
         publish()
@@ -128,8 +155,9 @@ actor AwsLoginRunner {
         return AwsLogin.Reply(ok: true, state: run.state)
     }
 
-    private func consume(profile: String, chunk: String) {
-        guard var run = runs[profile] else { return }
+    private func consume(profile: String, process: Process, chunk: String) {
+        // A replaced CLI's last output must not land on its successor.
+        guard var run = runs[profile], run.process === process else { return }
         run.output += chunk
         if run.output.count > 64 * 1024 { run.output = String(run.output.suffix(32 * 1024)) }
         let prompt = AwsLogin.parseOutput(run.output)
@@ -152,8 +180,9 @@ actor AwsLoginRunner {
         publish()
     }
 
-    private func ended(profile: String, status: Int32) {
-        guard var run = runs[profile] else { return }
+    private func ended(profile: String, process: Process, status: Int32) {
+        live.remove(process)
+        guard var run = runs[profile], run.process === process else { return }
         let prompt = AwsLogin.parseOutput(run.output)
         if status == 0 || prompt.succeeded {
             run.state.phase = .done

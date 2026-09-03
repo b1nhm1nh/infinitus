@@ -128,9 +128,16 @@ final class AppModel: ObservableObject {
     @Published var awsLogins: [AwsLogin.Item] = []
     private var awsLoginStates: [AwsLogin.State] = []
     private var awsLoginNeedsWatch: AnyCancellable?
-    private(set) lazy var awsLoginRunner = AwsLoginRunner(
-        onChange: { [weak self] states in Task { @MainActor in self?.awsLoginStates = states; self?.rebuildAwsLogins() } },
-        onDone: { [weak self] state in Task { @MainActor in self?.awsLoginLanded(state) } })
+    private var awsLoginQuitWatch: AnyCancellable?
+    private(set) lazy var awsLoginRunner: AwsLoginRunner = {
+        let runner = AwsLoginRunner(
+            onChange: { [weak self] states in Task { @MainActor in self?.awsLoginStates = states; self?.rebuildAwsLogins() } },
+            onDone: { [weak self] state in Task { @MainActor in self?.awsLoginLanded(state) } })
+        // A CLI left behind at quit keeps its localhost listener alive.
+        awsLoginQuitWatch = NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)
+            .sink { _ in runner.killAll() }
+        return runner
+    }()
     /// Last 24h of usage samples, the burn-rate input (5h pace over the
     /// last hour, weekly pace over the day). Seeded from this machine's
     /// history file at launch so the first plan doesn't wait ten minutes
