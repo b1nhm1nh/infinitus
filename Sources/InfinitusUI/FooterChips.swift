@@ -34,6 +34,7 @@ public struct FooterChips<M: FleetModel, P: SessionProgressSource,
         HStack(spacing: 6) {
             serviceChip
             agentChip
+            tokenChip
             engineBadge
             Spacer().frame(width: 6)
             if model.appUpdatePending {
@@ -94,6 +95,25 @@ public struct FooterChips<M: FleetModel, P: SessionProgressSource,
         }
     }
 
+    /// Output tokens per minute across the live sessions (user
+    /// 2026-09-03 "display tokens/minute gauge"), a bar scaled to the
+    /// recent peak — shown only while something is actually flowing.
+    @ViewBuilder private var tokenChip: some View {
+        if let rate = progress.tokenRate, rate.perMinute > 0 {
+            HStack(spacing: 4) {
+                Image(systemName: "bolt.horizontal.fill")
+                    .font(PopupFont.caption).foregroundStyle(.yellow)
+                TokenRateBar(fraction: rate.fraction)
+                    .frame(width: 34, height: 6)
+                Text(rate.label)
+                    .font(PopupFont.caption).monospacedDigit().foregroundStyle(.secondary)
+            }
+            .instantTip("Output tokens per minute, every live session, last "
+                        + "\(Int(TokenRate.window / 60)) min — peak lately \(rate.peakPerMinute)/min",
+                        edge: .above)
+        }
+    }
+
     /// Clickable on the mac: running <-> stopped ("auto switch status is
     /// clickable to toggle", user 2026-08-30). Other states stay
     /// informational; a mirroring host's toggle is a no-op.
@@ -150,6 +170,22 @@ public enum EngineBadgeText {
         case .backingOff(let s): return "engine retrying in \(Int(s))s — click to stop"
         case .schemaMismatch: return "update the app"
         case .stopped: return "auto-switch off — click to start"
+        }
+    }
+}
+
+/// The tokens/minute bar: fill = current over the recent peak. Plain
+/// (no GaugeBar percent label — "% of peak" would read as usage).
+public struct TokenRateBar: View {
+    let fraction: Double
+    public init(fraction: Double) { self.fraction = fraction }
+    public var body: some View {
+        GeometryReader { geo in
+            ZStack(alignment: .leading) {
+                Capsule().fill(Color.secondary.opacity(0.25))
+                Capsule().fill(Color.yellow)
+                    .frame(width: max(2, geo.size.width * min(1, max(0, fraction))))
+            }
         }
     }
 }

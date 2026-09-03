@@ -52,6 +52,10 @@ public struct SessionProgress: Sendable, Equatable, Codable {
     public let model: String?
     /// Sum of `message.usage.output_tokens` across the tail.
     public let outputTokens: Int
+    /// Output tokens in entries stamped within `TokenRate.window` of the
+    /// read — the session's share of the tokens/minute gauge. Nil from
+    /// Macs that predate it.
+    public let recentOutputTokens: Int?
     /// True when the last entry that decides whether work has stopped
     /// (Transcript's notion) is an assistant API-error message.
     public let retrying: Bool
@@ -59,7 +63,7 @@ public struct SessionProgress: Sendable, Equatable, Codable {
     public init(lastActivityAt: Date? = nil, nowDoing: String? = nil, todos: Todos? = nil,
                 title: String? = nil, goal: String? = nil, phase: String? = nil,
                 name: String? = nil, gitBranch: String? = nil, model: String? = nil,
-                outputTokens: Int = 0, retrying: Bool = false) {
+                outputTokens: Int = 0, recentOutputTokens: Int? = nil, retrying: Bool = false) {
         self.lastActivityAt = lastActivityAt
         self.nowDoing = nowDoing
         self.todos = todos
@@ -70,6 +74,7 @@ public struct SessionProgress: Sendable, Equatable, Codable {
         self.gitBranch = gitBranch
         self.model = model
         self.outputTokens = outputTokens
+        self.recentOutputTokens = recentOutputTokens
         self.retrying = retrying
     }
 
@@ -77,7 +82,7 @@ public struct SessionProgress: Sendable, Equatable, Codable {
     /// first line — the tail may start mid-object — lines that don't parse
     /// as a JSON object are skipped, never an error, same convention as
     /// Transcript/UsageHistory.
-    public static func parse(lines: [String]) -> SessionProgress {
+    public static func parse(lines: [String], now: Date = Date()) -> SessionProgress {
         let entries: [[String: Any]] = lines.compactMap { line in
             guard line.first == "{",
                   let data = line.data(using: .utf8),
@@ -133,11 +138,17 @@ public struct SessionProgress: Sendable, Equatable, Codable {
         }
 
         var outputTokens = 0
+        var recentOutputTokens = 0
+        let recentSince = now.addingTimeInterval(-TokenRate.window)
         for entry in entries {
             if let message = entry["message"] as? [String: Any],
                let usage = message["usage"] as? [String: Any],
                let tokens = usage["output_tokens"] as? Int {
                 outputTokens += tokens
+                if let ts = entry["timestamp"] as? String, let at = UsageHistory.parseISO(ts),
+                   at >= recentSince {
+                    recentOutputTokens += tokens
+                }
             }
         }
 
@@ -165,7 +176,8 @@ public struct SessionProgress: Sendable, Equatable, Codable {
         return SessionProgress(lastActivityAt: lastActivityAt, nowDoing: nowDoing, todos: todos,
                                 title: title, goal: goal(lines: lines), phase: phase(entries: entries),
                                 gitBranch: gitBranch, model: model,
-                                outputTokens: outputTokens, retrying: retrying)
+                                outputTokens: outputTokens, recentOutputTokens: recentOutputTokens,
+                                retrying: retrying)
     }
 
     static let phaseWindow = 24
@@ -293,7 +305,8 @@ public struct SessionProgress: Sendable, Equatable, Codable {
                              todos: progress.todos, title: progress.title,
                              goal: headGoal ?? progress.goal, phase: progress.phase, name: name,
                              gitBranch: progress.gitBranch, model: progress.model,
-                             outputTokens: progress.outputTokens, retrying: progress.retrying)
+                             outputTokens: progress.outputTokens,
+                             recentOutputTokens: progress.recentOutputTokens, retrying: progress.retrying)
         }
         guard let handle = try? FileHandle(forReadingFrom: url) else { return withGoal(parse(lines: [])) }
         defer { try? handle.close() }
@@ -409,5 +422,49 @@ public struct SessionPanelRow: Sendable, Equatable, Codable {
             quietMinutes: quietMinutes,
             goal: progress.goal,
             phase: progress.phase)
+    }
+}
+
+/// The fleet-wide output-token rate (user 2026-09-03 "display
+/// tokens/minute gauge on live activities, popup"): every live session's
+/// output tokens over the last `window`, per minute, plus the peak the
+/// host has seen lately so a gauge has a scale.
+public struct TokenRate: Codable, Sendable, Equatable {
+    /// How far back a session's transcript counts.
+    public static let window: TimeInterval = 5 * 60
+    public let perMinute: Int
+    public let peakPerMinute: Int
+
+    public init(perMinute: Int, peakPerMinute: Int) {
+        self.perMinute = perMinute
+        self.peakPerMinute = max(peakPerMinute, perMinute)
+    }
+
+    /// Sum of every session's recent tokens, per minute. A session whose
+    /// last entry is older than the window contributes nothing — its
+    /// cached count is from a read that was inside the window.
+    public static func perMinute(_ byPid: [Int: SessionProgress], now: Date = Date()) -> Int {
+        let since = now.addingTimeInterval(-window)
+        let total = byPid.values.reduce(0) { sum, p in
+            guard let at = p.lastActivityAt, at >= since else { return sum }
+            return sum + (p.recentOutputTokens ?? 0)
+        }
+        return Int((Double(total) / (window / 60)).rounded())
+    }
+
+    /// The peak decays a little every tick, so a burst an hour ago stops
+    /// dwarfing the gauge — ~halved after 100 ticks.
+    public static func nextPeak(_ peak: Int, seeing perMinute: Int) -> Int {
+        max(perMinute, Int(Double(peak) * 0.993))
+    }
+
+    /// 0…1 of peak for the gauge; a quiet fleet reads empty, not full.
+    public var fraction: Double {
+        peakPerMinute > 0 ? min(1, Double(perMinute) / Double(peakPerMinute)) : 0
+    }
+
+    /// "1.2k/min", "340/min".
+    public var label: String {
+        perMinute >= 1000 ? String(format: "%.1fk/min", Double(perMinute) / 1000) : "\(perMinute)/min"
     }
 }

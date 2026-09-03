@@ -29,14 +29,14 @@ final class LiveActivities {
         working = Activity<WorkingActivity>.activities.first
     }
 
-    func sync(fleet: MirrorFleetModel?, machine: String) {
+    func sync(fleet: MirrorFleetModel?, machine: String, tokenRate: TokenRate?) {
         guard let fleet else { return }
         guard ActivityAuthorizationInfo().areActivitiesEnabled else {
             log.notice("live activities disabled for this app")
             return
         }
         syncRevival(fleet: fleet, machine: machine)
-        syncWorking(fleet: fleet, machine: machine)
+        syncWorking(fleet: fleet, machine: machine, tokenRate: tokenRate)
     }
 
     // MARK: #1
@@ -51,6 +51,8 @@ final class LiveActivities {
                 icon: account?.icon.map(PopupGlyph.text),
                 revivesAt: at,
                 sessions: fleet.liveSessions?.total ?? 0,
+                waiting: fleet.liveSessions?.waiting ?? 0,
+                later: Self.laterRevivals(fleet, after: rec.number, theme: theme),
                 reviveWord: theme.plain ? "recovers" : PopupGlyph.text(theme.revivePrefix),
                 deadWord: theme.plain ? "limited" : theme.deadVerb,
                 accent: theme.flashColor,
@@ -81,7 +83,7 @@ final class LiveActivities {
 
     // MARK: #2
 
-    private func syncWorking(fleet: MirrorFleetModel, machine: String) {
+    private func syncWorking(fleet: MirrorFleetModel, machine: String, tokenRate: TokenRate?) {
         let busy = fleet.liveSessions?.busy ?? 0
         if busy > 0, let active = fleet.accounts.first(where: { $0.active }) {
             let theme = fleet.rowTheme
@@ -102,6 +104,8 @@ final class LiveActivities {
                         (theme.plain ? "→ " : PopupGlyph.text(theme.nextIcon) + " ") + Self.name(of: next)
                     }
                 },
+                tokensPerMinute: tokenRate.flatMap { $0.perMinute > 0 ? $0.perMinute : nil },
+                tokenFraction: tokenRate?.fraction ?? 0,
                 accent: theme.flashColor,
                 plain: theme.plain)
             let content = ActivityContent(state: state,
@@ -129,11 +133,37 @@ final class LiveActivities {
     private static func differs(_ a: WorkingActivity.ContentState, _ b: WorkingActivity.ContentState) -> Bool {
         var stable = a
         stable.windows = b.windows
+        stable.tokensPerMinute = b.tokensPerMinute
+        stable.tokenFraction = b.tokenFraction
         if stable != b { return true }
+        // Tokens/minute: a fifth of the bar or the number appearing/vanishing.
+        if (a.tokensPerMinute == nil) != (b.tokensPerMinute == nil)
+            || abs(a.tokenFraction - b.tokenFraction) >= 0.2 { return true }
         guard a.windows.count == b.windows.count else { return true }
         return zip(a.windows, b.windows).contains { x, y in
             x.label != y.label || x.reset != y.reset || abs(x.pct - y.pct) >= 5
         }
+    }
+
+    /// The other dead accounts' recovery times after the first reviver,
+    /// soonest first — "loc 2:50 PM · P2 Sep 4".
+    private static func laterRevivals(_ fleet: MirrorFleetModel, after number: Int,
+                                      theme: RowTheme, now: Date = Date()) -> [String] {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .none
+        formatter.timeStyle = .short
+        let rows: [(Date, String)] = fleet.accounts.compactMap { account in
+            guard account.number != number, let usage = account.usage else { return nil }
+            let resets = [usage.fiveHour, usage.sevenDay].compactMap { $0 }
+                .filter { $0.pct >= 100 }
+                .compactMap { WeeklyRoll.parse($0.resetsAt) }
+            guard let at = resets.max(), at > now else { return nil }
+            let clock = Calendar.current.isDate(at, inSameDayAs: now)
+                ? formatter.string(from: at)
+                : at.formatted(.dateTime.month(.abbreviated).day())
+            return (at, "\(name(of: account)) \(clock)")
+        }
+        return rows.sorted { $0.0 < $1.0 }.prefix(3).map(\.1)
     }
 
     private static func name(of account: Account) -> String {

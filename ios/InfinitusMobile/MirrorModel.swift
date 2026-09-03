@@ -179,12 +179,12 @@ final class MirrorModel: ObservableObject, FleetModel {
             self.snapshot = snapshot
             prefs = snapshot.prefs
             if usesLAN { transportStatus = await NetworkFleetMirror.shared.statusText }
-            sessionProgress.apply(snapshot.progressByPid ?? [:])
+            sessionProgress.apply(snapshot.progressByPid ?? [:], tokenRate: snapshot.tokenRate)
             let firstLoad = reconcile(engineFleets)
             error = nil
             LiveActivities.shared.sync(
                 fleet: fleets.first { $0.provider == .claude } ?? fleets.first,
-                machine: snapshot.machineName)
+                machine: snapshot.machineName, tokenRate: snapshot.tokenRate)
             if firstLoad {
                 DispatchQueue.main.async { self.replayIntro() }
             }
@@ -334,10 +334,11 @@ final class MirrorModel: ObservableObject, FleetModel {
 @MainActor
 final class MobileSessionProgress: ObservableObject, SessionProgressSource {
     @Published private(set) var byPid: [Int: SessionProgress] = [:]
+    @Published private(set) var tokenRate: TokenRate?
 
-    func apply(_ byPid: [Int: SessionProgress]) {
-        guard byPid != self.byPid else { return }
-        self.byPid = byPid
+    func apply(_ byPid: [Int: SessionProgress], tokenRate: TokenRate?) {
+        if byPid != self.byPid { self.byPid = byPid }
+        if tokenRate != self.tokenRate { self.tokenRate = tokenRate }
     }
 }
 

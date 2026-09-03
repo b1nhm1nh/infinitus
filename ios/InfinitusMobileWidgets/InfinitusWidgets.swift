@@ -31,8 +31,12 @@ struct RevivalLiveActivity: Widget {
                             Text(timerInterval: Date.now...context.state.revivesAt, countsDown: true)
                                 .font(.system(.title, design: .rounded).weight(.semibold))
                                 .monospacedDigit().multilineTextAlignment(.center)
-                            Text("\(context.state.icon ?? "")\(context.state.reviver) \(context.state.reviveWord) · \(context.state.sessions) sessions")
+                            Text("\(context.state.icon ?? "")\(context.state.reviver) \(context.state.reviveWord) · \(waitingLine(context.state))")
                                 .font(.caption2).foregroundStyle(.secondary)
+                            if !context.state.later.isEmpty {
+                                Text("then " + context.state.later.joined(separator: " · "))
+                                    .font(.caption2).foregroundStyle(.tertiary).lineLimit(1)
+                            }
                         }
                     }
                 }
@@ -70,8 +74,11 @@ private struct RevivalLockScreen: View {
                         Text(timerInterval: Date.now...state.revivesAt, countsDown: true)
                             .font(.headline).monospacedDigit().foregroundStyle(accent)
                     }
-                    Text("\(state.sessions) session\(state.sessions == 1 ? "" : "s") waiting to resume")
-                        .font(.caption2).foregroundStyle(.secondary)
+                    Text(waitingLine(state)).font(.caption2).foregroundStyle(.secondary)
+                    if !state.later.isEmpty {
+                        Text("then " + state.later.joined(separator: " · "))
+                            .font(.caption2).foregroundStyle(.tertiary).lineLimit(1)
+                    }
                 }
             }
             Spacer(minLength: 0)
@@ -117,6 +124,9 @@ struct WorkingLiveActivity: Widget {
                         Grid(alignment: .leading, horizontalSpacing: 8, verticalSpacing: 3) {
                             ForEach(Array(state.windows.enumerated()), id: \.offset) { _, window in
                                 GridRow { WindowRow(window: window) }
+                            }
+                            if let tokens = state.tokensPerMinute {
+                                GridRow { TokenRow(perMinute: tokens, fraction: state.tokenFraction) }
                             }
                         }
                         HStack {
@@ -168,6 +178,9 @@ private struct WorkingLockScreen: View {
                 ForEach(Array(state.windows.enumerated()), id: \.offset) { _, window in
                     GridRow { WindowRow(window: window) }
                 }
+                if let tokens = state.tokensPerMinute {
+                    GridRow { TokenRow(perMinute: tokens, fraction: state.tokenFraction) }
+                }
             }
             HStack {
                 Text(sessionsLine(state)).font(.caption).foregroundStyle(.secondary)
@@ -196,8 +209,28 @@ private struct WindowRow: View {
     }
 }
 
+/// "⚡ ▮▮▯ 1.2k/min" — the popup footer's tokens/minute gauge.
+private struct TokenRow: View {
+    let perMinute: Int
+    let fraction: Double
+    var body: some View {
+        Image(systemName: "bolt.horizontal.fill").font(.caption).foregroundStyle(.yellow)
+        TokenRateBar(fraction: fraction).frame(width: 120, height: 6)
+        Text(perMinute >= 1000 ? String(format: "%.1fk tok/min", Double(perMinute) / 1000)
+                               : "\(perMinute) tok/min")
+            .font(.caption2).monospacedDigit().foregroundStyle(.secondary)
+    }
+}
+
 private func sessionsLine(_ state: WorkingActivity.ContentState) -> String {
     var line = "\(state.busy) working · \(state.total) session\(state.total == 1 ? "" : "s")"
     if state.waiting > 0 { line += " · \(state.waiting) waiting on you" }
     return line
+}
+
+/// "4 stopped, waiting to resume · 12 sessions" (or just the count).
+private func waitingLine(_ state: RevivalActivity.ContentState) -> String {
+    state.waiting > 0
+        ? "\(state.waiting) stopped, waiting to resume · \(state.sessions) sessions"
+        : "\(state.sessions) session\(state.sessions == 1 ? "" : "s")"
 }

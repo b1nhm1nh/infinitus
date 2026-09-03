@@ -8,6 +8,9 @@ import InfinitusUI
 @MainActor
 final class SessionProgressModel: SessionProgressSource {
     @Published private(set) var byPid: [Int: SessionProgress] = [:]
+    /// Fleet-wide output tokens per minute with a slowly decaying peak
+    /// (the footer's ⚡ gauge and the phone's Live Activity).
+    @Published private(set) var tokenRate: TokenRate?
 
     private let claudeDir = ClaudeSessions.configHome()
     private struct Stamp: Equatable { let size: Int; let mtime: Date }
@@ -26,6 +29,7 @@ final class SessionProgressModel: SessionProgressSource {
         guard !busy else { return }
         guard !sessions.isEmpty else {
             byPid = [:]
+            tokenRate = nil
             return
         }
         busy = true
@@ -64,5 +68,9 @@ final class SessionProgressModel: SessionProgressSource {
         self.byPid = byPid
         self.stamps = stamps
         self.cached = cached
+        let perMinute = TokenRate.perMinute(byPid)
+        tokenRate = TokenRate(perMinute: perMinute,
+                              peakPerMinute: TokenRate.nextPeak(tokenRate?.peakPerMinute ?? 0,
+                                                                seeing: perMinute))
     }
 }

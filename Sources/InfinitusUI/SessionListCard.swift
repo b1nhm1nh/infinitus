@@ -7,6 +7,8 @@ import InfinitusCore
 @MainActor
 public protocol SessionProgressSource: ObservableObject {
     var byPid: [Int: SessionProgress] { get }
+    /// Fleet-wide output tokens per minute — the footer's ⚡ gauge.
+    var tokenRate: TokenRate? { get }
     /// `sessions`: the engine's current per-session detail (busy-first,
     /// capped) — only those get matched to a transcript and read.
     func refresh(sessions: [SessionDetail])

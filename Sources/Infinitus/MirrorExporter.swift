@@ -23,6 +23,9 @@ actor MirrorExporter {
             .appendingPathComponent("Infinitus/mirror-snapshot.json")
     }()
 
+    /// The ⚡ gauge's scale: the highest tokens/minute seen lately.
+    private var tokenPeak = 0
+
     func record(listJSON: Data, prefs: FleetPrefs,
                 serviceStatus: ServiceStatusSummary, engine: EngineBadge,
                 fleets: [EngineFleet] = []) {
@@ -50,6 +53,8 @@ actor MirrorExporter {
         // Cash column (#9 phase D1a): the cache UsagePane.swift's refresh
         // already writes, verbatim — no new subprocess, no engine call.
         let usageJSON = try? Data(contentsOf: UsageModel.cacheURL)
+        let perMinute = TokenRate.perMinute(progressByPid, now: now)
+        tokenPeak = TokenRate.nextPeak(tokenPeak, seeing: perMinute)
         let snapshot = MirrorSnapshot(
             capturedAt: now,
             machineName: Host.current().localizedName ?? "Mac",
@@ -60,7 +65,8 @@ actor MirrorExporter {
             serviceStatus: serviceStatus,
             engine: engine,
             progressByPid: progressByPid,
-            fleets: fleets.isEmpty ? nil : fleets)
+            fleets: fleets.isEmpty ? nil : fleets,
+            tokenRate: TokenRate(perMinute: perMinute, peakPerMinute: tokenPeak))
         // Encoded once here rather than inside MirrorWriter so the LAN
         // server hands out the same bytes the file holds.
         let encoder = JSONEncoder()

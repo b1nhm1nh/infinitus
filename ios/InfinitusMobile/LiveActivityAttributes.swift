@@ -24,7 +24,12 @@ struct RevivalActivity: ActivityAttributes {
         var reviver: String
         var icon: String?
         var revivesAt: Date
+        /// Live sessions on the Mac, and how many of them are stopped
+        /// waiting for an account (the ones a revival resumes).
         var sessions: Int
+        var waiting: Int
+        /// The accounts after the reviver, in recovery order: "loc 2:50 PM".
+        var later: [String]
         /// Theme words: "revives" / "is dead" … and the flash colour.
         var reviveWord: String
         var deadWord: String
@@ -52,6 +57,10 @@ struct WorkingActivity: ActivityAttributes {
         var total: Int
         var waiting: Int
         var next: String?
+        /// Output tokens per minute across the fleet, and 0…1 of the
+        /// recent peak for the bar. Nil until something flows.
+        var tokensPerMinute: Int?
+        var tokenFraction: Double
         var accent: String
         var plain: Bool
     }

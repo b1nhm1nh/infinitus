@@ -32,6 +32,9 @@ public struct MirrorSnapshot: Codable, Sendable {
     /// `listJSON` stays the primary cswap fleet for older phones; a
     /// phone that knows this field stacks one section per fleet.
     public let fleets: [EngineFleet]?
+    /// Output tokens per minute across every live session, with the
+    /// host's recent peak for the gauge scale.
+    public let tokenRate: TokenRate?
 
     public init(capturedAt: Date, machineName: String, listJSON: Data,
                 sessions: [SessionPanelRow], prefs: FleetPrefs? = nil,
@@ -39,7 +42,8 @@ public struct MirrorSnapshot: Codable, Sendable {
                 serviceStatus: ServiceStatusSummary? = nil,
                 engine: EngineBadge? = nil,
                 progressByPid: [Int: SessionProgress]? = nil,
-                fleets: [EngineFleet]? = nil) {
+                fleets: [EngineFleet]? = nil,
+                tokenRate: TokenRate? = nil) {
         self.capturedAt = capturedAt
         self.machineName = machineName
         self.listJSON = listJSON
@@ -50,6 +54,7 @@ public struct MirrorSnapshot: Codable, Sendable {
         self.engine = engine
         self.progressByPid = progressByPid
         self.fleets = fleets
+        self.tokenRate = tokenRate
     }
 }
 
