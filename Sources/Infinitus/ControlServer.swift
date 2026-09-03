@@ -341,7 +341,7 @@ final class ControlServer {
 
         case "engine":
             guard r.args.count == 2, ["on", "off"].contains(r.args[1]) else {
-                throw Fail("usage: engine cswap|cliproxy on|off")
+                throw Fail("usage: engine cswap|cliproxy|9router on|off")
             }
             let on = r.args[1] == "on"
             switch r.args[0] {
@@ -353,6 +353,9 @@ final class ControlServer {
                 guard model.cliproxyKeyPresent || !on else { throw Fail("store a management key first (proxy-key)") }
                 guard model.cliproxyEnabled != on else { return ControlReply(ok: true, result: .object(["unchanged": .bool(true)])) }
                 model.cliproxyEnabled = on
+            case "9router":
+                guard model.nineRouterEnabled != on else { return ControlReply(ok: true, result: .object(["unchanged": .bool(true)])) }
+                model.nineRouterEnabled = on
             default: throw Fail("unknown engine \(r.args[0])")
             }
             return ControlReply(ok: true, result: .object(["restarting": .bool(true)]), restarting: true)
@@ -370,6 +373,11 @@ final class ControlServer {
         case "proxy-key":
             let url = r.options["url"] ?? model.cliproxyBaseURL
             model.saveCLIProxy(baseURL: url, key: r.secret ?? "")
+            return ControlReply(ok: true, result: .object(["restarting": .bool(true)]), restarting: true)
+
+        case "9router-password":
+            let url = r.options["url"] ?? model.nineRouterBaseURL
+            model.saveNineRouter(baseURL: url, password: r.secret ?? "")
             return ControlReply(ok: true, result: .object(["restarting": .bool(true)]), restarting: true)
 
         case "proxy-routing":
@@ -447,6 +455,9 @@ final class ControlServer {
                 "cliproxy": EngineStatus(enabled: model.cliproxyEnabled,
                                          registered: model.registry.engine(id: CLIProxyEngine.engineID) != nil,
                                          keyPresent: model.cliproxyKeyPresent),
+                "9router": EngineStatus(enabled: model.nineRouterEnabled,
+                                        registered: model.registry.engine(id: NineRouterEngine.engineID) != nil,
+                                        keyPresent: model.nineRouterPasswordPresent),
             ],
             badge: model.engineBadge.map { "\($0)" } ?? "none",
             signInRunning: TokenFlow.shared.running || model.addingFirstAccount,

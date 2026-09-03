@@ -9,6 +9,8 @@ import Security
 enum Keychain {
     static let service = "com.huuloc.infinitus.cliproxy"
     static let tunnelService = "com.huuloc.infinitus.cloudflare-tunnel"
+    /// 9Router's dashboard password (third engine), account = base URL.
+    static let nineRouterService = "com.huuloc.infinitus.9router"
 
     static func read(account: String, service: String = Self.service) -> String? {
         let query: [String: Any] = [

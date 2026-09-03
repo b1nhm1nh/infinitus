@@ -291,6 +291,97 @@ struct CLIProxyEnginePane: View {
     }
 }
 
+/// 9Router pane (third engine): the dashboard API on loopback with the
+/// dashboard password in the keychain; never `~/.9router`.
+struct NineRouterEnginePane: View {
+    @ObservedObject var model: AppModel
+    @State private var baseURL = ""
+    @State private var password = ""
+    @State private var probe: String?
+    @State private var probing = false
+
+    var body: some View {
+        Form {
+            Section("Claude — 9Router engine") {
+                Toggle("Engine on (rotates behind its own endpoint)", isOn: $model.nineRouterEnabled)
+                EngineToggleNotes(model: model)
+                Text("9Router rotates its connections per request in priority order and "
+                     + "falls back on quota errors. Infinitus reads the roster and quotas, "
+                     + "and sets priority / hold; the rotation policy stays 9Router's.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            Section("Dashboard API") {
+                TextField("Base URL", text: $baseURL, prompt: Text(NineRouterEngine.defaultBaseURL.absoluteString))
+                    .textFieldStyle(.roundedBorder)
+                SecureField("Dashboard password", text: $password,
+                            prompt: Text(model.nineRouterPasswordPresent ? "•••••••• (stored in keychain)" : "the dashboard login password"))
+                    .textFieldStyle(.roundedBorder)
+                HStack {
+                    Button(probing ? "Testing…" : "Test connection") { test() }
+                        .disabled(probing)
+                    Button("Save & restart") {
+                        model.saveNineRouter(
+                            baseURL: baseURL.isEmpty ? model.nineRouterBaseURL : baseURL,
+                            password: password.isEmpty
+                                ? (Keychain.read(account: model.nineRouterBaseURL, service: Keychain.nineRouterService) ?? "")
+                                : password)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    if model.nineRouterPasswordPresent {
+                        Button("Forget password") { model.saveNineRouter(baseURL: model.nineRouterBaseURL, password: "") }
+                    }
+                }
+                if let probe {
+                    Text(probe).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
+                }
+                if let err = model.engineErrors[NineRouterEngine.engineID] {
+                    Text(err).font(.caption).foregroundStyle(.orange)
+                }
+                Text("The password is the one the 9Router dashboard asks for; it is kept in "
+                     + "the keychain and exchanged for a session cookie on demand. Leave it "
+                     + "empty if 9Router's \"require login\" is off. Infinitus never reads "
+                     + "9Router's database or config.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            if model.nineRouterEnabled {
+                Section("Accounts") {
+                    Text("9Router's connections are managed in the Accounts tab, next to the "
+                         + "other engines'. Adding one is done in the 9Router dashboard "
+                         + "(Providers → Connect Claude Code).")
+                        .font(.caption).foregroundStyle(.secondary)
+                    Button("Open 9Router dashboard") {
+                        if let url = URL(string: (baseURL.isEmpty ? model.nineRouterBaseURL : baseURL) + "/dashboard") {
+                            NSWorkspace.shared.open(url)
+                        }
+                    }
+                }
+            }
+        }
+        .formStyle(.grouped)
+        .onAppear { baseURL = model.nineRouterBaseURL }
+    }
+
+    private func test() {
+        let urlString = baseURL.isEmpty ? model.nineRouterBaseURL : baseURL
+        guard let url = URL(string: urlString) else { probe = "bad URL"; return }
+        let pw = password.isEmpty
+            ? (Keychain.read(account: model.nineRouterBaseURL, service: Keychain.nineRouterService) ?? "")
+            : password
+        probing = true
+        Task {
+            let engine = NineRouterEngine(baseURL: url, password: pw)
+            do {
+                let p = try await engine.probe()
+                probe = "reachable — \(p.connections) connection\(p.connections == 1 ? "" : "s"), "
+                    + "\(p.claudeConnections) Claude"
+            } catch {
+                probe = (error as? EngineError)?.errorDescription ?? "\(error)"
+            }
+            probing = false
+        }
+    }
+}
+
 /// Under the routing picker: what each proxy mode does to prompt caching
 /// and to the Accounts tab's Switch (config_basic.go / selector.go).
 struct RoutingNotes: View {

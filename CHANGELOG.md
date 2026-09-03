@@ -6,6 +6,15 @@ GitHub release body.
 
 ## 0.4.1 (unreleased)
 
+### 9Router engine
+- **A third engine.** [9Router](https://github.com/decolua/9router)
+  joins cswap and CLIProxyAPI: its Claude connections show up as a
+  fleet with 5h / 7d / per-model gauges, switch (priority), hold and
+  remove, all through its dashboard API on loopback with the dashboard
+  password kept in the keychain. Rotation stays 9Router's own; Infinitus
+  only sets its knobs. Settings → 9Router to turn it on;
+  `infinitusctl engine 9router on` and `9router-password` from a script.
+
 ### Battle plan (#7)
 - **Ignite from any engine that can.** Starting a spare account's 5h
   clock is now an engine capability: cswap does it with `cswap run`; the
