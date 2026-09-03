@@ -162,10 +162,7 @@ public enum SessionFeedReader {
             } else {
                 text = nil
             }
-            guard let text else { return nil }
-            let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !trimmed.isEmpty, trimmed.first != "<" else { return nil }
-            return trimmed
+            return text.flatMap(presentableUserText)
         }
 
         /// Whether an assistant text block at `index` is the final answer
@@ -195,8 +192,7 @@ public enum SessionFeedReader {
                let attachment = entry["attachment"] as? [String: Any],
                (attachment["type"] as? String) == "queued_command",
                let prompt = attachment["prompt"] as? String {
-                let text = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
-                if !text.isEmpty {
+                if let text = presentableUserText(prompt) {
                     append(SessionFeedItem(kind: .user, text: String(text.prefix(textCap)),
                                            at: timestamp(entry)))
                 }
@@ -260,6 +256,29 @@ public enum SessionFeedReader {
                                    at: run.item.at, toolName: toolName, options: run.item.options)
         }
         return Array(items.suffix(max(0, limit)))
+    }
+
+    /// A user prompt worth a bubble: plain text as is; a cross-session
+    /// message (another Claude session, or the phone via the peer socket)
+    /// as "<sender>: <body>"; any other tagged payload (system reminders,
+    /// hook output) is machinery, not a message — nil.
+    static func presentableUserText(_ raw: String) -> String? {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        guard trimmed.first == "<" else { return trimmed }
+        guard trimmed.hasPrefix("<cross-session-message"),
+              let headEnd = trimmed.firstIndex(of: ">") else { return nil }
+        let head = trimmed[..<headEnd]
+        var body = String(trimmed[trimmed.index(after: headEnd)...])
+        if let close = body.range(of: "</cross-session-message>") { body = String(body[..<close.lowerBound]) }
+        body = body.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !body.isEmpty else { return nil }
+        var sender = "peer"
+        if let r = head.range(of: "from-name=\"") {
+            let rest = head[r.upperBound...]
+            if let q = rest.firstIndex(of: "\"") { sender = String(rest[..<q]) }
+        }
+        return "\(sender): \(body)"
     }
 
     private static func errorSummary(_ block: [String: Any]) -> String {

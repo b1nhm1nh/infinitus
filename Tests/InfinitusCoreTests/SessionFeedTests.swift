@@ -126,6 +126,13 @@ final class SessionFeedTests: XCTestCase {
         XCTAssertEqual(items[1].text, "also check the tests")
     }
 
+    func testCrossSessionMessageShowsSenderAndBody() {
+        let raw = "<cross-session-message from=\"uds:/tmp/x.sock\" from-name=\"Infinitus2\" from-mode=\"bypass\">\nmerge e2 at abc123\n</cross-session-message>"
+        XCTAssertEqual(SessionFeedReader.presentableUserText(raw), "Infinitus2: merge e2 at abc123")
+        XCTAssertNil(SessionFeedReader.presentableUserText("<system-reminder>x</system-reminder>"))
+        XCTAssertEqual(SessionFeedReader.presentableUserText("  hi  "), "hi")
+    }
+
     func testLimitReturnsOnlyNewestItems() {
         let lines = (0..<5).map { i in
             #"{"type":"user","timestamp":"2026-09-01T10:00:0\#(i).000Z","message":{"content":"msg \#(i)"}}"#
