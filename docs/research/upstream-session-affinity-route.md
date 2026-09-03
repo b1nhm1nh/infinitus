@@ -1,7 +1,11 @@
-# Upstream request draft — management route for `routing.session-affinity`
+# Upstream request — management route for `routing.session-affinity`
 
-Not posted. Target: router-for-me/CLIProxyAPI issues. Post only after
-the user says so (outward-facing).
+**Posted 2026-09-03 as a PR (user: "sure"): router-for-me/CLIProxyAPI#5447**
+(fork branch `feat/routing-session-affinity`, targets `dev`): GET/PUT/PATCH
+`/v0/management/routing/session-affinity` → `{enabled, ttl}`, persisted
+and hot-reloaded like `routing/strategy`. The app gains a toggle next to
+the strategy picker that degrades to the YAML note while the proxy lacks
+the route (404). Original draft below.
 
 **Title:** Management API: expose `routing.session-affinity` (and TTL) like `routing/strategy`
 
