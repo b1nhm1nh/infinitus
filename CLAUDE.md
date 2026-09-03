@@ -113,6 +113,13 @@ Native macOS menu bar app for the claude-swap engine. Split out of
   README** with the new features so app, site and README stay in sync
   (user 2026-09-03). Do it in the release commit, not after.
 
+- Any dev/smoke instance of the app (debug binary, `-mock_mode`, a
+  second bundle) MUST run with `INFINITUS_CONTROL_SOCKET=/tmp/<short>.sock`
+  — without it, ControlServer.start() unlinks the real app's control
+  socket and `infinitusctl`/the phone get "connection refused" until
+  the bundle relaunches (bit us 2026-09-03 08:21). Short path: unix
+  sockets cap at ~104 bytes, so never the scratchpad dir.
+
 ## Build / run / test
 `./make-app.sh && open Infinitus.app` · `swift test` · `./dev.sh` (entr)
 · `./run-unbundled.sh` (menu bar wedge workaround).
