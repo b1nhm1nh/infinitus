@@ -40,7 +40,10 @@ products.append(.library(name: "InfinitusUI", targets: ["InfinitusUI"]))
 targets.append(.executableTarget(
     name: "Infinitus",
     dependencies: ["InfinitusCore", "InfinitusUI"],
-    path: "Sources/Infinitus"
+    path: "Sources/Infinitus",
+    // Debug only: lets InjectionIII swap top-level/struct functions
+    // (docs/guides/hot-reload.md). Release links exactly as before.
+    linkerSettings: [.unsafeFlags(["-Xlinker", "-interposable"], .when(configuration: .debug))]
 ))
 // Agent-facing control CLI: talks to the running app over its control
 // socket (ControlProtocol.swift); bundled into Infinitus.app/Contents/MacOS.

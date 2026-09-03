@@ -535,6 +535,7 @@ struct PlaygroundView: View {
             .padding(20)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
+        .reloadOnInjection()
     }
 
     @ViewBuilder

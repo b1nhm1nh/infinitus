@@ -110,6 +110,7 @@ private struct WallRoot: View {
             }
         }
         .preferredColorScheme(.dark)
+        .reloadOnInjection()
     }
 
     private func scale(in room: CGSize) -> CGFloat {

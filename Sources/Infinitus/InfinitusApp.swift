@@ -63,6 +63,13 @@ struct InfinitusApp: App {
     init() {
         // Menu bar app: no Dock icon, no main window.
         NSApplication.shared.setActivationPolicy(.accessory)
+        #if DEBUG
+        // Hot reload (docs/guides/hot-reload.md): opt in per launch so the
+        // playground/shots instances never dial the injection server.
+        if ProcessInfo.processInfo.environment["INFINITUS_INJECT"] != nil {
+            Bundle(path: "/Applications/InjectionIII.app/Contents/Resources/macOSInjection.bundle")?.load()
+        }
+        #endif
         RenameMigration.run()   // before anything reads App Support
         let model = AppModel()
         _model = StateObject(wrappedValue: model)
@@ -284,6 +291,7 @@ struct SettingsRoot: View {
                 selection = title
             }
         }
+        .reloadOnInjection()
     }
 
     private var sidebar: some View {
@@ -1015,6 +1023,33 @@ struct OnboardingCard: View {
             .foregroundStyle(.tertiary)
             .textSelection(.enabled)
         DetectionLines(model: model, afterInstall: true)
+        OnboardingBriefButton(model: model, engineInstalled: false)
+    }
+}
+
+/// "Copy for an AI agent" (user 2026-09-03): the whole first-run recipe,
+/// with what this Mac already has ticked, on the clipboard — paste it
+/// into Claude Code and let it do the typing.
+struct OnboardingBriefButton: View {
+    @ObservedObject var model: AppModel
+    let engineInstalled: Bool
+    @State private var copied = false
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Button(copied ? "Copied" : "Copy for an AI agent") {
+                let text = OnboardingBrief.text(engineInstalled: engineInstalled,
+                                                claude: model.claudeCLI, proxy: model.cliProxy,
+                                                proxyLive: model.cliProxyLive)
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(text, forType: .string)
+                copied = true
+                DispatchQueue.main.asyncAfter(deadline: .now() + 2) { copied = false }
+            }
+            .font(PopupFont.caption)
+            Text("paste into Claude Code; it does the steps")
+                .font(.caption).foregroundStyle(.tertiary)
+        }
     }
 }
 
@@ -1065,6 +1100,7 @@ struct FirstAccountCard: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
             DetectionLines(model: model, afterInstall: false)
+            OnboardingBriefButton(model: model, engineInstalled: true)
         }
         .padding(6)
     }

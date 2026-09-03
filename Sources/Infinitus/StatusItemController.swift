@@ -628,6 +628,7 @@ private struct AnchoredRoot: View {
             .fixedSize()
             .onGeometryChange(for: CGSize.self) { $0.size } action: { onSize($0) }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .reloadOnInjection()
     }
 }
 
@@ -654,5 +655,6 @@ private struct PinnedRoot: View {
         // safe-area inset, which rendered as a dead strip above the header
         // (user screenshot 2026-08-30); the header IS the titlebar here.
         .ignoresSafeArea(.container, edges: .top)
+        .reloadOnInjection()
     }
 }
