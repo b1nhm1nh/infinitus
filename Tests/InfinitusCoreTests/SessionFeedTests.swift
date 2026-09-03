@@ -114,6 +114,18 @@ final class SessionFeedTests: XCTestCase {
         XCTAssertEqual(items[0].text, "pwd (\u{00d7}3)")
     }
 
+    func testMidTurnQueuedPromptShowsAsUserMessage() {
+        let lines = [
+            #"{"type":"assistant","timestamp":"2026-09-01T10:00:00.000Z","message":{"content":[{"type":"tool_use","id":"t1","name":"Bash","input":{"command":"ls"}}]}}"#,
+            #"{"type":"queue-operation","operation":"enqueue","timestamp":"2026-09-01T10:00:01.000Z","content":"also check the tests"}"#,
+            #"{"type":"attachment","timestamp":"2026-09-01T10:00:01.000Z","attachment":{"type":"queued_command","prompt":"also check the tests","commandMode":"prompt","origin":{"kind":"human"}}}"#,
+            #"{"type":"attachment","timestamp":"2026-09-01T10:00:02.000Z","attachment":{"type":"total_tokens_reminder","text":"<total_tokens>1</total_tokens>"}}"#,
+        ]
+        let items = SessionFeedReader.parse(lines: lines, limit: 30)
+        XCTAssertEqual(items.map(\.kind), [.tool, .user])
+        XCTAssertEqual(items[1].text, "also check the tests")
+    }
+
     func testLimitReturnsOnlyNewestItems() {
         let lines = (0..<5).map { i in
             #"{"type":"user","timestamp":"2026-09-01T10:00:0\#(i).000Z","message":{"content":"msg \#(i)"}}"#

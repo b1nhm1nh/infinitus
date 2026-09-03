@@ -183,6 +183,21 @@ public enum SessionFeedReader {
 
         for (index, entry) in entries.enumerated() {
             let type = entry["type"] as? String
+            // A prompt typed while a turn was running is absorbed mid-turn
+            // and logged as a `queued_command` attachment, never as a
+            // `user` entry (user 2026-09-03: "messages I chat from here
+            // doesn't appear on iOS").
+            if type == "attachment",
+               let attachment = entry["attachment"] as? [String: Any],
+               (attachment["type"] as? String) == "queued_command",
+               let prompt = attachment["prompt"] as? String {
+                let text = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !text.isEmpty {
+                    append(SessionFeedItem(kind: .user, text: String(text.prefix(textCap)),
+                                           at: timestamp(entry)))
+                }
+                continue
+            }
             if type == "user" {
                 if let text = realUserText(entry) {
                     append(SessionFeedItem(kind: .user, text: String(text.prefix(textCap)),
