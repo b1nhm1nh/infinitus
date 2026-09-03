@@ -113,6 +113,7 @@ final class AwsLoginProgressTests: XCTestCase {
         let failed = #"{"type":"user","timestamp":"2026-09-03T08:00:00.000Z","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"t1","content":"[aws-cred-broker] could not refresh credentials for 'papaya-login'.\n  aws said: aws: [ERROR]: Your session has expired. Please reauthenticate using 'aws login'.\n  Fix: aws login --profile papaya-login"}]}}"#
         let fine = #"{"type":"user","timestamp":"2026-09-03T08:01:00.000Z","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"t2","content":[{"type":"text","text":"ok"}]}]}}"#
         XCTAssertEqual(SessionProgress.parse(lines: [failed, fine]).awsLoginProfile, "papaya-login")
+        XCTAssertEqual(SessionProgress.parse(lines: [failed, fine]).awsLoginFailedAt, UsageHistory.parseISO("2026-09-03T08:00:00.000Z"))
         XCTAssertNil(SessionProgress.parse(lines: [fine]).awsLoginProfile)
         // The CLI's own error names no profile — the failed command does.
         let use = #"{"type":"assistant","timestamp":"2026-09-03T08:00:00.000Z","message":{"role":"assistant","content":[{"type":"tool_use","id":"t9","name":"Bash","input":{"command":"AWS_PROFILE=papaya-dev aws sts get-caller-identity"}}]}}"#

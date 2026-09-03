@@ -931,6 +931,12 @@ final class AppModel: ObservableObject {
         var needed = Set<String>()
         for (pid, progress) in sessionProgress.byPid.sorted(by: { $0.key < $1.key }) {
             guard let profile = progress.awsLoginProfile else { continue }
+            // Signed in since the failure: the failing result stays in the
+            // transcript's window until the session moves on, but the
+            // need is met (the key badge outlived the login, 2026-09-03).
+            if let done = byProfile[profile], done.phase == .done,
+               let failedAt = progress.awsLoginFailedAt,
+               failedAt.timeIntervalSince1970 < done.startedAt { continue }
             needed.insert(profile)
             let label = progress.name ?? liveSessions?.sessions?.first { $0.pid == pid }
                 .map { URL(fileURLWithPath: $0.cwd).lastPathComponent }
