@@ -49,6 +49,11 @@ public protocol FleetModel: ObservableObject {
     /// Update chips: a newer build on disk / a newer release upstream.
     var appUpdatePending: Bool { get }
     var appUpdateVersion: String? { get }
+    /// #7: the reset battle plan the planner proposes right now; nil when
+    /// nothing is worth planning. The card rides the error slot.
+    var battlePlan: WindowPlanner.Plan? { get }
+    /// The account an ignition is in flight for (button shows a spinner).
+    var igniting: Int? { get }
 
     // Intro choreography (Animations.swift) — the entrance gates.
     var engineMissing: Bool { get }
@@ -67,6 +72,9 @@ public protocol FleetModel: ObservableObject {
     func toggleEngine()
     func relaunchApp()
     func openSettings()
+    /// #7 manual mode: start account n's 5h clock (`cswap run` igniter).
+    /// Mac-only; the card confirm-gates it.
+    func ignite(_ number: Int)
 }
 
 /// One fleet's header line in a multi-fleet popup.
@@ -92,6 +100,9 @@ public extension FleetModel {
     var engineBadge: EngineBadge? { nil }
     var appUpdatePending: Bool { false }
     var appUpdateVersion: String? { nil }
+    var battlePlan: WindowPlanner.Plan? { nil }
+    var igniting: Int? { nil }
+    func ignite(_ number: Int) {}
     /// A host with no resume nudge (the phone) simply has no count —
     /// the banner then drops its suffix.
     var waitingResume: Int? { nil }

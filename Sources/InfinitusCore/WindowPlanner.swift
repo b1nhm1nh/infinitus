@@ -77,6 +77,16 @@ public enum WindowPlanner {
             case .ignite(let n), .switchTo(let n), .hold(let n), .reset(let n): return n
             }
         }
+
+        /// Wire name (`infinitusctl plan`, the phone mirror).
+        public var name: String {
+            switch self {
+            case .ignite: return "ignite"
+            case .switchTo: return "switch"
+            case .hold: return "hold"
+            case .reset: return "reset"
+            }
+        }
     }
 
     public struct Step: Sendable, Equatable, Identifiable {
@@ -100,6 +110,36 @@ public enum WindowPlanner {
             self.steps = steps
         }
         public var ignites: Bool { steps.contains { if case .ignite = $0.action { return true }; return false } }
+        /// The account an ignite step names, if the plan has one.
+        public var igniteNumber: Int? {
+            steps.lazy.compactMap { if case .ignite(let n) = $0.action { return n }; return nil }.first
+        }
+    }
+
+    /// Flat wire shape of a plan (Action is an enum with payload, so the
+    /// Codable form is spelled out): `infinitusctl plan`, the phone.
+    public struct Payload: Codable, Sendable, Equatable {
+        public struct Step: Codable, Sendable, Equatable {
+            public let at: Double
+            public let action: String
+            public let number: Int
+            public let why: String
+        }
+        public let bindAt: Double
+        public let steps: [Step]
+        public init(_ plan: Plan) {
+            bindAt = plan.bindAt
+            steps = plan.steps.map { .init(at: $0.at, action: $0.action.name,
+                                           number: $0.action.number, why: $0.why) }
+        }
+    }
+
+    /// The igniter: one ~1K-token request as account `number` through
+    /// `cswap run`, which execs claude under that account's own
+    /// CLAUDE_CONFIG_DIR — the default login and the fleet stay untouched
+    /// (docs/research/smart-engine.md, "The primitive we already have").
+    public static func igniterArguments(number: Int) -> [String] {
+        ["run", "\(number)", "--", "-p", ".", "--max-turns", "1"]
     }
 
     /// The core decision, evaluated each poll. Nil means "nothing to plan":

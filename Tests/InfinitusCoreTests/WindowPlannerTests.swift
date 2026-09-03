@@ -136,6 +136,22 @@ final class WindowPlannerTests: XCTestCase {
         XCTAssertEqual(late.stalledSeconds, 700, accuracy: 0.001)
     }
 
+    func testPayloadAndIgniterArguments() throws {
+        let cold = S(number: 2, email: "spare@x", active: false,
+                     fiveHourPct: 0, fiveHourResetsAt: nil, weeklyPct: 20)
+        let plan = try XCTUnwrap(WindowPlanner.plan(accounts: [active, cold], burnPctPerHour: 20,
+                                                    busySessions: 1, now: 10_000))
+        XCTAssertEqual(plan.igniteNumber, 2)
+        let payload = WindowPlanner.Payload(plan)
+        XCTAssertEqual(payload.steps.map(\.action), ["ignite", "switch", "reset"])
+        XCTAssertEqual(payload.steps.map(\.number), [2, 2, 2])
+        XCTAssertEqual(payload.bindAt, plan.bindAt)
+        let data = try JSONEncoder().encode(payload)
+        XCTAssertEqual(try JSONDecoder().decode(WindowPlanner.Payload.self, from: data), payload)
+        XCTAssertEqual(WindowPlanner.igniterArguments(number: 2),
+                       ["run", "2", "--", "-p", ".", "--max-turns", "1"])
+    }
+
     func testReplayWithoutActiveFlagSeesNothing() {
         let s = [sample(t: 100, email: "a", fh: win(100, resetsAt: 5000)),
                  sample(t: 700, email: "b", fh: win(1, resetsAt: 18_700))]

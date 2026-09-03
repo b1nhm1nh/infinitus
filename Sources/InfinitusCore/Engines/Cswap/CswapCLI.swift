@@ -41,7 +41,11 @@ public struct CswapCLI: Sendable {
     /// `stdin` feeds the child's standard input and closes it — the channel
     /// secrets travel on (`cswap notify slack -`), so they never appear in an
     /// argv another process could read out of `ps`.
-    public func run(_ arguments: [String], stdin: String? = nil) async throws -> Data {
+    /// `environment` replaces the child's environment when given — the
+    /// igniter (#7) needs a PATH that reaches `claude`, which a GUI app's
+    /// inherited one doesn't.
+    public func run(_ arguments: [String], stdin: String? = nil,
+                    environment: [String: String]? = nil) async throws -> Data {
         // The blocking Process dance lives on a GCD thread, bridged by a
         // continuation. Running it inline in this async function blocked
         // whatever executor served it — on macOS 26 the body silently never
@@ -53,6 +57,7 @@ public struct CswapCLI: Sendable {
                 let process = Process()
                 process.executableURL = URL(fileURLWithPath: binaryPath)
                 process.arguments = arguments
+                if let environment { process.environment = environment }
                 let out = Pipe()
                 process.standardOutput = out
                 process.standardError = Pipe()
