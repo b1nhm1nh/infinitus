@@ -285,6 +285,31 @@ actor NetworkFleetMirror: FleetMirror {
         return try JSONDecoder().decode(SessionInput.Reply.self, from: data)
     }
 
+    /// Hands a Live Activity push token to the Mac (`POST
+    /// /activities/token`) so its APNs pusher can reach this phone.
+    /// Best effort: false when no Mac answered — the next token update
+    /// or app launch tries again.
+    func registerActivityToken(_ registration: ActivityPushRegistration) async -> Bool {
+        let token = MirrorPairing.normalize(
+            UserDefaults.standard.string(forKey: Self.tokenKey) ?? "")
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        guard let body = try? encoder.encode(registration),
+              let text = candidateEndpoints().first,
+              let manual = MirrorTransport.parseEndpoint(text) else { return false }
+        let endpoint = NWEndpoint.hostPort(
+            host: NWEndpoint.Host(manual.host),
+            port: NWEndpoint.Port(rawValue: manual.port) ?? .any)
+        do {
+            _ = try await fetch(endpoint, path: MirrorTransport.activityTokenPath, hostHeader: manual.host,
+                                useTLS: manual.useTLS, token: token, timeout: Self.inputTimeout,
+                                method: "POST", body: body)
+            return true
+        } catch {
+            return false
+        }
+    }
+
     /// `192.168.2.36:47824` / `abc.trycloudflare.com` — the stored text
     /// without its scheme, short enough for one status line.
     private static func routeLabel(_ text: String) -> String {

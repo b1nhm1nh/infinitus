@@ -1,0 +1,156 @@
+import Foundation
+#if canImport(CryptoKit)
+import CryptoKit
+#endif
+
+// Live Activity pushes (APNs) — the Mac keeps the phone's lock screen
+// moving with the app closed. The phone registers its tokens with the
+// Mac over the mirror (`POST /activities/token`); the Mac posts updates
+// straight to Apple with a token-based (.p8) key it holds in the
+// keychain. No relay, no account of ours in between.
+
+/// What the phone tells the Mac: one token per activity kind. `start`
+/// tokens (iOS 17.2+ push-to-start) let the Mac START an activity when
+/// the app isn't running; `update` tokens belong to one live activity.
+public struct ActivityPushRegistration: Codable, Sendable, Equatable {
+    public enum Kind: String, Codable, Sendable {
+        case workingStart = "working-start"
+        case working = "working"
+        case revivalStart = "revival-start"
+        case revival = "revival"
+    }
+    public let kind: Kind
+    /// Hex APNs token.
+    public let token: String
+    public let deviceId: String
+    public let deviceName: String
+    /// "sandbox" for development-signed builds, "production" otherwise —
+    /// Apple routes them to different gateways.
+    public let environment: String
+    /// The phone's theme, so the Mac themes the content the way the
+    /// phone would; nil = the Mac's own.
+    public let themeID: String?
+    public var registeredAt: Date
+
+    public init(kind: Kind, token: String, deviceId: String, deviceName: String,
+                environment: String, themeID: String?, registeredAt: Date = Date()) {
+        self.kind = kind
+        self.token = token
+        self.deviceId = deviceId
+        self.deviceName = deviceName
+        self.environment = environment
+        self.themeID = themeID
+        self.registeredAt = registeredAt
+    }
+
+    public var isSandbox: Bool { environment == "sandbox" }
+    /// One slot per device+kind: a new token for the same replaces it.
+    public var slot: String { "\(deviceId)/\(kind.rawValue)" }
+}
+
+public enum LiveActivityPush {
+    public static let bundleID = "com.huuloc.infinitus.mobile"
+    public static let topic = bundleID + ".push-type.liveactivity"
+    public static let workingAttributesType = "WorkingActivity"
+    public static let revivalAttributesType = "RevivalActivity"
+
+    public static func host(sandbox: Bool) -> String {
+        sandbox ? "api.sandbox.push.apple.com" : "api.push.apple.com"
+    }
+
+    public static func url(token: String, sandbox: Bool) -> URL {
+        URL(string: "https://\(host(sandbox: sandbox))/3/device/\(token)")!
+    }
+
+    /// `event: update` — new content for a running activity.
+    public static func updatePayload<S: Encodable>(state: S, staleDate: Date?, now: Date = Date()) -> Data {
+        var aps: [String: Any] = ["timestamp": Int(now.timeIntervalSince1970), "event": "update",
+                                  "content-state": json(state)]
+        if let staleDate { aps["stale-date"] = Int(staleDate.timeIntervalSince1970) }
+        return data(["aps": aps])
+    }
+
+    /// `event: end` — final content, gone after `dismissalDate` (nil =
+    /// the system default, a few hours).
+    public static func endPayload<S: Encodable>(state: S, dismissalDate: Date?, now: Date = Date()) -> Data {
+        var aps: [String: Any] = ["timestamp": Int(now.timeIntervalSince1970), "event": "end",
+                                  "content-state": json(state)]
+        if let dismissalDate { aps["dismissal-date"] = Int(dismissalDate.timeIntervalSince1970) }
+        return data(["aps": aps])
+    }
+
+    /// `event: start` (push-to-start): the activity's attributes plus
+    /// its first content, and the alert iOS shows as it appears.
+    public static func startPayload<S: Encodable>(attributesType: String, machine: String, state: S,
+                                                  staleDate: Date?, alertTitle: String, alertBody: String,
+                                                  now: Date = Date()) -> Data {
+        var aps: [String: Any] = [
+            "timestamp": Int(now.timeIntervalSince1970), "event": "start",
+            "content-state": json(state),
+            "attributes-type": attributesType,
+            "attributes": ["machine": machine],
+            "alert": ["title": alertTitle, "body": alertBody],
+        ]
+        if let staleDate { aps["stale-date"] = Int(staleDate.timeIntervalSince1970) }
+        return data(["aps": aps])
+    }
+
+    private static func json<S: Encodable>(_ state: S) -> Any {
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .secondsSince1970
+        guard let data = try? encoder.encode(state),
+              let object = try? JSONSerialization.jsonObject(with: data) else { return [:] }
+        return object
+    }
+
+    private static func data(_ object: [String: Any]) -> Data {
+        (try? JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])) ?? Data()
+    }
+}
+
+/// APNs token-based auth: a JWT signed ES256 with the team's .p8 key,
+/// good for an hour (Apple refuses one older than that and rate-limits
+/// minting under 20 min). Apple platforms only — the Linux tray has no
+/// CryptoKit and pushes nothing (parity pending).
+public enum APNsJWT {
+    public struct Credentials: Sendable, Equatable {
+        public let keyID: String
+        public let teamID: String
+        public let privateKeyPEM: String
+        public init(keyID: String, teamID: String, privateKeyPEM: String) {
+            self.keyID = keyID
+            self.teamID = teamID
+            self.privateKeyPEM = privateKeyPEM
+        }
+    }
+
+    public enum Failure: Error, Equatable { case badKey, unsupported }
+
+    public static func make(_ credentials: Credentials, now: Date = Date()) throws -> String {
+        #if canImport(CryptoKit)
+        let key: P256.Signing.PrivateKey
+        do { key = try P256.Signing.PrivateKey(pemRepresentation: credentials.privateKeyPEM) }
+        catch { throw Failure.badKey }
+        let header = base64url(try JSONSerialization.data(
+            withJSONObject: ["alg": "ES256", "kid": credentials.keyID], options: [.sortedKeys]))
+        let claims = base64url(try JSONSerialization.data(
+            withJSONObject: ["iss": credentials.teamID, "iat": Int(now.timeIntervalSince1970)],
+            options: [.sortedKeys]))
+        let signingInput = Data("\(header).\(claims)".utf8)
+        let signature = try key.signature(for: signingInput)
+        return "\(header).\(claims).\(base64url(signature.rawRepresentation))"
+        #else
+        throw Failure.unsupported
+        #endif
+    }
+
+    /// Mint at most every 50 min: Apple accepts a token for 60.
+    public static let lifetime: TimeInterval = 50 * 60
+
+    static func base64url(_ data: Data) -> String {
+        data.base64EncodedString()
+            .replacingOccurrences(of: "+", with: "-")
+            .replacingOccurrences(of: "/", with: "_")
+            .replacingOccurrences(of: "=", with: "")
+    }
+}

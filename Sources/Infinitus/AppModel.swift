@@ -436,6 +436,8 @@ final class AppModel: ObservableObject {
     private(set) lazy var controlServer = ControlServer(model: self)
     let quickTunnel = QuickTunnel()
     let namedTunnel = NamedTunnel()
+    /// Live Activity pushes to the phone (APNs), LiveActivityPusher.swift.
+    let liveActivityPusher = LiveActivityPusher()
     private let awake = KeepAwake()
     private var pushTriggers = PushTriggers()
     private let defaults: UserDefaults
@@ -769,6 +771,10 @@ final class AppModel: ObservableObject {
             if self.eventLog.count > 100 { self.eventLog.removeFirst(self.eventLog.count - 100) }
         }
         namedTunnel.log = quickTunnel.log
+        liveActivityPusher.log = quickTunnel.log
+        mirrorServer.activityTokens.set { [weak self] registration in
+            Task { @MainActor in self?.liveActivityPusher.register(registration) }
+        }
         quickTunnel.onURL = { [weak self] url in self?.publishRendezvous(url) }
         // The tunnels can only point at a bound port, which arrives later.
         mirrorServer.onReady = { [weak self] _ in
@@ -1315,6 +1321,13 @@ final class AppModel: ObservableObject {
             let allFleets = fleets.compactMap(\.lastFleet)
             let forecast = forecast
             let plan = battlePlan
+            if let primaryFleet = primary.lastFleet {
+                liveActivityPusher.tick(fleet: primaryFleet,
+                                        machine: Host.current().localizedName ?? "Mac",
+                                        themes: availableThemes, macTheme: rowTheme,
+                                        report: usageModel?.report,
+                                        tokenRate: sessionProgress.tokenRate)
+            }
             Task.detached(priority: .utility) { [mirrorExporter] in
                 await mirrorExporter.record(listJSON: raw, prefs: prefs,
                                             serviceStatus: serviceStatus,

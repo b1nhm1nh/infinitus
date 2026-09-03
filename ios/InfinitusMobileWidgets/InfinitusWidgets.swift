@@ -1,4 +1,5 @@
 import ActivityKit
+import InfinitusCore
 import InfinitusUI
 import SwiftUI
 import WidgetKit
@@ -58,7 +59,7 @@ struct RevivalLiveActivity: Widget {
 }
 
 private struct RevivalLockScreen: View {
-    let state: RevivalActivity.ContentState
+    let state: RevivalActivityState
     var body: some View {
         let accent = ThemeColor.resolve(state.accent)
         HStack(spacing: 14) {
@@ -157,7 +158,7 @@ struct WorkingLiveActivity: Widget {
 }
 
 private struct WorkingLockScreen: View {
-    let state: WorkingActivity.ContentState
+    let state: WorkingActivityState
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 8) {
@@ -222,14 +223,14 @@ private struct TokenRow: View {
     }
 }
 
-private func sessionsLine(_ state: WorkingActivity.ContentState) -> String {
+private func sessionsLine(_ state: WorkingActivityState) -> String {
     var line = "\(state.busy) working · \(state.total) session\(state.total == 1 ? "" : "s")"
     if state.waiting > 0 { line += " · \(state.waiting) waiting on you" }
     return line
 }
 
 /// "4 stopped, waiting to resume · 12 sessions" (or just the count).
-private func waitingLine(_ state: RevivalActivity.ContentState) -> String {
+private func waitingLine(_ state: RevivalActivityState) -> String {
     state.waiting > 0
         ? "\(state.waiting) stopped, waiting to resume · \(state.sessions) sessions"
         : "\(state.sessions) session\(state.sessions == 1 ? "" : "s")"

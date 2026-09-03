@@ -1,0 +1,146 @@
+import XCTest
+@testable import InfinitusCore
+#if canImport(CryptoKit)
+import CryptoKit
+#endif
+
+final class LiveActivityPushTests: XCTestCase {
+    #if canImport(CryptoKit)
+    func testJWTIsES256SignedWithTheKeyAndCarriesKidAndIss() throws {
+        let key = P256.Signing.PrivateKey()
+        let jwt = try APNsJWT.make(.init(keyID: "KEY1234567", teamID: "TEAM123456",
+                                         privateKeyPEM: key.pemRepresentation),
+                                   now: Date(timeIntervalSince1970: 1_700_000_000))
+        let parts = jwt.split(separator: ".").map(String.init)
+        XCTAssertEqual(parts.count, 3)
+        func decode(_ s: String) -> Data {
+            var b = s.replacingOccurrences(of: "-", with: "+").replacingOccurrences(of: "_", with: "/")
+            while b.count % 4 != 0 { b += "=" }
+            return Data(base64Encoded: b)!
+        }
+        let header = try JSONSerialization.jsonObject(with: decode(parts[0])) as! [String: Any]
+        let claims = try JSONSerialization.jsonObject(with: decode(parts[1])) as! [String: Any]
+        XCTAssertEqual(header["alg"] as? String, "ES256")
+        XCTAssertEqual(header["kid"] as? String, "KEY1234567")
+        XCTAssertEqual(claims["iss"] as? String, "TEAM123456")
+        XCTAssertEqual(claims["iat"] as? Int, 1_700_000_000)
+        let signature = try P256.Signing.ECDSASignature(rawRepresentation: decode(parts[2]))
+        XCTAssertTrue(key.publicKey.isValidSignature(signature, for: Data("\(parts[0]).\(parts[1])".utf8)))
+    }
+
+    func testBadKeyIsRefused() {
+        XCTAssertThrowsError(try APNsJWT.make(.init(keyID: "K", teamID: "T", privateKeyPEM: "nope")))
+    }
+    #endif
+
+    func testPayloadShapes() throws {
+        struct S: Encodable { let a = 1 }
+        let now = Date(timeIntervalSince1970: 100)
+        let update = try JSONSerialization.jsonObject(with: LiveActivityPush.updatePayload(
+            state: S(), staleDate: now.addingTimeInterval(60), now: now)) as! [String: Any]
+        let aps = update["aps"] as! [String: Any]
+        XCTAssertEqual(aps["event"] as? String, "update")
+        XCTAssertEqual(aps["timestamp"] as? Int, 100)
+        XCTAssertEqual(aps["stale-date"] as? Int, 160)
+        XCTAssertEqual((aps["content-state"] as! [String: Any])["a"] as? Int, 1)
+
+        let start = try JSONSerialization.jsonObject(with: LiveActivityPush.startPayload(
+            attributesType: "WorkingActivity", machine: "Mac", state: S(), staleDate: nil,
+            alertTitle: "t", alertBody: "b", now: now)) as! [String: Any]
+        let saps = start["aps"] as! [String: Any]
+        XCTAssertEqual(saps["event"] as? String, "start")
+        XCTAssertEqual(saps["attributes-type"] as? String, "WorkingActivity")
+        XCTAssertEqual((saps["attributes"] as! [String: Any])["machine"] as? String, "Mac")
+        XCTAssertEqual((saps["alert"] as! [String: Any])["title"] as? String, "t")
+
+        let end = try JSONSerialization.jsonObject(with: LiveActivityPush.endPayload(
+            state: S(), dismissalDate: now, now: now)) as! [String: Any]
+        XCTAssertEqual((end["aps"] as! [String: Any])["dismissal-date"] as? Int, 100)
+    }
+
+    func testHostsAndTopic() {
+        XCTAssertEqual(LiveActivityPush.host(sandbox: true), "api.sandbox.push.apple.com")
+        XCTAssertEqual(LiveActivityPush.url(token: "ab12", sandbox: false).absoluteString,
+                       "https://api.push.apple.com/3/device/ab12")
+        XCTAssertEqual(LiveActivityPush.topic, "com.huuloc.infinitus.mobile.push-type.liveactivity")
+    }
+
+    func testRegistrationSlotAndRoundTrip() throws {
+        let reg = ActivityPushRegistration(kind: .working, token: "ff", deviceId: "d1", deviceName: "Titan",
+                                           environment: "sandbox", themeID: "rpg",
+                                           registeredAt: Date(timeIntervalSince1970: 5))
+        XCTAssertEqual(reg.slot, "d1/working")
+        XCTAssertTrue(reg.isSandbox)
+        let encoder = JSONEncoder(); encoder.dateEncodingStrategy = .iso8601
+        let decoder = JSONDecoder(); decoder.dateDecodingStrategy = .iso8601
+        XCTAssertEqual(try decoder.decode(ActivityPushRegistration.self, from: try encoder.encode(reg)), reg)
+    }
+}
+
+final class LiveActivityBuilderTests: XCTestCase {
+    private func account(_ n: Int, active: Bool, five: Double, seven: Double, alias: String? = nil,
+                         resets: String? = nil) -> Account {
+        Account(number: n, email: "p\(n)@x.com", organizationName: "", organizationUuid: "",
+                isOrganization: false, active: active, usageStatus: "ok",
+                usage: Usage(fiveHour: UsageWindow(pct: five, resetsAt: resets),
+                             sevenDay: UsageWindow(pct: seven, resetsAt: resets),
+                             scoped: [UsageWindow(pct: 74, resetsAt: resets, name: "Fable")], spend: nil),
+                alias: alias, icon: nil, plan: "Max 20x", disabled: nil, preferred: nil,
+                usageFetchedAt: nil, usageAgeSeconds: nil, lastGoodUsage: nil,
+                lastGoodFetchedAt: nil, lastGoodAgeSeconds: nil)
+    }
+
+    private func fleet(accounts: [Account], next: Int?, recovery: NextRecovery? = nil,
+                       busy: Int) -> EngineFleet {
+        EngineFleet(engineID: "cswap", provider: .claude, accounts: accounts, activeNumber: nil,
+                    nextCandidate: next, nextRecovery: recovery,
+                    liveSessions: LiveSessions(busy: busy, total: 12, idle: nil, waiting: 2, shell: nil,
+                                               unknown: nil, sessions: nil), raw: nil)
+    }
+
+    func testWorkingStateIsThemedAndPicksTheBindingWindow() throws {
+        let rpg = try XCTUnwrap(RowTheme.builtins.first { $0.id == "rpg" })
+        let f = fleet(accounts: [account(1, active: true, five: 44, seven: 63, alias: "death2"),
+                                 account(2, active: false, five: 0, seven: 0)], next: 2, busy: 3)
+        let state = try XCTUnwrap(LiveActivityBuilder.working(
+            fleet: f, theme: rpg, report: nil, tokenRate: TokenRate(perMinute: 900, peakPerMinute: 1800)))
+        XCTAssertEqual(state.active, "death2")
+        XCTAssertEqual(state.windows.map(\.label).count, 3)
+        XCTAssertEqual(state.binding, 2)            // Fable 74% > 63 > 44
+        XCTAssertEqual(state.busy, 3)
+        XCTAssertEqual(state.waiting, 2)
+        XCTAssertEqual(state.tokensPerMinute, 900)
+        XCTAssertEqual(state.tokenFraction, 0.5)
+        XCTAssertTrue(state.next?.hasSuffix("p2") == true)
+        XCTAssertFalse(state.plain)
+        XCTAssertNil(LiveActivityBuilder.working(fleet: fleet(accounts: f.accounts, next: 2, busy: 0),
+                                                 theme: rpg, report: nil, tokenRate: nil))
+    }
+
+    func testRevivalStateOnlyWhenAllDead() throws {
+        let plain = RowTheme.off
+        let soon = ISO8601DateFormatter().string(from: Date().addingTimeInterval(3600))
+        let dead = fleet(accounts: [account(1, active: true, five: 100, seven: 40, alias: "loc", resets: soon)],
+                         next: nil, recovery: NextRecovery(number: 1, at: soon), busy: 0)
+        let state = try XCTUnwrap(LiveActivityBuilder.revival(fleet: dead, theme: plain))
+        XCTAssertEqual(state.reviver, "loc")
+        XCTAssertEqual(state.reviveWord, "recovers")
+        XCTAssertFalse(state.revived)
+        XCTAssertNil(LiveActivityBuilder.revival(
+            fleet: fleet(accounts: dead.accounts, next: 1, recovery: dead.nextRecovery, busy: 0), theme: plain))
+    }
+
+    func testDiffersIgnoresSmallMoves() throws {
+        let rpg = try XCTUnwrap(RowTheme.builtins.first { $0.id == "rpg" })
+        let a = try XCTUnwrap(LiveActivityBuilder.working(
+            fleet: fleet(accounts: [account(1, active: true, five: 40, seven: 60)], next: nil, busy: 1),
+            theme: rpg, report: nil, tokenRate: nil))
+        var b = a
+        b.windows[0].pct = 43
+        XCTAssertFalse(LiveActivityBuilder.differs(a, b))
+        b.windows[0].pct = 46
+        XCTAssertTrue(LiveActivityBuilder.differs(a, b))
+        b = a; b.busy = 2
+        XCTAssertTrue(LiveActivityBuilder.differs(a, b))
+    }
+}

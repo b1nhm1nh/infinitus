@@ -59,6 +59,22 @@ final class MirrorSessionFeedBox: @unchecked Sendable {
     }
 }
 
+/// The `POST /activities/token` handler (Live Activity pushes): the
+/// phone's APNs tokens, handed to AppModel's pusher on the main actor.
+final class MirrorActivityTokenBox: @unchecked Sendable {
+    private let lock = NSLock()
+    private var sink: (@Sendable (ActivityPushRegistration) -> Void)?
+
+    func set(_ new: @escaping @Sendable (ActivityPushRegistration) -> Void) {
+        lock.lock(); sink = new; lock.unlock()
+    }
+
+    func call(_ registration: ActivityPushRegistration) {
+        lock.lock(); let current = sink; lock.unlock()
+        current?(registration)
+    }
+}
+
 /// The `POST /sessions/<pid>/input` handler (#17 layer 2), boxed the
 /// same way as `sessionFeed`: AppModel sets it once from the main actor,
 /// the connection handlers call it from the network queue. `nil` means
@@ -107,6 +123,8 @@ final class MirrorServer: ObservableObject {
     let token = MirrorTokenBox()
     /// Answers `/sessions/<pid>/tail`; set by AppModel once at start.
     let sessionFeed = MirrorSessionFeedBox()
+    /// Answers `POST /activities/token`; set by AppModel once at start.
+    let activityTokens = MirrorActivityTokenBox()
     /// Answers `POST /sessions/<pid>/input` (#17 layer 2); set by AppModel
     /// once at start.
     let sessionInput = MirrorSessionInputBox()
@@ -161,6 +179,7 @@ final class MirrorServer: ObservableObject {
         let token = self.token
         let sessionFeed = self.sessionFeed
         let sessionInput = self.sessionInput
+        let activityTokens = self.activityTokens
         let served: @Sendable (MirrorTransport.Request) -> Void = { [weak self] request in
             let client = MirrorClient(request: request)
             Task { @MainActor in
@@ -171,7 +190,8 @@ final class MirrorServer: ObservableObject {
         }
         listener.newConnectionHandler = { [queue] connection in
             Self.serve(connection, payload: payload, token: token, sessionFeed: sessionFeed,
-                       sessionInput: sessionInput, queue: queue, onServed: served)
+                       sessionInput: sessionInput, activityTokens: activityTokens,
+                       queue: queue, onServed: served)
         }
         listener.stateUpdateHandler = { [weak self] state in
             Task { @MainActor in self?.handle(state, wasFixedPort: rawPort != 0, name: name) }
@@ -215,11 +235,13 @@ final class MirrorServer: ObservableObject {
                                           token: MirrorTokenBox,
                                           sessionFeed: MirrorSessionFeedBox,
                                           sessionInput: MirrorSessionInputBox,
+                                          activityTokens: MirrorActivityTokenBox,
                                           queue: DispatchQueue,
                                           onServed: @escaping @Sendable (MirrorTransport.Request) -> Void) {
         connection.start(queue: queue)
         receive(connection, buffer: Data(), payload: payload, token: token,
-               sessionFeed: sessionFeed, sessionInput: sessionInput, onServed: onServed)
+               sessionFeed: sessionFeed, sessionInput: sessionInput,
+               activityTokens: activityTokens, onServed: onServed)
     }
 
     private nonisolated static func receive(_ connection: NWConnection,
@@ -228,6 +250,7 @@ final class MirrorServer: ObservableObject {
                                             token: MirrorTokenBox,
                                             sessionFeed: MirrorSessionFeedBox,
                                             sessionInput: MirrorSessionInputBox,
+                                            activityTokens: MirrorActivityTokenBox,
                                             onServed: @escaping @Sendable (MirrorTransport.Request) -> Void) {
         connection.receive(minimumIncompleteLength: 1, maximumLength: 4096) {
             data, _, isComplete, error in
@@ -298,6 +321,17 @@ final class MirrorServer: ObservableObject {
                     } else {
                         response = MirrorTransport.badRequestResponse()
                     }
+                } else if request.method == "POST",
+                          request.path == MirrorTransport.activityTokenPath {
+                    let decoder = JSONDecoder()
+                    decoder.dateDecodingStrategy = .iso8601
+                    if let registration = try? decoder.decode(ActivityPushRegistration.self, from: request.body) {
+                        activityTokens.call(registration)
+                        response = MirrorTransport.jsonResponse(Data(#"{"ok":true}"#.utf8))
+                        onServed(request)
+                    } else {
+                        response = MirrorTransport.badRequestResponse()
+                    }
                 } else {
                     response = MirrorTransport.notFoundResponse()
                 }
@@ -313,7 +347,8 @@ final class MirrorServer: ObservableObject {
                 return
             }
             receive(connection, buffer: buffer, payload: payload, token: token,
-                   sessionFeed: sessionFeed, sessionInput: sessionInput, onServed: onServed)
+                   sessionFeed: sessionFeed, sessionInput: sessionInput,
+                   activityTokens: activityTokens, onServed: onServed)
         }
     }
 }

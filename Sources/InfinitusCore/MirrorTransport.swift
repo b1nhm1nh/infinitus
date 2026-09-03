@@ -34,6 +34,9 @@ public enum MirrorTransport {
         return Int32(parts[1])
     }
     /// Query parameter carrying the item limit for the tail route.
+    /// `POST /activities/token` — the phone's Live Activity push tokens
+    /// (an `ActivityPushRegistration` body; 204 when stored).
+    public static let activityTokenPath = "/activities/token"
     public static let tailLimitQueryName = "n"
     /// Long-poll: `?since=<feed.stamp>&wait=<seconds>` holds the reply until
     /// the transcript's stamp differs from `since`, or `wait` elapses

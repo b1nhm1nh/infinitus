@@ -1,4 +1,5 @@
 import Foundation
+import InfinitusCore
 
 /// Text-vs-emoji presentation shim (#9 phase D3). Themes lean on Unicode
 /// symbols that carry a text glyph by default on macOS/AppKit (⚔ U+2694,
@@ -15,17 +16,7 @@ public enum PopupGlyph {
         #if os(macOS)
         return s
         #else
-        var out = String.UnicodeScalarView()
-        let scalars = Array(s.unicodeScalars)
-        for (i, scalar) in scalars.enumerated() {
-            out.append(scalar)
-            guard scalar.properties.isEmoji, !scalar.properties.isEmojiPresentation else { continue }
-            let next = i + 1 < scalars.count ? scalars[i + 1] : nil
-            if next?.value != 0xFE0F, next?.value != 0xFE0E {
-                out.append(Unicode.Scalar(0xFE0E)!)
-            }
-        }
-        return String(out)
+        return GlyphText.textPresentation(s)
         #endif
     }
 }

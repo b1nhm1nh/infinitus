@@ -17,6 +17,7 @@ struct SyncPane: View {
     /// grows a third entry the moment cloudflared names the hostname.
     @ObservedObject private var tunnel: QuickTunnel
     @ObservedObject private var named: NamedTunnel
+    @ObservedObject private var pusher: LiveActivityPusher
     /// Typed hostname/token live here until Save: the model restarts the
     /// tunnel on a hostname change, and a half-typed one shouldn't.
     @State private var namedHost = ""
@@ -38,6 +39,7 @@ struct SyncPane: View {
         _server = ObservedObject(wrappedValue: app.mirrorServer)
         _tunnel = ObservedObject(wrappedValue: app.quickTunnel)
         _named = ObservedObject(wrappedValue: app.namedTunnel)
+        _pusher = ObservedObject(wrappedValue: app.liveActivityPusher)
     }
 
     var body: some View {
@@ -164,6 +166,9 @@ struct SyncPane: View {
                 .onAppear { probeTailscale(); namedHost = app.mirrorNamedTunnelHost }
                 .onReceive(reprobe) { _ in probeTailscale() }
             }
+            Section("Phone lock screen") {
+                liveActivityRows
+            }
             Section("iCloud") {
                 Toggle("Sync settings via iCloud Drive", isOn: $sync.enabled)
                     .help("Display prefs, custom themes, and set cswap "
@@ -205,6 +210,44 @@ struct SyncPane: View {
     /// The restart-proof remote route: a Cloudflare tunnel the user owns.
     /// Cloudflare holds the hostname → localhost:port mapping; this Mac
     /// holds only the tunnel token, in the keychain.
+    /// Live Activity pushes (APNs): the .p8 key that lets this Mac keep
+    /// the phone's lock-screen activities moving with the app closed.
+    @ViewBuilder private var liveActivityRows: some View {
+        Text("The phone's Live Activities (working sessions, revival countdown) "
+             + "update while the app is open. To keep them live with the app "
+             + "closed, this Mac pushes through Apple (APNs) with a key from "
+             + "your developer account: Certificates, Identifiers & Profiles → "
+             + "Keys → + → Apple Push Notifications service, download the .p8.")
+            .font(.caption).foregroundStyle(.secondary)
+        TextField("Team ID", text: $pusher.teamID, prompt: Text("ABCDE12345"))
+        TextField("Key ID", text: $pusher.keyID, prompt: Text("the key's 10-character id"))
+        HStack {
+            Button(pusher.keyStored ? "Replace .p8 from clipboard" : "Paste .p8 from clipboard") {
+                pusher.storeKey(pem: NSPasteboard.general.string(forType: .string) ?? "")
+            }
+            if pusher.keyStored {
+                Button("Forget key") { pusher.storeKey(pem: "") }
+            }
+            Text(pusher.keyStored ? "key in the keychain" : "no key yet")
+                .font(.caption).foregroundStyle(.secondary)
+        }
+        if pusher.registrations.isEmpty {
+            Text("No phone has registered a push token yet — open the app once "
+                 + "on the phone after it's paired.")
+                .font(.caption).foregroundStyle(.secondary)
+        } else {
+            ForEach(pusher.registrations.values.sorted { $0.registeredAt > $1.registeredAt },
+                    id: \.slot) { reg in
+                Text("\(reg.deviceName) · \(reg.kind.rawValue) · \(reg.environment) · "
+                     + reg.registeredAt.formatted(date: .omitted, time: .shortened))
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+        }
+        if let result = pusher.lastResult {
+            Text(result).font(.caption).foregroundStyle(.secondary)
+        }
+    }
+
     /// Who is talking to the mirror (user 2026-09-03: "show active/
     /// connected devices"): one row per phone, green while it has been
     /// heard from inside MirrorClient.activeWindow, grey after.
