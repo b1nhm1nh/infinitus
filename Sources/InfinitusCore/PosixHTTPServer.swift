@@ -17,17 +17,25 @@ import Glibc
 /// only owns the socket.
 public final class PosixHTTPServer: @unchecked Sendable {
     public typealias Handler = @Sendable (MirrorTransport.Request) -> Data
+    public typealias Authorizer = @Sendable (MirrorTransport.Request) -> Bool
 
     public enum ServerError: Error, Sendable {
         case socket, setsockopt, bind, listen
     }
 
     private let handler: Handler
+    /// Checked off the head alone, before a single body byte is read
+    /// (mirrors MirrorServer.receive on the Mac, 2026-09-03 attachments):
+    /// an unpaired caller must not be able to make this thread buffer up
+    /// to the attachments route's 24 MiB cap. `nil` skips the check, same
+    /// as before this existed.
+    private let authorize: Authorizer?
     private let lock = NSLock()
     private var listenFD: Int32 = -1
     private var stopped = false
 
-    public init(handler: @escaping Handler) {
+    public init(authorize: Authorizer? = nil, handler: @escaping Handler) {
+        self.authorize = authorize
         self.handler = handler
     }
 
@@ -116,6 +124,10 @@ public final class PosixHTTPServer: @unchecked Sendable {
             if let head = MirrorTransport.parseRequest(buffer) {
                 bodyCap = MirrorTransport.bodyCap(method: head.method, path: head.path)
                 readCap = bodyCap + 4096
+                if let authorize, !authorize(head) {
+                    writeAll(MirrorTransport.unauthorizedResponse(), to: fd)
+                    return
+                }
             }
             if let request = MirrorTransport.parseRequestWithBody(buffer, bodyCap: bodyCap) {
                 writeAll(handler(request), to: fd)

@@ -12,7 +12,7 @@ final class PosixHTTPServerTests: XCTestCase {
 
     func startServer() throws -> (server: PosixHTTPServer, port: UInt16) {
         let expected = Self.token
-        let server = PosixHTTPServer { request in
+        let server = PosixHTTPServer(authorize: { MirrorTransport.isAuthorized($0, token: expected) }) { request in
             guard MirrorTransport.isAuthorized(request, token: expected) else {
                 return MirrorTransport.unauthorizedResponse()
             }
@@ -132,6 +132,47 @@ final class PosixHTTPServerTests: XCTestCase {
                              headers: ["Authorization": "Bearer \(token)"])
         XCTAssertEqual(response?.status, 200)
         XCTAssertEqual(response?.body, Data(#"{"machineName":"linux-test"}"#.utf8))
+    }
+
+    /// A bad token plus a huge `Content-Length` must be rejected off the
+    /// head alone — the client here never sends a body at all, so a
+    /// 401 arriving proves the server didn't wait to buffer it
+    /// (2026-09-03 attachments parity with the Mac's `MirrorServer`).
+    func testUnauthorizedHeadRejectedBeforeBodyArrives() throws {
+        let (server, port) = try startServer()
+        defer { server.stop() }
+        let fd = socket(AF_INET, Int32(SOCK_STREAM.rawValue), 0)
+        XCTAssertGreaterThanOrEqual(fd, 0)
+        defer { close(fd) }
+        var addr = sockaddr_in()
+        addr.sin_family = sa_family_t(AF_INET)
+        addr.sin_port = port.bigEndian
+        addr.sin_addr = in_addr(s_addr: inet_addr("127.0.0.1"))
+        let connected = withUnsafePointer(to: &addr) { ptr in
+            ptr.withMemoryRebound(to: sockaddr.self, capacity: 1) { sa in
+                connect(fd, sa, socklen_t(MemoryLayout<sockaddr_in>.size))
+            }
+        }
+        XCTAssertEqual(connected, 0)
+        // 24 MiB+ — the attachments route's cap — but not one byte of it
+        // ever gets sent.
+        let head = "POST /sessions/1/input HTTP/1.1\r\nHost: 127.0.0.1\r\n"
+            + "Authorization: Bearer WRONGWRONGWRONGWRONGWRON\r\n"
+            + "Content-Length: 25000000\r\n\r\n"
+        let bytes = Array(head.utf8)
+        bytes.withUnsafeBufferPointer { buf in
+            _ = send(fd, buf.baseAddress, buf.count, 0)
+        }
+        var buffer = Data()
+        var chunk = [UInt8](repeating: 0, count: 4096)
+        var response: MirrorTransport.HTTPResponse?
+        while response == nil {
+            let n = chunk.withUnsafeMutableBytes { raw in read(fd, raw.baseAddress, raw.count) }
+            guard n > 0 else { break }
+            buffer.append(contentsOf: chunk[0..<n])
+            response = MirrorTransport.parseResponse(buffer)
+        }
+        XCTAssertEqual(response?.status, 401)
     }
 
     func testUnknownRouteIsNotFound() throws {

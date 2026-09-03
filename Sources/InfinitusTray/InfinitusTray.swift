@@ -626,7 +626,7 @@ struct InfinitusTray {
         let firstList = await collectAndExport(themeID: themeID)
         await tickPushes(list: firstList, pushTriggers: &pushTriggers,
                          flags: pushFlags, bin: CswapLocator.locate())
-        let server = PosixHTTPServer { request in
+        let server = PosixHTTPServer(authorize: { MirrorTransport.isAuthorized($0, token: resolved) }) { request in
             guard MirrorTransport.isAuthorized(request, token: resolved) else {
                 return MirrorTransport.unauthorizedResponse()
             }
