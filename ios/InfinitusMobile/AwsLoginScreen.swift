@@ -300,15 +300,23 @@ struct AwsLoginScreen: View {
                 Label("Open sign-in page", systemImage: "safari")
             }
             .buttonStyle(.borderedProminent)
-            TextField("Authorization code", text: $code)
+            // The real code is ~1.8k chars of base64: a growing multi-line
+            // field so the paste is visible, plus a one-tap paste.
+            TextField("Authorization code", text: $code, axis: .vertical)
+                .lineLimit(3...8)
                 .textFieldStyle(.roundedBorder)
-                .font(.system(.body, design: .monospaced))
+                .font(.system(.caption, design: .monospaced))
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
-                .onSubmit { flow.send(code: code) }
-            Button("Send code") { flow.send(code: code) }
+            HStack {
+                Button {
+                    if let pasted = UIPasteboard.general.string { code = pasted }
+                } label: { Label("Paste", systemImage: "doc.on.clipboard") }
                 .buttonStyle(.bordered)
-                .disabled(code.trimmingCharacters(in: .whitespaces).isEmpty || flow.busy)
+                Button("Send code") { flow.send(code: code) }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(code.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || flow.busy)
+            }
             if state.phase == .waitingForBrowser {
                 ProgressView("Finishing…").font(.footnote)
             }
