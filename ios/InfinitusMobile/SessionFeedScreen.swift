@@ -1,11 +1,13 @@
 import SwiftUI
 import InfinitusCore
+import InfinitusUI
 
 /// One session's recent important messages (#17), chat-style — `GET
 /// /sessions/<pid>/tail` polled every 5s while this screen is on screen,
 /// with a bottom composer and per-card action buttons (layer 2) that
 /// `POST /sessions/<pid>/input`.
 struct SessionFeedScreen: View {
+    @ObservedObject var model: MirrorModel
     let session: SessionDetail
 
     @State private var feed: SessionFeed?
@@ -52,12 +54,30 @@ struct SessionFeedScreen: View {
         .navigationTitle(feed?.name ?? repoName(session.cwd))
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
+            // The whole header is a tap target into the detail screen
+            // (user 2026-09-03: "a more detail screen when tap on its
+            // header title") — same NavigationPath the row tap already
+            // pushes onto, one level deeper.
             ToolbarItem(placement: .principal) {
-                VStack(spacing: 0) {
-                    Text(feed?.name ?? repoName(session.cwd)).font(.headline)
-                    Text(feed?.status ?? session.status)
-                        .font(.caption2).foregroundStyle(.secondary)
+                NavigationLink(value: SessionDetailRoute(session: session)) {
+                    VStack(spacing: 1) {
+                        Text(feed?.name ?? repoName(session.cwd)).font(.headline)
+                        Text(feed?.status ?? session.status)
+                            .font(.caption2).foregroundStyle(.secondary)
+                        if let line = AccountSummaryFormat.headerLine(
+                            model.accountSummary(forSessionPid: session.pid)) {
+                            HStack(spacing: 4) {
+                                Circle().fill(ThemeColor.resolve(line.colorName))
+                                    .frame(width: 6, height: 6)
+                                Text(line.text)
+                                    .font(.caption2).foregroundStyle(.secondary)
+                                    .lineLimit(1)
+                            }
+                        }
+                    }
                 }
+                .buttonStyle(.plain)
+                .foregroundStyle(.primary)
             }
         }
         .refreshable { await load() }

@@ -17,7 +17,14 @@ struct SessionsScreen: View {
                 .navigationTitle("Sessions")
                 .refreshable { await model.refresh() }
                 .navigationDestination(for: SessionDetail.self) { session in
-                    SessionFeedScreen(session: session)
+                    SessionFeedScreen(model: model, session: session)
+                }
+                // The feed header's tap target (user 2026-09-03: account
+                // summary + "a more detail screen when tap on its header
+                // title") — a distinct route so it stacks one level past
+                // the feed rather than replacing it.
+                .navigationDestination(for: SessionDetailRoute.self) { route in
+                    SessionDetailScreen(model: model, progress: progress, session: route.session)
                 }
         }
         // Same dev seam as `INFINITUS_TAB` — a headless simulator capture

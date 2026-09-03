@@ -154,6 +154,27 @@ extension MirrorFleetModel: FleetModel {
     var introBarDelay: Double { host.introBarDelay }
 }
 
+extension MirrorModel {
+    /// The mirrored fleets, reconstituted as plain `EngineFleet`s — same
+    /// fields `MirrorFleetModel.apply` keeps published — for
+    /// `SessionAccountLookup`, which stays a pure Core function with no
+    /// notion of the phone's `ObservableObject` wrapper.
+    var engineFleets: [EngineFleet] {
+        fleets.map {
+            EngineFleet(engineID: $0.engineID, provider: $0.provider, accounts: $0.accounts,
+                        activeNumber: $0.activeNumber, nextCandidate: $0.nextCandidate,
+                        nextRecovery: $0.nextRecovery, liveSessions: $0.liveSessions)
+        }
+    }
+
+    /// Which account (cswap) or fleet (CLIProxyAPI's per-request routing)
+    /// is actually serving a live session ("which account is active or
+    /// using the session", user 2026-09-03).
+    func accountSummary(forSessionPid pid: Int) -> SessionAccountSummary? {
+        SessionAccountLookup.summarize(pid: pid, fleets: engineFleets)
+    }
+}
+
 extension MirrorFleetModel: UsageSource {
     /// Same fidelity as the Mac popup's cash column here: only cswap's
     /// report ever rides the mirror (`MirrorSnapshot.usageJSON`), so
