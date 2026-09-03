@@ -52,6 +52,11 @@ windows.
   history with rhythm and burn rate; a Utilization pane with a
   "Battle plan — dry run" that replays what deliberate ignite / switch /
   hold / reset would have done. Samples now record the active account.
+- **Battle plan (manual).** Infinitus projects when the active account's
+  5h window binds and offers to start a spare account's clock early so
+  its reset lands mid-sprint — a live line in the popup with a two-tap,
+  confirm-gated Ignite (`cswap run <n> -- -p . --max-turns 1`), and
+  `infinitusctl plan`.
 - **Weekly reset on full-HP rows (#16)**, 5h-dead rows keep their 7d
   reset, remembered resets say "last seen".
 
