@@ -1,5 +1,8 @@
 import SwiftUI
 import InfinitusCore
+#if os(macOS)
+import AppKit
+#endif
 
 /// The prediction line (2026-09-03): at the measured pace, when each
 /// window of the active account hits its limit and when the fleet is
@@ -16,18 +19,21 @@ public struct UsageForecastLine<M: FleetModel>: View {
 
     @ViewBuilder public var body: some View {
         if let f = model.forecast, let text = summary(f) {
+            // The line is the door to the dashboard (user 2026-09-03 "link
+            // from 'at this pace' to view full" … "nobody knows it's
+            // clickable"): a visible link tail, underlined, hand cursor.
             (Text(Image(systemName: "hourglass"))
                 .foregroundStyle(.orange)
-             + Text(" " + text))
+             + Text(" " + text + "  ")
+             + Text("Full forecast ›").foregroundStyle(Color.accentColor).underline())
                 .font(PopupFont.caption)
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
                 .fixedSize()
                 .help(help(f) + "\n\nClick for the full forecast.")
-                // The line is the door to the dashboard (user 2026-09-03
-                // "link from 'at this pace' to view full").
                 .contentShape(Rectangle())
                 .onTapGesture { model.openForecast() }
+                .pointingHandCursor()
         }
     }
 
@@ -99,5 +105,16 @@ public enum ForecastClock {
             f.setLocalizedDateFormatFromTemplate("MMM d jmm")
         }
         return "~" + f.string(from: date)
+    }
+}
+
+extension View {
+    /// The hand cursor a link gets on the Mac; nothing on the phone.
+    func pointingHandCursor() -> some View {
+        #if os(macOS)
+        return onHover { inside in inside ? NSCursor.pointingHand.push() : NSCursor.pop() }
+        #else
+        return self
+        #endif
     }
 }

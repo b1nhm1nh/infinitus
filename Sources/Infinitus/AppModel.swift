@@ -1330,6 +1330,13 @@ final class AppModel: ObservableObject {
             let allFleets = fleets.compactMap(\.lastFleet)
             let forecast = forecast
             let plan = battlePlan
+            // The footer's ⚡ tokens/minute needs the transcripts read even
+            // with the sessions card closed (user 2026-09-03 "display
+            // toks/m on bottom right status"): busy sessions only, and
+            // the model skips any transcript whose size+mtime held still.
+            if let live = primary.lastFleet?.liveSessions?.sessions {
+                sessionProgress.refresh(sessions: live.filter { $0.status == "busy" })
+            }
             if let primaryFleet = primary.lastFleet {
                 liveActivityPusher.tick(fleet: primaryFleet,
                                         machine: Host.current().localizedName ?? "Mac",
