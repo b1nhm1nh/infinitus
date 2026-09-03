@@ -143,6 +143,11 @@ actor AwsLoginRunner {
         if let code = prompt.userCode { run.state.userCode = code }
         if prompt.wantsCode, run.state.message != "code submitted" { run.state.phase = .waitingForCode }
         if prompt.succeeded { run.state.phase = .done }
+        if let refusal = prompt.rebindRefusal, run.state.phase != .failed {
+            run.stdin.fileHandleForWriting.write(Data("n\n".utf8))
+            run.state.phase = .failed
+            run.state.message = refusal
+        }
         runs[profile] = run
         publish()
     }
@@ -153,6 +158,9 @@ actor AwsLoginRunner {
         if status == 0 || prompt.succeeded {
             run.state.phase = .done
             run.state.message = "signed in"
+        } else if run.state.phase == .failed, run.state.message != nil {
+            // Already explained (the declined rebind); the CLI's own last
+            // line after a "n" is just its EOF/expired complaint.
         } else {
             run.state.phase = .failed
             let last = run.output.replacingOccurrences(of: "\r", with: "\n")

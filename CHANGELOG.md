@@ -75,6 +75,18 @@ GitHub release body.
   code goes straight into the CLI's stdin — never logged or stored;
   Infinitus never reads the AWS credential caches. `infinitusctl
   aws-logins` / `aws-login <profile> [--local]` / `aws-login-code`.
+- **Detection tuned on the first real run.** The scan covers every
+  listed session, not just busy ones — a session that hit the expiry
+  has stopped on it and is idle by the time the scan runs — and its
+  window counts message entries, so the hook/attachment lines a turn
+  appends can't push the failure out of view. The signature has to
+  open an output line: the same words quoted from a source file, a
+  grep hit or a Read no longer flag the session reading them. Two more
+  CLI messages count ("pending authorization … has expired", "security
+  token … is expired"). When the CLI asks whether to rebind the profile
+  to the account the browser signed into, the runner answers no and
+  reports which account you landed in — a silent rebind is how a
+  profile ends up on the wrong account.
 
 ### Prediction model
 - **"At this pace" line in the popup.** Below the account rows: when

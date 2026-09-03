@@ -12,6 +12,11 @@ final class AwsLoginTests: XCTestCase {
         XCTAssertEqual(AwsLogin.profile(in: "Error when retrieving token from sso: Token has expired and refresh failed\nRun: aws sso login --profile papaya-dev"), "papaya-dev")
         XCTAssertNil(AwsLogin.profile(in: "aws login --profile x is documented here"), "no failure, no need")
         XCTAssertNil(AwsLogin.profile(in: "all good"))
+        XCTAssertEqual(AwsLogin.profile(in: "aws: [ERROR]: The pending authorization to retrieve an SSO token has expired. The login flow to retrieve an SSO token must be restarted."), "default")
+        XCTAssertEqual(AwsLogin.profile(in: "aws: [ERROR]: An error occurred (ExpiredToken) when calling the GetCallerIdentity operation: The security token included in the request is expired"), "default")
+        // Quoted, not suffered: a grep hit / Read line / source fixture.
+        XCTAssertNil(AwsLogin.profile(in: "99:    let failed = \"aws: [ERROR]: Your session has expired. Please reauthenticate using 'aws login'.\""))
+        XCTAssertNil(AwsLogin.profile(in: "    [aws-cred-broker] ...\n      Fix: aws login --profile papaya-login"))
     }
 
     func testFlowFollowsTheProfileKindInTheConfig() {
@@ -53,6 +58,11 @@ final class AwsLoginTests: XCTestCase {
         XCTAssertFalse(device.wantsCode)
 
         XCTAssertTrue(AwsLogin.parseOutput("Updated profile papaya-login to use arn:aws:sts::1:assumed-role/x credentials.").succeeded)
+        // The rebind question (browser signed into another account).
+        let rebind = AwsLogin.parseOutput("https://x.signin.aws.amazon.com/v1/authorize?a=b\r\n\r\nProfile papaya-login is already configured to use session arn:aws:iam::089192911254:user/a@b.c. Do you want to overwrite it to use arn:aws:iam::812652266901:user/a@b.c instead? (y/n): ")
+        XCTAssertEqual(rebind.rebindRefusal, "papaya-login is bound to account 089192911254 but you signed in to 812652266901 — not rebound; sign in to the right account and retry")
+        XCTAssertFalse(rebind.succeeded)
+        XCTAssertNil(AwsLogin.parseOutput("Updated profile x").rebindRefusal)
         XCTAssertTrue(AwsLogin.parseOutput("Successfully logged into Start URL: https://x").succeeded)
     }
 
@@ -109,5 +119,9 @@ final class AwsLoginProgressTests: XCTestCase {
         // Scrolls out of the scan window once the session moves on.
         let later = Array(repeating: fine, count: SessionProgress.awsLoginScanEntries)
         XCTAssertNil(SessionProgress.parse(lines: [failed] + later).awsLoginProfile)
+        // Attachments / hook summaries / turn stats don't eat the window.
+        let padding = Array(repeating: #"{"type":"attachment","attachment":{"type":"hook_success"}}"#, count: 20)
+            + [#"{"type":"system","subtype":"turn_duration","durationMs":1}"#]
+        XCTAssertEqual(SessionProgress.parse(lines: [failed] + padding).awsLoginProfile, "papaya-login")
     }
 }

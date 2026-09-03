@@ -187,7 +187,13 @@ public struct SessionProgress: Sendable, Equatable, Codable {
         // names no profile, the failed command's own --profile /
         // AWS_PROFILE does (found by tool_use_id).
         var awsLoginProfile: String?
-        let recent = Array(entries.suffix(awsLoginScanEntries))
+        // Message entries only: attachments, hook summaries and turn
+        // stats pad a transcript by ~8 lines per turn, so a raw-line
+        // window lost the failed call as soon as the session reported
+        // it (the aws-login sim, 2026-09-03).
+        let recent = Array(entries.filter { entry in
+            ((entry["message"] as? [String: Any])?["content"] as? [[String: Any]]) != nil
+        }.suffix(awsLoginScanEntries))
         func command(forToolUse id: String) -> String? {
             for entry in recent {
                 guard let message = entry["message"] as? [String: Any],
@@ -342,7 +348,8 @@ public struct SessionProgress: Sendable, Equatable, Codable {
     /// Reads the tail of `<claudeDir>/projects/<slug>/<sessionId>.jsonl`
     /// (same path and tail-read approach as `Transcript.lastTurnEntry`)
     /// and parses it.
-    /// How many tail entries the AWS sign-in signature is looked for in.
+    /// How many tail MESSAGE entries (tool calls, results, replies) the
+    /// AWS sign-in signature is looked for in.
     static let awsLoginScanEntries = 12
 
     public static func read(sessionId: String, cwd: String, claudeDir: URL,
