@@ -20,6 +20,15 @@ GitHub release body.
   "uv not found" (Homebrew if present, else Astral's installer) —
   thanks @sonyy172 (#20).
 
+### One account
+- **The solo card.** With a single account the popup drops the fleet
+  grid for one card: name and plan up top, every window on its own
+  line with a gauge three times the grid's and the full reset text
+  beside it — the reset is the whole story when there is nothing to
+  rotate to. Under it, one line on why a second account is worth
+  having, with "Add account…" opening the sign-in right there. Two
+  accounts keep the grid; the menu bar countdown above serves both.
+
 ### Docs
 - `docs/guides/agent-setup.md`: a from-scratch setup recipe for a
   coding agent — install, engine, accounts, auto-switch knobs, menu
