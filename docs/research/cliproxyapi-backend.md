@@ -41,6 +41,9 @@ header, never argv.
 Upstream PR candidates (quality-of-life, in value order):
 
 1. **Server-side quota endpoint** — `GET /auth-files/quota`: proxy
+   (**posted 2026-09-03 as router-for-me/CLIProxyAPI#5434**, from the
+   `deathemperor` fork, branch `feat/auth-files-quota`; app switches
+   to it once merged). Proxy
    calls `oauth/usage` per Claude credential itself and returns
    normalized utilization/reset per window. Kills the N-call
    `/api-call` fan-out that every client (CPAMC included) reimplements.
