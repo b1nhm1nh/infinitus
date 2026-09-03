@@ -16,9 +16,12 @@ public struct ClaudeSessionRecord: Sendable, Equatable {
     public let messagingSocketPath: String
     /// Wire-format version of that socket; 0 when absent.
     public let peerProtocol: Int
+    /// The session's name (`/rename`, or Claude Code's own), when it has one.
+    public let name: String?
 
     public init(pid: Int32, sessionId: String, cwd: String, kind: String = "interactive",
-                status: String? = nil, messagingSocketPath: String = "", peerProtocol: Int = 0) {
+                status: String? = nil, messagingSocketPath: String = "", peerProtocol: Int = 0,
+                name: String? = nil) {
         self.pid = pid
         self.sessionId = sessionId
         self.cwd = cwd
@@ -26,6 +29,7 @@ public struct ClaudeSessionRecord: Sendable, Equatable {
         self.status = status
         self.messagingSocketPath = messagingSocketPath
         self.peerProtocol = peerProtocol
+        self.name = name
     }
 }
 
@@ -77,7 +81,8 @@ public enum ClaudeSessions {
                 kind: obj["kind"] as? String ?? "",
                 status: obj["status"] as? String,
                 messagingSocketPath: obj["messagingSocketPath"] as? String ?? "",
-                peerProtocol: proto.map { isBool($0) ? 0 : $0.intValue } ?? 0))
+                peerProtocol: proto.map { isBool($0) ? 0 : $0.intValue } ?? 0,
+                name: (obj["name"] as? String).flatMap { $0.isEmpty ? nil : $0 }))
         }
         return out.sorted { $0.pid < $1.pid }
     }

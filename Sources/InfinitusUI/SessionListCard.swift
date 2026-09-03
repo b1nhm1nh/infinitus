@@ -40,7 +40,7 @@ public struct SessionListCard<P: SessionProgressSource>: View {
                             Circle()
                                 .fill(color(for: s.status))
                                 .frame(width: 7, height: 7)
-                            Text(shortCwd(s.cwd))
+                            Text(progress.byPid[s.pid]?.name ?? shortCwd(s.cwd))
                                 .font(PopupFont.caption)
                                 .lineLimit(1)
                                 .truncationMode(.head)
@@ -55,7 +55,7 @@ public struct SessionListCard<P: SessionProgressSource>: View {
                             SessionProgressLine(progress: p)
                         }
                     }
-                    .help("pid \(s.pid) · \(s.kind) · \(s.cwd)")
+                    .help(tooltip(s, progress.byPid[s.pid]))
                 }
             } else {
                 Text("Session detail needs a newer cswap engine.")
@@ -80,6 +80,16 @@ public struct SessionListCard<P: SessionProgressSource>: View {
         case "shell": return .blue
         default: return .gray
         }
+    }
+
+    /// pid · kind · branch · model · cwd — the metadata the phone's row
+    /// prints inline lives in the tooltip here, where the row stays one line.
+    private func tooltip(_ s: SessionDetail, _ p: SessionProgress?) -> String {
+        var parts = ["pid \(s.pid)", s.kind]
+        if let branch = p?.gitBranch { parts.append("⎇ \(branch)") }
+        if let model = p?.model { parts.append(model) }
+        parts.append(s.cwd)
+        return parts.joined(separator: " · ")
     }
 
     private func shortCwd(_ path: String) -> String {

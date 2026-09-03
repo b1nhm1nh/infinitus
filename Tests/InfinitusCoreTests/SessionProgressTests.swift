@@ -2,6 +2,17 @@ import XCTest
 @testable import InfinitusCore
 
 final class SessionProgressTests: XCTestCase {
+    func testBranchAndModelComeFromNewestEntryThatHasThem() {
+        let lines = [
+            #"{"type":"user","timestamp":"2026-09-01T10:00:00.000Z","gitBranch":"main","message":{"content":"hi"}}"#,
+            #"{"type":"assistant","timestamp":"2026-09-01T10:00:01.000Z","gitBranch":"e2","message":{"model":"claude-fable-5","content":[{"type":"text","text":"ok"}]}}"#,
+            #"{"type":"assistant","timestamp":"2026-09-01T10:00:02.000Z","message":{"model":"<synthetic>","content":[{"type":"text","text":"…"}]}}"#,
+        ]
+        let p = SessionProgress.parse(lines: lines)
+        XCTAssertEqual(p.gitBranch, "e2")
+        XCTAssertEqual(p.model, "claude-fable-5")
+    }
+
     func testTodosCounting() {
         let line = """
         {"type":"assistant","timestamp":"2026-09-01T10:00:00.000Z","message":{"content":[\

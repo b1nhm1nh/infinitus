@@ -42,7 +42,8 @@ actor MirrorExporter {
         var progressByPid: [Int: SessionProgress] = [:]
         let sessions = sessionRecords.prefix(6).map { record -> SessionPanelRow in
             let progress = SessionProgress.read(sessionId: record.sessionId,
-                                                cwd: record.cwd, claudeDir: claudeDir)
+                                                cwd: record.cwd, claudeDir: claudeDir,
+                                                name: record.name)
             progressByPid[Int(record.pid)] = progress
             return SessionPanelRow.make(record: record, progress: progress, now: now)
         }

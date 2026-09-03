@@ -326,7 +326,8 @@ struct InfinitusTray {
                 progress = entry.progress
             } else {
                 progress = SessionProgress.read(sessionId: record.sessionId,
-                                                cwd: record.cwd, claudeDir: claudeDir)
+                                                cwd: record.cwd, claudeDir: claudeDir,
+                                                name: record.name)
                 progressCache[record.sessionId] = .init(size: stamp.size, mtime: stamp.mtime,
                                                         progress: progress)
             }

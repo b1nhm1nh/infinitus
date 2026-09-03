@@ -41,6 +41,15 @@ public struct SessionProgress: Sendable, Equatable, Codable {
     /// doesn't read "exploring" off a single Read. New optional field;
     /// absent in old cached JSON, which still decodes fine.
     public let phase: String?
+    /// The session's own name from its record (user 2026-09-03: "can
+    /// sessions use their names?") — rows show it instead of the repo.
+    /// New optional field; absent in old cached JSON.
+    public let name: String?
+    /// Git branch and model from the newest transcript entry that carries
+    /// them (user 2026-09-03: "populate other metadata into the session
+    /// list"). New optional fields; absent in old cached JSON.
+    public let gitBranch: String?
+    public let model: String?
     /// Sum of `message.usage.output_tokens` across the tail.
     public let outputTokens: Int
     /// True when the last entry that decides whether work has stopped
@@ -49,6 +58,7 @@ public struct SessionProgress: Sendable, Equatable, Codable {
 
     public init(lastActivityAt: Date? = nil, nowDoing: String? = nil, todos: Todos? = nil,
                 title: String? = nil, goal: String? = nil, phase: String? = nil,
+                name: String? = nil, gitBranch: String? = nil, model: String? = nil,
                 outputTokens: Int = 0, retrying: Bool = false) {
         self.lastActivityAt = lastActivityAt
         self.nowDoing = nowDoing
@@ -56,6 +66,9 @@ public struct SessionProgress: Sendable, Equatable, Codable {
         self.title = title
         self.goal = goal
         self.phase = phase
+        self.name = name
+        self.gitBranch = gitBranch
+        self.model = model
         self.outputTokens = outputTokens
         self.retrying = retrying
     }
@@ -136,8 +149,22 @@ public struct SessionProgress: Sendable, Equatable, Codable {
         let retrying = (lastDecisive?["type"] as? String) == "assistant"
             && (lastDecisive?["isApiErrorMessage"] as? Bool) == true
 
+        var gitBranch: String?
+        var model: String?
+        for entry in entries.reversed() {
+            if gitBranch == nil, let branch = entry["gitBranch"] as? String, !branch.isEmpty {
+                gitBranch = branch
+            }
+            if model == nil, let message = entry["message"] as? [String: Any],
+               let m = message["model"] as? String, !m.isEmpty, m != "<synthetic>" {
+                model = m
+            }
+            if gitBranch != nil, model != nil { break }
+        }
+
         return SessionProgress(lastActivityAt: lastActivityAt, nowDoing: nowDoing, todos: todos,
                                 title: title, goal: goal(lines: lines), phase: phase(entries: entries),
+                                gitBranch: gitBranch, model: model,
                                 outputTokens: outputTokens, retrying: retrying)
     }
 
@@ -258,13 +285,14 @@ public struct SessionProgress: Sendable, Equatable, Codable {
     /// (same path and tail-read approach as `Transcript.lastTurnEntry`)
     /// and parses it.
     public static func read(sessionId: String, cwd: String, claudeDir: URL,
-                             maxBytes: Int = 512 * 1024) -> SessionProgress {
+                             name: String? = nil, maxBytes: Int = 512 * 1024) -> SessionProgress {
         let url = Transcript.path(cwd: cwd, sessionId: sessionId, claudeDir: claudeDir)
         let headGoal = readGoal(sessionId: sessionId, cwd: cwd, claudeDir: claudeDir)
         func withGoal(_ progress: SessionProgress) -> SessionProgress {
             SessionProgress(lastActivityAt: progress.lastActivityAt, nowDoing: progress.nowDoing,
                              todos: progress.todos, title: progress.title,
-                             goal: headGoal ?? progress.goal, phase: progress.phase,
+                             goal: headGoal ?? progress.goal, phase: progress.phase, name: name,
+                             gitBranch: progress.gitBranch, model: progress.model,
                              outputTokens: progress.outputTokens, retrying: progress.retrying)
         }
         guard let handle = try? FileHandle(forReadingFrom: url) else { return withGoal(parse(lines: [])) }

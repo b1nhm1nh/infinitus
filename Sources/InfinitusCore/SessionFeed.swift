@@ -35,15 +35,18 @@ public struct SessionFeed: Codable, Sendable {
     public let status: String?
     public let waiting: Bool
     public let items: [SessionFeedItem]
+    /// The session's own name, when it has one (new optional field).
+    public let name: String?
 
     public init(pid: Int32, sessionId: String, cwd: String, status: String?,
-                waiting: Bool, items: [SessionFeedItem]) {
+                waiting: Bool, items: [SessionFeedItem], name: String? = nil) {
         self.pid = pid
         self.sessionId = sessionId
         self.cwd = cwd
         self.status = status
         self.waiting = waiting
         self.items = items
+        self.name = name
     }
 }
 
@@ -70,7 +73,8 @@ public enum SessionFeedReader {
         let raw = parse(lines: lines, limit: limit)
         let (items, waiting) = finalize(items: raw, status: record.status)
         return SessionFeed(pid: record.pid, sessionId: record.sessionId, cwd: record.cwd,
-                           status: record.status, waiting: waiting, items: items)
+                           status: record.status, waiting: waiting, items: items,
+                           name: record.name)
     }
 
     private static func tail(of url: URL, maxBytes: Int) -> [String] {

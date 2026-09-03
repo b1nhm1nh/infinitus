@@ -49,7 +49,7 @@ final class SessionProgressModel: SessionProgressSource {
                     continue
                 }
                 let progress = SessionProgress.read(sessionId: record.sessionId, cwd: record.cwd,
-                                                     claudeDir: claudeDir)
+                                                     claudeDir: claudeDir, name: record.name)
                 newByPid[session.pid] = progress
                 newStamps[record.sessionId] = stamp
                 newCached[record.sessionId] = progress

@@ -49,12 +49,12 @@ struct SessionFeedScreen: View {
             }
         }
         .safeAreaInset(edge: .bottom) { composer }
-        .navigationTitle(repoName(session.cwd))
+        .navigationTitle(feed?.name ?? repoName(session.cwd))
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .principal) {
                 VStack(spacing: 0) {
-                    Text(repoName(session.cwd)).font(.headline)
+                    Text(feed?.name ?? repoName(session.cwd)).font(.headline)
                     Text(feed?.status ?? session.status)
                         .font(.caption2).foregroundStyle(.secondary)
                 }
