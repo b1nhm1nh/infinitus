@@ -32,6 +32,10 @@ public struct MirrorSnapshot: Codable, Sendable {
     /// `listJSON` stays the primary cswap fleet for older phones; a
     /// phone that knows this field stacks one section per fleet.
     public let fleets: [EngineFleet]?
+    /// Run-rate projection for the primary fleet (2026-09-03) and the #7
+    /// battle plan — both additive optionals; older phones ignore them.
+    public let forecast: UsageForecast?
+    public let plan: WindowPlanner.Payload?
 
     public init(capturedAt: Date, machineName: String, listJSON: Data,
                 sessions: [SessionPanelRow], prefs: FleetPrefs? = nil,
@@ -39,7 +43,9 @@ public struct MirrorSnapshot: Codable, Sendable {
                 serviceStatus: ServiceStatusSummary? = nil,
                 engine: EngineBadge? = nil,
                 progressByPid: [Int: SessionProgress]? = nil,
-                fleets: [EngineFleet]? = nil) {
+                fleets: [EngineFleet]? = nil,
+                forecast: UsageForecast? = nil,
+                plan: WindowPlanner.Payload? = nil) {
         self.capturedAt = capturedAt
         self.machineName = machineName
         self.listJSON = listJSON
@@ -50,6 +56,8 @@ public struct MirrorSnapshot: Codable, Sendable {
         self.engine = engine
         self.progressByPid = progressByPid
         self.fleets = fleets
+        self.forecast = forecast
+        self.plan = plan
     }
 }
 

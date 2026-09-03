@@ -307,17 +307,7 @@ extension WindowTelemetry {
     public static func burnRate(_ samples: [UsageSample], email: String, now: Double,
                                 lookback: Double = 3600,
                                 resetSlack: Double = resetSlack) -> Double? {
-        let recent = samples
-            .filter { $0.email == email && $0.t >= now - lookback && $0.t <= now }
-            .sorted { $0.t < $1.t }
-        guard let last = recent.last, let lw = last.fiveHour, let lr = lw.resetsAt,
-              let first = recent.first(where: { s in
-                  s.fiveHour?.resetsAt.map { abs($0 - lr) <= resetSlack } ?? false
-              }),
-              let fw = first.fiveHour,
-              last.t - first.t >= 600 else { return nil }
-        let delta = lw.pct - fw.pct
-        guard delta >= 0 else { return nil }
-        return delta / (last.t - first.t) * 3600
+        burnRate(samples, email: email, now: now, lookback: lookback,
+                 resetSlack: resetSlack, window: { $0.fiveHour })
     }
 }

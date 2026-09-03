@@ -57,6 +57,9 @@ public protocol FleetModel: ObservableObject {
     /// Whether this host's engine can ignite (capability `.ignite`); the
     /// button is hidden otherwise — the plan line still shows.
     var canIgnite: Bool { get }
+    /// Run-rate projection (when each window of the active account hits
+    /// its limit, when the fleet is out); nil on a host without one.
+    var forecast: UsageForecast? { get }
 
     // Intro choreography (Animations.swift) — the entrance gates.
     var engineMissing: Bool { get }
@@ -106,6 +109,7 @@ public extension FleetModel {
     var battlePlan: WindowPlanner.Plan? { nil }
     var igniting: Int? { nil }
     var canIgnite: Bool { false }
+    var forecast: UsageForecast? { nil }
     func ignite(_ number: Int) {}
     /// A host with no resume nudge (the phone) simply has no count —
     /// the banner then drops its suffix.
