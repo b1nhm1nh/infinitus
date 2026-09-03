@@ -1559,6 +1559,11 @@ extension AppModel: FleetModel {
     func startRelogin(_ account: Account) {
         TokenFlow.shared.start(model: self, relogin: account)
     }
+    func addAccount() {
+        guard !TokenFlow.shared.running, !addingFirstAccount else { return }
+        TokenFlow.shared.start(model: self)
+    }
+    var canAddAccount: Bool { cswapRegistered }
 
     /// The engine badge's portable half (#9 phase D2) — the supervisor's
     /// own State can't cross to iOS, so the shared footer reads this.

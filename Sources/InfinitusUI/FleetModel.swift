@@ -84,6 +84,11 @@ public protocol FleetModel: ObservableObject {
     /// #7 manual mode: start account n's 5h clock (`cswap run` igniter).
     /// Mac-only; the card confirm-gates it.
     func ignite(_ number: Int)
+    /// The solo card's nudge: open this fleet's sign-in for a second
+    /// account. Mac-only; a mirroring host leaves it a no-op and the
+    /// card hides the button.
+    func addAccount()
+    var canAddAccount: Bool { get }
 }
 
 /// One fleet's header line in a multi-fleet popup.
@@ -115,6 +120,8 @@ public extension FleetModel {
     var forecast: UsageForecast? { nil }
     func openForecast() {}
     func ignite(_ number: Int) {}
+    func addAccount() {}
+    var canAddAccount: Bool { false }
     /// A host with no resume nudge (the phone) simply has no count —
     /// the banner then drops its suffix.
     var waitingResume: Int? { nil }

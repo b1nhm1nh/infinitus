@@ -294,6 +294,18 @@ extension FleetState: FleetModel {
     func toggleEngine() { host.toggleEngine() }
     func relaunchApp() { host.relaunchApp() }
     func openSettings() { host.openSettings() }
+    /// A second account: cswap through the in-app token flow (a fresh
+    /// login, not `cswap add` — that would re-adopt the same account),
+    /// an OAuth engine through its browser sign-in.
+    func addAccount() {
+        if engineID == CswapEngine.engineID { host.addAccount() }
+        else if capabilities.contains(.addOAuth) {
+            host.addOAuthAccount(engineID: engineID, provider: provider)
+        }
+    }
+    var canAddAccount: Bool {
+        engineID == CswapEngine.engineID || capabilities.contains(.addOAuth)
+    }
 }
 
 extension FleetState: UsageSource {

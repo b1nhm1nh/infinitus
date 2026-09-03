@@ -38,8 +38,13 @@ public struct GaugeBar: View {
     /// All Lucky 7s: the call site decides the trigger; the label
     /// flashes the fever digits instead of the plain percent.
     var lucky: Bool = false
-    @ScaledMetric(relativeTo: .caption) private var barWidth = 56.0
-    @ScaledMetric(relativeTo: .caption) private var barHeight = 6.0
+    @ScaledMetric(relativeTo: .caption) private var baseBarWidth = 56.0
+    @ScaledMetric(relativeTo: .caption) private var baseBarHeight = 6.0
+    /// The solo card (one account, nothing to compare against) grows
+    /// its gauges through this; rows in a grid keep 1.
+    @Environment(\.gaugeScale) private var gaugeScale
+    private var barWidth: Double { baseBarWidth * gaugeScale }
+    private var barHeight: Double { baseBarHeight * min(gaugeScale, 1.5) }
     @State private var shown: Double = 0
     // HP-drop drama (user 2026-08-31): a big one-refresh plunge zooms
     // the bar 5×, flashes the doomed chunk, then drains it. dropSeq
@@ -355,5 +360,14 @@ private struct ChillHalo: View {
             host.addSublayer(ring)
         }
         .allowsHitTesting(false)
+    }
+}
+
+private struct GaugeScaleKey: EnvironmentKey { static let defaultValue = 1.0 }
+public extension EnvironmentValues {
+    /// Multiplies GaugeBar's width (height caps at 1.5×).
+    var gaugeScale: Double {
+        get { self[GaugeScaleKey.self] }
+        set { self[GaugeScaleKey.self] = newValue }
     }
 }

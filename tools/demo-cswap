@@ -184,6 +184,15 @@ elif cmd == "list":
     payload = {"schemaVersion": 1, "activeAccountNumber": st["active"],
                "nextCandidate": 4 if st["active"] != 4 else 1,
                "liveSessions": sessions(), "accounts": accounts}
+    # The mainline fleets (user 2026-09-03 "invest efforts for users
+    # with 1 & 2 accounts"): `simulate solo` keeps the active account
+    # alone (nothing to rotate to), `simulate duo` keeps it plus one.
+    if st.get("scenario") in ("solo", "duo"):
+        keep = 1 if st["scenario"] == "solo" else 2
+        accounts = [a for a in accounts if a["number"] == st["active"]] \
+            + [a for a in accounts if a["number"] != st["active"]][:keep - 1]
+        payload["accounts"] = accounts
+        payload["nextCandidate"] = accounts[1]["number"] if keep == 2 else None
     if st.get("scenario") == "alldead" or os.environ.get("SHIM_ALLDEAD"):
         # Every window maxed: no viable candidate, echo recovers first.
         for a in accounts:

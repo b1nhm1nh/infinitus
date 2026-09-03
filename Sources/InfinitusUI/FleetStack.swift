@@ -19,7 +19,7 @@ public struct FleetStack<F: FleetModel & UsageSource & Identifiable>: View {
                 if fleets.count > 1, let label = fleet.fleetLabel {
                     FleetHeader(label: label)
                 }
-                AccountRows(model: fleet, usage: fleet)
+                FleetSection(model: fleet, lone: fleets.count == 1)
             }
         }
         .environment(\.sharedColumnWidths, fleets.count > 1 ? columnWidths : [:])
@@ -30,6 +30,25 @@ public struct FleetStack<F: FleetModel & UsageSource & Identifiable>: View {
             if next != columnWidths { columnWidths = next }
         }
         .onChange(of: fleets.count) { _, _ in columnWidths = [:] }
+    }
+}
+
+/// One fleet's rows — or, for the only fleet with the only account, the
+/// solo card (SoloCard.swift). Its own view so the account count is
+/// OBSERVED: FleetStack holds the models as plain values and would
+/// never re-decide when the first snapshot lands.
+private struct FleetSection<F: FleetModel & UsageSource>: View {
+    @ObservedObject var model: F
+    let lone: Bool
+
+    var body: some View {
+        if lone, model.accounts.count == 1, !model.compactRows,
+           let only = model.accounts.first {
+            SoloCard(model: model, usage: model, account: only)
+            SecondAccountNudge(model: model)
+        } else {
+            AccountRows(model: model, usage: model)
+        }
     }
 }
 
