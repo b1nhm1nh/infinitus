@@ -7,6 +7,9 @@ import AppKit
 
 let out = CommandLine.arguments[1]
 let px = 1024
+// "ios": full-bleed square — iOS masks its own corners, so the squircle
+// fills the canvas (a transparent-cornered icon shows black corners).
+let fullBleed = CommandLine.arguments.count > 2 && CommandLine.arguments[2] == "ios"
 
 let rep = NSBitmapImageRep(
     bitmapDataPlanes: nil, pixelsWide: px, pixelsHigh: px,
@@ -17,10 +20,11 @@ NSGraphicsContext.saveGraphicsState()
 NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
 
 // Apple's icon grid: content inset ~10% per side, continuous-corner feel.
-let inset: CGFloat = 100
+let inset: CGFloat = fullBleed ? 0 : 100
 let body = NSRect(x: inset, y: inset,
                   width: CGFloat(px) - 2 * inset, height: CGFloat(px) - 2 * inset)
-let squircle = NSBezierPath(roundedRect: body, xRadius: 185, yRadius: 185)
+let squircle = NSBezierPath(roundedRect: body, xRadius: fullBleed ? 0 : 185,
+                            yRadius: fullBleed ? 0 : 185)
 NSGradient(colors: [
     NSColor(calibratedRed: 0.15, green: 0.28, blue: 0.85, alpha: 1),  // cobalt
     NSColor(calibratedRed: 0.04, green: 0.06, blue: 0.15, alpha: 1),  // midnight
@@ -39,7 +43,7 @@ NSGradient(colors: [
 
 // The twin loop, verbatim from MenuBarGlyph's 17×16 design space,
 // scaled up and centered (design-box center (8.5, 8) → canvas center).
-let s: CGFloat = 40
+let s: CGFloat = fullBleed ? 46 : 40
 let transform = NSAffineTransform()
 transform.translateX(by: 512 - 8.5 * s, yBy: 512 - 8.0 * s)
 transform.scale(by: s)
@@ -76,5 +80,17 @@ head.close()
 head.fill()
 
 NSGraphicsContext.restoreGraphicsState()
-try! rep.representation(using: .png, properties: [:])!
-    .write(to: URL(fileURLWithPath: out))
+if fullBleed {
+    // Flatten to opaque RGB: App Store icons may not carry alpha.
+    let cg = rep.cgImage!
+    let ctx = CGContext(data: nil, width: px, height: px, bitsPerComponent: 8, bytesPerRow: 0,
+                        space: CGColorSpaceCreateDeviceRGB(),
+                        bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue)!
+    ctx.draw(cg, in: CGRect(x: 0, y: 0, width: px, height: px))
+    let flat = NSBitmapImageRep(cgImage: ctx.makeImage()!)
+    try! flat.representation(using: .png, properties: [:])!
+        .write(to: URL(fileURLWithPath: out))
+} else {
+    try! rep.representation(using: .png, properties: [:])!
+        .write(to: URL(fileURLWithPath: out))
+}

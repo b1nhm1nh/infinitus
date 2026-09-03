@@ -91,7 +91,12 @@ to drive the running app.
 ## Features
 
 - **Menu bar usage** — active account name plus 5h/weekly percentages
-  in the bar (used or remaining, your pick), glyph-only mode too.
+  in the bar (used or remaining, your pick) and when the fuller window
+  resets (`↺2h14m`, a clock time, or off), glyph-only mode too.
+- **One account, one card** — a single account gets a card with big
+  gauges and full reset text instead of a fleet grid, plus a one-line
+  case for a second account with the sign-in a click away; two accounts
+  keep the grid.
 - **Every account at a glance** — live 5-hour / weekly / per-model
   gauges for the whole fleet, pace markers when a window is burning
   faster than time passes, reset countdowns, dead rows with the cause.
@@ -141,11 +146,24 @@ to drive the running app.
   camera) and files — delivered over Claude Code's peer socket or into
   the terminal. Tap the header for the account behind the session and
   its limits (CLIProxyAPI included).
+- **AWS sign-in from the phone** — a session that hits an expired
+  `aws login` shows up on the Mac and the phone; the phone runs the
+  login on the Mac and opens the AWS page in Safari (passkeys work),
+  the code pastes back, and the session gets "completed, retry and
+  continue". Nothing is logged or stored; Infinitus never reads the
+  AWS credential caches.
+- **Three engines** — cswap, CLIProxyAPI and 9Router (every provider
+  it knows: Claude, Kiro credits, Codex, Gemini) as stacked fleets with
+  aligned columns; policy stays in each engine, the app sets its knobs.
+- **"At this pace"** — measured burn per window, when each runs out,
+  when the fleet is out, a full per-account forecast dashboard, and a
+  plain-words battle plan for the next reset.
 - **`infinitusctl`** — an agent-facing control CLI over a same-user
   socket: status, fleets, switch/rotate/hold/rename/prefer/reorder,
-  proxy settings, windows and perf probes; the same calls the panes
-  make. An onboarding "Copy for an AI agent" brief walks a coding agent
-  through the whole setup (engine, accounts, proxy, phone).
+  proxy settings, AWS logins, windows and perf probes; the same calls
+  the panes make. An onboarding "Copy for an AI agent" brief and
+  `docs/guides/agent-setup.md` walk a coding agent through the whole
+  setup (engine, accounts, proxy, phone).
 
 ## Privacy
 

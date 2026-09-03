@@ -12,7 +12,7 @@ packages:
 # app extension without one ("Invalid placeholder attributes").
 settings:
   base:
-    MARKETING_VERSION: "0.4.0"
+    MARKETING_VERSION: "0.4.1"
     CURRENT_PROJECT_VERSION: "1"
 targets:
   InfinitusMobile:
@@ -57,6 +57,7 @@ targets:
         # Mobile has its own id under the mac app's com.huuloc.infinitus
         # (CLAUDE.md). Revisit before TestFlight if wanted.
         PRODUCT_BUNDLE_IDENTIFIER: com.huuloc.infinitus.mobile
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         # Simulator-only until the Apple Developer account lands (#9).
         CODE_SIGNING_ALLOWED: "NO"
         GENERATE_INFOPLIST_FILE: "YES"

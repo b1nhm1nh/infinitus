@@ -4,7 +4,7 @@ Composed release notes — what changed and why it matters, not a list of
 commit links. The release workflow publishes the matching section as the
 GitHub release body.
 
-## 0.4.1 (unreleased)
+## 0.4.1
 
 ### Menu bar
 - **The reset time, in the bar.** The title now ends with when the
@@ -36,6 +36,23 @@ GitHub release body.
   rotate to. Under it, one line on why a second account is worth
   having, with "Add account…" opening the sign-in right there. Two
   accounts keep the grid; the menu bar countdown above serves both.
+
+### Phone
+- **AWS sign-in flows that survive a passkey.** The code flow is the
+  phone's default: the AWS page opens in Safari (passkeys work there)
+  and the code — ~1.8 KB of base64 — pastes into a growing field with
+  a Paste button. The in-app relay stays one tap away and, when the
+  page hits a passkey step it can't serve, offers the switch. The
+  needs-login control is a sticky bar above the session's chat and a
+  section at the top of the sessions list, so the stuck session never
+  has to be found. The hide-keyboard button is gone (drag or tap
+  dismisses it).
+
+### Playground
+- **Every fleet scenario is a button**: Normal / Empty fleet / All
+  dead / One account / Two accounts / No engine / Two engines
+  (`playctl scenario …`). The Animations tab no longer goes missing on
+  the first launch after a bundle-id change.
 
 ### Docs
 - `docs/guides/agent-setup.md`: a from-scratch setup recipe for a

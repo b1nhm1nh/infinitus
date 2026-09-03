@@ -258,7 +258,7 @@
       "description": "Menu bar mission control for a fleet of Claude Code accounts: live 5-hour and weekly usage gauges, automatic account rotation when a limit hits, session resume nudges, a full-screen fleet wall and 15 themes.",
       "applicationCategory": "DeveloperApplication",
       "operatingSystem": "macOS 14+, Linux (Omarchy / Arch, Quickshell)",
-      "softwareVersion": "0.4.0",
+      "softwareVersion": "0.4.1",
       "license": "https://github.com/deathemperor/infinitus/blob/main/LICENSE",
       "isAccessibleForFree": true,
       "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
@@ -346,9 +346,9 @@
     so an agent run survives the five-hour wall without you.
   </p>
   <div class="cta">
-    <a class="btn primary" href="https://github.com/deathemperor/infinitus/releases/download/v0.4.0/Infinitus-0.4.0.zip">Download for macOS</a>
+    <a class="btn primary" href="https://github.com/deathemperor/infinitus/releases/download/v0.4.1/Infinitus-0.4.1.zip">Download for macOS</a>
     <a class="btn" href="https://github.com/deathemperor/infinitus">Source on GitHub</a>
-    <span class="note">v0.4 · Apple silicon · free &amp; open source</span>
+    <span class="note">v0.4.1 · Apple silicon · free &amp; open source</span>
   </div>
   <button class="brew" type="button" data-copy="brew install --cask --no-quarantine deathemperor/tap/infinitus"
           title="Copy to clipboard" aria-label="Copy the Homebrew install command">
@@ -356,9 +356,9 @@
     <span class="k">copy</span>
   </button>
   <p class="also">Also for
-    <a href="https://github.com/deathemperor/infinitus/releases/download/v0.4.0/infinitus-tray-linux-x86_64">Linux x86_64</a> ·
-    <a href="https://github.com/deathemperor/infinitus/releases/download/v0.4.0/infinitus-tray-linux-aarch64">Linux aarch64</a> ·
-    <a href="https://github.com/deathemperor/infinitus/releases/download/v0.4.0/infinitus-omarchy.tar.gz">Omarchy</a>
+    <a href="https://github.com/deathemperor/infinitus/releases/download/v0.4.1/infinitus-tray-linux-x86_64">Linux x86_64</a> ·
+    <a href="https://github.com/deathemperor/infinitus/releases/download/v0.4.1/infinitus-tray-linux-aarch64">Linux aarch64</a> ·
+    <a href="https://github.com/deathemperor/infinitus/releases/download/v0.4.1/infinitus-omarchy.tar.gz">Omarchy</a>
     — or <a href="#install">brew / AUR / source</a>.</p>
 </header>
 
@@ -458,9 +458,20 @@
       <div class="card"><h3><span class="dot">●</span>Reset battle plans</h3>
         <p>The smart engine triggers 5-hour windows deliberately, chaining
         two sessions back-to-back on the same account.</p></div>
-      <div class="card"><h3><span class="dot">●</span>CLIProxyAPI backend</h3>
-        <p>Fleets already running behind the proxy plug in through its
-        management API as an alternate engine.</p></div>
+      <div class="card"><h3><span class="dot">●</span>CLIProxyAPI &amp; 9Router</h3>
+        <p>Fleets behind a proxy plug in as more engines — CLIProxyAPI's
+        management API, 9Router's dashboard (Claude, Kiro credits, Codex,
+        Gemini) — stacked with aligned columns.</p></div>
+      <div class="card"><h3><span class="dot">●</span>AWS login from the phone</h3>
+        <p>A session stuck on an expired <code>aws login</code> shows up on
+        your phone; sign in there (passkeys included) and the session
+        is told to carry on.</p></div>
+      <div class="card"><h3><span class="dot">●</span>At this pace</h3>
+        <p>Measured burn per window, when each runs out, when the whole
+        fleet is out — and a full forecast dashboard behind it.</p></div>
+      <div class="card"><h3><span class="dot">●</span>One account, done right</h3>
+        <p>Single account? A card with big gauges and the reset time in
+        the menu bar — no fleet vocabulary until you add a second.</p></div>
     </div>
   </div>
 </section>
