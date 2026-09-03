@@ -499,3 +499,9 @@ file keeps the shipped log and the deferred-by-design notes.
   when moved" guard in `updateBattlePlan` is effectively always true.
 - First Run-rate scan reads each transcript whole (`readToEnd`) — a
   one-time RSS bump right after opening Utilization, not a leak.
+
+## Engines backlog
+- OmniRoute (https://github.com/diegosouzapw/OmniRoute) as a fourth
+  engine (user 2026-09-03) — same shape as 9Router: probe its API for
+  connections + per-connection quotas, map to EngineFleet, switch/hold
+  via its own knobs. Research first (docs/research/omniroute-backend.md).
