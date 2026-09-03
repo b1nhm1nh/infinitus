@@ -41,6 +41,31 @@ struct SessionFeedScreen: View {
         let thumbnail: UIImage?
     }
 
+    /// The session hit an expired AWS session; the login runs on the
+    /// Mac, driven from AwsLoginScreen.
+    @ViewBuilder private var awsLoginBar: some View {
+        if let item = model.awsLogin(for: session.pid) {
+            Button { awsLoginItem = item } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "key.fill").foregroundStyle(.orange)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Needs AWS login · \(item.profile)").font(.subheadline.bold())
+                        Text(awsLoginStatus(item)).font(.caption).foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+                    Spacer()
+                    Text("Sign in").font(.subheadline.bold()).foregroundStyle(.orange)
+                    Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary)
+                }
+                .padding(.horizontal, 14).padding(.vertical, 10)
+                .frame(maxWidth: .infinity)
+                .background(.bar)
+                .overlay(alignment: .bottom) { Divider() }
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
     private func awsLoginStatus(_ item: AwsLogin.Item) -> String {
         switch item.state?.phase {
         case nil: return "Tap to sign in from this phone"
@@ -55,25 +80,6 @@ struct SessionFeedScreen: View {
     var body: some View {
         ScrollViewReader { proxy in
             List {
-                if let item = model.awsLogin(for: session.pid) {
-                    // The session hit an expired AWS session; the login
-                    // runs on the Mac, driven from here (AwsLoginScreen).
-                    Button { awsLoginItem = item } label: {
-                        HStack(spacing: 8) {
-                            Image(systemName: "key.fill").foregroundStyle(.orange)
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("Needs AWS login · \(item.profile)").font(.subheadline.bold())
-                                Text(awsLoginStatus(item)).font(.caption).foregroundStyle(.secondary)
-                            }
-                            Spacer()
-                            Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary)
-                        }
-                        .padding(10)
-                        .background(Color.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
-                    }
-                    .buttonStyle(.plain)
-                    .listRowSeparator(.hidden)
-                }
                 if feed?.waiting == true {
                     Label("Waiting on you", systemImage: "hand.raised.fill")
                         .foregroundStyle(.orange)
@@ -107,6 +113,10 @@ struct SessionFeedScreen: View {
             }
         }
         .sheet(item: $awsLoginItem) { AwsLoginScreen(item: $0) }
+        // Pinned above the transcript, not in it: the feed opens scrolled
+        // to the newest message, so a card at the top was out of reach
+        // (user 2026-09-03 "have to scroll to top").
+        .safeAreaInset(edge: .top) { awsLoginBar }
         .safeAreaInset(edge: .bottom) { composer }
         .navigationTitle(feed?.name ?? repoName(session.cwd))
         .navigationBarTitleDisplayMode(.inline)
