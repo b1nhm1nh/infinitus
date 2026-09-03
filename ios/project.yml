@@ -26,6 +26,7 @@ targets:
         # PhotosPicker attachments on a message (2026-09-03 "add features
         # to allow attachments").
         NSPhotoLibraryUsageDescription: Infinitus attaches photos you pick to a message sent into a session.
+        NSCameraUsageDescription: Infinitus attaches a photo you take to a message sent into a session.
         # `infinitus://pair?url=…&token=…` — the same pair link, opened
         # from a message or a browser instead of the camera.
         CFBundleURLTypes:

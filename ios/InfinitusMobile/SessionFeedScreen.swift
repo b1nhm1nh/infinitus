@@ -25,6 +25,8 @@ struct SessionFeedScreen: View {
     @State private var photoPickerItems: [PhotosPickerItem] = []
     @State private var showFileImporter = false
     @State private var showPhotoPicker = false
+    @State private var showCamera = false
+    @State private var previewing: PendingAttachment?
     @State private var attachmentError: String?
 
     /// A picked file, already processed into the exact bytes/mime that
@@ -165,6 +167,11 @@ struct SessionFeedScreen: View {
                     // dismisses first — user 2026-09-03 "Choose library
                     // doesn't show anything"); the picker is a modifier
                     // below, flipped from a plain button like the importer.
+                    if CameraCapture.isAvailable {
+                        Button { showCamera = true } label: {
+                            Label("Take Photo", systemImage: "camera")
+                        }
+                    }
                     Button { showPhotoPicker = true } label: {
                         Label("Photo Library", systemImage: "photo.on.rectangle")
                     }
@@ -197,6 +204,14 @@ struct SessionFeedScreen: View {
             guard !items.isEmpty else { return }
             Task { await addPickedPhotos(items) }
         }
+        .fullScreenCover(isPresented: $showCamera) {
+            CameraCapture { image in addCapturedPhoto(image) }
+                .ignoresSafeArea()
+        }
+        .fullScreenCover(item: $previewing) { attachment in
+            AttachmentPreview(name: attachment.name, bytes: attachment.data.count,
+                              image: attachment.thumbnail)
+        }
         .photosPicker(isPresented: $showPhotoPicker, selection: $photoPickerItems,
                       maxSelectionCount: SessionInput.maxAttachments, matching: .images)
         .fileImporter(isPresented: $showFileImporter, allowedContentTypes: Self.allowedFileTypes,
@@ -225,6 +240,7 @@ struct SessionFeedScreen: View {
             .frame(width: 52, height: 52)
             .background(.quaternary, in: RoundedRectangle(cornerRadius: 8))
             .clipShape(RoundedRectangle(cornerRadius: 8))
+            .onTapGesture { previewing = attachment }
             Button {
                 attachments.removeAll { $0.id == attachment.id }
             } label: {
@@ -257,12 +273,33 @@ struct SessionFeedScreen: View {
         photoPickerItems = []
     }
 
+    /// A camera shot takes the same downscale/JPEG path as a library pick.
+    private func addCapturedPhoto(_ image: UIImage) {
+        guard attachments.count < SessionInput.maxAttachments,
+              let jpeg = Self.downscaledJPEG(image) else {
+            attachmentError = "couldn't read that photo"
+            return
+        }
+        guard jpeg.count <= SessionInput.maxAttachmentBytes else {
+            attachmentError = "that photo is still \(jpeg.count / 1_048_576) MB after compression — the cap is \(SessionInput.maxAttachmentBytes / 1_048_576) MB"
+            return
+        }
+        let name = "camera-\(UUID().uuidString.prefix(8)).jpg"
+        attachments.append(PendingAttachment(name: name, mime: "image/jpeg",
+                                             data: jpeg, thumbnail: UIImage(data: jpeg)))
+    }
+
     private static func downscaledJPEG(_ image: UIImage, maxDimension: CGFloat = 2048,
                                        quality: CGFloat = 0.85) -> Data? {
         let longest = max(image.size.width, image.size.height)
         let scale = min(1, maxDimension / longest)
         let targetSize = CGSize(width: image.size.width * scale, height: image.size.height * scale)
-        let resized = UIGraphicsImageRenderer(size: targetSize).image { _ in
+        // Points, not pixels: the renderer's default format renders at
+        // the screen's 3× scale, which sent a "2048 px" photo out at
+        // 6144×4608 (the first photo through, 2026-09-03).
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        let resized = UIGraphicsImageRenderer(size: targetSize, format: format).image { _ in
             image.draw(in: CGRect(origin: .zero, size: targetSize))
         }
         // A busy 2048 px frame can still pass the Mac's 5 MiB cap at 0.85;
@@ -397,11 +434,19 @@ struct SessionFeedScreen: View {
     @ViewBuilder private func row(_ item: SessionFeedItem) -> some View {
         switch item.kind {
         case .user:
+            let (text, attached) = Self.splitAttached(item.text)
             HStack {
                 Spacer(minLength: 40)
-                Text(item.text)
-                    .padding(10)
-                    .background(Color.accentColor.opacity(0.18), in: RoundedRectangle(cornerRadius: 14))
+                VStack(alignment: .trailing, spacing: 6) {
+                    if !text.isEmpty { Text(text) }
+                    ForEach(attached, id: \.self) { name in
+                        Label(name, systemImage: "paperclip")
+                            .font(.caption).foregroundStyle(.secondary)
+                            .lineLimit(1).truncationMode(.middle)
+                    }
+                }
+                .padding(10)
+                .background(Color.accentColor.opacity(0.18), in: RoundedRectangle(cornerRadius: 14))
             }
         case .assistant, .result:
             HStack {
@@ -463,6 +508,23 @@ struct SessionFeedScreen: View {
             .padding(10)
             .background(Color.accentColor.opacity(0.08), in: RoundedRectangle(cornerRadius: 12))
         }
+    }
+
+    /// "[attached: /a/x.jpg, /b/y.pdf]" at the end of a sent message
+    /// (SessionInput.deliver's wire form) becomes chips with the file
+    /// names; the Mac-side paths mean nothing on the phone.
+    static func splitAttached(_ text: String) -> (String, [String]) {
+        guard let range = text.range(of: "[attached: ", options: .backwards),
+              text.hasSuffix("]") else { return (text, []) }
+        let list = text[range.upperBound..<text.index(before: text.endIndex)]
+        let names = list.split(separator: ", ").map { path -> String in
+            let file = String(path).split(separator: "/").last.map(String.init) ?? String(path)
+            // Strip the UUID prefix deliver() adds: "<uuid>-photo-1234.jpg".
+            let parts = file.split(separator: "-", maxSplits: 5, omittingEmptySubsequences: false)
+            return parts.count > 5 ? parts[5...].joined(separator: "-") : file
+        }
+        let body = text[..<range.lowerBound].trimmingCharacters(in: .whitespacesAndNewlines)
+        return (body == "Please look at the attached file(s):" ? "" : body, names)
     }
 
     private func agentStatus(_ agent: SessionFeedItem.Agent) -> String {
