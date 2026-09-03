@@ -16,6 +16,11 @@ import InfinitusUI
 /// chips) keep reading `model` directly on the "Show as Mac popup" view.
 @MainActor
 final class MirrorModel: ObservableObject, FleetModel {
+    /// The one instance the app runs on — the scene's StateObject and
+    /// the background-refresh task share it, so a refresh from either
+    /// side lands in the same fleets and Live Activities.
+    static let shared = MirrorModel()
+
     @Published private(set) var snapshot: MirrorSnapshot?
     /// One engine's fleet per element, in the Mac's popup order.
     @Published private(set) var fleets: [MirrorFleetModel] = []

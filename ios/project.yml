@@ -35,8 +35,11 @@ targets:
         # PhotosPicker attachments on a message (2026-09-03 "add features
         # to allow attachments").
         NSPhotoLibraryUsageDescription: Infinitus attaches photos you pick to a message sent into a session.
-        # Live Activities (#1 revival countdown, #2 working sessions).
+        # Live Activities (#1 revival countdown, #2 working sessions), and
+        # the background refresh that keeps them moving with the app closed.
         NSSupportsLiveActivities: true
+        UIBackgroundModes: [fetch]
+        BGTaskSchedulerPermittedIdentifiers: [com.huuloc.infinitus.mobile.refresh]
         # `infinitus://pair?url=…&token=…` — the same pair link, opened
         # from a message or a browser instead of the camera.
         CFBundleURLTypes:
