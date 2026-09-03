@@ -72,3 +72,58 @@ public enum CLIProxyDetect {
             hasConfig: names.contains("config.yaml"))
     }
 }
+
+// MARK: - "Copy for an AI agent" (user 2026-09-03)
+
+/// The first-run brief a user hands to a coding agent: what is already on
+/// this machine, what is missing, and the exact commands — the same
+/// shape as the Devices pane's phone brief. Pure text, so `swift test`
+/// covers every branch.
+public enum OnboardingBrief {
+    public static func text(engineInstalled: Bool, claude: ClaudeCLIInfo?,
+                            proxy: CLIProxyInfo?, proxyLive: Bool) -> String {
+        var out = ["# Set up Infinitus on this Mac", "",
+                   "Infinitus is a menu bar cockpit over the claude-swap engine (`cswap`): it "
+                   + "rotates Claude Code between several Claude accounts and shows their "
+                   + "5-hour / 7-day usage. Do the unticked steps in order; every command is "
+                   + "safe to re-run. Ask before signing into any account — a human types the "
+                   + "credentials.", "",
+                   "## Found on this Mac"]
+        out.append("- claude-swap engine (cswap): \(engineInstalled ? "installed" : "NOT installed")")
+        if let claude {
+            out.append("- Claude Code: " + (claude.binaryPath.map { "at \($0)" } ?? "not found")
+                       + (claude.email.map { " — signed in as \($0)" + org(claude.organization) } ?? " — not signed in"))
+        } else {
+            out.append("- Claude Code: not checked yet")
+        }
+        if let proxy {
+            out.append("- CLIProxyAPI (optional second engine): "
+                       + (proxy.hasConfig ? "config present, \(proxy.credentialFiles) credential file(s), "
+                          + (proxyLive ? "running" : "not running") : "not set up"))
+        }
+        out += ["", "## Steps"]
+        out.append("- [\(engineInstalled ? "x" : " ")] 1. Install the engine: `brew install uv` if `uv` is missing, then "
+                   + "`uv tool install claude-swap`. Relaunch Infinitus (or click Install engine in its popup).")
+        let signedIn = claude?.email != nil
+        out.append("- [\(signedIn ? "x" : " ")] 2. Sign Claude Code into the first account: run `claude`, use "
+                   + "`/login`, the human completes the browser sign-in.")
+        out.append("- [ ] 3. Register it: `cswap add` (adopts Claude Code's current login). "
+                   + "Repeat 2–3 for every extra account: `/logout` in Claude Code, `/login` as the "
+                   + "next account, `cswap add` again. `cswap list` shows the fleet.")
+        out.append("- [ ] 4. Start auto-rotation: Infinitus runs `cswap auto` itself once the "
+                   + "fleet has accounts (Settings → Engines shows it; `infinitusctl status` from "
+                   + "Infinitus.app/Contents/MacOS confirms).")
+        out.append("- [ ] 5. Optional, CLIProxyAPI as a second engine: `brew install cliproxyapi` "
+                   + "(or the release binary), start it, then in Infinitus Settings → Engines → "
+                   + "CLIProxyAPI paste the management key (the human pastes secrets) and add "
+                   + "accounts from the same tab.")
+        out.append("- [ ] 6. Optional, the phone: Infinitus Settings → Devices has its own "
+                   + "\"Copy for an AI agent\" brief for pairing the iPhone app.")
+        out += ["", "## Verify", "`cswap list --json` lists every account with usage; the Infinitus popup "
+                + "shows one row per account with 5h/7d bars; `infinitusctl status` reports "
+                + "`badge: running`."]
+        return out.joined(separator: "\n")
+    }
+
+    private static func org(_ o: String?) -> String { o.map { " (\($0))" } ?? "" }
+}
