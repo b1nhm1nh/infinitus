@@ -108,6 +108,30 @@ actor NetworkFleetMirror: FleetMirror {
                 failures.append("\(Self.routeLabel(text)) \(Self.failureWord(error))")
             }
         }
+        // Every saved route is dead. If one of them was a quick-tunnel
+        // URL, the Mac may simply have restarted onto a new one and
+        // published it to the rendezvous (MirrorRendezvous) — swap it in
+        // and try once more before giving up.
+        if let stale = stored.first(where: MirrorRendezvous.isEphemeral),
+           let fresh = await rendezvousLookup(token: token), fresh != stale,
+           let manual = MirrorTransport.parseEndpoint(fresh) {
+            var list = Self.storedEndpoints()
+            list = list.map { $0 == stale ? fresh : $0 }
+            UserDefaults.standard.set(list, forKey: Self.manualKey)
+            let endpoint = NWEndpoint.hostPort(
+                host: NWEndpoint.Host(manual.host),
+                port: NWEndpoint.Port(rawValue: manual.port) ?? .any)
+            if let (data, _) = try? await fetch(endpoint, path: MirrorTransport.snapshotPath,
+                                                hostHeader: manual.host, useTLS: manual.useTLS,
+                                                token: token, timeout: Self.candidateTimeout),
+               let snapshot = try? Self.decode(data) {
+                cached = snapshot
+                UserDefaults.standard.set(fresh, forKey: Self.lastGoodKey)
+                statusText = "\(snapshot.machineName) at \(fresh) (new tunnel address)"
+                return snapshot
+            }
+            failures.append("new tunnel address didn't answer either")
+        }
         // No stored endpoint answered (or none is stored) — Bonjour is
         // the last resort, and only worth trying while on the LAN.
         startBrowsing()
@@ -324,6 +348,17 @@ actor NetworkFleetMirror: FleetMirror {
     /// from (the Bonjour endpoint alone never names a port). `method`/
     /// `body` default to a plain `GET` (#17 layer 2's `POST
     /// /sessions/<pid>/input` is the only other caller).
+    /// GET the rendezvous entry for this token — the quick-tunnel URL the
+    /// Mac last published, or nil (unpublished, expired, offline).
+    private func rendezvousLookup(token: String) async -> String? {
+        guard let url = MirrorRendezvous.url(token: token) else { return nil }
+        var request = URLRequest(url: url, timeoutInterval: 5)
+        request.cachePolicy = .reloadIgnoringLocalCacheData
+        guard let (data, response) = try? await URLSession.shared.data(for: request),
+              (response as? HTTPURLResponse)?.statusCode == 200 else { return nil }
+        return MirrorRendezvous.parseLookup(data)
+    }
+
     private func fetch(_ endpoint: NWEndpoint, path: String, hostHeader: String, useTLS: Bool,
                        token: String, timeout: TimeInterval = 5,
                        method: String = "GET", body: Data? = nil) async throws -> (Data, String) {

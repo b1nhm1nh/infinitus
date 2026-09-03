@@ -108,6 +108,8 @@ final class QuickTunnel: ObservableObject {
     @Published private(set) var status: String?
     /// Set by AppModel so tunnel events land in the popup's event log.
     var log: ((String, String) -> Void)?
+    /// Fires with each URL the tunnel comes up on — the rendezvous publish.
+    var onURL: ((String) -> Void)?
 
     private var process: Process?
     /// The child's pid, remembered across launches: a hard kill of the
@@ -217,6 +219,7 @@ final class QuickTunnel: ObservableObject {
         url = found
         status = found
         log?("🌐", "quick tunnel up at \(found)")
+        onURL?(found)
     }
 
     private func ended() {

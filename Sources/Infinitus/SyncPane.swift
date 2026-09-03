@@ -133,11 +133,22 @@ struct SyncPane: View {
                         if let status = tunnel.status {
                             Text(status).font(.caption).foregroundStyle(.secondary)
                         }
-                        Text("The URL is public and changes every start (a phone "
-                             + "that has no other route then needs a fresh scan); "
-                             + "the pairing token is the only thing keeping the "
+                        Text("The URL is public and changes every start; the "
+                             + "pairing token is the only thing keeping the "
                              + "snapshot private. Stops when you turn this off "
                              + "or quit.")
+                            .font(.caption).foregroundStyle(.secondary)
+                        Toggle("Publish the current URL to infinitus.run",
+                               isOn: $app.mirrorRendezvousEnabled)
+                            .disabled(!app.mirrorTunnelEnabled)
+                            .help("Each start PUTs the new trycloudflare URL under "
+                                  + "a key derived from the pairing token (SHA-256), "
+                                  + "so a paired phone finds it instead of rescanning. "
+                                  + "The URL alone opens nothing.")
+                        Text("Without this, a phone with no other route needs a "
+                             + "fresh scan after every restart. What's sent: the "
+                             + "URL, keyed by a hash of the token — never the "
+                             + "token, never a snapshot.")
                             .font(.caption).foregroundStyle(.secondary)
                         namedTunnelRows
                     } else {

@@ -337,6 +337,17 @@ final class AppModel: ObservableObject {
             mirrorServer.token.set(mirrorPairToken)
         }
     }
+    /// Publish the quick tunnel's current URL to the infinitus.run
+    /// rendezvous (MirrorRendezvous) so a paired phone finds the new
+    /// address after a restart instead of rescanning. On by default: it
+    /// only ever runs while the quick tunnel does, and the URL is useless
+    /// without the token.
+    @Published var mirrorRendezvousEnabled: Bool {
+        didSet {
+            defaults.set(mirrorRendezvousEnabled, forKey: "mirror_rendezvous_enabled")
+            if mirrorRendezvousEnabled, let url = quickTunnel.url { publishRendezvous(url) }
+        }
+    }
     /// "Expose through a Cloudflare quick tunnel" — off by default; a
     /// public hostname, even a throwaway one, is never a default.
     @Published var mirrorTunnelEnabled: Bool {
@@ -465,6 +476,7 @@ final class AppModel: ObservableObject {
         sortByHeadroom = defaults.object(forKey: "sort_headroom") as? Bool ?? true
         mirrorLANEnabled = defaults.object(forKey: "mirror_lan_enabled") as? Bool ?? false
         mirrorTunnelEnabled = defaults.object(forKey: "mirror_tunnel_enabled") as? Bool ?? false
+        mirrorRendezvousEnabled = defaults.object(forKey: "mirror_rendezvous_enabled") as? Bool ?? true
         mirrorNamedTunnelEnabled = defaults.bool(forKey: NamedTunnel.enabledKey)
         mirrorNamedTunnelHost = defaults.string(forKey: NamedTunnel.hostnameKey) ?? ""
         // One token per install, minted the first time anyone looks.
@@ -603,6 +615,7 @@ final class AppModel: ObservableObject {
             if self.eventLog.count > 100 { self.eventLog.removeFirst(self.eventLog.count - 100) }
         }
         namedTunnel.log = quickTunnel.log
+        quickTunnel.onURL = { [weak self] url in self?.publishRendezvous(url) }
         // The tunnels can only point at a bound port, which arrives later.
         mirrorServer.onReady = { [weak self] _ in
             self?.applyQuickTunnel()
@@ -750,6 +763,31 @@ final class AppModel: ObservableObject {
     func regeneratePairToken() {
         mirrorPairToken = MirrorPairing.generateToken()
         eventLog.append(EventEntry(icon: "🔑", text: "phone pairing token regenerated"))
+        // A new token is a new rendezvous key; the old entry just expires.
+        if let url = quickTunnel.url { publishRendezvous(url) }
+    }
+
+    /// PUTs the quick tunnel's URL under this token's rendezvous key
+    /// (MirrorRendezvous). Best effort: the QR still carries the URL, this
+    /// only spares the rescan after a restart.
+    func publishRendezvous(_ url: String) {
+        guard mirrorRendezvousEnabled,
+              let target = MirrorRendezvous.url(token: mirrorPairToken) else { return }
+        var request = URLRequest(url: target, timeoutInterval: 10)
+        request.httpMethod = "PUT"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = MirrorRendezvous.publishBody(url: url)
+        URLSession.shared.dataTask(with: request) { [weak self] _, response, error in
+            let code = (response as? HTTPURLResponse)?.statusCode ?? 0
+            Task { @MainActor in
+                if code == 204 {
+                    self?.eventLog.append(EventEntry(icon: "📍", text: "tunnel address published to infinitus.run"))
+                } else {
+                    let why = error?.localizedDescription ?? "HTTP \(code)"
+                    self?.eventLog.append(EventEntry(icon: "⚠️", text: "rendezvous publish failed: \(why)"))
+                }
+            }
+        }.resume()
     }
 
     /// Every way a phone can reach this Mac right now (#9 remote access):

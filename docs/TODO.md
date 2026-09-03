@@ -168,6 +168,19 @@ file keeps the shipped log and the deferred-by-design notes.
       brainstorm in docs/research/session-progress.md)
 
 ## Shipped 2026-09-02/03 (remote access, engine ranking, two-session flow)
+
+- **Pairing rendezvous on infinitus.run** (user 2026-09-03 "can the
+  domain be reused for other users?" → "1 ok"): `site/src/worker.js`
+  serves the landing page as before plus `PUT/GET /rendezvous/<sha256
+  of pairing token>` backed by KV (7-day TTL, only *.trycloudflare.com
+  URLs accepted, no accounts). Mac: `QuickTunnel.onURL` →
+  `AppModel.publishRendezvous` (toggle "Publish the current URL to
+  infinitus.run", default on, republished on token regenerate). Phone:
+  when every saved route is dead and one was a quick-tunnel URL,
+  `NetworkFleetMirror` GETs the rendezvous, swaps the new URL into the
+  saved list and retries — no rescan after a Mac restart. Core:
+  `MirrorRendezvous` (key/url/isEphemeral/publishBody/parseLookup).
+  Verified live against the deployed Worker (404 / 400 / 204 / 200).
 - ~~#17 layer 1 session feed~~ → shipped 2026-09-03: `SessionFeed`
   (InfinitusCore, zero-token parse of the session jsonl into
   user/assistant/tool/question/permission/result/limit items,
