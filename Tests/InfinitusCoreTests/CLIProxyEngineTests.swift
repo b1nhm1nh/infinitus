@@ -84,6 +84,7 @@ final class CLIProxyEngineTests: XCTestCase {
         switch path {
         case "/v0/management/auth-files": return (200, Self.authFiles)
         case "/v0/management/routing/strategy": return (200, #"{"strategy":"fill-first"}"#)
+        case "/v0/management/routing/session-affinity": return (200, #"{"enabled":true,"ttl":"1h"}"#)
         case "/v0/management/usage-queue": return (200, "[]")
         case "/v0/management/api-call":
             if body.contains("\"auth_index\":\"\(expiredIndex)\"") {
@@ -123,6 +124,27 @@ final class CLIProxyEngineTests: XCTestCase {
         XCTAssertTrue(apiCalls.allSatisfy { ($0.body ?? "").contains("$TOKEN$") })
         let strategy = await engine.routingStrategy
         XCTAssertEqual(strategy, "fill-first")
+        let affinity = await engine.sessionAffinity
+        XCTAssertEqual(affinity, true)
+    }
+
+    func testSessionAffinityIsNilOnAProxyWithoutTheRouteAndPutsEnabled() async throws {
+        ProxyStubProtocol.reset { [self] req, body in
+            req.url!.path == "/v0/management/routing/session-affinity" ? (404, "") : route(req, body: body)
+        }
+        let engine = makeEngine()
+        _ = try await engine.snapshot()
+        let missing = await engine.sessionAffinity
+        XCTAssertNil(missing, "a 404 leaves the knob unknown, not off")
+        ProxyStubProtocol.reset { req, _ in
+            req.url!.path == "/v0/management/routing/session-affinity" ? (200, #"{"status":"ok"}"#) : (404, "")
+        }
+        try await engine.setSessionAffinity(true)
+        let put = try XCTUnwrap(ProxyStubProtocol.seen.first { $0.method == "PUT" })
+        XCTAssertEqual(put.path, "/v0/management/routing/session-affinity")
+        XCTAssertEqual(put.body, #"{"enabled":true}"#)
+        let now = await engine.sessionAffinity
+        XCTAssertEqual(now, true)
     }
 
     func testExpiredIsStickyThroughA429AndFailedFetchIsNotOk() async throws {

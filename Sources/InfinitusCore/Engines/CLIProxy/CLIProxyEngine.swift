@@ -59,6 +59,10 @@ public actor CLIProxyEngine: AccountEngine {
     private var pendingOAuth: (state: String, provider: Provider)?
     /// `GET /routing/strategy` as of the last snapshot.
     public private(set) var routingStrategy: String?
+    /// `GET /routing/session-affinity` (upstream PR #5447) as of the last
+    /// snapshot; nil while the proxy lacks the route (404) — the pane then
+    /// falls back to telling the user where the YAML knob is.
+    public private(set) var sessionAffinity: Bool?
 
     public init(baseURL: URL = CLIProxyEngine.defaultBaseURL, managementKey: String,
                 session: URLSession = .shared, ledgerURL: URL? = nil,
@@ -153,6 +157,23 @@ public actor CLIProxyEngine: AccountEngine {
         return (obj?["strategy"] as? String) ?? ""
     }
 
+    private func fetchSessionAffinity() async throws -> Bool {
+        let (_, data) = try await request("GET", "routing/session-affinity")
+        let obj = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+        guard let enabled = obj?["enabled"] as? Bool else {
+            throw EngineError.remote(status: 200, body: String(decoding: data, as: UTF8.self))
+        }
+        return enabled
+    }
+
+    /// `PUT /routing/session-affinity {"enabled": …}` — same persist +
+    /// hot-reload as the strategy. Throws `.unauthorized` on a proxy
+    /// without the route (its 404 maps there).
+    public func setSessionAffinity(_ enabled: Bool) async throws {
+        _ = try await request("PUT", "routing/session-affinity", json: ["enabled": enabled])
+        sessionAffinity = enabled
+    }
+
     /// The proxy's selector modes (config_basic.go `normalizeRoutingStrategy`).
     public static let routingStrategies = ["fill-first", "round-robin", "weighted-round-robin"]
 
@@ -172,6 +193,7 @@ public actor CLIProxyEngine: AccountEngine {
         let (_, data) = try await request("GET", "auth-files")
         let files = try JSONDecoder().decode(ProxyAuthFileList.self, from: data).files
         routingStrategy = try? await fetchStrategy()
+        sessionAffinity = try? await fetchSessionAffinity()
 
         // Gauges: only Claude credentials expose oauth/usage; held ones
         // are skipped (nothing routes to them). One Anthropic call per

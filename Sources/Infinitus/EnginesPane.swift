@@ -258,7 +258,13 @@ struct CLIProxyEnginePane: View {
                         ForEach(CLIProxyEngine.routingStrategies, id: \.self) { Text($0) }
                     }
                     .disabled(model.proxyRoutingStrategy == nil)
-                    RoutingNotes(strategy: model.proxyRoutingStrategy)
+                    if let affinity = model.proxySessionAffinity {
+                        Toggle("Session affinity (a conversation stays on one credential)",
+                               isOn: Binding(get: { affinity },
+                                             set: { model.setProxySessionAffinity($0) }))
+                    }
+                    RoutingNotes(strategy: model.proxyRoutingStrategy,
+                                 affinity: model.proxySessionAffinity)
                 }
                 Section("Accounts") {
                     Text("The proxy's credentials are managed in the Accounts tab, "
@@ -386,15 +392,30 @@ struct NineRouterEnginePane: View {
 /// and to the Accounts tab's Switch (config_basic.go / selector.go).
 struct RoutingNotes: View {
     let strategy: String?
+    /// nil = the proxy predates the session-affinity route (CLIProxyAPI
+    /// PR #5447), so the knob is YAML-only and the note says where.
+    var affinity: Bool? = nil
 
     var body: some View {
         Text(explainer).font(.caption).foregroundStyle(.secondary)
         if strategy != nil, strategy != "fill-first" {
-            Text("Turn on session-affinity in the proxy's config (no management route "
-                 + "for it yet) so a conversation stays on one credential: without it "
-                 + "every request lands on a different account and the prompt cache "
-                 + "misses. Under affinity, Switch only steers new sessions.")
-                .font(.caption).foregroundStyle(.orange)
+            if affinity == nil {
+                Text("Turn on session-affinity in the proxy's config (this proxy has no "
+                     + "management route for it yet) so a conversation stays on one "
+                     + "credential: without it every request lands on a different account "
+                     + "and the prompt cache misses. Under affinity, Switch only steers "
+                     + "new sessions.")
+                    .font(.caption).foregroundStyle(.orange)
+            } else if affinity == false {
+                Text("Turn on session affinity so a conversation stays on one credential: "
+                     + "without it every request lands on a different account and the "
+                     + "prompt cache misses.")
+                    .font(.caption).foregroundStyle(.orange)
+            } else {
+                Text("Under affinity, Switch only steers new sessions; bound ones keep "
+                     + "their credential until the TTL lapses.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
         }
     }
 

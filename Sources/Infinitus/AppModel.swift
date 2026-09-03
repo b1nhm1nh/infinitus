@@ -297,9 +297,26 @@ final class AppModel: ObservableObject {
 
     /// `GET /routing/strategy` as of the last refresh (proxy engine only).
     @Published var proxyRoutingStrategy: String?
+    /// nil = the proxy has no session-affinity route (pre-#5447): the
+    /// pane shows the YAML note instead of a toggle.
+    @Published var proxySessionAffinity: Bool?
 
     /// The CLIProxyAPI tab's routing picker: PUT, then a refresh so the
     /// caveat line and the mapped fleet follow the new mode.
+    func setProxySessionAffinity(_ on: Bool) {
+        guard let proxy = registry.engine(id: CLIProxyEngine.engineID) as? CLIProxyEngine else { return }
+        Task {
+            do {
+                try await proxy.setSessionAffinity(on)
+                engineErrors[CLIProxyEngine.engineID] = nil
+            } catch {
+                engineErrors[CLIProxyEngine.engineID] =
+                    (error as? EngineError)?.errorDescription ?? "\(error)"
+            }
+            await refreshSnapshot()
+        }
+    }
+
     func setProxyRoutingStrategy(_ strategy: String) {
         guard let proxy = registry.engine(id: CLIProxyEngine.engineID) as? CLIProxyEngine else { return }
         Task {
@@ -1212,6 +1229,7 @@ final class AppModel: ObservableObject {
         if let proxy = registry.engine(id: CLIProxyEngine.engineID) as? CLIProxyEngine {
             let strategy = await proxy.routingStrategy ?? ""
             proxyRoutingStrategy = strategy.isEmpty ? nil : strategy
+            proxySessionAffinity = await proxy.sessionAffinity
             fleetCaveats[CLIProxyEngine.engineID] =
                 (strategy.isEmpty || strategy == "fill-first")
                     ? nil : "\(strategy) routing ignores priority — switch is advisory"
