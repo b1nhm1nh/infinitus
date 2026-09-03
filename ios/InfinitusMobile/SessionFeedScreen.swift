@@ -24,6 +24,7 @@ struct SessionFeedScreen: View {
     @State private var attachments: [PendingAttachment] = []
     @State private var photoPickerItems: [PhotosPickerItem] = []
     @State private var showFileImporter = false
+    @State private var showPhotoPicker = false
     @State private var attachmentError: String?
 
     /// A picked file, already processed into the exact bytes/mime that
@@ -160,9 +161,11 @@ struct SessionFeedScreen: View {
             }
             HStack(spacing: 8) {
                 Menu {
-                    PhotosPicker(selection: $photoPickerItems,
-                                maxSelectionCount: SessionInput.maxAttachments,
-                                matching: .images) {
+                    // A PhotosPicker inside a Menu never presents (the menu
+                    // dismisses first — user 2026-09-03 "Choose library
+                    // doesn't show anything"); the picker is a modifier
+                    // below, flipped from a plain button like the importer.
+                    Button { showPhotoPicker = true } label: {
                         Label("Photo Library", systemImage: "photo.on.rectangle")
                     }
                     Button { showFileImporter = true } label: {
@@ -194,6 +197,8 @@ struct SessionFeedScreen: View {
             guard !items.isEmpty else { return }
             Task { await addPickedPhotos(items) }
         }
+        .photosPicker(isPresented: $showPhotoPicker, selection: $photoPickerItems,
+                      maxSelectionCount: SessionInput.maxAttachments, matching: .images)
         .fileImporter(isPresented: $showFileImporter, allowedContentTypes: Self.allowedFileTypes,
                      allowsMultipleSelection: true) { result in
             addPickedFiles(result)
