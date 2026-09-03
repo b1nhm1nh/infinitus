@@ -62,12 +62,9 @@ public struct MirrorSnapshot: Codable, Sendable {
         self.engine = engine
         self.progressByPid = progressByPid
         self.fleets = fleets
-<<<<<<< HEAD
         self.tokenRate = tokenRate
-=======
         self.forecast = forecast
         self.plan = plan
->>>>>>> d244806
     }
 }
 
