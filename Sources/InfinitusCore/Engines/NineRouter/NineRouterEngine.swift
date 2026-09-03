@@ -25,6 +25,8 @@ public actor NineRouterEngine: AccountEngine {
 
     private var ordinals: [Provider: [String]] = [:]
     private var usageCache: [String: (usage: Usage, at: Date)] = [:]
+    /// Plan names ride the usage reply, so they outlive the usage TTL here.
+    private var planCache: [String: String] = [:]
     private var usageBackoff: [String: Date] = [:]
     private var sharedUsage: [String: SharedUsage] = [:]
     private var expiredIDs: Set<String> = []
@@ -135,7 +137,6 @@ public actor NineRouterEngine: AccountEngine {
         }
 
         var statuses: [String: String] = [:]
-        var plans: [String: String] = [:]
         await withTaskGroup(of: (String, NineRouterUsage.Outcome).self) { group in
             var pending = wanted.makeIterator()
             var inFlight = 0
@@ -154,7 +155,7 @@ public actor NineRouterEngine: AccountEngine {
                 switch outcome {
                 case .ok(let u, let plan):
                     expiredIDs.remove(id)
-                    if let plan { plans[id] = plan }
+                    if let plan { planCache[id] = plan }
                     if let u {
                         for n in [id] + (followers[id] ?? []) {
                             usage[n] = u
@@ -180,7 +181,7 @@ public actor NineRouterEngine: AccountEngine {
         for id in expiredIDs where statuses[id] == nil { statuses[id] = "relogin_required" }
 
         let mapped = NineRouterMapping.fleets(engineID: Self.engineID, connections: connections,
-                                              usage: usage, plans: plans, statuses: statuses, now: now)
+                                              usage: usage, plans: planCache, statuses: statuses, now: now)
         ordinals = mapped.ordinals
         return mapped.fleets
     }
