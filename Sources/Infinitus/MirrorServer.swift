@@ -43,16 +43,19 @@ final class MirrorTokenBox: @unchecked Sendable {
 /// its own file read (`ClaudeSessions.list` + `SessionFeedReader.read`)
 /// on that queue — off the main actor, same as every other route here.
 final class MirrorSessionFeedBox: @unchecked Sendable {
+    typealias Provider = @Sendable (_ pid: Int32, _ limit: Int, _ since: String?, _ wait: TimeInterval) -> Data?
     private let lock = NSLock()
-    private var provider: (@Sendable (Int32, Int) -> Data?)?
+    private var provider: Provider?
 
-    func set(_ new: @escaping @Sendable (Int32, Int) -> Data?) {
+    func set(_ new: @escaping Provider) {
         lock.lock(); provider = new; lock.unlock()
     }
 
-    func call(_ pid: Int32, _ limit: Int) -> Data? {
+    /// May block for up to `wait` seconds (the long-poll) — call it off
+    /// the network queue when `wait > 0`.
+    func call(_ pid: Int32, _ limit: Int, since: String? = nil, wait: TimeInterval = 0) -> Data? {
         lock.lock(); let current = provider; lock.unlock()
-        return current?(pid, limit)
+        return current?(pid, limit, since, wait)
     }
 }
 
@@ -256,6 +259,21 @@ final class MirrorServer: ObservableObject {
                 } else if request.method == "GET",
                           let pid = MirrorTransport.sessionTailPid(request.path) {
                     let limit = request.query(MirrorTransport.tailLimitQueryName).flatMap(Int.init) ?? 30
+                    let since = request.query(MirrorTransport.tailSinceQueryName)
+                    let wait = request.query(MirrorTransport.tailWaitQueryName).flatMap(Double.init) ?? 0
+                    if since != nil, wait > 0 {
+                        // Long-poll: the provider sleeps until the transcript
+                        // moves, so it runs on a global thread, never here.
+                        DispatchQueue.global(qos: .utility).async {
+                            let data = sessionFeed.call(pid, limit, since: since, wait: wait)
+                            let response = data.map(MirrorTransport.snapshotResponse)
+                                ?? MirrorTransport.notFoundResponse()
+                            onServed()
+                            connection.send(content: response,
+                                            completion: .contentProcessed { _ in connection.cancel() })
+                        }
+                        return
+                    }
                     response = sessionFeed.call(pid, limit).map(MirrorTransport.snapshotResponse)
                         ?? MirrorTransport.notFoundResponse()
                     onServed()

@@ -651,8 +651,9 @@ final class AppModel: ObservableObject {
         Task { [mirrorExporter] in await mirrorExporter.attach(payload: payload) }
         mirrorServer.start(machineName: Host.current().localizedName ?? "Mac",
                            token: mirrorPairToken)
-        mirrorServer.sessionFeed.set { pid, limit in
+        mirrorServer.sessionFeed.set { pid, limit, since, wait in
             let claudeDir = ClaudeSessions.configHome()
+            SessionFeedReader.waitForChange(pid: pid, claudeDir: claudeDir, since: since, wait: wait)
             guard let record = ClaudeSessions.list(claudeDir: claudeDir).first(where: { $0.pid == pid })
             else { return nil }
             guard let feed = SessionFeedReader.read(record: record, claudeDir: claudeDir, limit: limit)

@@ -640,6 +640,11 @@ struct InfinitusTray {
             if request.method == "GET", let pid = MirrorTransport.sessionTailPid(request.path) {
                 let claudeDir = ClaudeSessions.configHome()
                 let limit = max(0, request.query(MirrorTransport.tailLimitQueryName).flatMap(Int.init) ?? 30)
+                // Long-poll (one thread per connection, so blocking is fine).
+                SessionFeedReader.waitForChange(
+                    pid: pid, claudeDir: claudeDir,
+                    since: request.query(MirrorTransport.tailSinceQueryName),
+                    wait: request.query(MirrorTransport.tailWaitQueryName).flatMap(Double.init) ?? 0)
                 guard let record = ClaudeSessions.list(claudeDir: claudeDir).first(where: { $0.pid == pid }),
                       let feed = SessionFeedReader.read(record: record, claudeDir: claudeDir, limit: limit)
                 else {

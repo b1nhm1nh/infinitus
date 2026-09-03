@@ -203,3 +203,50 @@ final class SessionFeedTests: XCTestCase {
         XCTAssertTrue(waiting)
     }
 }
+
+final class SessionFeedLongPollTests: XCTestCase {
+    private var dir: URL!
+    private let pid = Int32(ProcessInfo.processInfo.processIdentifier)   // alive, so `list` keeps it
+
+    override func setUpWithError() throws {
+        dir = FileManager.default.temporaryDirectory.appendingPathComponent("feed-poll-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir.appendingPathComponent("sessions"),
+                                                withIntermediateDirectories: true)
+        let obj: [String: Any] = ["pid": pid, "sessionId": "s1", "cwd": "/p", "kind": "interactive",
+                                  "startedAt": 1, "status": "busy"]
+        try JSONSerialization.data(withJSONObject: obj).write(to: dir.appendingPathComponent("sessions/\(pid).json"))
+        let url = Transcript.path(cwd: "/p", sessionId: "s1", claudeDir: dir)
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try "{}\n".write(to: url, atomically: true, encoding: .utf8)
+    }
+
+    override func tearDownWithError() throws { try? FileManager.default.removeItem(at: dir) }
+
+    private var record: ClaudeSessionRecord { ClaudeSessions.list(claudeDir: dir)[0] }
+
+    func testReturnsAtOnceWithoutSinceOrWhenStampAlreadyMoved() {
+        let start = Date()
+        SessionFeedReader.waitForChange(pid: pid, claudeDir: dir, since: nil, wait: 5)
+        SessionFeedReader.waitForChange(pid: pid, claudeDir: dir, since: "old", wait: 5)
+        SessionFeedReader.waitForChange(pid: 1, claudeDir: dir, since: "x", wait: 5)   // unknown pid
+        XCTAssertLessThan(Date().timeIntervalSince(start), 0.5)
+    }
+
+    func testWaitsUntilDeadlineWhenNothingChanges() {
+        let stamp = SessionFeedReader.stamp(record: record, claudeDir: dir)
+        let start = Date()
+        SessionFeedReader.waitForChange(pid: pid, claudeDir: dir, since: stamp, wait: 0.5, poll: 0.05)
+        XCTAssertGreaterThanOrEqual(Date().timeIntervalSince(start), 0.45)
+    }
+
+    func testWakesWhenTheTranscriptGrows() throws {
+        let stamp = SessionFeedReader.stamp(record: record, claudeDir: dir)
+        let url = Transcript.path(cwd: "/p", sessionId: "s1", claudeDir: dir)
+        DispatchQueue.global().asyncAfter(deadline: .now() + 0.15) {
+            try? "{}\n{}\n{}\n".write(to: url, atomically: true, encoding: .utf8)
+        }
+        let start = Date()
+        SessionFeedReader.waitForChange(pid: pid, claudeDir: dir, since: stamp, wait: 5, poll: 0.05)
+        XCTAssertLessThan(Date().timeIntervalSince(start), 2)
+    }
+}

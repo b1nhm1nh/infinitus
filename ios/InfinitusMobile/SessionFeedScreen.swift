@@ -35,7 +35,6 @@ struct SessionFeedScreen: View {
         let data: Data
         let thumbnail: UIImage?
     }
-    private let pollInterval: UInt64 = 5 * 1_000_000_000
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -100,20 +99,44 @@ struct SessionFeedScreen: View {
         }
         .refreshable { await load() }
         .task {
+            // Long-poll loop: each request returns when the transcript
+            // changes (or after the Mac's wait cap), so a reply lands
+            // within a second of being written. Against a Mac that
+            // ignores `since`/`wait` the floor below keeps it a 2 s poll.
             while !Task.isCancelled {
-                await load()
-                try? await Task.sleep(nanoseconds: pollInterval)
+                let started = Date()
+                let ok = await load(longPoll: feed?.stamp != nil)
+                let elapsed = Date().timeIntervalSince(started)
+                let floor: TimeInterval = ok ? 2 : 3
+                if elapsed < floor {
+                    try? await Task.sleep(nanoseconds: UInt64((floor - elapsed) * 1_000_000_000))
+                }
             }
         }
     }
 
-    private func load() async {
+    @discardableResult
+    private func load(longPoll: Bool = false) async -> Bool {
         do {
+            if longPoll, let since = feed?.stamp {
+                do {
+                    feed = try await NetworkFleetMirror.shared.sessionTail(
+                        pid: Int32(session.pid), limit: 30, since: since,
+                        wait: MirrorTransport.tailWaitMax)
+                    errorText = nil
+                    return true
+                } catch {
+                    // The pinned route may have died — the plain fetch
+                    // below walks every route again.
+                }
+            }
             feed = try await NetworkFleetMirror.shared.sessionTail(pid: Int32(session.pid), limit: 30)
             errorText = nil
+            return true
         } catch {
             errorText = feed == nil ? "couldn't reach the Mac: \(error.localizedDescription)"
                 : "offline — showing the last feed"
+            return false
         }
     }
 
@@ -398,7 +421,36 @@ struct SessionFeedScreen: View {
         case .limit:
             Label(item.text, systemImage: "clock.badge.exclamationmark")
                 .font(.caption).foregroundStyle(.red)
+        case .agent:
+            // Sub-agent card, the way Claude Code's own UI lists them
+            // (user 2026-09-03 via the phone: "show sub agents like
+            // Claude Code rc on mobile").
+            HStack(alignment: .top, spacing: 8) {
+                Image(systemName: "cpu")
+                    .foregroundStyle(item.agent?.running == true ? Color.accentColor : Color.secondary)
+                    .padding(.top, 2)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(item.agent.map { "\($0.type) — \($0.description)" } ?? item.text)
+                        .font(.subheadline.weight(.semibold))
+                    if let agent = item.agent {
+                        Text(agentStatus(agent))
+                            .font(.system(.caption, design: .monospaced))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(2)
+                    }
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(10)
+            .background(Color.accentColor.opacity(0.08), in: RoundedRectangle(cornerRadius: 12))
         }
+    }
+
+    private func agentStatus(_ agent: SessionFeedItem.Agent) -> String {
+        var parts = ["\(agent.toolCalls) tool call\(agent.toolCalls == 1 ? "" : "s")"]
+        if let last = agent.lastTool { parts.append("last: \(last)") }
+        parts.append(agent.running ? "running" : "done")
+        return parts.joined(separator: " · ")
     }
 
     private func repoName(_ path: String) -> String {

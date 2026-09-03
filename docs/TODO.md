@@ -62,6 +62,14 @@ Open work lives at github.com/deathemperor/infinitus/issues (user
 2026-09-01: "move todo items to use github issues tracking"); this
 file keeps the shipped log and the deferred-by-design notes.
 
+- **Show active/connected devices** (user 2026-09-03 mid-turn: "todo:
+  show active/connected devices"): the Sync pane (and the phone's
+  header) should list which phones/browsers are currently talking to
+  the mirror — name, route (Wi-Fi / tailnet / tunnel), last seen —
+  fed from `MirrorServer.onServed` with the request's User-Agent /
+  device name header, so "is my phone still paired and reaching me?"
+  has an answer without opening the phone.
+
 - ~~infinitusctl~~ → shipped 2026-09-03: agent-facing control CLI.
   `ControlProtocol` (InfinitusCore: request/reply, manifest table,
   socket path), `ControlServer` (app: same-user UNIX socket in App

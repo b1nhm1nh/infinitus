@@ -145,10 +145,33 @@ actor NetworkFleetMirror: FleetMirror {
     /// The session feed (#17 layer 1): same candidate/token/Host picking
     /// logic as `latest()`, factored into `fetchFromStored` so both share
     /// it — no snapshot-style caching here, a failed fetch just throws.
-    func sessionTail(pid: Int32, limit: Int) async throws -> SessionFeed {
+    /// `since`/`wait` make it a long-poll (#17): the Mac holds the reply
+    /// until the transcript changes or `wait` seconds pass. A long-poll
+    /// goes to the route that last answered only, with a timeout past
+    /// `wait` — falling through routes with a 30 s timeout each would be
+    /// a minute of nothing; the caller retries the plain form on failure.
+    func sessionTail(pid: Int32, limit: Int, since: String? = nil,
+                     wait: TimeInterval = 0) async throws -> SessionFeed {
         let token = MirrorPairing.normalize(
             UserDefaults.standard.string(forKey: Self.tokenKey) ?? "")
-        let path = MirrorTransport.sessionTailPath(pid: pid) + "?n=\(limit)"
+        var path = MirrorTransport.sessionTailPath(pid: pid) + "?n=\(limit)"
+        if let since, wait > 0 {
+            let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-_."))
+            path += "&\(MirrorTransport.tailSinceQueryName)="
+                + (since.addingPercentEncoding(withAllowedCharacters: allowed) ?? since)
+                + "&\(MirrorTransport.tailWaitQueryName)=\(Int(wait))"
+            guard let text = candidateEndpoints().first,
+                  let manual = MirrorTransport.parseEndpoint(text) else {
+                throw MirrorTransportError.timedOut
+            }
+            let endpoint = NWEndpoint.hostPort(
+                host: NWEndpoint.Host(manual.host),
+                port: NWEndpoint.Port(rawValue: manual.port) ?? .any)
+            let (data, _) = try await fetch(endpoint, path: path, hostHeader: manual.host,
+                                            useTLS: manual.useTLS, token: token,
+                                            timeout: wait + 10)
+            return try Self.decodeFeed(data)
+        }
         if let data = try await fetchFromStored(path: path, token: token, timeout: Self.candidateTimeout) {
             return try Self.decodeFeed(data)
         }

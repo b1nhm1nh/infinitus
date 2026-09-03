@@ -35,6 +35,12 @@ public enum MirrorTransport {
     }
     /// Query parameter carrying the item limit for the tail route.
     public static let tailLimitQueryName = "n"
+    /// Long-poll: `?since=<feed.stamp>&wait=<seconds>` holds the reply until
+    /// the transcript's stamp differs from `since`, or `wait` elapses
+    /// (capped at `tailWaitMax`) — then answers with the current feed.
+    public static let tailSinceQueryName = "since"
+    public static let tailWaitQueryName = "wait"
+    public static let tailWaitMax: TimeInterval = 25
     /// Query parameter carrying the pairing token when a header can't
     /// (a QR-pasted URL opened in a browser, `curl "…?t=TOKEN"`).
     public static let tokenQueryName = "t"

@@ -142,6 +142,23 @@ public enum SessionFeedReader {
         return "\(size)-\(Int(mtime * 1000))-\(record.status ?? "")"
     }
 
+    /// Long-poll half of `GET …/tail?since=&wait=` (#17, "streaming to
+    /// mobile seems laggy"): blocks the calling thread — never the main
+    /// actor or a network queue — until the session's stamp differs from
+    /// `since` or `wait` seconds (capped at `MirrorTransport.tailWaitMax`)
+    /// pass, re-resolving the record each poll so a status flip counts.
+    /// Returns at once when there is nothing to wait for.
+    public static func waitForChange(pid: Int32, claudeDir: URL, since: String?,
+                                     wait: TimeInterval, poll: TimeInterval = 0.3) {
+        guard let since, wait > 0 else { return }
+        let deadline = Date().addingTimeInterval(min(wait, MirrorTransport.tailWaitMax))
+        while Date() < deadline {
+            guard let record = ClaudeSessions.list(claudeDir: claudeDir).first(where: { $0.pid == pid }),
+                  stamp(record: record, claudeDir: claudeDir) == since else { return }
+            Thread.sleep(forTimeInterval: poll)
+        }
+    }
+
     /// Fills each `.agent` row from `<transcript dir>/<sessionId>/subagents/`:
     /// `agent-<id>.meta.json` names the spawning `toolUseId`, `agent-<id>.jsonl`
     /// is the sub-agent's own transcript (tail-read, 64 KiB). Running =
