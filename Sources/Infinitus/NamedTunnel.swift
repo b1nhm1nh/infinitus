@@ -8,9 +8,13 @@ import AppKit
 /// tunnel token here. Unlike the quick tunnel the hostname is theirs and
 /// never changes, so a phone paired to it survives every restart.
 ///
-/// The token is the only secret and it never touches argv: cloudflared
-/// reads `TUNNEL_TOKEN` from the environment. It lives in the keychain
-/// (`Keychain.tunnelService`, account = the hostname), never in defaults.
+/// Two ways to hold the credentials, both invisible to argv:
+///  - dashboard-managed: the tunnel token in the keychain
+///    (`Keychain.tunnelService`, account = the hostname), handed to
+///    cloudflared as `TUNNEL_TOKEN` in the environment;
+///  - locally-managed: `cloudflared tunnel login/create/route dns` done
+///    on this Mac, `~/.cloudflared/config.yml` naming the hostname in its
+///    ingress — then `cloudflared tunnel run` needs nothing from us.
 @MainActor
 final class NamedTunnel: ObservableObject {
     /// Whether cloudflared has at least one edge connection registered —
@@ -55,6 +59,16 @@ final class NamedTunnel: ObservableObject {
     /// The phone's endpoint for this route — TLS is Cloudflare's.
     var endpoint: String? { connected ? "https://\(hostname)" : nil }
 
+    /// True when `~/.cloudflared/config.yml` routes this hostname — the
+    /// locally-managed setup, which needs no token from the keychain.
+    static func localConfigCovers(_ hostname: String,
+                                  home: String = NSHomeDirectory()) -> Bool {
+        guard !hostname.isEmpty,
+              let text = try? String(contentsOfFile: home + "/.cloudflared/config.yml",
+                                     encoding: .utf8) else { return false }
+        return text.lowercased().contains("hostname: \(hostname)")
+    }
+
     static func token(for hostname: String) -> String? {
         Keychain.read(account: hostname, service: Keychain.tunnelService)
     }
@@ -65,15 +79,18 @@ final class NamedTunnel: ObservableObject {
         else { _ = Keychain.write(account: hostname, value: trimmed, service: Keychain.tunnelService) }
     }
 
-    func start(hostname: String, token: String) {
+    /// `token` nil = locally-managed: cloudflared reads its own config.
+    func start(hostname: String, token: String?) {
         guard process == nil, let binary = QuickTunnel.binaryPath else { return }
         self.hostname = hostname
         let process = Process()
         process.executableURL = URL(fileURLWithPath: binary)
         process.arguments = ["tunnel", "--no-autoupdate", "run"]
-        var env = ProcessInfo.processInfo.environment
-        env["TUNNEL_TOKEN"] = token
-        process.environment = env
+        if let token {
+            var env = ProcessInfo.processInfo.environment
+            env["TUNNEL_TOKEN"] = token
+            process.environment = env
+        }
         let pipe = Pipe()
         process.standardError = pipe
         process.standardOutput = pipe

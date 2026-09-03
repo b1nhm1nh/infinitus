@@ -203,10 +203,17 @@ struct SyncPane: View {
         TextField("Hostname", text: $namedHost, prompt: Text("infinitus.example.com"))
             .textFieldStyle(.roundedBorder)
             .onSubmit { app.mirrorNamedTunnelHost = namedHost }
-        SecureField("Tunnel token", text: $namedToken,
-                    prompt: Text(app.namedTunnelTokenPresent
-                                 ? "•••••••• (stored in keychain)" : "eyJh… from the Cloudflare dashboard"))
-            .textFieldStyle(.roundedBorder)
+        if app.namedTunnelLocalConfig {
+            LabeledContent("Tunnel token") {
+                Text("not needed — ~/.cloudflared/config.yml routes this hostname")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+        } else {
+            SecureField("Tunnel token", text: $namedToken,
+                        prompt: Text(app.namedTunnelTokenPresent
+                                     ? "•••••••• (stored in keychain)" : "eyJh… from the Cloudflare dashboard"))
+                .textFieldStyle(.roundedBorder)
+        }
         HStack {
             Button("Save") {
                 app.mirrorNamedTunnelHost = namedHost
@@ -230,10 +237,12 @@ struct SyncPane: View {
                  + "http://localhost:\(port).")
                 .font(.caption).foregroundStyle(.orange)
         }
-        Text("Once in the Cloudflare dashboard: Zero Trust → Networks → Tunnels → "
-             + "Create → Cloudflared, name it, copy the token; then Public hostname "
-             + "= the hostname above, service = http://localhost:\(MirrorTransport.defaultPort). "
-             + "Needs a Cloudflare account and a domain on it.")
+        Text("Two ways to set it up, both need a Cloudflare account with your domain on it. "
+             + "Dashboard: Zero Trust → Networks → Tunnels → Create → Cloudflared, name it, "
+             + "copy the token here; Public hostname = the hostname above, service = "
+             + "http://localhost:\(MirrorTransport.defaultPort). Terminal: `cloudflared tunnel "
+             + "login`, `tunnel create infinitus`, `tunnel route dns infinitus <hostname>`, "
+             + "and a ~/.cloudflared/config.yml with that ingress — then no token is needed.")
             .font(.caption).foregroundStyle(.secondary)
     }
 

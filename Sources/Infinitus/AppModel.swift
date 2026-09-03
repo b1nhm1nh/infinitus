@@ -735,16 +735,29 @@ final class AppModel: ObservableObject {
         let host = NamedTunnel.normalizeHostname(mirrorNamedTunnelHost)
         if namedTunnel.isRunning, namedTunnel.hostname != host { namedTunnel.stop() }
         guard mirrorNamedTunnelEnabled, mirrorLANEnabled, mirrorServer.port != nil,
-              !host.isEmpty, let token = NamedTunnel.token(for: host) else {
+              !host.isEmpty else {
             namedTunnel.stop()
             return
         }
-        namedTunnel.start(hostname: host, token: token)
+        // A local cloudflared config for this hostname wins over a token:
+        // it was set up on this Mac and carries its own credentials file.
+        if NamedTunnel.localConfigCovers(host) {
+            namedTunnel.start(hostname: host, token: nil)
+        } else if let token = NamedTunnel.token(for: host) {
+            namedTunnel.start(hostname: host, token: token)
+        } else {
+            namedTunnel.stop()
+        }
     }
 
     var namedTunnelTokenPresent: Bool {
         let host = NamedTunnel.normalizeHostname(mirrorNamedTunnelHost)
         return !host.isEmpty && NamedTunnel.token(for: host) != nil
+    }
+
+    /// The locally-managed setup is in place for the typed hostname.
+    var namedTunnelLocalConfig: Bool {
+        NamedTunnel.localConfigCovers(NamedTunnel.normalizeHostname(mirrorNamedTunnelHost))
     }
 
     /// Stores (or, when empty, forgets) the tunnel token for the current
