@@ -168,7 +168,10 @@ file keeps the shipped log and the deferred-by-design notes.
   session flips to waiting-on-you shipped the same night (PushTriggers
   `sessions:` — once per pid, re-arms when answered, seeded silently at
   launch so a relaunch never re-pushes stale prompts; Notify → "A session
-  waits on you"; the Linux tray has no push loop — `parity pending`).
+  waits on you"). Linux parity a2e1ecb: `infinitus-tray serve` ticks
+  PushTriggers every pass (cswap notify push + notify-send + stderr;
+  `INFINITUS_PUSH_*` env flags, `--interval`); docker: 0 pushes on the
+  seeding pass, exactly 1 on the busy→waiting flip, none while it stays.
   Not yet: multi-Mac picker (#17 item 3).
 - ~~Linux parity (#9)~~ → shipped 2026-09-03: panel footer chips (service
   status via cached Anthropic fetch, sessions, engine probe) and
