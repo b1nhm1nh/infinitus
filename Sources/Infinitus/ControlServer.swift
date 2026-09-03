@@ -14,6 +14,8 @@ final class ControlServer {
     private let launchedAt = Date()
     private unowned let model: AppModel
     private var listener: NWListener?
+    /// The inode we bound — `heal()` checks the path still leads to it.
+    private var boundInode: ino_t = 0
     private let queue = DispatchQueue(label: "infinitus.control")
     private var busy = false
     private var task: Task<Void, Never>?
@@ -50,10 +52,13 @@ final class ControlServer {
             guard let self else { return }
             Task { @MainActor in self.serve(conn) }
         }
-        listener.stateUpdateHandler = { state in
+        listener.stateUpdateHandler = { [weak self] state in
             switch state {
             case .ready:
                 chmod(url.path, 0o600)
+                var st = stat()
+                let inode = stat(url.path, &st) == 0 ? st.st_ino : 0
+                Task { @MainActor in self?.boundInode = inode }
                 NSLog("Infinitus control: listening at %@", url.path)
             case .failed(let error), .waiting(let error):
                 // CI's e2e job sat on "socket never came up" with nothing
@@ -70,7 +75,56 @@ final class ControlServer {
     func stop() {
         listener?.cancel()
         listener = nil
+        boundInode = 0
         unlink(ControlProtocol.socketURL().path)
+    }
+
+    /// Re-bind when the path no longer leads to a live listener. Another
+    /// Infinitus instance — a debug binary launched without
+    /// INFINITUS_CONTROL_SOCKET — unlinks and re-binds this path on start;
+    /// killed, it leaves an inode nobody answers, and every infinitusctl
+    /// and phone control call got "connection refused" until a relaunch
+    /// (2026-09-03, the bundle sat that way for 25 minutes). Called after
+    /// every snapshot, so the cost is one stat per refresh. A LIVE foreign
+    /// listener is left alone: two instances must not fight over the path.
+    func heal() {
+        guard listener != nil, boundInode != 0 else { return }
+        let path = ControlProtocol.socketURL().path
+        var st = stat()
+        if stat(path, &st) == 0 {
+            if st.st_ino == boundInode { return }
+            if Self.answers(path) {
+                NSLog("Infinitus control: another instance listens at %@; leaving it", path)
+                return
+            }
+        }
+        NSLog("Infinitus control: socket path lost at %@; rebinding", path)
+        listener?.cancel()
+        listener = nil
+        boundInode = 0
+        start()
+    }
+
+    /// Does anything accept on this UNIX socket path? (One connect; a
+    /// live ControlServer just sees an empty request and drops it.)
+    private static func answers(_ path: String) -> Bool {
+        let fd = socket(AF_UNIX, SOCK_STREAM, 0)
+        guard fd >= 0 else { return false }
+        defer { close(fd) }
+        var addr = sockaddr_un()
+        addr.sun_family = sa_family_t(AF_UNIX)
+        let capacity = MemoryLayout.size(ofValue: addr.sun_path)
+        let fits = withUnsafeMutablePointer(to: &addr.sun_path) { p in
+            p.withMemoryRebound(to: CChar.self, capacity: capacity) { dst in
+                path.withCString { strlcpy(dst, $0, capacity) } < capacity
+            }
+        }
+        guard fits else { return false }
+        return withUnsafePointer(to: &addr) {
+            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                connect(fd, $0, socklen_t(MemoryLayout<sockaddr_un>.size)) == 0
+            }
+        }
     }
 
     private func serve(_ conn: NWConnection) {

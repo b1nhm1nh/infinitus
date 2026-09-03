@@ -1219,6 +1219,7 @@ final class AppModel: ObservableObject {
             awake.update(wanted: keepAwake,
                          busyCount: list.liveSessions?.busy ?? 0)
         }
+        controlServer.heal()
         // Same display-feed vantage: a switch (manual or parked-engine)
         // re-arms /rc; an active account that can work resumes stopped
         // sessions. Detached, single-flight — never awaited here.
