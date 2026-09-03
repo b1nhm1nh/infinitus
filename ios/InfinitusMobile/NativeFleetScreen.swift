@@ -139,13 +139,17 @@ struct NativeFleetScreen: View {
     @ViewBuilder private var outlookSection: some View {
         if model.nextCandidate != nil, model.forecast != nil || model.battlePlan != nil {
             Section {
-                VStack(alignment: .leading, spacing: 4) {
-                    UsageForecastLine(model: model)
-                    BattlePlanLine(model: model)
+                NavigationLink {
+                    OutlookScreen(model: model)
+                } label: {
+                    VStack(alignment: .leading, spacing: 4) {
+                        UsageForecastLine(model: model)
+                        BattlePlanLine(model: model)
+                    }
+                    .padding(.vertical, 2)
                 }
-                .padding(.vertical, 2)
             } header: {
-                Text("Outlook").textCase(nil)
+                Text("Outlook · tap for the full picture").textCase(nil)
             }
         }
     }
