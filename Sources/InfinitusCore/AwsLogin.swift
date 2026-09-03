@@ -311,11 +311,14 @@ public enum AwsLogin {
         return p
     }
 
-    /// Codes are short, alphanumeric with dashes — anything else never
-    /// reaches the CLI's stdin.
+    /// The `--remote` code is a base64 blob a couple of thousand
+    /// characters long with `=` padding (the first real one, 2026-09-03);
+    /// the device code is `XXXX-XXXX`. One character class covers both —
+    /// anything else never reaches the CLI's stdin.
+    public static let maxCodeLength = 8192
     public static func isValidCode(_ code: String) -> Bool {
-        !code.isEmpty && code.count <= 128
-            && code.allSatisfy { $0.isLetter || $0.isNumber || $0 == "-" || $0 == "_" }
+        !code.isEmpty && code.count <= maxCodeLength
+            && code.allSatisfy { $0.isASCII && ($0.isLetter || $0.isNumber || "-_+/=".contains($0)) }
     }
 
     /// The message the session gets once the login lands (SessionInput

@@ -79,6 +79,10 @@ final class AwsLoginTests: XCTestCase {
     }
 
     func testCodesAreShortAndPlain() {
+        // The real --remote code: ~1.8k chars of base64 with padding.
+        XCTAssertTrue(AwsLogin.isValidCode(String(repeating: "Y29kZT1leUo2YVhB", count: 110) + "=="))
+        XCTAssertFalse(AwsLogin.isValidCode("abc def"))
+        XCTAssertFalse(AwsLogin.isValidCode(String(repeating: "a", count: AwsLogin.maxCodeLength + 1)))
         XCTAssertTrue(AwsLogin.isValidCode("ABCD-EFGH"))
         XCTAssertTrue(AwsLogin.isValidCode("a1b2c3"))
         XCTAssertFalse(AwsLogin.isValidCode(""))
