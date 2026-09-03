@@ -243,6 +243,24 @@ final class ControlServer {
             await model.refreshSnapshot()
             return ControlReply(ok: true, result: try .of(["fleet": fleetPayload(fleet)]))
 
+        case "aws-logins":
+            return ControlReply(ok: true, result: try .of(["logins": model.awsLogins]))
+
+        case "aws-login":
+            guard let profile = r.args.first, !profile.isEmpty else { throw Fail("usage: aws-login <profile> [--pid n] [--local]") }
+            let pid = r.options["pid"].flatMap(Int.init)
+            let reply = await model.startAwsLogin(profile: profile, pid: pid, local: r.options["local"] == "true")
+            guard reply.ok, let state = reply.state else { throw Fail(reply.error ?? "could not start") }
+            return ControlReply(ok: true, result: try .of(["state": state]))
+
+        case "aws-login-code":
+            guard let profile = r.args.first, let code = r.secret, !code.isEmpty else {
+                throw Fail("usage: aws-login-code <profile>  (code on stdin)")
+            }
+            let reply = await model.submitAwsLoginCode(profile: profile, code: code)
+            guard reply.ok, let state = reply.state else { throw Fail(reply.error ?? "not accepted") }
+            return ControlReply(ok: true, result: try .of(["state": state]))
+
         case "ignite":
             let (fleet, n) = try target(r)
             guard fleet.capabilities.contains(.ignite) else { throw Fail("\(fleet.id) cannot ignite (no per-account request verb)") }

@@ -15,6 +15,7 @@ public struct AllDeadBanner<M: FleetModel>: View {
 
     @ViewBuilder public var body: some View {
         allDeadLine
+        AwsLoginLine(model: model)
         UsageForecastLine(model: model)
         BattlePlanLine(model: model)
     }
