@@ -1,9 +1,9 @@
 import Foundation
 
 #if !os(iOS)
-/// Resumes Claude Code sessions a usage limit stopped: a terminal nudge
-/// first (cmux/tmux/herdr), the peer socket as fallback, with the
-/// engine's pacing — 5s/15s retries while a nudge burns on stale
+/// Resumes Claude Code sessions a usage limit stopped: a message on the
+/// session's peer socket first, a terminal nudge (cmux/tmux/herdr) as
+/// the fallback, with the engine's pacing — 5s/15s retries while a nudge burns on stale
 /// credentials, a 10s watch to tell burned from held-for-review.
 /// Blocking throughout; run detached.
 public struct ResumeCoordinator {
@@ -44,11 +44,14 @@ public struct ResumeCoordinator {
         public init() {}
     }
 
-    /// One delivery. Terminal hosts are tried first — a typed nudge must
-    /// NEVER also go to the socket (two prompts). Running turns are left
-    /// alone; a menu that stays captured falls through to the socket so
-    /// the inbox message at least queues behind it.
+    /// One delivery. The peer socket first: Claude Code's own inbox, a
+    /// message rather than keystrokes (user 2026-09-03: "cmux -> native
+    /// messages"). A terminal host only for a record without a usable
+    /// socket, or when the send fails — never both (two prompts). On the
+    /// terminal path a running turn is left alone and a menu that stays
+    /// captured makes the session unreachable this round.
     func deliver(_ session: StoppedSession, text: String) -> String? {
+        if session.canUseSocket, socketSend(session, text) { return "socket" }
         let tty = ttyOfPid(session.pid)
         let ancestors = ancestorsOf(session.pid)
         for host in hosts {
@@ -59,8 +62,7 @@ public struct ResumeCoordinator {
             case .capturedInput, .noSurface: continue
             }
         }
-        guard session.canUseSocket, socketSend(session, text) else { return nil }
-        return "socket"
+        return nil
     }
 
     /// Nudge every stopped session, retrying the ones whose nudge burned.

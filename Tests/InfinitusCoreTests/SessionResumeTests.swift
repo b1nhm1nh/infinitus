@@ -324,28 +324,33 @@ final class SessionResumeTests: XCTestCase {
         return c
     }
 
-    func testTypedNudgeNeverAlsoUsesSocket() {
+    func testSocketNudgeIsNeverAlsoTyped() {
         let h = host(["> ", "> [Infinitus] Your account hit its usage limit"])
-        var socketCalls = 0
-        let s = StoppedSession(sessionId: "s1", pid: 7, cwd: "/", socketPath: "/tmp/s.sock", peerProtocol: 1, stopUuid: "u1")
-        let out = coordinator(hosts: [h], socket: { _, _ in socketCalls += 1; return true }, verdicts: [.done]).resume([s])
-        XCTAssertEqual(out.accepted, [s])
-        XCTAssertEqual(out.channel["s1"], "fake")
-        XCTAssertEqual(socketCalls, 0)
-    }
-
-    func testSocketFallbackWhenNoSurface() {
-        let h = FakeHost(surfaces: [], screens: [])
         var sent: [String] = []
         let s = StoppedSession(sessionId: "s1", pid: 7, cwd: "/", socketPath: "/tmp/s.sock", peerProtocol: 1, stopUuid: "u1")
         let out = coordinator(hosts: [h], socket: { _, t in sent.append(t); return true }, verdicts: [.done]).resume([s])
+        XCTAssertEqual(out.accepted, [s])
         XCTAssertEqual(out.channel["s1"], "socket")
         XCTAssertEqual(sent, [ResumeCoordinator.message])
-        // No socket either → unreachable, no retries.
-        let bare = StoppedSession(sessionId: "s2", pid: 8, cwd: "/", stopUuid: "u2")
-        let out2 = coordinator(hosts: [h], socket: { _, _ in XCTFail("no socket"); return false }, verdicts: []).resume([bare])
-        XCTAssertEqual(out2.unreachable, [bare])
-        XCTAssertTrue(out2.accepted.isEmpty)
+        XCTAssertEqual(h.commands, [], "the terminal is never touched when the socket took the message")
+    }
+
+    func testTerminalFallbackWithoutAUsableSocket() {
+        let h = host(["> ", "> [Infinitus] Your account hit its usage limit"])
+        // No socket in the record → typed.
+        let bare = StoppedSession(sessionId: "s1", pid: 7, cwd: "/", stopUuid: "u1")
+        let out = coordinator(hosts: [h], socket: { _, _ in XCTFail("no socket"); return false }, verdicts: [.done]).resume([bare])
+        XCTAssertEqual(out.channel["s1"], "fake")
+        // Socket present but the send fails (stale path) → typed.
+        let h2 = host(["> ", "> [Infinitus] Your account hit its usage limit"])
+        let s = StoppedSession(sessionId: "s2", pid: 8, cwd: "/", socketPath: "/tmp/s.sock", peerProtocol: 1, stopUuid: "u2")
+        let out2 = coordinator(hosts: [h2], socket: { _, _ in false }, verdicts: [.done]).resume([s])
+        XCTAssertEqual(out2.channel["s2"], "fake")
+        // Neither → unreachable, no retries.
+        let none = FakeHost(surfaces: [], screens: [])
+        let out3 = coordinator(hosts: [none], socket: { _, _ in XCTFail("no socket"); return false }, verdicts: []).resume([bare])
+        XCTAssertEqual(out3.unreachable, [bare])
+        XCTAssertTrue(out3.accepted.isEmpty)
     }
 
     func testBurnedNudgeRetriesWithDistinctTextAndRebaselines() {
@@ -375,8 +380,8 @@ final class SessionResumeTests: XCTestCase {
 
     func testRunningTurnIsUnreachableThisRound() {
         let h = host(["esc to interrupt"])
-        let s = StoppedSession(sessionId: "s1", pid: 7, cwd: "/", socketPath: "/tmp/s.sock", peerProtocol: 1, stopUuid: "u1")
-        let out = coordinator(hosts: [h], socket: { _, _ in XCTFail("socket while running"); return true }, verdicts: []).resume([s])
+        let s = StoppedSession(sessionId: "s1", pid: 7, cwd: "/", stopUuid: "u1")   // socketless: terminal path
+        let out = coordinator(hosts: [h], socket: { _, _ in XCTFail("no socket"); return true }, verdicts: []).resume([s])
         XCTAssertEqual(out.unreachable, [s])
     }
 }

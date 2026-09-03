@@ -154,7 +154,8 @@ file keeps the shipped log and the deferred-by-design notes.
 - ~~#17 layer 2 reply/decide~~ → shipped 2026-09-03: `SessionInput`
   (kinds `message`/`key`; keys y/n/1-9/enter/esc, PTY only via new
   `PtyNudge.press` which never Esc-dismisses the menu it answers; messages
-  try the PTY then the peer socket), `MirrorTransport` request bodies
+  go to the peer socket first, the PTY only without one — flipped from
+  PTY-first 2026-09-03, same for the resume nudge), `MirrorTransport` request bodies
   (Content-Length, 16 KiB cap), Mac `POST /sessions/<pid>/input`
   (400/404/200 JSON reply), every attempt in Activity (`📲 phone → repo:
   "…" (pty|socket)`), phone composer + Yes/No on a trailing permission card

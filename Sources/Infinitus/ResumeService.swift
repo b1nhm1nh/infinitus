@@ -3,9 +3,10 @@ import InfinitusCore
 
 /// The resume-nudge mechanism, app-side (user 2026-08-30: "move all the
 /// nudge mechanism to Infinitus" — upstream never merged the engine's
-/// copy). Reads Claude Code's own session records and transcripts, types
-/// into the terminal hosting a stopped session (cmux/tmux/herdr) with the
-/// peer socket as fallback, and re-arms `/rc` after a switch. Off by
+/// copy). Reads Claude Code's own session records and transcripts,
+/// messages a stopped session over its peer socket (typing into its
+/// terminal — cmux/tmux/herdr — when it has none), and re-arms `/rc`
+/// after a switch. Off by
 /// default; per-machine (the terminals are).
 @MainActor
 final class ResumeService: ObservableObject {
@@ -170,8 +171,8 @@ struct ResumeNudgesSection: View {
 
     private var hostsCaption: String {
         service.hostNames.isEmpty
-            ? "No terminal multiplexer found (cmux, tmux, herdr) — only the peer socket can reach a session."
-            : "Terminals: \(service.hostNames.joined(separator: ", ")); the peer socket is the fallback."
+            ? "No terminal multiplexer found (cmux, tmux, herdr) — only sessions with a peer socket can be reached."
+            : "Peer socket first; terminals (\(service.hostNames.joined(separator: ", "))) for sessions without one."
     }
 
     var body: some View {
