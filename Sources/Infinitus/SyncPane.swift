@@ -263,8 +263,8 @@ struct SyncPane: View {
                  detail: remote
                     ? "Same Wi-Fi works already; a remote route is up too."
                     : "Same Wi-Fi needs nothing. From anywhere: Tailscale "
-                      + "on both devices (see Anywhere), or a Cloudflare "
-                      + "quick tunnel.",
+                      + "on both devices, your own Cloudflare tunnel (stable "
+                      + "hostname), or a quick tunnel (see Anywhere).",
                  done: !routes.isEmpty),
             Step(id: 4, title: "Scan the QR from the phone",
                  detail: "On the phone: Settings → Mac connection → Scan QR, "
@@ -361,6 +361,15 @@ struct SyncPane: View {
                 + "Settings → Devices → Anywhere turn on the tunnel (random public URL that "
                 + "changes every Infinitus start — a phone with no other route rescans after a "
                 + "restart; the token is the only lock).",
+                "   - Cloudflare named tunnel (stable hostname, the user's own domain on "
+                + "Cloudflare): `cloudflared tunnel login` (the user authorizes the zone in the "
+                + "browser), `cloudflared tunnel create infinitus`, `cloudflared tunnel route dns "
+                + "infinitus <host>`, then write ~/.cloudflared/config.yml with `tunnel: <id>`, "
+                + "`credentials-file: ~/.cloudflared/<id>.json`, and an ingress entry "
+                + "`hostname: <host>` → `service: http://localhost:\(MirrorTransport.defaultPort)` "
+                + "plus a final `service: http_status:404`. In Infinitus Settings → Devices → "
+                + "Anywhere enter <host> under \"your own Cloudflare tunnel\" and turn it on — no "
+                + "token needed; Infinitus runs `cloudflared tunnel run` itself.",
                 "4. Pair: on the phone, Settings → Mac connection → Scan QR, pointing at "
                 + "Infinitus Settings → Devices → Pair a phone (one QR carries every route). "
                 + "Or enter a route address and the pairing token by hand in the same screen.",
