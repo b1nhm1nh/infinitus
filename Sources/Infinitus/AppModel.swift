@@ -823,6 +823,13 @@ final class AppModel: ObservableObject {
             self?.applyNamedTunnel()
         }
         applyMirrorLAN()
+        // The Mac's own "Needs AWS login" line follows the transcripts
+        // whether or not the phone's mirror is on (it lived inside the
+        // mirror setup, so a LAN-off or mock-mode instance never rebuilt
+        // the list — caught by the e2e gate, 2026-09-03).
+        awsLoginNeedsWatch = sessionProgress.$byPid
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in self?.rebuildAwsLogins() }
         // The playground gets a socket only where INFINITUS_CONTROL_SOCKET
         // points — never the real app's path.
         if !isPlayground || ProcessInfo.processInfo.environment["INFINITUS_CONTROL_SOCKET"] != nil {
@@ -890,9 +897,6 @@ final class AppModel: ObservableObject {
                 guard let self else { return AwsLogin.Reply(ok: false, error: "app gone") }
                 return await self.awsLoginRunner.relay(profile: request.profile, url: request.url)
             })
-        awsLoginNeedsWatch = sessionProgress.$byPid
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] _ in self?.rebuildAwsLogins() }
         mirrorServer.sessionInput.set { [weak self] pid, request in
             let claudeDir = ClaudeSessions.configHome()
             guard let record = ClaudeSessions.list(claudeDir: claudeDir).first(where: { $0.pid == pid })
@@ -959,7 +963,9 @@ final class AppModel: ObservableObject {
     /// (2026-09-03). false = the profile's default flow, true = the code
     /// flow; either replaces a run of the other kind.
     func startAwsLogin(profile: String, pid: Int?, local: Bool, remote: Bool? = nil) async -> AwsLogin.Reply {
-        guard !isPlayground, !mockMode else { return AwsLogin.Reply(ok: false, error: "not in a demo instance") }
+        // The e2e gate runs in mock mode against a stub CLI (INFINITUS_AWS_CLI).
+        guard !isPlayground, !mockMode || ProcessInfo.processInfo.environment["INFINITUS_AWS_CLI"] != nil
+        else { return AwsLogin.Reply(ok: false, error: "not in a demo instance") }
         if !local, remote == nil {
             let state = await awsLoginRunner.state(profile: profile)
             return AwsLogin.Reply(ok: state != nil, state: state, error: state == nil ? "no login in flight for \(profile)" : nil)
@@ -1467,6 +1473,19 @@ final class AppModel: ObservableObject {
         let previous = change.previousActive
         let firstLoad = change.firstLoad
         if !isPlayground { updateBattlePlan(list) }
+        // The footer's ⚡ tokens/minute needs the transcripts read even
+        // with the sessions card closed (user 2026-09-03 "display
+        // toks/m on bottom right status"). Every listed session, not
+        // just the busy ones: a session that hit the expired AWS
+        // sign-in has STOPPED on it and is idle by the time the scan
+        // runs (the aws-login sim never surfaced, 2026-09-03). Idle
+        // ones cost a stat each — the model skips any transcript
+        // whose size+mtime held still. Transcripts are Claude Code's
+        // own files, not the engine's: a mock-mode instance reads them
+        // too, so the e2e gate drives the AWS sign-in need off a fixture.
+        if !isPlayground, let live = primary.lastFleet?.liveSessions?.sessions {
+            sessionProgress.refresh(sessions: live)
+        }
         // Utilization history (todo 2026-09-01): every real snapshot
         // feeds the per-machine JSONL; the playground's fabricated
         // fleet must never pollute it — nor a mock-mode dev instance's
@@ -1497,17 +1516,6 @@ final class AppModel: ObservableObject {
             let forecast = forecast
             let plan = battlePlan
             let awsLogins = awsLogins
-            // The footer's ⚡ tokens/minute needs the transcripts read even
-            // with the sessions card closed (user 2026-09-03 "display
-            // toks/m on bottom right status"). Every listed session, not
-            // just the busy ones: a session that hit the expired AWS
-            // sign-in has STOPPED on it and is idle by the time the scan
-            // runs (the aws-login sim never surfaced, 2026-09-03). Idle
-            // ones cost a stat each — the model skips any transcript
-            // whose size+mtime held still.
-            if let live = primary.lastFleet?.liveSessions?.sessions {
-                sessionProgress.refresh(sessions: live)
-            }
             if let primaryFleet = primary.lastFleet {
                 liveActivityPusher.tick(fleet: primaryFleet,
                                         machine: Host.current().localizedName ?? "Mac",

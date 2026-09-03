@@ -50,6 +50,8 @@ cleanup() {
     # The supervised demo engine outlives its app (four orphans found
     # sleeping from earlier runs, 2026-09-03).
     pkill -f "$INFINITUS_CSWAP auto" 2>/dev/null || true
+    pkill -f "$SOCKDIR/aws" 2>/dev/null || true
+    [ -z "${SESSION_PID:-}" ] || kill "$SESSION_PID" 2>/dev/null || true
     rm -rf "$SOCKDIR"
     "$INFINITUS_CSWAP" reset >/dev/null 2>&1 || true
     # Leave the dev domain as we found it for the keys we touched.
@@ -75,6 +77,67 @@ defaults write "$DOMAIN" popover_pinned -bool false
 defaults write "$DOMAIN" gamification_style rpg
 defaults write "$DOMAIN" burn_style ember
 defaults write "$DOMAIN" mock_mode -bool true
+
+# --- AWS sign-in fixtures (must exist before launch: env is read at start) --
+# A stub `aws` in place of the real CLI: `login --remote --profile P`
+# prints the URL and asks for the code the way the CLI does; the magic
+# code signs in, profile e2e-rebind hits the "already configured to use
+# session" question (answered n → failed, never rebound).
+cat >"$SOCKDIR/aws" <<'STUB'
+#!/bin/sh
+profile=""
+while [ $# -gt 0 ]; do [ "$1" = "--profile" ] && profile="$2"; shift; done
+echo "Please visit the following URL:"
+echo "https://e2e.invalid/authorize?profile=$profile"
+printf 'Enter the authorization code: '
+read code
+if [ "$profile" = "e2e-rebind" ]; then
+    printf 'Profile %s is already configured to use session arn:aws:iam::1:user/a. Do you want to overwrite it to use arn:aws:iam::2:user/a instead? (y/n): ' "$profile"
+    read answer
+    echo "aws: [ERROR]: Login cancelled."; exit 255
+fi
+[ "$code" = "E2E-CODE-OK" ] || { echo "aws: [ERROR]: Invalid authorization code."; exit 255; }
+echo "Updated profile $profile to use arn:aws:iam::1:user/e2e credentials."
+STUB
+chmod +x "$SOCKDIR/aws"
+export INFINITUS_AWS_CLI="$SOCKDIR/aws"
+# The fake Claude session: a process with no tty (setsid, so the nudge
+# can't fall back to typing into THIS terminal) listening on the record's
+# messaging socket, writing every frame it receives to an inbox file.
+export CLAUDE_CONFIG_DIR="$SOCKDIR/claude"
+PEER_SOCK="$SOCKDIR/peer.sock"; INBOX="$SOCKDIR/inbox.ndjson"
+python3 - "$PEER_SOCK" "$INBOX" <<'PEER' &
+import os, socket, sys
+os.setsid()
+s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM); s.bind(sys.argv[1]); s.listen(4)
+while True:
+    c, _ = s.accept(); c.settimeout(3); data = b""
+    try:
+        while True:
+            chunk = c.recv(65536)
+            if not chunk: break
+            data += chunk
+    except socket.timeout: pass
+    with open(sys.argv[2], "ab") as f: f.write(data)
+    c.close()
+PEER
+SESSION_PID=$!
+SESSION_CWD="$SOCKDIR/proj"
+export DEMO_SESSION_PID="$SESSION_PID" DEMO_SESSION_CWD="$SESSION_CWD"
+mkdir -p "$CLAUDE_CONFIG_DIR/sessions"
+cat >"$CLAUDE_CONFIG_DIR/sessions/$SESSION_PID.json" <<EOF
+{"pid":$SESSION_PID,"sessionId":"e2e-aws","cwd":"$SESSION_CWD","kind":"interactive","status":"idle",
+ "peerProtocol":1,"messagingSocketPath":"$PEER_SOCK","name":"e2e-aws"}
+EOF
+# Its transcript: an aws call that died on the expired session, stamped a
+# minute back so it is unmistakably older than any login started below.
+SLUG="$(printf '%s' "$SESSION_CWD" | sed 's/[^A-Za-z0-9]/-/g')"
+mkdir -p "$CLAUDE_CONFIG_DIR/projects/$SLUG"
+TS="$(python3 -c "import datetime;print((datetime.datetime.now(datetime.timezone.utc)-datetime.timedelta(seconds=60)).strftime('%Y-%m-%dT%H:%M:%S.000Z'))")"
+cat >"$CLAUDE_CONFIG_DIR/projects/$SLUG/e2e-aws.jsonl" <<EOF
+{"type":"assistant","timestamp":"$TS","message":{"role":"assistant","content":[{"type":"tool_use","id":"toolu_e2e","name":"Bash","input":{"command":"aws sts get-caller-identity --profile e2e-login"}}]}}
+{"type":"user","timestamp":"$TS","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_e2e","content":"\naws: [ERROR]: Your session has expired. Please reauthenticate using 'aws login'.\n"}]}}
+EOF
 
 "$APP" >"$LOG" 2>&1 &
 APP_PID=$!
@@ -168,6 +231,61 @@ until "$CTL" status >/dev/null 2>&1; do
     sleep 1
 done
 echo "control: ok (dead socket path re-bound after ${i}s)"
+
+# --- AWS sign-in from the phone -------------------------------------------
+# The transcript scan surfaces the expired profile against the session.
+aws_login_item() { "$CTL" aws-logins | expect "any(l['profile']=='e2e-login' and l['pid']==$SESSION_PID for l in d['logins'])"; }
+aws_phase() { "$CTL" aws-logins | json "next((l.get('state') or {}).get('phase') for l in d['logins'] if l['profile']=='$1')"; }
+i=0
+until aws_login_item; do
+    i=$((i + 1)); [ "$i" -lt 60 ] || fail "expired AWS session never surfaced in aws-logins"
+    sleep 1
+done
+echo "aws: need surfaced after ${i}s"
+# The phone's flag-less poll reports and never starts (it re-opened the
+# sign-in on every poll, 2026-09-03).
+"$CTL" aws-login e2e-login --status >/dev/null 2>&1 && fail "--status started a login"
+"$CTL" aws-logins | expect "all(l.get('state') is None for l in d['logins'])" || fail "--status left a login in flight"
+# Code flow: URL for the phone's browser, then the pasted code.
+"$CTL" aws-login e2e-login --remote --pid "$SESSION_PID" | expect "d['state']['flow']=='remote'" || fail "aws-login --remote"
+i=0
+until [ "$(aws_phase e2e-login)" = "waitingForCode" ]; do
+    i=$((i + 1)); [ "$i" -lt 20 ] || fail "login never asked for the code (phase $(aws_phase e2e-login))"
+    sleep 1
+done
+"$CTL" aws-logins | expect "next(l['state']['url'] for l in d['logins'] if l['profile']=='e2e-login').startswith('https://e2e.invalid/')" || fail "no URL for the phone"
+"$CTL" aws-login e2e-login --status | expect "d['state']['phase']=='waitingForCode'" || fail "--status did not report the login in flight"
+printf 'E2E-CODE-OK' | "$CTL" aws-login-code e2e-login >/dev/null || fail "aws-login-code"
+# Signed in: the item drops (the failure predates the login) and the
+# session gets its nudge over its own inbox socket.
+i=0
+while aws_login_item; do
+    i=$((i + 1)); [ "$i" -lt 20 ] || fail "need did not clear after the login (phase $(aws_phase e2e-login))"
+    sleep 1
+done
+i=0
+until grep -q "AWS login for profile e2e-login completed from the phone" "$INBOX" 2>/dev/null; do
+    i=$((i + 1)); [ "$i" -lt 20 ] || fail "session never got the continue nudge (inbox: $(cat "$INBOX" 2>/dev/null | head -c 300))"
+    sleep 1
+done
+echo "aws: code flow signed in, need cleared, session nudged"
+# Rebind refusal: the CLI asks to overwrite the profile's session; the
+# app answers n and reports which account it was bound to.
+"$CTL" aws-login e2e-rebind --remote >/dev/null || fail "aws-login e2e-rebind"
+i=0
+until [ "$(aws_phase e2e-rebind)" = "waitingForCode" ]; do
+    i=$((i + 1)); [ "$i" -lt 20 ] || fail "rebind login never asked for the code"
+    sleep 1
+done
+printf 'E2E-CODE-OK' | "$CTL" aws-login-code e2e-rebind >/dev/null || fail "aws-login-code e2e-rebind"
+i=0
+until [ "$(aws_phase e2e-rebind)" = "failed" ]; do
+    i=$((i + 1)); [ "$i" -lt 20 ] || fail "rebind was not refused (phase $(aws_phase e2e-rebind))"
+    sleep 1
+done
+"$CTL" aws-logins | expect "'bound to account 1 but you signed in to 2' in next(l['state']['message'] for l in d['logins'] if l['profile']=='e2e-rebind')" || fail "rebind message"
+pgrep -f "$SOCKDIR/aws" >/dev/null && fail "stub aws CLI still running"
+echo "aws: rebind refused"
 
 # --- performance --------------------------------------------------------
 # Sampled AFTER the churn above so a timer left behind by a closed wall

@@ -68,7 +68,9 @@ actor AwsLoginRunner {
             run.process.terminate()
             live.remove(run.process)
         }
-        guard let aws = Subprocess.find(Self.awsCandidates) else {
+        // INFINITUS_AWS_CLI: the e2e gate's stub in place of the real CLI.
+        guard let aws = ProcessInfo.processInfo.environment["INFINITUS_AWS_CLI"]
+                ?? Subprocess.find(Self.awsCandidates) else {
             return AwsLogin.Reply(ok: false, error: "aws CLI not found")
         }
         let process = Process()
