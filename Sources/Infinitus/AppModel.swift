@@ -946,14 +946,17 @@ final class AppModel: ObservableObject {
         if items != awsLogins { awsLogins = items }
     }
 
-    /// `remote` nil = no flow asked for: a login already in flight is
-    /// reported as is (the phone polls this route every 2 s), else the
-    /// profile's default flow starts. true / false pick the code flow /
-    /// the relay explicitly and replace a run of the other kind.
+    /// `remote` nil = no flow asked for: this only REPORTS the profile's
+    /// login (in flight or finished) and starts nothing — the phone polls
+    /// this route every 2 s, and a poll that started the default flow
+    /// re-opened the sign-in the moment the code flow finished
+    /// (2026-09-03). false = the profile's default flow, true = the code
+    /// flow; either replaces a run of the other kind.
     func startAwsLogin(profile: String, pid: Int?, local: Bool, remote: Bool? = nil) async -> AwsLogin.Reply {
         guard !isPlayground, !mockMode else { return AwsLogin.Reply(ok: false, error: "not in a demo instance") }
-        if !local, remote == nil, let inFlight = await awsLoginRunner.inFlight(profile: profile) {
-            return AwsLogin.Reply(ok: true, state: inFlight)
+        if !local, remote == nil {
+            let state = await awsLoginRunner.state(profile: profile)
+            return AwsLogin.Reply(ok: state != nil, state: state, error: state == nil ? "no login in flight for \(profile)" : nil)
         }
         let configText = (try? String(contentsOf: AwsLogin.defaultConfigURL(), encoding: .utf8)) ?? ""
         var flow: AwsLogin.Flow = local ? .local : AwsLogin.flow(profile: profile, configText: configText)

@@ -250,7 +250,7 @@ final class ControlServer {
             guard let profile = r.args.first, !profile.isEmpty else { throw Fail("usage: aws-login <profile> [--pid n] [--local]") }
             let pid = r.options["pid"].flatMap(Int.init)
             let reply = await model.startAwsLogin(profile: profile, pid: pid, local: r.options["local"] == "true",
-                                                  remote: r.options["remote"] == "true" ? true : nil)
+                                                  remote: r.options["remote"] == "true")
             guard reply.ok, let state = reply.state else { throw Fail(reply.error ?? "could not start") }
             return ControlReply(ok: true, result: try .of(["state": state]))
 
