@@ -301,35 +301,13 @@ final class AppModel: ObservableObject {
     // Persisted by request — a pinned popup stays pinned across relaunches.
     @Published var popoverPinned: Bool { didSet { defaults.set(popoverPinned, forKey: "popover_pinned") } }
     /// Hold a power assertion while any session is mid-turn (KeepAwake).
-    /// Keep the fleet sorted (most headroom first) through `cswap reorder`
-    /// after every snapshot — see InfinitusCore.AutoOrder for the policy.
     /// Display-only: rows sorted most-headroom-first with the active
     /// account and the next candidate pinned on top (todo 2026-09-01).
-    /// Engine slots never move — unlike autoOrder, nothing is written.
+    /// Engine slots never move — nothing is written (the app-side
+    /// auto-order writer was removed 2026-09-03: pick-first is an engine
+    /// knob, see EngineCapabilities.prefer).
     @Published var sortByHeadroom: Bool {
         didSet { defaults.set(sortByHeadroom, forKey: "sort_headroom") }
-    }
-    @Published var autoOrder: Bool {
-        didSet {
-            defaults.set(autoOrder, forKey: "auto_order")
-            if autoOrder { applyAutoOrder() }
-        }
-    }
-    /// Pick-first accounts (#15, interim): starred emails lead the
-    /// auto-order so the engine's slot-order tie-break favours them.
-    /// Keyed by email, not slot — auto-order itself moves slots.
-    @Published var preferredEmails: Set<String> {
-        didSet {
-            defaults.set(Array(preferredEmails).sorted(), forKey: "preferred_emails")
-            if autoOrder { applyAutoOrder() }
-        }
-    }
-    func setPreferred(_ email: String, _ on: Bool) {
-        if on { preferredEmails.insert(email.lowercased()) }
-        else { preferredEmails.remove(email.lowercased()) }
-    }
-    func isPreferred(_ account: Account) -> Bool {
-        preferredEmails.contains(account.email.lowercased())
     }
     @Published var keepAwake: Bool {
         didSet {
@@ -484,8 +462,6 @@ final class AppModel: ObservableObject {
         cswapEnabled = defaults.object(forKey: "engine_cswap_enabled") as? Bool ?? true
         cliproxyEnabled = defaults.object(forKey: "engine_cliproxy_enabled") as? Bool ?? false
         keepAwake = defaults.object(forKey: "keep_awake") as? Bool ?? false
-        autoOrder = defaults.object(forKey: "auto_order") as? Bool ?? false
-        preferredEmails = Set((defaults.stringArray(forKey: "preferred_emails") ?? []).map { $0.lowercased() })
         sortByHeadroom = defaults.object(forKey: "sort_headroom") as? Bool ?? true
         mirrorLANEnabled = defaults.object(forKey: "mirror_lan_enabled") as? Bool ?? false
         mirrorTunnelEnabled = defaults.object(forKey: "mirror_tunnel_enabled") as? Bool ?? false
@@ -586,8 +562,6 @@ final class AppModel: ObservableObject {
         popupTextSize = defaults.string(forKey: "popup_text_size") ?? "default"
         glassFocused = defaults.object(forKey: "glass_focused") as? Double ?? 0.7
         keepAwake = defaults.object(forKey: "keep_awake") as? Bool ?? false
-        autoOrder = defaults.object(forKey: "auto_order") as? Bool ?? false
-        preferredEmails = Set((defaults.stringArray(forKey: "preferred_emails") ?? []).map { $0.lowercased() })
         sortByHeadroom = defaults.object(forKey: "sort_headroom") as? Bool ?? true
         pushSessionsDone = defaults.object(forKey: "push_sessions_done") as? Bool ?? true
         pushAllDead = defaults.object(forKey: "push_all_dead") as? Bool ?? true
@@ -1206,7 +1180,6 @@ final class AppModel: ObservableObject {
             awake.update(wanted: keepAwake,
                          busyCount: list.liveSessions?.busy ?? 0)
         }
-        applyAutoOrder()
         // Same display-feed vantage: a switch (manual or parked-engine)
         // re-arms /rc; an active account that can work resumes stopped
         // sessions. Detached, single-flight — never awaited here.
@@ -1301,7 +1274,6 @@ final class AppModel: ObservableObject {
     }
 
     func rename(_ number: Int, to name: String) { primary?.rename(number, to: name) }
-    func applyAutoOrder() { primary?.applyAutoOrder() }
     var displayAccounts: [Account] { primary?.displayAccounts ?? [] }
     func setRotation(_ number: Int, enabled: Bool) {
         primary?.setRotation(number, enabled: enabled)

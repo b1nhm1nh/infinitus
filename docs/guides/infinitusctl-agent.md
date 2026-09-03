@@ -45,9 +45,8 @@ infinitusctl rotate  <fleet>                 switch to the engine's next candida
 infinitusctl hold    <fleet> <n>
 infinitusctl unhold  <fleet> <n>
 infinitusctl rename  <fleet> <n> <alias>     "" clears
-infinitusctl prefer  <fleet> <n> on|off        star: auto-order keeps it on top
-infinitusctl auto-order on|off               headroom sort after every refresh, starred first; off before reorder
-infinitusctl reorder <fleet> <n>...          every account once, top first; refused while auto-order is on
+infinitusctl prefer  <fleet> <n> on|off        star: the engine lands on it first (cswap autoswitch.preferred, proxy priority)
+infinitusctl reorder <fleet> <n>...          every account once, top first
 infinitusctl remove  <fleet> <n> --yes
 infinitusctl add     <fleet>                 opens the in-app sign-in; human finishes it
 infinitusctl wait-add [--timeout 300]        blocks until that sign-in ends

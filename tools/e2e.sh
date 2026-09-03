@@ -50,7 +50,7 @@ cleanup() {
     rm -rf "$SOCKDIR"
     "$INFINITUS_CSWAP" reset >/dev/null 2>&1 || true
     # Leave the dev domain as we found it for the keys we touched.
-    for k in popout_shown popover_pinned gamification_style burn_style mock_mode auto_order; do
+    for k in popout_shown popover_pinned gamification_style burn_style mock_mode; do
         defaults delete "$DOMAIN" "$k" >/dev/null 2>&1 || true
     done
 }
@@ -101,8 +101,6 @@ N="$("$CTL" fleets | json "sum(len(f['accounts']) for f in d)")"
 "$CTL" fleets | json "d[0]['key']" | grep -q '^cswap/claude$' || fail "primary fleet key"
 "$CTL" remove cswap/claude 1 >/dev/null 2>&1 && fail "remove without --yes must be refused"
 "$CTL" switch nope/x 1 >/dev/null 2>&1 && fail "unknown fleet must be refused"
-"$CTL" prefer cswap/claude 2 on | json "'alpha' in ' '.join(d['preferred']) or d['preferred']" >/dev/null || fail "prefer"
-"$CTL" prefer cswap/claude 2 off >/dev/null || fail "unprefer"
 popout_visible || fail "pop-out window not visible (popout_shown restore)"
 echo "functional: ok ($N demo accounts, pop-out visible)"
 
@@ -113,20 +111,17 @@ echo "functional: ok ($N demo accounts, pop-out visible)"
 "$CTL" unhold cswap/claude 3 | expect "not $(acct 3).get('disabled')" || fail "unhold 3 didn't take"
 "$CTL" rename cswap/claude 3 "E2E Alias" | expect "$(acct 3).get('alias')=='E2E Alias'" || fail "rename didn't take"
 "$CTL" rename cswap/claude 3 "" | expect "$(acct 3).get('alias')!='E2E Alias'" || fail "rename clear didn't take"   # demo accounts carry default aliases
+"$CTL" prefer cswap/claude 2 on | expect "$(acct 2).get('preferred')==True" || fail "prefer 2 didn't take"
+"$CTL" prefer cswap/claude 2 off | expect "$(acct 2).get('preferred')==False" || fail "unprefer 2 didn't take"
 NEXT="$("$CTL" fleets | json "d[0]['nextCandidate']")"
 "$CTL" rotate cswap/claude | expect "d['fleet']['activeNumber']==$NEXT" || fail "rotate didn't land on the next candidate ($NEXT)"
 ORDER="$("$CTL" fleets | json "' '.join(str(a['number']) for a in d[0]['accounts'])")"
 REV="$(python3 -c "print(' '.join(reversed('$ORDER'.split())))")"
-"$CTL" auto-order on | expect "d['autoOrder']==True" || fail "auto-order on"
-sleep 1   # its own headroom reorder lands
-"$CTL" reorder cswap/claude $REV >/dev/null 2>&1 && fail "reorder must be refused while auto-order is on"
-"$CTL" auto-order off | expect "d['autoOrder']==False" || fail "auto-order off"
-"$CTL" status | expect "d['autoOrder']==False" || fail "status doesn't carry autoOrder"
 "$CTL" reorder cswap/claude $REV | expect "[a['number'] for a in d['fleet']['accounts']]==[int(x) for x in '$REV'.split()]" || fail "reorder didn't take"
 "$CTL" reorder cswap/claude 1 >/dev/null 2>&1 && fail "partial reorder must be refused"
 "$CTL" reorder cswap/claude $ORDER | expect "[a['number'] for a in d['fleet']['accounts']]==[int(x) for x in '$ORDER'.split()]" || fail "reorder restore didn't take"
 "$CTL" switch cswap/claude 1 | expect "d['fleet']['activeNumber']==1" || fail "switch back to 1"
-echo "round-trips: ok (switch, rotate, hold, unhold, rename, auto-order, reorder)"
+echo "round-trips: ok (switch, rotate, hold, unhold, rename, prefer, reorder)"
 
 # --- windows: the wall takes over from the pop-out and gives it back ----
 "$CTL" show wall | expect "d['shown']" || fail "show wall"

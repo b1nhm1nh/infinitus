@@ -9,7 +9,7 @@ import Foundation
 // file and readers merge all of them.
 //
 // Accounts are keyed by EMAIL, not slot number — `cswap swap`/`move`
-// renumber slots and the auto-order pane does it live. The slot rides
+// renumber slots (`cswap reorder`, the Accounts pane drag). The slot rides
 // along as display metadata only.
 
 public struct UsageSample: Codable, Sendable, Equatable {

@@ -248,7 +248,11 @@ file keeps the shipped log and the deferred-by-design notes.
 - Queued (user 2026-09-03, autonomous run): #17 session feed +
   reply/decide from the phone (layer 1 in progress), Linux parity
   (footer chips, `infinitus-tray serve/pair`; in progress), hot reload
-  (InjectionIII download still awaiting permission), #15 pick-first.
+  (InjectionIII download still awaiting permission), ~~#15 pick-first~~
+  → engine knob only (user 2026-09-03): cswap `autoswitch.preferred`
+  (claude-swap PR #312, star hidden until the installed cswap has it),
+  proxy priority tier; the app-side auto-order writer and `auto-order`
+  verb are gone, headroom sort is display-only.
 
 ## Shipped 2026-09-01/02 (session progress, site, mobile v0)
 - ~~#13 Session progress (layers 0+1)~~ → SessionProgress transcript

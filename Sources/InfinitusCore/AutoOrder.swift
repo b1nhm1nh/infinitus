@@ -1,7 +1,10 @@
 import Foundation
 
-/// The auto-order policy: which top-to-bottom account order the app asks
-/// the engine for (`cswap reorder`) when "keep accounts sorted" is on.
+/// The headroom ranking behind the proxy fleet's advisory next candidate
+/// (ProxyMapping) and the popup's display sort (DisplayOrder). Nothing
+/// writes it to an engine any more: pick-first is each engine's own knob
+/// (cswap `autoswitch.preferred`, the proxy's priority tier) — the app
+/// runs no second account policy (user 2026-09-03).
 ///
 /// Most headroom first — the same ranking the engine's advisory next
 /// candidate uses: an account's binding window is its highest pct across
@@ -13,8 +16,7 @@ import Foundation
 /// Anchored to the incumbent order: an account only moves ahead of the one
 /// directly in front of it when it beats it by a real margin (`margin`
 /// points of headroom), so two accounts burning side by side never
-/// flip-flop every refresh — each swap is an engine write that moves
-/// aliases, backups, and session history with the account.
+/// flip-flop every refresh.
 public enum AutoOrder {
     public static let margin: Double = 5
 
@@ -91,25 +93,6 @@ public enum AutoOrder {
 
     public static func order(_ accounts: [Account]) -> [Int] {
         order(accounts.map(row))
-    }
-
-    /// Pick-first (#15, interim): the starred accounts lead the order —
-    /// among themselves by the policy above, the rest after them, also
-    /// by the policy. Starred accounts that are dead or disabled still
-    /// sink to their rank: a star is a preference, not a resurrection.
-    /// Why slot order: the engine's strategies break ties by sequence
-    /// (`consume-first`: soonest reset, then headroom, then slot;
-    /// `best`: headroom, then slot), so the lowest slots are the only
-    /// preference the engine honours today without an upstream change.
-    public static func order(_ rows: [Row], preferred: Set<Int>) -> [Int] {
-        guard !preferred.isEmpty else { return order(rows) }
-        let alivePreferred = rows.filter { preferred.contains($0.number) && $0.rank == .alive }
-        let rest = rows.filter { !alivePreferred.contains($0) }
-        return order(alivePreferred) + order(rest)
-    }
-
-    public static func order(_ accounts: [Account], preferred: Set<Int>) -> [Int] {
-        order(accounts.map(row), preferred: preferred)
     }
 }
 

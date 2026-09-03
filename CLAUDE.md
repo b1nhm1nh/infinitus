@@ -26,6 +26,11 @@ Native macOS menu bar app for the claude-swap engine. Split out of
 - Secrets (webhook URLs, bot tokens) travel over stdin, never argv; shown
   masked only. Usage-cost figures are estimates, never billing truth.
 - Surgical changes; match existing style; no speculative abstractions.
+- **Account policy lives in the engines** (user 2026-09-03). Auto-swap,
+  pick-first, ordering come from each engine's own knobs (cswap
+  `autoswitch.*`, the proxy's priority); the app only sets those and
+  never runs a second policy on top (the app-side auto-order writer was
+  removed for this). Missing knob → upstream PR, never a fork.
 - **Keep performance in check with every feature** (user 2026-09-03):
   idle CPU with the pop-out open must stay near 0% (`infinitusctl perf`
   twice, 15s apart; `tools/e2e.sh` gates it in CI). Any continuous

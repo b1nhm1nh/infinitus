@@ -16,14 +16,38 @@ public struct CswapEngine: AccountEngine {
     public var capabilities: EngineCapabilities { .all }
 
     public func snapshot() async throws -> [EngineFleet] {
+        // Pick-first lives in the engine's settings (autoswitch.preferred,
+        // claude-swap PR #312); read alongside the list so the refresh
+        // takes no longer. An engine without the key leaves every row's
+        // `preferred` nil, which is what hides the star.
+        async let config: ConfigList? = try? cli.configList()
         let (list, raw) = try await cli.accountListRaw()
-        return [Self.fleet(from: list, raw: raw)]
+        let preferred = await config.flatMap(Self.preferredTokens)
+        return [Self.fleet(from: list, raw: raw, preferred: preferred)]
+    }
+
+    public static let preferredKey = "autoswitch.preferred"
+
+    /// The lowercased tokens (emails and/or slot numbers) of
+    /// `autoswitch.preferred`; nil when this cswap has no such key.
+    public static func preferredTokens(_ config: ConfigList) -> Set<String>? {
+        guard let entry = config.settings.first(where: { $0.key == preferredKey }) else { return nil }
+        guard entry.isSet, case .string(let text) = entry.value else { return [] }
+        return Set(text.split(separator: ",")
+            .map { $0.trimmingCharacters(in: .whitespaces).lowercased() }
+            .filter { !$0.isEmpty })
     }
 
     /// Pure: the same mapping the launch cache used to apply by hand.
-    public static func fleet(from list: AccountList, raw: Data?) -> EngineFleet {
-        EngineFleet(engineID: engineID, provider: .claude,
-                    accounts: list.accounts,
+    public static func fleet(from list: AccountList, raw: Data?,
+                             preferred: Set<String>? = nil) -> EngineFleet {
+        let accounts = preferred.map { tokens in
+            list.accounts.map {
+                $0.preferring(tokens.contains($0.email.lowercased()) || tokens.contains(String($0.number)))
+            }
+        } ?? list.accounts
+        return EngineFleet(engineID: engineID, provider: .claude,
+                    accounts: accounts,
                     activeNumber: list.activeAccountNumber,
                     nextCandidate: list.nextCandidate,
                     nextRecovery: list.nextRecovery,
@@ -40,6 +64,20 @@ public struct CswapEngine: AccountEngine {
     }
     public func setHold(fleet: Provider, number: Int, held: Bool) async throws {
         try await cli.setRotation(number, enabled: !held)
+    }
+    /// Star = add the account's email to autoswitch.preferred (emails, not
+    /// slots: reorder moves slots). Off also drops a slot-number token
+    /// someone set by hand for it.
+    public func setPreferred(fleet: Provider, number: Int, _ on: Bool) async throws {
+        guard var tokens = Self.preferredTokens(try await cli.configList()) else {
+            throw EngineError.unsupported("prefer: this cswap has no \(Self.preferredKey) setting (claude-swap PR #312)")
+        }
+        guard let account = try await cli.accountList().accounts.first(where: { $0.number == number }) else {
+            throw EngineError.remote(status: 0, body: "no account #\(number)")
+        }
+        let email = account.email.lowercased()
+        if on { tokens.insert(email) } else { tokens.remove(email); tokens.remove(String(number)) }
+        try await cli.setConfig(Self.preferredKey, tokens.isEmpty ? nil : tokens.sorted().joined(separator: ","))
     }
     public func rename(fleet: Provider, number: Int, _ name: String) async throws {
         try await cli.setAlias(number, name)

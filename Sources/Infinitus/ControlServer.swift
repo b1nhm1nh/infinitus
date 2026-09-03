@@ -156,19 +156,9 @@ final class ControlServer {
             await model.refreshSnapshot()
             return ControlReply(ok: true, result: try .of(["fleet": fleetPayload(fleet)]))
 
-        case "auto-order":
-            guard let arg = r.args.first, ["on", "off"].contains(arg) else { throw Fail("usage: auto-order on|off") }
-            model.autoOrder = arg == "on"
-            return ControlReply(ok: true, result: .object(["autoOrder": .bool(model.autoOrder)]))
-
         case "reorder":
             let fleet = try fleet(r)
             guard fleet.capabilities.contains(.reorder) else { throw Fail("\(fleet.id) has no rotation order") }
-            // Same gate as the Accounts pane's drag: auto-order would put
-            // its own order back on the next refresh.
-            guard !model.autoOrder else {
-                throw Fail("auto-order is on (Accounts › Keep accounts sorted by headroom); turn it off, or star accounts with prefer")
-            }
             let order = r.args.dropFirst().compactMap(Int.init)
             let have = fleet.accounts.map(\.number)
             guard order.count == r.args.count - 1, order.count == have.count, Set(order) == Set(have) else {
@@ -180,11 +170,15 @@ final class ControlServer {
 
         case "prefer":
             let (fleet, n) = try target(r)
-            guard fleet.capabilities.contains(.reorder) else { throw Fail("\(fleet.id) has no rotation order") }
+            guard fleet.capabilities.contains(.prefer) else { throw Fail("\(fleet.id) has no pick-first setting") }
             guard r.args.count >= 3, ["on", "off"].contains(r.args[2]) else { throw Fail("usage: prefer <fleet> <n> on|off") }
             guard let account = fleet.accounts.first(where: { $0.number == n }) else { throw Fail("no account #\(n) in \(fleet.id)") }
-            model.setPreferred(account.email, r.args[2] == "on")
-            return ControlReply(ok: true, result: try .of(["preferred": Array(model.preferredEmails).sorted()]))
+            guard account.preferred != nil else {
+                throw Fail("the installed cswap has no autoswitch.preferred setting (claude-swap PR #312)")
+            }
+            try await fleet.engine.setPreferred(fleet: fleet.provider, number: n, r.args[2] == "on")
+            await model.refreshSnapshot()
+            return ControlReply(ok: true, result: try .of(["fleet": fleetPayload(fleet)]))
 
         case "add":
             guard let key = r.args.first,
@@ -372,7 +366,6 @@ final class ControlServer {
         let badge: String
         let signInRunning: Bool
         let playground: Bool
-        let autoOrder: Bool
         let socket: String
     }
 
@@ -391,7 +384,6 @@ final class ControlServer {
             badge: model.engineBadge.map { "\($0)" } ?? "none",
             signInRunning: TokenFlow.shared.running || model.addingFirstAccount,
             playground: model.isPlayground,
-            autoOrder: model.autoOrder,
             socket: ControlProtocol.socketURL().path)
     }
 
@@ -401,6 +393,7 @@ final class ControlServer {
             (.rename, "rename"), (.remove, "remove"), (.addCurrent, "addCurrent"),
             (.addToken, "addToken"), (.addOAuth, "addOAuth"), (.autoSwitch, "autoSwitch"),
             (.costReport, "costReport"), (.history, "history"), (.settings, "settings"),
+            (.prefer, "prefer"),
         ]
         return table.filter { caps.contains($0.0) }.map(\.1)
     }

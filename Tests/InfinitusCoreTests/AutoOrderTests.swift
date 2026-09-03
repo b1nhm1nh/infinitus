@@ -39,34 +39,6 @@ final class AutoOrderTests: XCTestCase {
         XCTAssertEqual(AutoOrder.order(rows), [3, 1])
     }
 
-    func testPreferredAliveRowsLeadThenPolicy() {
-        let rows = [Row(number: 1, rank: .alive, bindingPct: 10),
-                    Row(number: 2, rank: .alive, bindingPct: 80),
-                    Row(number: 3, rank: .alive, bindingPct: 30),
-                    Row(number: 4, rank: .alive, bindingPct: 60)]
-        // 2 and 4 starred: they lead (most headroom first among them),
-        // the rest follow by headroom.
-        XCTAssertEqual(AutoOrder.order(rows, preferred: [2, 4]), [4, 2, 1, 3])
-        XCTAssertEqual(AutoOrder.order(rows, preferred: []), AutoOrder.order(rows))
-    }
-
-    func testPreferredDeadOrDisabledRowsDoNotLead() {
-        let rows = [Row(number: 1, rank: .alive, bindingPct: 50),
-                    Row(number: 2, rank: .dead, recovery: Date(timeIntervalSince1970: 1)),
-                    Row(number: 3, rank: .disabled),
-                    Row(number: 4, rank: .unknown)]
-        // A star on a dead/disabled/unknown account changes nothing.
-        XCTAssertEqual(AutoOrder.order(rows, preferred: [2, 3, 4]), [1, 4, 2, 3])
-    }
-
-    func testPreferredKeepsTheMarginWithinTiers() {
-        // Two starred accounts within the margin keep their incumbent order.
-        let rows = [Row(number: 5, rank: .alive, bindingPct: 44),
-                    Row(number: 6, rank: .alive, bindingPct: 41),
-                    Row(number: 1, rank: .alive, bindingPct: 5)]
-        XCTAssertEqual(AutoOrder.order(rows, preferred: [5, 6]), [5, 6, 1])
-    }
-
     func testRowFromAccountIgnoresSpend() throws {
         // Rested windows, spent credit: alive with plenty of headroom,
         // never dead — the engine had exactly this regression.

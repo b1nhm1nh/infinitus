@@ -32,6 +32,26 @@ final class AccountEngineTests: XCTestCase {
         } catch { XCTFail("wrong error \(error)") }
     }
 
+    func testPreferredComesFromTheEnginesConfigKey() throws {
+        func config(_ settings: String) throws -> ConfigList {
+            try JSONDecoder().decode(ConfigList.self, from: Data(
+                #"{"schemaVersion":1,"path":"/x","settings":[\#(settings)]}"#.utf8))
+        }
+        // No key at all (older cswap): nil, so the star stays hidden.
+        XCTAssertNil(CswapEngine.preferredTokens(try config("")))
+        // Key present but unset: an empty set — stars shown, none lit.
+        let unset = #"{"key":"autoswitch.preferred","value":null,"isSet":false,"kind":"string","help":"","default":null}"#
+        XCTAssertEqual(CswapEngine.preferredTokens(try config(unset)), [])
+        let set = #"{"key":"autoswitch.preferred","value":" A@Example.com, 3 ,","isSet":true,"kind":"string","help":"","default":null}"#
+        let tokens = CswapEngine.preferredTokens(try config(set))
+        XCTAssertEqual(tokens, ["a@example.com", "3"])
+        let list = try JSONDecoder().decode(AccountList.self, from: try fixture("list.json"))
+        let fleet = CswapEngine.fleet(from: list, raw: nil, preferred: tokens)
+        XCTAssertEqual(fleet.accounts.map(\.preferred),
+                       list.accounts.map { $0.email.lowercased() == "a@example.com" || $0.number == 3 })
+        XCTAssertTrue(CswapEngine.fleet(from: list, raw: nil).accounts.allSatisfy { $0.preferred == nil })
+    }
+
     func testFleetRoundTripsThroughJSONWithRawBytes() throws {
         let raw = try fixture("list.json")
         let list = try JSONDecoder().decode(AccountList.self, from: raw)
