@@ -4,7 +4,8 @@
 # network), drives it through infinitusctl on a private control socket,
 # and fails on:
 #   - any command that errors, a missing window, a wrong fleet shape
-#   - a switch/hold/unhold/rename that doesn't round-trip into `fleets`
+#   - a switch/rotate/hold/unhold/rename/reorder that doesn't round-trip
+#     into `fleets`
 #   - the wall not taking over from the pop-out (and giving it back), or
 #     the all-dead scenario not producing the no-candidate fleet
 #   - idle CPU above IDLE_BUDGET_PCT with the pop-out open on the RPG
@@ -112,8 +113,15 @@ echo "functional: ok ($N demo accounts, pop-out visible)"
 "$CTL" unhold cswap/claude 3 | expect "not $(acct 3).get('disabled')" || fail "unhold 3 didn't take"
 "$CTL" rename cswap/claude 3 "E2E Alias" | expect "$(acct 3).get('alias')=='E2E Alias'" || fail "rename didn't take"
 "$CTL" rename cswap/claude 3 "" | expect "$(acct 3).get('alias')!='E2E Alias'" || fail "rename clear didn't take"   # demo accounts carry default aliases
+NEXT="$("$CTL" fleets | json "d[0]['nextCandidate']")"
+"$CTL" rotate cswap/claude | expect "d['fleet']['activeNumber']==$NEXT" || fail "rotate didn't land on the next candidate ($NEXT)"
+ORDER="$("$CTL" fleets | json "' '.join(str(a['number']) for a in d[0]['accounts'])")"
+REV="$(python3 -c "print(' '.join(reversed('$ORDER'.split())))")"
+"$CTL" reorder cswap/claude $REV | expect "[a['number'] for a in d['fleet']['accounts']]==[int(x) for x in '$REV'.split()]" || fail "reorder didn't take"
+"$CTL" reorder cswap/claude 1 >/dev/null 2>&1 && fail "partial reorder must be refused"
+"$CTL" reorder cswap/claude $ORDER | expect "[a['number'] for a in d['fleet']['accounts']]==[int(x) for x in '$ORDER'.split()]" || fail "reorder restore didn't take"
 "$CTL" switch cswap/claude 1 | expect "d['fleet']['activeNumber']==1" || fail "switch back to 1"
-echo "round-trips: ok (switch, hold, unhold, rename)"
+echo "round-trips: ok (switch, rotate, hold, unhold, rename, reorder)"
 
 # --- windows: the wall takes over from the pop-out and gives it back ----
 "$CTL" show wall | expect "d['shown']" || fail "show wall"

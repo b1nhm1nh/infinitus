@@ -149,6 +149,30 @@ final class ControlServer {
             await model.refreshSnapshot()
             return ControlReply(ok: true, result: try .of(["fleet": fleetPayload(fleet)]))
 
+        case "rotate":
+            let fleet = try fleet(r)
+            guard fleet.capabilities.contains(.rotate) else { throw Fail("\(fleet.id) does not support rotate") }
+            try await fleet.engine.rotate(fleet: fleet.provider)
+            await model.refreshSnapshot()
+            return ControlReply(ok: true, result: try .of(["fleet": fleetPayload(fleet)]))
+
+        case "reorder":
+            let fleet = try fleet(r)
+            guard fleet.capabilities.contains(.reorder) else { throw Fail("\(fleet.id) has no rotation order") }
+            // Same gate as the Accounts pane's drag: auto-order would put
+            // its own order back on the next refresh.
+            guard !model.autoOrder else {
+                throw Fail("auto-order is on (Accounts › Keep accounts sorted by headroom); turn it off, or star accounts with prefer")
+            }
+            let order = r.args.dropFirst().compactMap(Int.init)
+            let have = fleet.accounts.map(\.number)
+            guard order.count == r.args.count - 1, order.count == have.count, Set(order) == Set(have) else {
+                throw Fail("reorder needs every account number exactly once, top first: \(have.sorted().map(String.init).joined(separator: " "))")
+            }
+            try await fleet.engine.reorder(fleet: fleet.provider, order)
+            await model.refreshSnapshot()
+            return ControlReply(ok: true, result: try .of(["fleet": fleetPayload(fleet)]))
+
         case "prefer":
             let (fleet, n) = try target(r)
             guard fleet.capabilities.contains(.reorder) else { throw Fail("\(fleet.id) has no rotation order") }
@@ -300,14 +324,19 @@ final class ControlServer {
 
     // MARK: payloads
 
+    private func fleet(_ r: ControlRequest) throws -> FleetState {
+        guard let key = r.args.first else { throw Fail("usage: \(r.command) <fleet> …") }
+        guard let fleet = model.fleets.first(where: { $0.id == key }) else {
+            throw Fail("no fleet \(key); fleets: \(model.fleets.map(\.id).joined(separator: ", "))")
+        }
+        return fleet
+    }
+
     private func target(_ r: ControlRequest) throws -> (FleetState, Int) {
         guard r.args.count >= 2, let n = Int(r.args[1]) else {
             throw Fail("usage: \(r.command) <fleet> <n>")
         }
-        guard let fleet = model.fleets.first(where: { $0.id == r.args[0] }) else {
-            throw Fail("no fleet \(r.args[0]); fleets: \(model.fleets.map(\.id).joined(separator: ", "))")
-        }
-        return (fleet, n)
+        return (try fleet(r), n)
     }
 
     private struct FleetPayload: Encodable {

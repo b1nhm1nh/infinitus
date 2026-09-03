@@ -71,7 +71,8 @@ file keeps the shipped log and the deferred-by-design notes.
   Verified live: status/fleets/proxy/manifest, rename + routing
   round-trips, remove/--yes and bad-fleet guards. Not yet: a Homebrew
   symlink for `infinitusctl` (release flow), socket round-trip test
-  against a fake model (live-verified only), `rotate`/`reorder` verbs.
+  against a fake model (live-verified only). `rotate`/`reorder` verbs
+  shipped 2026-09-03 (e2e round-trips them on the demo engine).
 - #1 All-dead Live Activity (iOS + macOS equivalent)
 - #2 Working-sessions Live Activity design
 - #3 Slack push mirror to mobile
