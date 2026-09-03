@@ -471,23 +471,35 @@ struct AccountCells<M: FleetModel, U: UsageSource> {
                 .glowOnChange(of: w.pct, color: ThemeColor.flash(theme))
             } else if w == nil, !session, creditOnly, let spend = account.usage?.spend {
                 // A credit-only plan (9Router's Kiro rows) wears its pool
-                // in the weekly slot — "HP 0 / 10,000 · resets Oct 1" —
-                // instead of an em dash (user 2026-09-03).
+                // in the weekly slot as the SAME gauge the other rows
+                // wear — label + bar + reset — the count lives in the
+                // tooltip (user 2026-09-03: raw "0 / 10,000" is bad design).
+                let color = ThemeColor.resolve(theme.weeklyColor)
                 HStack(spacing: 3) {
-                    Text(PopupGlyph.text(theme.weeklyLabel))
-                        .font(theme.plain ? PopupFont.body : PopupFont.caption.bold())
-                        .foregroundStyle(theme.plain ? Color.secondary
-                                         : ThemeColor.resolve(theme.weeklyColor))
-                    Text("\(CreditFormat.count(spend.used)) / \(CreditFormat.count(spend.limit))")
-                        .foregroundStyle(spend.pct >= 100 ? .red : .primary)
-                        .monospacedDigit()
+                    if theme.plain {
+                        Text(theme.weeklyLabel).foregroundStyle(.secondary)
+                        Text("\(Int(spend.pct))%")
+                            .foregroundStyle(spend.pct >= 100 ? .red : .primary)
+                            .monospacedDigit()
+                            .contentTransition(.numericText(value: spend.pct))
+                    } else {
+                        Text(PopupGlyph.text(theme.weeklyLabel))
+                            .font(PopupFont.caption).bold()
+                            .foregroundStyle(color)
+                            .help("Monthly credit pool left")
+                        GaugeBar(remaining: GaugeMath.remaining(usedPct: spend.pct),
+                                 color: color,
+                                 dividers: [25, 50, 75],
+                                 dropAnchor: banded ? .center : .leading,
+                                 lucky: luckyPair)
+                    }
                     if timer {
                         resetLabelView(resetsAt: spend.resetsAt, staticText: spend.clock ?? spend.countdown)
                     }
                 }
-                .instantTip(String(format: "%@ of %@ %@ used this period%@",
+                .instantTip(String(format: "Credits: %@ of %@ used (%d%%)%@",
                                    CreditFormat.count(spend.used), CreditFormat.count(spend.limit),
-                                   spend.currency, spend.clock.map { " — resets \($0)" } ?? ""))
+                                   Int(spend.pct), spend.clock.map { " · resets \($0)" } ?? ""))
                 .fixedSize()
                 .glowOnChange(of: spend.pct, color: ThemeColor.flash(theme))
             } else if w == nil, banded, !model.compactRows {
