@@ -162,13 +162,15 @@ final class FleetState: ObservableObject, Identifiable {
 
     // MARK: actions — engine first, then a fresh snapshot
 
-    private func perform(_ op: @escaping @Sendable () async throws -> Void) {
+    private func perform(after settle: @escaping @MainActor () -> Void = {},
+                         _ op: @escaping @Sendable () async throws -> Void) {
         Task {
             do {
                 try await op()
                 host.lastError = nil
             } catch { host.lastError = "\(error)" }
             await host.refreshSnapshot()
+            settle()
         }
     }
 
@@ -189,10 +191,18 @@ final class FleetState: ObservableObject, Identifiable {
         perform { try await engine.setHold(fleet: provider, number: number, held: !enabled) }
     }
 
+    /// Stars flipped but not yet confirmed by the engine (the subprocess
+    /// plus the snapshot refresh take a few seconds — user 2026-09-03
+    /// "pressing star … is not responsive"): the row shows this at once.
+    @Published var pendingPreferred: [Int: Bool] = [:]
+
     /// Star/unstar through the engine's own pick-first knob.
     func setPreferred(_ number: Int, _ on: Bool) {
         let engine = engine, provider = provider
-        perform { try await engine.setPreferred(fleet: provider, number: number, on) }
+        pendingPreferred[number] = on
+        perform(after: { [weak self] in self?.pendingPreferred[number] = nil }) {
+            try await engine.setPreferred(fleet: provider, number: number, on)
+        }
     }
 
     func remove(_ number: Int) {

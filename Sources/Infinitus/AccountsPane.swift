@@ -699,15 +699,20 @@ private struct FleetAccountsSection: View {
             }
             statusChip(a)
             Spacer()
-            if caps.contains(.prefer), let starred = a.preferred {
+            if caps.contains(.prefer), let confirmed = a.preferred {
                 // Pick-first (#15) is the engine's knob: nil `preferred`
                 // means this engine build has none, so no star at all.
+                // A pending flip shows at once, dimmed until the engine
+                // confirms it.
+                let pending = fleet.pendingPreferred[a.number]
+                let starred = pending ?? confirmed
                 Button { fleet.setPreferred(a.number, !starred) } label: {
                     Image(systemName: starred ? "star.fill" : "star")
                         .foregroundStyle(starred ? Color.yellow : Color.secondary)
+                        .opacity(pending == nil ? 1 : 0.5)
                 }
                 .buttonStyle(.borderless)
-                .disabled(flow.running)
+                .disabled(flow.running || pending != nil)
                 .help(starred
                       ? "Preferred: the engine lands on this account first when it switches"
                       : (isCswap
