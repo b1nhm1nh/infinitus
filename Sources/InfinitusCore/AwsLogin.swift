@@ -205,7 +205,9 @@ public enum AwsLogin {
     }
 
     public static func defaultConfigURL() -> URL {
-        FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".aws/config")
+        // NSHomeDirectory, not homeDirectoryForCurrentUser: Core also
+        // builds for iOS, where the latter doesn't exist.
+        URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent(".aws/config")
     }
 
     // MARK: running

@@ -29,6 +29,7 @@ struct SessionFeedScreen: View {
     @FocusState private var composerFocused: Bool
     @State private var previewing: PendingAttachment?
     @State private var attachmentError: String?
+    @State private var awsLoginItem: AwsLogin.Item?
 
     /// A picked file, already processed into the exact bytes/mime that
     /// will ride in `SessionInput.Attachment`.
@@ -40,9 +41,39 @@ struct SessionFeedScreen: View {
         let thumbnail: UIImage?
     }
 
+    private func awsLoginStatus(_ item: AwsLogin.Item) -> String {
+        switch item.state?.phase {
+        case nil: return "Tap to sign in from this phone"
+        case .starting: return "Starting on the Mac…"
+        case .waitingForBrowser: return "Sign-in page ready — tap to continue"
+        case .waitingForCode: return "Waiting for the authorization code"
+        case .done: return "Signed in — the session was told to continue"
+        case .failed: return item.state?.message ?? "Failed — tap to retry"
+        }
+    }
+
     var body: some View {
         ScrollViewReader { proxy in
             List {
+                if let item = model.awsLogin(for: session.pid) {
+                    // The session hit an expired AWS session; the login
+                    // runs on the Mac, driven from here (AwsLoginScreen).
+                    Button { awsLoginItem = item } label: {
+                        HStack(spacing: 8) {
+                            Image(systemName: "key.fill").foregroundStyle(.orange)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Needs AWS login · \(item.profile)").font(.subheadline.bold())
+                                Text(awsLoginStatus(item)).font(.caption).foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary)
+                        }
+                        .padding(10)
+                        .background(Color.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
+                    }
+                    .buttonStyle(.plain)
+                    .listRowSeparator(.hidden)
+                }
                 if feed?.waiting == true {
                     Label("Waiting on you", systemImage: "hand.raised.fill")
                         .foregroundStyle(.orange)
@@ -75,6 +106,7 @@ struct SessionFeedScreen: View {
                 withAnimation { proxy.scrollTo(last, anchor: .bottom) }
             }
         }
+        .sheet(item: $awsLoginItem) { AwsLoginScreen(item: $0) }
         .safeAreaInset(edge: .bottom) { composer }
         .navigationTitle(feed?.name ?? repoName(session.cwd))
         .navigationBarTitleDisplayMode(.inline)

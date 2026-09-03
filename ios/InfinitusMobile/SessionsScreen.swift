@@ -88,6 +88,10 @@ struct SessionsScreen: View {
                 HStack {
                     // "Infinitus · limitless": the session's name and its
                     // repo (user 2026-09-03 "show repo too").
+                    if model.awsLogin(for: session.pid) != nil {
+                        Image(systemName: "key.fill").foregroundStyle(.orange)
+                            .accessibilityLabel("needs AWS login")
+                    }
                     Text(title(session))
                         .font(.headline).lineLimit(1)
                     Spacer(minLength: 8)

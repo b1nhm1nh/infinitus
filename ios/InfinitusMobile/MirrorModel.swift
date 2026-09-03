@@ -22,6 +22,11 @@ final class MirrorModel: ObservableObject, FleetModel {
     static let shared = MirrorModel()
 
     @Published private(set) var snapshot: MirrorSnapshot?
+    /// Sessions the Mac says need an AWS sign-in (AwsLoginScreen).
+    var awsLogins: [AwsLogin.Item] { snapshot?.awsLogins ?? [] }
+    func awsLogin(for pid: Int) -> AwsLogin.Item? {
+        awsLogins.first { $0.pid == pid }
+    }
     /// One engine's fleet per element, in the Mac's popup order.
     @Published private(set) var fleets: [MirrorFleetModel] = []
     private var fleetSinks: [String: AnyCancellable] = [:]

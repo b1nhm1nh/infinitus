@@ -285,6 +285,41 @@ actor NetworkFleetMirror: FleetMirror {
         return try JSONDecoder().decode(SessionInput.Reply.self, from: data)
     }
 
+    /// AWS sign-in from the phone: start (idempotent — returns the
+    /// in-flight state, so it doubles as the poll), the intercepted
+    /// relay callback, or the paste-back code. Same route as replies.
+    func awsLoginStart(_ request: AwsLogin.StartRequest) async throws -> AwsLogin.Reply {
+        try await postJSON(AwsLogin.startPath, body: request)
+    }
+    func awsLoginCallback(_ request: AwsLogin.CallbackRequest) async throws -> AwsLogin.Reply {
+        try await postJSON(AwsLogin.callbackPath, body: request)
+    }
+    func awsLoginCode(_ request: AwsLogin.CodeRequest) async throws -> AwsLogin.Reply {
+        try await postJSON(AwsLogin.codePath, body: request)
+    }
+
+    private func postJSON<B: Encodable, R: Decodable>(_ path: String, body: B) async throws -> R {
+        let token = MirrorPairing.normalize(
+            UserDefaults.standard.string(forKey: Self.tokenKey) ?? "")
+        let payload = try JSONEncoder().encode(body)
+        let data: Data
+        if let text = candidateEndpoints().first, let manual = MirrorTransport.parseEndpoint(text) {
+            let endpoint = NWEndpoint.hostPort(
+                host: NWEndpoint.Host(manual.host),
+                port: NWEndpoint.Port(rawValue: manual.port) ?? .any)
+            (data, _) = try await fetch(endpoint, path: path, hostHeader: manual.host,
+                                        useTLS: manual.useTLS, token: token,
+                                        timeout: Self.inputTimeout, method: "POST", body: payload)
+        } else {
+            startBrowsing()
+            guard let discovered = await firstEndpoint() else { throw MirrorTransportError.timedOut }
+            (data, _) = try await fetch(discovered, path: path, hostHeader: "infinitus",
+                                        useTLS: false, token: token, timeout: Self.inputTimeout,
+                                        method: "POST", body: payload)
+        }
+        return try JSONDecoder().decode(R.self, from: data)
+    }
+
     /// Hands a Live Activity push token to the Mac (`POST
     /// /activities/token`) so its APNs pusher can reach this phone.
     /// Best effort: false when no Mac answered — the next token update
