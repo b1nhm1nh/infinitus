@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(FoundationNetworking)
+import FoundationNetworking   // URLSession lives here on Linux
+#endif
 
 /// The 9Router engine (decolua/9router): a third `AccountEngine`, one
 /// Claude fleet over 9Router's dashboard API on loopback. 9Router rotates
