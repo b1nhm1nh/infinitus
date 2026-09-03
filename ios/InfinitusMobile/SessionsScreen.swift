@@ -51,6 +51,29 @@ struct SessionsScreen: View {
     @ViewBuilder private var content: some View {
         if !fleetsWithSessions.isEmpty {
             List {
+                if !model.awsLogins.isEmpty {
+                    // Up top, whatever the session's place in the list
+                    // (user 2026-09-03 "not seeing session with aws
+                    // login button"): one row per login the Mac reports,
+                    // pid-less ones included.
+                    Section("Needs AWS login") {
+                        ForEach(model.awsLogins) { item in
+                            Button { awsLoginItem = item } label: {
+                                HStack(spacing: 10) {
+                                    Image(systemName: "key.fill").foregroundStyle(.orange)
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(item.sessionLabel ?? "Profile \(item.profile)").font(.headline)
+                                        Text("profile \(item.profile) · \(awsPhase(item))")
+                                            .font(.caption).foregroundStyle(.secondary)
+                                    }
+                                    Spacer()
+                                    Text("Sign in").font(.subheadline.bold()).foregroundStyle(.orange)
+                                }
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
                 ForEach(fleetsWithSessions) { fleet in
                     let live = fleet.liveSessions!
                     Section {
@@ -65,6 +88,7 @@ struct SessionsScreen: View {
                 }
             }
             .listStyle(.insetGrouped)
+            .sheet(item: $awsLoginItem) { AwsLoginScreen(item: $0) }
         } else if !model.fleets.isEmpty {
             ContentUnavailableView("No live sessions",
                                    systemImage: "brain",
@@ -75,6 +99,19 @@ struct SessionsScreen: View {
                                    systemImage: "antenna.radiowaves.left.and.right",
                                    description: Text("No snapshot yet — check "
                                                      + "Settings › Mac connection."))
+        }
+    }
+
+    @State private var awsLoginItem: AwsLogin.Item?
+
+    private func awsPhase(_ item: AwsLogin.Item) -> String {
+        switch item.state?.phase {
+        case nil: return "tap to sign in"
+        case .starting: return "starting"
+        case .waitingForBrowser: return "sign-in page ready"
+        case .waitingForCode: return "waiting for the code"
+        case .done: return "signed in"
+        case .failed: return "failed — tap to retry"
         }
     }
 
