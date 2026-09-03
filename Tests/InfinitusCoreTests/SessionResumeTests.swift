@@ -182,6 +182,15 @@ final class SessionResumeTests: XCTestCase {
                            PtySurface(ref: "surface:3", tty: nil, title: "zsh")])
     }
 
+    func testCmuxKeys() throws {
+        var calls: [[String]] = []
+        let host = CmuxHost(binary: "/x/cmux") { _, args in calls.append(args); return "" }
+        try host.sendLine("surface:1", "/rc")
+        XCTAssertEqual(calls, [["send", "--surface", "surface:1", "--", "/rc"],
+                               ["send-key", "--surface", "surface:1", "enter"]],
+                       "Enter is a key event, never a CR inside the (bracketed-paste) text")
+    }
+
     func testTmuxParseAndKeys() throws {
         var calls: [[String]] = []
         let host = TmuxHost(binary: "/x/tmux") { _, args in
