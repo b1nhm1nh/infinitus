@@ -192,13 +192,16 @@ public struct SessionProgress: Sendable, Equatable, Codable {
         // AWS_PROFILE does (found by tool_use_id).
         var awsLoginProfile: String?
         var awsLoginFailedAt: Date?
-        // Message entries only: attachments, hook summaries and turn
-        // stats pad a transcript by ~8 lines per turn, so a raw-line
-        // window lost the failed call as soon as the session reported
-        // it (the aws-login sim, 2026-09-03).
+        // Tool calls only: attachments, hook summaries, turn stats and
+        // thinking/text turns pad a transcript by ~8 lines per call, so
+        // a raw-line window lost the failed call as soon as the session
+        // reported it, and a message window within a minute of a session
+        // that kept working (the aws-login sim, 2026-09-03). A tool_use
+        // and its result are two entries.
         let recent = Array(entries.filter { entry in
-            ((entry["message"] as? [String: Any])?["content"] as? [[String: Any]]) != nil
-        }.suffix(awsLoginScanEntries))
+            guard let content = (entry["message"] as? [String: Any])?["content"] as? [[String: Any]] else { return false }
+            return content.contains { ($0["type"] as? String) == "tool_use" || ($0["type"] as? String) == "tool_result" }
+        }.suffix(awsLoginScanEntries * 2))
         func command(forToolUse id: String) -> String? {
             for entry in recent {
                 guard let message = entry["message"] as? [String: Any],
@@ -355,8 +358,8 @@ public struct SessionProgress: Sendable, Equatable, Codable {
     /// Reads the tail of `<claudeDir>/projects/<slug>/<sessionId>.jsonl`
     /// (same path and tail-read approach as `Transcript.lastTurnEntry`)
     /// and parses it.
-    /// How many tail MESSAGE entries (tool calls, results, replies) the
-    /// AWS sign-in signature is looked for in.
+    /// How many of the session's latest tool calls the AWS sign-in
+    /// signature is looked for in.
     static let awsLoginScanEntries = 12
 
     public static func read(sessionId: String, cwd: String, claudeDir: URL,

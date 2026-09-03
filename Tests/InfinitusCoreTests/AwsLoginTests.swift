@@ -122,8 +122,11 @@ final class AwsLoginProgressTests: XCTestCase {
         XCTAssertEqual(AwsLogin.profile(inCommand: "aws s3 ls --profile=banyan"), "banyan")
         XCTAssertNil(AwsLogin.profile(inCommand: "aws s3 ls"))
         // Scrolls out of the scan window once the session moves on.
-        let later = Array(repeating: fine, count: SessionProgress.awsLoginScanEntries)
+        let later = Array(repeating: fine, count: SessionProgress.awsLoginScanEntries * 2)
         XCTAssertNil(SessionProgress.parse(lines: [failed] + later).awsLoginProfile)
+        // Thinking / text turns between calls don't count.
+        let thought = #"{"type":"assistant","timestamp":"2026-09-03T08:02:00.000Z","message":{"role":"assistant","content":[{"type":"thinking","thinking":"hmm"},{"type":"text","text":"ok"}]}}"#
+        XCTAssertEqual(SessionProgress.parse(lines: [failed] + Array(repeating: thought, count: 30)).awsLoginProfile, "papaya-login")
         // Attachments / hook summaries / turn stats don't eat the window.
         let padding = Array(repeating: #"{"type":"attachment","attachment":{"type":"hook_success"}}"#, count: 20)
             + [#"{"type":"system","subtype":"turn_duration","durationMs":1}"#]
