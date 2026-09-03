@@ -201,7 +201,7 @@ struct SessionFeedScreen: View {
             }
         case .assistant, .result:
             HStack {
-                Text(item.text)
+                MarkdownText(text: item.text)
                     .padding(10)
                     .background(Color.secondary.opacity(0.12), in: RoundedRectangle(cornerRadius: 14))
                 Spacer(minLength: 40)
