@@ -465,6 +465,27 @@ struct AccountCells<M: FleetModel, U: UsageSource> {
                 // rather than truncate; the name column stays flexible.
                 .fixedSize()
                 .glowOnChange(of: w.pct, color: ThemeColor.flash(theme))
+            } else if w == nil, !session, creditOnly, let spend = account.usage?.spend {
+                // A credit-only plan (9Router's Kiro rows) wears its pool
+                // in the weekly slot — "HP 0 / 10,000 · resets Oct 1" —
+                // instead of an em dash (user 2026-09-03).
+                HStack(spacing: 3) {
+                    Text(PopupGlyph.text(theme.weeklyLabel))
+                        .font(theme.plain ? PopupFont.body : PopupFont.caption.bold())
+                        .foregroundStyle(theme.plain ? Color.secondary
+                                         : ThemeColor.resolve(theme.weeklyColor))
+                    Text("\(CreditFormat.count(spend.used)) / \(CreditFormat.count(spend.limit))")
+                        .foregroundStyle(spend.pct >= 100 ? .red : .primary)
+                        .monospacedDigit()
+                    if timer {
+                        resetLabelView(resetsAt: spend.resetsAt, staticText: spend.clock ?? spend.countdown)
+                    }
+                }
+                .instantTip(String(format: "%@ of %@ %@ used this period%@",
+                                   CreditFormat.count(spend.used), CreditFormat.count(spend.limit),
+                                   spend.currency, spend.clock.map { " — resets \($0)" } ?? ""))
+                .fixedSize()
+                .glowOnChange(of: spend.pct, color: ThemeColor.flash(theme))
             } else if w == nil, banded, !model.compactRows {
                 Text("—").foregroundStyle(.tertiary)
             } else if banded, !model.compactRows {
@@ -489,7 +510,7 @@ struct AccountCells<M: FleetModel, U: UsageSource> {
     }
 
     @ViewBuilder var spendCell: some View {
-        if let spend = account.usage?.spend, spend.pct >= 100 {
+        if let spend = account.usage?.spend, spend.pct >= 100, !creditOnly {
             // Spent credit is a footnote, not a death: the overflow buffer
             // is gone, the subscription windows still rule the row. The
             // invisible pace slot keeps it aligned with the gauge lines
@@ -504,7 +525,7 @@ struct AccountCells<M: FleetModel, U: UsageSource> {
                              spend.used, spend.limit, spend.currency))
                 .fixedSize()
                 .activeBand(banded && account.active)
-        } else if let spend = account.usage?.spend, creditOnly || !hiddenInCompact(spend.pct) {
+        } else if let spend = account.usage?.spend, !creditOnly, !hiddenInCompact(spend.pct) {
             HStack(spacing: 3) {
                 Text(PopupGlyph.text(theme.creditLabel))
                     .font(theme.plain ? PopupFont.body : PopupFont.caption.bold())
@@ -628,5 +649,15 @@ struct AccountCells<M: FleetModel, U: UsageSource> {
                 .fixedSize()
                 .activeBand(banded && account.active)
         }
+    }
+}
+
+/// "10,000" — grouped whole credits for the credit-only rows.
+public enum CreditFormat {
+    public static func count(_ n: Double) -> String {
+        let f = NumberFormatter()
+        f.numberStyle = .decimal
+        f.maximumFractionDigits = 0
+        return f.string(from: NSNumber(value: n)) ?? String(Int(n))
     }
 }
