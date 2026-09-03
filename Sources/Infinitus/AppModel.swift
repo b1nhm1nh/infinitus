@@ -450,7 +450,7 @@ final class AppModel: ObservableObject {
     private let awake = KeepAwake()
     private var pushTriggers = PushTriggers()
     private let defaults: UserDefaults
-    static let playgroundSuite = "com.huuloc.limitless.playground"
+    static let playgroundSuite = "com.huuloc.infinitus.playground"
 
     /// Custom skins from themes.json, loaded at launch and on demand
     /// (the Display pane reloads when it appears).
@@ -487,15 +487,21 @@ final class AppModel: ObservableObject {
     /// (io.github.claude-swap.CswapBar.g2). Bundled runs only — the
     /// unbundled domain is per-executable name and unaffected. Copies,
     /// never moves: the old domain stays for rollback. Locally-set keys win.
+    /// First launch under a new bundle id copies the previous id's
+    /// prefs domain (the bundled app's UserDefaults.standard IS the
+    /// bundle id): com.huuloc.limitless (2026-08-30 → 2026-09-03), and
+    /// before it the CswapBar g2 domain. Each hop runs once; existing
+    /// keys are never overwritten.
     private static func migrateLegacyDefaults() {
         let std = UserDefaults.standard
-        guard !std.bool(forKey: "migrated_from_g2"),
-              let legacy = std.persistentDomain(
-                forName: "io.github.claude-swap.CswapBar.g2") else { return }
-        for (key, value) in legacy where std.object(forKey: key) == nil {
-            std.set(value, forKey: key)
+        for (domain, marker) in [("com.huuloc.limitless", "migrated_from_limitless_id"),
+                                 ("io.github.claude-swap.CswapBar.g2", "migrated_from_g2")] {
+            guard !std.bool(forKey: marker), let legacy = std.persistentDomain(forName: domain) else { continue }
+            for (key, value) in legacy where std.object(forKey: key) == nil {
+                std.set(value, forKey: key)
+            }
+            std.set(true, forKey: marker)
         }
-        std.set(true, forKey: "migrated_from_g2")
     }
 
     init(playground: Bool = false) {

@@ -26,6 +26,8 @@
   menu bar glyph on the gradient card (the retired ∞ is gone).
 
 - ~~Bundle id~~ → `com.huuloc.limitless`, done 2026-08-30 as the one
+  intentional step (superseded 2026-09-03: `com.huuloc.infinitus`,
+  prefs migrate again; re-grant notifications + login item); it was the one
   intentional step: prefs copy-migrate from the g2 domain on first
   launch, themes.json copy-migrates from `CswapBar/`; re-grant
   notifications + login item once under the new id.

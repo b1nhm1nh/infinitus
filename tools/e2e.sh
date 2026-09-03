@@ -18,7 +18,7 @@
 # Runs on a dev Mac (`tools/e2e.sh`) and in CI (ci.yml e2e job). The
 # real app, if running, is untouched: separate socket, separate defaults
 # suite (the executable name "Infinitus" from .build → domain "Infinitus",
-# never com.huuloc.limitless), INFINITUS_CSWAP pinned to the demo script.
+# never com.huuloc.infinitus), INFINITUS_CSWAP pinned to the demo script.
 set -eu
 cd "$(dirname "$0")/.."
 
@@ -35,7 +35,7 @@ CTL="$BIN/infinitusctl"
 # debug binary AS that identifier so the launch never blocks on a keychain
 # prompt (ci: no identity, no key, nothing to prompt for).
 ID="$(security find-identity -v -p codesigning 2>/dev/null | awk -F'"' '/Apple Development/{print $2; exit}')"
-[ -z "$ID" ] || codesign --force --sign "$ID" --identifier com.huuloc.limitless "$APP" 2>/dev/null || true
+[ -z "$ID" ] || codesign --force --sign "$ID" --identifier com.huuloc.infinitus "$APP" 2>/dev/null || true
 
 # Its own directory: the server chmods the socket's parent to 0700.
 SOCKDIR="/tmp/infinitus-e2e-$$"; mkdir -p "$SOCKDIR"

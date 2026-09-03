@@ -54,8 +54,8 @@ targets:
         embed: true
     settings:
       base:
-        # Mobile has its own id — the mac app's com.huuloc.limitless is
-        # untouchable (CLAUDE.md). Revisit before TestFlight if wanted.
+        # Mobile has its own id under the mac app's com.huuloc.infinitus
+        # (CLAUDE.md). Revisit before TestFlight if wanted.
         PRODUCT_BUNDLE_IDENTIFIER: com.huuloc.infinitus.mobile
         # Simulator-only until the Apple Developer account lands (#9).
         CODE_SIGNING_ALLOWED: "NO"

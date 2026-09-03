@@ -172,7 +172,7 @@ final class MirrorServer: ObservableObject {
     var onReady: ((UInt16) -> Void)?
 
     private var listener: NWListener?
-    private let queue = DispatchQueue(label: "com.huuloc.limitless.mirror-server")
+    private let queue = DispatchQueue(label: "com.huuloc.infinitus.mirror-server")
 
     func start(machineName: String, token: String) {
         self.token.set(token)
