@@ -249,11 +249,25 @@ elif cmd == "usage":
                                  {"model": "claude-sonnet-5", "estimatedUSD": round(usd*0.4, 2), "messages": msg - msg//2}]}
                      for n, al, usd, msg in accts]}))
 elif cmd == "config":
-    print(json.dumps({"schemaVersion": 1, "path": "/Users/demo/.claude-swap-backup/settings.json",
-        "settings": [{"key": "autoswitch.enabled", "value": True, "isSet": False,
-                      "kind": "bool", "help": "Auto-switching on/off", "default": True},
-                     {"key": "autoswitch.threshold", "value": 98.0, "isSet": False,
-                      "kind": "float", "help": "Switch when a window hits this pct", "default": 98.0}]}))
+    # list/set/unset; only autoswitch.preferred persists (the app's star).
+    st = state()
+    sub = args[1] if len(args) > 1 else "list"
+    if sub == "set" and len(args) > 3:
+        st.setdefault("config", {})[args[2]] = args[3]; save(st)
+        print(json.dumps({"ok": True, "key": args[2], "value": args[3]}))
+    elif sub == "unset" and len(args) > 2:
+        st.get("config", {}).pop(args[2], None); save(st)
+        print(json.dumps({"ok": True, "key": args[2]}))
+    else:
+        pref = st.get("config", {}).get("autoswitch.preferred")
+        print(json.dumps({"schemaVersion": 1, "path": "/Users/demo/.claude-swap-backup/settings.json",
+            "settings": [{"key": "autoswitch.enabled", "value": True, "isSet": False,
+                          "kind": "bool", "help": "Auto-switching on/off", "default": True},
+                         {"key": "autoswitch.threshold", "value": 98.0, "isSet": False,
+                          "kind": "float", "help": "Switch when a window hits this pct", "default": 98.0},
+                         {"key": "autoswitch.preferred", "value": pref, "isSet": pref is not None,
+                          "kind": "string", "help": "Land on these accounts first when switching (emails and/or slot numbers, comma-separated)",
+                          "default": None}]}))
 elif cmd == "history":
     print(json.dumps({"schemaVersion": 1, "switches": [
         {"from": 5, "to": 1, "at": "2026-08-30 19:41"},

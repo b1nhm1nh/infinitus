@@ -638,11 +638,9 @@ private struct FleetAccountsSection: View {
     var body: some View {
         Section("\(fleet.provider.displayName) \u{00B7} \(fleet.engine.displayName)") {
             if caps.contains(.reorder) {
-                Toggle("Keep accounts sorted by headroom", isOn: $model.autoOrder)
-                    .help(Self.autoOrderHelp)
-                // Display-only cousin of autoOrder (todo 2026-09-01): the
-                // popup shows headroom order with active + next on top;
-                // engine slot numbers stay put.
+                // Display-only (todo 2026-09-01): the popup shows headroom
+                // order with active + next on top; engine slot numbers
+                // stay put.
                 Toggle("Popup sorts rows by headroom (active and next first)",
                        isOn: $model.sortByHeadroom)
                     .help("Display only \u{2014} the popup lists the active "
@@ -657,7 +655,7 @@ private struct FleetAccountsSection: View {
             }
             List {
                 ForEach(fleet.accounts, id: \.number) { a in
-                    row(a).moveDisabled(!caps.contains(.reorder) || model.autoOrder)
+                    row(a).moveDisabled(!caps.contains(.reorder))
                 }
                 .onMove { from, to in
                     guard caps.contains(.reorder) else { return }
@@ -701,19 +699,20 @@ private struct FleetAccountsSection: View {
             }
             statusChip(a)
             Spacer()
-            if caps.contains(.reorder) {
-                // Pick-first (#15): starred accounts lead the auto-order,
-                // and the engine's tie-break by slot favours them.
-                let starred = model.isPreferred(a)
-                Button { model.setPreferred(a.email, !starred) } label: {
+            if caps.contains(.prefer), let starred = a.preferred {
+                // Pick-first (#15) is the engine's knob: nil `preferred`
+                // means this engine build has none, so no star at all.
+                Button { fleet.setPreferred(a.number, !starred) } label: {
                     Image(systemName: starred ? "star.fill" : "star")
                         .foregroundStyle(starred ? Color.yellow : Color.secondary)
                 }
                 .buttonStyle(.borderless)
+                .disabled(flow.running)
                 .help(starred
-                      ? "Preferred: auto-rotation picks this account first while it has headroom"
-                      : "Prefer this account: with \"Keep accounts sorted\" on, it is moved "
-                        + "to the top slots so auto-rotation picks it first")
+                      ? "Preferred: the engine lands on this account first when it switches"
+                      : (isCswap
+                         ? "Prefer this account: auto-switch lands on it first when it qualifies (autoswitch.preferred)"
+                         : "Prefer this account: the proxy drains it before unstarred ones (priority tier)"))
             }
             if caps.contains(.switch), !a.active {
                 Button { fleet.switchTo(a.number) } label: {
@@ -755,20 +754,18 @@ private struct FleetAccountsSection: View {
         }
     }
 
-    private static let autoOrderHelp = "After every refresh, the fleet is reordered most headroom first (unknown, then out-of-limit by who recovers first, then disabled last); starred accounts lead. Slot numbers shift with it. Small differences don't move a row, so neighbours never flip-flop."
-
     /// Same sentences in every section, each present only when the
     /// fleet has the control it describes (user 2026-09-02: "make sure
     /// 2 sections saying same things").
     private var caption: String {
         var parts: [String] = []
         if caps.contains(.reorder) {
-            parts.append(model.autoOrder
-                ? "Sorted automatically \u{2014} drag is off while this is on."
-                : "Drag rows to set the rotation order \u{2014} Rotate cycles through them.")
-            parts.append(model.autoOrder
-                ? "Starred accounts stay on top, so auto-rotation picks them first."
-                : "Star an account and turn sorting on to have auto-rotation pick it first.")
+            parts.append("Drag rows to set the rotation order \u{2014} Rotate cycles through them.")
+        }
+        if caps.contains(.prefer) {
+            parts.append(fleet.accounts.contains { $0.preferred != nil }
+                ? "Star an account to have the engine land on it first when it switches."
+                : "Stars need a cswap with the autoswitch.preferred setting (claude-swap PR #312).")
         }
         if caps.contains(.switch) || caps.contains(.hold) {
             parts.append("The arrow switches to that account; pause holds it "

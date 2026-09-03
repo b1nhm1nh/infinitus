@@ -98,6 +98,12 @@ public struct CswapCLI: Sendable {
         try JSONDecoder().decode(ConfigList.self, from: await run(["config", "list", "--json"]))
     }
 
+    /// `cswap config set|unset` (nil unsets — the engine rejects an empty set).
+    @discardableResult
+    public func setConfig(_ key: String, _ value: String?) async throws -> Data {
+        try await run(value.map { ["config", "set", key, $0] } ?? ["config", "unset", key])
+    }
+
     @discardableResult
     public func switchTo(_ number: Int) async throws -> Data {
         try await run(["switch", String(number), "--json"])

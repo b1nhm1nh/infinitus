@@ -343,6 +343,9 @@ public enum ProxyMapping {
             // and only replace on a STRICTLY higher priority.
             var activeName: String?
             var bestPriority = Int.min
+            // Starred = above the fleet's priority floor (see
+            // CLIProxyEngine.setPreferred); the active one always is.
+            let floor = sorted.map { $0.priority ?? 0 }.min() ?? 0
             for file in sorted where file.disabled != true && file.unavailable != true {
                 let priority = file.priority ?? 0
                 if activeName == nil || priority > bestPriority {
@@ -367,6 +370,7 @@ public enum ProxyMapping {
                     alias: (file.note?.isEmpty == false) ? file.note : nil,
                     plan: profile?.plan,
                     disabled: file.disabled == true ? true : nil,
+                    preferred: (file.priority ?? 0) > floor,
                     usageFetchedAt: fileUsage != nil ? isoString(now) : nil
                 ))
             }

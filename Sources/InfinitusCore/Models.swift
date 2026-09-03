@@ -102,6 +102,10 @@ public struct Account: Codable, Sendable {
     /// Claude subscription tier ("Max 20x", "Pro"); additive, may be absent.
     public let plan: String?
     public let disabled: Bool?
+    /// The engine's own pick-first flag (cswap `autoswitch.preferred`,
+    /// proxy priority tier); nil = this engine has no such knob, so the
+    /// star is hidden. Additive, absent from `cswap list --json`.
+    public let preferred: Bool?
     public let usageFetchedAt: String?
     public let usageAgeSeconds: Double?
     // Display-grade last-good data served when the live fetch failed.
@@ -115,7 +119,7 @@ public struct Account: Codable, Sendable {
                 organizationUuid: String = "", isOrganization: Bool = false,
                 active: Bool = false, usageStatus: String = "ok",
                 usage: Usage? = nil, alias: String? = nil, icon: String? = nil,
-                plan: String? = nil, disabled: Bool? = nil,
+                plan: String? = nil, disabled: Bool? = nil, preferred: Bool? = nil,
                 usageFetchedAt: String? = nil, usageAgeSeconds: Double? = nil,
                 lastGoodUsage: Usage? = nil, lastGoodFetchedAt: String? = nil,
                 lastGoodAgeSeconds: Double? = nil) {
@@ -131,11 +135,24 @@ public struct Account: Codable, Sendable {
         self.icon = icon
         self.plan = plan
         self.disabled = disabled
+        self.preferred = preferred
         self.usageFetchedAt = usageFetchedAt
         self.usageAgeSeconds = usageAgeSeconds
         self.lastGoodUsage = lastGoodUsage
         self.lastGoodFetchedAt = lastGoodFetchedAt
         self.lastGoodAgeSeconds = lastGoodAgeSeconds
+    }
+
+    /// The same account with `preferred` stamped — cswap learns it from
+    /// `config list`, a different call from the one this row decodes from.
+    public func preferring(_ preferred: Bool?) -> Account {
+        Account(number: number, email: email, organizationName: organizationName,
+                organizationUuid: organizationUuid, isOrganization: isOrganization,
+                active: active, usageStatus: usageStatus, usage: usage, alias: alias,
+                icon: icon, plan: plan, disabled: disabled, preferred: preferred,
+                usageFetchedAt: usageFetchedAt, usageAgeSeconds: usageAgeSeconds,
+                lastGoodUsage: lastGoodUsage, lastGoodFetchedAt: lastGoodFetchedAt,
+                lastGoodAgeSeconds: lastGoodAgeSeconds)
     }
 }
 

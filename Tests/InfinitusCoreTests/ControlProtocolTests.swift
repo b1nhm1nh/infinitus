@@ -38,7 +38,7 @@ final class ControlProtocolTests: XCTestCase {
         XCTAssertEqual(ControlCommand.named("engine")?.effect, .restart)
         XCTAssertEqual(ControlCommand.named("rotate")?.requires, "rotate")
         XCTAssertEqual(ControlCommand.named("reorder")?.args, ["<fleet>", "<n>..."])
-        XCTAssertEqual(ControlCommand.named("auto-order")?.args, ["on|off"])
+        XCTAssertEqual(ControlCommand.named("prefer")?.requires, "prefer")
         XCTAssertNil(ControlCommand.named("nope"))
     }
 

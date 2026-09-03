@@ -238,7 +238,7 @@ final class CLIProxyEngineTests: XCTestCase {
 
     func testCapabilitiesAreTheProxySet() {
         let engine = makeEngine()
-        XCTAssertEqual(engine.capabilities, [.switch, .hold, .rename, .remove, .addOAuth, .costReport])
+        XCTAssertEqual(engine.capabilities, [.switch, .hold, .rename, .remove, .addOAuth, .costReport, .prefer])
         XCTAssertFalse(engine.capabilities.contains(.autoSwitch))
     }
 

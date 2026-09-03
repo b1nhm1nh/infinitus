@@ -136,13 +136,6 @@ final class FleetState: ObservableObject, Identifiable {
             }
             DispatchQueue.main.asyncAfter(deadline: .now() + 3.9) {
                 self.dying.remove(n)
-                // The dead row keeps its place (and its skull is
-                // held back) until the tragedy finishes; only now
-                // does auto-order move it down (user 2026-08-31:
-                // "delay moving the account until dead plays").
-                withAnimation(.easeInOut(duration: 0.5)) {
-                    self.applyAutoOrder()
-                }
             }
         }
         for n in newlyAlive { reviveTicks[n, default: 0] += 1 }
@@ -196,6 +189,12 @@ final class FleetState: ObservableObject, Identifiable {
         perform { try await engine.setHold(fleet: provider, number: number, held: !enabled) }
     }
 
+    /// Star/unstar through the engine's own pick-first knob.
+    func setPreferred(_ number: Int, _ on: Bool) {
+        let engine = engine, provider = provider
+        perform { try await engine.setPreferred(fleet: provider, number: number, on) }
+    }
+
     func remove(_ number: Int) {
         let engine = engine, provider = provider
         perform { try await engine.remove(fleet: provider, number: number) }
@@ -229,25 +228,6 @@ final class FleetState: ObservableObject, Identifiable {
             await host.refreshSnapshot()
             done?()
         }
-    }
-
-    /// One auto-order write at a time: reorder() refreshes the snapshot,
-    /// which lands back here — a no-op once the engine confirms the order.
-    private var autoOrderInFlight = false
-
-    /// Ask the engine for the policy's order when it differs from what the
-    /// snapshot shows. Skipped while a switch confirmation is up: reorder
-    /// renumbers occupants, and the pending number would point at a
-    /// different account by the time the user hits Switch.
-    func applyAutoOrder() {
-        guard host.autoOrder, capabilities.contains(.reorder), !autoOrderInFlight,
-              pendingSwitch == nil, !accounts.isEmpty,
-              dying.isEmpty else { return }
-        let preferred = Set(accounts.filter { host.isPreferred($0) }.map(\.number))
-        let desired = AutoOrder.order(accounts, preferred: preferred)
-        guard desired != accounts.map(\.number) else { return }
-        autoOrderInFlight = true
-        reorder(desired) { [weak self] in self?.autoOrderInFlight = false }
     }
 }
 

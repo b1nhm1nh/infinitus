@@ -62,6 +62,24 @@ final class ProxyMappingTests: XCTestCase {
         XCTAssertEqual(claude.activeNumber, 1)  // a-account: ordinal 1, tied priority wins on lowest ordinal
         XCTAssertTrue(claude.accounts[0].active)
         XCTAssertFalse(claude.accounts[1].active)
+        // Tied at the floor: neither sits in a tier above it.
+        XCTAssertEqual(claude.accounts.map(\.preferred), [false, false])
+    }
+
+    func testPreferredIsAnyTierAboveTheFleetsPriorityFloor() {
+        func file(_ name: String, _ index: String, priority: Int?) -> ProxyAuthFile {
+            ProxyAuthFile(id: nil, authIndex: index, name: name, provider: "claude",
+                          label: nil, status: "active", statusMessage: nil, disabled: false,
+                          unavailable: false, email: "\(name)@example.com", accountType: nil,
+                          account: nil, priority: priority, note: nil, weight: nil, success: nil,
+                          failed: nil, nextRetryAfter: nil, quota: nil)
+        }
+        let files = [file("a", "0", priority: 5), file("b", "1", priority: nil), file("c", "2", priority: 1)]
+        let (fleets, _) = ProxyMapping.fleets(engineID: "cliproxy", files: files, usage: [:], profiles: [:])
+        let claude = fleets.first { $0.provider == .claude }!
+        // Floor is 0 (missing): the switched-to 5 and the starred 1 are both above it.
+        XCTAssertEqual(claude.accounts.map(\.preferred), [true, false, true])
+        XCTAssertEqual(claude.activeNumber, 1)
     }
 
     // MARK: - Status derivation

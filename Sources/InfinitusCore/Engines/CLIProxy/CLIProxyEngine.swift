@@ -23,7 +23,7 @@ public actor CLIProxyEngine: AccountEngine {
     public nonisolated let id = CLIProxyEngine.engineID
     public nonisolated var displayName: String { "CLIProxyAPI" }
     public nonisolated var capabilities: EngineCapabilities {
-        [.switch, .hold, .rename, .remove, .addOAuth, .costReport]
+        [.switch, .hold, .rename, .remove, .addOAuth, .costReport, .prefer]
     }
 
     let baseURL: URL
@@ -346,6 +346,19 @@ public actor CLIProxyEngine: AccountEngine {
         _ = try await request("PATCH", "auth-files/fields",
                               json: ["name": target, "priority": top + 1])
         priorityByName[target] = top + 1
+    }
+
+    /// Pick-first on a proxy = the priority tiers above the floor (the
+    /// fleet's lowest priority, missing = 0): fill-first drains a starred
+    /// credential before an unstarred one. A star joins the tier just
+    /// above the floor — under anything switched to (top+1), so the active
+    /// credential stays the top pick; unstarring drops to the floor.
+    public func setPreferred(fleet: Provider, number: Int, _ on: Bool) async throws {
+        let target = try name(fleet, number)
+        let floor = (ordinals[fleet] ?? []).map { priorityByName[$0] ?? 0 }.min() ?? 0
+        let current = priorityByName[target] ?? 0
+        if on ? current > floor : current == floor { return }
+        try await setPriority(fleet: fleet, number: number, on ? floor + 1 : floor)
     }
 
     /// Internal: the live switch test puts the priority back.
