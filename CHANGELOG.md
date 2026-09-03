@@ -4,6 +4,16 @@ Composed release notes — what changed and why it matters, not a list of
 commit links. The release workflow publishes the matching section as the
 GitHub release body.
 
+## 0.4.2 (unreleased)
+
+### All accounts limited
+- **A floating revival countdown** (issue #1's macOS half). When every
+  account is limited, a small always-on-top panel shows who recovers
+  first and a live countdown, with the sessions waiting to resume.
+  Click it for the popup; ✕ hides it until the next revival. Settings →
+  Display → "Floating countdown when every account is limited" (on by
+  default). The same state the phone's Live Activity shows.
+
 ## 0.4.1
 
 ### Menu bar
@@ -19,14 +29,6 @@ GitHub release body.
 - **Install engine bootstraps `uv`** instead of dead-ending on
   "uv not found" (Homebrew if present, else Astral's installer) —
   thanks @sonyy172 (#20).
-
-### All accounts limited
-- **A floating revival countdown** (issue #1's macOS half). When every
-  account is limited, a small always-on-top panel shows who recovers
-  first and a live countdown, with the sessions waiting to resume.
-  Click it for the popup; ✕ hides it until the next revival. Settings →
-  Display → "Floating countdown when every account is limited" (on by
-  default). The same state the phone's Live Activity shows.
 
 ### One account
 - **The solo card.** With a single account the popup drops the fleet
