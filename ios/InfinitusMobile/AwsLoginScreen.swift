@@ -53,7 +53,9 @@ final class AwsLoginFlow: ObservableObject {
         relayed = false
         passkeyWall = false
         Task {
-            await post(AwsLogin.StartRequest(profile: profile, pid: item.pid, remote: remote ? true : nil))
+            // Explicit true/false: the Mac replaces a run of the other
+            // kind on it; the flag-less poll below only reports.
+            await post(AwsLogin.StartRequest(profile: profile, pid: item.pid, remote: remote))
             busy = false
             startPolling()
         }
