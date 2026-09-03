@@ -127,7 +127,7 @@ REV="$(python3 -c "print(' '.join(reversed('$ORDER'.split())))")"
 echo "round-trips: ok (switch, rotate, hold, unhold, rename, prefer, reorder)"
 "$CTL" plan | expect "'plan' in d and (d['plan'] is None or 'steps' in d['plan'])" || fail "plan verb"
 "$CTL" ignite cswap/claude 2 | expect "'fleet' in d" || fail "ignite verb"
-"$CTL" forecast | expect "'forecast' in d and (d['forecast'] is None or 'basis' in d['forecast'])" || fail "forecast verb"
+"$CTL" forecast | expect "'forecast' in d and (d['forecast'] is None or ('basis' in d['forecast'] and 'accounts' in d['forecast']))" || fail "forecast verb"
 
 # --- windows: the wall takes over from the pop-out and gives it back ----
 "$CTL" show wall | expect "d['shown']" || fail "show wall"

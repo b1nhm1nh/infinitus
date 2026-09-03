@@ -18,10 +18,6 @@ final class UtilizationModel: ObservableObject {
     /// running — a dry run for eyeballing, nothing executes.
     @Published var replay: WindowPlanner.ReplayReport?
     @Published var dryRunPlan: WindowPlanner.Plan?
-    /// The projection the live popup line shows, rebuilt here from the
-    /// history the same way the dry-run plan is (latest sample per
-    /// account, the active flag from the samples).
-    @Published var dryRunForecast: UsageForecast?
     /// Token/$ run rate from the transcripts (2026-09-03); its own task
     /// because the first pass over a week of transcripts takes a while.
     @Published var rates: TokenRates?
@@ -72,7 +68,6 @@ final class UtilizationModel: ObservableObject {
                 merged.filter { $0.t >= cutoff }, bucket: bucket)
             let replay = WindowPlanner.replay(merged, from: cutoff, to: now)
             let plan = Self.dryRunPlan(merged, now: now)
-            let forecast = Self.dryRunForecast(merged, now: now)
             await MainActor.run { [weak self] in
                 guard let self else { return }
                 self.samples = thin
@@ -80,7 +75,6 @@ final class UtilizationModel: ObservableObject {
                 self.fiveHourWindows = windows
                 self.replay = replay
                 self.dryRunPlan = plan
-                self.dryRunForecast = forecast
                 self.loading = false
             }
         }
@@ -131,27 +125,13 @@ extension UtilizationModel {
                                   busySessions: 1, now: now)
     }
 
-    /// The forecast over the same latest-sample fleet; disabled accounts
-    /// aren't in the history, so the fleet drain counts every account seen.
-    nonisolated static func dryRunForecast(_ samples: [UsageSample], now: Double) -> UsageForecast? {
-        var latest: [String: UsageSample] = [:]
-        for s in samples where s.t >= now - 3600 {
-            if let cur = latest[s.email], cur.t >= s.t { continue }
-            latest[s.email] = s
-        }
-        guard let active = latest.values.first(where: { $0.active == true }) else { return nil }
-        let inputs = latest.values.map { s in
-            UsageForecast.AccountInput(number: s.number, email: s.email, active: s.active == true,
-                                       disabled: false, fiveHour: s.fiveHour, sevenDay: s.sevenDay,
-                                       scoped: s.scoped ?? [:])
-        }
-        let rates = WindowTelemetry.burnRates(samples, email: active.email, now: now)
-        return UsageForecast.build(accounts: inputs, rates: rates, now: now)
-    }
 }
 
 struct UtilizationPane: View {
     @ObservedObject var model: UtilizationModel
+    /// The live forecast / plan / token rate (the detail dashboard, user
+    /// 2026-09-03) — AppModel publishes into the relay every snapshot.
+    @ObservedObject private var live = LiveForecastRelay.shared
 
     var body: some View {
         Form {
@@ -169,13 +149,15 @@ struct UtilizationPane: View {
                     Button("Refresh") { model.refresh() }
                 }
             }
+            forecastSection
+            fleetSection
+            liveBattlePlanSection
             runRateSection
             if model.samples.isEmpty && !model.loading {
                 Text("No history yet — samples accrue while Infinitus runs "
                      + "(one per engine usage poll).")
                     .foregroundStyle(.secondary)
             } else {
-                projectionSection
                 utilizationSection
                 fiveHourSection
                 battlePlanSection
@@ -209,6 +191,11 @@ struct UtilizationPane: View {
                     Text("Unpriced (tokens counted, $ not): " + r.unpricedModels.joined(separator: ", "))
                         .font(.caption).foregroundStyle(.secondary)
                 }
+                if let t = live.tokenRate {
+                    Text("Live: \(TokenFormat.compact(t.perMinute)) output tokens/min over the last 5 minutes "
+                         + "(peak \(TokenFormat.compact(t.peakPerMinute)))")
+                        .font(.caption).foregroundStyle(.secondary).monospacedDigit()
+                }
             } else if model.ratesScanning {
                 HStack { ProgressView().controlSize(.small); Text("Scanning transcripts…") }
                     .foregroundStyle(.secondary)
@@ -239,40 +226,105 @@ struct UtilizationPane: View {
         }
     }
 
-    // MARK: projection
+    // MARK: forecast dashboard (live, from AppModel via the relay)
 
-    @ViewBuilder private var projectionSection: some View {
-        if let f = model.dryRunForecast {
-            Section {
-                if let a = f.active {
-                    ForEach(a.windows, id: \.name) { w in
-                        HStack {
-                            Text(w.name).bold().frame(width: 60, alignment: .leading)
-                            Text("\(Int(w.pct.rounded()))%").monospacedDigit()
-                            Text(w.ratePctPerHour.map { String(format: "%.1f%%/h", $0) } ?? "pace unknown")
-                                .foregroundStyle(.secondary).monospacedDigit()
-                            Spacer()
-                            if let at = w.hitsAt {
-                                Text("out " + ForecastClock.label(at)).foregroundStyle(.orange)
-                            } else if w.ratePctPerHour != nil {
-                                Text("resets before it fills").foregroundStyle(.secondary)
+    private var liveTheme: RowTheme { live.theme }
+
+    @ViewBuilder private var forecastSection: some View {
+        Section {
+            if let f = live.forecast, let lines = f.accounts, !lines.isEmpty {
+                ForEach(lines, id: \.number) { line in
+                    VStack(alignment: .leading, spacing: 3) {
+                        HStack(spacing: 6) {
+                            Text(line.label).bold()
+                            if line.active {
+                                Text("active").font(.caption).foregroundStyle(.orange)
+                            } else if line.disabled {
+                                Text("held").font(.caption).foregroundStyle(.secondary)
                             }
+                            Spacer()
+                            if let at = line.bindsAt, let w = line.bindsWindow {
+                                Text("\(ForecastWords.gaugeName(w, theme: liveTheme)) binds first, \(ForecastClock.label(at))")
+                                    .font(.caption).foregroundStyle(.orange)
+                            } else {
+                                Text("no limit in sight").font(.caption).foregroundStyle(.secondary)
+                            }
+                        }
+                        ForEach(line.windows, id: \.name) { w in
+                            HStack(spacing: 8) {
+                                Text(ForecastWords.gaugeName(w.name, theme: liveTheme))
+                                    .frame(width: 56, alignment: .leading)
+                                Text("\(Int(w.pct.rounded()))%").frame(width: 40, alignment: .trailing)
+                                Text(w.ratePctPerHour.map { ForecastWords.rate($0) } ?? "pace unknown")
+                                    .frame(width: 84, alignment: .trailing)
+                                    .foregroundStyle(w.ratePctPerHour == nil ? .secondary : .primary)
+                                Text(w.hitsAt.map { "out " + ForecastClock.label($0) }
+                                     ?? (w.ratePctPerHour == nil ? "" : "resets before it fills"))
+                                    .foregroundStyle(w.hitsAt == nil ? Color.secondary : Color.orange)
+                                Spacer()
+                                if let r = w.resetsAt {
+                                    Text("resets " + ForecastClock.label(r)).foregroundStyle(.secondary)
+                                }
+                            }
+                            .font(.caption).monospacedDigit()
                         }
                     }
                 }
+            } else {
+                Text("No projection yet — needs an active account and ten minutes of polls.")
+                    .foregroundStyle(.secondary)
+            }
+        } header: {
+            Text("Forecast — every account at its own pace")
+        } footer: {
+            Text("Estimate. " + (live.forecast?.basis ?? UsageForecast.basisText))
+                .font(.caption2).foregroundStyle(.secondary)
+        }
+    }
+
+    @ViewBuilder private var fleetSection: some View {
+        if let f = live.forecast, f.active != nil {
+            Section {
                 HStack {
                     Text("All accounts out").bold()
                     Spacer()
                     Text(f.allDeadAt.map { ForecastClock.label($0) } ?? "no weekly pace measured yet")
                         .foregroundStyle(f.allDeadAt == nil ? Color.secondary : Color.orange)
                 }
+                if let order = f.drainOrder, let lines = f.accounts, !order.isEmpty {
+                    let names = order.compactMap { n in lines.first { $0.number == n }?.label }
+                    Text("Drain order: " + names.joined(separator: " → "))
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                if let paces = f.active.map({ ForecastWords.paces(UsageForecast(computedAt: f.computedAt, active: $0, allDeadAt: nil, basis: ""), theme: liveTheme) }), !paces.isEmpty {
+                    Text("Active pace: " + paces).font(.caption).foregroundStyle(.secondary)
+                }
             } header: {
-                Text("Projection — at this pace")
-            } footer: {
-                Text("Estimate. " + f.basis + ". Same numbers as the popup's hourglass line, "
-                     + "built from the latest sample per account.")
-                    .font(.caption2).foregroundStyle(.secondary)
+                Text("Fleet")
             }
+        }
+    }
+
+    @ViewBuilder private var liveBattlePlanSection: some View {
+        Section {
+            if let plan = live.plan {
+                ForEach(plan.steps) { step in
+                    VStack(alignment: .leading, spacing: 2) {
+                        HStack {
+                            Text(clockLabel(step.at)).monospacedDigit()
+                            Text(actionLabel(step.action)).bold()
+                            Spacer()
+                        }
+                        Text(step.why).font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+            } else {
+                Text("Nothing to plan right now: no bind projected within two hours "
+                     + "of the active account's window, or no busy session.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+        } header: {
+            Text("Battle plan — live")
         }
     }
 

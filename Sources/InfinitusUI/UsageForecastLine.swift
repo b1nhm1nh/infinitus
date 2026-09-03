@@ -27,14 +27,45 @@ public struct UsageForecastLine<M: FleetModel>: View {
         }
     }
 
+    private func summary(_ f: UsageForecast) -> String? {
+        let clauses = ForecastWords.clauses(f, theme: model.rowTheme)
+        guard !clauses.isEmpty else { return nil }
+        let paces = ForecastWords.paces(f, theme: model.rowTheme)
+        return "At this pace" + (paces.isEmpty ? "" : " (\(paces))") + ": " + clauses.joined(separator: " · ")
+    }
+
+    private func help(_ f: UsageForecast) -> String {
+        let theme = model.rowTheme
+        let paces = (f.active?.windows ?? []).map { w -> String in
+            let rate = w.ratePctPerHour.map { ForecastWords.rate($0) } ?? "pace unknown"
+            let fate = w.hitsAt == nil && w.ratePctPerHour != nil ? " — resets before it fills" : ""
+            return "\(ForecastWords.gaugeName(w.name, theme: theme)): \(Int(w.pct.rounded()))% used, \(rate)\(fate)"
+        }
+        return (paces + ["Estimate. " + f.basis]).joined(separator: "\n")
+    }
+}
+
+/// The words behind the forecast line, off the generic view so the pane
+/// and the phone can call them without a model type.
+public enum ForecastWords {
+    public static func gaugeName(_ window: String, theme: RowTheme) -> String {
+        window == "5h" ? theme.sessionLabel : window == "7d" ? theme.weeklyLabel : window
+    }
+
+    /// "MP 39%/h · HP 4%/h · Fable 4.7%/h" — the paces the line rests on
+    /// (user 2026-09-03: "'at this pace' — what pace?").
+    public static func paces(_ f: UsageForecast, theme: RowTheme) -> String {
+        (f.active?.windows ?? []).compactMap { w in
+            w.ratePctPerHour.map { "\(gaugeName(w.name, theme: theme)) \(rate($0))" }
+        }.joined(separator: " · ")
+    }
+
     /// Public so the pane and the phone can render the same words.
     public static func clauses(_ f: UsageForecast, theme: RowTheme, now: Date = Date()) -> [String] {
         var out: [String] = []
         for w in f.active?.windows ?? [] {
             guard let at = w.hitsAt else { continue }
-            let label = w.name == "5h" ? theme.sessionLabel
-                : w.name == "7d" ? theme.weeklyLabel : w.name
-            out.append("\(label) out \(ForecastClock.label(at, now: now))")
+            out.append("\(gaugeName(w.name, theme: theme)) out \(ForecastClock.label(at, now: now))")
         }
         if let dead = f.allDeadAt {
             out.append("all accounts out \(ForecastClock.label(dead, now: now))")
@@ -42,20 +73,10 @@ public struct UsageForecastLine<M: FleetModel>: View {
         return out
     }
 
-    private func summary(_ f: UsageForecast) -> String? {
-        let clauses = Self.clauses(f, theme: model.rowTheme)
-        guard !clauses.isEmpty else { return nil }
-        return "At this pace: " + clauses.joined(separator: " · ")
+    public static func rate(_ pctPerHour: Double) -> String {
+        pctPerHour >= 10 ? String(format: "%.0f%%/h", pctPerHour) : String(format: "%.1f%%/h", pctPerHour)
     }
 
-    private func help(_ f: UsageForecast) -> String {
-        let paces = (f.active?.windows ?? []).map { w -> String in
-            let rate = w.ratePctPerHour.map { String(format: "%.1f%%/h", $0) } ?? "pace unknown"
-            let fate = w.hitsAt == nil && w.ratePctPerHour != nil ? " — resets before it fills" : ""
-            return "\(w.name): \(Int(w.pct.rounded()))% at \(rate)\(fate)"
-        }
-        return (paces + ["Estimate. " + f.basis]).joined(separator: "\n")
-    }
 }
 
 /// "now", "~4:12 PM" today, "~Fri 9:00 AM" inside a week, else a date.

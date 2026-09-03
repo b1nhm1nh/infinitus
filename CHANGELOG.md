@@ -31,6 +31,15 @@ GitHub release body.
   the tooltip carries the paces. Same numbers as the battle plan's
   bind, so the two lines never disagree. `infinitusctl forecast` and
   the mirror snapshot's `forecast`/`plan` fields carry it to the phone.
+- **The pace is on the line.** "At this pace (MP 39%/h · HP 4%/h ·
+  Fable 4.7%/h): MP out ~4:12 PM · …" — the measured rates ride inline,
+  the tooltip says where they come from in plain words.
+- **Detail dashboard.** Utilization opens with the full forecast: every
+  account at its own pace — each window's used %, rate, when it runs
+  out, when it resets, which limit binds first — the fleet's all-out
+  time with the drain order it assumes, the live battle plan steps, and
+  the run rate with the live tokens/minute. `infinitusctl forecast` and
+  the snapshot carry every account's line.
 - **Run rate in Utilization.** Tokens, API-equivalent dollars and turns
   per minute / hour / day / week, read off Claude Code's own transcripts
   (a turn counted once, priced from the static table; unknown models
