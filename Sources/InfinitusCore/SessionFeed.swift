@@ -260,12 +260,14 @@ public enum SessionFeedReader {
         /// A run of consecutive `.tool` items — any tools (user 2026-09-03:
         /// "all the tool uses should be combined into one") — collapsed
         /// into one chip showing the latest call, the count and the mix of
-        /// tool names. An error result never merges into or over one, so
-        /// it stays visible rather than being swallowed by "(×N)".
+        /// tool names. Error results ride in the run too (user 2026-09-03
+        /// from the phone, "group tool uses": every error split the run
+        /// into a stack of chips); the chip counts them, and the latest
+        /// item's text — an error's included — is what it shows.
         struct Run {
             var item: SessionFeedItem
             var count: Int
-            var isError: Bool
+            var errors: Int
             /// Distinct tool names in first-seen order.
             var names: [String] = []
         }
@@ -285,17 +287,16 @@ public enum SessionFeedReader {
                let last = runs.last, last.item.kind == .assistant {
                 let merged = SessionFeedItem(kind: item.kind, text: last.item.text + "\n\n" + item.text,
                                              at: item.at)
-                runs[runs.count - 1] = Run(item: merged, count: 1, isError: false)
+                runs[runs.count - 1] = Run(item: merged, count: 1, errors: 0)
                 return
             }
-            if item.kind == .tool, !isError, let last = runs.last, !last.isError,
-               last.item.kind == .tool {
+            if item.kind == .tool, let last = runs.last, last.item.kind == .tool {
                 var names = last.names
                 if let name = item.toolName, !names.contains(name) { names.append(name) }
-                runs[runs.count - 1] = Run(item: item, count: last.count + 1, isError: false,
-                                           names: names)
+                runs[runs.count - 1] = Run(item: item, count: last.count + 1,
+                                           errors: last.errors + (isError ? 1 : 0), names: names)
             } else {
-                runs.append(Run(item: item, count: 1, isError: isError,
+                runs.append(Run(item: item, count: 1, errors: isError ? 1 : 0,
                                 names: item.toolName.map { [$0] } ?? []))
             }
         }
@@ -413,7 +414,8 @@ public enum SessionFeedReader {
             guard run.count > 1 else { return run.item }
             // A mixed run names every tool it covers, latest call as the text.
             let toolName = run.names.count > 1 ? run.names.joined(separator: ", ") : run.item.toolName
-            return SessionFeedItem(kind: run.item.kind, text: "\(run.item.text) (\u{00d7}\(run.count))",
+            let errors = run.errors > 0 ? " · \(run.errors) error\(run.errors == 1 ? "" : "s")" : ""
+            return SessionFeedItem(kind: run.item.kind, text: "\(run.item.text) (\u{00d7}\(run.count)\(errors))",
                                    at: run.item.at, toolName: toolName, options: run.item.options)
         }
         return Array(items.suffix(max(0, limit)))

@@ -62,18 +62,18 @@ final class SessionFeedTests: XCTestCase {
             #"{"type":"user","timestamp":"2026-09-01T10:00:03.000Z","message":{"content":[{"type":"tool_result","tool_use_id":"t2","content":"no such file","is_error":true}]}}"#,
         ]
         let items = SessionFeedReader.parse(lines: lines, limit: 30)
-        // The clean tool_result is dropped; the two calls collapse into one
-        // mixed chip; the error becomes its own item after it.
-        XCTAssertEqual(items.map(\.kind), [.tool, .tool])
-        XCTAssertEqual(items[0].text, "cat missing (\u{00d7}2)")
+        // The clean tool_result is dropped; the two calls and the error
+        // collapse into one mixed chip that shows the error (latest) and
+        // counts it.
+        XCTAssertEqual(items.map(\.kind), [.tool])
+        XCTAssertEqual(items[0].text, "error: no such file (\u{00d7}3 · 1 error)")
         XCTAssertEqual(items[0].toolName, "Grep, Bash")
-        XCTAssertEqual(items[1].text, "error: no such file")
-        XCTAssertEqual(items[1].toolName, "Bash")
     }
 
-    /// Same tool name repeated collapses into a count — but never across
-    /// an error result, which must stay visible.
-    func testErrorNeverCollapsesIntoASameNameRun() {
+    /// An error result rides inside the run (user 2026-09-03 from the
+    /// phone, "group tool uses"): the chip counts errors, and a later
+    /// call's text takes over while the count keeps the error visible.
+    func testErrorsCountInsideTheRun() {
         let lines = [
             #"{"type":"assistant","timestamp":"2026-09-01T10:00:00.000Z","message":{"content":[{"type":"tool_use","id":"t1","name":"Bash","input":{"command":"ls"}}]}}"#,
             #"{"type":"assistant","timestamp":"2026-09-01T10:00:01.000Z","message":{"content":[{"type":"tool_use","id":"t2","name":"Bash","input":{"command":"cat missing"}}]}}"#,
@@ -81,12 +81,9 @@ final class SessionFeedTests: XCTestCase {
             #"{"type":"assistant","timestamp":"2026-09-01T10:00:03.000Z","message":{"content":[{"type":"tool_use","id":"t3","name":"Bash","input":{"command":"pwd"}}]}}"#,
         ]
         let items = SessionFeedReader.parse(lines: lines, limit: 30)
-        XCTAssertEqual(items.map(\.kind), [.tool, .tool, .tool])
-        // "ls" then "cat missing" collapse (same name, no error between).
-        XCTAssertEqual(items[0].text, "cat missing (\u{00d7}2)")
-        XCTAssertEqual(items[1].text, "error: no such file")
-        // The run resets after the error: "pwd" starts fresh, uncollapsed.
-        XCTAssertEqual(items[2].text, "pwd")
+        XCTAssertEqual(items.map(\.kind), [.tool])
+        XCTAssertEqual(items[0].text, "pwd (\u{00d7}4 · 1 error)")
+        XCTAssertEqual(items[0].toolName, "Bash")
     }
 
     func testConsecutiveSameToolCollapsesWithCount() {

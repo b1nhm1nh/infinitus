@@ -31,6 +31,11 @@ struct SessionFeedScreen: View {
     @State private var attachmentError: String?
     @State private var awsLoginItem: AwsLogin.Item?
     @State private var lastRowVisible = true
+    // MARK: dictation (user 2026-09-03 "build a smart dictation for mobile")
+    @StateObject private var dictation = Dictation()
+    /// The draft as it stood when the mic went on; the transcript
+    /// appends to it.
+    @State private var draftBeforeDictation = ""
 
     /// A picked file, already processed into the exact bytes/mime that
     /// will ride in `SessionInput.Attachment`.
@@ -226,6 +231,10 @@ struct SessionFeedScreen: View {
                 Text(attachmentError).font(.caption).foregroundStyle(.red)
                     .padding(.horizontal)
             }
+            if let dictationError = dictation.error {
+                Text(dictationError).font(.caption).foregroundStyle(.red)
+                    .padding(.horizontal)
+            }
             if !attachments.isEmpty {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 8) { ForEach(attachments) { attachmentChip($0) } }
@@ -249,17 +258,37 @@ struct SessionFeedScreen: View {
                     Button { showFileImporter = true } label: {
                         Label("Choose File", systemImage: "doc")
                     }
+                    // A copied image/screenshot (user 2026-09-03 from the
+                    // phone: "allow pasting images"). The check reads no
+                    // pasteboard content, so no paste banner until chosen.
+                    if UIPasteboard.general.hasImages {
+                        Button { pasteImage() } label: {
+                            Label("Paste Image", systemImage: "doc.on.clipboard")
+                        }
+                    }
                 } label: {
                     Image(systemName: "paperclip").font(.title2)
                 }
                 .disabled(sendingMessage || attachments.count >= SessionInput.maxAttachments)
-                TextField("Reply…", text: $draft, axis: .vertical)
+                TextField(dictation.listening ? "Listening…" : "Reply…", text: $draft, axis: .vertical)
                     .textFieldStyle(.roundedBorder)
                     .focused($composerFocused)
                     .disabled(sendingMessage)
                 // No hide-keyboard button (user 2026-09-03 from the phone:
                 // "too much") — a drag on the feed or a tap outside the
                 // composer dismisses it.
+                if Dictation.isAvailable {
+                    Button {
+                        if !dictation.listening { draftBeforeDictation = draft }
+                        dictation.toggle()
+                    } label: {
+                        Image(systemName: dictation.listening ? "stop.circle.fill" : "mic.circle")
+                            .font(.title2)
+                            .foregroundStyle(dictation.listening ? Color.red : Color.accentColor)
+                    }
+                    .disabled(sendingMessage)
+                    .accessibilityLabel(dictation.listening ? "Stop dictating" : "Dictate")
+                }
                 Button(action: sendMessage) {
                     if sendingMessage {
                         ProgressView()
@@ -275,12 +304,18 @@ struct SessionFeedScreen: View {
             .padding(.vertical, 8)
         }
         .background(.bar)
+        .onChange(of: dictation.transcript) { _, text in
+            guard !text.isEmpty else { return }
+            let base = draftBeforeDictation
+            draft = base.isEmpty || base.hasSuffix(" ") || base.hasSuffix("\n") ? base + text : base + " " + text
+        }
+        .onDisappear { dictation.stop() }
         .onChange(of: photoPickerItems) { _, items in
             guard !items.isEmpty else { return }
             Task { await addPickedPhotos(items) }
         }
         .fullScreenCover(isPresented: $showCamera) {
-            CameraCapture { image in addCapturedPhoto(image) }
+            CameraCapture { image in addImage(image, prefix: "camera") }
                 .ignoresSafeArea()
         }
         .fullScreenCover(item: $previewing) { attachment in
@@ -348,8 +383,17 @@ struct SessionFeedScreen: View {
         photoPickerItems = []
     }
 
-    /// A camera shot takes the same downscale/JPEG path as a library pick.
-    private func addCapturedPhoto(_ image: UIImage) {
+    private func pasteImage() {
+        guard let image = UIPasteboard.general.image else {
+            attachmentError = "nothing to paste"
+            return
+        }
+        addImage(image, prefix: "pasted")
+    }
+
+    /// A camera shot or a pasted image takes the same downscale/JPEG
+    /// path as a library pick.
+    private func addImage(_ image: UIImage, prefix: String) {
         guard attachments.count < SessionInput.maxAttachments,
               let jpeg = Self.downscaledJPEG(image) else {
             attachmentError = "couldn't read that photo"
@@ -359,7 +403,7 @@ struct SessionFeedScreen: View {
             attachmentError = "that photo is still \(jpeg.count / 1_048_576) MB after compression — the cap is \(SessionInput.maxAttachmentBytes / 1_048_576) MB"
             return
         }
-        let name = "camera-\(UUID().uuidString.prefix(8)).jpg"
+        let name = "\(prefix)-\(UUID().uuidString.prefix(8)).jpg"
         attachments.append(PendingAttachment(name: name, mime: "image/jpeg",
                                              data: jpeg, thumbnail: UIImage(data: jpeg)))
     }
@@ -438,6 +482,7 @@ struct SessionFeedScreen: View {
     }
 
     private func sendMessage() {
+        dictation.stop()
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty || !attachments.isEmpty else { return }
         sendingMessage = true

@@ -32,6 +32,15 @@ GitHub release body.
   with the same key that drives the Live Activities. No Slack or
   Telegram in between. Needs the phone build that registers an `alert`
   token; until one does, nothing is sent.
+- **Dictate a message.** A mic in the session composer streams what you
+  say into the draft as you speak (Apple's on-device recognizer where
+  the language allows, punctuation added); stop, edit, send. No server
+  of ours, no tokens.
+- **Paste an image.** The paperclip menu offers "Paste Image" when the
+  clipboard holds one — a screenshot goes in like a photo.
+- **Tool runs stay grouped through errors.** A failed call no longer
+  splits the run into a stack of chips; the chip counts the errors
+  ("(×7 · 2 errors)") and shows the latest call or error.
 
 ### Fixes
 - **A refused engine no longer reads as a crash.** The supervisor
