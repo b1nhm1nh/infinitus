@@ -62,13 +62,13 @@ final class SessionFeedTests: XCTestCase {
             #"{"type":"user","timestamp":"2026-09-01T10:00:03.000Z","message":{"content":[{"type":"tool_result","tool_use_id":"t2","content":"no such file","is_error":true}]}}"#,
         ]
         let items = SessionFeedReader.parse(lines: lines, limit: 30)
-        // The clean tool_result is dropped; the error one becomes its own
-        // item, distinct from the preceding (different-named) call.
-        XCTAssertEqual(items.map(\.kind), [.tool, .tool, .tool])
-        XCTAssertEqual(items[0].text, "foo")
-        XCTAssertEqual(items[1].text, "cat missing")
-        XCTAssertEqual(items[2].text, "error: no such file")
-        XCTAssertEqual(items[2].toolName, "Bash")
+        // The clean tool_result is dropped; the two calls collapse into one
+        // mixed chip; the error becomes its own item after it.
+        XCTAssertEqual(items.map(\.kind), [.tool, .tool])
+        XCTAssertEqual(items[0].text, "cat missing (\u{00d7}2)")
+        XCTAssertEqual(items[0].toolName, "Grep, Bash")
+        XCTAssertEqual(items[1].text, "error: no such file")
+        XCTAssertEqual(items[1].toolName, "Bash")
     }
 
     /// Same tool name repeated collapses into a count — but never across
@@ -99,6 +99,19 @@ final class SessionFeedTests: XCTestCase {
         XCTAssertEqual(items[0].kind, .tool)
         XCTAssertEqual(items[0].toolName, "Read")
         XCTAssertEqual(items[0].text, "Three.swift (\u{00d7}3)")
+    }
+
+    func testConsecutiveMixedToolsCollapseIntoOneChip() {
+        let lines = [
+            #"{"type":"assistant","timestamp":"2026-09-01T10:00:00.000Z","message":{"content":[{"type":"tool_use","id":"t1","name":"Bash","input":{"command":"ls"}}]}}"#,
+            #"{"type":"assistant","timestamp":"2026-09-01T10:00:01.000Z","message":{"content":[{"type":"tool_use","id":"t2","name":"Read","input":{"file_path":"/a/One.swift"}}]}}"#,
+            #"{"type":"assistant","timestamp":"2026-09-01T10:00:02.000Z","message":{"content":[{"type":"tool_use","id":"t3","name":"Bash","input":{"command":"pwd"}}]}}"#,
+            #"{"type":"assistant","timestamp":"2026-09-01T10:00:03.000Z","message":{"content":[{"type":"text","text":"Done looking."}]}}"#,
+        ]
+        let items = SessionFeedReader.parse(lines: lines, limit: 30)
+        XCTAssertEqual(items.map(\.kind), [.tool, .result])   // last text = turn end
+        XCTAssertEqual(items[0].toolName, "Bash, Read")
+        XCTAssertEqual(items[0].text, "pwd (\u{00d7}3)")
     }
 
     func testLimitReturnsOnlyNewestItems() {

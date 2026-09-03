@@ -112,14 +112,17 @@ public enum SessionFeedReader {
             return obj
         }
 
-        /// A run of consecutive `.tool` items with the same tool name,
-        /// collapsed into one with a count — an error result never merges
-        /// into or over one, so it stays visible rather than being
-        /// swallowed by "(×N)".
+        /// A run of consecutive `.tool` items — any tools (user 2026-09-03:
+        /// "all the tool uses should be combined into one") — collapsed
+        /// into one chip showing the latest call, the count and the mix of
+        /// tool names. An error result never merges into or over one, so
+        /// it stays visible rather than being swallowed by "(×N)".
         struct Run {
             var item: SessionFeedItem
             var count: Int
             var isError: Bool
+            /// Distinct tool names in first-seen order.
+            var names: [String] = []
         }
         var runs: [Run] = []
         var toolNames: [String: String] = [:]   // tool_use id -> name
@@ -130,10 +133,14 @@ public enum SessionFeedReader {
 
         func append(_ item: SessionFeedItem, isError: Bool = false) {
             if item.kind == .tool, !isError, let last = runs.last, !last.isError,
-               last.item.kind == .tool, last.item.toolName == item.toolName {
-                runs[runs.count - 1] = Run(item: item, count: last.count + 1, isError: false)
+               last.item.kind == .tool {
+                var names = last.names
+                if let name = item.toolName, !names.contains(name) { names.append(name) }
+                runs[runs.count - 1] = Run(item: item, count: last.count + 1, isError: false,
+                                           names: names)
             } else {
-                runs.append(Run(item: item, count: 1, isError: isError))
+                runs.append(Run(item: item, count: 1, isError: isError,
+                                names: item.toolName.map { [$0] } ?? []))
             }
         }
 
@@ -228,8 +235,10 @@ public enum SessionFeedReader {
 
         let items = runs.map { run -> SessionFeedItem in
             guard run.count > 1 else { return run.item }
+            // A mixed run names every tool it covers, latest call as the text.
+            let toolName = run.names.count > 1 ? run.names.joined(separator: ", ") : run.item.toolName
             return SessionFeedItem(kind: run.item.kind, text: "\(run.item.text) (\u{00d7}\(run.count))",
-                                   at: run.item.at, toolName: run.item.toolName, options: run.item.options)
+                                   at: run.item.at, toolName: toolName, options: run.item.options)
         }
         return Array(items.suffix(max(0, limit)))
     }
