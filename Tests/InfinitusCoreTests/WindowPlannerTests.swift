@@ -43,6 +43,18 @@ final class WindowPlannerTests: XCTestCase {
         XCTAssertFalse(plan!.ignites)
     }
 
+    func testWarmCandidateResettingBeforeTheBindGetsNoResetStep() {
+        // Resets 1h from now, 1h before the bind — fresh by the switch, so
+        // the plan is the switch alone (no reset step dated before it).
+        let warm = S(number: 2, email: "spare@x", active: false,
+                     fiveHourPct: 80, fiveHourResetsAt: 10_000 + 3600, weeklyPct: 20)
+        let plan = WindowPlanner.plan(accounts: [active, warm], burnPctPerHour: 20,
+                                      busySessions: 1, now: 10_000)
+        XCTAssertEqual(plan?.steps.map(\.action), [.switchTo(2)])
+        XCTAssertEqual(plan?.steps[0].at, 10_000 + 2 * 3600)
+        XCTAssertTrue(plan!.steps[0].why.contains("fresh"))
+    }
+
     func testHoldWhenResetLandsWithinStallTolerance() {
         // Binds in 2h, resets 10 min later → hold, no candidate needed.
         let near = S(number: 1, email: "main@x", active: true,

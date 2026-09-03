@@ -212,14 +212,21 @@ public enum WindowPlanner {
                      why: "\(cand.shortName)'s ignited window resets mid-sprint — second session on the same account"),
             ])
         }
-        var steps = [Step(at: bindAt, action: .switchTo(cand.number),
-                          why: "\(active.shortName) binds; \(cand.shortName) has the most weekly headroom "
-                             + "(\(Int(cand.weeklyPct.rounded()))%) and a window already ticking")]
-        if let candReset = cand.fiveHourResetsAt, candReset > now {
-            steps.append(Step(at: candReset, action: .reset(cand.number),
-                              why: "\(cand.shortName)'s window resets"))
+        // A window that resets before the bind is fresh again by the time
+        // we land on it — nothing left to schedule after the switch.
+        let headroom = "\(cand.shortName) has the most weekly headroom (\(Int(cand.weeklyPct.rounded()))%)"
+        guard let candReset = cand.fiveHourResetsAt, candReset > bindAt else {
+            return Plan(bindAt: bindAt, steps: [
+                Step(at: bindAt, action: .switchTo(cand.number),
+                     why: "\(active.shortName) binds; \(headroom) and a fresh 5h window by then"),
+            ])
         }
-        return Plan(bindAt: bindAt, steps: steps)
+        return Plan(bindAt: bindAt, steps: [
+            Step(at: bindAt, action: .switchTo(cand.number),
+                 why: "\(active.shortName) binds; \(headroom) and a window already ticking"),
+            Step(at: candReset, action: .reset(cand.number),
+                 why: "\(cand.shortName)'s window resets \(minutes(candReset - bindAt)) min into the switch"),
+        ])
     }
 
     // MARK: replay

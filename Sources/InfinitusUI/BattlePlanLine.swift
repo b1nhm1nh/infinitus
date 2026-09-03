@@ -59,17 +59,25 @@ public struct BattlePlanLine<M: FleetModel>: View {
         }
     }
 
+    /// Plain words, one clause per step, in time order: the switch/hold
+    /// clause carries the trigger ("when main hits its MP limit ~4:00 PM")
+    /// so the reader knows what the times refer to.
     private func summary(_ plan: WindowPlanner.Plan) -> String {
-        plan.steps.map { step in
-            let when = step.at <= Date().timeIntervalSince1970 + 30
-                ? "now" : clock(step.at)
+        let session = model.rowTheme.sessionLabel
+        let activeName = model.accounts.first { $0.active }
+            .map { name($0.number) } ?? "the active account"
+        let bind = plan.bindAt <= Date().timeIntervalSince1970 + 30
+            ? "now" : "~" + clock(plan.bindAt)
+        let trigger = "\(activeName) hits its \(session) limit \(bind)"
+        let clauses = plan.steps.sorted { $0.at < $1.at }.map { step -> String in
             switch step.action {
-            case .ignite(let n): return "ignite \(name(n)) \(when)"
-            case .switchTo(let n): return "switch to \(name(n)) \(when)"
-            case .hold(let n): return "hold \(name(n)) \(when)"
-            case .reset(let n): return "\(name(n)) resets \(when)"
+            case .ignite(let n): return "start \(name(n)) now"
+            case .switchTo(let n): return "when \(trigger) switch to \(name(n))"
+            case .hold(let n): return "stay on \(name(n)) when \(trigger)"
+            case .reset(let n): return "\(name(n))'s \(session) resets \(clock(step.at))"
             }
-        }.joined(separator: " → ")
+        }
+        return "Plan: " + clauses.joined(separator: " → ")
     }
 
     private func name(_ n: Int) -> String {
