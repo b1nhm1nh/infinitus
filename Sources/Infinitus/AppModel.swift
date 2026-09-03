@@ -862,11 +862,15 @@ final class AppModel: ObservableObject {
             start: { [weak self] request in
                 guard let self else { return AwsLogin.Reply(ok: false, error: "app gone") }
                 return await self.startAwsLogin(profile: request.profile, pid: request.pid,
-                                                local: request.local ?? false)
+                                                local: request.local ?? false, remote: request.remote ?? false)
             },
             code: { [weak self] request in
                 guard let self else { return AwsLogin.Reply(ok: false, error: "app gone") }
                 return await self.submitAwsLoginCode(profile: request.profile, code: request.code)
+            },
+            callback: { [weak self] request in
+                guard let self else { return AwsLogin.Reply(ok: false, error: "app gone") }
+                return await self.awsLoginRunner.relay(profile: request.profile, url: request.url)
             })
         awsLoginNeedsWatch = sessionProgress.$byPid
             .receive(on: DispatchQueue.main)
@@ -924,10 +928,11 @@ final class AppModel: ObservableObject {
         if items != awsLogins { awsLogins = items }
     }
 
-    func startAwsLogin(profile: String, pid: Int?, local: Bool) async -> AwsLogin.Reply {
+    func startAwsLogin(profile: String, pid: Int?, local: Bool, remote: Bool = false) async -> AwsLogin.Reply {
         guard !isPlayground, !mockMode else { return AwsLogin.Reply(ok: false, error: "not in a demo instance") }
         let configText = (try? String(contentsOf: AwsLogin.defaultConfigURL(), encoding: .utf8)) ?? ""
-        let flow: AwsLogin.Flow = local ? .local : AwsLogin.flow(profile: profile, configText: configText)
+        var flow: AwsLogin.Flow = local ? .local : AwsLogin.flow(profile: profile, configText: configText)
+        if remote, flow == .relay { flow = .remote }
         let reply = await awsLoginRunner.start(profile: profile, flow: flow, pid: pid)
         logMirrorInput(reply.ok ? "🔐" : "⚠️",
                        reply.ok ? "aws login started for \(profile) (\(flow.rawValue))"

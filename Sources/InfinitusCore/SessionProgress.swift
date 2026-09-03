@@ -181,8 +181,24 @@ public struct SessionProgress: Sendable, Equatable, Codable {
 
         // AWS sign-in lapsed? Only the newest tool results count: once the
         // session moves on the signature scrolls out and the need clears.
+        // The session need not call `aws login` in any particular way: any
+        // aws command that fails with the CLI's expired-session error (or
+        // the cred broker's "Fix:" line) is the signal. When the error
+        // names no profile, the failed command's own --profile /
+        // AWS_PROFILE does (found by tool_use_id).
         var awsLoginProfile: String?
-        scan: for entry in entries.suffix(awsLoginScanEntries).reversed() {
+        let recent = Array(entries.suffix(awsLoginScanEntries))
+        func command(forToolUse id: String) -> String? {
+            for entry in recent {
+                guard let message = entry["message"] as? [String: Any],
+                      let content = message["content"] as? [[String: Any]] else { continue }
+                for block in content where (block["type"] as? String) == "tool_use" && (block["id"] as? String) == id {
+                    return (block["input"] as? [String: Any])?["command"] as? String
+                }
+            }
+            return nil
+        }
+        scan: for entry in recent.reversed() {
             guard let message = entry["message"] as? [String: Any],
                   let content = message["content"] as? [[String: Any]] else { continue }
             for block in content where (block["type"] as? String) == "tool_result" {
@@ -192,10 +208,14 @@ public struct SessionProgress: Sendable, Equatable, Codable {
                 } else if let parts = block["content"] as? [[String: Any]] {
                     text = parts.compactMap { $0["text"] as? String }.joined(separator: "\n")
                 } else { continue }
-                if let profile = AwsLogin.profile(in: text) {
+                guard let profile = AwsLogin.profile(in: text) else { continue }
+                if profile == "default", let id = block["tool_use_id"] as? String,
+                   let cmd = command(forToolUse: id), let named = AwsLogin.profile(inCommand: cmd) {
+                    awsLoginProfile = named
+                } else {
                     awsLoginProfile = profile
-                    break scan
                 }
+                break scan
             }
         }
 

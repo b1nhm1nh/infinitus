@@ -17,6 +17,15 @@ session takes the key and continues."
   `sso_start_url` → device code; `login_session` / `credential_process`
   → `--remote`.
 
+- Plain `aws login --profile X` (probed 2026-09-03): prints the
+  authorize URL even when the browser can't open, with
+  `redirect_uri=http://127.0.0.1:<port>/oauth/callback`. With
+  `BROWSER=/usr/bin/true` no Mac browser opens. The phone's web view
+  intercepts the redirect to 127.0.0.1 and posts it to the Mac
+  (`/aws-login/callback`), which GETs it against the CLI's listener —
+  the **relay** flow, no code at all. `AwsLogin.isValidCallback` only
+  lets http://127.0.0.1:<that port>/oauth/callback?code=… through.
+
 ## How sessions surface the need
 Tool results carry `aws: [ERROR]: Your session has expired. Please
 reauthenticate using 'aws login'.` and the cred broker's

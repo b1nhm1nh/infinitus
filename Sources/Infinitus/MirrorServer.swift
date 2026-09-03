@@ -85,16 +85,24 @@ final class MirrorAwsLoginBox: @unchecked Sendable {
     private let lock = NSLock()
     private var start: (@Sendable (AwsLogin.StartRequest) async -> AwsLogin.Reply)?
     private var code: (@Sendable (AwsLogin.CodeRequest) async -> AwsLogin.Reply)?
+    private var callback: (@Sendable (AwsLogin.CallbackRequest) async -> AwsLogin.Reply)?
 
     func set(start: @escaping @Sendable (AwsLogin.StartRequest) async -> AwsLogin.Reply,
-             code: @escaping @Sendable (AwsLogin.CodeRequest) async -> AwsLogin.Reply) {
-        lock.lock(); self.start = start; self.code = code; lock.unlock()
+             code: @escaping @Sendable (AwsLogin.CodeRequest) async -> AwsLogin.Reply,
+             callback: @escaping @Sendable (AwsLogin.CallbackRequest) async -> AwsLogin.Reply) {
+        lock.lock(); self.start = start; self.code = code; self.callback = callback; lock.unlock()
     }
 
     private func handlers() -> ((@Sendable (AwsLogin.StartRequest) async -> AwsLogin.Reply)?,
-                                (@Sendable (AwsLogin.CodeRequest) async -> AwsLogin.Reply)?) {
+                                (@Sendable (AwsLogin.CodeRequest) async -> AwsLogin.Reply)?,
+                                (@Sendable (AwsLogin.CallbackRequest) async -> AwsLogin.Reply)?) {
         lock.lock(); defer { lock.unlock() }
-        return (start, code)
+        return (start, code, callback)
+    }
+
+    func callCallback(_ r: AwsLogin.CallbackRequest) async -> AwsLogin.Reply? {
+        guard let f = handlers().2 else { return nil }
+        return await f(r)
     }
 
     func callStart(_ r: AwsLogin.StartRequest) async -> AwsLogin.Reply? {
@@ -354,14 +362,15 @@ final class MirrorServer: ObservableObject {
                         response = MirrorTransport.badRequestResponse()
                     }
                 } else if request.method == "POST",
-                          request.path == AwsLogin.startPath || request.path == AwsLogin.codePath {
-                    // The code never leaves this path: decoded, handed to
-                    // the runner, gone. Async: the reply waits for the
-                    // runner actor, so it runs off this queue.
-                    let isStart = request.path == AwsLogin.startPath
-                    let startBody = isStart ? try? JSONDecoder().decode(AwsLogin.StartRequest.self, from: request.body) : nil
-                    let codeBody = isStart ? nil : try? JSONDecoder().decode(AwsLogin.CodeRequest.self, from: request.body)
-                    guard startBody != nil || codeBody != nil else {
+                          [AwsLogin.startPath, AwsLogin.codePath, AwsLogin.callbackPath].contains(request.path) {
+                    // The code / callback never leaves this path: decoded,
+                    // handed to the runner, gone. Async: the reply waits
+                    // for the runner actor, so it runs off this queue.
+                    let decoder = JSONDecoder()
+                    let startBody = request.path == AwsLogin.startPath ? try? decoder.decode(AwsLogin.StartRequest.self, from: request.body) : nil
+                    let codeBody = request.path == AwsLogin.codePath ? try? decoder.decode(AwsLogin.CodeRequest.self, from: request.body) : nil
+                    let callbackBody = request.path == AwsLogin.callbackPath ? try? decoder.decode(AwsLogin.CallbackRequest.self, from: request.body) : nil
+                    guard startBody != nil || codeBody != nil || callbackBody != nil else {
                         connection.send(content: MirrorTransport.badRequestResponse(),
                                         completion: .contentProcessed { _ in connection.cancel() })
                         return
@@ -370,6 +379,7 @@ final class MirrorServer: ObservableObject {
                         let reply: AwsLogin.Reply?
                         if let startBody { reply = await awsLogin.callStart(startBody) }
                         else if let codeBody { reply = await awsLogin.callCode(codeBody) }
+                        else if let callbackBody { reply = await awsLogin.callCallback(callbackBody) }
                         else { reply = nil }
                         let response = reply.flatMap { try? JSONEncoder().encode($0) }
                             .map(MirrorTransport.jsonResponse) ?? MirrorTransport.notFoundResponse()

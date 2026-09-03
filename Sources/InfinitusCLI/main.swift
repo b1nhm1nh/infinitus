@@ -40,7 +40,7 @@ while i < args.count {
     let a = args[i]
     if a.hasPrefix("--") {
         let key = String(a.dropFirst(2))
-        let flagOnly = ["yes", "local"]
+        let flagOnly = ["yes", "local", "remote"]
         if flagOnly.contains(key) || i + 1 >= args.count || args[i + 1].hasPrefix("--") {
             options[key] = "true"
         } else {
@@ -53,7 +53,7 @@ while i < args.count {
 }
 
 var secret: String?
-if command == "proxy-key" || command == "9router-password" || command == "aws-login-code" {
+if ["proxy-key", "9router-password", "aws-login-code", "aws-login-callback"].contains(command) {
     let data = FileHandle.standardInput.readDataToEndOfFile()
     secret = String(decoding: data, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
 }

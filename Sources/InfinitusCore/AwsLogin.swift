@@ -23,6 +23,13 @@ public enum AwsLogin {
         case deviceCode
         /// `aws login` with the local browser callback — the Mac's own button.
         case local
+        /// `aws login` with its localhost callback, the browser on the
+        /// PHONE: the phone's web view intercepts the redirect to
+        /// `http://127.0.0.1:<port>/oauth/callback?code=…` and posts it
+        /// back; the Mac replays it against the CLI's own listener. No
+        /// code to read or type (user 2026-09-03: "can the mobile app
+        /// capture the code itself?").
+        case relay
     }
 
     public enum Phase: String, Codable, Sendable {
@@ -38,18 +45,22 @@ public enum AwsLogin {
         public var url: String?
         /// Device-code flow: the code the page asks for.
         public var userCode: String?
+        /// Relay flow: the port of the CLI's localhost callback listener.
+        public var callbackPort: Int?
         /// Failure text (sanitized last output line) or the success line.
         public var message: String?
         public let startedAt: Double
         /// The session that needed it, if the login was started for one.
         public let pid: Int?
         public init(profile: String, flow: Flow, phase: Phase = .starting, url: String? = nil,
-                    userCode: String? = nil, message: String? = nil, startedAt: Double, pid: Int?) {
+                    userCode: String? = nil, callbackPort: Int? = nil, message: String? = nil,
+                    startedAt: Double, pid: Int?) {
             self.profile = profile
             self.flow = flow
             self.phase = phase
             self.url = url
             self.userCode = userCode
+            self.callbackPort = callbackPort
             self.message = message
             self.startedAt = startedAt
             self.pid = pid
@@ -82,10 +93,14 @@ public enum AwsLogin {
         public let pid: Int?
         /// The Mac's own browser flow instead of the phone one.
         public let local: Bool?
-        public init(profile: String, pid: Int? = nil, local: Bool? = nil) {
+        /// Paste-back (`aws login --remote`) instead of the relay — for a
+        /// client without an intercepting web view.
+        public let remote: Bool?
+        public init(profile: String, pid: Int? = nil, local: Bool? = nil, remote: Bool? = nil) {
             self.profile = profile
             self.pid = pid
             self.local = local
+            self.remote = remote
         }
     }
 
@@ -96,6 +111,17 @@ public enum AwsLogin {
         public init(profile: String, code: String) {
             self.profile = profile
             self.code = code
+        }
+    }
+
+    /// `POST /aws-login/callback`: the redirect the phone's web view
+    /// intercepted, verbatim (`http://127.0.0.1:<port>/oauth/callback?…`).
+    public struct CallbackRequest: Codable, Sendable, Equatable {
+        public let profile: String
+        public let url: String
+        public init(profile: String, url: String) {
+            self.profile = profile
+            self.url = url
         }
     }
 
@@ -112,6 +138,7 @@ public enum AwsLogin {
 
     public static let startPath = "/aws-login/start"
     public static let codePath = "/aws-login/code"
+    public static let callbackPath = "/aws-login/callback"
     /// A login that hasn't finished in this long is abandoned.
     public static let timeout: TimeInterval = 600
 
@@ -144,9 +171,22 @@ public enum AwsLogin {
         return "default"
     }
 
-    /// Which flow signs a profile in, from the user's own `~/.aws/config`
-    /// text: an SSO profile (`sso_session` / `sso_start_url`) takes the
-    /// device-code flow, everything else `aws login --remote`.
+    /// The profile the FAILED command addressed — `--profile X` or
+    /// `AWS_PROFILE=X` in the Bash command — for the CLI's own error,
+    /// which names no profile. Nil when the command names none.
+    public static func profile(inCommand command: String) -> String? {
+        let pattern = #"(?:--profile[ =]|AWS_PROFILE=)["']?([A-Za-z0-9._-]+)"#
+        guard let re = try? NSRegularExpression(pattern: pattern),
+              let m = re.firstMatch(in: command, range: NSRange(command.startIndex..., in: command)),
+              let r = Range(m.range(at: 1), in: command) else { return nil }
+        return String(command[r])
+    }
+
+    /// Which flow signs a profile in from the phone, from the user's own
+    /// `~/.aws/config` text: an SSO profile (`sso_session` /
+    /// `sso_start_url`) takes the device-code flow, everything else the
+    /// relay (`aws login` with the phone intercepting the callback).
+    /// `.remote` stays the paste-back fallback a client may ask for.
     public static func flow(profile: String, configText: String) -> Flow {
         var inProfile = false
         for raw in configText.split(separator: "\n", omittingEmptySubsequences: false) {
@@ -161,7 +201,7 @@ public enum AwsLogin {
             let key = line[..<eq].trimmingCharacters(in: .whitespaces)
             if key == "sso_session" || key == "sso_start_url" { return .deviceCode }
         }
-        return .remote
+        return .relay
     }
 
     public static func defaultConfigURL() -> URL {
@@ -175,8 +215,27 @@ public enum AwsLogin {
         switch flow {
         case .remote: return ["login", "--remote", "--profile", profile]
         case .deviceCode: return ["sso", "login", "--use-device-code", "--no-browser", "--profile", profile]
-        case .local: return ["login", "--profile", profile]
+        case .local, .relay: return ["login", "--profile", profile]
         }
+    }
+
+    /// The localhost callback port in a plain `aws login` authorize URL
+    /// (`redirect_uri=http%3A%2F%2F127.0.0.1%3A60861%2Foauth%2Fcallback`).
+    public static func callbackPort(inURL url: String) -> Int? {
+        guard let comps = URLComponents(string: url),
+              let redirect = comps.queryItems?.first(where: { $0.name == "redirect_uri" })?.value,
+              let r = URLComponents(string: redirect), r.host == "127.0.0.1" else { return nil }
+        return r.port
+    }
+
+    /// A callback the Mac may replay: plain http to 127.0.0.1 on the
+    /// CLI's own port, the CLI's own path — nothing else is fetched.
+    public static func isValidCallback(_ url: String, port: Int) -> Bool {
+        guard let c = URLComponents(string: url), c.scheme == "http", c.host == "127.0.0.1",
+              c.port == port, c.path == "/oauth/callback",
+              c.queryItems?.contains(where: { $0.name == "code" && !($0.value ?? "").isEmpty }) == true
+        else { return false }
+        return true
     }
 
     /// What the CLI's output so far tells us.

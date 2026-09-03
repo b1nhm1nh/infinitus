@@ -47,11 +47,14 @@ GitHub release body.
   reauthenticate using 'aws login'", the cred broker's "Fix: aws login
   --profile …"), the popup shows "🔐 <session> needs AWS login
   (<profile>)" and the phone gets the same item. Start it from the
-  phone: Infinitus runs `aws login --remote` (or the SSO device-code
-  flow for `sso_session` profiles) on the Mac, hands the sign-in URL to
-  the phone, takes the authorization code back, and once the CLI
-  reports success sends the session "AWS login for profile … completed,
-  retry and continue" over the same channel the phone's replies use.
+  phone: Infinitus runs `aws login` on the Mac with the phone as the
+  browser — the phone's web view intercepts the CLI's localhost
+  callback and hands it back, so there is no code to read or type
+  (SSO profiles take the device-code flow; `aws login --remote` with a
+  pasted code stays as a fallback). Once the CLI reports success the
+  session gets "AWS login for profile … completed, retry and continue"
+  over the same channel the phone's replies use. Any failing aws
+  command is the trigger; sessions need not call `aws login` at all.
   "Log in here" on the Mac runs the normal browser flow instead. The
   code goes straight into the CLI's stdin — never logged or stored;
   Infinitus never reads the AWS credential caches. `infinitusctl

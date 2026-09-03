@@ -42,7 +42,7 @@ public struct AwsLoginLine<M: FleetModel>: View {
         if let s = item.state {
             switch s.phase {
             case .starting: text += " · starting…"
-            case .waitingForBrowser: text += s.flow == .local ? " · finish in the browser" : " · open the link on the phone"
+            case .waitingForBrowser: text += s.flow == .local ? " · finish in the browser" : " · sign in on the phone"
             case .waitingForCode: text += " · paste the code on the phone"
             case .done: text += " · signed in ✓"
             case .failed: text += " · failed: \(s.message ?? "?")"

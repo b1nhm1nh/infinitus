@@ -249,8 +249,17 @@ final class ControlServer {
         case "aws-login":
             guard let profile = r.args.first, !profile.isEmpty else { throw Fail("usage: aws-login <profile> [--pid n] [--local]") }
             let pid = r.options["pid"].flatMap(Int.init)
-            let reply = await model.startAwsLogin(profile: profile, pid: pid, local: r.options["local"] == "true")
+            let reply = await model.startAwsLogin(profile: profile, pid: pid, local: r.options["local"] == "true",
+                                                  remote: r.options["remote"] == "true")
             guard reply.ok, let state = reply.state else { throw Fail(reply.error ?? "could not start") }
+            return ControlReply(ok: true, result: try .of(["state": state]))
+
+        case "aws-login-callback":
+            guard let profile = r.args.first, let url = r.secret, !url.isEmpty else {
+                throw Fail("usage: aws-login-callback <profile>  (the intercepted http://127.0.0.1:<port>/oauth/callback?… URL on stdin)")
+            }
+            let reply = await model.awsLoginRunner.relay(profile: profile, url: url)
+            guard reply.ok, let state = reply.state else { throw Fail(reply.error ?? "not accepted") }
             return ControlReply(ok: true, result: try .of(["state": state]))
 
         case "aws-login-code":

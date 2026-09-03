@@ -28,9 +28,9 @@ final class AwsLoginTests: XCTestCase {
         sso_account_id = 1
         """
         XCTAssertEqual(AwsLogin.flow(profile: "papaya-dev", configText: config), .deviceCode)
-        XCTAssertEqual(AwsLogin.flow(profile: "papaya-login", configText: config), .remote)
-        XCTAssertEqual(AwsLogin.flow(profile: "default", configText: config), .remote)
-        XCTAssertEqual(AwsLogin.flow(profile: "missing", configText: config), .remote)
+        XCTAssertEqual(AwsLogin.flow(profile: "papaya-login", configText: config), .relay)
+        XCTAssertEqual(AwsLogin.flow(profile: "default", configText: config), .relay)
+        XCTAssertEqual(AwsLogin.flow(profile: "missing", configText: config), .relay)
     }
 
     func testParsesBothCliPrompts() {
@@ -54,6 +54,18 @@ final class AwsLoginTests: XCTestCase {
 
         XCTAssertTrue(AwsLogin.parseOutput("Updated profile papaya-login to use arn:aws:sts::1:assumed-role/x credentials.").succeeded)
         XCTAssertTrue(AwsLogin.parseOutput("Successfully logged into Start URL: https://x").succeeded)
+    }
+
+    func testRelayCallbackPortAndValidation() {
+        let authorize = "https://ap-southeast-1.signin.aws.amazon.com/v1/authorize?response_type=code&client_id=x&redirect_uri=http%3A%2F%2F127.0.0.1%3A60861%2Foauth%2Fcallback&code_challenge=y"
+        XCTAssertEqual(AwsLogin.callbackPort(inURL: authorize), 60861)
+        XCTAssertNil(AwsLogin.callbackPort(inURL: "https://x/authorize?redirect_uri=https%3A%2F%2Fsignin.aws%2Fconfirm"), "the --remote flow has no localhost callback")
+        XCTAssertTrue(AwsLogin.isValidCallback("http://127.0.0.1:60861/oauth/callback?code=abc&state=s", port: 60861))
+        XCTAssertFalse(AwsLogin.isValidCallback("http://127.0.0.1:60862/oauth/callback?code=abc", port: 60861), "wrong port")
+        XCTAssertFalse(AwsLogin.isValidCallback("http://evil.example/oauth/callback?code=abc", port: 60861))
+        XCTAssertFalse(AwsLogin.isValidCallback("http://127.0.0.1:60861/other?code=abc", port: 60861))
+        XCTAssertFalse(AwsLogin.isValidCallback("http://127.0.0.1:60861/oauth/callback?error=denied", port: 60861))
+        XCTAssertEqual(AwsLogin.arguments(profile: "p", flow: .relay), ["login", "--profile", "p"])
     }
 
     func testCodesAreShortAndPlain() {
@@ -88,6 +100,12 @@ final class AwsLoginProgressTests: XCTestCase {
         let fine = #"{"type":"user","timestamp":"2026-09-03T08:01:00.000Z","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"t2","content":[{"type":"text","text":"ok"}]}]}}"#
         XCTAssertEqual(SessionProgress.parse(lines: [failed, fine]).awsLoginProfile, "papaya-login")
         XCTAssertNil(SessionProgress.parse(lines: [fine]).awsLoginProfile)
+        // The CLI's own error names no profile — the failed command does.
+        let use = #"{"type":"assistant","timestamp":"2026-09-03T08:00:00.000Z","message":{"role":"assistant","content":[{"type":"tool_use","id":"t9","name":"Bash","input":{"command":"AWS_PROFILE=papaya-dev aws sts get-caller-identity"}}]}}"#
+        let raw = #"{"type":"user","timestamp":"2026-09-03T08:00:01.000Z","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"t9","content":"aws: [ERROR]: Your session has expired. Please reauthenticate using 'aws login'."}]}}"#
+        XCTAssertEqual(SessionProgress.parse(lines: [use, raw]).awsLoginProfile, "papaya-dev")
+        XCTAssertEqual(AwsLogin.profile(inCommand: "aws s3 ls --profile=banyan"), "banyan")
+        XCTAssertNil(AwsLogin.profile(inCommand: "aws s3 ls"))
         // Scrolls out of the scan window once the session moves on.
         let later = Array(repeating: fine, count: SessionProgress.awsLoginScanEntries)
         XCTAssertNil(SessionProgress.parse(lines: [failed] + later).awsLoginProfile)

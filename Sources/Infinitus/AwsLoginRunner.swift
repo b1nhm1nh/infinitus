@@ -53,6 +53,9 @@ actor AwsLoginRunner {
         var env = ProcessInfo.processInfo.environment
         env["AWS_PAGER"] = ""
         env["NO_COLOR"] = "1"
+        // Relay: the CLI must not open THIS Mac's browser — the phone's
+        // web view is the browser. Python's webbrowser honors BROWSER.
+        if flow == .relay { env["BROWSER"] = "/usr/bin/true" }
         process.environment = env
         let stdin = Pipe(), out = Pipe()
         process.standardInput = stdin
@@ -102,6 +105,29 @@ actor AwsLoginRunner {
         return AwsLogin.Reply(ok: true, state: run.state)
     }
 
+    /// Replays the redirect the phone intercepted against the CLI's own
+    /// localhost listener; the CLI then finishes the exchange itself.
+    func relay(profile: String, url: String) async -> AwsLogin.Reply {
+        guard var run = runs[profile] else {
+            return AwsLogin.Reply(ok: false, state: finished[profile], error: "no login in flight for \(profile)")
+        }
+        guard run.state.flow == .relay || run.state.flow == .local, let port = run.state.callbackPort else {
+            return AwsLogin.Reply(ok: false, state: run.state, error: "this flow takes no callback")
+        }
+        guard AwsLogin.isValidCallback(url, port: port), let target = URL(string: url) else {
+            return AwsLogin.Reply(ok: false, state: run.state, error: "not the CLI's callback")
+        }
+        do {
+            _ = try await URLSession.shared.data(from: target)
+        } catch {
+            return AwsLogin.Reply(ok: false, state: run.state, error: "callback not accepted: \(error.localizedDescription)")
+        }
+        run.state.message = "callback relayed"
+        runs[profile] = run
+        publish()
+        return AwsLogin.Reply(ok: true, state: run.state)
+    }
+
     private func consume(profile: String, chunk: String) {
         guard var run = runs[profile] else { return }
         run.output += chunk
@@ -110,6 +136,9 @@ actor AwsLoginRunner {
         if let url = prompt.url, run.state.url == nil {
             run.state.url = url
             run.state.phase = .waitingForBrowser
+            if run.state.flow == .relay || run.state.flow == .local {
+                run.state.callbackPort = AwsLogin.callbackPort(inURL: url)
+            }
         }
         if let code = prompt.userCode { run.state.userCode = code }
         if prompt.wantsCode, run.state.message != "code submitted" { run.state.phase = .waitingForCode }
