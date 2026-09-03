@@ -92,7 +92,7 @@ struct BurnOverlay: View {
 
     /// One shared white disc for every spark (CAEmitterCell wants a
     /// CGImage; the cell tints it). 16px, scaled down to ~2pt.
-    private static let sparkDot: CGImage? = {
+    static let sparkDot: CGImage? = {
         let px = 16
         guard let ctx = CGContext(data: nil, width: px, height: px, bitsPerComponent: 8,
                                   bytesPerRow: px * 4, space: CGColorSpaceCreateDeviceRGB(),
