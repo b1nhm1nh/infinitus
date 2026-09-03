@@ -233,12 +233,9 @@ struct SessionFeedScreen: View {
                     .textFieldStyle(.roundedBorder)
                     .focused($composerFocused)
                     .disabled(sendingMessage)
-                if composerFocused {
-                    Button { composerFocused = false } label: {
-                        Image(systemName: "keyboard.chevron.compact.down").font(.title3)
-                    }
-                    .accessibilityLabel("Hide keyboard")
-                }
+                // No hide-keyboard button (user 2026-09-03 from the phone:
+                // "too much") — a drag on the feed or a tap outside the
+                // composer dismisses it.
                 Button(action: sendMessage) {
                     if sendingMessage {
                         ProgressView()
