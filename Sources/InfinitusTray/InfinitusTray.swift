@@ -75,6 +75,14 @@ struct PanelRecovery: Encodable {
     let waiting: Int
 }
 
+/// A phone on the mirror (#9 parity with the Mac's device list).
+struct PanelDevice: Encodable {
+    let name: String
+    let route: String
+    let secondsAgo: Int
+    let active: Bool
+}
+
 struct PanelPayload: Encodable {
     let schemaVersion: Int
     let themeId: String
@@ -91,6 +99,8 @@ struct PanelPayload: Encodable {
     let serviceStatus: PanelServiceStatus?
     let sessionsChip: PanelSessionsChip?
     let engine: PanelEngine?
+    /// Phones heard from by `serve`, newest first; additive field.
+    let devices: [PanelDevice]
     let error: String?
 }
 
@@ -351,7 +361,7 @@ struct InfinitusTray {
                 title: "\(TitleFormatter.icon) \(message)", sessionsLine: nil,
                 activeNumber: nil, accounts: [], themes: themes,
                 nextRecovery: nil, sessions: [],
-                serviceStatus: nil, sessionsChip: nil, engine: nil, error: message))
+                serviceStatus: nil, sessionsChip: nil, engine: nil, devices: [], error: message))
         }
         guard let bin = CswapLocator.locate() else {
             emitError("cswap not found")
@@ -477,7 +487,7 @@ struct InfinitusTray {
                 themes: themes, nextRecovery: panelRecovery, sessions: sessions,
                 serviceStatus: footer.panelStatus,
                 sessionsChip: list.liveSessions.map { PanelSessionsChip(busy: $0.busy, total: $0.total) },
-                engine: footer.panelEngine, error: nil))
+                engine: footer.panelEngine, devices: TrayClients.panelDevices(now: now), error: nil))
         } catch {
             emitError("engine error: \(error)")
         }
@@ -632,6 +642,7 @@ struct InfinitusTray {
             guard MirrorTransport.isAuthorized(request, token: resolved) else {
                 return MirrorTransport.unauthorizedResponse()
             }
+            TrayClients.note(request)
             if request.method == "GET", request.path == MirrorTransport.snapshotPath {
                 guard let data = try? Data(contentsOf: TrayMirror.url) else {
                     return MirrorTransport.unavailableResponse()

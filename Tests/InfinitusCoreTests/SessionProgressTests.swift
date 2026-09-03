@@ -328,6 +328,11 @@ final class SessionProgressTests: XCTestCase {
         XCTAssertEqual(row.activeForm, "Doing b")
         XCTAssertEqual(row.phase, "building")
         XCTAssertFalse(row.retrying)
+        XCTAssertNil(row.awsLoginProfile)
+        // The expired-AWS need rides the row (the tray's "needs AWS
+        // login" line, the phone's key badge).
+        let expired = SessionProgress(awsLoginProfile: "papaya", awsLoginFailedAt: Date())
+        XCTAssertEqual(SessionPanelRow.make(record: record, progress: expired).awsLoginProfile, "papaya")
     }
 
     func testSessionPanelRowQuietMinutesThresholdAt120Seconds() {

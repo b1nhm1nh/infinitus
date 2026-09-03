@@ -663,6 +663,11 @@ Panel {
                     anchors.verticalCenter: parent.verticalCenter
                     elide: Text.ElideRight
                     text: {
+                      // An expired AWS session under this session (the
+                      // Mac's key badge): the login itself runs where
+                      // the session is — the line just says so.
+                      if (sessionRow.modelData.awsLoginProfile)
+                        return "needs AWS login · " + sessionRow.modelData.awsLoginProfile
                       var base = sessionRow.modelData.retrying ? "retrying"
                           : sessionRow.modelData.nowDoing ? sessionRow.modelData.nowDoing
                           : sessionRow.modelData.todosTotal
@@ -677,7 +682,8 @@ Panel {
                           ? sessionRow.modelData.phase : ""
                       return base && phase ? base + " · " + phase : (base || phase)
                     }
-                    color: sessionRow.modelData.retrying ? Color.urgent : root.mutedForeground
+                    color: (sessionRow.modelData.retrying || sessionRow.modelData.awsLoginProfile)
+                      ? Color.urgent : root.mutedForeground
                     font.family: root.contentFontFamily
                     font.pixelSize: Style.font.caption
                   }
@@ -780,6 +786,43 @@ Panel {
                   }
                   color: (root.fleet && root.fleet.sessionsChip && root.fleet.sessionsChip.busy > 0)
                     ? "orange" : root.mutedForeground
+                  font.family: root.contentFontFamily
+                  font.pixelSize: Style.font.caption
+                }
+              }
+
+              // Phones on the mirror (#9 parity with the Mac's device
+              // list): the newest active one by name and route, or how
+              // long since the last was heard from. Hidden until a
+              // phone has ever connected to `infinitus-tray serve`.
+              Row {
+                visible: !!(root.fleet && root.fleet.devices && root.fleet.devices.length > 0)
+                anchors.verticalCenter: parent.verticalCenter
+                spacing: Style.space(4)
+
+                Rectangle {
+                  width: Style.space(7)
+                  height: Style.space(7)
+                  radius: width / 2
+                  anchors.verticalCenter: parent.verticalCenter
+                  color: (root.fleet && root.fleet.devices && root.fleet.devices.length > 0
+                          && root.fleet.devices[0].active) ? "green" : root.mutedForeground
+                }
+
+                Text {
+                  textFormat: Text.PlainText
+                  anchors.verticalCenter: parent.verticalCenter
+                  text: {
+                    var list = root.fleet ? root.fleet.devices : null
+                    if (!list || list.length === 0) return ""
+                    var d = list[0]
+                    var ago = d.secondsAgo < 60 ? d.secondsAgo + " s ago"
+                            : d.secondsAgo < 3600 ? Math.floor(d.secondsAgo / 60) + " min ago"
+                            : Math.floor(d.secondsAgo / 3600) + " h ago"
+                    var more = list.length > 1 ? " +" + (list.length - 1) : ""
+                    return d.name + " · " + d.route + " · " + ago + more
+                  }
+                  color: root.mutedForeground
                   font.family: root.contentFontFamily
                   font.pixelSize: Style.font.caption
                 }
