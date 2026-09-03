@@ -30,6 +30,7 @@ struct SessionFeedScreen: View {
     @State private var previewing: PendingAttachment?
     @State private var attachmentError: String?
     @State private var awsLoginItem: AwsLogin.Item?
+    @State private var lastRowVisible = true
 
     /// A picked file, already processed into the exact bytes/mime that
     /// will ride in `SessionInput.Attachment`.
@@ -95,6 +96,10 @@ struct SessionFeedScreen: View {
                     .id(index)
                     .listRowSeparator(.hidden)
                     .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
+                    // The last row's visibility drives the scroll-to-
+                    // bottom button (user 2026-09-03 from the phone).
+                    .onAppear { if index == (feed?.items.count ?? 0) - 1 { lastRowVisible = true } }
+                    .onDisappear { if index == (feed?.items.count ?? 0) - 1 { lastRowVisible = false } }
                 }
                 if let errorText {
                     Text(errorText)
@@ -111,6 +116,25 @@ struct SessionFeedScreen: View {
                 guard let last = feed?.items.indices.last else { return }
                 withAnimation { proxy.scrollTo(last, anchor: .bottom) }
             }
+            .overlay(alignment: .bottomTrailing) {
+                if !lastRowVisible, (feed?.items.count ?? 0) > 1 {
+                    Button {
+                        guard let last = feed?.items.indices.last else { return }
+                        withAnimation { proxy.scrollTo(last, anchor: .bottom) }
+                    } label: {
+                        Image(systemName: "arrow.down")
+                            .font(.body.weight(.semibold))
+                            .padding(10)
+                            .background(.regularMaterial, in: Circle())
+                            .overlay(Circle().strokeBorder(.quaternary))
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.trailing, 14).padding(.bottom, 10)
+                    .accessibilityLabel("Scroll to newest")
+                    .transition(.opacity.combined(with: .scale(scale: 0.8)))
+                }
+            }
+            .animation(.easeInOut(duration: 0.2), value: lastRowVisible)
         }
         .sheet(item: $awsLoginItem) { AwsLoginScreen(item: $0) }
         // Pinned above the transcript, not in it: the feed opens scrolled
