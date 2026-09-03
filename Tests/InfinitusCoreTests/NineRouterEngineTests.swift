@@ -95,7 +95,7 @@ final class NineRouterEngineTests: XCTestCase {
         // credits; the plan name rides the subscription tip.
         let kiro = fleets[2]
         XCTAssertEqual(kiro.accounts.map(\.email), ["Kiro Power"])
-        XCTAssertEqual(kiro.accounts[0].plan, "KIRO POWER")
+        XCTAssertEqual(kiro.accounts[0].plan, "Kiro Power")
         XCTAssertEqual(kiro.accounts[0].usage?.spend?.used, 2500)
         XCTAssertEqual(kiro.accounts[0].usage?.spend?.limit, 10000)
         XCTAssertEqual(kiro.accounts[0].usage?.spend?.pct, 25)

@@ -211,6 +211,12 @@ public enum NineRouterMapping {
         return (fleets, ordinals)
     }
 
+    /// "KIRO POWER" → "Kiro Power"; already-cased names ("Claude Code")
+    /// pass through.
+    static func planName(_ raw: String) -> String {
+        raw == raw.uppercased() ? raw.capitalized : raw
+    }
+
     static func fleet(engineID: String, provider: Provider, connections sorted: [NineRouterConnection],
                       usage: [String: Usage], plans: [String: String], statuses: [String: String],
                       now: Date) -> (fleet: EngineFleet, ordinals: [String]) {
@@ -229,7 +235,7 @@ public enum NineRouterMapping {
                 number: index + 1, email: email,
                 active: c.id == activeID,
                 usageStatus: statuses[c.id] ?? usageStatus(for: c, now: now),
-                usage: fileUsage, alias: alias, plan: plans[c.id],
+                usage: fileUsage, alias: alias, plan: plans[c.id].map(planName),
                 disabled: c.isActive == false ? true : nil,
                 usageFetchedAt: fileUsage != nil ? ProxyMapping.isoString(now) : nil))
         }

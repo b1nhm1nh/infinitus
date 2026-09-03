@@ -502,6 +502,12 @@ struct AccountCells<M: FleetModel, U: UsageSource> {
                                    Int(spend.pct), spend.clock.map { " · resets \($0)" } ?? ""))
                 .fixedSize()
                 .glowOnChange(of: spend.pct, color: ThemeColor.flash(theme))
+            } else if w == nil, session, creditOnly, banded, !model.compactRows {
+                // Credit-only row: no MP slot to point at — keep the
+                // column filled for the band, without an orphaned dash.
+                Text(verbatim: "")
+                    .frame(maxWidth: .infinity)
+                    .gridCellUnsizedAxes(.horizontal)
             } else if w == nil, banded, !model.compactRows {
                 Text("—").foregroundStyle(.tertiary)
             } else if banded, !model.compactRows {
