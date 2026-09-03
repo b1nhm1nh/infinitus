@@ -70,7 +70,7 @@ public enum WindowPlanner {
         var shortName: String { email.split(separator: "@").first.map(String.init) ?? email }
     }
 
-    public enum Action: Sendable, Equatable {
+    public enum Action: Codable, Sendable, Equatable {
         /// Start the account's 5h clock without switching (`cswap run`).
         case ignite(Int)
         case switchTo(Int)
@@ -96,7 +96,7 @@ public enum WindowPlanner {
         }
     }
 
-    public struct Step: Sendable, Equatable, Identifiable {
+    public struct Step: Codable, Sendable, Equatable, Identifiable {
         public let at: Double
         public let action: Action
         public let why: String
@@ -108,7 +108,7 @@ public enum WindowPlanner {
         }
     }
 
-    public struct Plan: Sendable, Equatable {
+    public struct Plan: Codable, Sendable, Equatable {
         /// When the active account's 5h window is projected to bind.
         public let bindAt: Double
         public let steps: [Step]
@@ -212,14 +212,21 @@ public enum WindowPlanner {
                      why: "\(cand.shortName)'s ignited window resets mid-sprint — second session on the same account"),
             ])
         }
-        var steps = [Step(at: bindAt, action: .switchTo(cand.number),
-                          why: "\(active.shortName) binds; \(cand.shortName) has the most weekly headroom "
-                             + "(\(Int(cand.weeklyPct.rounded()))%) and a window already ticking")]
-        if let candReset = cand.fiveHourResetsAt, candReset > now {
-            steps.append(Step(at: candReset, action: .reset(cand.number),
-                              why: "\(cand.shortName)'s window resets"))
+        // A window that resets before the bind is fresh again by the time
+        // we land on it — nothing left to schedule after the switch.
+        let headroom = "\(cand.shortName) has the most weekly headroom (\(Int(cand.weeklyPct.rounded()))%)"
+        guard let candReset = cand.fiveHourResetsAt, candReset > bindAt else {
+            return Plan(bindAt: bindAt, steps: [
+                Step(at: bindAt, action: .switchTo(cand.number),
+                     why: "\(active.shortName) binds; \(headroom) and a fresh 5h window by then"),
+            ])
         }
-        return Plan(bindAt: bindAt, steps: steps)
+        return Plan(bindAt: bindAt, steps: [
+            Step(at: bindAt, action: .switchTo(cand.number),
+                 why: "\(active.shortName) binds; \(headroom) and a window already ticking"),
+            Step(at: candReset, action: .reset(cand.number),
+                 why: "\(cand.shortName)'s window resets \(minutes(candReset - bindAt)) min into the switch"),
+        ])
     }
 
     // MARK: replay
@@ -300,17 +307,7 @@ extension WindowTelemetry {
     public static func burnRate(_ samples: [UsageSample], email: String, now: Double,
                                 lookback: Double = 3600,
                                 resetSlack: Double = resetSlack) -> Double? {
-        let recent = samples
-            .filter { $0.email == email && $0.t >= now - lookback && $0.t <= now }
-            .sorted { $0.t < $1.t }
-        guard let last = recent.last, let lw = last.fiveHour, let lr = lw.resetsAt,
-              let first = recent.first(where: { s in
-                  s.fiveHour?.resetsAt.map { abs($0 - lr) <= resetSlack } ?? false
-              }),
-              let fw = first.fiveHour,
-              last.t - first.t >= 600 else { return nil }
-        let delta = lw.pct - fw.pct
-        guard delta >= 0 else { return nil }
-        return delta / (last.t - first.t) * 3600
+        burnRate(samples, email: email, now: now, lookback: lookback,
+                 resetSlack: resetSlack, window: { $0.fiveHour })
     }
 }

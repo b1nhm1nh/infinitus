@@ -489,3 +489,13 @@ file keeps the shipped log and the deferred-by-design notes.
   the 192/160 MB single "allocations" are mmapped font/CoreUI assets.
   Nothing app-owned left that a change would move much.
 
+
+## Prediction model follow-ups (2026-09-03)
+- Anchor projections to the newest sample's `t`, not `now`: `hitsAt`,
+  `allDeadAt` and the planner's `bindAt` all extrapolate a cached pct
+  from the wall clock, so between engine polls the projected times
+  creep later and snap back on a fresh sample. Fix forecast AND planner
+  together (they must keep agreeing); until then the "only republish
+  when moved" guard in `updateBattlePlan` is effectively always true.
+- First Run-rate scan reads each transcript whole (`readToEnd`) — a
+  one-time RSS bump right after opening Utilization, not a leak.

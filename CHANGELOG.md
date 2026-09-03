@@ -15,6 +15,27 @@ GitHub release body.
   only sets its knobs. Settings → 9Router to turn it on;
   `infinitusctl engine 9router on` and `9router-password` from a script.
 
+### Prediction model
+- **"At this pace" line in the popup.** Below the account rows: when
+  each window of the active account hits its limit at the measured burn
+  (MP / HP / per-model, named by the row theme) and when the whole
+  fleet's weekly headroom would be gone — clock times, no ticking
+  countdown. 5h pace from the last hour, weekly pace from the last 24h;
+  the tooltip carries the paces. Same numbers as the battle plan's
+  bind, so the two lines never disagree. `infinitusctl forecast` and
+  the mirror snapshot's `forecast`/`plan` fields carry it to the phone.
+- **Run rate in Utilization.** Tokens, API-equivalent dollars and turns
+  per minute / hour / day / week, read off Claude Code's own transcripts
+  (a turn counted once, priced from the static table; unknown models
+  named). Incremental: only bytes appended since the last scan are
+  parsed, so after the first pass a refresh is instant. Plus a
+  Projection section with the same forecast built from the history.
+- **Plan line in plain words.** "Plan: when main hits its MP limit
+  ~4:00 PM switch to loc → loc's MP resets 6:50 PM" instead of a bare
+  "switch to loc 4:00 PM → loc resets 2:50 PM" — and a candidate whose
+  window resets before the switch no longer gets a reset step dated
+  before it.
+
 ### Battle plan (#7)
 - **Ignite from any engine that can.** Starting a spare account's 5h
   clock is now an engine capability: cswap does it with `cswap run`; the

@@ -35,6 +35,12 @@ public struct MirrorSnapshot: Codable, Sendable {
     /// Output tokens per minute across every live session, with the
     /// host's recent peak for the gauge scale.
     public let tokenRate: TokenRate?
+    /// Run-rate projection for the primary fleet (2026-09-03) and the #7
+    /// battle plan — both additive optionals; older phones ignore them.
+    /// The plan is the view-side `Plan` (not the ctl `Payload`) so the
+    /// phone's store hands it straight to the shared BattlePlanLine.
+    public let forecast: UsageForecast?
+    public let plan: WindowPlanner.Plan?
 
     public init(capturedAt: Date, machineName: String, listJSON: Data,
                 sessions: [SessionPanelRow], prefs: FleetPrefs? = nil,
@@ -43,7 +49,9 @@ public struct MirrorSnapshot: Codable, Sendable {
                 engine: EngineBadge? = nil,
                 progressByPid: [Int: SessionProgress]? = nil,
                 fleets: [EngineFleet]? = nil,
-                tokenRate: TokenRate? = nil) {
+                tokenRate: TokenRate? = nil,
+                forecast: UsageForecast? = nil,
+                plan: WindowPlanner.Plan? = nil) {
         self.capturedAt = capturedAt
         self.machineName = machineName
         self.listJSON = listJSON
@@ -54,7 +62,12 @@ public struct MirrorSnapshot: Codable, Sendable {
         self.engine = engine
         self.progressByPid = progressByPid
         self.fleets = fleets
+<<<<<<< HEAD
         self.tokenRate = tokenRate
+=======
+        self.forecast = forecast
+        self.plan = plan
+>>>>>>> d244806
     }
 }
 

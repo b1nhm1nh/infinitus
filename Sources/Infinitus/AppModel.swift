@@ -115,9 +115,14 @@ final class AppModel: ObservableObject {
     /// by itself.
     @Published var battlePlan: WindowPlanner.Plan?
     @Published var igniting: Int?
-    /// Last hour of usage samples, the planner's burn-rate input. Seeded
-    /// from this machine's history file at launch so the first plan
-    /// doesn't wait ten minutes for fresh polls.
+    /// Run-rate projection: when the active account's windows hit their
+    /// limits and when the fleet is out, at the measured pace (nil until
+    /// there is an active account). The planner reads the same rates.
+    @Published var forecast: UsageForecast?
+    /// Last 24h of usage samples, the burn-rate input (5h pace over the
+    /// last hour, weekly pace over the day). Seeded from this machine's
+    /// history file at launch so the first plan doesn't wait ten minutes
+    /// for fresh polls.
     private var recentSamples: [UsageSample] = []
 
     let cswap: CswapCLI?
@@ -663,7 +668,7 @@ final class AppModel: ObservableObject {
         let fresh = UsageHistory.samples(accounts: list.accounts)
         var seen = Set(recentSamples.map(\.dedupeKey))
         for s in fresh where seen.insert(s.dedupeKey).inserted { recentSamples.append(s) }
-        recentSamples.removeAll { $0.t < now - 3600 }
+        recentSamples.removeAll { $0.t < now - UsageForecast.weeklyLookback }
         let states = list.accounts.map { a in
             WindowPlanner.AccountState(
                 number: a.number, email: a.email, active: a.active,
@@ -674,12 +679,32 @@ final class AppModel: ObservableObject {
                 weeklyPct: ([a.usage?.sevenDay?.pct] + (a.usage?.scoped ?? []).map { $0.pct })
                     .compactMap { $0 }.max() ?? 0)
         }
-        let rate = list.accounts.first { $0.active }.flatMap {
-            WindowTelemetry.burnRate(recentSamples, email: $0.email, now: now)
-        }
-        let plan = WindowPlanner.plan(accounts: states, burnPctPerHour: rate,
+        let rates = list.accounts.first { $0.active }.map {
+            WindowTelemetry.burnRates(recentSamples, email: $0.email, now: now)
+        } ?? [:]
+        let plan = WindowPlanner.plan(accounts: states, burnPctPerHour: rates["5h"],
                                       busySessions: list.liveSessions?.busy ?? 0, now: now)
         if plan != battlePlan { battlePlan = plan }
+        let inputs = list.accounts.map { a in
+            UsageForecast.AccountInput(
+                number: a.number, email: a.email, active: a.active,
+                disabled: a.disabled ?? false,
+                fiveHour: window(a.usage?.fiveHour), sevenDay: window(a.usage?.sevenDay),
+                scoped: Dictionary((a.usage?.scoped ?? []).compactMap { sc in
+                    window(sc).map { (sc.name ?? "?", $0) }
+                }, uniquingKeysWith: { a, _ in a }))
+        }
+        let next = UsageForecast.build(accounts: inputs, rates: rates, now: now)
+        // Skips the republish only while nothing is projected (the hits
+        // move with `now` between polls — see docs/TODO.md, anchoring).
+        if next.active != forecast?.active || next.allDeadAt != forecast?.allDeadAt {
+            forecast = next
+        }
+    }
+
+    private func window(_ w: UsageWindow?) -> UsageSample.Window? {
+        guard let w else { return nil }
+        return .init(pct: w.pct, resetsAt: w.resetsAt.flatMap(UsageHistory.parseISO)?.timeIntervalSince1970)
     }
 
     /// Seed the burn-rate buffer from this machine's own history file.
@@ -687,7 +712,7 @@ final class AppModel: ObservableObject {
         guard !isPlayground, !mockMode else { return }
         let url = UsageHistoryRecorder.localURL
         Task.detached(priority: .utility) { [weak self] in
-            let cutoff = Date().timeIntervalSince1970 - 3600
+            let cutoff = Date().timeIntervalSince1970 - UsageForecast.weeklyLookback
             let recent = UsageHistory.load(url: url).filter { $0.t >= cutoff }
             await MainActor.run { [weak self] in
                 guard let self, self.recentSamples.isEmpty else { return }
@@ -1288,10 +1313,13 @@ final class AppModel: ObservableObject {
                 indicator: ServiceStatusModel.shared.indicator)
             let engine = engineBadge ?? .stopped
             let allFleets = fleets.compactMap(\.lastFleet)
+            let forecast = forecast
+            let plan = battlePlan
             Task.detached(priority: .utility) { [mirrorExporter] in
                 await mirrorExporter.record(listJSON: raw, prefs: prefs,
                                             serviceStatus: serviceStatus,
-                                            engine: engine, fleets: allFleets)
+                                            engine: engine, fleets: allFleets,
+                                            forecast: forecast, plan: plan)
             }
         }
         // All-limited: count the limit-stopped sessions waiting to be

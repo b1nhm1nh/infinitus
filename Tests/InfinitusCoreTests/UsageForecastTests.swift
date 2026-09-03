@@ -1,0 +1,84 @@
+import XCTest
+@testable import InfinitusCore
+
+final class UsageForecastTests: XCTestCase {
+    private typealias A = UsageForecast.AccountInput
+    private func win(_ pct: Double, resetsAt: Double? = nil) -> UsageSample.Window {
+        .init(pct: pct, resetsAt: resetsAt)
+    }
+    private let now: Double = 100_000
+
+    // Active: 5h 60% at 20%/h (hits in 2h, reset in 4h); 7d 50% at 1%/h
+    // (hits in 50h, reset in 30h → resets first); Fable 90% at 2%/h → 5h.
+    private var active: A {
+        A(number: 1, email: "main@x", active: true, disabled: false,
+          fiveHour: win(60, resetsAt: 100_000 + 4 * 3600),
+          sevenDay: win(50, resetsAt: 100_000 + 30 * 3600),
+          scoped: ["Fable": win(90, resetsAt: 100_000 + 30 * 3600)])
+    }
+    private let rates: [String: Double] = ["5h": 20, "7d": 1, "Fable": 2]
+
+    func testActiveWindowsProjectHitsOrResetFirst() {
+        let f = UsageForecast.build(accounts: [active], rates: rates, now: now)
+        let byName = Dictionary(uniqueKeysWithValues: f.active!.windows.map { ($0.name, $0) })
+        XCTAssertEqual(byName["5h"]?.hitsAt, now + 2 * 3600)
+        XCTAssertNil(byName["7d"]?.hitsAt, "reset lands before the projected hit")
+        XCTAssertEqual(byName["7d"]?.ratePctPerHour, 1)
+        XCTAssertEqual(byName["Fable"]?.hitsAt, now + 5 * 3600)
+        XCTAssertEqual(f.active?.bindsAt, now + 2 * 3600)
+        XCTAssertEqual(f.active?.windows.map(\.name), ["5h", "7d", "Fable"])
+    }
+
+    func testUnknownRateProjectsNothingAndFullWindowHitsNow() {
+        let full = A(number: 1, email: "main@x", active: true, disabled: false,
+                     fiveHour: win(100, resetsAt: now + 600), sevenDay: win(10), scoped: [:])
+        let f = UsageForecast.build(accounts: [full], rates: [:], now: now)
+        XCTAssertEqual(f.active?.windows[0].hitsAt, now)
+        XCTAssertNil(f.active?.windows[1].hitsAt)
+        XCTAssertNil(f.active?.windows[1].ratePctPerHour)
+        XCTAssertNil(f.allDeadAt, "no weekly rate → no fleet projection")
+    }
+
+    func testAllDeadDrainsWeeklyHeadroomInHeadroomOrder() {
+        // Active binds on Fable in 5h. Spare A: 7d 80% (20h), Fable 40%
+        // (30h) → 20h. Spare B: 7d 100% → 0h. Disabled ignored.
+        let spareA = A(number: 2, email: "a@x", active: false, disabled: false,
+                       fiveHour: nil, sevenDay: win(80), scoped: ["Fable": win(40)])
+        let spareB = A(number: 3, email: "b@x", active: false, disabled: false,
+                       fiveHour: nil, sevenDay: win(100), scoped: [:])
+        let off = A(number: 4, email: "off@x", active: false, disabled: true,
+                    fiveHour: nil, sevenDay: win(0), scoped: [:])
+        let f = UsageForecast.build(accounts: [active, spareA, spareB, off], rates: rates, now: now)
+        XCTAssertEqual(f.allDeadAt, now + (5 + 20 + 0) * 3600)
+    }
+
+    func testNoActiveAccountMeansNoProjection() {
+        let f = UsageForecast.build(accounts: [], rates: rates, now: now)
+        XCTAssertNil(f.active)
+        XCTAssertNil(f.allDeadAt)
+    }
+
+    func testBurnRatesPerWindowUseTheirOwnLookback() {
+        func s(_ t: Double, fh: Double, sd: Double, fable: Double) -> UsageSample {
+            UsageSample(t: t, email: "main@x", number: 1,
+                        fiveHour: .init(pct: fh, resetsAt: 200_000),
+                        sevenDay: .init(pct: sd, resetsAt: 300_000),
+                        scoped: ["Fable": .init(pct: fable, resetsAt: 300_000)], active: true)
+        }
+        // 20h ago → now: 7d +10 (0.5%/h), Fable +20 (1%/h); last hour: 5h +15 (15%/h).
+        let samples = [s(now - 20 * 3600, fh: 0, sd: 30, fable: 10),
+                       s(now - 3600, fh: 40, sd: 39.5, fable: 29),
+                       s(now, fh: 55, sd: 40, fable: 30)]
+        let rates = WindowTelemetry.burnRates(samples, email: "main@x", now: now)
+        XCTAssertEqual(rates["5h"]!, 15, accuracy: 1e-9)
+        XCTAssertEqual(rates["7d"]!, 0.5, accuracy: 1e-9)
+        XCTAssertEqual(rates["Fable"]!, 1, accuracy: 1e-9)
+        XCTAssertNil(WindowTelemetry.burnRates(samples, email: "other@x", now: now)["5h"])
+    }
+
+    func testForecastRoundTripsAsJSON() throws {
+        let f = UsageForecast.build(accounts: [active], rates: rates, now: now)
+        let data = try JSONEncoder().encode(f)
+        XCTAssertEqual(try JSONDecoder().decode(UsageForecast.self, from: data), f)
+    }
+}

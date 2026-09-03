@@ -1,5 +1,6 @@
 import SwiftUI
 import Charts
+import InfinitusUI
 import InfinitusCore
 
 /// Utilization-over-time dashboard (todo 2026-09-01): charts the recorded
@@ -17,6 +18,14 @@ final class UtilizationModel: ObservableObject {
     /// running — a dry run for eyeballing, nothing executes.
     @Published var replay: WindowPlanner.ReplayReport?
     @Published var dryRunPlan: WindowPlanner.Plan?
+    /// The projection the live popup line shows, rebuilt here from the
+    /// history the same way the dry-run plan is (latest sample per
+    /// account, the active flag from the samples).
+    @Published var dryRunForecast: UsageForecast?
+    /// Token/$ run rate from the transcripts (2026-09-03); its own task
+    /// because the first pass over a week of transcripts takes a while.
+    @Published var rates: TokenRates?
+    @Published var ratesScanning = false
     @Published var loading = false
     @Published var rangeDays = 7 { didSet { if rangeDays != oldValue { refresh() } } }
     /// "7d", "5h", or a scoped model name.
@@ -63,6 +72,7 @@ final class UtilizationModel: ObservableObject {
                 merged.filter { $0.t >= cutoff }, bucket: bucket)
             let replay = WindowPlanner.replay(merged, from: cutoff, to: now)
             let plan = Self.dryRunPlan(merged, now: now)
+            let forecast = Self.dryRunForecast(merged, now: now)
             await MainActor.run { [weak self] in
                 guard let self else { return }
                 self.samples = thin
@@ -70,7 +80,27 @@ final class UtilizationModel: ObservableObject {
                 self.fiveHourWindows = windows
                 self.replay = replay
                 self.dryRunPlan = plan
+                self.dryRunForecast = forecast
                 self.loading = false
+            }
+        }
+        refreshRates()
+    }
+
+    nonisolated static let ratesCacheURL: URL = {
+        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("Infinitus/token-rates-cache.json")
+    }()
+
+    func refreshRates() {
+        guard !ratesScanning else { return }
+        ratesScanning = true
+        Task.detached(priority: .utility) {
+            let rates = TokenRateScanner.scan(projectsDir: TokenRateScanner.defaultProjectsDir(),
+                                              cacheURL: Self.ratesCacheURL)
+            await MainActor.run { [weak self] in
+                self?.rates = rates
+                self?.ratesScanning = false
             }
         }
     }
@@ -100,6 +130,24 @@ extension UtilizationModel {
         return WindowPlanner.plan(accounts: states, burnPctPerHour: rate,
                                   busySessions: 1, now: now)
     }
+
+    /// The forecast over the same latest-sample fleet; disabled accounts
+    /// aren't in the history, so the fleet drain counts every account seen.
+    nonisolated static func dryRunForecast(_ samples: [UsageSample], now: Double) -> UsageForecast? {
+        var latest: [String: UsageSample] = [:]
+        for s in samples where s.t >= now - 3600 {
+            if let cur = latest[s.email], cur.t >= s.t { continue }
+            latest[s.email] = s
+        }
+        guard let active = latest.values.first(where: { $0.active == true }) else { return nil }
+        let inputs = latest.values.map { s in
+            UsageForecast.AccountInput(number: s.number, email: s.email, active: s.active == true,
+                                       disabled: false, fiveHour: s.fiveHour, sevenDay: s.sevenDay,
+                                       scoped: s.scoped ?? [:])
+        }
+        let rates = WindowTelemetry.burnRates(samples, email: active.email, now: now)
+        return UsageForecast.build(accounts: inputs, rates: rates, now: now)
+    }
 }
 
 struct UtilizationPane: View {
@@ -121,11 +169,13 @@ struct UtilizationPane: View {
                     Button("Refresh") { model.refresh() }
                 }
             }
+            runRateSection
             if model.samples.isEmpty && !model.loading {
                 Text("No history yet — samples accrue while Infinitus runs "
                      + "(one per engine usage poll).")
                     .foregroundStyle(.secondary)
             } else {
+                projectionSection
                 utilizationSection
                 fiveHourSection
                 battlePlanSection
@@ -134,6 +184,96 @@ struct UtilizationPane: View {
         }
         .formStyle(.grouped)
         .onAppear { model.loadIfNeeded() }
+    }
+
+    // MARK: run rate (tokens and $ per minute / hour / day / week)
+
+    @ViewBuilder private var runRateSection: some View {
+        Section {
+            if let r = model.rates {
+                Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 4) {
+                    GridRow {
+                        Text("").gridColumnAlignment(.leading)
+                        Text("Tokens").foregroundStyle(.secondary).gridColumnAlignment(.trailing)
+                        Text("API-equivalent $").foregroundStyle(.secondary).gridColumnAlignment(.trailing)
+                        Text("Turns").foregroundStyle(.secondary).gridColumnAlignment(.trailing)
+                    }
+                    .font(.caption)
+                    rateRow("per minute", r.lastHour, divide: 60)
+                    rateRow("per hour", r.lastHour, divide: 1)
+                    rateRow("per day", r.lastDay, divide: 1)
+                    rateRow("per week", r.lastWeek, divide: 1)
+                }
+                .monospacedDigit()
+                if !r.unpricedModels.isEmpty {
+                    Text("Unpriced (tokens counted, $ not): " + r.unpricedModels.joined(separator: ", "))
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+            } else if model.ratesScanning {
+                HStack { ProgressView().controlSize(.small); Text("Scanning transcripts…") }
+                    .foregroundStyle(.secondary)
+            } else {
+                Text("No transcript usage found.").foregroundStyle(.secondary)
+            }
+        } header: {
+            HStack {
+                Text("Run rate")
+                Spacer()
+                if model.ratesScanning, model.rates != nil { ProgressView().controlSize(.mini) }
+            }
+        } footer: {
+            Text("Read off Claude Code's own transcripts: per minute and per hour "
+                 + "from the last 60 minutes, per day from the last 24 hours, per week "
+                 + "from the last 7 days. One turn counted once; dollars are what the "
+                 + "same tokens would cost at API list prices — an estimate, not a bill.")
+                .font(.caption2).foregroundStyle(.secondary)
+        }
+    }
+
+    @ViewBuilder private func rateRow(_ label: String, _ t: TokenRates.Totals, divide: Double) -> some View {
+        GridRow {
+            Text(label)
+            Text(TokenFormat.compact(Int((Double(t.tokens) / divide).rounded())))
+            Text(String(format: "$%.2f", t.usd / divide))
+            Text(divide == 1 ? "\(t.messages)" : String(format: "%.1f", Double(t.messages) / divide))
+        }
+    }
+
+    // MARK: projection
+
+    @ViewBuilder private var projectionSection: some View {
+        if let f = model.dryRunForecast {
+            Section {
+                if let a = f.active {
+                    ForEach(a.windows, id: \.name) { w in
+                        HStack {
+                            Text(w.name).bold().frame(width: 60, alignment: .leading)
+                            Text("\(Int(w.pct.rounded()))%").monospacedDigit()
+                            Text(w.ratePctPerHour.map { String(format: "%.1f%%/h", $0) } ?? "pace unknown")
+                                .foregroundStyle(.secondary).monospacedDigit()
+                            Spacer()
+                            if let at = w.hitsAt {
+                                Text("out " + ForecastClock.label(at)).foregroundStyle(.orange)
+                            } else if w.ratePctPerHour != nil {
+                                Text("resets before it fills").foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                }
+                HStack {
+                    Text("All accounts out").bold()
+                    Spacer()
+                    Text(f.allDeadAt.map { ForecastClock.label($0) } ?? "no weekly pace measured yet")
+                        .foregroundStyle(f.allDeadAt == nil ? Color.secondary : Color.orange)
+                }
+            } header: {
+                Text("Projection — at this pace")
+            } footer: {
+                Text("Estimate. " + f.basis + ". Same numbers as the popup's hourglass line, "
+                     + "built from the latest sample per account.")
+                    .font(.caption2).foregroundStyle(.secondary)
+            }
+        }
     }
 
     // MARK: utilization over time

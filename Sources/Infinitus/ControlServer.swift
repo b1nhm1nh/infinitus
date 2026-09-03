@@ -179,6 +179,10 @@ final class ControlServer {
             return ControlReply(ok: true, result: .object([
                 "plan": try model.battlePlan.map { try .of(WindowPlanner.Payload($0)) } ?? .null]))
 
+        case "forecast":
+            return ControlReply(ok: true, result: .object([
+                "forecast": try model.forecast.map { try .of($0) } ?? .null]))
+
         case "refresh":
             await model.refreshSnapshot()
             return ControlReply(ok: true, result: try .of(fleetsPayload()))
