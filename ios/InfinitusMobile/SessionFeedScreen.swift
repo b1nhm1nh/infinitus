@@ -246,6 +246,10 @@ struct SessionFeedScreen: View {
                 attachmentError = "couldn't read that photo"
                 continue
             }
+            guard jpeg.count <= SessionInput.maxAttachmentBytes else {
+                attachmentError = "that photo is still \(jpeg.count / 1_048_576) MB after compression — the cap is \(SessionInput.maxAttachmentBytes / 1_048_576) MB"
+                continue
+            }
             let name = "photo-\(UUID().uuidString.prefix(8)).jpg"
             attachments.append(PendingAttachment(name: name, mime: "image/jpeg",
                                                  data: jpeg, thumbnail: UIImage(data: jpeg)))
@@ -261,7 +265,13 @@ struct SessionFeedScreen: View {
         let resized = UIGraphicsImageRenderer(size: targetSize).image { _ in
             image.draw(in: CGRect(origin: .zero, size: targetSize))
         }
-        return resized.jpegData(compressionQuality: quality)
+        // A busy 2048 px frame can still pass the Mac's 5 MiB cap at 0.85;
+        // step the quality down before giving up on it.
+        for q in [quality, 0.7, 0.55, 0.4] {
+            if let data = resized.jpegData(compressionQuality: q),
+               data.count <= SessionInput.maxAttachmentBytes { return data }
+        }
+        return resized.jpegData(compressionQuality: 0.4)
     }
 
     /// PDFs/text ride as-is (≤ 5 MiB, same cap the Mac enforces) — no
@@ -332,7 +342,11 @@ struct SessionFeedScreen: View {
                     attachments = []
                     messageResult = reply.channel == "socket" ? "sent as a message (no terminal)" : nil
                 } else {
-                    messageResult = Self.describe(reply.outcome)
+                    // The Mac says why ("attachment too large", "unsupported
+                    // attachment type"…) — show it, a bare "wasn't valid"
+                    // sent the user guessing (2026-09-03).
+                    messageResult = reply.detail.map { "\(Self.describe(reply.outcome)) — \($0)" }
+                        ?? Self.describe(reply.outcome)
                 }
             } onFailure: {
                 messageResult = "couldn't reach the Mac"

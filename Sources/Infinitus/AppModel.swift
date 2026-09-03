@@ -690,7 +690,8 @@ final class AppModel: ObservableObject {
                     let preview = String(request.text.prefix(60))
                     self?.logMirrorInput("📲", "phone → \(label): \"\(preview)\" (\(reply.channel ?? "?"))")
                 } else {
-                    self?.logMirrorInput("⚠️", "phone input not delivered: \(reply.outcome)")
+                    let why = reply.detail.map { "\(reply.outcome) — \($0)" } ?? reply.outcome
+                    self?.logMirrorInput("⚠️", "phone input not delivered: \(why)")
                 }
             }
             return reply

@@ -86,7 +86,9 @@ struct SessionsScreen: View {
                 .padding(.top, 5)
             VStack(alignment: .leading, spacing: 3) {
                 HStack {
-                    Text(progress.byPid[session.pid]?.name ?? repoName(session.cwd))
+                    // "Infinitus · limitless": the session's name and its
+                    // repo (user 2026-09-03 "show repo too").
+                    Text(title(session))
                         .font(.headline).lineLimit(1)
                     Spacer(minLength: 8)
                     Text(session.status)
@@ -127,6 +129,12 @@ struct SessionsScreen: View {
         case "shell": return .blue
         default: return .gray
         }
+    }
+
+    private func title(_ session: SessionDetail) -> String {
+        let repo = repoName(session.cwd)
+        guard let name = progress.byPid[session.pid]?.name, !name.isEmpty, name != repo else { return repo }
+        return "\(name) · \(repo)"
     }
 
     private func repoName(_ path: String) -> String {
