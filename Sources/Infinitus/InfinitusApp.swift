@@ -236,6 +236,13 @@ struct InfinitusApp: App {
                                             && model.engineErrors[CLIProxyEngine.engineID] == nil
                                             && model.fleets.contains { $0.engineID == CLIProxyEngine.engineID }),
                     view: AnyView(CLIProxyEnginePane(model: model))),
+        SettingsTab(title: "9Router", symbol: "arrow.triangle.branch",
+                    keywords: ["9router", "router", "engine", "provider",
+                               "claude", "password"],
+                    provider: ProviderBadge(live: model.nineRouterEnabled
+                                            && model.engineErrors[NineRouterEngine.engineID] == nil
+                                            && model.fleets.contains { $0.engineID == NineRouterEngine.engineID }),
+                    view: AnyView(NineRouterEnginePane(model: model))),
         SettingsTab(title: "Codex", symbol: "circle.hexagongrid",
                     keywords: ["openai", "codex", "provider", "slots",
                                "accounts", "engine"],
