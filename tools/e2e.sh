@@ -210,9 +210,20 @@ echo "windows: ok (wall over pop-out, restored)"
     || fail "all-dead scenario not reflected in fleets"
 sleep 2
 popout_visible || fail "pop-out lost during all-dead"
+# The floating revival countdown (#1's macOS equivalent) rides the same
+# state: up while all-dead, gone — content detached — once the fleet is back.
+revival_visible() { "$CTL" windows | expect "any(w['visible'] and 'RevivalRoot' in w['content'] for w in d)"; }
+i=0
+until revival_visible; do
+    i=$((i + 1)); [ "$i" -lt 10 ] || fail "revival panel not shown during all-dead"
+    sleep 1
+done
 "$INFINITUS_CSWAP" simulate off >/dev/null
 "$CTL" refresh | expect "d[0].get('nextCandidate') is not None" || fail "fleet didn't recover after simulate off"
-echo "scenarios: ok (all-dead and back)"
+sleep 1
+revival_visible && fail "revival panel outlived the all-dead"
+"$CTL" windows | expect "not any('RevivalRoot' in w['content'] for w in d)" || fail "revival panel content not detached"
+echo "scenarios: ok (all-dead and back, revival panel up and gone)"
 
 # --- control socket self-heal -------------------------------------------
 # A dev instance launched without INFINITUS_CONTROL_SOCKET unlinks and

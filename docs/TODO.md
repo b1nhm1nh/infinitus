@@ -78,8 +78,9 @@ file keeps the shipped log and the deferred-by-design notes.
   `binary` stanza for `infinitusctl` on the first release that ships it
   (release.yml). `rotate`/`reorder` verbs shipped 2026-09-03; tools/e2e.sh
   round-trips every verb on the demo engine in CI.
-- #1 All-dead Live Activity (iOS + macOS equivalent)
-- #2 Working-sessions Live Activity design
+- ~~#1 All-dead Live Activity (iOS + macOS equivalent)~~ → shipped;
+  the macOS floating countdown panel landed 2026-09-03 (RevivalPanel).
+- ~~#2 Working-sessions Live Activity design~~ → shipped (WorkingActivity).
 - #3 Slack push mirror to mobile
 - #4 Capture quality (window captures + bright backgrounds)
 - #5 Resume nudge typed but never submitted (Enter delivery)
@@ -194,9 +195,11 @@ file keeps the shipped log and the deferred-by-design notes.
   happen while the app runs; APNs from the Mac is the follow-up if the
   lock screen needs to stay live with the app closed. Verified on the
   iPhone 17 simulator (lock-screen card "death2 · Fable 70% · 3
-  working · 12 sessions · → deathemperor1st"). macOS floating
-  countdown panel (the #1 "macOS equivalent") not done — the menu bar
-  countdown stands.
+  working · 12 sessions · → deathemperor1st"). The macOS floating
+  countdown panel (the #1 "macOS equivalent") followed on 2026-09-03:
+  `RevivalPanel.swift`, a non-activating floating NSPanel off the same
+  `LiveActivityBuilder.revival` state, Display toggle
+  `revival_panel`, gated in tools/e2e.sh's all-dead scenario.
 - **Connected devices** (user 2026-09-03 mid-turn "todo: show
   active/connected devices"): the phone sends `X-Infinitus-Device-Id`
   (per-install UUID) + `X-Infinitus-Device` (its name) on every

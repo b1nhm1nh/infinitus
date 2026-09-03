@@ -20,6 +20,14 @@ GitHub release body.
   "uv not found" (Homebrew if present, else Astral's installer) —
   thanks @sonyy172 (#20).
 
+### All accounts limited
+- **A floating revival countdown** (issue #1's macOS half). When every
+  account is limited, a small always-on-top panel shows who recovers
+  first and a live countdown, with the sessions waiting to resume.
+  Click it for the popup; ✕ hides it until the next revival. Settings →
+  Display → "Floating countdown when every account is limited" (on by
+  default). The same state the phone's Live Activity shows.
+
 ### One account
 - **The solo card.** With a single account the popup drops the fleet
   grid for one card: name and plan up top, every window on its own

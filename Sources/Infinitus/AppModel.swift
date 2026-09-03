@@ -378,6 +378,15 @@ final class AppModel: ObservableObject {
     // Pin holds the popover open (click-outside stops closing it).
     // Persisted by request — a pinned popup stays pinned across relaunches.
     @Published var popoverPinned: Bool { didSet { defaults.set(popoverPinned, forKey: "popover_pinned") } }
+    /// Floating revival countdown while every account is limited (#1's
+    /// macOS equivalent). On by default; ✕ on the panel hides one episode.
+    @Published var revivalPanelShown: Bool {
+        didSet {
+            defaults.set(revivalPanelShown, forKey: "revival_panel")
+            if !isPlayground { revivalPanel.sync(model: self) }
+        }
+    }
+    private lazy var revivalPanel = RevivalPanelController()
     /// Hold a power assertion while any session is mid-turn (KeepAwake).
     /// Display-only: rows sorted most-headroom-first with the active
     /// account and the next candidate pinned on top (todo 2026-09-01).
@@ -549,6 +558,7 @@ final class AppModel: ObservableObject {
         titleReset = TitlePrefs.resetChoices.contains(reset) ? reset : "countdown"
         titleIconOnly = defaults.object(forKey: "title_icon_only") as? Bool ?? false
         popoverPinned = defaults.object(forKey: "popover_pinned") as? Bool ?? false
+        revivalPanelShown = defaults.object(forKey: "revival_panel") as? Bool ?? true
         popupLayout = defaults.string(forKey: "popup_layout") ?? "wide"
         popupTextSize = defaults.string(forKey: "popup_text_size") ?? "default"
         glassFocused = defaults.object(forKey: "glass_focused") as? Double ?? 0.7
@@ -1472,7 +1482,10 @@ final class AppModel: ObservableObject {
         let raw = fleet.raw ?? (try? JSONEncoder().encode(list)) ?? Data()
         let previous = change.previousActive
         let firstLoad = change.firstLoad
-        if !isPlayground { updateBattlePlan(list) }
+        if !isPlayground {
+            updateBattlePlan(list)
+            revivalPanel.sync(model: self)
+        }
         // The footer's ⚡ tokens/minute needs the transcripts read even
         // with the sessions card closed (user 2026-09-03 "display
         // toks/m on bottom right status"). Every listed session, not

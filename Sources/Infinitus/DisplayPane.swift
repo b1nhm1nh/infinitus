@@ -107,6 +107,11 @@ struct DisplayPane: View {
                    isOn: $model.footerActionsHidden)
                 .help("Removes the buttons from the popup. Everything they "
                       + "did is in the menu bar icon's right-click menu.")
+            Toggle("Floating countdown when every account is limited",
+                   isOn: $model.revivalPanelShown)
+                .help("A small always-on-top panel: who recovers first and "
+                      + "when. Click it for the popup; ✕ hides it until the "
+                      + "next revival.")
             Toggle("Show menu bar icon", isOn: $model.menuBarIconShown)
                 .help("Hide lasts until quit — it always returns on the next "
                       + "launch, so the app can never strand itself with no UI.")
