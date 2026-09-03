@@ -134,11 +134,17 @@ def sessions():
             ("busy", "/Users/demo/projects/cli"), ("idle", "/Users/demo/projects/docs"),
             ("idle", "/Users/demo/projects/infra"), ("idle", "/Users/demo/notes"),
             ("idle", "/Users/demo/projects/blog"), ("idle", "/Users/demo/scratch")]
-    return {"busy": 3, "idle": 5, "waiting": 0, "shell": 0, "unknown": 0,
-            "total": 8,
-            "sessions": [{"pid": 1000+i, "cwd": c, "status": s,
-                          "kind": "interactive", "startedAt": now - i*900000}
-                         for i, (s, c) in enumerate(rows)]}
+    out = [{"pid": 1000+i, "cwd": c, "status": s,
+            "kind": "interactive", "startedAt": now - i*900000}
+           for i, (s, c) in enumerate(rows)]
+    # A session with a REAL pid (the e2e gate's fake Claude session): the
+    # app drops the 1000+i rows as dead before it reads their transcripts.
+    if os.environ.get("DEMO_SESSION_PID"):
+        out.append({"pid": int(os.environ["DEMO_SESSION_PID"]),
+                    "cwd": os.environ.get("DEMO_SESSION_CWD", "/Users/demo/projects/e2e"),
+                    "status": "idle", "kind": "interactive", "startedAt": now - 60000})
+    return {"busy": 3, "idle": len(out) - 3, "waiting": 0, "shell": 0, "unknown": 0,
+            "total": len(out), "sessions": out}
 
 def ordered(rows, st):
     order = st.get("order") or []

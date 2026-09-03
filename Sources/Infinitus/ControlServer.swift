@@ -247,10 +247,11 @@ final class ControlServer {
             return ControlReply(ok: true, result: try .of(["logins": model.awsLogins]))
 
         case "aws-login":
-            guard let profile = r.args.first, !profile.isEmpty else { throw Fail("usage: aws-login <profile> [--pid n] [--local]") }
+            guard let profile = r.args.first, !profile.isEmpty else { throw Fail("usage: aws-login <profile> [--pid n] [--local] [--remote] [--status]") }
             let pid = r.options["pid"].flatMap(Int.init)
+            // --status: the phone's flag-less poll — report, start nothing.
             let reply = await model.startAwsLogin(profile: profile, pid: pid, local: r.options["local"] == "true",
-                                                  remote: r.options["remote"] == "true")
+                                                  remote: r.options["status"] == "true" ? nil : r.options["remote"] == "true")
             guard reply.ok, let state = reply.state else { throw Fail(reply.error ?? "could not start") }
             return ControlReply(ok: true, result: try .of(["state": state]))
 

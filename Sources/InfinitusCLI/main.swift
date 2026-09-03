@@ -40,7 +40,7 @@ while i < args.count {
     let a = args[i]
     if a.hasPrefix("--") {
         let key = String(a.dropFirst(2))
-        let flagOnly = ["yes", "local", "remote"]
+        let flagOnly = ["yes", "local", "remote", "status"]
         if flagOnly.contains(key) || i + 1 >= args.count || args[i + 1].hasPrefix("--") {
             options[key] = "true"
         } else {

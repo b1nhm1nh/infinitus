@@ -104,6 +104,15 @@ GitHub release body.
   to the account the browser signed into, the runner answers no and
   reports which account you landed in — a silent rebind is how a
   profile ends up on the wrong account.
+- **The whole flow is in the e2e gate.** `tools/e2e.sh` plants a
+  fake Claude session whose transcript died on the expired sign-in,
+  runs the code flow against a stub `aws` CLI (`INFINITUS_AWS_CLI`),
+  and checks the need surfaces, the flag-less poll (`aws-login
+  --status`) starts nothing, the session gets its continue nudge over
+  its own inbox socket, the need clears, and a rebind is refused.
+  Writing it found two holes: the Mac's own "Needs AWS login" line
+  only followed the transcripts while the phone's LAN mirror was on,
+  and a mock-mode instance never read transcripts at all.
 
 ### Prediction model
 - **"At this pace" line in the popup.** Below the account rows: when
