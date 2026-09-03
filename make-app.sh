@@ -25,13 +25,15 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 <plist version="1.0">
 <dict>
     <key>CFBundleExecutable</key><string>Infinitus</string>
-    <!-- com.huuloc.limitless: the ONE deliberate id change (2026-08-30,
-         user-approved). Notification and login-item grants key on the id —
-         re-grant both after this. Prefs migrate in-app from the old
-         domain (io.github.claude-swap.CswapBar.g2 — itself a rename away
-         from a persistent macOS 26 ControlCenter per-id ban acquired in
-         the 2026-08-29 MenuBarExtra insert/evict war). -->
-    <key>CFBundleIdentifier</key><string>com.huuloc.limitless</string>
+    <!-- com.huuloc.infinitus (2026-09-03, user-approved, explicit ask):
+         the id finally follows the app name. Notification and login-item
+         grants key on the id — re-grant both after this; keychain items
+         prompt once. Prefs migrate in-app from com.huuloc.limitless
+         (2026-08-30 id), which itself migrated from
+         io.github.claude-swap.CswapBar.g2 — a rename away from a
+         persistent macOS 26 ControlCenter per-id ban acquired in the
+         2026-08-29 MenuBarExtra insert/evict war. Never change casually. -->
+    <key>CFBundleIdentifier</key><string>com.huuloc.infinitus</string>
     <key>CFBundleName</key><string>Infinitus</string>
     <key>CFBundlePackageType</key><string>APPL</string>
     <key>CFBundleShortVersionString</key><string>${VERSION:-0.0.0}</string>

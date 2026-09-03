@@ -13,14 +13,15 @@ Native macOS menu bar app for the claude-swap engine. Split out of
   2026-08-30; upstream never merged PR #250's copy). InfinitusCore
   ClaudeSessions/Transcript/PeerSocket/PtyHosts/PtyNudge/SessionResume
   + ResumeService. Never rebuild it engine-side.
-- **Bundle id is `com.huuloc.limitless`** — the one deliberate change,
-  done 2026-08-30 (user-approved). The app was renamed Limitless →
-  Infinitus on 2026-08-30 (limitless.ai collision) WITHOUT touching the
-  id. App Support is `Infinitus/` (copy-migrated from `Limitless/`,
-  which came from `CswapBar/`; legacy dirs left for rollback). The
-  local checkout may still live at `~/death/limitless`.
-  Notification Center and login-item grants key on the id and must be
-  re-granted once under it. Never change the id casually again — the
+- **Bundle id is `com.huuloc.infinitus`** (user-approved explicit ask,
+  2026-09-03; before it `com.huuloc.limitless` from 2026-08-30, before
+  that the CswapBar g2 id). Prefs copy-migrate from the previous id's
+  domain on first launch (AppModel.migrateLegacyDefaults). App Support
+  is `Infinitus/` (copy-migrated from `Limitless/`, which came from
+  `CswapBar/`; legacy dirs left for rollback). The local checkout may
+  still live at `~/death/limitless`. Notification Center and login-item
+  grants key on the id and must be re-granted once under it; keychain
+  items prompt once. Never change the id casually again — the
   2026-08-29 casual change cost a day of ControlCenter-ban debugging.
 - **Push nothing to any remote** unless explicitly asked. Commit locally.
 - Secrets (webhook URLs, bot tokens) travel over stdin, never argv; shown
@@ -94,7 +95,7 @@ Native macOS menu bar app for the claude-swap engine. Split out of
   hosting controller on close, and reuse the NSWindow — a closed
   borderless one lingers in AppKit's list regardless.
 - Dev instances: sign the debug binary `--identifier
-  com.huuloc.limitless` (tools/e2e.sh does) or the keychain ACL prompt
+  com.huuloc.infinitus` (tools/e2e.sh does) or the keychain ACL prompt
   blocks AppModel.init forever (no socket, SecurityAgent spawns).
   `swift build --target X` may not relink — use `--product`, ONE per
   invocation: with two `--product` flags SwiftPM builds only the last

@@ -41,6 +41,13 @@ GitHub release body.
   Kiro connections goes through 9Router's priority like Claude's, though
   9Router routes Kiro traffic itself — the row is there for the stats.
 
+### Bundle id
+- **`com.huuloc.infinitus`.** The macOS bundle id now matches the app
+  (it was `com.huuloc.limitless` since the rename). Settings carry over
+  on first launch; macOS asks again for Notification Center and the
+  Login Item under the new id, and each keychain item (proxy key,
+  9Router password, tunnel, APNs) prompts once.
+
 ### AWS sign-in from the phone
 - **Sessions that need `aws login` get one.** When a session's newest
   tool result carries the expired-session signature ("Please

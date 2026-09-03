@@ -513,9 +513,11 @@ struct AboutPane: View {
         let home = FileManager.default.homeDirectoryForCurrentUser
         var candidates = ["death/infinitus/Infinitus.app", "death/limitless/Infinitus.app"]
             .map { home.appendingPathComponent($0).path }
-        if let url = NSWorkspace.shared.urlForApplication(
-            withBundleIdentifier: "com.huuloc.limitless") {
-            candidates.insert(url.path, at: 0)
+        for id in ["com.huuloc.infinitus", "com.huuloc.limitless"] {
+            if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: id) {
+                candidates.insert(url.path, at: 0)
+                break
+            }
         }
         for path in candidates where FileManager.default.fileExists(atPath: path) {
             let icon = NSWorkspace.shared.icon(forFile: path)
