@@ -133,6 +133,49 @@ final class SessionFeedTests: XCTestCase {
         XCTAssertEqual(SessionFeedReader.presentableUserText("  hi  "), "hi")
     }
 
+    func testAdjacentAssistantTextBlocksShareOneBubble() {
+        let lines = [
+            #"{"type":"assistant","timestamp":"2026-09-01T10:00:00.000Z","message":{"content":[{"type":"text","text":"First part."}]}}"#,
+            #"{"type":"assistant","timestamp":"2026-09-01T10:00:01.000Z","message":{"content":[{"type":"text","text":"Second part."}]}}"#,
+            #"{"type":"assistant","timestamp":"2026-09-01T10:00:02.000Z","message":{"content":[{"type":"text","text":"Last part."}]}}"#,
+        ]
+        let items = SessionFeedReader.parse(lines: lines, limit: 30)
+        XCTAssertEqual(items.count, 1)
+        XCTAssertEqual(items[0].kind, .result)
+        XCTAssertEqual(items[0].text, "First part.\n\nSecond part.\n\nLast part.")
+    }
+
+    func testAgentRowsAreFilledFromTheSubagentsDir() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("feed-agents-\(UUID().uuidString)")
+        let transcript = root.appendingPathComponent("s1.jsonl")
+        let sub = root.appendingPathComponent("s1/subagents")
+        try FileManager.default.createDirectory(at: sub, withIntermediateDirectories: true)
+        try #"{"agentType":"coder","description":"port the thing","toolUseId":"toolu_A"}"#
+            .write(to: sub.appendingPathComponent("agent-abc.meta.json"), atomically: true, encoding: .utf8)
+        try [
+            #"{"type":"user","timestamp":"2026-09-01T10:00:00.000Z","isSidechain":true,"message":{"content":"do it"}}"#,
+            #"{"type":"assistant","timestamp":"2026-09-01T10:00:01.000Z","isSidechain":true,"message":{"content":[{"type":"tool_use","id":"t1","name":"Bash","input":{"command":"swift build"}}]}}"#,
+            #"{"type":"assistant","timestamp":"2026-09-01T10:00:02.000Z","isSidechain":true,"message":{"content":[{"type":"tool_use","id":"t2","name":"Edit","input":{"file_path":"/a/B.swift"}}]}}"#,
+            #"{"type":"assistant","timestamp":"2026-09-01T10:00:03.000Z","isSidechain":true,"message":{"content":[{"type":"text","text":"Done."}]}}"#,
+        ].joined(separator: "\n").write(to: sub.appendingPathComponent("agent-abc.jsonl"), atomically: true, encoding: .utf8)
+        let main = [
+            #"{"type":"assistant","timestamp":"2026-09-01T10:00:00.000Z","message":{"content":[{"type":"tool_use","id":"toolu_A","name":"Agent","input":{"description":"port the thing","subagent_type":"coder","prompt":"…"}}]}}"#,
+            #"{"type":"assistant","timestamp":"2026-09-01T10:00:00.500Z","message":{"content":[{"type":"tool_use","id":"toolu_B","name":"Bash","input":{"command":"ls"}}]}}"#,
+        ]
+        let items = SessionFeedReader.attachAgents(SessionFeedReader.parse(lines: main, limit: 30),
+                                                   transcript: transcript)
+        XCTAssertEqual(items.map(\.kind), [.agent, .tool])
+        let agent = try XCTUnwrap(items[0].agent)
+        XCTAssertEqual(agent.type, "coder")
+        XCTAssertEqual(agent.toolCalls, 2)
+        XCTAssertEqual(agent.lastTool, "Edit · B.swift")
+        XCTAssertFalse(agent.running)   // ended with text (and the file is old)
+        // Wire: toolUseId stays private, agent rides along.
+        let data = try JSONEncoder().encode(items[0])
+        XCTAssertFalse(String(decoding: data, as: UTF8.self).contains("toolUseId"))
+        XCTAssertEqual(try JSONDecoder().decode(SessionFeedItem.self, from: data).agent?.toolCalls, 2)
+    }
+
     func testLimitReturnsOnlyNewestItems() {
         let lines = (0..<5).map { i in
             #"{"type":"user","timestamp":"2026-09-01T10:00:0\#(i).000Z","message":{"content":"msg \#(i)"}}"#

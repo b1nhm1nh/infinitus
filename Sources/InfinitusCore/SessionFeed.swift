@@ -7,6 +7,32 @@ import Foundation
 public struct SessionFeedItem: Codable, Sendable, Equatable {
     public enum Kind: String, Codable, Sendable {
         case user, assistant, tool, question, permission, result, limit
+        /// A sub-agent this session spawned (the `Agent` tool) — its own
+        /// transcript lives under `<session>/subagents/`, summarized here
+        /// like Remote Control does (user 2026-09-03, from the phone).
+        case agent
+    }
+
+    /// Sub-agent summary for `.agent` items. New optional field.
+    public struct Agent: Codable, Sendable, Equatable {
+        public let id: String
+        public let type: String
+        public let description: String
+        public let toolCalls: Int
+        /// "Bash · git commit …" — the newest tool call, if any.
+        public let lastTool: String?
+        public let running: Bool
+        public let lastActivityAt: Date?
+        public init(id: String, type: String, description: String, toolCalls: Int,
+                    lastTool: String?, running: Bool, lastActivityAt: Date?) {
+            self.id = id
+            self.type = type
+            self.description = description
+            self.toolCalls = toolCalls
+            self.lastTool = lastTool
+            self.running = running
+            self.lastActivityAt = lastActivityAt
+        }
     }
 
     public let kind: Kind
@@ -16,14 +42,34 @@ public struct SessionFeedItem: Codable, Sendable, Equatable {
     public let toolName: String?
     /// Set only for `.question` items — the option labels, read-only.
     public let options: [String]?
+    /// Set only for `.agent` items.
+    public let agent: Agent?
+    /// The `tool_use` id behind a `.tool`/`.agent` item — how a sub-agent's
+    /// meta file (`toolUseId`) finds its row. Not on the wire.
+    let toolUseId: String?
 
     public init(kind: Kind, text: String, at: Date? = nil, toolName: String? = nil,
-                options: [String]? = nil) {
+                options: [String]? = nil, agent: Agent? = nil, toolUseId: String? = nil) {
         self.kind = kind
         self.text = text
         self.at = at
         self.toolName = toolName
         self.options = options
+        self.agent = agent
+        self.toolUseId = toolUseId
+    }
+
+    enum CodingKeys: String, CodingKey { case kind, text, at, toolName, options, agent }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        kind = try c.decode(Kind.self, forKey: .kind)
+        text = try c.decode(String.self, forKey: .text)
+        at = try c.decodeIfPresent(Date.self, forKey: .at)
+        toolName = try c.decodeIfPresent(String.self, forKey: .toolName)
+        options = try c.decodeIfPresent([String].self, forKey: .options)
+        agent = try c.decodeIfPresent(Agent.self, forKey: .agent)
+        toolUseId = nil
     }
 }
 
@@ -37,9 +83,14 @@ public struct SessionFeed: Codable, Sendable {
     public let items: [SessionFeedItem]
     /// The session's own name, when it has one (new optional field).
     public let name: String?
+    /// Opaque transcript version (size + mtime) — the phone hands it back
+    /// as `?since=` so the Mac can hold the reply until something changed
+    /// (long-poll). New optional field.
+    public let stamp: String?
 
     public init(pid: Int32, sessionId: String, cwd: String, status: String?,
-                waiting: Bool, items: [SessionFeedItem], name: String? = nil) {
+                waiting: Bool, items: [SessionFeedItem], name: String? = nil,
+                stamp: String? = nil) {
         self.pid = pid
         self.sessionId = sessionId
         self.cwd = cwd
@@ -47,6 +98,7 @@ public struct SessionFeed: Codable, Sendable {
         self.waiting = waiting
         self.items = items
         self.name = name
+        self.stamp = stamp
     }
 }
 
@@ -58,7 +110,9 @@ public enum SessionFeedReader {
     /// Assistant AND user text items are capped here — the sessions this
     /// serves are dispatch-driven, so user prompts run multi-KB too, and
     /// this feed is polled every 5s from the phone.
-    static let textCap = 400
+    /// Per-item text cap. 400 trimmed real answers (user 2026-09-03:
+    /// "messages got trimmed too"); a long reply is what the phone is for.
+    static let textCap = 12_000
 
     /// Reads `~/.claude/projects/<slug>/<sessionId>.jsonl` for the given
     /// record and parses its tail. `nil` only when the record carries no
@@ -70,11 +124,79 @@ public enum SessionFeedReader {
         guard !record.sessionId.isEmpty else { return nil }
         let url = Transcript.path(cwd: record.cwd, sessionId: record.sessionId, claudeDir: claudeDir)
         let lines = tail(of: url, maxBytes: tailBytes)
-        let raw = parse(lines: lines, limit: limit)
+        let raw = attachAgents(parse(lines: lines, limit: limit), transcript: url)
         let (items, waiting) = finalize(items: raw, status: record.status)
         return SessionFeed(pid: record.pid, sessionId: record.sessionId, cwd: record.cwd,
                            status: record.status, waiting: waiting, items: items,
-                           name: record.name)
+                           name: record.name, stamp: stamp(record: record, claudeDir: claudeDir))
+    }
+
+    /// "size-mtime" of the transcript plus the record's status, so a
+    /// status flip (busy → waiting) counts as a change too. Nil when the
+    /// transcript isn't there yet.
+    public static func stamp(record: ClaudeSessionRecord, claudeDir: URL) -> String? {
+        let url = Transcript.path(cwd: record.cwd, sessionId: record.sessionId, claudeDir: claudeDir)
+        guard let attrs = try? FileManager.default.attributesOfItem(atPath: url.path) else { return nil }
+        let size = (attrs[.size] as? NSNumber)?.int64Value ?? 0
+        let mtime = (attrs[.modificationDate] as? Date)?.timeIntervalSince1970 ?? 0
+        return "\(size)-\(Int(mtime * 1000))-\(record.status ?? "")"
+    }
+
+    /// Fills each `.agent` row from `<transcript dir>/<sessionId>/subagents/`:
+    /// `agent-<id>.meta.json` names the spawning `toolUseId`, `agent-<id>.jsonl`
+    /// is the sub-agent's own transcript (tail-read, 64 KiB). Running =
+    /// the transcript's newest entry is not a final assistant text and it
+    /// was touched in the last two minutes.
+    static func attachAgents(_ items: [SessionFeedItem], transcript: URL,
+                             now: Date = Date()) -> [SessionFeedItem] {
+        guard items.contains(where: { $0.kind == .agent }) else { return items }
+        let dir = transcript.deletingPathExtension().appendingPathComponent("subagents")
+        guard let names = try? FileManager.default.contentsOfDirectory(atPath: dir.path) else { return items }
+        var byToolUse: [String: SessionFeedItem.Agent] = [:]
+        for name in names where name.hasSuffix(".meta.json") {
+            let id = String(name.dropFirst("agent-".count).dropLast(".meta.json".count))
+            guard let data = try? Data(contentsOf: dir.appendingPathComponent(name)),
+                  let meta = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let toolUseId = meta["toolUseId"] as? String else { continue }
+            let log = dir.appendingPathComponent("agent-\(id).jsonl")
+            let entries = tail(of: log, maxBytes: 64 * 1024).compactMap(decodeLine)
+            var toolCalls = 0
+            var lastTool: String?
+            var lastAt: Date?
+            var endsWithText = false
+            for entry in entries {
+                lastAt = (entry["timestamp"] as? String).flatMap(UsageHistory.parseISO) ?? lastAt
+                guard (entry["type"] as? String) == "assistant",
+                      let message = entry["message"] as? [String: Any],
+                      let content = message["content"] as? [[String: Any]] else { continue }
+                for block in content {
+                    switch block["type"] as? String {
+                    case "tool_use":
+                        toolCalls += 1
+                        let tool = block["name"] as? String ?? ""
+                        lastTool = tool + " · " + describeTool(name: tool, input: block["input"] as? [String: Any] ?? [:])
+                        endsWithText = false
+                    case "text":
+                        if let t = block["text"] as? String, !t.trimmingCharacters(in: .whitespaces).isEmpty {
+                            endsWithText = true
+                        }
+                    default: break
+                    }
+                }
+            }
+            let mtime = (try? FileManager.default.attributesOfItem(atPath: log.path))?[.modificationDate] as? Date
+            let fresh = mtime.map { now.timeIntervalSince($0) < 120 } ?? false
+            byToolUse[toolUseId] = SessionFeedItem.Agent(
+                id: id, type: meta["agentType"] as? String ?? "agent",
+                description: meta["description"] as? String ?? "sub-agent",
+                toolCalls: toolCalls, lastTool: lastTool, running: !endsWithText && fresh,
+                lastActivityAt: lastAt ?? mtime)
+        }
+        return items.map { item in
+            guard item.kind == .agent, let id = item.toolUseId, let agent = byToolUse[id] else { return item }
+            return SessionFeedItem(kind: .agent, text: agent.description, at: item.at,
+                                   toolName: agent.type, agent: agent, toolUseId: id)
+        }
     }
 
     private static func tail(of url: URL, maxBytes: Int) -> [String] {
@@ -107,14 +229,16 @@ public enum SessionFeedReader {
     /// tolerant of a torn first line — same convention as
     /// `SessionProgress.parse`. Returns at most `limit` items, newest
     /// last.
+    static func decodeLine(_ line: String) -> [String: Any]? {
+        guard line.first == "{",
+              let data = line.data(using: .utf8),
+              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        else { return nil }
+        return obj
+    }
+
     public static func parse(lines: [String], limit: Int) -> [SessionFeedItem] {
-        let entries: [[String: Any]] = lines.compactMap { line in
-            guard line.first == "{",
-                  let data = line.data(using: .utf8),
-                  let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
-            else { return nil }
-            return obj
-        }
+        let entries: [[String: Any]] = lines.compactMap(decodeLine)
 
         /// A run of consecutive `.tool` items — any tools (user 2026-09-03:
         /// "all the tool uses should be combined into one") — collapsed
@@ -136,6 +260,17 @@ public enum SessionFeedReader {
         }
 
         func append(_ item: SessionFeedItem, isError: Bool = false) {
+            // Streamed text arrives one block per entry; adjacent assistant
+            // blocks are one answer, so they share a bubble (user
+            // 2026-09-03: "sometimes I got part of message"). The turn-end
+            // block carries `.result`, which the merged bubble adopts.
+            if item.kind == .assistant || item.kind == .result,
+               let last = runs.last, last.item.kind == .assistant {
+                let merged = SessionFeedItem(kind: item.kind, text: last.item.text + "\n\n" + item.text,
+                                             at: item.at)
+                runs[runs.count - 1] = Run(item: merged, count: 1, isError: false)
+                return
+            }
             if item.kind == .tool, !isError, let last = runs.last, !last.isError,
                last.item.kind == .tool {
                 var names = last.names
@@ -237,6 +372,15 @@ public enum SessionFeedReader {
                         let (question, options) = describeQuestion(block)
                         append(SessionFeedItem(kind: .question, text: question,
                                                at: timestamp(entry), options: options))
+                    } else if name == "Agent" {
+                        // Its own row, never collapsed into a tool run —
+                        // `attachAgents` fills in the sub-agent's progress.
+                        let input = block["input"] as? [String: Any] ?? [:]
+                        let description = input["description"] as? String ?? "sub-agent"
+                        let type = input["subagent_type"] as? String ?? "agent"
+                        append(SessionFeedItem(kind: .agent, text: description,
+                                               at: timestamp(entry), toolName: type,
+                                               toolUseId: block["id"] as? String))
                     } else {
                         let summary = describeTool(name: name, input: block["input"] as? [String: Any] ?? [:])
                         append(SessionFeedItem(kind: .tool, text: summary,
