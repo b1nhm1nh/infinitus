@@ -644,26 +644,22 @@ final class AppModel: ObservableObject {
         }
     }
 
-    /// Manual ignition (#7 MVP step 3): `cswap run <n> -- -p . --max-turns 1`
-    /// — one tiny request as account n under its own CLAUDE_CONFIG_DIR, so
-    /// its 5h clock starts now without touching the fleet. PATH is widened
-    /// to where `claude` lives (a GUI app's inherited PATH doesn't reach
-    /// it). Cost shows up as ~1K weekly tokens on that account.
+    var canIgnite: Bool { capabilities.contains(.ignite) }
+
+    /// Manual ignition (#7 MVP step 3) through the primary fleet's engine
+    /// (`AccountEngine.ignite`, capability-gated): one tiny request as
+    /// account n so its 5h clock starts now; the fleet stays put. Outcome
+    /// in the event log; ~1K weekly tokens on n.
     func ignite(_ number: Int) {
-        guard let cswap, !isPlayground, igniting == nil else { return }
+        guard let primary, canIgnite, !isPlayground, igniting == nil else { return }
         igniting = number
-        let home = NSHomeDirectory()
-        var env = ProcessInfo.processInfo.environment
-        let extra = ["\(home)/.claude/local", "\(home)/.local/bin",
-                     "/opt/homebrew/bin", "/usr/local/bin",
-                     (cswap.binaryPath as NSString).deletingLastPathComponent]
-        env["PATH"] = (extra + [env["PATH"] ?? "/usr/bin:/bin"]).joined(separator: ":")
+        let engine = primary.engine, provider = primary.provider
         let name = accounts.first { $0.number == number }
             .map { $0.alias ?? String($0.email.prefix(while: { $0 != "@" })) } ?? "#\(number)"
         eventLog.append(EventEntry(icon: "flag.checkered", text: "igniting \(name)'s 5h window"))
         Task { [weak self] in
             do {
-                _ = try await cswap.run(WindowPlanner.igniterArguments(number: number), environment: env)
+                try await engine.ignite(fleet: provider, number: number)
                 self?.eventLog.append(EventEntry(icon: "flag.checkered", text: "ignited \(name) — window started"))
             } catch {
                 self?.eventLog.append(EventEntry(icon: "exclamationmark.triangle", text: "ignite \(name) failed: \(error.localizedDescription)"))

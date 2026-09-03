@@ -33,12 +33,13 @@ final class WindowPlannerTests: XCTestCase {
     }
 
     func testWarmCandidateIsOnlySwitchedTo() {
+        // Resets 2h after the bind — plenty left to land on.
         let warm = S(number: 2, email: "spare@x", active: false,
-                     fiveHourPct: 30, fiveHourResetsAt: 10_000 + 3 * 3600, weeklyPct: 20)
+                     fiveHourPct: 30, fiveHourResetsAt: 10_000 + 4 * 3600, weeklyPct: 20)
         let plan = WindowPlanner.plan(accounts: [active, warm], burnPctPerHour: 20,
                                       busySessions: 1, now: 10_000)
         XCTAssertEqual(plan?.steps.map(\.action), [.switchTo(2), .reset(2)])
-        XCTAssertEqual(plan?.steps[1].at, 10_000 + 3 * 3600)
+        XCTAssertEqual(plan?.steps[1].at, 10_000 + 4 * 3600)
         XCTAssertFalse(plan!.ignites)
     }
 
@@ -91,6 +92,44 @@ final class WindowPlannerTests: XCTestCase {
         XCTAssertEqual(plan?.steps.first?.action, .switchTo(5))
         XCTAssertNil(WindowPlanner.plan(accounts: [active, spent, disabled, boundLate],
                                         burnPctPerHour: 20, busySessions: 1, now: 10_000))
+    }
+
+    func testWarmCandidateWithTooLittleLeftAtTheBindIsSkipped() {
+        // #2's window resets 30 min after the bind — landing on it would
+        // give 30 min and a stall. #3 is cold, so it gets ignited instead.
+        let short = S(number: 2, email: "short@x", active: false,
+                      fiveHourPct: 30, fiveHourResetsAt: 10_000 + 2 * 3600 + 1800, weeklyPct: 10)
+        let cold = S(number: 3, email: "cold@x", active: false,
+                     fiveHourPct: 0, fiveHourResetsAt: nil, weeklyPct: 40)
+        let plan = WindowPlanner.plan(accounts: [active, short, cold], burnPctPerHour: 20,
+                                      busySessions: 1, now: 10_000)
+        XCTAssertEqual(plan?.steps.first?.action, .ignite(3))
+        // With only the short one, nothing is worth planning.
+        XCTAssertNil(WindowPlanner.plan(accounts: [active, short], burnPctPerHour: 20,
+                                        busySessions: 1, now: 10_000))
+        // Exactly the minimum left is fine.
+        let enough = S(number: 2, email: "ok@x", active: false,
+                       fiveHourPct: 30, fiveHourResetsAt: 10_000 + 2 * 3600 + 90 * 60, weeklyPct: 10)
+        XCTAssertEqual(WindowPlanner.plan(accounts: [active, enough], burnPctPerHour: 20,
+                                          busySessions: 1, now: 10_000)?.steps.first?.action,
+                       .switchTo(2))
+    }
+
+    func testIgnitionNeedsEnoughWindowLeftAtTheBind() {
+        // Horizon widened to 4h: a bind 3h45 out would leave an ignited
+        // window (5h) only 1h15 at the switch — below the 90 min floor.
+        var config = WindowPlanner.Config()
+        config.horizon = 4 * 3600
+        let far = S(number: 1, email: "main@x", active: true,
+                    fiveHourPct: 25, fiveHourResetsAt: 10_000 + 4 * 3600 + 3600, weeklyPct: 40)
+        let cold = S(number: 2, email: "spare@x", active: false,
+                     fiveHourPct: 0, fiveHourResetsAt: nil, weeklyPct: 20)
+        XCTAssertNil(WindowPlanner.plan(accounts: [far, cold], burnPctPerHour: 20,
+                                        busySessions: 1, now: 10_000, config: config))
+        // At 30%/h the bind is 2h30 out → 2h30 left at the switch → ignite.
+        XCTAssertEqual(WindowPlanner.plan(accounts: [far, cold], burnPctPerHour: 30,
+                                          busySessions: 1, now: 10_000, config: config)?.steps.first?.action,
+                       .ignite(2))
     }
 
     func testBurnRateInsideOneWindow() {

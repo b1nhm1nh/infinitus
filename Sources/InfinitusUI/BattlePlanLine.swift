@@ -23,7 +23,7 @@ public struct BattlePlanLine<M: FleetModel>: View {
                     .font(PopupFont.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
-                if let n = plan.igniteNumber {
+                if model.canIgnite, let n = plan.igniteNumber {
                     igniteButton(n)
                 }
             }

@@ -26,6 +26,13 @@ public enum WindowPlanner {
         /// Never ignite an account whose weekly reserve is this spent —
         /// the fleet's last headroom is not for warming up.
         public var reserveFloorPct: Double = 95
+        /// A window must have at least this much left when the switch
+        /// lands, or it isn't worth landing on: an ignited window that
+        /// has aged past this by the bind (the bind came later than
+        /// projected) would give minutes and then a stall — worse than a
+        /// cold clock. Applies to warm candidates and to the ignition
+        /// itself.
+        public var minRemainingAtSwitch: Double = 90 * 60
         /// Length of a 5h window.
         public static let windowLength: Double = 18_000
         public init() {}
@@ -134,10 +141,11 @@ public enum WindowPlanner {
         }
     }
 
-    /// The igniter: one ~1K-token request as account `number` through
-    /// `cswap run`, which execs claude under that account's own
+    /// The cswap igniter: one ~1K-token request as account `number`
+    /// through `cswap run`, which execs claude under that account's own
     /// CLAUDE_CONFIG_DIR — the default login and the fleet stay untouched
     /// (docs/research/smart-engine.md, "The primitive we already have").
+    /// Engines expose it as `AccountEngine.ignite` (capability `.ignite`).
     public static func igniterArguments(number: Int) -> [String] {
         ["run", "\(number)", "--", "-p", ".", "--max-turns", "1"]
     }
@@ -174,16 +182,25 @@ public enum WindowPlanner {
             ])
         }
 
-        // Most weekly headroom first; must be usable at the switch: below
-        // 100% on 5h, or its 5h resets before the bind lands.
+        // Most weekly headroom first; must be usable at the switch: a cold
+        // clock (fresh window on the first request — or on ignition, if
+        // the ignited window still has enough left at the bind), a window
+        // that resets before the bind lands (fresh again), or a ticking
+        // window with enough left after the bind to be worth landing on.
+        let ignitedResetAt = now + Config.windowLength
         let candidates = accounts.filter { a in
-            !a.active && !a.disabled && a.weeklyPct < config.reserveFloorPct
-                && ((a.fiveHourPct ?? 0) < 100 || (a.fiveHourResetsAt ?? .infinity) <= bindAt)
+            guard !a.active, !a.disabled, a.weeklyPct < config.reserveFloorPct else { return false }
+            if a.coldClock(now: now) {
+                return ignitedResetAt - bindAt >= config.minRemainingAtSwitch
+            }
+            let reset = a.fiveHourResetsAt ?? .infinity
+            if reset <= bindAt { return true }
+            return (a.fiveHourPct ?? 0) < 100 && reset - bindAt >= config.minRemainingAtSwitch
         }
         guard let cand = candidates.min(by: { $0.weeklyPct < $1.weeklyPct }) else { return nil }
 
         if cand.coldClock(now: now) {
-            let resetAt = now + Config.windowLength
+            let resetAt = ignitedResetAt
             return Plan(bindAt: bindAt, steps: [
                 Step(at: now, action: .ignite(cand.number),
                      why: "\(cand.shortName)'s 5h clock is cold — start it now so its window is "

@@ -229,6 +229,10 @@ elif cmd == "reorder":
     st["order"] = [int(a) for a in args[1:] if a.isdigit()]
     save(st)
     print(json.dumps({"schemaVersion": 1, "order": st["order"]}))
+elif cmd == "run":
+    # The igniter (`cswap run <n> -- -p . --max-turns 1`): a real cswap
+    # execs claude here; the demo just answers.
+    print("Launching Account-%s [session mode]" % (args[1] if len(args) > 1 else "?"))
 elif cmd == "switch":
     st = state()
     nums = [a for a in args[1:] if a.isdigit()]

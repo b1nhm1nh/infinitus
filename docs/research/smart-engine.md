@@ -119,6 +119,40 @@ fleets, human interruptions).
 4. Auto-execution toggle.
 5. Claude strategist (layer 3) last, behind its own toggle.
 
+## Status and decisions (2026-09-03, user: "go with your suggestions")
+
+Shipped: layer 1 (WindowTelemetry), layer 2 (WindowPlanner + replay +
+burn rate; Utilization pane dry run), MVP step 3 (live plan line in
+the popup, two-tap confirm-gated Ignite; `infinitusctl plan` /
+`ignite`). Ignition is an engine capability (`.ignite`,
+`AccountEngine.ignite`): cswap implements it with `cswap run`; the
+proxy fleet has no "one request as credential X" verb and its Claude
+Code cloaking lives in its executor, so nothing app-side can imitate
+it safely — the button is hidden there until upstream grows a verb
+(candidate PR, after #5434).
+
+Decisions, from the honest assessment:
+- **Manual stays the mode.** The auto-execution toggle is parked, and
+  if it ever ships it belongs engine-side (account policy lives in the
+  engines) — an upstream `cswap ignite` verb plus a scheduler knob,
+  not the app running it.
+- **Layer 3 (Claude strategist) is dropped.** The decision is
+  low-dimensional and deterministic; an LLM would add cost, latency
+  and nondeterminism to a dozen lines, and be hard to verify.
+- **Replay before more investment.** Samples now carry the active
+  account; after a week the Utilization pane's replay says how many
+  switches actually landed on cold clocks. That number decides
+  whether the planner earns more work.
+- **Window-age guard.** The planner only lands on a window (ignited or
+  already ticking) with at least `minRemainingAtSwitch` (90 min) left
+  at the projected bind — an ignited window that aged past that
+  because the bind came late gives minutes then a stall, worse than a
+  cold clock. Candidates that resets before the bind count as fresh.
+- The prize is narrower than the framing: ignition shifts timing, it
+  never adds capacity, so it does nothing for the all-dead case. The
+  win is fewer mid-sprint switches and less resume-nudge churn on
+  long sprints.
+
 ## Open questions (user)
 
 1. Idle-gap tolerance: chaining two windows back-to-back on one
