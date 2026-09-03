@@ -184,6 +184,10 @@ struct AccountGrid<M: FleetModel, U: UsageSource>: View {
                 }
             }
         }
+        // Every section's grid at least as wide as the widest sibling, so
+        // the full-width bands below end at the same x in every section
+        // (a section without a cash column had a shorter band).
+        .alignedColumn("grid")
         // One band + one sweep for the whole active row (Grid has no
         // per-row view): union the reported cell bounds, draw full-width.
         // ± half the 8pt verticalSpacing so rows still read separated.
