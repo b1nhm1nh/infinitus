@@ -34,16 +34,22 @@ public struct UsageSample: Codable, Sendable, Equatable {
     public let sevenDay: Window?
     /// Per-model weekly windows by display name ("Fable", "Opus", …).
     public let scoped: [String: Window]?
+    /// Whether this account was the fleet's active one at sampling time
+    /// (#7 layer 2: the replay reads switches off consecutive polls).
+    /// Additive — nil on lines written before it existed, and omitted
+    /// from the JSON then, so old files decode unchanged.
+    public let active: Bool?
 
     public init(t: Double, email: String, number: Int,
                 fiveHour: Window?, sevenDay: Window?,
-                scoped: [String: Window]?) {
+                scoped: [String: Window]?, active: Bool? = nil) {
         self.t = t
         self.email = email
         self.number = number
         self.fiveHour = fiveHour
         self.sevenDay = sevenDay
         self.scoped = scoped
+        self.active = active
     }
 
     /// Sampling identity: one line per (account, usage poll).
@@ -70,7 +76,8 @@ public enum UsageHistory {
                 t: t, email: a.email, number: a.number,
                 fiveHour: usage.fiveHour.map(window),
                 sevenDay: usage.sevenDay.map(window),
-                scoped: scoped.isEmpty ? nil : scoped)
+                scoped: scoped.isEmpty ? nil : scoped,
+                active: a.active)
         }
     }
 
