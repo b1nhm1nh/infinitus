@@ -105,6 +105,7 @@ struct InfinitusTray {
         var port: UInt16 = MirrorTransport.defaultPort
         var token: String?
         var tokenFile: String?
+        var interval: UInt64 = 30
         var positional: [String] = []
         var i = 0
         while i < args.count {
@@ -125,6 +126,10 @@ struct InfinitusTray {
                 i += 1
             case "--token-file" where i + 1 < args.count:
                 tokenFile = args[i + 1]
+                i += 1
+            case "--interval" where i + 1 < args.count:
+                guard let parsed = UInt64(args[i + 1]) else { fail("--interval needs a number") }
+                interval = parsed
                 i += 1
             case let a where !a.hasPrefix("-"):
                 positional.append(a)
@@ -149,7 +154,7 @@ struct InfinitusTray {
                 print("\(theme.id)\t\(theme.name)")
             }
         case "serve":
-            await serve(port: port, token: token, tokenFile: tokenFile, themeID: themeID)
+            await serve(port: port, token: token, tokenFile: tokenFile, themeID: themeID, interval: interval)
         case "pair":
             pair(port: port)
         case "help", "--help", "-h":
@@ -168,9 +173,13 @@ struct InfinitusTray {
       switch <n>                          switch to account n
       disable <n> / enable <n>            hold an account out of rotation / return it
       themes                              list built-in theme ids
-      serve [--port N] [--token T|--token-file PATH]
+      serve [--port N] [--token T|--token-file PATH] [--interval S]
                                            phone companion: serve the fleet snapshot
-                                           over HTTP (Linux only)
+                                           over HTTP (Linux only); also ticks the
+                                           away-push triggers (#13 parity) every S
+                                           seconds (default 30) — env vars
+                                           INFINITUS_PUSH_SESSIONS_DONE/ALL_DEAD/
+                                           LAST_ALIVE/WAITING (default on) gate them
       pair [--port N]                     print the pair URL (+ QR if qrencode is on PATH)
 
     Wire-up (packaging/omarchy/waybar-infinitus.jsonc):
@@ -516,14 +525,20 @@ struct InfinitusTray {
     /// One collection pass, independent of `panel`/`status`'s stdout
     /// paths — always produces *some* snapshot, even with no `cswap` on
     /// the box: `serve` in a container with no engine installed answers
-    /// `/snapshot` with an empty fleet rather than crashing.
-    static func collectAndExport(themeID: String, now: Date = Date()) async {
+    /// `/snapshot` with an empty fleet rather than crashing. Returns the
+    /// decoded list (nil when `cswap` is missing or the fetch failed) so
+    /// `serve`'s loop can tick `PushTriggers` off the same fetch instead
+    /// of paying for a second `cswap list --json`.
+    @discardableResult
+    static func collectAndExport(themeID: String, now: Date = Date()) async -> AccountList? {
         var raw = Data(#"{"schemaVersion":1,"accounts":[]}"#.utf8)
         var sessions: [SessionPanelRow] = []
         var progressByPid: [Int: SessionProgress] = [:]
+        var list: AccountList?
         let bin = CswapLocator.locate()
-        if let bin, let (_, fetched) = try? await CswapCLI(binaryPath: bin).accountListRaw() {
-            raw = fetched
+        if let bin, let (fetched, rawData) = try? await CswapCLI(binaryPath: bin).accountListRaw() {
+            list = fetched
+            raw = rawData
             let claudeDir = ClaudeSessions.configHome()
             let collected = sessionRows(claudeDir: claudeDir, now: now)
             sessions = collected.rows
@@ -534,9 +549,60 @@ struct InfinitusTray {
                           prefs: FleetPrefs(themeID: themeID),
                           serviceStatus: footer.serviceStatus, engine: footer.engine,
                           progressByPid: progressByPid, now: now)
+        return list
     }
 
-    static func serve(port: UInt16, token: String?, tokenFile: String?, themeID: String) async {
+    /// Env-var flags for `serve`'s push triggers (#13 parity, Linux side)
+    /// — the tray has no settings file, and `INFINITUS_CSWAP` already
+    /// sets the precedent of env as the tray's config channel. Default
+    /// on, same as the Mac app's toggles.
+    static func pushFlagsFromEnv(_ env: [String: String] = ProcessInfo.processInfo.environment) -> PushTriggers.Flags {
+        func on(_ name: String) -> Bool {
+            guard let v = env[name] else { return true }
+            return !["0", "false", "off"].contains(v.lowercased())
+        }
+        return .init(sessionsDone: on("INFINITUS_PUSH_SESSIONS_DONE"),
+                     allDead: on("INFINITUS_PUSH_ALL_DEAD"),
+                     lastAlive: on("INFINITUS_PUSH_LAST_ALIVE"),
+                     waiting: on("INFINITUS_PUSH_WAITING"))
+    }
+
+    /// One `PushTriggers` tick off a freshly-collected list — mirrors
+    /// `AppModel.refreshSnapshot`'s block verbatim (same account health
+    /// mapping, same `liveSessions.sessions`). Only `serve` calls this:
+    /// it runs a persistent process, unlike `status`/`panel` which are
+    /// one-shot waybar/quickshell execs with no state to carry a
+    /// multi-tick episode (e.g. the two-quiet-ticks "sessions finished"
+    /// rule) across.
+    static func tickPushes(list: AccountList?, pushTriggers: inout PushTriggers,
+                           flags: PushTriggers.Flags, bin: String?) async {
+        let health = (list?.accounts ?? [])
+            .filter { !($0.disabled ?? false) && $0.usage != nil }
+            .map { a in PushTriggers.Account(
+                number: a.number,
+                name: a.alias ?? String(a.email.prefix(while: { $0 != "@" })),
+                dead: AccountVitals.isDead(a.usage),
+                worstPct: PushTriggers.worstPlanPct(a.usage)) }
+        let pushes = pushTriggers.tick(
+            busy: list?.liveSessions?.busy, total: list?.liveSessions?.total,
+            accounts: health, flags: flags, sessions: list?.liveSessions?.sessions)
+        for msg in pushes {
+            logPhoneInput("🔔 \(msg)")
+            if let bin {
+                _ = try? await CswapCLI(binaryPath: bin).run(["notify", "push", "-"], stdin: msg)
+            }
+            if let notifySend = which("notify-send") {
+                let process = Process()
+                process.executableURL = URL(fileURLWithPath: notifySend)
+                process.arguments = ["Infinitus", msg]
+                try? process.run()
+                process.waitUntilExit()
+            }
+        }
+    }
+
+    static func serve(port: UInt16, token: String?, tokenFile: String?, themeID: String,
+                      interval: UInt64 = 30) async {
         #if canImport(Glibc)
         let resolved: String
         if let token, !token.isEmpty {
@@ -550,9 +616,15 @@ struct InfinitusTray {
             resolved = PairingStore.loadOrCreate()
         }
         guard !resolved.isEmpty else { fail("serve: empty pairing token") }
+        var pushTriggers = PushTriggers()
+        let pushFlags = pushFlagsFromEnv()
         // The first request must not 503 while the first 30s tick is
-        // still pending.
-        await collectAndExport(themeID: themeID)
+        // still pending. This first tick also seeds PushTriggers: a
+        // session already `waiting` at launch is not news (same rule
+        // as the Mac — PushTriggers.seededWaiting).
+        let firstList = await collectAndExport(themeID: themeID)
+        await tickPushes(list: firstList, pushTriggers: &pushTriggers,
+                         flags: pushFlags, bin: CswapLocator.locate())
         let server = PosixHTTPServer { request in
             guard MirrorTransport.isAuthorized(request, token: resolved) else {
                 return MirrorTransport.unauthorizedResponse()
@@ -612,11 +684,13 @@ struct InfinitusTray {
         print("infinitus-tray serve: listening on 0.0.0.0:\(bound), "
             + "pairing token \(MirrorPairing.mask(resolved))")
         while true {
-            // MirrorWriter.shouldWrite needs a strict `>` on the 30s
-            // interval — sleep a touch over it so this loop's own tick
-            // never gets throttled away by itself.
-            try? await Task.sleep(nanoseconds: 31_000_000_000)
-            await collectAndExport(themeID: themeID)
+            // MirrorWriter.shouldWrite needs a strict `>` on the interval
+            // — sleep a touch over it so this loop's own tick never gets
+            // throttled away by itself.
+            try? await Task.sleep(nanoseconds: (interval + 1) * 1_000_000_000)
+            let list = await collectAndExport(themeID: themeID)
+            await tickPushes(list: list, pushTriggers: &pushTriggers,
+                             flags: pushFlags, bin: CswapLocator.locate())
         }
         #else
         fail("serve is Linux-only (no POSIX HTTP listener on this platform)")
