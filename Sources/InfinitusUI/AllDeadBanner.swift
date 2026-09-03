@@ -4,7 +4,8 @@ import InfinitusCore
 /// All-limited banner (todo 2026-09-01): names the first account
 /// to recover with a live one-second countdown, and counts the
 /// limit-stopped sessions waiting to be resumed. Rides the error
-/// slot so every layout carries it without four insert sites.
+/// slot so every layout carries it without four insert sites — and
+/// the #7 battle plan line rides along with it for the same reason.
 public struct AllDeadBanner<M: FleetModel>: View {
     @ObservedObject var model: M
 
@@ -13,6 +14,11 @@ public struct AllDeadBanner<M: FleetModel>: View {
     }
 
     @ViewBuilder public var body: some View {
+        allDeadLine
+        BattlePlanLine(model: model)
+    }
+
+    @ViewBuilder private var allDeadLine: some View {
         if model.nextCandidate == nil, let rec = model.nextRecovery,
            let date = WeeklyRoll.parse(rec.at) {
             let name = model.accounts.first { $0.number == rec.number }

@@ -84,9 +84,14 @@ file keeps the shipped log and the deferred-by-design notes.
       Layer 1 (WindowTelemetry) and layer 2 (WindowPlanner: ignite /
       switch / hold / reset steps, replay report, burn rate; Utilization
       pane "Battle plan — dry run"; samples now carry `active`) shipped
-      compute-only 2026-09-03. Next: live Battle Plan card with
-      confirm-gated ignite (needs busy-session count + `cswap run`),
-      then the auto toggle. Open questions 1–3 still the user's.
+      compute-only 2026-09-03. Same day, MVP step 3 (manual mode): the
+      live plan rides the popup's error slot (`BattlePlanLine`, next to
+      the all-dead banner) with a two-tap confirm-gated "Ignite" that
+      runs `cswap run <n> -- -p . --max-turns 1` (PATH widened to reach
+      `claude`; result in the event log); `infinitusctl plan` returns
+      the plan (e2e-gated). Next: the auto-execution toggle (off by
+      default), then the Claude strategist. Open questions 1–3 still
+      the user's — the igniter leans on experimental `cswap run` (q2).
 - ~~#8 CLIProxyAPI alternate backend~~ → shipped 2026-09-02 as the
   multi-engine seam: `AccountEngine` + `EngineFleet` + capabilities in
   InfinitusCore, `FleetState`/`EngineRegistry` in the app (AppModel stays a

@@ -109,6 +109,16 @@ final class AppModel: ObservableObject {
     /// Sessions popover's mini progress rows (SessionProgressModel.swift).
     let sessionProgress = SessionProgressModel()
     @Published var lastError: String?
+    /// #7 layer 2: the reset battle plan for the current sprint, recomputed
+    /// every snapshot; nil when there is nothing to plan. Manual mode: the
+    /// popup line offers the ignite step behind a confirm, nothing runs
+    /// by itself.
+    @Published var battlePlan: WindowPlanner.Plan?
+    @Published var igniting: Int?
+    /// Last hour of usage samples, the planner's burn-rate input. Seeded
+    /// from this machine's history file at launch so the first plan
+    /// doesn't wait ten minutes for fresh polls.
+    private var recentSamples: [UsageSample] = []
 
     let cswap: CswapCLI?
     /// True for the Animation Playground's private model: cswap is pinned
@@ -594,11 +604,82 @@ final class AppModel: ObservableObject {
         burnStyle = defaults.string(forKey: "burn_style") ?? "ember"
     }
 
+    // MARK: battle plan (#7)
+
+    private func updateBattlePlan(_ list: AccountList) {
+        let now = Date().timeIntervalSince1970
+        let fresh = UsageHistory.samples(accounts: list.accounts)
+        var seen = Set(recentSamples.map(\.dedupeKey))
+        for s in fresh where seen.insert(s.dedupeKey).inserted { recentSamples.append(s) }
+        recentSamples.removeAll { $0.t < now - 3600 }
+        let states = list.accounts.map { a in
+            WindowPlanner.AccountState(
+                number: a.number, email: a.email, active: a.active,
+                disabled: a.disabled ?? false,
+                fiveHourPct: a.usage?.fiveHour?.pct,
+                fiveHourResetsAt: a.usage?.fiveHour?.resetsAt
+                    .flatMap(UsageHistory.parseISO)?.timeIntervalSince1970,
+                weeklyPct: ([a.usage?.sevenDay?.pct] + (a.usage?.scoped ?? []).map { $0.pct })
+                    .compactMap { $0 }.max() ?? 0)
+        }
+        let rate = list.accounts.first { $0.active }.flatMap {
+            WindowTelemetry.burnRate(recentSamples, email: $0.email, now: now)
+        }
+        let plan = WindowPlanner.plan(accounts: states, burnPctPerHour: rate,
+                                      busySessions: list.liveSessions?.busy ?? 0, now: now)
+        if plan != battlePlan { battlePlan = plan }
+    }
+
+    /// Seed the burn-rate buffer from this machine's own history file.
+    private func seedRecentSamples() {
+        guard !isPlayground, !mockMode else { return }
+        let url = UsageHistoryRecorder.localURL
+        Task.detached(priority: .utility) { [weak self] in
+            let cutoff = Date().timeIntervalSince1970 - 3600
+            let recent = UsageHistory.load(url: url).filter { $0.t >= cutoff }
+            await MainActor.run { [weak self] in
+                guard let self, self.recentSamples.isEmpty else { return }
+                self.recentSamples = recent
+            }
+        }
+    }
+
+    /// Manual ignition (#7 MVP step 3): `cswap run <n> -- -p . --max-turns 1`
+    /// — one tiny request as account n under its own CLAUDE_CONFIG_DIR, so
+    /// its 5h clock starts now without touching the fleet. PATH is widened
+    /// to where `claude` lives (a GUI app's inherited PATH doesn't reach
+    /// it). Cost shows up as ~1K weekly tokens on that account.
+    func ignite(_ number: Int) {
+        guard let cswap, !isPlayground, igniting == nil else { return }
+        igniting = number
+        let home = NSHomeDirectory()
+        var env = ProcessInfo.processInfo.environment
+        let extra = ["\(home)/.claude/local", "\(home)/.local/bin",
+                     "/opt/homebrew/bin", "/usr/local/bin",
+                     (cswap.binaryPath as NSString).deletingLastPathComponent]
+        env["PATH"] = (extra + [env["PATH"] ?? "/usr/bin:/bin"]).joined(separator: ":")
+        let name = accounts.first { $0.number == number }
+            .map { $0.alias ?? String($0.email.prefix(while: { $0 != "@" })) } ?? "#\(number)"
+        eventLog.append(EventEntry(icon: "flag.checkered", text: "igniting \(name)'s 5h window"))
+        Task { [weak self] in
+            do {
+                _ = try await cswap.run(WindowPlanner.igniterArguments(number: number), environment: env)
+                self?.eventLog.append(EventEntry(icon: "flag.checkered", text: "ignited \(name) — window started"))
+            } catch {
+                self?.eventLog.append(EventEntry(icon: "exclamationmark.triangle", text: "ignite \(name) failed: \(error.localizedDescription)"))
+            }
+            if let self, self.eventLog.count > 100 { self.eventLog.removeFirst(self.eventLog.count - 100) }
+            self?.igniting = nil
+            await self?.refreshSnapshot()
+        }
+    }
+
     /// Idempotent: called from app init so the supervised engine starts at
     /// LAUNCH — a window-style MenuBarExtra may not build its content view
     /// until the first click, and rumps started its engine immediately.
     func startFeeds() {
         detectOnboarding()
+        seedRecentSamples()
         resume.log = { [weak self] icon, text in
             guard let self else { return }
             self.eventLog.append(EventEntry(icon: icon, text: text))
@@ -1130,6 +1211,7 @@ final class AppModel: ObservableObject {
         let raw = fleet.raw ?? (try? JSONEncoder().encode(list)) ?? Data()
         let previous = change.previousActive
         let firstLoad = change.firstLoad
+        if !isPlayground { updateBattlePlan(list) }
         // Utilization history (todo 2026-09-01): every real snapshot
         // feeds the per-machine JSONL; the playground's fabricated
         // fleet must never pollute it — nor a mock-mode dev instance's

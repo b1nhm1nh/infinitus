@@ -174,6 +174,11 @@ final class ControlServer {
         case "fleets":
             return ControlReply(ok: true, result: try .of(fleetsPayload()))
 
+        case "plan":
+            // Wrapped: a bare null result prints as nothing in infinitusctl.
+            return ControlReply(ok: true, result: .object([
+                "plan": try model.battlePlan.map { try .of(WindowPlanner.Payload($0)) } ?? .null]))
+
         case "refresh":
             await model.refreshSnapshot()
             return ControlReply(ok: true, result: try .of(fleetsPayload()))
