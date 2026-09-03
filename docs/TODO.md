@@ -176,6 +176,22 @@ file keeps the shipped log and the deferred-by-design notes.
 
 ## Shipped 2026-09-02/03 (remote access, engine ranking, two-session flow)
 
+- **Live Activities #1 + #2** (user 2026-09-03 "pick #1 … and #2"):
+  widget extension `ios/InfinitusMobileWidgets` (bundle
+  `com.huuloc.infinitus.mobile.widgets`, embedded by the app), shared
+  `LiveActivityAttributes.swift`. `LiveActivities.sync` runs after every
+  mirror refresh: all-dead → RevivalActivity (reviver, native
+  `Text(timerInterval:)` countdown to its reset, session count; ends
+  with a 2-min "revived — X is back" card), busy > 0 → WorkingActivity
+  (active account + plan, binding-window gauge, "N working · M
+  sessions", "→ next" hint; updates only on switch / ≥5-pt move /
+  count change; 15-min staleDate). No push pipeline yet — updates
+  happen while the app runs; APNs from the Mac is the follow-up if the
+  lock screen needs to stay live with the app closed. Verified on the
+  iPhone 17 simulator (lock-screen card "death2 · Fable 70% · 3
+  working · 12 sessions · → deathemperor1st"). macOS floating
+  countdown panel (the #1 "macOS equivalent") not done — the menu bar
+  countdown stands.
 - **Connected devices** (user 2026-09-03 mid-turn "todo: show
   active/connected devices"): the phone sends `X-Infinitus-Device-Id`
   (per-install UUID) + `X-Infinitus-Device` (its name) on every

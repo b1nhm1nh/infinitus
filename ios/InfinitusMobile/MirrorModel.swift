@@ -182,6 +182,9 @@ final class MirrorModel: ObservableObject, FleetModel {
             sessionProgress.apply(snapshot.progressByPid ?? [:])
             let firstLoad = reconcile(engineFleets)
             error = nil
+            LiveActivities.shared.sync(
+                fleet: fleets.first { $0.provider == .claude } ?? fleets.first,
+                machine: snapshot.machineName)
             if firstLoad {
                 DispatchQueue.main.async { self.replayIntro() }
             }

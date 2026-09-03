@@ -8,6 +8,12 @@ options:
 packages:
   Infinitus:
     path: ..
+# Both bundles need a version pair — the simulator refuses to install an
+# app extension without one ("Invalid placeholder attributes").
+settings:
+  base:
+    MARKETING_VERSION: "0.4.0"
+    CURRENT_PROJECT_VERSION: "1"
 targets:
   InfinitusMobile:
     type: application
@@ -19,14 +25,18 @@ targets:
     info:
       path: InfinitusMobile/Info.plist
       properties:
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         NSLocalNetworkUsageDescription: Infinitus finds the Mac running your fleet on this Wi-Fi and reads its latest snapshot.
         NSBonjourServices: [_infinitus._tcp]
-        # Scanning the Mac's pairing QR (#9 remote access).
-        NSCameraUsageDescription: Infinitus scans the pairing QR your Mac shows, to learn its address and pairing token.
+        # Scanning the Mac's pairing QR (#9 remote access) and taking a
+        # photo to attach to a session message.
+        NSCameraUsageDescription: Infinitus scans the pairing QR your Mac shows, and takes photos you attach to a session message.
         # PhotosPicker attachments on a message (2026-09-03 "add features
         # to allow attachments").
         NSPhotoLibraryUsageDescription: Infinitus attaches photos you pick to a message sent into a session.
-        NSCameraUsageDescription: Infinitus attaches a photo you take to a message sent into a session.
+        # Live Activities (#1 revival countdown, #2 working sessions).
+        NSSupportsLiveActivities: true
         # `infinitus://pair?url=…&token=…` — the same pair link, opened
         # from a message or a browser instead of the camera.
         CFBundleURLTypes:
@@ -37,6 +47,8 @@ targets:
         product: InfinitusCore
       - package: Infinitus
         product: InfinitusUI
+      - target: InfinitusMobileWidgets
+        embed: true
     settings:
       base:
         # Mobile has its own id — the mac app's com.huuloc.limitless is
@@ -47,5 +59,28 @@ targets:
         GENERATE_INFOPLIST_FILE: "YES"
         INFOPLIST_KEY_UILaunchScreen_Generation: "YES"
         INFOPLIST_KEY_UISupportedInterfaceOrientations: UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight
+        SWIFT_VERSION: "5.9"
+        TARGETED_DEVICE_FAMILY: "1"
+  # Live Activity renderer (#1, #2): the widget extension the app embeds.
+  # LiveActivityAttributes.swift is compiled into both targets.
+  InfinitusMobileWidgets:
+    type: app-extension
+    platform: iOS
+    sources:
+      - InfinitusMobileWidgets
+      - InfinitusMobile/LiveActivityAttributes.swift
+    info:
+      path: InfinitusMobileWidgets/Info.plist
+      properties:
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.huuloc.infinitus.mobile.widgets
+        CODE_SIGNING_ALLOWED: "NO"
+        GENERATE_INFOPLIST_FILE: "YES"
+        INFOPLIST_KEY_CFBundleDisplayName: Infinitus
         SWIFT_VERSION: "5.9"
         TARGETED_DEVICE_FAMILY: "1"
