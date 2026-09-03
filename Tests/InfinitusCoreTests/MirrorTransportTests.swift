@@ -173,4 +173,33 @@ final class MirrorTransportTests: XCTestCase {
         let request = MirrorTransport.parseRequestWithBody(Data((head + payload).utf8), bodyCap: 10)
         XCTAssertEqual(request?.body, Data(String(repeating: "x", count: 10).utf8))
     }
+
+    /// `POST /sessions/*/input` gets the big cap (attachments); every
+    /// other route stays at the small default (2026-09-03 attachments).
+    func testBodyCapIsBigOnlyForSessionInput() {
+        XCTAssertEqual(MirrorTransport.bodyCap(method: "POST", path: "/sessions/7/input"),
+                       MirrorTransport.sessionInputBodyCap)
+        XCTAssertEqual(MirrorTransport.bodyCap(method: "GET", path: MirrorTransport.snapshotPath),
+                       MirrorTransport.defaultBodyCap)
+        XCTAssertEqual(MirrorTransport.bodyCap(method: "GET", path: "/sessions/7/tail"),
+                       MirrorTransport.defaultBodyCap)
+        // Wrong verb on the input path doesn't get the big cap either.
+        XCTAssertEqual(MirrorTransport.bodyCap(method: "GET", path: "/sessions/7/input"),
+                       MirrorTransport.defaultBodyCap)
+    }
+
+    /// A body bigger than the small default but within the session-input
+    /// cap is honoured when the route says so.
+    func testParseRequestWithBodyHonoursTheSessionInputCap() {
+        let payload = String(repeating: "x", count: 20_000)
+        let head = "POST /sessions/1/input HTTP/1.1\r\nContent-Length: \(payload.count)\r\n\r\n"
+        let whole = Data((head + payload).utf8)
+        // The default cap truncates well short of the real body.
+        XCTAssertEqual(MirrorTransport.parseRequestWithBody(whole)?.body.count,
+                       MirrorTransport.defaultBodyCap)
+        // The session-input cap is large enough for the whole thing.
+        let request = MirrorTransport.parseRequestWithBody(
+            whole, bodyCap: MirrorTransport.sessionInputBodyCap)
+        XCTAssertEqual(request?.body, Data(payload.utf8))
+    }
 }

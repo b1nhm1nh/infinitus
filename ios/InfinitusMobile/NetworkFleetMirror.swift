@@ -195,8 +195,13 @@ actor NetworkFleetMirror: FleetMirror {
     /// the feed on screen came from) with a timeout long enough for the
     /// Mac's settle sleeps, and a failure is reported, not retried.
     static let inputTimeout: TimeInterval = 15
+    /// Attachments push the body into the megabytes and the Mac writes
+    /// each one to disk before delivering — longer than a bare keystroke
+    /// or text line needs (2026-09-03 "add features to allow attachments").
+    static let attachmentInputTimeout: TimeInterval = 60
 
     func sessionInput(pid: Int32, request: SessionInput.Request) async throws -> SessionInput.Reply {
+        let timeout = (request.attachments?.isEmpty == false) ? Self.attachmentInputTimeout : Self.inputTimeout
         let token = MirrorPairing.normalize(
             UserDefaults.standard.string(forKey: Self.tokenKey) ?? "")
         let path = MirrorTransport.sessionInputPath(pid: pid)
@@ -208,12 +213,12 @@ actor NetworkFleetMirror: FleetMirror {
                 port: NWEndpoint.Port(rawValue: manual.port) ?? .any)
             (data, _) = try await fetch(endpoint, path: path, hostHeader: manual.host,
                                         useTLS: manual.useTLS, token: token,
-                                        timeout: Self.inputTimeout, method: "POST", body: body)
+                                        timeout: timeout, method: "POST", body: body)
         } else {
             startBrowsing()
             guard let discovered = await firstEndpoint() else { throw MirrorTransportError.timedOut }
             (data, _) = try await fetch(discovered, path: path, hostHeader: "infinitus",
-                                        useTLS: false, token: token, timeout: Self.inputTimeout,
+                                        useTLS: false, token: token, timeout: timeout,
                                         method: "POST", body: body)
         }
         return try JSONDecoder().decode(SessionInput.Reply.self, from: data)

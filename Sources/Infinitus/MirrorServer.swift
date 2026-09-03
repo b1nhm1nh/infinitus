@@ -222,12 +222,29 @@ final class MirrorServer: ObservableObject {
             data, _, isComplete, error in
             var buffer = buffer
             if let data { buffer.append(data) }
+            // The head alone (token included — it rides in a header or the
+            // query, never the body) is enough to both pick the route's
+            // body cap and reject an unpaired caller before buffering a
+            // single byte of a body it was never going to be allowed to
+            // send — this listener may be tunnel-exposed, and the
+            // attachments route's 24 MiB cap is not something to hold open
+            // for a caller that was always going to get a 401
+            // (2026-09-03 attachments).
+            let head = MirrorTransport.parseRequest(buffer)
+            if let head, !MirrorTransport.isAuthorized(head, token: token.current) {
+                connection.send(content: MirrorTransport.unauthorizedResponse(),
+                                completion: .contentProcessed { _ in connection.cancel() })
+                return
+            }
+            let cap = head.map {
+                MirrorTransport.bodyCap(method: $0.method, path: $0.path)
+            } ?? MirrorTransport.defaultBodyCap
             // The whole head AND, when there is one, the whole body — the
-            // token may be in a header, and the input route's JSON body
-            // arrives in arbitrary chunks just like everything else. Auth
-            // is checked before routing, so an unpaired caller can't even
-            // probe which routes exist.
-            if let request = MirrorTransport.parseRequestWithBody(buffer) {
+            // input route's JSON body arrives in arbitrary chunks just
+            // like everything else. Auth was already checked off the head
+            // above; the check below stays as the route dispatch's own
+            // defense in depth (e.g. a token regenerated mid-request).
+            if let request = MirrorTransport.parseRequestWithBody(buffer, bodyCap: cap) {
                 let response: Data
                 if !MirrorTransport.isAuthorized(request, token: token.current) {
                     response = MirrorTransport.unauthorizedResponse()
@@ -263,8 +280,9 @@ final class MirrorServer: ObservableObject {
                 return
             }
             // Nothing to answer yet — and nothing ever will be if the peer
-            // hung up or is spraying bytes without a request line.
-            guard error == nil, !isComplete, buffer.count < 16 * 1024 else {
+            // hung up or is spraying bytes without a request line. Allow a
+            // little headroom over the cap for the head itself.
+            guard error == nil, !isComplete, buffer.count < cap + 4096 else {
                 connection.cancel()
                 return
             }

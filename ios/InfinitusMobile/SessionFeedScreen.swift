@@ -1,4 +1,7 @@
 import SwiftUI
+import UIKit
+import PhotosUI
+import UniformTypeIdentifiers
 import InfinitusCore
 import InfinitusUI
 
@@ -17,6 +20,21 @@ struct SessionFeedScreen: View {
     @State private var messageResult: String?
     @State private var actionSending = false
     @State private var actionResult: String?
+    // MARK: attachments (2026-09-03 "add features to allow attachments")
+    @State private var attachments: [PendingAttachment] = []
+    @State private var photoPickerItems: [PhotosPickerItem] = []
+    @State private var showFileImporter = false
+    @State private var attachmentError: String?
+
+    /// A picked file, already processed into the exact bytes/mime that
+    /// will ride in `SessionInput.Attachment`.
+    private struct PendingAttachment: Identifiable {
+        let id = UUID()
+        let name: String
+        let mime: String
+        let data: Data
+        let thumbnail: UIImage?
+    }
     private let pollInterval: UInt64 = 5 * 1_000_000_000
 
     var body: some View {
@@ -107,7 +125,30 @@ struct SessionFeedScreen: View {
                 Text(messageResult).font(.caption).foregroundStyle(.secondary)
                     .padding(.horizontal)
             }
+            if let attachmentError {
+                Text(attachmentError).font(.caption).foregroundStyle(.red)
+                    .padding(.horizontal)
+            }
+            if !attachments.isEmpty {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) { ForEach(attachments) { attachmentChip($0) } }
+                        .padding(.horizontal)
+                }
+            }
             HStack(spacing: 8) {
+                Menu {
+                    PhotosPicker(selection: $photoPickerItems,
+                                maxSelectionCount: SessionInput.maxAttachments,
+                                matching: .images) {
+                        Label("Photo Library", systemImage: "photo.on.rectangle")
+                    }
+                    Button { showFileImporter = true } label: {
+                        Label("Choose File", systemImage: "doc")
+                    }
+                } label: {
+                    Image(systemName: "paperclip").font(.title2)
+                }
+                .disabled(sendingMessage || attachments.count >= SessionInput.maxAttachments)
                 TextField("Reply…", text: $draft, axis: .vertical)
                     .textFieldStyle(.roundedBorder)
                     .disabled(sendingMessage)
@@ -119,12 +160,107 @@ struct SessionFeedScreen: View {
                     }
                 }
                 .disabled(sendingMessage
-                          || draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                          || (draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                              && attachments.isEmpty))
             }
             .padding(.horizontal)
             .padding(.vertical, 8)
         }
         .background(.bar)
+        .onChange(of: photoPickerItems) { _, items in
+            guard !items.isEmpty else { return }
+            Task { await addPickedPhotos(items) }
+        }
+        .fileImporter(isPresented: $showFileImporter, allowedContentTypes: Self.allowedFileTypes,
+                     allowsMultipleSelection: true) { result in
+            addPickedFiles(result)
+        }
+    }
+
+    private static let allowedFileTypes: [UTType] = [
+        .png, .jpeg, .heic, .gif, .pdf, .plainText,
+        UTType(mimeType: "image/webp"),
+    ].compactMap { $0 }
+
+    @ViewBuilder private func attachmentChip(_ attachment: PendingAttachment) -> some View {
+        ZStack(alignment: .topTrailing) {
+            Group {
+                if let thumbnail = attachment.thumbnail {
+                    Image(uiImage: thumbnail).resizable().scaledToFill()
+                } else {
+                    VStack(spacing: 2) {
+                        Image(systemName: "doc.fill").font(.title3)
+                        Text(attachment.name).font(.caption2).lineLimit(1)
+                    }
+                }
+            }
+            .frame(width: 52, height: 52)
+            .background(.quaternary, in: RoundedRectangle(cornerRadius: 8))
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+            Button {
+                attachments.removeAll { $0.id == attachment.id }
+            } label: {
+                Image(systemName: "xmark.circle.fill")
+                    .foregroundStyle(.white, .black.opacity(0.6))
+            }
+            .offset(x: 6, y: -6)
+        }
+    }
+
+    /// PhotosPicker hands over the original bytes (HEIC included); every
+    /// image is downscaled to ≤ 2048 px on its long edge and re-encoded
+    /// JPEG regardless of source format.
+    private func addPickedPhotos(_ items: [PhotosPickerItem]) async {
+        for item in items {
+            guard attachments.count < SessionInput.maxAttachments else { break }
+            guard let data = try? await item.loadTransferable(type: Data.self),
+                  let image = UIImage(data: data), let jpeg = Self.downscaledJPEG(image) else {
+                attachmentError = "couldn't read that photo"
+                continue
+            }
+            let name = "photo-\(UUID().uuidString.prefix(8)).jpg"
+            attachments.append(PendingAttachment(name: name, mime: "image/jpeg",
+                                                 data: jpeg, thumbnail: UIImage(data: jpeg)))
+        }
+        photoPickerItems = []
+    }
+
+    private static func downscaledJPEG(_ image: UIImage, maxDimension: CGFloat = 2048,
+                                       quality: CGFloat = 0.85) -> Data? {
+        let longest = max(image.size.width, image.size.height)
+        let scale = min(1, maxDimension / longest)
+        let targetSize = CGSize(width: image.size.width * scale, height: image.size.height * scale)
+        let resized = UIGraphicsImageRenderer(size: targetSize).image { _ in
+            image.draw(in: CGRect(origin: .zero, size: targetSize))
+        }
+        return resized.jpegData(compressionQuality: quality)
+    }
+
+    /// PDFs/text ride as-is (≤ 5 MiB, same cap the Mac enforces) — no
+    /// re-encoding, unlike photos.
+    private func addPickedFiles(_ result: Result<[URL], Error>) {
+        guard case .success(let urls) = result else { return }
+        for url in urls {
+            guard attachments.count < SessionInput.maxAttachments else { break }
+            guard url.startAccessingSecurityScopedResource() else { continue }
+            defer { url.stopAccessingSecurityScopedResource() }
+            guard let data = try? Data(contentsOf: url) else {
+                attachmentError = "couldn't read \(url.lastPathComponent)"
+                continue
+            }
+            guard data.count <= SessionInput.maxAttachmentBytes else {
+                attachmentError = "\(url.lastPathComponent) is over 5 MB"
+                continue
+            }
+            let mime = UTType(filenameExtension: url.pathExtension)?.preferredMIMEType
+                ?? "application/octet-stream"
+            guard SessionInput.allowedAttachmentMimes.contains(mime) else {
+                attachmentError = "\(url.lastPathComponent) isn't a supported file type"
+                continue
+            }
+            attachments.append(PendingAttachment(name: url.lastPathComponent, mime: mime,
+                                                 data: data, thumbnail: nil))
+        }
     }
 
     @ViewBuilder private func actionRow(_ item: SessionFeedItem) -> some View {
@@ -153,13 +289,19 @@ struct SessionFeedScreen: View {
 
     private func sendMessage() {
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty else { return }
+        guard !text.isEmpty || !attachments.isEmpty else { return }
         sendingMessage = true
         messageResult = nil
+        attachmentError = nil
+        let picked = attachments.map {
+            SessionInput.Attachment(name: $0.name, mime: $0.mime, data: $0.data)
+        }
         Task {
-            await send(.init(kind: .message, text: text)) { reply in
+            await send(.init(kind: .message, text: text,
+                             attachments: picked.isEmpty ? nil : picked)) { reply in
                 if reply.outcome == "delivered" {
                     draft = ""
+                    attachments = []
                     messageResult = reply.channel == "socket" ? "sent as a message (no terminal)" : nil
                 } else {
                     messageResult = Self.describe(reply.outcome)

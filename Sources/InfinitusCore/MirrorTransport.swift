@@ -42,6 +42,13 @@ public enum MirrorTransport {
     /// `host:port` override has something to guess when mDNS is blocked.
     /// The server falls back to a kernel-assigned port if it's taken.
     public static let defaultPort: UInt16 = 47824
+    /// Default body cap for every route except `POST /sessions/*/input`
+    /// (`/snapshot` and `/tail` never carry a body worth more than this).
+    public static let defaultBodyCap = 16 * 1024
+    /// `POST /sessions/<pid>/input` carries up to 4 attachments at 5 MiB
+    /// each, base64-inflated — room for that plus the JSON envelope
+    /// (2026-09-03 "add features to allow attachments").
+    public static let sessionInputBodyCap = 24 * 1024 * 1024
 
     // MARK: - Server side
 
@@ -123,6 +130,14 @@ public enum MirrorTransport {
         parseHead(data)?.0
     }
 
+    /// The body cap a route should use, decided from the request line
+    /// alone — the head parses (and so the route is known) well before a
+    /// large body has fully arrived. Every route but `POST
+    /// /sessions/*/input` keeps the small default.
+    public static func bodyCap(method: String, path: String) -> Int {
+        method == "POST" && sessionInputPid(path) != nil ? sessionInputBodyCap : defaultBodyCap
+    }
+
     /// A whole request, body included: `nil` while the head or (when
     /// `Content-Length` says there's more) the body is still arriving.
     /// A request with no `Content-Length` is complete as soon as the head
@@ -130,7 +145,7 @@ public enum MirrorTransport {
     /// `Content-Length`: once that many body bytes have arrived the
     /// request is treated as complete, its body silently truncated,
     /// leaving the route's own decode to reject it.
-    public static func parseRequestWithBody(_ data: Data, bodyCap: Int = 16 * 1024) -> Request? {
+    public static func parseRequestWithBody(_ data: Data, bodyCap: Int = defaultBodyCap) -> Request? {
         guard let (head, bodyStart) = parseHead(data) else { return nil }
         guard let lengthText = head.headers["content-length"], let length = Int(lengthText), length > 0
         else { return head }

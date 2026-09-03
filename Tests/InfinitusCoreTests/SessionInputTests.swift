@@ -14,12 +14,19 @@ final class SessionInputTests: XCTestCase {
     }
 
     private func deliver(_ request: SessionInput.Request, hosts: [any PtyHost],
-                         socket: String = "", socketSend: @escaping (ClaudeSessionRecord, String) -> Bool = { _, _ in false }
+                         socket: String = "", attachmentsDir: URL? = nil,
+                         socketSend: @escaping (ClaudeSessionRecord, String) -> Bool = { _, _ in false }
     ) -> SessionInput.Reply {
         SessionInput.deliver(request: request, record: record(socket: socket), hosts: hosts,
                              claudeDir: FileManager.default.temporaryDirectory,
+                             attachmentsDir: attachmentsDir ?? FileManager.default.temporaryDirectory
+                                 .appendingPathComponent("infinitus-attachment-tests-\(UUID().uuidString)"),
                              ttyOfPid: { _ in "ttys009" }, ancestorsOf: { _ in [] },
                              socketSend: socketSend, sleep: { _ in })
+    }
+
+    private func tinyPNG() -> SessionInput.Attachment {
+        SessionInput.Attachment(name: "photo.png", mime: "image/png", data: Data([0x89, 0x50, 0x4E, 0x47]))
     }
 
     // MARK: key validation
@@ -136,5 +143,82 @@ final class SessionInputTests: XCTestCase {
         let reply = SessionInput.Reply(outcome: "delivered", channel: "pty", detail: nil)
         let replyData = try JSONEncoder().encode(reply)
         XCTAssertEqual(try JSONDecoder().decode(SessionInput.Reply.self, from: replyData), reply)
+    }
+
+    /// An old client's JSON — no `attachments` key at all — must still
+    /// decode, with `attachments == nil`.
+    func testRequestWithoutAttachmentsKeyStillDecodes() throws {
+        let data = Data(#"{"kind":"message","text":"hi"}"#.utf8)
+        let request = try JSONDecoder().decode(SessionInput.Request.self, from: data)
+        XCTAssertNil(request.attachments)
+    }
+
+    // MARK: attachments (2026-09-03 "add features to allow attachments")
+
+    func testTooManyAttachmentsIsRejected() {
+        let attachments = (0..<5).map { _ in tinyPNG() }
+        let reply = deliver(.init(kind: .message, text: "hi", attachments: attachments), hosts: [])
+        XCTAssertEqual(reply, .init(outcome: "rejected", detail: "too many attachments"))
+    }
+
+    func testOversizedAttachmentIsRejected() {
+        let big = SessionInput.Attachment(name: "big.png", mime: "image/png",
+                                          data: Data(count: SessionInput.maxAttachmentBytes + 1))
+        let reply = deliver(.init(kind: .message, text: "hi", attachments: [big]), hosts: [])
+        XCTAssertEqual(reply, .init(outcome: "rejected", detail: "attachment too large"))
+    }
+
+    func testUnsupportedMimeIsRejected() {
+        let exe = SessionInput.Attachment(name: "a.exe", mime: "application/x-msdownload",
+                                          data: Data([0]))
+        let reply = deliver(.init(kind: .message, text: "hi", attachments: [exe]), hosts: [])
+        XCTAssertEqual(reply, .init(outcome: "rejected", detail: "unsupported attachment type"))
+    }
+
+    func testAttachmentValidationRunsBeforeTouchingAHost() {
+        let h = host(["> "])
+        _ = deliver(.init(kind: .message, text: "hi", attachments: (0..<5).map { _ in tinyPNG() }),
+                    hosts: [h])
+        XCTAssertEqual(h.commands, [])
+    }
+
+    func testAttachmentLandsOnDiskWithASanitizedNameAndDeliveredTextListsItsPath() throws {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("infinitus-attachment-test-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let attachment = SessionInput.Attachment(name: "my photo!.png", mime: "image/png",
+                                                 data: Data([1, 2, 3]))
+        let h = host(["> ", "> typed"])
+        let reply = deliver(.init(kind: .message, text: "look", attachments: [attachment]),
+                            hosts: [h], attachmentsDir: dir)
+        XCTAssertEqual(reply, .init(outcome: "delivered", channel: "pty"))
+        let written = try FileManager.default.contentsOfDirectory(atPath: dir.path)
+        XCTAssertEqual(written.count, 1)
+        let name = try XCTUnwrap(written.first)
+        XCTAssertTrue(name.hasSuffix("-myphoto.png"), name)
+        XCTAssertFalse(name.contains("!"), name)
+        XCTAssertFalse(name.contains(" "), name)
+        XCTAssertEqual(try Data(contentsOf: dir.appendingPathComponent(name)), attachment.data)
+        let typedLine = h.commands.first { $0.hasPrefix("line s1 ") }
+        XCTAssertTrue(typedLine?.contains(dir.appendingPathComponent(name).path) ?? false,
+                     typedLine ?? "<nil>")
+    }
+
+    func testAttachmentsOnlyMessageGetsAPlaceholderText() throws {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("infinitus-attachment-test-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        var sent: String?
+        let reply = deliver(.init(kind: .message, text: "", attachments: [tinyPNG()]),
+                            hosts: [], socket: "/tmp/x.sock", attachmentsDir: dir,
+                            socketSend: { _, text in sent = text; return true })
+        XCTAssertEqual(reply, .init(outcome: "delivered", channel: "socket"))
+        XCTAssertTrue(sent?.hasPrefix("Please look at the attached file(s):") ?? false, sent ?? "<nil>")
+        XCTAssertTrue(sent?.contains("[attached:") ?? false, sent ?? "<nil>")
+    }
+
+    func testEmptyTextAndNoAttachmentsIsStillRejected() {
+        let reply = deliver(.init(kind: .message, text: ""), hosts: [host(["> "])])
+        XCTAssertEqual(reply.outcome, "rejected")
     }
 }

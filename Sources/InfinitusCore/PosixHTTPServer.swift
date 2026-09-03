@@ -97,11 +97,12 @@ public final class PosixHTTPServer: @unchecked Sendable {
         setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, socklen_t(MemoryLayout<timeval>.size))
         var buffer = Data()
         var chunk = [UInt8](repeating: 0, count: 8192)
-        // Head allowance on top of the 16 KiB body cap (same as the Mac's
-        // `parseRequestWithBody`) — `POST /sessions/<pid>/input` carries a
-        // JSON body, everything else is headers-only.
-        let bodyCap = 16 * 1024
-        let readCap = bodyCap + 4096
+        // The route decides the body cap (24 MiB for POST
+        // /sessions/*/input's attachments, 16 KiB for everything else —
+        // same split as the Mac's MirrorServer); head allowance on top,
+        // same as before.
+        var bodyCap = MirrorTransport.defaultBodyCap
+        var readCap = bodyCap + 4096
         while buffer.count < readCap {
             let n = chunk.withUnsafeMutableBytes { raw -> Int in
                 var got: Int
@@ -112,6 +113,10 @@ public final class PosixHTTPServer: @unchecked Sendable {
             }
             guard n > 0 else { return }   // closed, timed out, or errored
             buffer.append(contentsOf: chunk[0..<n])
+            if let head = MirrorTransport.parseRequest(buffer) {
+                bodyCap = MirrorTransport.bodyCap(method: head.method, path: head.path)
+                readCap = bodyCap + 4096
+            }
             if let request = MirrorTransport.parseRequestWithBody(buffer, bodyCap: bodyCap) {
                 writeAll(handler(request), to: fd)
                 return
