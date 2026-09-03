@@ -695,8 +695,8 @@ final class AppModel: ObservableObject {
                 }, uniquingKeysWith: { a, _ in a }))
         }
         let next = UsageForecast.build(accounts: inputs, rates: rates, now: now)
-        // Same inputs → same output; only republish when something moved
-        // (the popup re-lays out on every change).
+        // Skips the republish only while nothing is projected (the hits
+        // move with `now` between polls — see docs/TODO.md, anchoring).
         if next.active != forecast?.active || next.allDeadAt != forecast?.allDeadAt {
             forecast = next
         }
@@ -1314,7 +1314,7 @@ final class AppModel: ObservableObject {
             let engine = engineBadge ?? .stopped
             let allFleets = fleets.compactMap(\.lastFleet)
             let forecast = forecast
-            let plan = battlePlan.map(WindowPlanner.Payload.init)
+            let plan = battlePlan
             Task.detached(priority: .utility) { [mirrorExporter] in
                 await mirrorExporter.record(listJSON: raw, prefs: prefs,
                                             serviceStatus: serviceStatus,

@@ -26,7 +26,7 @@ actor MirrorExporter {
     func record(listJSON: Data, prefs: FleetPrefs,
                 serviceStatus: ServiceStatusSummary, engine: EngineBadge,
                 fleets: [EngineFleet] = [], forecast: UsageForecast? = nil,
-                plan: WindowPlanner.Payload? = nil) {
+                plan: WindowPlanner.Plan? = nil) {
         guard Date().timeIntervalSince(lastWrite) > minInterval else { return }
         lastWrite = Date()
         let claudeDir = ClaudeSessions.configHome()

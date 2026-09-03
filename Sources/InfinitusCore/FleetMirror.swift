@@ -34,8 +34,10 @@ public struct MirrorSnapshot: Codable, Sendable {
     public let fleets: [EngineFleet]?
     /// Run-rate projection for the primary fleet (2026-09-03) and the #7
     /// battle plan — both additive optionals; older phones ignore them.
+    /// The plan is the view-side `Plan` (not the ctl `Payload`) so the
+    /// phone's store hands it straight to the shared BattlePlanLine.
     public let forecast: UsageForecast?
-    public let plan: WindowPlanner.Payload?
+    public let plan: WindowPlanner.Plan?
 
     public init(capturedAt: Date, machineName: String, listJSON: Data,
                 sessions: [SessionPanelRow], prefs: FleetPrefs? = nil,
@@ -45,7 +47,7 @@ public struct MirrorSnapshot: Codable, Sendable {
                 progressByPid: [Int: SessionProgress]? = nil,
                 fleets: [EngineFleet]? = nil,
                 forecast: UsageForecast? = nil,
-                plan: WindowPlanner.Payload? = nil) {
+                plan: WindowPlanner.Plan? = nil) {
         self.capturedAt = capturedAt
         self.machineName = machineName
         self.listJSON = listJSON

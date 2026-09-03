@@ -70,7 +70,7 @@ public enum WindowPlanner {
         var shortName: String { email.split(separator: "@").first.map(String.init) ?? email }
     }
 
-    public enum Action: Sendable, Equatable {
+    public enum Action: Codable, Sendable, Equatable {
         /// Start the account's 5h clock without switching (`cswap run`).
         case ignite(Int)
         case switchTo(Int)
@@ -96,7 +96,7 @@ public enum WindowPlanner {
         }
     }
 
-    public struct Step: Sendable, Equatable, Identifiable {
+    public struct Step: Codable, Sendable, Equatable, Identifiable {
         public let at: Double
         public let action: Action
         public let why: String
@@ -108,7 +108,7 @@ public enum WindowPlanner {
         }
     }
 
-    public struct Plan: Sendable, Equatable {
+    public struct Plan: Codable, Sendable, Equatable {
         /// When the active account's 5h window is projected to bind.
         public let bindAt: Double
         public let steps: [Step]
