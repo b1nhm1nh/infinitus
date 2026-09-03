@@ -196,12 +196,19 @@ final class FleetState: ObservableObject, Identifiable {
     /// "pressing star … is not responsive"): the row shows this at once.
     @Published var pendingPreferred: [Int: Bool] = [:]
 
-    /// Star/unstar through the engine's own pick-first knob.
+    /// Star/unstar through the engine's own pick-first knob. Starring
+    /// also lands on the account right away when it isn't the active one
+    /// (user 2026-09-03 "stared P3 but it doesn't … switch to it"): the
+    /// knob only orders the engine's FUTURE switches, and a star reads as
+    /// "use this one" — a one-shot switch, not a second policy.
     func setPreferred(_ number: Int, _ on: Bool) {
         let engine = engine, provider = provider
+        let land = on && capabilities.contains(.switch)
+            && !(accounts.first { $0.number == number }?.active ?? true)
         pendingPreferred[number] = on
         perform(after: { [weak self] in self?.pendingPreferred[number] = nil }) {
             try await engine.setPreferred(fleet: provider, number: number, on)
+            if land { try await engine.switchTo(fleet: provider, number: number) }
         }
     }
 

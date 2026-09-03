@@ -176,13 +176,17 @@ struct AccountCells<M: FleetModel, U: UsageSource> {
         if model.nextCandidate == account.number {
             tip += " — next auto-switch target"
         }
+        if account.preferred == true { tip += " — preferred (lands here first)" }
         return tip
     }
 
     var displayName: String {
         // The pause mark leads: a long alias truncates the tail, so a
         // suffix-only tag vanished on real fleets (user 2026-09-01).
+        // The star (pick-first, #15) leads too: the lists used to show
+        // nothing for it (user 2026-09-03 "doesn't show the star on list").
         let name = [(account.disabled ?? false) ? PopupGlyph.text("⏸") : nil,
+                    account.preferred == true ? PopupGlyph.text("★") : nil,
                     showAsDead ? PopupGlyph.text(theme.deadMarker) : nil,
                     account.icon, account.alias ?? account.email]
             .compactMap { $0 }.joined(separator: " ")

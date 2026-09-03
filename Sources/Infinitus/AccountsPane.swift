@@ -716,8 +716,8 @@ private struct FleetAccountsSection: View {
                 .help(starred
                       ? "Preferred: the engine lands on this account first when it switches"
                       : (isCswap
-                         ? "Prefer this account: auto-switch lands on it first when it qualifies (autoswitch.preferred)"
-                         : "Prefer this account: the proxy drains it before unstarred ones (priority tier)"))
+                         ? "Prefer this account: switches to it now, and auto-switch lands on it first when it qualifies (autoswitch.preferred)"
+                         : "Prefer this account: switches to it now, and the proxy drains it before unstarred ones (priority tier)"))
             }
             if caps.contains(.switch), !a.active {
                 Button { fleet.switchTo(a.number) } label: {
