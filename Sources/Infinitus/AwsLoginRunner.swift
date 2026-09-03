@@ -54,6 +54,8 @@ actor AwsLoginRunner {
     }
 
     func state(profile: String) -> AwsLogin.State? { runs[profile]?.state ?? finished[profile] }
+    /// The login still running for the profile, if any.
+    func inFlight(profile: String) -> AwsLogin.State? { runs[profile]?.state }
 
     /// Starts the flow, or returns the login already in flight for that
     /// profile. `pid` is the session to nudge when it lands.

@@ -880,7 +880,7 @@ final class AppModel: ObservableObject {
             start: { [weak self] request in
                 guard let self else { return AwsLogin.Reply(ok: false, error: "app gone") }
                 return await self.startAwsLogin(profile: request.profile, pid: request.pid,
-                                                local: request.local ?? false, remote: request.remote ?? false)
+                                                local: request.local ?? false, remote: request.remote)
             },
             code: { [weak self] request in
                 guard let self else { return AwsLogin.Reply(ok: false, error: "app gone") }
@@ -946,11 +946,18 @@ final class AppModel: ObservableObject {
         if items != awsLogins { awsLogins = items }
     }
 
-    func startAwsLogin(profile: String, pid: Int?, local: Bool, remote: Bool = false) async -> AwsLogin.Reply {
+    /// `remote` nil = no flow asked for: a login already in flight is
+    /// reported as is (the phone polls this route every 2 s), else the
+    /// profile's default flow starts. true / false pick the code flow /
+    /// the relay explicitly and replace a run of the other kind.
+    func startAwsLogin(profile: String, pid: Int?, local: Bool, remote: Bool? = nil) async -> AwsLogin.Reply {
         guard !isPlayground, !mockMode else { return AwsLogin.Reply(ok: false, error: "not in a demo instance") }
+        if !local, remote == nil, let inFlight = await awsLoginRunner.inFlight(profile: profile) {
+            return AwsLogin.Reply(ok: true, state: inFlight)
+        }
         let configText = (try? String(contentsOf: AwsLogin.defaultConfigURL(), encoding: .utf8)) ?? ""
         var flow: AwsLogin.Flow = local ? .local : AwsLogin.flow(profile: profile, configText: configText)
-        if remote, flow == .relay { flow = .remote }
+        if remote == true, flow == .relay { flow = .remote }
         let reply = await awsLoginRunner.start(profile: profile, flow: flow, pid: pid)
         logMirrorInput(reply.ok ? "🔐" : "⚠️",
                        reply.ok ? "aws login started for \(profile) (\(flow.rawValue))"
