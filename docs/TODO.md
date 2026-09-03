@@ -69,10 +69,10 @@ file keeps the shipped log and the deferred-by-design notes.
   action through the same FleetState/AppModel calls as the panes),
   `infinitusctl` executable bundled in Infinitus.app/Contents/MacOS.
   Verified live: status/fleets/proxy/manifest, rename + routing
-  round-trips, remove/--yes and bad-fleet guards. Not yet: a Homebrew
-  symlink for `infinitusctl` (release flow), socket round-trip test
-  against a fake model (live-verified only). `rotate`/`reorder` verbs
-  shipped 2026-09-03 (e2e round-trips them on the demo engine).
+  round-trips, remove/--yes and bad-fleet guards. The cask gains a
+  `binary` stanza for `infinitusctl` on the first release that ships it
+  (release.yml). `rotate`/`reorder` verbs shipped 2026-09-03; tools/e2e.sh
+  round-trips every verb on the demo engine in CI.
 - #1 All-dead Live Activity (iOS + macOS equivalent)
 - #2 Working-sessions Live Activity design
 - #3 Slack push mirror to mobile
@@ -241,7 +241,7 @@ file keeps the shipped log and the deferred-by-design notes.
   wrapping up) from the recency-weighted tool mix; shown only when the
   session has no TodoWrite report (open question 1 resolved that way —
   todos are the agent's own report, the heuristic fills in). Row JSON
-  carries `phase`; Panel.qml doesn't render it yet.
+  carries `phase`; the Linux panel renders it (6399a2a).
 - ~~#14 Landing page~~ → infinitus.run (Cloudflare Workers assets):
   real captures, 1080p popup video, 15 full-popup theme images, brew
   cask, subtle Linux/Omarchy downloads, SEO/agent pass (JSON-LD, FAQ,
@@ -383,8 +383,8 @@ file keeps the shipped log and the deferred-by-design notes.
   (publishing needs the user's AUR account).
 - ~~Omarchy~~ → app not compatible (macOS-only) — README says so
   honestly; engine CLI on Arch/Omarchy highlighted instead.
-- Open: Developer ID/notarization for quarantine-free installs;
-  release workflow doesn't auto-bump the tap cask (manual sha step).
+- Open: Developer ID/notarization for quarantine-free installs (the
+  release workflow bumps the tap cask itself via a deploy key).
 
 ## Performance (#18, 2026-09-03)
 - ~~RPG effects idle the pop-out at 43% CPU~~ → every effect is a
