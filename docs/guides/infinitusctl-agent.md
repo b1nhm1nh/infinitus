@@ -41,10 +41,12 @@ infinitusctl status                          app version, engines on/off, badge,
 infinitusctl fleets                          every fleet: accounts, usage, active/next, capabilities
 infinitusctl refresh                         poll engines now, then like fleets
 infinitusctl switch  <fleet> <n>
+infinitusctl rotate  <fleet>                 switch to the engine's next candidate
 infinitusctl hold    <fleet> <n>
 infinitusctl unhold  <fleet> <n>
 infinitusctl rename  <fleet> <n> <alias>     "" clears
 infinitusctl prefer  <fleet> <n> on|off        star: auto-order keeps it on top
+infinitusctl reorder <fleet> <n>...          every account once, top first; refused while auto-order is on
 infinitusctl remove  <fleet> <n> --yes
 infinitusctl add     <fleet>                 opens the in-app sign-in; human finishes it
 infinitusctl wait-add [--timeout 300]        blocks until that sign-in ends
