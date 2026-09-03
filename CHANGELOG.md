@@ -4,6 +4,85 @@ Composed release notes — what changed and why it matters, not a list of
 commit links. The release workflow publishes the matching section as the
 GitHub release body.
 
+## 0.4.0
+
+The phone release: your fleet and every Claude Code session reachable
+from anywhere, a second engine, and the app learns to plan its 5-hour
+windows.
+
+### Remote access (#9)
+- **Four ways in, one QR.** The iPhone app reaches your Mac over Wi-Fi
+  (Bonjour), Tailscale, your own Cloudflare tunnel hostname (dashboard
+  token or a local `~/.cloudflared/config.yml`), or a free quick
+  tunnel. One pairing QR carries every route and the token; the phone
+  keeps the list and falls through to whichever answers, and names the
+  route that failed instead of saying "offline".
+- **Rendezvous on infinitus.run.** A quick tunnel's throwaway URL is
+  published under a hash of the pairing token, so a phone whose saved
+  tunnel died fetches the new address instead of rescanning after every
+  restart. Nothing else ever leaves your Mac.
+- **Connected devices.** The Sync pane lists each phone with its route
+  and last-seen time; a "Set up your phone" walkthrough with live checks
+  and a "Copy for an AI agent" brief cover the setup.
+
+### Session chat (#17)
+- **Every session as a chat on the phone.** Recent transcript as bubbles:
+  markdown replies, consecutive tool calls collapsed into one chip,
+  sub-agent cards (type, description, tool count, running/done),
+  prompts typed mid-turn, cross-session messages as "sender: body".
+  Long-polled, so replies stream in as they're written.
+- **Reply from the phone.** Answer questions and permission prompts by
+  number, type a message, attach photos (library or camera, downscaled)
+  and PDF/text files — delivered over Claude Code's peer socket, or typed
+  into the terminal (cmux, tmux, herdr) when there is none. Tap the
+  header for the account serving the session and its limits.
+- **Sessions by name.** Rows use the session's own name (`/rename`) with
+  branch, model, kind and output size; a "waiting on you" push fires once
+  per session that stops for an answer.
+
+### Engines and accounts
+- **CLIProxyAPI backend (#8).** Fleets already running behind the proxy
+  plug in through its Management API as a second engine: OAuth add,
+  hold/remove, routing-strategy picker, keychain-held key. The app is a
+  facade over any number of engine fleets; UI gates on capabilities.
+- **Pick-first stars (#15).** Star an account and the engine lands on it
+  first when it switches — cswap `autoswitch.preferred`, the proxy's
+  priority tier. Policy stays in the engines; the app only sets knobs.
+- **5-hour window telemetry (#7).** Windows reconstructed from usage
+  history with rhythm and burn rate; a Utilization pane with a
+  "Battle plan — dry run" that replays what deliberate ignite / switch /
+  hold / reset would have done. Samples now record the active account.
+- **Weekly reset on full-HP rows (#16)**, 5h-dead rows keep their 7d
+  reset, remembered resets say "last seen".
+
+### Agents and tooling
+- **`infinitusctl`.** A same-user control socket in the app and a
+  manifest-driven CLI: status, fleets, switch / rotate / hold / rename /
+  prefer / reorder / remove, add + wait-add, proxy settings, windows and
+  perf probes. `tools/e2e.sh` round-trips every verb in CI with a perf
+  gate. The socket re-binds itself if something clobbers its path.
+- **Onboarding brief.** First-run card offers a pasteable recipe with
+  this Mac's state ticked off, for a coding agent to finish the setup.
+- **Resume nudges** go over the peer socket first (terminal typing only
+  without one); a usage poll up to 60 s before a limit stop counts as a
+  fresh verdict, so the session stopped by the switch itself is nudged.
+
+### Performance (#18)
+- Pop-out idle CPU 43% → 0.4%: every RPG effect and burn overlay runs as
+  Core Animation on a layer host; the countdown no longer grows the
+  glyph cache; the closed wall stops ticking. CI gates idle CPU and heap
+  growth.
+
+### Omarchy / Linux
+- `infinitus-tray serve/pair`: the phone companion over a POSIX
+  listener with the same routes, session tail/input, push triggers, and
+  head-first rejection of unpaired callers. Panel shows each session's
+  phase and footer chips (service, sessions, engine).
+
+### Site
+- infinitus.run carries the popup in every theme, an SEO/agent pass
+  (OG card, JSON-LD, FAQ, llms.txt) and the pairing rendezvous.
+
 ## 0.3.0
 
 The Linux release: Omarchy gets the full popup, and the fleet learns to
