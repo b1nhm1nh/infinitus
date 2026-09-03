@@ -47,6 +47,9 @@ DOMAIN=Infinitus   # the unbundled debug binary's defaults domain
 
 cleanup() {
     pkill -f "$APP" 2>/dev/null || true
+    # The supervised demo engine outlives its app (four orphans found
+    # sleeping from earlier runs, 2026-09-03).
+    pkill -f "$INFINITUS_CSWAP auto" 2>/dev/null || true
     rm -rf "$SOCKDIR"
     "$INFINITUS_CSWAP" reset >/dev/null 2>&1 || true
     # Leave the dev domain as we found it for the keys we touched.
@@ -143,6 +146,24 @@ popout_visible || fail "pop-out lost during all-dead"
 "$INFINITUS_CSWAP" simulate off >/dev/null
 "$CTL" refresh | expect "d[0].get('nextCandidate') is not None" || fail "fleet didn't recover after simulate off"
 echo "scenarios: ok (all-dead and back)"
+
+# --- control socket self-heal -------------------------------------------
+# A dev instance launched without INFINITUS_CONTROL_SOCKET unlinks and
+# re-binds the path; killed, it leaves an inode nobody answers and the
+# bundle was unreachable for 25 minutes (2026-09-03). The app must notice
+# on its next snapshot and bind again.
+python3 - "$SOCKDIR/control.sock" <<'PYS'
+import os, socket, sys
+p = sys.argv[1]; os.unlink(p)
+s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM); s.bind(p); s.listen(1); s.close()  # dead inode stays
+PYS
+"$CTL" status >/dev/null 2>&1 && fail "a dead socket path should refuse"
+i=0
+until "$CTL" status >/dev/null 2>&1; do
+    i=$((i + 1)); [ "$i" -le 75 ] || fail "control socket not re-bound within a refresh interval"
+    sleep 1
+done
+echo "control: ok (dead socket path re-bound after ${i}s)"
 
 # --- performance --------------------------------------------------------
 # Sampled AFTER the churn above so a timer left behind by a closed wall
