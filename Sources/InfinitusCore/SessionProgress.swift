@@ -63,12 +63,15 @@ public struct SessionProgress: Sendable, Equatable, Codable {
     /// results (`AwsLogin.profile(in:)`); nil when the tail's recent
     /// results carry no such signature. New optional field.
     public let awsLoginProfile: String?
+    /// When that failing tool result was recorded — a login for the
+    /// profile started after it clears the need.
+    public let awsLoginFailedAt: Date?
 
     public init(lastActivityAt: Date? = nil, nowDoing: String? = nil, todos: Todos? = nil,
                 title: String? = nil, goal: String? = nil, phase: String? = nil,
                 name: String? = nil, gitBranch: String? = nil, model: String? = nil,
                 outputTokens: Int = 0, recentOutputTokens: Int? = nil, retrying: Bool = false,
-                awsLoginProfile: String? = nil) {
+                awsLoginProfile: String? = nil, awsLoginFailedAt: Date? = nil) {
         self.lastActivityAt = lastActivityAt
         self.nowDoing = nowDoing
         self.todos = todos
@@ -82,6 +85,7 @@ public struct SessionProgress: Sendable, Equatable, Codable {
         self.recentOutputTokens = recentOutputTokens
         self.retrying = retrying
         self.awsLoginProfile = awsLoginProfile
+        self.awsLoginFailedAt = awsLoginFailedAt
     }
 
     /// Parses a tail of JSONL lines (oldest→newest). Tolerant of a torn
@@ -187,6 +191,7 @@ public struct SessionProgress: Sendable, Equatable, Codable {
         // names no profile, the failed command's own --profile /
         // AWS_PROFILE does (found by tool_use_id).
         var awsLoginProfile: String?
+        var awsLoginFailedAt: Date?
         // Message entries only: attachments, hook summaries and turn
         // stats pad a transcript by ~8 lines per turn, so a raw-line
         // window lost the failed call as soon as the session reported
@@ -221,6 +226,7 @@ public struct SessionProgress: Sendable, Equatable, Codable {
                 } else {
                     awsLoginProfile = profile
                 }
+                awsLoginFailedAt = (entry["timestamp"] as? String).flatMap(UsageHistory.parseISO)
                 break scan
             }
         }
@@ -229,7 +235,8 @@ public struct SessionProgress: Sendable, Equatable, Codable {
                                 title: title, goal: goal(lines: lines), phase: phase(entries: entries),
                                 gitBranch: gitBranch, model: model,
                                 outputTokens: outputTokens, recentOutputTokens: recentOutputTokens,
-                                retrying: retrying, awsLoginProfile: awsLoginProfile)
+                                retrying: retrying, awsLoginProfile: awsLoginProfile,
+                                awsLoginFailedAt: awsLoginFailedAt)
     }
 
     static let phaseWindow = 24
@@ -363,7 +370,8 @@ public struct SessionProgress: Sendable, Equatable, Codable {
                              gitBranch: progress.gitBranch, model: progress.model,
                              outputTokens: progress.outputTokens,
                              recentOutputTokens: progress.recentOutputTokens, retrying: progress.retrying,
-                             awsLoginProfile: progress.awsLoginProfile)
+                             awsLoginProfile: progress.awsLoginProfile,
+                             awsLoginFailedAt: progress.awsLoginFailedAt)
         }
         guard let handle = try? FileHandle(forReadingFrom: url) else { return withGoal(parse(lines: [])) }
         defer { try? handle.close() }
