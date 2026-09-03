@@ -58,8 +58,19 @@ final class SettingsSyncModel: ObservableObject {
         return drive.appendingPathComponent("Infinitus")
     }
 
+    /// Dev, mock and playground instances never touch the shared file:
+    /// a mock-mode debug binary pushed the DEMO engine's config into it
+    /// and the real app pulled it, unsetting the user's threshold and
+    /// strategy (2026-09-03 "my cswap config kept getting reverted").
+    static var isDevInstance: Bool {
+        ProcessInfo.processInfo.environment["INFINITUS_CONTROL_SOCKET"] != nil
+            || ProcessInfo.processInfo.environment["INFINITUS_CSWAP"] != nil
+            || UserDefaults.standard.bool(forKey: "mock_mode")
+            || Bundle.main.bundleIdentifier == nil
+    }
+
     func tick() async {
-        guard enabled else { return }
+        guard enabled, !Self.isDevInstance else { return }
         guard let dir = Self.containerDir() else {
             status = "iCloud Drive not available on this Mac"
             return
@@ -74,9 +85,18 @@ final class SettingsSyncModel: ObservableObject {
         if let remote, remote != lastSeen, remote != local {
             // Remote moved (another Mac wrote, or first tick over an
             // existing file): adopt it. Remote wins a two-sided race — the
-            // file IS the shared truth.
-            await apply(remote)
-            lastSeen = remote
+            // file IS the shared truth. Except the ENGINE keys on the
+            // first tick after launch: this Mac's cswap is the truth for
+            // its own settings, and a relaunch used to pull whatever the
+            // file last held over a `cswap config set` made meanwhile.
+            let first = lastSeen == nil
+            await apply(remote, engine: !first)
+            if first, remote.engine != local.engine {
+                // Push the merge (remote prefs + this engine) next tick.
+                lastSeen = SyncSnapshot(app: remote.app, themes: remote.themes, engine: local.engine)
+            } else {
+                lastSeen = remote
+            }
             status = "pulled \(Self.stamp())"
         } else if remote != local {
             do {
@@ -155,7 +175,7 @@ final class SettingsSyncModel: ObservableObject {
         return SyncSnapshot(app: app, themes: RowTheme.loadCustom(), engine: engine)
     }
 
-    private func apply(_ snap: SyncSnapshot) async {
+    private func apply(_ snap: SyncSnapshot, engine applyEngine: Bool = true) async {
         for (key, value) in snap.app where Self.appKeys.contains(key) {
             switch value {
             case .bool(let b): defaults.set(b, forKey: key)
@@ -173,7 +193,7 @@ final class SettingsSyncModel: ObservableObject {
         }
         // Engine settings: set what differs, unset what the snapshot lost —
         // without the unset leg two Macs ping-pong a removed key forever.
-        if let cli = model?.cswap, let current = try? await cli.configList() {
+        if applyEngine, let cli = model?.cswap, let current = try? await cli.configList() {
             for entry in current.settings {
                 let want = snap.engine[entry.key]
                 let have = entry.isSet ? entry.value.editableText : nil
