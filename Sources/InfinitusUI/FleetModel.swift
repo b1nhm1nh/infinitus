@@ -60,6 +60,9 @@ public protocol FleetModel: ObservableObject {
     /// Run-rate projection (when each window of the active account hits
     /// its limit, when the fleet is out); nil on a host without one.
     var forecast: UsageForecast? { get }
+    /// Open the full forecast (the Mac's Utilization pane, the phone's
+    /// Outlook screen) — the "at this pace" line is a link to it.
+    func openForecast()
 
     // Intro choreography (Animations.swift) — the entrance gates.
     var engineMissing: Bool { get }
@@ -110,6 +113,7 @@ public extension FleetModel {
     var igniting: Int? { nil }
     var canIgnite: Bool { false }
     var forecast: UsageForecast? { nil }
+    func openForecast() {}
     func ignite(_ number: Int) {}
     /// A host with no resume nudge (the phone) simply has no count —
     /// the banner then drops its suffix.

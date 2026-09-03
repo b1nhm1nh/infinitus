@@ -23,7 +23,11 @@ public struct UsageForecastLine<M: FleetModel>: View {
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
                 .fixedSize()
-                .help(help(f))
+                .help(help(f) + "\n\nClick for the full forecast.")
+                // The line is the door to the dashboard (user 2026-09-03
+                // "link from 'at this pace' to view full").
+                .contentShape(Rectangle())
+                .onTapGesture { model.openForecast() }
         }
     }
 

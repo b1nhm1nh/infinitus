@@ -14,23 +14,42 @@ struct OutlookScreen: View {
     var body: some View {
         List {
             if let forecast = model.forecast {
-                if let active = forecast.active {
+                // Every account with its own measured paces (newer Macs);
+                // older ones only project the active account.
+                let lines = forecast.accounts ?? forecast.active.map { [$0] } ?? []
+                ForEach(Array(lines.enumerated()), id: \.offset) { index, line in
                     Section {
-                        ForEach(Array(active.windows.enumerated()), id: \.offset) { _, window in
+                        ForEach(Array(line.windows.enumerated()), id: \.offset) { _, window in
                             windowRow(window)
                         }
+                        if let binds = line.bindsWindow, let at = line.bindsAt {
+                            Text("\(ForecastWords.gaugeName(binds, theme: model.rowTheme)) binds first, \(ForecastClock.label(at))")
+                                .font(.caption).foregroundStyle(.orange)
+                        }
                     } header: {
-                        Text("\(accountName(active.number, active.email)) · at this pace")
+                        Text("\(accountName(line.number, line.email))"
+                             + (line.active ? " · active" : line.disabled ? " · held" : "")
+                             + (index == 0 ? " · at this pace" : ""))
                     } footer: {
-                        Text("Pace = measured % per hour of each window on the active account: "
-                             + "the 5h window over the last hour, weekly and per-model windows "
-                             + "over the last 24 h. ETA assumes the pace holds; a reset that "
-                             + "lands first clears the window instead.")
+                        if index == lines.count - 1 { paceFooter }
+                    }
+                }
+                if lines.isEmpty {
+                    Section {
+                        Text("No projection yet — the Mac needs about an hour of usage samples.")
+                            .foregroundStyle(.secondary)
                     }
                 }
                 Section("Fleet") {
                     LabeledContent("All accounts out") {
                         Text(forecast.allDeadAt.map { ForecastClock.label($0) } ?? "no weekly pace yet")
+                    }
+                    if let order = forecast.drainOrder, !order.isEmpty {
+                        LabeledContent("Drain order") {
+                            Text(order.map { n in
+                                model.accounts.first { $0.number == n }.map(LiveActivityBuilder.name(of:)) ?? "#\(n)"
+                            }.joined(separator: " → ")).multilineTextAlignment(.trailing)
+                        }
                     }
                     if let rate = model.snapshot?.tokenRate, rate.perMinute > 0 {
                         LabeledContent("Output tokens now") {
@@ -63,6 +82,14 @@ struct OutlookScreen: View {
         }
         .navigationTitle("Outlook")
         .navigationBarTitleDisplayMode(.inline)
+    }
+
+    private var paceFooter: some View {
+        Text("Pace = measured % per hour of each window, per account: the 5h window "
+             + "over the last hour, weekly and per-model windows over the last 24 h. "
+             + "ETA assumes the pace holds; a reset that lands first clears the window "
+             + "instead. The fleet projection drains weekly headroom account by account "
+             + "at the active account's pace.")
     }
 
     @ViewBuilder private func windowRow(_ window: UsageForecast.Window) -> some View {

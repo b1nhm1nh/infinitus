@@ -265,6 +265,9 @@ final class MirrorModel: ObservableObject, FleetModel {
     /// snapshot — the shared AllDeadBanner renders both lines.
     var forecast: UsageForecast? { snapshot?.forecast }
     var battlePlan: WindowPlanner.Plan? { snapshot?.plan }
+    /// The "at this pace" line's tap: NativeFleetScreen pushes OutlookScreen.
+    @Published var outlookShown = false
+    func openForecast() { outlookShown = true }
     var switchFlashTick: Int { primary?.switchFlashTick ?? 0 }
     var deathTicks: [Int: Int] { primary?.deathTicks ?? [:] }
     var dying: Set<Int> { primary?.dying ?? [] }

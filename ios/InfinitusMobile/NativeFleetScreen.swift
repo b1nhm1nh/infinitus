@@ -42,6 +42,7 @@ struct NativeFleetScreen: View {
                     }
                 }
                 .onAppear { usage.loadIfNeeded() }
+                .navigationDestination(isPresented: $model.outlookShown) { OutlookScreen(model: model) }
         }
         // The one shared cue that has a phone equivalent: a switch is a
         // success beat, an account dying is a warning one. The trigger is
