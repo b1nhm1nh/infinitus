@@ -22,6 +22,15 @@ targets:
     # NSBonjourServices / NSLocalNetworkUsageDescription have no
     # INFOPLIST_KEY_ equivalent, so the target gets a real (generated,
     # untracked) Info.plist that Xcode merges the keys above into.
+    # Push (Live Activity tokens, #3's alerts) needs the aps-environment
+    # entitlement, which a personal team cannot hold ("Personal development
+    # teams do not support the Push Notifications capability", probed
+    # 2026-09-03). Once the paid Apple Developer account lands, add:
+    #   entitlements:
+    #     path: InfinitusMobile/InfinitusMobile.entitlements
+    #     properties: { aps-environment: development }
+    # The app already asks for notification permission and registers the
+    # alert token the moment the entitlement is there.
     info:
       path: InfinitusMobile/Info.plist
       properties:

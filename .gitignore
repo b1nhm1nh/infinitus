@@ -12,3 +12,4 @@ build-*/
 ios/build/
 ios/InfinitusMobile/Info.plist
 ios/InfinitusMobileWidgets/Info.plist
+ios/InfinitusMobile/InfinitusMobile.entitlements

@@ -129,7 +129,7 @@ final class LiveActivities {
         }
     }
 
-    private func register(kind: ActivityPushRegistration.Kind, token: Data) async {
+    func register(kind: ActivityPushRegistration.Kind, token: Data) async {
         #if DEBUG
         let environment = "sandbox"
         #else
