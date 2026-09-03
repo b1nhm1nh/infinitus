@@ -239,6 +239,14 @@ final class ControlServer {
             await model.refreshSnapshot()
             return ControlReply(ok: true, result: try .of(["fleet": fleetPayload(fleet)]))
 
+        case "ignite":
+            let (fleet, n) = try target(r)
+            guard fleet.capabilities.contains(.ignite) else { throw Fail("\(fleet.id) cannot ignite (no per-account request verb)") }
+            guard fleet.accounts.contains(where: { $0.number == n }) else { throw Fail("no account #\(n) in \(fleet.id)") }
+            try await fleet.engine.ignite(fleet: fleet.provider, number: n)
+            await model.refreshSnapshot()
+            return ControlReply(ok: true, result: try .of(["fleet": fleetPayload(fleet)]))
+
         case "add":
             guard let key = r.args.first,
                   let fleet = model.fleets.first(where: { $0.id == key }) else {
@@ -452,7 +460,7 @@ final class ControlServer {
             (.rename, "rename"), (.remove, "remove"), (.addCurrent, "addCurrent"),
             (.addToken, "addToken"), (.addOAuth, "addOAuth"), (.autoSwitch, "autoSwitch"),
             (.costReport, "costReport"), (.history, "history"), (.settings, "settings"),
-            (.prefer, "prefer"),
+            (.prefer, "prefer"), (.ignite, "ignite"),
         ]
         return table.filter { caps.contains($0.0) }.map(\.1)
     }

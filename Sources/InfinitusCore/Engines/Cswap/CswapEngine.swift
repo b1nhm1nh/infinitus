@@ -79,6 +79,19 @@ public struct CswapEngine: AccountEngine {
         if on { tokens.insert(email) } else { tokens.remove(email); tokens.remove(String(number)) }
         try await cli.setConfig(Self.preferredKey, tokens.isEmpty ? nil : tokens.sorted().joined(separator: ","))
     }
+    /// `cswap run <n> -- -p . --max-turns 1`: one ~1K-token request under
+    /// the account's own CLAUDE_CONFIG_DIR. PATH is widened to where
+    /// `claude` lives — `cswap run` resolves it with `which`, and a GUI
+    /// app's inherited PATH doesn't reach it.
+    public func ignite(fleet: Provider, number: Int) async throws {
+        let home = NSHomeDirectory()
+        var env = ProcessInfo.processInfo.environment
+        let extra = ["\(home)/.claude/local", "\(home)/.local/bin",
+                     "/opt/homebrew/bin", "/usr/local/bin",
+                     (cli.binaryPath as NSString).deletingLastPathComponent]
+        env["PATH"] = (extra + [env["PATH"] ?? "/usr/bin:/bin"]).joined(separator: ":")
+        _ = try await cli.run(WindowPlanner.igniterArguments(number: number), environment: env)
+    }
     public func rename(fleet: Provider, number: Int, _ name: String) async throws {
         try await cli.setAlias(number, name)
     }

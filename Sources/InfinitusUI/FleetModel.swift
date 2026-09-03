@@ -54,6 +54,9 @@ public protocol FleetModel: ObservableObject {
     var battlePlan: WindowPlanner.Plan? { get }
     /// The account an ignition is in flight for (button shows a spinner).
     var igniting: Int? { get }
+    /// Whether this host's engine can ignite (capability `.ignite`); the
+    /// button is hidden otherwise — the plan line still shows.
+    var canIgnite: Bool { get }
 
     // Intro choreography (Animations.swift) — the entrance gates.
     var engineMissing: Bool { get }
@@ -102,6 +105,7 @@ public extension FleetModel {
     var appUpdateVersion: String? { nil }
     var battlePlan: WindowPlanner.Plan? { nil }
     var igniting: Int? { nil }
+    var canIgnite: Bool { false }
     func ignite(_ number: Int) {}
     /// A host with no resume nudge (the phone) simply has no count —
     /// the banner then drops its suffix.

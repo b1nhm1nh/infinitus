@@ -43,11 +43,16 @@ public struct EngineCapabilities: OptionSet, Sendable, Codable, Hashable {
     /// Pick-first is the ENGINE's knob (user 2026-09-03: no second policy
     /// app-side): cswap `autoswitch.preferred`, the proxy's priority tier.
     public static let prefer      = EngineCapabilities(rawValue: 1 << 14)
+    /// Start an account's 5h clock with one tiny request, without
+    /// switching the fleet (#7 igniter). cswap: `cswap run`. The proxy
+    /// has no "one request as credential X" verb yet — its cloaking
+    /// lives in its executor, so nothing app-side can imitate it safely.
+    public static let ignite      = EngineCapabilities(rawValue: 1 << 15)
 
     public static let all: EngineCapabilities = [
         .switch, .rotate, .reorder, .hold, .rename, .remove, .addCurrent,
         .addToken, .addOAuth, .autoSwitch, .costReport, .history,
-        .settings, .notify, .prefer,
+        .settings, .notify, .prefer, .ignite,
     ]
 }
 
@@ -122,6 +127,10 @@ public protocol AccountEngine: Sendable {
     /// Star/unstar: the engine lands on starred accounts first when it
     /// switches. Reported back per account as `Account.preferred`.
     func setPreferred(fleet: Provider, number: Int, _ on: Bool) async throws
+    /// One tiny request as account n so its 5h window starts now; the
+    /// fleet's active account is untouched. Returns when the request is
+    /// done (seconds).
+    func ignite(fleet: Provider, number: Int) async throws
     func rename(fleet: Provider, number: Int, _ name: String) async throws
     func remove(fleet: Provider, number: Int) async throws
     func addCurrent() async throws
@@ -154,6 +163,7 @@ public extension AccountEngine {
     func reorder(fleet: Provider, _ numbers: [Int]) async throws { throw EngineError.unsupported("reorder") }
     func setHold(fleet: Provider, number: Int, held: Bool) async throws { throw EngineError.unsupported("hold") }
     func setPreferred(fleet: Provider, number: Int, _ on: Bool) async throws { throw EngineError.unsupported("prefer") }
+    func ignite(fleet: Provider, number: Int) async throws { throw EngineError.unsupported("ignite") }
     func rename(fleet: Provider, number: Int, _ name: String) async throws { throw EngineError.unsupported("rename") }
     func remove(fleet: Provider, number: Int) async throws { throw EngineError.unsupported("remove") }
     func addCurrent() async throws { throw EngineError.unsupported("addCurrent") }

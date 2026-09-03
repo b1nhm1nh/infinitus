@@ -89,9 +89,13 @@ file keeps the shipped log and the deferred-by-design notes.
       the all-dead banner) with a two-tap confirm-gated "Ignite" that
       runs `cswap run <n> -- -p . --max-turns 1` (PATH widened to reach
       `claude`; result in the event log); `infinitusctl plan` returns
-      the plan (e2e-gated). Next: the auto-execution toggle (off by
-      default), then the Claude strategist. Open questions 1–3 still
-      the user's — the igniter leans on experimental `cswap run` (q2).
+      the plan (e2e-gated). Then (user: "go with your suggestions"):
+      ignite is an engine capability (`.ignite`; cswap via `cswap run`,
+      proxy not yet — needs an upstream verb), `infinitusctl ignite`,
+      window-age guard (≥ 90 min left at the bind), strategist dropped,
+      auto toggle parked (engine-side if ever), replay after a week of
+      `active`-flagged samples decides further investment. Decisions
+      recorded in docs/research/smart-engine.md.
 - ~~#8 CLIProxyAPI alternate backend~~ → shipped 2026-09-02 as the
   multi-engine seam: `AccountEngine` + `EngineFleet` + capabilities in
   InfinitusCore, `FleetState`/`EngineRegistry` in the app (AppModel stays a

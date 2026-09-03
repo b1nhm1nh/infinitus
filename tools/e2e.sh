@@ -126,6 +126,7 @@ REV="$(python3 -c "print(' '.join(reversed('$ORDER'.split())))")"
 "$CTL" switch cswap/claude 1 | expect "d['fleet']['activeNumber']==1" || fail "switch back to 1"
 echo "round-trips: ok (switch, rotate, hold, unhold, rename, prefer, reorder)"
 "$CTL" plan | expect "'plan' in d and (d['plan'] is None or 'steps' in d['plan'])" || fail "plan verb"
+"$CTL" ignite cswap/claude 2 | expect "'fleet' in d" || fail "ignite verb"
 
 # --- windows: the wall takes over from the pop-out and gives it back ----
 "$CTL" show wall | expect "d['shown']" || fail "show wall"
