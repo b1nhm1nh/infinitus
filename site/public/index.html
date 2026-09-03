@@ -119,6 +119,20 @@
   }
   .btn.primary:hover { filter: brightness(1.08); }
   .cta .note { color: var(--faint); font-size: 13px; }
+  .brew {
+    display: inline-flex; align-items: baseline; gap: 8px; margin: 16px 0 0;
+    padding: 10px 14px; border-radius: 8px; max-width: 100%;
+    font-family: var(--mono); font-size: 13px; color: var(--text);
+    background: rgba(255,255,255,.04); border: 1px solid var(--line);
+    cursor: pointer; text-align: left; white-space: nowrap; overflow-x: auto;
+  }
+  .brew:hover { border-color: var(--dim); }
+  .brew .p { color: var(--orange); }
+  .brew .k {
+    margin-left: 8px; font-size: 11px; letter-spacing: .06em; text-transform: uppercase;
+    color: var(--faint); border: 1px solid var(--line); border-radius: 5px; padding: 2px 7px;
+  }
+  .brew.done .k { color: var(--orange); border-color: var(--orange); }
   .also { color: var(--faint); font-size: 12.5px; margin: 14px 0 0; }
   .also a { color: var(--dim); text-decoration: underline; text-underline-offset: 3px; text-decoration-color: var(--line); }
   .also a:hover { color: var(--text); }
@@ -334,8 +348,13 @@
   <div class="cta">
     <a class="btn primary" href="https://github.com/deathemperor/infinitus/releases/download/v0.4.0/Infinitus-0.4.0.zip">Download for macOS</a>
     <a class="btn" href="https://github.com/deathemperor/infinitus">Source on GitHub</a>
-    <span class="note">v0.3 · Apple silicon · free &amp; open source</span>
+    <span class="note">v0.4 · Apple silicon · free &amp; open source</span>
   </div>
+  <button class="brew" type="button" data-copy="brew install --cask --no-quarantine deathemperor/tap/infinitus"
+          title="Copy to clipboard" aria-label="Copy the Homebrew install command">
+    <span class="p">$</span> brew install --cask --no-quarantine deathemperor/tap/infinitus
+    <span class="k">copy</span>
+  </button>
   <p class="also">Also for
     <a href="https://github.com/deathemperor/infinitus/releases/download/v0.4.0/infinitus-tray-linux-x86_64">Linux x86_64</a> ·
     <a href="https://github.com/deathemperor/infinitus/releases/download/v0.4.0/infinitus-tray-linux-aarch64">Linux aarch64</a> ·
@@ -597,6 +616,21 @@
 
 <script>
 (function () {
+  // Hero brew line: click copies, the badge says so for a moment.
+  document.querySelectorAll(".brew").forEach(function (button) {
+    button.addEventListener("click", function () {
+      var done = function () {
+        button.classList.add("done");
+        button.querySelector(".k").textContent = "copied";
+        setTimeout(function () {
+          button.classList.remove("done");
+          button.querySelector(".k").textContent = "copy";
+        }, 1600);
+      };
+      if (navigator.clipboard) navigator.clipboard.writeText(button.dataset.copy).then(done, done);
+      else done();
+    });
+  });
   var accounts = [
     { name: "papaya",  pct: 64, warn: false, dead: false, reset: "resets 2d 4h" },
     { name: "banyan",  pct: 12, warn: true,  dead: false, reset: "resets 9h 12m" },
