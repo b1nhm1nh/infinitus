@@ -37,6 +37,24 @@ final class TitleFormatterTests: XCTestCase {
             "⇄ dev · 88·11% · Opus 70%")
     }
 
+    func testResetFollowsTheFullerWindow() throws {
+        // titleReset: the 7d is fuller than the 5h here, so its reset
+        // leads; countdown and clock forms, both de-spaced for the bar.
+        let now = Date(timeIntervalSince1970: 1_700_000_000)   // 2023-11-14 22:13:20Z
+        let a = try account(#"{\#(base), "usageStatus": "ok", "usage": {"fiveHour": {"pct": 30, "resetsAt": "2023-11-15T00:00:00Z"}, "sevenDay": {"pct": 70, "resetsAt": "2023-11-16T04:13:20Z"}}}"#)
+        XCTAssertEqual(TitleFormatter.format(account: a, prefs: TitlePrefs(titleReset: "countdown"), now: now),
+                       "⇄ dev · 30·70% · ↺1d6h")
+        let b = try account(#"{\#(base), "usageStatus": "ok", "usage": {"fiveHour": {"pct": 80, "resetsAt": "2023-11-14T23:58:20Z"}, "sevenDay": {"pct": 70, "resetsAt": "2023-11-16T04:13:20Z"}}}"#)
+        XCTAssertEqual(TitleFormatter.format(account: b, prefs: TitlePrefs(titleReset: "countdown"), now: now),
+                       "⇄ dev · 80·70% · ↺1h45m")
+        // Untouched windows and resets already behind us show nothing.
+        let c = try account(#"{\#(base), "usageStatus": "ok", "usage": {"fiveHour": {"pct": 0}, "sevenDay": {"pct": 0, "resetsAt": "2023-11-10T00:00:00Z"}}}"#)
+        XCTAssertEqual(TitleFormatter.format(account: c, prefs: TitlePrefs(titleReset: "countdown"), now: now),
+                       "⇄ dev · 0·0%")
+        XCTAssertEqual(TitleFormatter.format(account: b, prefs: TitlePrefs(titlePct: "off", titleReset: "clock"), now: now),
+                       "⇄ dev · ↺" + ResetLabel.compact(resetsAt: "2023-11-14T23:58:20Z", countdown: nil, now: now)!.split(separator: "·").last!)
+    }
+
     func testAliasWinsAndModesFilter() throws {
         let a = try account(#"{\#(base), "alias": "work", "usageStatus": "ok", "usage": {"fiveHour": {"pct": 50}, "sevenDay": {"pct": 70, "resetsAt": "2999-01-01T00:00:00Z"}}}"#)
         XCTAssertEqual(TitleFormatter.format(account: a, prefs: TitlePrefs(titlePct: "5h")), "⇄ work · 50%")

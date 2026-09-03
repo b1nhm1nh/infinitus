@@ -12,6 +12,9 @@ Talks to the app over `~/Library/Application Support/Infinitus/control/control.s
 on a playground/dev instance and on `infinitusctl` to drive that instance
 instead of the real app (the playground opens no socket without it).
 
+Installing from scratch instead? Start with `agent-setup.md` in this
+directory; this guide is for the app once it runs.
+
 ## The one rule
 
 **Run `infinitusctl manifest` first.** It returns every command with its

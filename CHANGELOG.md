@@ -6,6 +6,25 @@ GitHub release body.
 
 ## 0.4.1 (unreleased)
 
+### Menu bar
+- **The reset time, in the bar.** The title now ends with when the
+  active account's fuller window resets — `loc · 75·40% · ↺2h14m` — the
+  one number a one- or two-account user actually waits on. Settings →
+  Display → *Reset time in title*: countdown (default), clock time, or
+  off. The Linux tray title carries the same countdown.
+- **Stars you can see.** The pick-first star shows in every account
+  list (popup grid, cards, the phone), and starring an account that
+  isn't active switches to it at once; the star itself flips
+  immediately and settles when the engine confirms.
+- **Install engine bootstraps `uv`** instead of dead-ending on
+  "uv not found" (Homebrew if present, else Astral's installer) —
+  thanks @sonyy172 (#20).
+
+### Docs
+- `docs/guides/agent-setup.md`: a from-scratch setup recipe for a
+  coding agent — install, engine, accounts, auto-switch knobs, menu
+  bar, verification.
+
 ### 9Router engine
 - **A third engine.** [9Router](https://github.com/decolua/9router)
   joins cswap and CLIProxyAPI: its Claude connections show up as a

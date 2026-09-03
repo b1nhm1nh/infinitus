@@ -234,7 +234,8 @@ struct InfinitusTray {
             let now = Date()
             let active = list.accounts.first { $0.active }
             let prefs = TitlePrefs(showAccountName: true, titlePct: "both",
-                                   titleScoped: false, titleRemaining: remaining)
+                                   titleScoped: false, titleRemaining: remaining,
+                                   titleReset: "countdown")
             let recovery = RecoveryMath.corrected(engine: list.nextRecovery, accounts: list.accounts)
             let rows = list.accounts.map { row($0, list: list, recovery: recovery, theme: theme, now: now) }
             var tooltip = rows.joined(separator: "\n")
@@ -361,7 +362,8 @@ struct InfinitusTray {
             let now = Date()
             let active = list.accounts.first { $0.active }
             let prefs = TitlePrefs(showAccountName: true, titlePct: "both",
-                                   titleScoped: false, titleRemaining: false)
+                                   titleScoped: false, titleRemaining: false,
+                                   titleReset: "countdown")
             // Display order (todo 2026-09-01, matches the macOS popup):
             // active, next candidate, then most headroom first —
             // display-only, engine slots untouched. --engine-order opts out.

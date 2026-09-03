@@ -7,6 +7,8 @@ struct DisplayPane: View {
     @ObservedObject var model: AppModel
     @StateObject private var login = LoginItemModel()
 
+    private let resetLabels = ["off": "None", "countdown": "Countdown",
+                               "clock": "Clock time"]
     private let pctLabels = ["off": "None", "5h": "Session (5h)",
                              "7d": "Weekly (7d)", "both": "Both (5h · 7d)"]
     private let intervalLabels = [30: "30 seconds", 60: "60 seconds", 300: "5 minutes"]
@@ -25,6 +27,14 @@ struct DisplayPane: View {
                 }
             }
             .disabled(model.titleIconOnly)
+            Picker("Reset time in title", selection: $model.titleReset) {
+                ForEach(TitlePrefs.resetChoices, id: \.self) {
+                    Text(resetLabels[$0] ?? $0).tag($0)
+                }
+            }
+            .disabled(model.titleIconOnly)
+            .help("When the active account's fuller window resets — "
+                  + "as a countdown (↺2h14m) or a clock time (↺20:29).")
             Toggle("Show model limits in title", isOn: $model.titleScoped)
                 .disabled(model.titleIconOnly)
             Toggle("Menu bar counts remaining, not used",

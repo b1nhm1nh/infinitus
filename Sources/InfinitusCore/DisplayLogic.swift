@@ -13,16 +13,25 @@ public struct TitlePrefs: Sendable, Equatable {
     /// Percentages count what's LEFT instead of what's used
     /// (menu-bar-only setting, 2026-08-30).
     public var titleRemaining: Bool
+    /// When the binding window resets, in the menu bar: "off" |
+    /// "countdown" ("↺2h14m") | "clock" ("↺20:29") — the one number a
+    /// one-account user actually waits on (user 2026-09-03). The
+    /// formatter's own default is off so the ported title tests stay
+    /// put; the app defaults to countdown.
+    public var titleReset: String
 
     public static let pctChoices = ["off", "5h", "7d", "both"]
+    public static let resetChoices = ["off", "countdown", "clock"]
     public static let refreshChoices = [30, 60, 300]
 
     public init(showAccountName: Bool = true, titlePct: String = "both",
-                titleScoped: Bool = false, titleRemaining: Bool = false) {
+                titleScoped: Bool = false, titleRemaining: Bool = false,
+                titleReset: String = "off") {
         self.showAccountName = showAccountName
         self.titlePct = titlePct
         self.titleScoped = titleScoped
         self.titleRemaining = titleRemaining
+        self.titleReset = titleReset
     }
 }
 
@@ -106,9 +115,28 @@ public enum TitleFormatter {
                 segments.append("\(name) \(Int(shown(pct).rounded()))%")
             }
         }
+        if prefs.titleReset != "off",
+           let reset = bindingReset(usage, now: now) {
+            segments.append("↺" + (prefs.titleReset == "clock"
+                ? ResetLabel.shortClock(reset, now: now, calendar: .current)
+                : ResetLabel.countdown(reset, now: now)))
+        }
         if segments.isEmpty { return icon }
         let joined = segments.joined(separator: " · ")
         return icon.isEmpty ? joined : "\(icon) " + joined
+    }
+
+    /// The reset the user is waiting on: of the 5h and 7d windows with a
+    /// reset still ahead, the fuller one (ties go to the 5h, which
+    /// moves first). Nothing while both windows are untouched.
+    static func bindingReset(_ usage: Usage?, now: Date) -> Date? {
+        let windows = [usage?.fiveHour, usage?.sevenDay].compactMap { $0 }
+            .compactMap { w -> (Double, Date)? in
+                guard let at = WeeklyRoll.parse(w.resetsAt), at > now,
+                      let pct = WeeklyRoll.displayPct(w, now: now), pct > 0 else { return nil }
+                return (pct, at)
+            }
+        return windows.max { $0.0 < $1.0 }?.1
     }
 }
 
@@ -228,19 +256,27 @@ public enum ResetLabel {
             guard let countdown else { return nil }
             return countdown.replacingOccurrences(of: " ", with: "")
         }
-        let total = max(0, Int(reset.timeIntervalSince(now)))
-        let days = total / 86400
-        let hours = (total % 86400) / 3600
-        let minutes = (total % 3600) / 60
-        let countdown: String
-        if days > 0 { countdown = "\(days)d\(hours)h" }
-        else if hours > 0 { countdown = "\(hours)h\(minutes)m" }
-        else { countdown = "\(minutes)m" }
+        return "\(Self.countdown(reset, now: now))·\(shortClock(reset, now: now, calendar: calendar))"
+    }
+
+    /// "22:10" today, "Sep 4" on another day.
+    static func shortClock(_ reset: Date, now: Date, calendar: Calendar) -> String {
         let f = DateFormatter()
         f.calendar = calendar
         f.timeZone = calendar.timeZone
         f.dateFormat = calendar.isDate(reset, inSameDayAs: now) ? "HH:mm" : "MMM d"
-        return "\(countdown)·\(f.string(from: reset))"
+        return f.string(from: reset)
+    }
+
+    /// De-spaced countdown: "5d7h", "1h44m", "12m".
+    static func countdown(_ reset: Date, now: Date) -> String {
+        let total = max(0, Int(reset.timeIntervalSince(now)))
+        let days = total / 86400
+        let hours = (total % 86400) / 3600
+        let minutes = (total % 3600) / 60
+        if days > 0 { return "\(days)d\(hours)h" }
+        if hours > 0 { return "\(hours)h\(minutes)m" }
+        return "\(minutes)m"
     }
 
     static func clockString(_ reset: Date, now: Date, calendar: Calendar) -> String {

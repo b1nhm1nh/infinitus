@@ -82,6 +82,12 @@ Arch users can build from [`packaging/aur/PKGBUILD`](packaging/aur/) —
   `pipx install claude-swap`) — the app's first-run card installs it
   for you
 
+Setting it up with a coding agent? Hand it
+[docs/guides/agent-setup.md](docs/guides/agent-setup.md) — install,
+engine, accounts, auto-switch knobs, menu bar, verification — and
+[docs/guides/infinitusctl-agent.md](docs/guides/infinitusctl-agent.md)
+to drive the running app.
+
 ## Features
 
 - **Menu bar usage** — active account name plus 5h/weekly percentages
