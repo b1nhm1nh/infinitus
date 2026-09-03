@@ -25,6 +25,19 @@ GitHub release body.
 - **Idle sessions carry their names.** The mirror snapshot now ships
   the Mac's scan of every listed session, so an idle session's name
   and AWS need reach the phone, not only the busy six.
+- **Notifications reach the phone directly** (issue #3). Every alert the
+  Mac posts — a switch, a resumed session, an account back in rotation,
+  every account at its limit, the "Also push when" triggers — also goes
+  to any phone that registered for alerts, as a plain APNs notification
+  with the same key that drives the Live Activities. No Slack or
+  Telegram in between. Needs the phone build that registers an `alert`
+  token; until one does, nothing is sent.
+
+### Fixes
+- **A refused engine no longer reads as a crash.** The supervisor
+  decided crash-vs-refused when the child exited, which could beat the
+  pipe delivering its last line under load; it now waits for the pipe
+  to drain too (2 s cap for a grandchild holding it open).
 
 ## 0.4.1
 

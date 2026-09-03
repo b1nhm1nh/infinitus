@@ -23,6 +23,20 @@ private final class LineAssembler: @unchecked Sendable {
     }
 
     var sawRefusal: Bool { lock.lock(); defer { lock.unlock() }; return refused }
+
+    private var eof = false, exited = false, finished = false
+    /// True exactly once, when the pipe has drained AND the child has
+    /// exited — the exit alone raced the last line (a refusal printed
+    /// right before `exit 1` read as a crash under load) — or on
+    /// `force`, for a grandchild that inherited the pipe and keeps it open.
+    func done(eof sawEOF: Bool = false, exit sawExit: Bool = false, force: Bool = false) -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        if sawEOF { eof = true }
+        if sawExit { exited = true }
+        guard exited, eof || force, !finished else { return false }
+        finished = true
+        return true
+    }
 }
 
 /// Supervises the cswap engine's auto-switch child, `cswap auto --json`
@@ -93,18 +107,31 @@ public actor CswapSupervisor {
 
         let assembler = LineAssembler()
         let onLine = self.onLine
-        pipe.fileHandleForReading.readabilityHandler = { handle in
-            assembler.feed(handle.availableData, onLine: onLine)
-        }
-
         let started = Date()
-        p.terminationHandler = { [weak self] proc in
-            proc.standardOutput.flatMap { ($0 as? Pipe)?.fileHandleForReading.readabilityHandler = nil }
+        let finish: @Sendable () -> Void = { [weak self] in
             Task { [weak self] in
                 await self?.childExited(
                     cleanSeconds: Date().timeIntervalSince(started),
                     refused: assembler.sawRefusal
                 )
+            }
+        }
+        pipe.fileHandleForReading.readabilityHandler = { handle in
+            let chunk = handle.availableData
+            guard !chunk.isEmpty else {   // EOF
+                handle.readabilityHandler = nil
+                if assembler.done(eof: true) { finish() }
+                return
+            }
+            assembler.feed(chunk, onLine: onLine)
+        }
+        p.terminationHandler = { _ in
+            if assembler.done(exit: true) { finish(); return }
+            DispatchQueue.global().asyncAfter(deadline: .now() + 2) {
+                if assembler.done(force: true) {
+                    pipe.fileHandleForReading.readabilityHandler = nil
+                    finish()
+                }
             }
         }
 

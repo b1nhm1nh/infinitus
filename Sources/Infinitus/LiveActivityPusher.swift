@@ -102,6 +102,8 @@ final class LiveActivityPusher: ObservableObject {
         for registration in registrations.values {
             let theme = registration.themeID.flatMap { id in themes.first { $0.id == id } } ?? macTheme
             switch registration.kind {
+            case .alert:
+                continue  // pushAlert, on demand
             case .working:
                 let state = LiveActivityBuilder.working(fleet: fleet, theme: theme, report: report,
                                                         tokenRate: tokenRate)
@@ -191,6 +193,15 @@ final class LiveActivityPusher: ObservableObject {
         }
     }
 
+    /// The app's own notifications, mirrored to every phone that
+    /// registered an alert token (issue #3). No phone → nothing sent.
+    func pushAlert(title: String, body: String) {
+        guard configured else { return }
+        for registration in registrations.values where registration.kind == .alert {
+            send(LiveActivityPush.alertPayload(title: title, body: body), to: registration, what: "alert")
+        }
+    }
+
     // MARK: APNs
 
     private func bearer() -> String? {
@@ -204,16 +215,21 @@ final class LiveActivityPusher: ObservableObject {
 
     private func send(_ payload: Data, to registration: ActivityPushRegistration, what: String) {
         let slot = registration.slot
-        guard !inFlight.contains(slot), let bearer = bearer() else { return }
-        inFlight.insert(slot)
+        // Activity updates coalesce per slot; alerts are each their own
+        // message (two in one refresh must both land).
+        let key = registration.kind == .alert ? "\(slot)#\(UUID().uuidString)" : slot
+        guard !inFlight.contains(key), let bearer = bearer() else { return }
+        inFlight.insert(key)
         var request = URLRequest(url: LiveActivityPush.url(token: registration.token,
                                                            sandbox: registration.isSandbox),
                                  timeoutInterval: 15)
         request.httpMethod = "POST"
         request.httpBody = payload
         request.setValue("bearer \(bearer)", forHTTPHeaderField: "authorization")
-        request.setValue(LiveActivityPush.topic, forHTTPHeaderField: "apns-topic")
-        request.setValue("liveactivity", forHTTPHeaderField: "apns-push-type")
+        let isAlert = registration.kind == .alert
+        request.setValue(isAlert ? LiveActivityPush.bundleID : LiveActivityPush.topic,
+                         forHTTPHeaderField: "apns-topic")
+        request.setValue(isAlert ? "alert" : "liveactivity", forHTTPHeaderField: "apns-push-type")
         request.setValue("10", forHTTPHeaderField: "apns-priority")
         request.setValue("application/json", forHTTPHeaderField: "content-type")
         let device = registration.deviceName
@@ -222,7 +238,7 @@ final class LiveActivityPusher: ObservableObject {
             let body = data.flatMap { String(data: $0, encoding: .utf8) } ?? ""
             Task { @MainActor [weak self] in
                 guard let self else { return }
-                self.inFlight.remove(slot)
+                self.inFlight.remove(key)
                 if code == 200 {
                     self.lastResult = "\(what) → \(device) ok \(Date().formatted(date: .omitted, time: .shortened))"
                 } else {

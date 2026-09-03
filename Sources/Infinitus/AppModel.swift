@@ -467,6 +467,13 @@ final class AppModel: ObservableObject {
     let namedTunnel = NamedTunnel()
     /// Live Activity pushes to the phone (APNs), LiveActivityPusher.swift.
     let liveActivityPusher = LiveActivityPusher()
+
+    /// Every app notification: Notification Center here, and the same
+    /// text to any phone that registered an alert token (issue #3).
+    func notify(_ body: String) {
+        Notifier.post(title: "claude-swap", body: body)
+        liveActivityPusher.pushAlert(title: "claude-swap", body: body)
+    }
     private let awake = KeepAwake()
     private var pushTriggers = PushTriggers()
     private let defaults: UserDefaults
@@ -1185,13 +1192,13 @@ final class AppModel: ObservableObject {
             case "switch":
                 Task { await refreshSnapshot() }  // the snapshot diff posts the notification
             case "session-resumed":
-                Notifier.post(title: "claude-swap", body: event.summary)
+                notify(event.summary)
             case "remote-control-rearmed":
-                Notifier.post(title: "claude-swap", body: event.summary)
+                notify(event.summary)
             case "account-unquarantined":
-                Notifier.post(title: "claude-swap", body: "account back in rotation")
+                notify("account back in rotation")
             case "all-exhausted":
-                Notifier.post(title: "claude-swap", body: "every account is at its limit")
+                notify("every account is at its limit")
             default:
                 break
             }
@@ -1602,8 +1609,7 @@ final class AppModel: ObservableObject {
             lastNotifiedActive = current
             let name = accounts.first(where: { $0.number == current })
                 .map { $0.alias ?? String($0.email.prefix(while: { $0 != "@" })) } ?? "#\(current)"
-            Notifier.post(title: "claude-swap",
-                          body: "switched to account \(current) (\(name))")
+            notify("switched to account \(current) (\(name))")
         }
         if !isPlayground {
             awake.update(wanted: keepAwake,
@@ -1638,7 +1644,7 @@ final class AppModel: ObservableObject {
                          waiting: pushWaiting),
             sessions: list.liveSessions?.sessions)
         for msg in pushes where !isPlayground {
-            Notifier.post(title: "claude-swap", body: msg)
+            notify(msg)
             // Text over stdin, matching the channel-setup commands;
             // no channels configured is a quiet no-op (try?). The
             // away-push channels are cswap's.

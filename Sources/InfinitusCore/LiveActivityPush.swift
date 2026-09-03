@@ -18,6 +18,9 @@ public struct ActivityPushRegistration: Codable, Sendable, Equatable {
         case working = "working"
         case revivalStart = "revival-start"
         case revival = "revival"
+        /// A plain notification token (issue #3): every alert the Mac
+        /// posts locally also reaches the phone, no Slack in between.
+        case alert = "alert"
     }
     public let kind: Kind
     /// Hex APNs token.
@@ -93,6 +96,11 @@ public enum LiveActivityPush {
         ]
         if let staleDate { aps["stale-date"] = Int(staleDate.timeIntervalSince1970) }
         return data(["aps": aps])
+    }
+
+    /// A plain alert (push-type `alert`, topic = the app's bundle id).
+    public static func alertPayload(title: String, body: String) -> Data {
+        data(["aps": ["alert": ["title": title, "body": body], "sound": "default"]])
     }
 
     private static func json<S: Encodable>(_ state: S) -> Any {

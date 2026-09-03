@@ -56,6 +56,13 @@ final class LiveActivityPushTests: XCTestCase {
         let end = try JSONSerialization.jsonObject(with: LiveActivityPush.endPayload(
             state: S(), dismissalDate: now, now: now)) as! [String: Any]
         XCTAssertEqual((end["aps"] as! [String: Any])["dismissal-date"] as? Int, 100)
+
+        let alert = try JSONSerialization.jsonObject(with: LiveActivityPush.alertPayload(
+            title: "claude-swap", body: "switched to account 2")) as! [String: Any]
+        let aaps = alert["aps"] as! [String: Any]
+        XCTAssertEqual((aaps["alert"] as! [String: Any])["body"] as? String, "switched to account 2")
+        XCTAssertEqual(aaps["sound"] as? String, "default")
+        XCTAssertEqual(ActivityPushRegistration.Kind.alert.rawValue, "alert")
     }
 
     func testHostsAndTopic() {
