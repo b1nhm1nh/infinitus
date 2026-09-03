@@ -62,14 +62,6 @@ Open work lives at github.com/deathemperor/infinitus/issues (user
 2026-09-01: "move todo items to use github issues tracking"); this
 file keeps the shipped log and the deferred-by-design notes.
 
-- **Show active/connected devices** (user 2026-09-03 mid-turn: "todo:
-  show active/connected devices"): the Sync pane (and the phone's
-  header) should list which phones/browsers are currently talking to
-  the mirror — name, route (Wi-Fi / tailnet / tunnel), last seen —
-  fed from `MirrorServer.onServed` with the request's User-Agent /
-  device name header, so "is my phone still paired and reaching me?"
-  has an answer without opening the phone.
-
 - ~~infinitusctl~~ → shipped 2026-09-03: agent-facing control CLI.
   `ControlProtocol` (InfinitusCore: request/reply, manifest table,
   socket path), `ControlServer` (app: same-user UNIX socket in App
@@ -169,6 +161,14 @@ file keeps the shipped log and the deferred-by-design notes.
 
 ## Shipped 2026-09-02/03 (remote access, engine ranking, two-session flow)
 
+- **Connected devices** (user 2026-09-03 mid-turn "todo: show
+  active/connected devices"): the phone sends `X-Infinitus-Device-Id`
+  (per-install UUID) + `X-Infinitus-Device` (its name) on every
+  request; `MirrorServer.clients` keeps one `MirrorClient` per id
+  (route from the Host header: Wi-Fi / Tailscale / quick tunnel /
+  the named hostname), and the Sync pane lists them — green dot while
+  heard from in the last 90 s, "· route · N s ago". Linux tray:
+  parity pending (no pane; could go on the Panel.qml header).
 - **Pairing rendezvous on infinitus.run** (user 2026-09-03 "can the
   domain be reused for other users?" → "1 ok"): `site/src/worker.js`
   serves the landing page as before plus `PUT/GET /rendezvous/<sha256

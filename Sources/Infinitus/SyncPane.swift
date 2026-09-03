@@ -205,6 +205,36 @@ struct SyncPane: View {
     /// The restart-proof remote route: a Cloudflare tunnel the user owns.
     /// Cloudflare holds the hostname → localhost:port mapping; this Mac
     /// holds only the tunnel token, in the keychain.
+    /// Who is talking to the mirror (user 2026-09-03: "show active/
+    /// connected devices"): one row per phone, green while it has been
+    /// heard from inside MirrorClient.activeWindow, grey after.
+    private var connectedDevices: some View {
+        TimelineView(.periodic(from: .now, by: 5)) { context in
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Connected devices").font(.caption.weight(.semibold))
+                ForEach(server.clients) { client in
+                    let active = client.isActive(now: context.date)
+                    HStack(spacing: 6) {
+                        Circle().fill(active ? Color.green : Color.secondary).frame(width: 7, height: 7)
+                        Text(client.name)
+                        Text("· \(client.route) · \(relative(client.lastSeen, now: context.date))")
+                            .foregroundStyle(.secondary)
+                    }
+                    .font(.caption)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    private func relative(_ date: Date, now: Date) -> String {
+        let seconds = Int(now.timeIntervalSince(date))
+        if seconds < 5 { return "just now" }
+        if seconds < 60 { return "\(seconds) s ago" }
+        if seconds < 3600 { return "\(seconds / 60) min ago" }
+        return date.formatted(date: .omitted, time: .shortened)
+    }
+
     @ViewBuilder private var namedTunnelRows: some View {
         Toggle("Expose through your own Cloudflare tunnel",
                isOn: $app.mirrorNamedTunnelEnabled)
@@ -304,10 +334,8 @@ struct SyncPane: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.vertical, 2)
                 }
-                if let when = server.lastServed {
-                    Text("Phone last fetched the fleet \(when.formatted(date: .omitted, time: .shortened)).")
-                        .font(.caption).foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                if !server.clients.isEmpty {
+                    connectedDevices
                 }
                 // Hand the rest to an agent (user 2026-09-02): the same
                 // state as the checklist, plus the exact commands, as one

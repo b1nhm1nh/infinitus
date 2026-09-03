@@ -1,5 +1,6 @@
 import Foundation
 import Network
+import UIKit
 import InfinitusCore
 
 /// The LAN transport (#9): finds the Mac's `_infinitus._tcp`
@@ -27,6 +28,19 @@ actor NetworkFleetMirror: FleetMirror {
     /// The pairing token (#9 remote access) — every request carries it,
     /// Bonjour-discovered Macs included.
     static let tokenKey = "mirror_pair_token"
+    /// How the Mac's "Connected devices" list tells phones apart: a
+    /// per-install id, minted once, plus the device's name.
+    static let deviceIdKey = "mirror_device_id"
+    static let deviceId: String = {
+        if let stored = UserDefaults.standard.string(forKey: deviceIdKey), !stored.isEmpty { return stored }
+        let fresh = UUID().uuidString.lowercased()
+        UserDefaults.standard.set(fresh, forKey: deviceIdKey)
+        return fresh
+    }()
+    static let deviceName: String = {
+        let name = UIDevice.current.name.filter { $0.isASCII && !$0.isNewline }
+        return name.isEmpty ? UIDevice.current.model : name
+    }()
     /// Per-candidate connect timeout: several stored endpoints may be
     /// dead (a Mac off, a tunnel gone), so trying them all still has to
     /// land well inside one refresh.
@@ -386,6 +400,8 @@ actor NetworkFleetMirror: FleetMirror {
                     var head = "\(method) \(path) HTTP/1.1\r\n"
                         + "Host: \(hostHeader)\r\n"
                         + "Authorization: Bearer \(token)\r\n"
+                        + "\(MirrorClient.idHeader): \(Self.deviceId)\r\n"
+                        + "\(MirrorClient.nameHeader): \(Self.deviceName)\r\n"
                     if let body {
                         head += "Content-Type: application/json\r\n"
                         head += "Content-Length: \(body.count)\r\n"

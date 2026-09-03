@@ -97,6 +97,9 @@ final class MirrorServer: ObservableObject {
     /// When a phone last fetched with the right token — the walkthrough's
     /// "paired" check. Session-only; a relaunch starts unpaired.
     @Published private(set) var lastServed: Date?
+    /// Every phone that fetched with the right token this session, newest
+    /// first (user 2026-09-03: "show active/connected devices").
+    @Published private(set) var clients: [MirrorClient] = []
 
     /// Handed to MirrorExporter so every export lands here too.
     let payload = MirrorPayloadBox()
@@ -158,8 +161,13 @@ final class MirrorServer: ObservableObject {
         let token = self.token
         let sessionFeed = self.sessionFeed
         let sessionInput = self.sessionInput
-        let served: @Sendable () -> Void = { [weak self] in
-            Task { @MainActor in self?.lastServed = Date() }
+        let served: @Sendable (MirrorTransport.Request) -> Void = { [weak self] request in
+            let client = MirrorClient(request: request)
+            Task { @MainActor in
+                guard let self else { return }
+                self.lastServed = client.lastSeen
+                self.clients = MirrorClient.merge(client, into: self.clients)
+            }
         }
         listener.newConnectionHandler = { [queue] connection in
             Self.serve(connection, payload: payload, token: token, sessionFeed: sessionFeed,
@@ -208,7 +216,7 @@ final class MirrorServer: ObservableObject {
                                           sessionFeed: MirrorSessionFeedBox,
                                           sessionInput: MirrorSessionInputBox,
                                           queue: DispatchQueue,
-                                          onServed: @escaping @Sendable () -> Void) {
+                                          onServed: @escaping @Sendable (MirrorTransport.Request) -> Void) {
         connection.start(queue: queue)
         receive(connection, buffer: Data(), payload: payload, token: token,
                sessionFeed: sessionFeed, sessionInput: sessionInput, onServed: onServed)
@@ -220,7 +228,7 @@ final class MirrorServer: ObservableObject {
                                             token: MirrorTokenBox,
                                             sessionFeed: MirrorSessionFeedBox,
                                             sessionInput: MirrorSessionInputBox,
-                                            onServed: @escaping @Sendable () -> Void) {
+                                            onServed: @escaping @Sendable (MirrorTransport.Request) -> Void) {
         connection.receive(minimumIncompleteLength: 1, maximumLength: 4096) {
             data, _, isComplete, error in
             var buffer = buffer
@@ -255,7 +263,7 @@ final class MirrorServer: ObservableObject {
                           request.path == MirrorTransport.snapshotPath {
                     response = payload.latest.map(MirrorTransport.snapshotResponse)
                         ?? MirrorTransport.unavailableResponse()
-                    onServed()
+                    onServed(request)
                 } else if request.method == "GET",
                           let pid = MirrorTransport.sessionTailPid(request.path) {
                     let limit = request.query(MirrorTransport.tailLimitQueryName).flatMap(Int.init) ?? 30
@@ -268,7 +276,7 @@ final class MirrorServer: ObservableObject {
                             let data = sessionFeed.call(pid, limit, since: since, wait: wait)
                             let response = data.map(MirrorTransport.snapshotResponse)
                                 ?? MirrorTransport.notFoundResponse()
-                            onServed()
+                            onServed(request)
                             connection.send(content: response,
                                             completion: .contentProcessed { _ in connection.cancel() })
                         }
@@ -276,7 +284,7 @@ final class MirrorServer: ObservableObject {
                     }
                     response = sessionFeed.call(pid, limit).map(MirrorTransport.snapshotResponse)
                         ?? MirrorTransport.notFoundResponse()
-                    onServed()
+                    onServed(request)
                 } else if request.method == "POST",
                           let pid = MirrorTransport.sessionInputPid(request.path) {
                     if let decoded = try? JSONDecoder().decode(SessionInput.Request.self, from: request.body) {
@@ -286,7 +294,7 @@ final class MirrorServer: ObservableObject {
                         } else {
                             response = MirrorTransport.notFoundResponse()
                         }
-                        onServed()
+                        onServed(request)
                     } else {
                         response = MirrorTransport.badRequestResponse()
                     }
