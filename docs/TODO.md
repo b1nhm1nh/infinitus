@@ -80,7 +80,13 @@ file keeps the shipped log and the deferred-by-design notes.
 - #5 Resume nudge typed but never submitted (Enter delivery)
 - #6 Playground simulations (onboarding + auto-switch scenarios)
 - #7 Infinitus smart engine — reset battle plans, window-start
-      scheduling, capacity advice ("the big Infinitus"; plan last)
+      scheduling, capacity advice ("the big Infinitus"; plan last).
+      Layer 1 (WindowTelemetry) and layer 2 (WindowPlanner: ignite /
+      switch / hold / reset steps, replay report, burn rate; Utilization
+      pane "Battle plan — dry run"; samples now carry `active`) shipped
+      compute-only 2026-09-03. Next: live Battle Plan card with
+      confirm-gated ignite (needs busy-session count + `cswap run`),
+      then the auto toggle. Open questions 1–3 still the user's.
 - ~~#8 CLIProxyAPI alternate backend~~ → shipped 2026-09-02 as the
   multi-engine seam: `AccountEngine` + `EngineFleet` + capabilities in
   InfinitusCore, `FleetState`/`EngineRegistry` in the app (AppModel stays a

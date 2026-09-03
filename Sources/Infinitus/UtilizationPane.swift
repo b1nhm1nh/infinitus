@@ -12,6 +12,11 @@ final class UtilizationModel: ObservableObject {
     @Published var samples: [UsageSample] = []
     @Published var generations: [WindowGeneration] = []
     @Published var fiveHourWindows: [FiveHourWindow] = []
+    /// #7 layer 2: what the fleet did over the range, and the plan the
+    /// planner would propose off the latest samples if a sprint were
+    /// running — a dry run for eyeballing, nothing executes.
+    @Published var replay: WindowPlanner.ReplayReport?
+    @Published var dryRunPlan: WindowPlanner.Plan?
     @Published var loading = false
     @Published var rangeDays = 7 { didSet { if rangeDays != oldValue { refresh() } } }
     /// "7d", "5h", or a scoped model name.
@@ -51,19 +56,49 @@ final class UtilizationModel: ObservableObject {
             let gens = WasteMath.generations(merged)
             let windows = WindowTelemetry.fiveHourWindows(
                 merged, now: Date().timeIntervalSince1970)
-            let cutoff = Date().addingTimeInterval(-Double(days) * 86400)
-                .timeIntervalSince1970
+            let now = Date().timeIntervalSince1970
+            let cutoff = now - Double(days) * 86400
             let bucket: TimeInterval = days <= 1 ? 300 : days <= 7 ? 1800 : 7200
             let thin = UsageHistory.downsample(
                 merged.filter { $0.t >= cutoff }, bucket: bucket)
+            let replay = WindowPlanner.replay(merged, from: cutoff, to: now)
+            let plan = Self.dryRunPlan(merged, now: now)
             await MainActor.run { [weak self] in
                 guard let self else { return }
                 self.samples = thin
                 self.generations = gens
                 self.fiveHourWindows = windows
+                self.replay = replay
+                self.dryRunPlan = plan
                 self.loading = false
             }
         }
+    }
+}
+
+extension UtilizationModel {
+    /// The planner over each account's latest sample (within the last
+    /// hour, so a stale file doesn't fake a fleet), assuming one busy
+    /// session. Disabled accounts aren't in the history; the live card
+    /// (next layer) gets the real snapshot.
+    nonisolated static func dryRunPlan(_ samples: [UsageSample], now: Double) -> WindowPlanner.Plan? {
+        var latest: [String: UsageSample] = [:]
+        for s in samples where s.t >= now - 3600 {
+            if let cur = latest[s.email], cur.t >= s.t { continue }
+            latest[s.email] = s
+        }
+        let states = latest.values.map { s in
+            let weekly = ([s.sevenDay?.pct] + (s.scoped ?? [:]).values.map { $0.pct })
+                .compactMap { $0 }.max() ?? 0
+            return WindowPlanner.AccountState(
+                number: s.number, email: s.email, active: s.active == true,
+                fiveHourPct: s.fiveHour?.pct, fiveHourResetsAt: s.fiveHour?.resetsAt,
+                weeklyPct: weekly)
+        }
+        guard let active = states.first(where: { $0.active }) else { return nil }
+        let rate = WindowTelemetry.burnRate(samples, email: active.email, now: now)
+        return WindowPlanner.plan(accounts: states, burnPctPerHour: rate,
+                                  busySessions: 1, now: now)
     }
 }
 
@@ -93,6 +128,7 @@ struct UtilizationPane: View {
             } else {
                 utilizationSection
                 fiveHourSection
+                battlePlanSection
                 wasteSection
             }
         }
@@ -247,6 +283,65 @@ struct UtilizationPane: View {
                     .font(.caption2).foregroundStyle(.secondary)
             }
         }
+    }
+
+    // MARK: battle plan (#7 layer 2, dry run)
+
+    @ViewBuilder private var battlePlanSection: some View {
+        if let r = model.replay {
+            Section {
+                if r.sawActiveFlag {
+                    Text("\(r.switches) switch\(r.switches == 1 ? "" : "es")"
+                         + " · \(r.coldSwitches) onto a cold clock"
+                         + " · stalled " + durationLabel(r.stalledSeconds))
+                        .monospacedDigit()
+                } else {
+                    Text("No switch data in this range yet — samples carry the "
+                         + "active account from this version on.")
+                        .foregroundStyle(.secondary)
+                }
+                if let plan = model.dryRunPlan {
+                    ForEach(plan.steps) { step in
+                        VStack(alignment: .leading, spacing: 2) {
+                            HStack {
+                                Text(clockLabel(step.at)).monospacedDigit()
+                                Text(actionLabel(step.action)).bold()
+                                Spacer()
+                            }
+                            Text(step.why).font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
+                } else {
+                    Text("Nothing to plan right now: no bind projected within "
+                         + "two hours of the active account's window.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+            } header: {
+                Text("Battle plan — dry run")
+            } footer: {
+                Text("Replay of the range above: how often the fleet switched, "
+                     + "how many switches landed on an account with no 5h window "
+                     + "ticking (a plan would have ignited it first), and how long "
+                     + "the active account sat at 100%. Below it, the plan the "
+                     + "planner would propose from the latest samples if a sprint "
+                     + "were running. Nothing here runs anything.")
+                    .font(.caption2).foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private func actionLabel(_ a: WindowPlanner.Action) -> String {
+        switch a {
+        case .ignite(let n): return "ignite #\(n)"
+        case .switchTo(let n): return "switch to #\(n)"
+        case .hold(let n): return "hold #\(n)"
+        case .reset(let n): return "#\(n) resets"
+        }
+    }
+
+    private func durationLabel(_ s: Double) -> String {
+        let m = Int((s / 60).rounded())
+        return m >= 60 ? "\(m / 60)h \(m % 60)m" : "\(m)m"
     }
 
     private func rhythmBars(_ windows: [FiveHourWindow]) -> [RhythmBar] {
