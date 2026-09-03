@@ -117,10 +117,36 @@ Arch users can build from [`packaging/aur/PKGBUILD`](packaging/aur/) —
 - **Pop-out window, compact mode, three layouts (wide rows, stacked
   cards, horizontal cards), popup scaling** — the pop-out remembers
   its spot across restarts.
+- **Sessions by name** — Claude Code's session names (`/rename`) label
+  the session rows on the Mac and the phone, with branch, model, kind
+  and output size alongside; "waiting on you" pushes once per session
+  that stops for an answer.
+- **Phone companion, four ways in** — the iOS app reaches this Mac over
+  Wi-Fi (Bonjour), Tailscale, your own Cloudflare tunnel hostname, or a
+  free quick tunnel; one QR carries every route and the pairing token.
+  A quick tunnel's throwaway URL is published to infinitus.run under a
+  hash of the token, so the phone finds the new address after a restart
+  instead of rescanning. The Sync pane lists connected devices with
+  their route and last-seen time.
+- **Session chat from the phone** — each session's transcript as a chat
+  (markdown replies, tool runs collapsed into one chip, sub-agent cards,
+  mid-turn prompts), long-polled so replies stream in; answer questions
+  and permission prompts, type a reply, attach photos (library or
+  camera) and files — delivered over Claude Code's peer socket or into
+  the terminal. Tap the header for the account behind the session and
+  its limits (CLIProxyAPI included).
+- **`infinitusctl`** — an agent-facing control CLI over a same-user
+  socket: status, fleets, switch/rotate/hold/rename/prefer/reorder,
+  proxy settings, windows and perf probes; the same calls the panes
+  make. An onboarding "Copy for an AI agent" brief walks a coding agent
+  through the whole setup (engine, accounts, proxy, phone).
 
 ## Privacy
 
-Everything stays on your machine. The app talks to the engine through
+Everything stays on your machine (the phone talks straight to your Mac
+over routes you enable; the only thing that ever touches infinitus.run
+is a quick tunnel's URL, keyed by a hash of the pairing token — never
+the token, never usage). The app talks to the engine through
 `cswap … --json` subprocesses and never reads its files (resume nudges
 read Claude Code's own session records and transcripts, nothing of the
 engine's); usage-cost
