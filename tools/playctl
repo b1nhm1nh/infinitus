@@ -7,6 +7,7 @@
 #   playctl compact on|off | burn off|ember|flame|limit | introstyle top|...|off
 #   playctl title zoom|slam|spin|off | speed 1.5 | intro | switch | dead | revive
 #   playctl drop 5h|7d|fable | undrop 5h|7d|fable | kill | refresh | reset | themes
+#   playctl scenario off|empty|alldead|solo|duo|noengine | fleets 2
 #   playctl shot /path/out.png
 set -euo pipefail
 T="${TMPDIR:-/tmp}"

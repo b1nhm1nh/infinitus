@@ -95,8 +95,12 @@ final class AppModel: ObservableObject {
         forwardingFleetChange = false
     }
     /// Debug-only (defaults write … debug_menu -bool true): adds the
-    /// Animations tab so every effect can be fired by hand.
-    let debugMenu = UserDefaults.standard.bool(forKey: "debug_menu")
+    /// Animations tab so every effect can be fired by hand. Set in init
+    /// AFTER migrateLegacyDefaults: a stored-property initializer runs
+    /// first, and the first launch under the new bundle id read the
+    /// not-yet-copied key (user 2026-09-03 "not seeing the animations
+    /// setting on current build").
+    let debugMenu: Bool
     @Published var cswapState: CswapSupervisor.State = .stopped
     struct EventEntry: Identifiable {
         let id = UUID()
@@ -520,6 +524,7 @@ final class AppModel: ObservableObject {
             defaults = UserDefaults.standard
         }
         Self.migrateLegacyDefaults()
+        debugMenu = UserDefaults.standard.bool(forKey: "debug_menu")
         showAccountName = defaults.object(forKey: "show_account_name") as? Bool ?? true
         let pct = defaults.string(forKey: "title_pct") ?? "both"
         titlePct = TitlePrefs.pctChoices.contains(pct) ? pct : "both"

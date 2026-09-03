@@ -341,10 +341,28 @@ struct PlaygroundView: View {
                         Button("Normal") { setScenario("off") }
                         Button("Empty fleet") { setScenario("empty") }
                         Button("All dead") { setScenario("alldead") }
+                        // The mainline fleets (user 2026-09-03): the
+                        // solo card, and two rows.
+                        Button("One account") { setScenario("solo") }
+                        Button("Two accounts") { setScenario("duo") }
                         Button(model.simulateNoEngine
                                ? "Engine back" : "No engine") {
                             model.simulateNoEngine.toggle()
                         }
+                        // Multi-engine preview (#8), the playctl
+                        // `fleets 2` verb as a button (user 2026-09-03
+                        // "put all simulate to playground"): a second,
+                        // relabeled copy of the demo fleet so stacked
+                        // headers and column alignment can be eyeballed.
+                        // Sticks until the playground closes.
+                        Button("Two engines") {
+                            guard let demo = model.registry.engine(id: CswapEngine.engineID) else { return }
+                            model.registry.register(RelabeledEngine(
+                                base: demo, id: "cliproxy-demo", displayName: "CLIProxyAPI (demo)",
+                                capabilities: [.switch, .hold, .rename, .remove, .addOAuth, .costReport]))
+                            Task { await model.refreshSnapshot() }
+                        }
+                        .disabled(model.registry.engine(id: "cliproxy-demo") != nil)
                     }
                     HStack(spacing: 14) {
                         // Segmented, not dropdowns (user 2026-08-31:

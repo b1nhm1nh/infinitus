@@ -188,7 +188,8 @@ Drive it from the shell with `tools/playctl` — the playground polls a
 command file and acknowledges each line, so scripts (and coding agents)
 can flip knobs and replay animations without touching the mouse:
 `playctl theme rpg`, `playctl layout stacked`, `playctl drop fable`,
-`playctl kill`, `playctl dead` / `revive`, `playctl refresh`,
+`playctl kill`, `playctl dead` / `revive`, `playctl scenario solo`,
+`playctl refresh`,
 `playctl themes`, and `playctl shot out.png` to capture the window
 by its CGWindowID.
 
@@ -209,6 +210,9 @@ The control rail drives the real pipelines, not canned replays:
   HP-drop drama, spring refill.
 - **Play account switch / Replay intro** — a real engine switch on the
   demo fleet; the celebration fires from the active-number diff.
+- **Scenario** — Normal / Empty fleet / All dead / One account / Two
+  accounts / No engine / Two engines: the fleet shapes that otherwise
+  need real accounts or waits, one click each.
 - **Layout / size / compact / theme / pace fire / intro** — the same
   knobs as Settings, sandboxed.
 
