@@ -246,6 +246,32 @@ final class AppModel: ObservableObject {
         relaunchApp()
     }
 
+    /// 9Router (third engine): same shape as the proxy — toggle in
+    /// defaults, password in the keychain under the base URL.
+    @Published var nineRouterEnabled: Bool {
+        didSet {
+            guard nineRouterEnabled != oldValue else { return }
+            defaults.set(nineRouterEnabled, forKey: "engine_9router_enabled")
+            relaunchApp()
+        }
+    }
+    var nineRouterBaseURL: String {
+        defaults.string(forKey: "9router_base_url") ?? NineRouterEngine.defaultBaseURL.absoluteString
+    }
+    var nineRouterPasswordPresent: Bool {
+        Keychain.read(account: nineRouterBaseURL, service: Keychain.nineRouterService) != nil
+    }
+    func saveNineRouter(baseURL: String, password: String) {
+        let url = baseURL.trimmingCharacters(in: .whitespaces)
+        let old = nineRouterBaseURL
+        if old != url { Keychain.delete(account: old, service: Keychain.nineRouterService) }
+        defaults.set(url, forKey: "9router_base_url")
+        let trimmed = password.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty { Keychain.delete(account: url, service: Keychain.nineRouterService) }
+        else { _ = Keychain.write(account: url, value: trimmed, service: Keychain.nineRouterService) }
+        relaunchApp()
+    }
+
     static let cliproxyLedgerURL: URL = {
         FileManager.default.urls(for: .applicationSupportDirectory,
                                  in: .userDomainMask)[0]
@@ -482,6 +508,7 @@ final class AppModel: ObservableObject {
         mockMode = mock
         cswapEnabled = defaults.object(forKey: "engine_cswap_enabled") as? Bool ?? true
         cliproxyEnabled = defaults.object(forKey: "engine_cliproxy_enabled") as? Bool ?? false
+        nineRouterEnabled = defaults.object(forKey: "engine_9router_enabled") as? Bool ?? false
         keepAwake = defaults.object(forKey: "keep_awake") as? Bool ?? false
         sortByHeadroom = defaults.object(forKey: "sort_headroom") as? Bool ?? true
         mirrorLANEnabled = defaults.object(forKey: "mirror_lan_enabled") as? Bool ?? false
@@ -531,6 +558,14 @@ final class AppModel: ObservableObject {
                 baseURL: url, managementKey: key, ledgerURL: Self.cliproxyLedgerURL))
         } else if !playground, cliproxyEnabled {
             lastError = "CLIProxyAPI is enabled but no management key is readable — enter it in Settings → CLIProxyAPI"
+        }
+        if !playground, nineRouterEnabled, let url = URL(string: nineRouterBaseURL) {
+            // A missing password still registers: 9Router with "require
+            // login" off answers loopback anonymously; otherwise the first
+            // poll reports unauthorized and the pane says so.
+            registry.register(NineRouterEngine(
+                baseURL: url,
+                password: Keychain.read(account: nineRouterBaseURL, service: Keychain.nineRouterService) ?? ""))
         }
         NSLog("Infinitus engines: %@", registry.engines.map(\.id).joined(separator: ", "))
         // Last run's snapshot renders NOW — the popup otherwise opened

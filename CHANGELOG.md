@@ -4,6 +4,28 @@ Composed release notes — what changed and why it matters, not a list of
 commit links. The release workflow publishes the matching section as the
 GitHub release body.
 
+## 0.4.1 (unreleased)
+
+### 9Router engine
+- **A third engine.** [9Router](https://github.com/decolua/9router)
+  joins cswap and CLIProxyAPI: its Claude connections show up as a
+  fleet with 5h / 7d / per-model gauges, switch (priority), hold and
+  remove, all through its dashboard API on loopback with the dashboard
+  password kept in the keychain. Rotation stays 9Router's own; Infinitus
+  only sets its knobs. Settings → 9Router to turn it on;
+  `infinitusctl engine 9router on` and `9router-password` from a script.
+
+### Battle plan (#7)
+- **Ignite from any engine that can.** Starting a spare account's 5h
+  clock is now an engine capability: cswap does it with `cswap run`; the
+  CLIProxyAPI fleet has no per-credential request verb yet, so its plan
+  line shows without the button. `infinitusctl ignite <fleet> <n>` does
+  the same from a script.
+- **No landing on a nearly spent window.** The planner only switches
+  onto a window with at least 90 minutes left at the projected bind,
+  ignited or already ticking — an ignited window that aged past that
+  because the bind came late would give minutes and then a stall.
+
 ## 0.4.0
 
 The phone release: your fleet and every Claude Code session reachable

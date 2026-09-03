@@ -38,9 +38,12 @@
   behind the same isolation boundary. Not requested.
 - Router ecosystem (9router / n9router / ai-9router, 2026-08-30): local
   proxies that rotate provider accounts per-request via ANTHROPIC_BASE_URL.
-  Opposite layer to cswap's credential swap — running both fights. If ever
-  requested: detect ANTHROPIC_BASE_URL and show "routed via …" first;
-  a router backend would be a second engine behind the same boundary.
+  Opposite layer to cswap's credential swap — running both fights.
+  → 9Router requested and shipped as the THIRD engine 2026-09-03
+  (#19, docs/research/9router-backend.md): NineRouterEngine over the
+  dashboard API, keychain password, switch/hold/remove, verified live.
+  Still open there: "routed via …" detection of ANTHROPIC_BASE_URL,
+  Linux tray parity, cost report.
 - Developer ID signing: proven end-to-end 2026-09-01 under the company
   team (cert → notarytool Accepted → staple → spctl pass → 5 CI
   secrets), then UNSIGNED same day on user request ("I'll be providing
