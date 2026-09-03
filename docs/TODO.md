@@ -509,4 +509,8 @@ file keeps the shipped log and the deferred-by-design notes.
 - OmniRoute (https://github.com/diegosouzapw/OmniRoute) as a fourth
   engine (user 2026-09-03) — same shape as 9Router: probe its API for
   connections + per-connection quotas, map to EngineFleet, switch/hold
-  via its own knobs. Research first (docs/research/omniroute-backend.md).
+  via its own knobs. Research done 2026-09-03 (docs/research/
+  omniroute-backend.md): a 9Router fork on the same port with the same
+  `/api/providers` + `/api/usage/{id}` surface (roster paginated, 30-day
+  cookie) — build it as NineRouterEngine with a second identity once a
+  live instance confirms the Claude quota-key names.
