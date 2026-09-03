@@ -496,12 +496,11 @@ file keeps the shipped log and the deferred-by-design notes.
 
 
 ## Prediction model follow-ups (2026-09-03)
-- Anchor projections to the newest sample's `t`, not `now`: `hitsAt`,
-  `allDeadAt` and the planner's `bindAt` all extrapolate a cached pct
-  from the wall clock, so between engine polls the projected times
-  creep later and snap back on a fresh sample. Fix forecast AND planner
-  together (they must keep agreeing); until then the "only republish
-  when moved" guard in `updateBattlePlan` is effectively always true.
+- ~~Anchor projections to the newest sample's `t`, not `now`~~ → done
+  2026-09-03: `UsageForecast.build` / `WindowPlanner.plan` take
+  `measuredAt` (the newest sample's `t`, from `usageFetchedAt`), clamp
+  it to `now`, and never project into the past. The republish guard in
+  `updateBattlePlan` now only fires on a new sample or rate.
 - First Run-rate scan reads each transcript whole (`readToEnd`) — a
   one-time RSS bump right after opening Utilization, not a leak.
 

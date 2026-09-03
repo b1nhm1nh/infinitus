@@ -29,6 +29,26 @@ final class UsageForecastTests: XCTestCase {
         XCTAssertEqual(f.active?.windows.map(\.name), ["5h", "7d", "Fable"])
     }
 
+    func testProjectionsAnchorToTheSampleTimeNotThePoll() {
+        // Same sample read 10 min ago: the hit is 10 min sooner than a
+        // now-anchored one, and a later poll with the same sample agrees.
+        let t = now - 600
+        let a = UsageForecast.build(accounts: [active], rates: rates, now: now, measuredAt: t)
+        let b = UsageForecast.build(accounts: [active], rates: rates, now: now + 300, measuredAt: t)
+        XCTAssertEqual(a.active?.bindsAt, t + 2 * 3600)
+        XCTAssertEqual(a.active?.bindsAt, b.active?.bindsAt)
+        XCTAssertEqual(a.allDeadAt, b.allDeadAt)
+        XCTAssertEqual(a.accounts, b.accounts, "the republish guard must see no move")
+        // A stale sample about to bind never projects into the past.
+        let nearlyFull = A(number: 1, email: "main@x", active: true, disabled: false,
+                           fiveHour: win(99.9, resetsAt: now + 4 * 3600), sevenDay: nil, scoped: [:])
+        let c = UsageForecast.build(accounts: [nearlyFull], rates: ["5h": 20], now: now, measuredAt: now - 3600)
+        XCTAssertEqual(c.active?.bindsAt, now)
+        // A sample stamped in the future (clock skew) is treated as now.
+        let d = UsageForecast.build(accounts: [active], rates: rates, now: now, measuredAt: now + 900)
+        XCTAssertEqual(d.active?.bindsAt, now + 2 * 3600)
+    }
+
     func testUnknownRateProjectsNothingAndFullWindowHitsNow() {
         let full = A(number: 1, email: "main@x", active: true, disabled: false,
                      fiveHour: win(100, resetsAt: now + 600), sevenDay: win(10), scoped: [:])

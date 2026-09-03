@@ -32,6 +32,24 @@ final class WindowPlannerTests: XCTestCase {
         XCTAssertTrue(plan!.ignites)
     }
 
+    func testBindAnchorsToTheSampleTimeAndNeverThePast() {
+        let cold = S(number: 2, email: "spare@x", active: false,
+                     fiveHourPct: 0, fiveHourResetsAt: nil, weeklyPct: 20)
+        let early = WindowPlanner.plan(accounts: [active, cold], burnPctPerHour: 20,
+                                       busySessions: 1, now: 10_000, measuredAt: 10_000 - 600)
+        let later = WindowPlanner.plan(accounts: [active, cold], burnPctPerHour: 20,
+                                       busySessions: 1, now: 10_300, measuredAt: 10_000 - 600)
+        XCTAssertEqual(early?.bindAt, 10_000 - 600 + 2 * 3600)
+        // The ignite step is "now" by design; the bind and the switch hold still.
+        XCTAssertEqual(early?.bindAt, later?.bindAt, "the same sample plans the same bind on the next poll")
+        XCTAssertEqual(early?.steps[1], later?.steps[1])
+        let stale = S(number: 1, email: "main@x", active: true,
+                      fiveHourPct: 99, fiveHourResetsAt: 10_000 + 4 * 3600, weeklyPct: 40)
+        let plan = WindowPlanner.plan(accounts: [stale, cold], burnPctPerHour: 20,
+                                      busySessions: 1, now: 10_000, measuredAt: 10_000 - 3600)
+        XCTAssertEqual(plan?.bindAt, 10_000)
+    }
+
     func testWarmCandidateIsOnlySwitchedTo() {
         // Resets 2h after the bind — plenty left to land on.
         let warm = S(number: 2, email: "spare@x", active: false,

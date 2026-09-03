@@ -29,7 +29,8 @@ actor MirrorExporter {
     func record(listJSON: Data, prefs: FleetPrefs,
                 serviceStatus: ServiceStatusSummary, engine: EngineBadge,
                 fleets: [EngineFleet] = [], forecast: UsageForecast? = nil,
-                plan: WindowPlanner.Plan? = nil, awsLogins: [AwsLogin.Item] = []) {
+                plan: WindowPlanner.Plan? = nil, awsLogins: [AwsLogin.Item] = [],
+                progress: [Int: SessionProgress] = [:]) {
         guard Date().timeIntervalSince(lastWrite) > minInterval else { return }
         lastWrite = Date()
         let claudeDir = ClaudeSessions.configHome()
@@ -43,7 +44,11 @@ actor MirrorExporter {
         // sessions card's per-pid progress (#9 phase D2) — the card's own
         // rows come from listJSON's liveSessions, so a session outside
         // this busy/waiting six simply keeps its single line.
-        var progressByPid: [Int: SessionProgress] = [:]
+        // `progress` is the app's own scan of EVERY listed session (name,
+        // AWS need, token rate) — without it an idle session reached the
+        // phone nameless (user 2026-09-03 "idle sessions doesn't have
+        // names shown on ios"); the six below overwrite it with a fresh read.
+        var progressByPid = progress
         let sessions = sessionRecords.prefix(6).map { record -> SessionPanelRow in
             let progress = SessionProgress.read(sessionId: record.sessionId,
                                                 cwd: record.cwd, claudeDir: claudeDir,

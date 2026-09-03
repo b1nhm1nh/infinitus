@@ -730,8 +730,14 @@ final class AppModel: ObservableObject {
             ratesByEmail[a.email] = WindowTelemetry.burnRates(recentSamples, email: a.email, now: now)
         }
         let rates = list.accounts.first { $0.active }.flatMap { ratesByEmail[$0.email] } ?? [:]
+        // Projections extrapolate from when the engine READ the
+        // percentages (usageFetchedAt → the sample's t), not from this
+        // poll's clock: anchored to `now` they crept later between
+        // fetches and snapped back on each new sample.
+        let measuredAt = fresh.map(\.t).max() ?? now
         let plan = WindowPlanner.plan(accounts: states, burnPctPerHour: rates["5h"],
-                                      busySessions: list.liveSessions?.busy ?? 0, now: now)
+                                      busySessions: list.liveSessions?.busy ?? 0, now: now,
+                                      measuredAt: measuredAt)
         if plan != battlePlan { battlePlan = plan }
         let inputs = list.accounts.map { a in
             UsageForecast.AccountInput(
@@ -742,9 +748,10 @@ final class AppModel: ObservableObject {
                     window(sc).map { (sc.name ?? "?", $0) }
                 }, uniquingKeysWith: { a, _ in a }))
         }
-        let next = UsageForecast.build(accounts: inputs, ratesByEmail: ratesByEmail, now: now)
-        // Skips the republish only while nothing is projected (the hits
-        // move with `now` between polls — see docs/TODO.md, anchoring).
+        let next = UsageForecast.build(accounts: inputs, ratesByEmail: ratesByEmail, now: now,
+                                       measuredAt: measuredAt)
+        // Republish only when a projection moved — with the sample-time
+        // anchor that is a new sample or a new rate, not every poll.
         if next.accounts != forecast?.accounts || next.allDeadAt != forecast?.allDeadAt {
             forecast = next
         }
@@ -1529,6 +1536,7 @@ final class AppModel: ObservableObject {
             let forecast = forecast
             let plan = battlePlan
             let awsLogins = awsLogins
+            let progress = sessionProgress.byPid
             if let primaryFleet = primary.lastFleet {
                 liveActivityPusher.tick(fleet: primaryFleet,
                                         machine: Host.current().localizedName ?? "Mac",
@@ -1541,7 +1549,7 @@ final class AppModel: ObservableObject {
                                             serviceStatus: serviceStatus,
                                             engine: engine, fleets: allFleets,
                                             forecast: forecast, plan: plan,
-                                            awsLogins: awsLogins)
+                                            awsLogins: awsLogins, progress: progress)
             }
         }
         // All-limited: count the limit-stopped sessions waiting to be

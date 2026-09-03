@@ -115,40 +115,46 @@ public struct UsageForecast: Codable, Sendable, Equatable {
     /// `ratesByEmail` maps email → window name → pct/hour, measured per
     /// account. Missing keys mean "unknown", which projects nothing
     /// rather than something wrong.
+    /// `measuredAt`: when the percentages were read (the newest sample's
+    /// `t`). A projection extrapolates from THAT instant — anchored to
+    /// `now`, every poll between engine fetches pushed the hits later
+    /// and a fresh sample snapped them back (docs/TODO.md, 2026-09-03).
     public static func build(accounts: [AccountInput], ratesByEmail: [String: [String: Double]],
-                             now: Double) -> UsageForecast {
+                             now: Double, measuredAt: Double? = nil) -> UsageForecast {
+        let measuredAt = min(measuredAt ?? now, now)
         let lines = accounts.map { a -> AccountLine in
             let rates = ratesByEmail[a.email] ?? [:]
             var windows: [Window] = []
-            if let w = a.fiveHour { windows.append(project("5h", w, rate: rates["5h"], now: now)) }
-            if let w = a.sevenDay { windows.append(project("7d", w, rate: rates["7d"], now: now)) }
+            if let w = a.fiveHour { windows.append(project("5h", w, rate: rates["5h"], now: now, measuredAt: measuredAt)) }
+            if let w = a.sevenDay { windows.append(project("7d", w, rate: rates["7d"], now: now, measuredAt: measuredAt)) }
             for (name, w) in a.scoped.sorted(by: { $0.key < $1.key }) {
-                windows.append(project(name, w, rate: rates[name], now: now))
+                windows.append(project(name, w, rate: rates[name], now: now, measuredAt: measuredAt))
             }
             return AccountLine(number: a.number, email: a.email, alias: a.alias, active: a.active,
                                disabled: a.disabled, windows: windows)
         }
         let active = lines.first { $0.active }
         let activeRates = accounts.first { $0.active }.flatMap { ratesByEmail[$0.email] } ?? [:]
-        let drain = allDead(accounts: accounts, rates: activeRates, now: now)
+        let drain = allDead(accounts: accounts, rates: activeRates, now: now, measuredAt: measuredAt)
         return UsageForecast(computedAt: now, active: active, accounts: lines,
                              allDeadAt: drain.at, drainOrder: drain.order, basis: basisText)
     }
 
     /// One rate table for the active account only (the older call).
     public static func build(accounts: [AccountInput], rates: [String: Double],
-                             now: Double) -> UsageForecast {
+                             now: Double, measuredAt: Double? = nil) -> UsageForecast {
         let byEmail = accounts.first { $0.active }.map { [$0.email: rates] } ?? [:]
-        return build(accounts: accounts, ratesByEmail: byEmail, now: now)
+        return build(accounts: accounts, ratesByEmail: byEmail, now: now, measuredAt: measuredAt)
     }
 
     static func project(_ name: String, _ w: UsageSample.Window, rate: Double?,
-                        now: Double) -> Window {
+                        now: Double, measuredAt: Double? = nil) -> Window {
         var hits: Double?
         if w.pct >= 100 {
             hits = now
         } else if let rate, rate > 0 {
-            let at = now + (100 - w.pct) / rate * 3600
+            // Never in the past: a stale sample near the top still "hits now".
+            let at = max(now, (measuredAt ?? now) + (100 - w.pct) / rate * 3600)
             if let reset = w.resetsAt, reset <= at { hits = nil } else { hits = at }
         }
         return Window(name: name, pct: w.pct, ratePctPerHour: rate, resetsAt: w.resetsAt, hitsAt: hits)
@@ -161,7 +167,7 @@ public struct UsageForecast: Codable, Sendable, Equatable {
     /// An account already at 100% weekly contributes nothing; a weekly
     /// reset inside the horizon is ignored (reported as such in `basis`).
     static func allDead(accounts: [AccountInput], rates: [String: Double],
-                        now: Double) -> (at: Double?, order: [Int]) {
+                        now: Double, measuredAt: Double? = nil) -> (at: Double?, order: [Int]) {
         let usable = accounts.filter { !$0.disabled }
         guard usable.contains(where: { $0.active }) else { return (nil, []) }
         let ordered = usable.filter(\.active) + usable.filter { !$0.active }
@@ -175,14 +181,14 @@ public struct UsageForecast: Codable, Sendable, Equatable {
             for (name, w) in a.scoped { if let r = weeklyRates[name] { hours.append(max(0, 100 - w.pct) / r) } }
             return hours.min()
         }
-        var cursor = now
+        var cursor = measuredAt ?? now
         var measured = false
         for a in ordered {
             guard let h = headroomHours(a) else { continue }
             measured = true
             cursor += h * 3600
         }
-        return (measured ? cursor : nil, order)
+        return (measured ? max(cursor, now) : nil, order)
     }
 }
 

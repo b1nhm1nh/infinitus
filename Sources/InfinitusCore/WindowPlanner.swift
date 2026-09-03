@@ -155,8 +155,10 @@ public enum WindowPlanner {
     /// measurable burn, the window resets before it binds, or the bind is
     /// beyond the horizon. `burnPctPerHour` is the active account's 5h
     /// burn (WindowTelemetry.burnRate).
+    /// `measuredAt`: when the active account's pct was read — the bind
+    /// extrapolates from there, not from `now` (UsageForecast.build).
     public static func plan(accounts: [AccountState], burnPctPerHour: Double?,
-                            busySessions: Int, now: Double,
+                            busySessions: Int, now: Double, measuredAt: Double? = nil,
                             config: Config = Config()) -> Plan? {
         guard busySessions > 0,
               let active = accounts.first(where: { $0.active }),
@@ -168,7 +170,7 @@ public enum WindowPlanner {
             bindAt = now
         } else {
             guard let rate = burnPctPerHour, rate > 0 else { return nil }
-            bindAt = now + (100 - pct) / rate * 3600
+            bindAt = max(now, min(measuredAt ?? now, now) + (100 - pct) / rate * 3600)
         }
         guard bindAt < reset, bindAt - now <= config.horizon else { return nil }
 

@@ -14,6 +14,18 @@ GitHub release body.
   Display → "Floating countdown when every account is limited" (on by
   default). The same state the phone's Live Activity shows.
 
+### Forecast
+- **Projections anchor to the sample, not the poll.** "Binds at",
+  "all accounts out" and the battle plan's bind extrapolate from when
+  the engine read the percentages; anchored to the wall clock they
+  crept later on every poll between fetches and snapped back on the
+  next sample.
+
+### Phone
+- **Idle sessions carry their names.** The mirror snapshot now ships
+  the Mac's scan of every listed session, so an idle session's name
+  and AWS need reach the phone, not only the busy six.
+
 ## 0.4.1
 
 ### Menu bar

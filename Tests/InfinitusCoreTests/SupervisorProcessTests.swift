@@ -24,6 +24,11 @@ final class SupervisorProcessTests: XCTestCase {
         """)
         let gotPoll = expectation(description: "poll event")
         let backedOff = expectation(description: "backing off after exit")
+        // The script exits after every respawn, so both fire again on
+        // the second run when the suite is slow enough for it to land
+        // before `wait` returns (flaked ~1 in 3 full runs, 2026-09-03).
+        gotPoll.assertForOverFulfill = false
+        backedOff.assertForOverFulfill = false
         let supervisor = CswapSupervisor(
             binaryPath: scriptURL.path,
             onLine: { line in
