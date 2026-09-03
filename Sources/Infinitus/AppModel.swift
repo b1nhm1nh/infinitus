@@ -681,27 +681,36 @@ final class AppModel: ObservableObject {
                 weeklyPct: ([a.usage?.sevenDay?.pct] + (a.usage?.scoped ?? []).map { $0.pct })
                     .compactMap { $0 }.max() ?? 0)
         }
-        let rates = list.accounts.first { $0.active }.map {
-            WindowTelemetry.burnRates(recentSamples, email: $0.email, now: now)
-        } ?? [:]
+        // Every account at its own measured pace (the detail dashboard);
+        // the planner and the fleet drain read the active one's.
+        var ratesByEmail: [String: [String: Double]] = [:]
+        for a in list.accounts where ratesByEmail[a.email] == nil {
+            ratesByEmail[a.email] = WindowTelemetry.burnRates(recentSamples, email: a.email, now: now)
+        }
+        let rates = list.accounts.first { $0.active }.flatMap { ratesByEmail[$0.email] } ?? [:]
         let plan = WindowPlanner.plan(accounts: states, burnPctPerHour: rates["5h"],
                                       busySessions: list.liveSessions?.busy ?? 0, now: now)
         if plan != battlePlan { battlePlan = plan }
         let inputs = list.accounts.map { a in
             UsageForecast.AccountInput(
-                number: a.number, email: a.email, active: a.active,
+                number: a.number, email: a.email, alias: a.alias, active: a.active,
                 disabled: a.disabled ?? false,
                 fiveHour: window(a.usage?.fiveHour), sevenDay: window(a.usage?.sevenDay),
                 scoped: Dictionary((a.usage?.scoped ?? []).compactMap { sc in
                     window(sc).map { (sc.name ?? "?", $0) }
                 }, uniquingKeysWith: { a, _ in a }))
         }
-        let next = UsageForecast.build(accounts: inputs, rates: rates, now: now)
+        let next = UsageForecast.build(accounts: inputs, ratesByEmail: ratesByEmail, now: now)
         // Skips the republish only while nothing is projected (the hits
         // move with `now` between polls — see docs/TODO.md, anchoring).
-        if next.active != forecast?.active || next.allDeadAt != forecast?.allDeadAt {
+        if next.accounts != forecast?.accounts || next.allDeadAt != forecast?.allDeadAt {
             forecast = next
         }
+        let relay = LiveForecastRelay.shared
+        relay.forecast = forecast
+        relay.plan = battlePlan
+        relay.tokenRate = sessionProgress.tokenRate
+        if relay.theme.id != rowTheme.id { relay.theme = rowTheme }
     }
 
     private func window(_ w: UsageWindow?) -> UsageSample.Window? {

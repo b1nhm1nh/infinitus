@@ -50,6 +50,25 @@ final class UsageForecastTests: XCTestCase {
                     fiveHour: nil, sevenDay: win(0), scoped: [:])
         let f = UsageForecast.build(accounts: [active, spareA, spareB, off], rates: rates, now: now)
         XCTAssertEqual(f.allDeadAt, now + (5 + 20 + 0) * 3600)
+        XCTAssertEqual(f.drainOrder, [1, 3, 2], "active, then least weekly headroom first; disabled left out")
+    }
+
+    func testEveryAccountProjectsAtItsOwnPace() {
+        // Spare burns its 7d at 5%/h (own samples), active at 1%/h.
+        let spare = A(number: 2, email: "a@x", alias: "spare", active: false, disabled: false,
+                      fiveHour: nil, sevenDay: win(50, resetsAt: now + 30 * 3600), scoped: [:])
+        let f = UsageForecast.build(accounts: [active, spare],
+                                    ratesByEmail: ["main@x": rates, "a@x": ["7d": 5]], now: now)
+        XCTAssertEqual(f.accounts?.count, 2)
+        let line = f.accounts![1]
+        XCTAssertEqual(line.label, "spare")
+        XCTAssertEqual(line.windows[0].ratePctPerHour, 5)
+        XCTAssertEqual(line.windows[0].hitsAt, now + 10 * 3600)
+        XCTAssertEqual(line.bindsWindow, "7d")
+        XCTAssertEqual(f.accounts?[0].bindsWindow, "5h")
+        XCTAssertEqual(f.active?.label, "main")
+        // The fleet drain runs at the ACTIVE pace: spare's 7d 50% at 1%/h = 50h after main's 5h.
+        XCTAssertEqual(f.allDeadAt, now + (5 + 50) * 3600)
     }
 
     func testNoActiveAccountMeansNoProjection() {

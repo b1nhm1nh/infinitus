@@ -31,12 +31,24 @@ public struct UsageForecast: Codable, Sendable, Equatable {
     public struct AccountLine: Codable, Sendable, Equatable {
         public let number: Int
         public let email: String
+        public let alias: String?
+        public let active: Bool
+        public let disabled: Bool
         public let windows: [Window]
         /// The first limit to bind — what the planner's `bindAt` is.
         public var bindsAt: Double? { windows.compactMap(\.hitsAt).min() }
-        public init(number: Int, email: String, windows: [Window]) {
+        /// Name of the window that binds first.
+        public var bindsWindow: String? {
+            windows.filter { $0.hitsAt != nil }.min { $0.hitsAt! < $1.hitsAt! }?.name
+        }
+        public var label: String { alias ?? String(email.prefix { $0 != "@" }) }
+        public init(number: Int, email: String, alias: String? = nil, active: Bool,
+                    disabled: Bool = false, windows: [Window]) {
             self.number = number
             self.email = email
+            self.alias = alias
+            self.active = active
+            self.disabled = disabled
             self.windows = windows
         }
     }
@@ -44,17 +56,25 @@ public struct UsageForecast: Codable, Sendable, Equatable {
     public let computedAt: Double
     /// The active account's projection; nil when no account is active.
     public let active: AccountLine?
+    /// Every account's projection at ITS OWN measured pace (the detail
+    /// dashboard); additive, nil on snapshots before 2026-09-03 pm.
+    public let accounts: [AccountLine]?
     /// When every usable account's weekly headroom is gone at the active
     /// account's weekly pace (sequential drain, headroom-richest last);
     /// nil without a measurable weekly rate.
     public let allDeadAt: Double?
+    /// The account numbers in the order the drain assumes (active first).
+    public let drainOrder: [Int]?
     /// What the numbers rest on, for the tooltip / pane footer.
     public let basis: String
 
-    public init(computedAt: Double, active: AccountLine?, allDeadAt: Double?, basis: String) {
+    public init(computedAt: Double, active: AccountLine?, accounts: [AccountLine]? = nil,
+                allDeadAt: Double?, drainOrder: [Int]? = nil, basis: String) {
         self.computedAt = computedAt
         self.active = active
+        self.accounts = accounts
         self.allDeadAt = allDeadAt
+        self.drainOrder = drainOrder
         self.basis = basis
     }
 
@@ -65,16 +85,18 @@ public struct UsageForecast: Codable, Sendable, Equatable {
     public struct AccountInput: Sendable, Equatable {
         public let number: Int
         public let email: String
+        public let alias: String?
         public let active: Bool
         public let disabled: Bool
         public let fiveHour: UsageSample.Window?
         public let sevenDay: UsageSample.Window?
         public let scoped: [String: UsageSample.Window]
-        public init(number: Int, email: String, active: Bool, disabled: Bool,
+        public init(number: Int, email: String, alias: String? = nil, active: Bool, disabled: Bool,
                     fiveHour: UsageSample.Window?, sevenDay: UsageSample.Window?,
                     scoped: [String: UsageSample.Window]) {
             self.number = number
             self.email = email
+            self.alias = alias
             self.active = active
             self.disabled = disabled
             self.fiveHour = fiveHour
@@ -85,27 +107,39 @@ public struct UsageForecast: Codable, Sendable, Equatable {
 
     public static let fiveHourLookback: Double = 3600
     public static let weeklyLookback: Double = 24 * 3600
+    public static let basisText = "5h pace measured over the last hour, weekly and per-model paces "
+        + "over the last 24 hours, each account at its own pace. The fleet projection drains "
+        + "weekly headroom account by account at the active account's pace, active first, "
+        + "then least headroom first; weekly resets inside that horizon are not modeled."
 
-    /// `rates` maps window name → pct/hour for the ACTIVE account (the
-    /// fleet drains at that pace once it moves on). Missing keys mean
-    /// "unknown", which projects nothing rather than something wrong.
+    /// `ratesByEmail` maps email → window name → pct/hour, measured per
+    /// account. Missing keys mean "unknown", which projects nothing
+    /// rather than something wrong.
+    public static func build(accounts: [AccountInput], ratesByEmail: [String: [String: Double]],
+                             now: Double) -> UsageForecast {
+        let lines = accounts.map { a -> AccountLine in
+            let rates = ratesByEmail[a.email] ?? [:]
+            var windows: [Window] = []
+            if let w = a.fiveHour { windows.append(project("5h", w, rate: rates["5h"], now: now)) }
+            if let w = a.sevenDay { windows.append(project("7d", w, rate: rates["7d"], now: now)) }
+            for (name, w) in a.scoped.sorted(by: { $0.key < $1.key }) {
+                windows.append(project(name, w, rate: rates[name], now: now))
+            }
+            return AccountLine(number: a.number, email: a.email, alias: a.alias, active: a.active,
+                               disabled: a.disabled, windows: windows)
+        }
+        let active = lines.first { $0.active }
+        let activeRates = accounts.first { $0.active }.flatMap { ratesByEmail[$0.email] } ?? [:]
+        let drain = allDead(accounts: accounts, rates: activeRates, now: now)
+        return UsageForecast(computedAt: now, active: active, accounts: lines,
+                             allDeadAt: drain.at, drainOrder: drain.order, basis: basisText)
+    }
+
+    /// One rate table for the active account only (the older call).
     public static func build(accounts: [AccountInput], rates: [String: Double],
                              now: Double) -> UsageForecast {
-        let basis = "5h pace from the last hour, weekly pace from the last 24h; "
-            + "fleet drains weekly headroom in headroom order at the active account's pace"
-        guard let act = accounts.first(where: { $0.active }) else {
-            return UsageForecast(computedAt: now, active: nil, allDeadAt: nil, basis: basis)
-        }
-        var windows: [Window] = []
-        if let w = act.fiveHour { windows.append(project("5h", w, rate: rates["5h"], now: now)) }
-        if let w = act.sevenDay { windows.append(project("7d", w, rate: rates["7d"], now: now)) }
-        for (name, w) in act.scoped.sorted(by: { $0.key < $1.key }) {
-            windows.append(project(name, w, rate: rates[name], now: now))
-        }
-        let line = AccountLine(number: act.number, email: act.email, windows: windows)
-        return UsageForecast(computedAt: now, active: line,
-                             allDeadAt: allDead(accounts: accounts, rates: rates, now: now),
-                             basis: basis)
+        let byEmail = accounts.first { $0.active }.map { [$0.email: rates] } ?? [:]
+        return build(accounts: accounts, ratesByEmail: byEmail, now: now)
     }
 
     static func project(_ name: String, _ w: UsageSample.Window, rate: Double?,
@@ -126,19 +160,21 @@ public struct UsageForecast: Codable, Sendable, Equatable {
     /// window (7d or scoped) hits 100% at the active account's pace.
     /// An account already at 100% weekly contributes nothing; a weekly
     /// reset inside the horizon is ignored (reported as such in `basis`).
-    static func allDead(accounts: [AccountInput], rates: [String: Double], now: Double) -> Double? {
+    static func allDead(accounts: [AccountInput], rates: [String: Double],
+                        now: Double) -> (at: Double?, order: [Int]) {
+        let usable = accounts.filter { !$0.disabled }
+        guard usable.contains(where: { $0.active }) else { return (nil, []) }
+        let ordered = usable.filter(\.active) + usable.filter { !$0.active }
+            .sorted { ($0.sevenDay?.pct ?? 0) > ($1.sevenDay?.pct ?? 0) }
+        let order = ordered.map(\.number)
         let weeklyRates = rates.filter { $0.key != "5h" && $0.value > 0 }
-        guard !weeklyRates.isEmpty else { return nil }
+        guard !weeklyRates.isEmpty else { return (nil, order) }
         func headroomHours(_ a: AccountInput) -> Double? {
             var hours: [Double] = []
             if let w = a.sevenDay, let r = weeklyRates["7d"] { hours.append(max(0, 100 - w.pct) / r) }
             for (name, w) in a.scoped { if let r = weeklyRates[name] { hours.append(max(0, 100 - w.pct) / r) } }
             return hours.min()
         }
-        let usable = accounts.filter { !$0.disabled }
-        guard usable.contains(where: { $0.active }) else { return nil }
-        let ordered = usable.filter(\.active) + usable.filter { !$0.active }
-            .sorted { ($0.sevenDay?.pct ?? 0) > ($1.sevenDay?.pct ?? 0) }
         var cursor = now
         var measured = false
         for a in ordered {
@@ -146,7 +182,7 @@ public struct UsageForecast: Codable, Sendable, Equatable {
             measured = true
             cursor += h * 3600
         }
-        return measured ? cursor : nil
+        return (measured ? cursor : nil, order)
     }
 }
 
