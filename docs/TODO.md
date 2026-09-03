@@ -179,8 +179,12 @@ file keeps the shipped log and the deferred-by-design notes.
   `com.huuloc.infinitus.cloudflare-tunnel`, `TUNNEL_TOKEN` env), Devices →
   Anywhere → "Expose through your own Cloudflare tunnel" (hostname, masked
   token, Save/Forget, port-mismatch warning), pair route "Anywhere, your
-  domain" ahead of the quick tunnel. Awaiting the user's hostname + token.
-  Linux tray: `parity pending`.
+  domain" ahead of the quick tunnel. Live 2026-09-03 as `tunnel.infinitus.run`
+  via the locally-managed path (cloudflared login → user authorized the
+  zone → `tunnel create infinitus` → `route dns` → ~/.cloudflared/config.yml;
+  Infinitus runs `cloudflared tunnel run` with no token when config.yml
+  routes the hostname). Quick tunnel turned off — the named one replaces
+  it. Linux tray: `parity pending`.
 - ~~Phone status names the failed route~~ → shipped 2026-09-03: "couldn't
   reach any saved Mac — 192.168.2.36:47824 didn't answer · …trycloudflare.com
   answered 530 · Wi-Fi discovery didn't answer" instead of "offline". The
