@@ -454,10 +454,15 @@ public struct SessionPanelRow: Sendable, Equatable, Codable {
     public let quietMinutes: Int?
     public let goal: String?
     public let phase: String?
+    /// The AWS profile whose session expired under this session (the
+    /// Mac popup's key badge; the tray's "needs AWS login" line). New
+    /// optional field.
+    public let awsLoginProfile: String?
 
     public init(repo: String, status: String, nowDoing: String? = nil, todosDone: Int? = nil,
                 todosTotal: Int? = nil, activeForm: String? = nil, retrying: Bool = false,
-                quietMinutes: Int? = nil, goal: String? = nil, phase: String? = nil) {
+                quietMinutes: Int? = nil, goal: String? = nil, phase: String? = nil,
+                awsLoginProfile: String? = nil) {
         self.repo = repo
         self.status = status
         self.nowDoing = nowDoing
@@ -468,6 +473,7 @@ public struct SessionPanelRow: Sendable, Equatable, Codable {
         self.quietMinutes = quietMinutes
         self.goal = goal
         self.phase = phase
+        self.awsLoginProfile = awsLoginProfile
     }
 
     /// `repo` is the last path component of the record's cwd. `quietMinutes`
@@ -489,7 +495,8 @@ public struct SessionPanelRow: Sendable, Equatable, Codable {
             retrying: progress.retrying,
             quietMinutes: quietMinutes,
             goal: progress.goal,
-            phase: progress.phase)
+            phase: progress.phase,
+            awsLoginProfile: progress.awsLoginProfile)
     }
 }
 

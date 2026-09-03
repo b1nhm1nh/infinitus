@@ -42,7 +42,23 @@ GitHub release body.
   splits the run into a stack of chips; the chip counts the errors
   ("(×7 · 2 errors)") and shows the latest call or error.
 
+### Linux tray
+- **Needs-AWS-login line and connected phones** (parity with the Mac).
+  A session whose AWS session expired says "needs AWS login · profile"
+  on its row, and the footer names the phone last heard by
+  `infinitus-tray serve` ("Titan · Wi-Fi · 4 s ago", green while
+  inside the Mac's 90 s window). APNs pushes stay Mac-only: the .p8
+  key lives in the macOS keychain, and the tray already reaches the
+  phone through the engine's own push channels and `notify-send`.
+
 ### Fixes
+- **The popup no longer pegs the main thread while an account is in
+  the 90s.** The critical-row pulse re-ran the whole headroom sort on
+  every frame, and each sort built fresh ISO date formatters (an ICU
+  calendar per parse). With one such account the app sat at 80% CPU,
+  the control socket stopped answering and `infinitusctl switch` hung
+  — the e2e's "switch didn't take" flake was this. The sort now runs
+  once per fleet change, and date parsing uses cached formatters.
 - **A refused engine no longer reads as a crash.** The supervisor
   decided crash-vs-refused when the child exited, which could beat the
   pipe delivering its last line under load; it now waits for the pipe

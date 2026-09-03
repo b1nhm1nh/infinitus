@@ -206,8 +206,9 @@ file keeps the shipped log and the deferred-by-design notes.
   request; `MirrorServer.clients` keeps one `MirrorClient` per id
   (route from the Host header: Wi-Fi / Tailscale / quick tunnel /
   the named hostname), and the Sync pane lists them — green dot while
-  heard from in the last 90 s, "· route · N s ago". Linux tray:
-  parity pending (no pane; could go on the Panel.qml header).
+  heard from in the last 90 s, "· route · N s ago". Linux tray: a
+  footer chip (2026-09-03) — `serve` notes each phone in a
+  `mirror-clients.json` sidecar, `panel` ships it as `devices`.
 - **Pairing rendezvous on infinitus.run** (user 2026-09-03 "can the
   domain be reused for other users?" → "1 ok"): `site/src/worker.js`
   serves the landing page as before plus `PUT/GET /rendezvous/<sha256

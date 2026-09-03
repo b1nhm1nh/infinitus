@@ -235,7 +235,7 @@ struct AccountGrid<M: FleetModel, U: UsageSource>: View {
         // the 90s breathe red until they either die or recover. Reuses
         // the per-row bounds every slot cell already reports.
         .overlayPreferenceValue(DeadRowBounds.self) { dict in
-            criticalOverlay(dict)
+            criticalOverlay(dict, numbers: criticalNumbers)
         }
         // Death beats: a red band over each row whose account just went
         // dead (the slot cell reported its bounds; full grid width).
@@ -525,9 +525,12 @@ extension AccountGrid {
         }.map(\.number)
     }
 
-    func criticalOverlay(_ dict: [Int: [Anchor<CGRect>]]) -> some View {
+    /// `numbers` is computed by the caller, outside the GeometryReader:
+    /// inside it, the headroom sort ran again on every geometry update
+    /// (each pulse frame).
+    func criticalOverlay(_ dict: [Int: [Anchor<CGRect>]], numbers: [Int]) -> some View {
         GeometryReader { geo in
-            ForEach(criticalNumbers, id: \.self) { n in
+            ForEach(numbers, id: \.self) { n in
                 if let a = dict[n]?.first {
                     let r = geo[a]
                     CriticalPulse()
