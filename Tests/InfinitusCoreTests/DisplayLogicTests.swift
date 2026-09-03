@@ -173,6 +173,10 @@ final class AccountVitalsTests: XCTestCase {
 
     func testAnyExhaustedWindowIsDead() throws {
         XCTAssertTrue(AccountVitals.isDead(try usage(#"{"fiveHour":{"pct":100}}"#)))
+        // Credit-only plan (Kiro): spent credit is the death; under a
+        // window it stays a footnote.
+        XCTAssertTrue(AccountVitals.isDead(try usage(#"{"spend":{"used":10,"limit":10,"pct":100,"currency":"credits"}}"#)))
+        XCTAssertFalse(AccountVitals.isDead(try usage(#"{"fiveHour":{"pct":10},"spend":{"used":10,"limit":10,"pct":100,"currency":"credits"}}"#)))
         XCTAssertTrue(AccountVitals.isDead(try usage(#"{"sevenDay":{"pct":100.0}}"#)))
         XCTAssertTrue(AccountVitals.isDead(
             try usage(#"{"scoped":[{"pct":100,"name":"Fable"}]}"#)))

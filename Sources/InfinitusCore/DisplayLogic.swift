@@ -306,6 +306,10 @@ public enum AccountVitals {
         if let p = usage.fiveHour?.pct { pcts.append(p) }
         if let p = usage.sevenDay?.pct { pcts.append(p) }
         for w in usage.scoped ?? [] { pcts.append(w.pct) }
+        // A credit-only plan (Kiro's monthly pool) has nothing else to
+        // live on: spent credit IS the death there. Under Claude's
+        // windows it stays a footnote.
+        if pcts.isEmpty, let spend = usage.spend { return spend.pct >= 100 }
         return pcts.contains { $0 >= 100 }
     }
 }

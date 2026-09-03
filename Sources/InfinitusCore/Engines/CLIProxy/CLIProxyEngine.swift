@@ -416,7 +416,7 @@ public actor CLIProxyEngine: AccountEngine {
         switch fleet {
         case .claude: path = "anthropic-auth-url"
         case .codex: path = "codex-auth-url"
-        case .gemini, .other: throw EngineError.unsupported("addOAuth for \(fleet.rawValue)")
+        case .gemini, .kiro, .other: throw EngineError.unsupported("addOAuth for \(fleet.rawValue)")
         }
         // is_webui: only then does the proxy open the local callback
         // listener (port 54545 for Anthropic) that forwards the OAuth

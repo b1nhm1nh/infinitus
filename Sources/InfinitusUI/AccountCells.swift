@@ -481,6 +481,13 @@ struct AccountCells<M: FleetModel, U: UsageSource> {
         .activeBand(banded && account.active)
     }
 
+    /// A credit pool with no windows behind it (9Router's Kiro rows):
+    /// the credit gauge is the row's only gauge, so it never hides.
+    private var creditOnly: Bool {
+        guard let u = account.usage else { return false }
+        return u.spend != nil && u.fiveHour == nil && u.sevenDay == nil && (u.scoped ?? []).isEmpty
+    }
+
     @ViewBuilder var spendCell: some View {
         if let spend = account.usage?.spend, spend.pct >= 100 {
             // Spent credit is a footnote, not a death: the overflow buffer
@@ -492,11 +499,12 @@ struct AccountCells<M: FleetModel, U: UsageSource> {
             }
                 .font(PopupFont.caption).foregroundStyle(.tertiary)
                 .help(String(format: "usage credit exhausted: %.2f of %.0f %@ — "
-                             + "account still usable on its plan limits",
+                             + (creditOnly ? "nothing left until it resets"
+                                           : "account still usable on its plan limits"),
                              spend.used, spend.limit, spend.currency))
                 .fixedSize()
                 .activeBand(banded && account.active)
-        } else if let spend = account.usage?.spend, !hiddenInCompact(spend.pct) {
+        } else if let spend = account.usage?.spend, creditOnly || !hiddenInCompact(spend.pct) {
             HStack(spacing: 3) {
                 Text(PopupGlyph.text(theme.creditLabel))
                     .font(theme.plain ? PopupFont.body : PopupFont.caption.bold())

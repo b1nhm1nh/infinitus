@@ -23,7 +23,7 @@ public actor NineRouterEngine: AccountEngine {
     private let usageConcurrency = 4
     private let usageTTL: TimeInterval
 
-    private var ordinals: [String] = []
+    private var ordinals: [Provider: [String]] = [:]
     private var usageCache: [String: (usage: Usage, at: Date)] = [:]
     private var usageBackoff: [String: Date] = [:]
     private var sharedUsage: [String: SharedUsage] = [:]
@@ -101,7 +101,9 @@ public actor NineRouterEngine: AccountEngine {
         let now = Date()
         let (_, data) = try await request("GET", "providers")
         let connections = try JSONDecoder().decode(NineRouterConnectionList.self, from: data).connections
-        let claude = NineRouterMapping.ordered(connections)
+        let known = NineRouterMapping.providers(connections).flatMap {
+            NineRouterMapping.ordered(connections, provider: $0)
+        }
 
         // One quota call per account per usageTTL, shared across engines
         // holding the same email — the Anthropic 429 budget is per
@@ -111,7 +113,7 @@ public actor NineRouterEngine: AccountEngine {
         var wanted: [NineRouterConnection] = []
         var leaderByEmail: [String: String] = [:]
         var followers: [String: [String]] = [:]
-        for c in claude where c.isActive != false {
+        for c in known where c.isActive != false {
             let email = c.email?.lowercased()
             if let email, let shared = sharedUsage[email], fresh(shared.at) {
                 usage[c.id] = shared.usage
@@ -133,6 +135,7 @@ public actor NineRouterEngine: AccountEngine {
         }
 
         var statuses: [String: String] = [:]
+        var plans: [String: String] = [:]
         await withTaskGroup(of: (String, NineRouterUsage.Outcome).self) { group in
             var pending = wanted.makeIterator()
             var inFlight = 0
@@ -149,13 +152,18 @@ public actor NineRouterEngine: AccountEngine {
             for await (id, outcome) in group {
                 inFlight -= 1
                 switch outcome {
-                case .ok(let u):
+                case .ok(let u, let plan):
                     expiredIDs.remove(id)
+                    if let plan { plans[id] = plan }
                     if let u {
                         for n in [id] + (followers[id] ?? []) {
                             usage[n] = u
                             usageCache[n] = (u, now)
                         }
+                    } else {
+                        // No quotas for this provider (Gemini today): don't
+                        // ask again before the TTL, same cadence as a hit.
+                        usageBackoff[id] = now.addingTimeInterval(usageTTL)
                     }
                 case .expired:
                     expiredIDs.insert(id)
@@ -171,19 +179,19 @@ public actor NineRouterEngine: AccountEngine {
         }
         for id in expiredIDs where statuses[id] == nil { statuses[id] = "relogin_required" }
 
-        let mapped = NineRouterMapping.fleet(engineID: Self.engineID, connections: connections,
-                                             usage: usage, statuses: statuses, now: now)
+        let mapped = NineRouterMapping.fleets(engineID: Self.engineID, connections: connections,
+                                              usage: usage, plans: plans, statuses: statuses, now: now)
         ordinals = mapped.ordinals
-        return [mapped.fleet]
+        return mapped.fleets
     }
 
     // MARK: actions
 
     func connectionID(_ provider: Provider, _ number: Int) throws -> String {
-        guard provider == .claude, number >= 1, number <= ordinals.count else {
-            throw EngineError.remote(status: 0, body: "no account #\(number) in the last snapshot")
+        guard let ids = ordinals[provider], number >= 1, number <= ids.count else {
+            throw EngineError.remote(status: 0, body: "no \(provider.displayName) account #\(number) in the last snapshot")
         }
-        return ordinals[number - 1]
+        return ids[number - 1]
     }
 
     /// Priority 0 sorts ahead of every renumbered 1..n row; 9Router

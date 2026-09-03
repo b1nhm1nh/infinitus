@@ -9,13 +9,14 @@ import Foundation
 
 /// Whose accounts a fleet holds.
 public enum Provider: String, Codable, Sendable, CaseIterable {
-    case claude, codex, gemini, other
+    case claude, codex, gemini, kiro, other
 
     public var displayName: String {
         switch self {
         case .claude: return "Claude"
         case .codex: return "Codex"
         case .gemini: return "Gemini"
+        case .kiro: return "Kiro"
         case .other: return "Other"
         }
     }

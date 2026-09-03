@@ -14,6 +14,13 @@ GitHub release body.
   password kept in the keychain. Rotation stays 9Router's own; Infinitus
   only sets its knobs. Settings → 9Router to turn it on;
   `infinitusctl engine 9router on` and `9router-password` from a script.
+- **Every 9Router provider, not just Claude.** One fleet per provider
+  the app knows (Claude first, then Kiro / Codex / Gemini by name).
+  Kiro's monthly credit pool rides the row's credit gauge in credits —
+  used / total, reset date — with "KIRO POWER" in the subscription tip;
+  spent credit counts as dead for a credit-only row. Switching between
+  Kiro connections goes through 9Router's priority like Claude's, though
+  9Router routes Kiro traffic itself — the row is there for the stats.
 
 ### Prediction model
 - **"At this pace" line in the popup.** Below the account rows: when

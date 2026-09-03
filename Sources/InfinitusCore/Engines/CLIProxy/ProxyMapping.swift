@@ -304,6 +304,7 @@ public enum ProxyMapping {
         switch lower {
         case "claude", "anthropic": return .claude
         case "codex", "openai": return .codex
+        case "kiro": return .kiro
         default:
             if lower.hasPrefix("gemini") || lower.hasPrefix("antigravity") { return .gemini }
             return .other

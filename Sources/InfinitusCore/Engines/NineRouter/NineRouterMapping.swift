@@ -7,8 +7,11 @@ import Foundation
 // its secrets already stripped server-side; `GET /api/usage/{id}` returns
 // the provider's quota report normalized by 9Router itself (for Claude:
 // `session (5h)`, `weekly (7d)`, `weekly <model> (7d)`, each `used` %
-// with an ISO `resetAt`). Unknown keys are ignored by Decodable's
-// default, so newer 9Router fields never break decoding.
+// with an ISO `resetAt`; for Kiro: one `credit` pool with `used`/`total`
+// and a monthly `resetAt`). Unknown keys are ignored by Decodable's
+// default, so newer 9Router fields never break decoding — the Kiro
+// row's `providerSpecificData` (which carries client secrets) is never
+// decoded at all.
 
 /// One `providerConnections` row as the API shows it. Only `id` and
 /// `provider` are required.
@@ -57,10 +60,12 @@ public struct NineRouterConnectionList: Decodable, Sendable {
     public let connections: [NineRouterConnection]
 }
 
-/// `GET /api/usage/{id}` for a Claude connection.
+/// `GET /api/usage/{id}` for any connection.
 public enum NineRouterUsage {
     public enum Outcome: Sendable {
-        case ok(Usage?)
+        /// The quotas, plus the plan name 9Router reports ("Claude Code",
+        /// "KIRO POWER") for the row's subscription tip.
+        case ok(Usage?, plan: String?)
         /// 9Router answered with a message instead of quotas and the
         /// message reads as an expired/rejected token.
         case expired
@@ -70,6 +75,7 @@ public enum NineRouterUsage {
     struct Wire: Decodable {
         struct Quota: Decodable {
             let used: Double?
+            let total: Double?
             let resetAt: String?
             let unlimited: Bool?
         }
@@ -93,7 +99,7 @@ public enum NineRouterUsage {
             if authExpiredMarkers.contains(where: { lower.contains($0) }) { return .expired }
             return .unavailable(message)
         }
-        guard let quotas = wire.quotas else { return .ok(nil) }
+        guard let quotas = wire.quotas else { return .ok(nil, plan: wire.plan) }
 
         func window(_ q: Wire.Quota, name: String? = nil) -> UsageWindow? {
             guard let used = q.used, q.unlimited != true else { return nil }
@@ -108,9 +114,23 @@ public enum NineRouterUsage {
 
         var fiveHour: UsageWindow?, sevenDay: UsageWindow?
         var scoped: [UsageWindow] = []
+        var spend: Spend?
         for (key, quota) in quotas.sorted(by: { $0.key < $1.key }) {
             let lower = key.lowercased()
-            if lower.hasPrefix("session") {
+            if lower == "credit" {
+                // Kiro: a monthly credit pool, the account's only quota —
+                // shown on the row's credit gauge, in credits not dollars.
+                guard quota.unlimited != true, let used = quota.used,
+                      let total = quota.total, total > 0 else { continue }
+                var countdown: String?, clock: String?
+                if let resetAt = quota.resetAt, let date = WeeklyRoll.parse(resetAt) {
+                    countdown = ResetFormat.countdown(until: date, now: now)
+                    clock = ResetFormat.clock(date, now: now)
+                }
+                spend = Spend(used: used, limit: total, pct: used / total * 100,
+                              currency: "credits", resetsAt: quota.resetAt,
+                              countdown: countdown, clock: clock)
+            } else if lower.hasPrefix("session") {
                 fiveHour = window(quota)
             } else if lower == "weekly (7d)" || lower == "weekly" {
                 sevenDay = window(quota)
@@ -123,7 +143,6 @@ public enum NineRouterUsage {
                 scoped.append(w)
             }
         }
-        var spend: Spend?
         if let eu = wire.extraUsage, eu.isEnabled == true,
            let used = eu.usedCredits, let limit = eu.monthlyLimit, let pct = eu.utilization {
             var countdown: String?, clock: String?
@@ -135,23 +154,36 @@ public enum NineRouterUsage {
                           currency: eu.currency ?? "USD", resetsAt: eu.resetsAt,
                           countdown: countdown, clock: clock)
         }
-        if fiveHour == nil, sevenDay == nil, scoped.isEmpty, spend == nil { return .ok(nil) }
+        if fiveHour == nil, sevenDay == nil, scoped.isEmpty, spend == nil { return .ok(nil, plan: wire.plan) }
         return .ok(Usage(fiveHour: fiveHour, sevenDay: sevenDay,
-                         scoped: scoped.isEmpty ? nil : scoped, spend: spend))
+                         scoped: scoped.isEmpty ? nil : scoped, spend: spend), plan: wire.plan)
     }
 }
 
-/// Groups Claude connections into one fleet over the shared `AutoOrder` /
-/// `RecoveryMath` / `AccountVitals` math, exactly like ProxyMapping.
+/// Groups connections into one fleet per provider (Claude first, then
+/// Kiro/Codex/Gemini — 2026-09-03: "my 9router has Kiro too, display
+/// it") over the shared `AutoOrder` / `RecoveryMath` / `AccountVitals`
+/// math, exactly like ProxyMapping. Providers the app has no name for
+/// (`.other`) stay out.
 public enum NineRouterMapping {
     public static func isClaude(_ c: NineRouterConnection) -> Bool {
         ProxyMapping.provider(for: c.provider) == .claude
     }
 
-    /// 9Router's own pick order: priority ascending (1 first), newer
-    /// update first on ties, id last so the order is total.
-    public static func ordered(_ connections: [NineRouterConnection]) -> [NineRouterConnection] {
-        connections.filter(isClaude).sorted { a, b in
+    /// Providers present, Claude first, the rest by display name.
+    public static func providers(_ connections: [NineRouterConnection]) -> [Provider] {
+        let present = Set(connections.map { ProxyMapping.provider(for: $0.provider) }).subtracting([.other])
+        return present.sorted { a, b in
+            if (a == .claude) != (b == .claude) { return a == .claude }
+            return a.displayName < b.displayName
+        }
+    }
+
+    /// 9Router's own pick order within one provider: priority ascending
+    /// (1 first), newer update first on ties, id last so the order is total.
+    public static func ordered(_ connections: [NineRouterConnection],
+                               provider: Provider = .claude) -> [NineRouterConnection] {
+        connections.filter { ProxyMapping.provider(for: $0.provider) == provider }.sorted { a, b in
             let pa = a.priority ?? Int.max, pb = b.priority ?? Int.max
             if pa != pb { return pa < pb }
             let ua = a.updatedAt ?? "", ub = b.updatedAt ?? ""
@@ -160,12 +192,28 @@ public enum NineRouterMapping {
         }
     }
 
-    /// `usage` / `statuses` keyed by connection id; `ordinals` lists ids in
-    /// ordinal order — index 0 is `Account.number == 1`.
-    public static func fleet(engineID: String, connections: [NineRouterConnection],
-                             usage: [String: Usage], statuses: [String: String],
-                             now: Date = Date()) -> (fleet: EngineFleet, ordinals: [String]) {
-        let sorted = ordered(connections)
+    /// `usage` / `plans` / `statuses` keyed by connection id; `ordinals`
+    /// lists each provider's ids in ordinal order — index 0 is
+    /// `Account.number == 1` of that fleet.
+    public static func fleets(engineID: String, connections: [NineRouterConnection],
+                              usage: [String: Usage], plans: [String: String] = [:],
+                              statuses: [String: String],
+                              now: Date = Date()) -> (fleets: [EngineFleet], ordinals: [Provider: [String]]) {
+        var fleets: [EngineFleet] = []
+        var ordinals: [Provider: [String]] = [:]
+        for provider in providers(connections) {
+            let (fleet, ids) = fleet(engineID: engineID, provider: provider,
+                                     connections: ordered(connections, provider: provider),
+                                     usage: usage, plans: plans, statuses: statuses, now: now)
+            fleets.append(fleet)
+            ordinals[provider] = ids
+        }
+        return (fleets, ordinals)
+    }
+
+    static func fleet(engineID: String, provider: Provider, connections sorted: [NineRouterConnection],
+                      usage: [String: Usage], plans: [String: String], statuses: [String: String],
+                      now: Date) -> (fleet: EngineFleet, ordinals: [String]) {
         // Active = the first connection 9Router's fallback order would try:
         // enabled and not cooling down.
         let activeID = sorted.first { c in
@@ -181,7 +229,7 @@ public enum NineRouterMapping {
                 number: index + 1, email: email,
                 active: c.id == activeID,
                 usageStatus: statuses[c.id] ?? usageStatus(for: c, now: now),
-                usage: fileUsage, alias: alias,
+                usage: fileUsage, alias: alias, plan: plans[c.id],
                 disabled: c.isActive == false ? true : nil,
                 usageFetchedAt: fileUsage != nil ? ProxyMapping.isoString(now) : nil))
         }
@@ -192,7 +240,7 @@ public enum NineRouterMapping {
             return account.disabled != true && !AccountVitals.isDead(account.usage)
         }
         let recovery = candidate == nil ? RecoveryMath.nextRecovery(accounts: accounts) : nil
-        let fleet = EngineFleet(engineID: engineID, provider: .claude, accounts: accounts,
+        let fleet = EngineFleet(engineID: engineID, provider: provider, accounts: accounts,
                                 activeNumber: activeNumber, nextCandidate: candidate,
                                 nextRecovery: recovery, liveSessions: nil, raw: nil)
         return (fleet, sorted.map(\.id))
