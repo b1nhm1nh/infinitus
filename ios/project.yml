@@ -69,6 +69,11 @@ targets:
     sources:
       - InfinitusMobileWidgets
       - InfinitusMobile/LiveActivityAttributes.swift
+    dependencies:
+      - package: Infinitus
+        product: InfinitusCore
+      - package: Infinitus
+        product: InfinitusUI
     info:
       path: InfinitusMobileWidgets/Info.plist
       properties:

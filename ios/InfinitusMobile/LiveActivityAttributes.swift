@@ -2,8 +2,19 @@ import ActivityKit
 import Foundation
 
 // Shared between the app (which starts/updates the activities) and the
-// widget extension (which renders them) — compiled into both targets,
-// so nothing here may depend on InfinitusCore.
+// widget extension (which renders them) — compiled into both targets.
+// Everything is pre-themed by the app (RowTheme lives in InfinitusCore,
+// which the app has at hand with the fleet's prefs): the extension only
+// draws strings, colours and percentages.
+
+/// One usage window, themed: "MP" / "HP" / "× Dragon", its colour name,
+/// percent used, and the dense reset label ("4h20m·17:49").
+struct ActivityWindow: Codable, Hashable {
+    var label: String
+    var color: String
+    var pct: Double
+    var reset: String?
+}
 
 /// #1: every account is limited; counts down to the first reviver's
 /// reset. `Text(timerInterval:)` ticks natively, so the app only sends
@@ -11,26 +22,38 @@ import Foundation
 struct RevivalActivity: ActivityAttributes {
     struct ContentState: Codable, Hashable {
         var reviver: String
+        var icon: String?
         var revivesAt: Date
         var sessions: Int
-        /// Final state: the fleet came back — "revived — <reviver> is back".
+        /// Theme words: "revives" / "is dead" … and the flash colour.
+        var reviveWord: String
+        var deadWord: String
+        var accent: String
+        /// Final state: the fleet came back.
         var revived: Bool
     }
     var machine: String
 }
 
-/// #2: sessions are working; the active account and its binding window,
-/// the next candidate as a subtle hint.
+/// #2: sessions are working — the active account as its themed popup
+/// row (icon, slot, level, gold, every window), the session counts, the
+/// next candidate as a subtle hint.
 struct WorkingActivity: ActivityAttributes {
     struct ContentState: Codable, Hashable {
         var active: String
+        var icon: String?
+        var slot: String
         var plan: String?
-        var bindingLabel: String
-        /// 0…100 of the window closest to its limit.
-        var bindingPct: Double
+        var cash: String?
+        var windows: [ActivityWindow]
+        /// Index into `windows` of the one closest to its limit.
+        var binding: Int?
         var busy: Int
         var total: Int
+        var waiting: Int
         var next: String?
+        var accent: String
+        var plain: Bool
     }
     var machine: String
 }

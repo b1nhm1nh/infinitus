@@ -1,4 +1,5 @@
 import ActivityKit
+import InfinitusUI
 import SwiftUI
 import WidgetKit
 
@@ -18,34 +19,35 @@ struct RevivalLiveActivity: Widget {
             RevivalLockScreen(state: context.state)
                 .activityBackgroundTint(Color.black.opacity(0.6))
         } dynamicIsland: { context in
-            DynamicIsland {
+            let accent = ThemeColor.resolve(context.state.accent)
+            return DynamicIsland {
                 DynamicIslandExpandedRegion(.center) {
                     VStack(spacing: 4) {
                         if context.state.revived {
-                            Text("\(context.state.reviver) is back").font(.headline)
+                            Text("\(context.state.icon ?? "")\(context.state.reviver) is back").font(.headline)
                         } else {
-                            Text("All accounts limited")
-                                .font(.caption).foregroundStyle(.orange)
+                            Text("All accounts \(context.state.deadWord)")
+                                .font(.caption).foregroundStyle(accent)
                             Text(timerInterval: Date.now...context.state.revivesAt, countsDown: true)
                                 .font(.system(.title, design: .rounded).weight(.semibold))
                                 .monospacedDigit().multilineTextAlignment(.center)
-                            Text("\(context.state.reviver) recovers · \(context.state.sessions) sessions")
+                            Text("\(context.state.icon ?? "")\(context.state.reviver) \(context.state.reviveWord) · \(context.state.sessions) sessions")
                                 .font(.caption2).foregroundStyle(.secondary)
                         }
                     }
                 }
             } compactLeading: {
-                Image(systemName: context.state.revived ? "bolt.fill" : "hourglass")
-                    .foregroundStyle(.orange)
+                Text(context.state.icon ?? "⏳")
             } compactTrailing: {
                 if context.state.revived {
                     Text("back").font(.caption2)
                 } else {
                     Text(timerInterval: Date.now...context.state.revivesAt, countsDown: true)
                         .monospacedDigit().font(.caption2).frame(maxWidth: 52)
+                        .foregroundStyle(accent)
                 }
             } minimal: {
-                Image(systemName: "hourglass").foregroundStyle(.orange)
+                Image(systemName: "hourglass").foregroundStyle(accent)
             }
         }
     }
@@ -54,19 +56,19 @@ struct RevivalLiveActivity: Widget {
 private struct RevivalLockScreen: View {
     let state: RevivalActivity.ContentState
     var body: some View {
+        let accent = ThemeColor.resolve(state.accent)
         HStack(spacing: 14) {
-            Image(systemName: state.revived ? "bolt.fill" : "hourglass")
-                .font(.title2).foregroundStyle(.orange)
+            Text(state.icon ?? "⏳").font(.title)
             VStack(alignment: .leading, spacing: 3) {
                 if state.revived {
-                    Text("Revived — \(state.reviver) is back").font(.headline)
+                    Text("\(state.reviver) is back").font(.headline)
                 } else {
-                    Text("All accounts limited").font(.caption).foregroundStyle(.orange)
+                    Text("All accounts \(state.deadWord)").font(.caption).foregroundStyle(accent)
                     HStack(alignment: .firstTextBaseline, spacing: 6) {
                         Text(state.reviver).font(.headline)
-                        Text("recovers in").font(.caption).foregroundStyle(.secondary)
+                        Text("\(state.reviveWord) in").font(.caption).foregroundStyle(.secondary)
                         Text(timerInterval: Date.now...state.revivesAt, countsDown: true)
-                            .font(.headline).monospacedDigit()
+                            .font(.headline).monospacedDigit().foregroundStyle(accent)
                     }
                     Text("\(state.sessions) session\(state.sessions == 1 ? "" : "s") waiting to resume")
                         .font(.caption2).foregroundStyle(.secondary)
@@ -86,42 +88,58 @@ struct WorkingLiveActivity: Widget {
             WorkingLockScreen(state: context.state)
                 .activityBackgroundTint(Color.black.opacity(0.6))
         } dynamicIsland: { context in
-            DynamicIsland {
+            let state = context.state
+            let binding = state.binding.map { state.windows[$0] }
+            return DynamicIsland {
                 DynamicIslandExpandedRegion(.leading) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(context.state.active).font(.headline)
-                        if let plan = context.state.plan {
-                            Text(plan).font(.caption2).foregroundStyle(.secondary)
+                    HStack(spacing: 6) {
+                        if let icon = state.icon { Text(icon) }
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(state.active).font(.headline).lineLimit(1)
+                            HStack(spacing: 6) {
+                                Text(state.slot)
+                                if let plan = state.plan { Text(plan) }
+                            }
+                            .font(.caption2).foregroundStyle(.secondary)
                         }
                     }
                 }
                 DynamicIslandExpandedRegion(.trailing) {
-                    Text("\(context.state.busy) working · \(context.state.total)")
-                        .font(.caption).monospacedDigit()
+                    VStack(alignment: .trailing, spacing: 1) {
+                        Text("\(state.busy) working").font(.headline).monospacedDigit()
+                        if let cash = state.cash {
+                            Text(cash).font(.caption2).foregroundStyle(.yellow)
+                        }
+                    }
                 }
                 DynamicIslandExpandedRegion(.bottom) {
-                    VStack(spacing: 4) {
-                        Gauge(value: context.state.bindingPct, in: 0...100) { EmptyView() }
-                            .gaugeStyle(.accessoryLinearCapacity)
-                            .tint(gaugeTint(context.state.bindingPct))
+                    VStack(spacing: 3) {
+                        Grid(alignment: .leading, horizontalSpacing: 8, verticalSpacing: 3) {
+                            ForEach(Array(state.windows.enumerated()), id: \.offset) { _, window in
+                                GridRow { WindowRow(window: window) }
+                            }
+                        }
                         HStack {
-                            Text("\(context.state.bindingLabel) \(Int(context.state.bindingPct))%")
-                                .font(.caption2).monospacedDigit()
+                            Text(sessionsLine(state)).font(.caption2).foregroundStyle(.secondary)
                             Spacer()
-                            if let next = context.state.next {
-                                Text("next: \(next)").font(.caption2).foregroundStyle(.secondary)
+                            if let next = state.next {
+                                Text(next).font(.caption2).foregroundStyle(.tertiary)
                             }
                         }
                     }
                 }
             } compactLeading: {
-                Text("∞").font(.headline)
+                Text(state.icon ?? "∞")
             } compactTrailing: {
-                Text("\(Int(context.state.bindingPct))%")
-                    .font(.caption2).monospacedDigit()
-                    .foregroundStyle(gaugeTint(context.state.bindingPct))
+                if let binding {
+                    Text("\(binding.label) \(Int(max(0, 100 - binding.pct)))%")
+                        .font(.caption2).monospacedDigit()
+                        .foregroundStyle(ThemeColor.resolve(binding.color))
+                } else {
+                    Text("\(state.busy)").font(.caption2).monospacedDigit()
+                }
             } minimal: {
-                Text("\(Int(context.state.bindingPct))")
+                Text(binding.map { "\(Int(max(0, 100 - $0.pct)))" } ?? "∞")
                     .font(.caption2).monospacedDigit()
             }
         }
@@ -131,23 +149,31 @@ struct WorkingLiveActivity: Widget {
 private struct WorkingLockScreen: View {
     let state: WorkingActivity.ContentState
     var body: some View {
-        HStack(spacing: 14) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text(state.active).font(.headline)
-                Gauge(value: state.bindingPct, in: 0...100) { EmptyView() }
-                    .gaugeStyle(.accessoryLinearCapacity)
-                    .tint(gaugeTint(state.bindingPct))
-                    .frame(width: 110)
-                Text("\(state.bindingLabel) \(Int(state.bindingPct))%")
-                    .font(.caption2).monospacedDigit().foregroundStyle(.secondary)
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 8) {
+                if let icon = state.icon { Text(icon).font(.title3) }
+                Text(state.active).font(.headline).lineLimit(1)
+                Text(state.slot).font(.caption).foregroundStyle(.secondary)
+                if let plan = state.plan {
+                    Text(plan).font(.caption2)
+                        .padding(.horizontal, 6).padding(.vertical, 2)
+                        .background(.white.opacity(0.12), in: Capsule())
+                }
+                Spacer()
+                if let cash = state.cash {
+                    Text(cash).font(.caption).foregroundStyle(.yellow)
+                }
             }
-            Spacer()
-            VStack(alignment: .trailing, spacing: 3) {
-                Text("\(state.busy) working").font(.headline).monospacedDigit()
-                Text("\(state.total) session\(state.total == 1 ? "" : "s")")
-                    .font(.caption).foregroundStyle(.secondary)
+            Grid(alignment: .leading, horizontalSpacing: 8, verticalSpacing: 4) {
+                ForEach(Array(state.windows.enumerated()), id: \.offset) { _, window in
+                    GridRow { WindowRow(window: window) }
+                }
+            }
+            HStack {
+                Text(sessionsLine(state)).font(.caption).foregroundStyle(.secondary)
+                Spacer()
                 if let next = state.next {
-                    Text("→ \(next)").font(.caption2).foregroundStyle(.tertiary)
+                    Text(next).font(.caption2).foregroundStyle(.tertiary)
                 }
             }
         }
@@ -155,6 +181,23 @@ private struct WorkingLockScreen: View {
     }
 }
 
-private func gaugeTint(_ pct: Double) -> Color {
-    pct >= 90 ? .red : pct >= 70 ? .orange : .green
+/// One themed gauge row — "MP ▮▮▮▯ 73% 4h20m·17:49", the popup's cell,
+/// as three grid cells so every bar starts on the same column.
+private struct WindowRow: View {
+    let window: ActivityWindow
+    var body: some View {
+        let color = ThemeColor.resolve(window.color)
+        Text(window.label).font(.caption.weight(.semibold)).foregroundStyle(color)
+        // GaugeBar draws the remaining % itself, the popup's way
+        // (HP left, not damage taken).
+        GaugeBar(remaining: max(0, 100 - window.pct), color: color, animated: false)
+            .frame(width: 120, height: 8)
+        Text(window.reset ?? "").font(.caption2).monospacedDigit().foregroundStyle(.secondary).lineLimit(1)
+    }
+}
+
+private func sessionsLine(_ state: WorkingActivity.ContentState) -> String {
+    var line = "\(state.busy) working · \(state.total) session\(state.total == 1 ? "" : "s")"
+    if state.waiting > 0 { line += " · \(state.waiting) waiting on you" }
+    return line
 }
