@@ -40,7 +40,7 @@
     --line: #232b35;
     --text: #e6e1d6;
     --dim: #8b93a0;
-    --faint: #545c68;
+    --faint: #7c8592;
     --orange: #f0a03c;
     --mint: #58d38c;
     --red: #e4574f;
@@ -93,11 +93,7 @@
   @media (max-width: 640px) { .menubar nav { display: none; } }
 
   /* ── hero ── */
-  .hero { padding: 88px 0 40px; }
-  .kicker {
-    color: var(--orange); font-size: 13px; letter-spacing: .18em;
-    text-transform: uppercase; margin: 0 0 18px;
-  }
+  .hero { padding: 88px 24px 40px; }
   h1 {
     font-family: var(--serif); font-weight: 400;
     font-size: clamp(42px, 7vw, 74px); line-height: 1.05;
@@ -142,7 +138,7 @@
   .faq dd { margin: 0; color: var(--dim); line-height: 1.6; }
   .faq code { color: var(--mint); font-size: 13px; }
   /* ── live fleet demo ── */
-  .fleet { padding: 26px 0 70px; }
+  .fleet { padding: 26px 24px 70px; }
   .fleet-frame {
     background: var(--panel); border: 1px solid var(--line);
     border-radius: 14px; padding: 22px 24px 18px;
@@ -199,12 +195,13 @@
   .step h3 { margin: 10px 0 8px; font-size: 16px; font-weight: 600; }
   .step p { margin: 0; color: var(--dim); font-size: 14px; }
 
+  .group { margin: 30px 0 14px; font-size: 13px; font-weight: 600; letter-spacing: .04em; color: var(--dim); }
   .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 18px; }
   @media (max-width: 960px) { .grid { grid-template-columns: repeat(2, 1fr); } }
   @media (max-width: 540px) { .grid { grid-template-columns: 1fr; } }
   .card { border: 1px solid var(--line); border-radius: 12px; padding: 20px;
     background: var(--panel); }
-  .card h3 { margin: 0 0 8px; font-size: 15px; font-weight: 600; }
+  .card h3 { margin: 0 0 8px; font-size: 16px; font-weight: 600; }
   .card h3 .dot { color: var(--mint); margin-right: 7px; }
   .card p { margin: 0; color: var(--dim); font-size: 13.5px; line-height: 1.6; }
 
@@ -230,9 +227,9 @@
   }
   pre .c { color: var(--faint); }
   pre .g { color: var(--mint); }
-  .install-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; }
-  @media (max-width: 860px) { .install-cols { grid-template-columns: 1fr; } }
-  .install-cols h3 { font-size: 15px; font-weight: 600; margin: 0 0 12px; }
+  .install-cols { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); gap: 22px; }
+  @media (max-width: 860px) { .install-cols { grid-template-columns: minmax(0,1fr); } }
+  .install-cols h3 { font-size: 16px; font-weight: 600; margin: 0 0 12px; }
   .fineprint { color: var(--faint); font-size: 12.5px; margin-top: 14px; }
 
   footer { border-top: 1px solid var(--line); padding: 40px 0 60px;
@@ -241,6 +238,8 @@
     justify-content: space-between; }
   footer a { color: var(--dim); }
 
+  .closing { padding: 10px 0 70px; }
+  .closing h2 { margin-bottom: 18px; }
   @media (prefers-reduced-motion: reduce) {
     html { scroll-behavior: auto; }
     .gauge > i { transition: none; }
@@ -330,17 +329,17 @@
     </nav>
     <span class="tray">
       <a href="https://github.com/deathemperor/infinitus" style="color:var(--dim)">GitHub</a>
-      <span class="infty" id="tray-pct">∞ 64%</span>
+      <span class="infty" id="tray-pct" aria-hidden="true">∞ 64%</span>
     </span>
   </div>
 </div>
 
 <main>
 <header class="hero wrap">
-  <p class="kicker">macOS menu bar · Linux panel</p>
   <h1>Your Claude fleet,<br><em>never</em> off the clock.</h1>
   <p class="lede">
-    Infinitus is mission control for a fleet of Claude Code accounts.
+    Two or more Claude subscriptions? Infinitus is mission control for
+    a fleet of Claude Code accounts.
     It watches every usage window, rotates to the freshest account the
     moment a limit hits, and nudges your stopped sessions back to work —
     so an agent run survives the five-hour wall without you.
@@ -348,13 +347,16 @@
   <div class="cta">
     <a class="btn primary" href="https://github.com/deathemperor/infinitus/releases/download/v0.4.1/Infinitus-0.4.1.zip">Download for macOS</a>
     <a class="btn" href="https://github.com/deathemperor/infinitus">Source on GitHub</a>
-    <span class="note">v0.4.1 · Apple silicon · free &amp; open source</span>
+    <span class="note">v0.4.1 · macOS menu bar + Linux panel · free &amp; open source</span>
   </div>
   <button class="brew" type="button" data-copy="brew install --cask --no-quarantine deathemperor/tap/infinitus"
           title="Copy to clipboard" aria-label="Copy the Homebrew install command">
     <span class="p">$</span> brew install --cask --no-quarantine deathemperor/tap/infinitus
     <span class="k">copy</span>
   </button>
+  <p class="also">Unsigned build for now: first launch is right-click → Open.
+    Needs the <a href="https://github.com/deathemperor/claude-swap">claude-swap</a> CLI
+    on your PATH — Infinitus walks you through the first account.</p>
   <p class="also">Also for
     <a href="https://github.com/deathemperor/infinitus/releases/download/v0.4.1/infinitus-tray-linux-x86_64">Linux x86_64</a> ·
     <a href="https://github.com/deathemperor/infinitus/releases/download/v0.4.1/infinitus-tray-linux-aarch64">Linux aarch64</a> ·
@@ -373,7 +375,7 @@
 <section id="how">
   <div class="wrap">
     <h2>How it works</h2>
-    <p class="sub">A native Swift app over the <b>claude-swap</b> engine.
+    <p class="sub">A native Swift app over the <a href="https://github.com/deathemperor/claude-swap"><b>claude-swap</b></a> engine.
       Every engine touchpoint is an isolated <code>cswap --json</code>
       subprocess — Infinitus never touches your credentials directly.</p>
     <div class="steps">
@@ -400,7 +402,7 @@
       your 5-hour window, HP the weekly, Dragon the per-model quota.
       Skulls are limited accounts; the crown is who's carrying.</p>
     <video class="screen" src="/img/popup.mp4" width="2060" height="612"
-           autoplay loop muted playsinline
+           autoplay loop muted playsinline controls
            aria-label="Infinitus popup demo: intro animation, an account switch, a 5-hour window death, fleet-wide death and revival, and a theme change"></video>
   </div>
 </section>
@@ -410,31 +412,32 @@
     <h2>Features</h2>
     <p class="sub">Built for people who run agents all day and want to look
       at one thing — briefly — when it matters.</p>
+    <h3 class="group">Watch &amp; switch</h3>
     <div class="grid">
       <div class="card"><h3><span class="dot">●</span>Session progress</h3>
         <p>Zero-token transcript parsing shows what every agent is doing:
         current task, todo progress, quiet time, retry trouble.</p></div>
-      <div class="card"><h3><span class="dot">●</span>Fleet wall</h3>
-        <p>A full-screen mission-control layout for the spare display:
-        hero gauges, revival countdowns, a bench of every account.</p></div>
-      <div class="card"><h3><span class="dot">●</span>Usage history</h3>
-        <p>Per-account utilization over time with waste estimates —
-        see the capacity your fleet left on the table. iCloud sync.</p></div>
       <div class="card"><h3><span class="dot">●</span>Resume guards</h3>
         <p>Evidence-gated nudges: only after a real switch or a fresh
         capacity verdict, never into a busy session, with cooldowns.</p></div>
-      <div class="card"><h3><span class="dot">●</span>Themes</h3>
-        <p>RPG HP bars, tactical-espionage flavor, or plain minimal —
-        the fleet reads at a glance either way.</p></div>
       <div class="card"><h3><span class="dot">●</span>All-dead countdown</h3>
         <p>When every account is limited, a giant countdown to the first
         revival — and how many sessions are waiting on it.</p></div>
-      <div class="card"><h3><span class="dot">●</span>Linux port</h3>
-        <p>A Quickshell panel for Omarchy / Arch with the same gauges,
-        dead-account flash, and session rows.</p></div>
-      <div class="card"><h3><span class="dot">●</span>Playground</h3>
-        <p>Simulate empty fleets, all-dead nights, and switch storms
-        without burning real quota.</p></div>
+      <div class="card"><h3><span class="dot">●</span>At this pace</h3>
+        <p>Measured burn per window, when each runs out, when the whole
+        fleet is out — and a full forecast dashboard behind it.</p></div>
+      <div class="card"><h3><span class="dot">●</span>Reset battle plans</h3>
+        <p>The smart engine triggers 5-hour windows deliberately, chaining
+        two sessions back-to-back on the same account.</p></div>
+      <div class="card"><h3><span class="dot">●</span>Session narration</h3>
+        <p>Optional one-line Claude summaries of what each agent is doing —
+        off by default, strictly budgeted, only while you're looking.</p></div>
+      <div class="card"><h3><span class="dot">●</span>One account, done right</h3>
+        <p>Single account? A card with big gauges and the reset time in
+        the menu bar — no fleet vocabulary until you add a second.</p></div>
+    </div>
+    <h3 class="group">Phone</h3>
+    <div class="grid">
       <div class="card"><h3><span class="dot">●</span>Mobile companion</h3>
         <p>Your fleet on the iPhone — over Wi-Fi, Tailscale, your own
         Cloudflare hostname or a free quick tunnel. One QR, every route;
@@ -443,35 +446,44 @@
         <p>Every session as a chat on the phone: markdown replies streamed
         live, tool runs in one chip, sub-agent cards. Answer prompts, reply,
         attach photos from the camera or files.</p></div>
-      <div class="card"><h3><span class="dot">●</span>Agent-ready</h3>
-        <p><code>infinitusctl</code> drives the app over a local socket, and
-        an onboarding brief hands a coding agent the whole setup.</p></div>
       <div class="card"><h3><span class="dot">●</span>Live Activities</h3>
         <p>Working sessions in the Dynamic Island; when everything is
         limited, a lock-screen revival countdown that ticks natively.</p></div>
-      <div class="card"><h3><span class="dot">●</span>Team fleets</h3>
-        <p>Share your fleet read-only with teammates via iCloud — limits,
-        headroom, and waste across the whole team.</p></div>
-      <div class="card"><h3><span class="dot">●</span>Session narration</h3>
-        <p>Optional one-line Claude summaries of what each agent is doing —
-        off by default, strictly budgeted, only while you're looking.</p></div>
-      <div class="card"><h3><span class="dot">●</span>Reset battle plans</h3>
-        <p>The smart engine triggers 5-hour windows deliberately, chaining
-        two sessions back-to-back on the same account.</p></div>
-      <div class="card"><h3><span class="dot">●</span>CLIProxyAPI &amp; 9Router</h3>
-        <p>Fleets behind a proxy plug in as more engines — CLIProxyAPI's
-        management API, 9Router's dashboard (Claude, Kiro credits, Codex,
-        Gemini) — stacked with aligned columns.</p></div>
       <div class="card"><h3><span class="dot">●</span>AWS login from the phone</h3>
         <p>A session stuck on an expired <code>aws login</code> shows up on
         your phone; sign in there (passkeys included) and the session
         is told to carry on.</p></div>
-      <div class="card"><h3><span class="dot">●</span>At this pace</h3>
-        <p>Measured burn per window, when each runs out, when the whole
-        fleet is out — and a full forecast dashboard behind it.</p></div>
-      <div class="card"><h3><span class="dot">●</span>One account, done right</h3>
-        <p>Single account? A card with big gauges and the reset time in
-        the menu bar — no fleet vocabulary until you add a second.</p></div>
+    </div>
+    <h3 class="group">Wall &amp; history</h3>
+    <div class="grid">
+      <div class="card"><h3><span class="dot">●</span>Fleet wall</h3>
+        <p>A full-screen mission-control layout for the spare display:
+        hero gauges, revival countdowns, a bench of every account.</p></div>
+      <div class="card"><h3><span class="dot">●</span>Themes</h3>
+        <p>RPG HP bars, tactical-espionage flavor, or plain minimal —
+        the fleet reads at a glance either way.</p></div>
+      <div class="card"><h3><span class="dot">●</span>Usage history</h3>
+        <p>Per-account utilization over time with waste estimates —
+        see the capacity your fleet left on the table. iCloud sync.</p></div>
+      <div class="card"><h3><span class="dot">●</span>Team fleets</h3>
+        <p>Share your fleet read-only with teammates via iCloud — limits,
+        headroom, and waste across the whole team.</p></div>
+    </div>
+    <h3 class="group">Integrations &amp; agents</h3>
+    <div class="grid">
+      <div class="card"><h3><span class="dot">●</span>Linux port</h3>
+        <p>A Quickshell panel for Omarchy / Arch with the same gauges,
+        dead-account flash, and session rows.</p></div>
+      <div class="card"><h3><span class="dot">●</span>Agent-ready</h3>
+        <p><code>infinitusctl</code> drives the app over a local socket, and
+        an onboarding brief hands a coding agent the whole setup.</p></div>
+      <div class="card"><h3><span class="dot">●</span>CLIProxyAPI &amp; 9Router</h3>
+        <p>Fleets behind a proxy plug in as more engines — CLIProxyAPI's
+        management API, 9Router's dashboard (Claude, Kiro credits, Codex,
+        Gemini) — stacked with aligned columns.</p></div>
+      <div class="card"><h3><span class="dot">●</span>Playground</h3>
+        <p>Simulate empty fleets, all-dead nights, and switch storms
+        without burning real quota.</p></div>
     </div>
   </div>
 </section>
@@ -567,7 +579,7 @@
 <span class="g">git</span> clone https://github.com/deathemperor/infinitus
 <span class="g">cd</span> infinitus &amp;&amp; ./make-app.sh &amp;&amp; <span class="g">open</span> Infinitus.app</pre>
         <p class="fineprint">Builds are currently unsigned — first launch is
-        right-click → Open. Requires the claude-swap CLI on your PATH;
+        right-click → Open. Requires the <a href="https://github.com/deathemperor/claude-swap">claude-swap</a> CLI on your PATH;
         Infinitus walks you through first-account setup.</p>
       </div>
       <div>
@@ -596,13 +608,13 @@
         that put stopped sessions back to work.</dd>
       <dt>Does it work with Claude Code?</dt>
       <dd>Yes. It reads Claude Code's own local session files to show progress
-        and switches accounts through the <code>claude-swap</code> CLI. It
+        and switches accounts through the <a href="https://github.com/deathemperor/claude-swap"><code>claude-swap</code></a> CLI. It
         never modifies Claude Code.</dd>
       <dt>Which platforms?</dt>
       <dd>macOS 14+ on Apple silicon (Homebrew cask), and Linux — a static
         <code>infinitus-tray</code> for x86_64 and aarch64 with a Quickshell
-        panel plugin for Omarchy / Arch (also on the AUR). An iOS companion is
-        in progress.</dd>
+        panel plugin for Omarchy / Arch (also on the AUR). The iPhone companion
+        builds from source today — no App Store build yet.</dd>
       <dt>Is it free?</dt>
       <dd>Free and open source, MIT licensed. Source is on
         <a href="https://github.com/deathemperor/infinitus">GitHub</a>.</dd>
@@ -612,11 +624,25 @@
     </dl>
   </div>
 </section>
+<section id="get" class="closing">
+  <div class="wrap">
+    <h2>Keep the agents running.</h2>
+    <div class="cta">
+      <a class="btn primary" href="https://github.com/deathemperor/infinitus/releases/download/v0.4.1/Infinitus-0.4.1.zip">Download for macOS</a>
+      <a class="btn" href="#install">Linux &amp; source</a>
+    </div>
+    <button class="brew" type="button" data-copy="brew install --cask --no-quarantine deathemperor/tap/infinitus"
+            title="Copy to clipboard" aria-label="Copy the Homebrew install command">
+      <span class="p">$</span> brew install --cask --no-quarantine deathemperor/tap/infinitus
+      <span class="k">copy</span>
+    </button>
+  </div>
+</section>
 </main>
 
 <footer>
   <div class="wrap">
-    <span>♾ Infinitus — free &amp; open source, MIT-spirited.</span>
+    <span>♾ Infinitus — free &amp; open source, MIT licensed.</span>
     <span>
       <a href="https://github.com/deathemperor/infinitus">GitHub</a> ·
       <a href="https://github.com/deathemperor/infinitus/issues">Issues</a> ·
@@ -650,6 +676,9 @@
   var activeIdx = 0;
   var host = document.getElementById("fleet");
   var evEl = document.getElementById("fleet-event");
+  if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+    document.querySelectorAll("video[autoplay]").forEach(function (v) { v.removeAttribute("autoplay"); v.pause(); });
+  }
   var trayEl = document.getElementById("tray-pct");
 
   function render() {

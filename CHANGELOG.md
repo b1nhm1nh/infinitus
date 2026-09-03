@@ -51,6 +51,21 @@ GitHub release body.
   key lives in the macOS keychain, and the tray already reaches the
   phone through the engine's own push channels and `notify-send`.
 
+### Site
+- **infinitus.run after a design critique** (Impeccable, 19/36 → the
+  P0 and P1s fixed): phones no longer scroll sideways (the install
+  grid's `1fr` tracks took each code block's longest line as a minimum;
+  the hero and demo lost the wrapper's side padding); secondary text
+  lifted from 2.8:1 to AA contrast; the popup video has controls and
+  stays still under reduced motion; the tray pill is hidden from
+  assistive tech; the unsigned-build and claude-swap facts sit under the
+  install command instead of five screens down, with claude-swap linked
+  everywhere it's named; the 19 feature cards are grouped (Watch &
+  switch / Phone / Wall & history / Integrations & agents); the lede
+  opens with the premise; a closing Download band before the footer;
+  the eyebrow above the headline is gone; the FAQ says the phone app
+  builds from source today.
+
 ### Fixes
 - **The popup no longer pegs the main thread while an account is in
   the 90s.** The critical-row pulse re-ran the whole headroom sort on
