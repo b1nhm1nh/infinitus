@@ -324,7 +324,7 @@ public enum AwsLogin {
     /// The message the session gets once the login lands (SessionInput
     /// message path, same as the phone's replies).
     public static func continueMessage(profile: String, fromPhone: Bool) -> String {
-        "AWS login for profile \(profile) completed\(fromPhone ? " from the phone" : ""). "
+        "[Infinitus] AWS login for profile \(profile) completed\(fromPhone ? " from the phone" : ""). "
             + "Retry the command that needed it and continue."
     }
 }

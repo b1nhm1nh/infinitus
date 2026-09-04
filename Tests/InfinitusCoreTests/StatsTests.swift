@@ -237,4 +237,27 @@ final class StatsTests: XCTestCase {
         XCTAssertEqual(days["2026-09-03"]?.mergeHoursTotal ?? 0, 48, accuracy: 0.01)
         XCTAssertEqual(days["2026-09-03"]?.mergeCount, 1)
     }
+
+    func testEventsFoldIntoDaysWithMinutesLost() {
+        let ev: [StatsEvent] = [
+            .init(at: date("2026-09-04T01:00:00Z"), kind: "switch", icon: "", text: "switched a → b"),
+            .init(at: date("2026-09-04T01:05:00Z"), kind: "death", icon: "", text: "a hit its limit"),
+            .init(at: date("2026-09-04T01:10:00Z"), kind: "limit", icon: "", text: "every account at a limit"),
+            .init(at: date("2026-09-04T01:40:00Z"), kind: "revival", icon: "", text: "a is back"),
+            .init(at: date("2026-09-04T02:00:00Z"), kind: "ignite", icon: "", text: "ignited c"),
+            .init(at: date("2026-09-04T02:01:00Z"), kind: "resume", icon: "", text: "resumed s"),
+            .init(at: date("2026-09-04T02:02:00Z"), kind: "nudge", icon: "", text: "nudged s"),
+        ]
+        let d = StatsEvents.days(ev, calendar: cal)["2026-09-04"]!
+        XCTAssertEqual(d.switches, 1)
+        XCTAssertEqual(d.limitStops, 1)
+        XCTAssertEqual(d.revivals, 1)
+        XCTAssertEqual(d.ignites, 1)
+        XCTAssertEqual(d.resumes, 2)
+        XCTAssertEqual(d.minutesLostToLimits, 30, accuracy: 0.01)
+    }
+
+    func testAwsDoneNudgeCarriesThePrefix() {
+        XCTAssertTrue(AwsLogin.continueMessage(profile: "p", fromPhone: true).hasPrefix("[Infinitus] "))
+    }
 }
