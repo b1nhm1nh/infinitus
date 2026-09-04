@@ -77,6 +77,27 @@ final class FleetLayoutTests: XCTestCase {
         let healthy = Usage(fiveHour: UsageWindow(pct: 54), sevenDay: UsageWindow(pct: 20))
         XCTAssertFalse(AccountVitals.isDead(healthy))
         XCTAssertNil(AccountVitals.cause(healthy))
+
+        // Accounts without session/weekly windows (Gemini/Antigravity via 9Router)
+        // are dead when their scoped quota hits 100%.
+        let scopedOnlySpent = Usage(scoped: [UsageWindow(pct: 100, name: "Gemini 2.5 Flash")])
+        XCTAssertTrue(AccountVitals.isDead(scopedOnlySpent))
+        XCTAssertEqual(AccountVitals.cause(scopedOnlySpent)?.kind, .scoped)
+        XCTAssertEqual(AccountVitals.cause(scopedOnlySpent)?.name, "Gemini 2.5 Flash")
+
+        let scopedOnlyHealthy = Usage(scoped: [UsageWindow(pct: 42, name: "Gemini 2.5 Flash")])
+        XCTAssertFalse(AccountVitals.isDead(scopedOnlyHealthy))
+        XCTAssertNil(AccountVitals.cause(scopedOnlyHealthy))
+    }
+
+    /// Scoped windows roll over past their reset date just like weekly windows.
+    func testScopedRollShowsZeroAfterReset() {
+        let window = UsageWindow(pct: 75, resetsAt: "2026-09-04T12:00:00Z", name: "Gemini 2.5 Pro")
+        let before = WeeklyRoll.displayPct(window, now: WeeklyRoll.parse("2026-09-04T11:00:00Z")!)
+        XCTAssertEqual(before ?? -1, 75, accuracy: 0.001)
+
+        let after = WeeklyRoll.displayPct(window, now: WeeklyRoll.parse("2026-09-04T13:00:00Z")!)
+        XCTAssertEqual(after ?? -1, 0, accuracy: 0.001, "rolled scoped window resets to 0%")
     }
 
     /// The reset caption under each bar. It must survive an engine that

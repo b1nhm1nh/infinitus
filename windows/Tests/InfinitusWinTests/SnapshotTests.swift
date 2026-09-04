@@ -75,6 +75,29 @@ final class SnapshotTests: XCTestCase {
         }
     }
 
+    /// When Claude Code is routed through 9Router via ANTHROPIC_BASE_URL
+    /// in settings.json and cswap is absent, the synthetic fleet reflects
+    /// the 9Router routing (`claude-code-windows-9router`).
+    func testFleetIsSyntheticWith9RouterRouting() throws {
+        try DaemonHarness.scratch { dir in
+            try self.writeRecord(pid: SelfProcess.pid, status: "idle", to: dir)
+            let settings: [String: Any] = [
+                "env": [
+                    "ANTHROPIC_BASE_URL": "http://127.0.0.1:20128"
+                ]
+            ]
+            try JSONSerialization.data(withJSONObject: settings)
+                .write(to: dir.appendingPathComponent("settings.json"))
+
+            let snapshot = try self.snapshot(claudeDir: dir, environment: ["INFINITUS_CSWAP": ""])
+            let fleet = try XCTUnwrap(snapshot.fleets?.first)
+            XCTAssertEqual(fleet.engineID, "claude-code-windows-9router")
+            XCTAssertTrue(fleet.accounts.isEmpty)
+            XCTAssertNil(fleet.activeNumber)
+            XCTAssertEqual(fleet.liveSessions?.total, 1)
+        }
+    }
+
     // MARK: plumbing
 
     /// The daemon's snapshot for a synthetic `~/.claude` dir, decoded the

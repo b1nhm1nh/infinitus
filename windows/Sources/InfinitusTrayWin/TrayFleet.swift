@@ -92,8 +92,18 @@ enum TrayFleet {
     }
 
     /// Formats 5h and 7d usage percentages: `<5h%> / <7d%>`.
+    /// When session and weekly quotas are absent but scoped model quotas exist
+    /// (e.g. Gemini/Antigravity via 9Router), formats the primary scoped window: `<model>: <pct>%`.
     static func formatUsage(_ usage: Usage?, now: Date = Date()) -> String {
         guard let usage else { return "— / —" }
+
+        if usage.fiveHour == nil && usage.sevenDay == nil,
+           let scoped = usage.scoped, !scoped.isEmpty {
+            let first = scoped[0]
+            let name = (first.name?.isEmpty == false) ? first.name! : "model"
+            let pct = WeeklyRoll.displayPct(first, now: now) ?? first.pct
+            return "\(name): \(Int(pct.rounded()))%"
+        }
 
         let fiveText: String
         if let five = usage.fiveHour {

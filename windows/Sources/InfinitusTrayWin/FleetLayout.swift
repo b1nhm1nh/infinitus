@@ -132,7 +132,8 @@ enum FleetLayout {
             out.append(gauge(seven, label: "7d", overridePct: pct, now: now))
         }
         for scoped in usage.scoped ?? [] {
-            out.append(gauge(scoped, label: scoped.name ?? "model", now: now))
+            let pct = WeeklyRoll.displayPct(scoped, now: now) ?? scoped.pct
+            out.append(gauge(scoped, label: scoped.name ?? "model", overridePct: pct, now: now))
         }
         return out
     }

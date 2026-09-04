@@ -11,6 +11,8 @@ enum Snapshot {
     /// The synthetic fleet's id. `claude-code-` prefixed so the phone can
     /// tell an engine-less host from a Mac's cswap fleet.
     static let engineID = "claude-code-windows"
+    /// Synthetic fleet id when Claude Code routes through 9Router.
+    static let routedEngineID = "claude-code-windows-9router"
 
     /// Recompute at most this often — the phone polls `/snapshot` on a
     /// timer and every read walks every live transcript.
@@ -65,13 +67,21 @@ enum Snapshot {
         // there the fleet is the REAL one — accounts, quota, active
         // account — exactly as on the Mac. Without it the fleet stays
         // synthetic and account-less, and the phone hides that section.
+        //
+        // When cswap is absent, check whether Claude Code routes requests
+        // via 9Router (ANTHROPIC_BASE_URL in settings.json pointed at port 20128).
+        // If routed to 9Router, the synthetic fleet reflects that routing so
+        // mirrors and paired devices distinguish routed hosts from unmanaged standalone logins.
         let accountList = CswapFleet.list()
+        let isRouted = ClaudeCodeRouting.isRouted(
+            ClaudeCodeRouting.anthropicBaseURL(configHome: claudeDir), to: nil)
+        let fallbackEngineID = isRouted ? routedEngineID : engineID
         let fleet = accountList.map {
             EngineFleet(engineID: CswapFleet.engineID, provider: .claude,
                         accounts: $0.accounts, activeNumber: $0.activeAccountNumber,
                         nextCandidate: $0.nextCandidate, nextRecovery: $0.nextRecovery,
                         liveSessions: live)
-        } ?? EngineFleet(engineID: engineID, provider: .claude,
+        } ?? EngineFleet(engineID: fallbackEngineID, provider: .claude,
                          accounts: [], liveSessions: live)
         // listJSON keeps a phone older than `fleets` working: it decodes
         // this as the primary fleet and finds the sessions there.
