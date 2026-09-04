@@ -38,6 +38,11 @@ GitHub release body.
   of ours, no tokens.
 - **Paste an image.** The paperclip menu offers "Paste Image" when the
   clipboard holds one — a screenshot goes in like a photo.
+- **Continue a stopped session from the phone** (Mac half). A `resume`
+  input asks the Mac to send its own "continue where you left off"
+  message into the session — whatever stopped it: a limit, a crash, a
+  closed terminal — socket first, terminal fallback, the same replies as
+  a message. The phone's Continue button lands with the next phone build.
 - **Tool runs stay grouped through errors.** A failed call no longer
   splits the run into a stack of chips; the chip counts the errors
   ("(×7 · 2 errors)") and shows the latest call or error.

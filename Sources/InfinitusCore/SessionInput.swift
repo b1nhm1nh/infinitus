@@ -7,7 +7,12 @@ import Foundation
 public enum SessionInput {
     /// Wire body of `POST /sessions/<pid>/input`.
     public struct Request: Codable, Sendable, Equatable {
-        public enum Kind: String, Codable, Sendable { case message, key }
+        /// `resume` (user 2026-09-04 from the phone: "a button that
+        /// continues the session that maybe stopped by various reasons"):
+        /// the Mac composes the continue message itself; `text` is
+        /// ignored. Whatever stopped the session — a limit, a crash, a
+        /// closed terminal, a lost network — the ask is the same.
+        public enum Kind: String, Codable, Sendable { case message, key, resume }
         public let kind: Kind
         /// `message`: free text. `key`: one of `SessionInput.allowedKeys`.
         public let text: String
@@ -35,6 +40,14 @@ public enum SessionInput {
             self.mime = mime
             self.data = data
         }
+    }
+
+    /// What a `resume` request delivers. Claude Code drops a message
+    /// identical to the previous one from the same sender, so a second
+    /// tap carries the time.
+    public static func continueText(now: Date = Date()) -> String {
+        let f = DateFormatter(); f.dateFormat = "HH:mm:ss"
+        return "[Infinitus] Continue where you left off — this session stopped, and you were asked from the phone to pick the task back up from your last step. (\(f.string(from: now)))"
     }
 
     /// At most this many attachments per message.
@@ -163,6 +176,13 @@ extension SessionInput {
         let ancestors = ancestorsOf(record.pid)
 
         switch request.kind {
+        case .resume:
+            // The message path, with the Mac's own text: socket first,
+            // terminal fallback, the same outcomes.
+            return deliver(request: Request(kind: .message, text: continueText()), record: record,
+                           hosts: hosts, claudeDir: claudeDir, attachmentsDir: attachmentsDir,
+                           ttyOfPid: ttyOfPid, ancestorsOf: ancestorsOf, socketSend: socketSend,
+                           sleep: sleep)
         case .key:
             guard allowedKeys.contains(request.text) else {
                 return Reply(outcome: "rejected", detail: "unsupported key")

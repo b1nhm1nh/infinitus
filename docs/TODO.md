@@ -63,6 +63,17 @@
 
 ## Open — tracked as GitHub issues since 2026-09-01
 
+- **Phone: a Continue button for a stopped session** (user 2026-09-04
+  from the phone: "develop a button on ios when clicked it continues the
+  session that maybe stopped by various reasons"). Mac half shipped
+  2026-09-04: `SessionInput.Request.Kind.resume` — the Mac composes the
+  continue text (limit, crash, closed terminal, whatever), socket first,
+  terminal fallback, same outcomes as a message; Linux `serve` gets it
+  through the same `deliver`. Phone half (Infinitus): a "Continue" button
+  on the session feed/detail when the session is idle/waiting with no
+  prompt or its last item is a limit stop, POSTing `{kind:"resume",
+  text:""}`; a 400 from an older Mac → "update Infinitus on the Mac".
+
 Open work lives at github.com/deathemperor/infinitus/issues (user
 2026-09-01: "move todo items to use github issues tracking"); this
 file keeps the shipped log and the deferred-by-design notes.

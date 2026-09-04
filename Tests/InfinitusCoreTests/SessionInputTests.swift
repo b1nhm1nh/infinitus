@@ -82,6 +82,20 @@ final class SessionInputTests: XCTestCase {
         XCTAssertEqual(h.commands, [])
     }
 
+    /// A Continue tap: the Mac's own text, socket first, then the terminal.
+    func testResumeSendsTheContinueTextSocketFirst() {
+        var sent: [String] = []
+        let reply = deliver(.init(kind: .resume, text: "ignored"), hosts: [host(["> "])], socket: "/tmp/x.sock",
+                            socketSend: { _, text in sent.append(text); return true })
+        XCTAssertEqual(reply, .init(outcome: "delivered", channel: "socket"))
+        XCTAssertEqual(sent.count, 1)
+        XCTAssertTrue(sent[0].hasPrefix("[Infinitus] Continue where you left off"))
+        XCTAssertFalse(sent[0].contains("ignored"))
+        let h = host(["> "])
+        XCTAssertEqual(deliver(.init(kind: .resume, text: ""), hosts: [h]).channel, "pty")
+        XCTAssertTrue(h.commands.contains { $0.contains("Continue where you left off") })
+    }
+
     func testMessageDeliveredViaPty() {
         let h = host(["> ", "> hi there"])
         let reply = deliver(.init(kind: .message, text: "hi there"), hosts: [h])
