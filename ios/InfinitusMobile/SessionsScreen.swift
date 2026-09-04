@@ -14,7 +14,7 @@ struct SessionsScreen: View {
     var body: some View {
         NavigationStack(path: $path) {
             content
-                .navigationTitle("Sessions")
+                .navigationTitle(model.rowTheme.tabLabel("sessions"))
                 .refreshable { await model.refresh() }
                 .navigationDestination(for: SessionDetail.self) { session in
                     SessionFeedScreen(model: model, session: session)
@@ -132,7 +132,7 @@ struct SessionsScreen: View {
                     Text(title(session))
                         .font(.headline).lineLimit(1)
                     Spacer(minLength: 8)
-                    Text(SessionWords.status(session.status))
+                    Text(SessionWords.status(session.status, theme: model.rowTheme))
                         .font(.caption).foregroundStyle(.secondary)
                     Text(SessionWords.age(since: session.startedAt))
                         .font(.caption).monospacedDigit()

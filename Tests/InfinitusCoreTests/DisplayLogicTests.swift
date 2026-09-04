@@ -219,6 +219,29 @@ final class RowThemeTests: XCTestCase {
         XCTAssertFalse(themes.first?.plain ?? true)
     }
 
+    // Phone vocabulary (user 2026-09-04): a minimal theme keeps the plain
+    // words and tabs, a partial map fills only the keys it names, and
+    // every built-in skin names all four statuses and all three tabs.
+    func testSessionWordsAndTabsFallBackPerKey() throws {
+        let json = #"[{"id":"x","name":"X","sessionWords":{"busy":"Grinding"},"tabIcons":{"fleet":"🚀"}}]"#
+        let t = try XCTUnwrap(JSONDecoder().decode([RowTheme].self, from: Data(json.utf8)).first)
+        XCTAssertEqual(t.sessionWord("busy"), "Grinding")
+        XCTAssertEqual(t.sessionWord("waiting"), "Waiting on you")
+        XCTAssertEqual(t.sessionWord("weird"), "Weird")
+        XCTAssertEqual(t.sessionWord(""), "Unknown")
+        XCTAssertEqual(t.tabLabel("fleet"), "Fleet")
+        XCTAssertEqual(t.tabIcon("fleet"), "🚀")
+        XCTAssertEqual(t.tabIcon("sessions"), "sf:brain")
+        for theme in RowTheme.builtins where !theme.plain {
+            for k in ["busy", "waiting", "idle", "shell"] { XCTAssertNotNil(theme.sessionWords[k], "\(theme.id) \(k)") }
+            for k in ["sessions", "fleet", "settings"] {
+                XCTAssertNotNil(theme.tabLabels[k], "\(theme.id) \(k)")
+                XCTAssertNotNil(theme.tabIcons[k], "\(theme.id) \(k)")
+            }
+        }
+        XCTAssertEqual(RowTheme.off.sessionWord("busy"), "Working")
+    }
+
     func testTemplateJSONParses() throws {
         let themes = try JSONDecoder().decode(
             [RowTheme].self, from: Data(RowTheme.templateJSON.utf8))

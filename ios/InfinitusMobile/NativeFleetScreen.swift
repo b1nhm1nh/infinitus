@@ -35,7 +35,7 @@ struct NativeFleetScreen: View {
     var body: some View {
         NavigationStack {
             content(wide: width > 600 || sizeClass == .regular)
-                .navigationTitle("Fleet")
+                .navigationTitle(model.rowTheme.tabLabel("fleet"))
                 .refreshable { await model.refresh() }
                 .background {
                     GeometryReader { geo in

@@ -207,7 +207,7 @@ struct SessionFeedScreen: View {
             ToolbarItem(placement: .principal) {
                 VStack(spacing: 1) {
                     Text(feed?.name ?? repoName(session.cwd)).font(.headline).lineLimit(1)
-                    Text(SessionWords.status(feed?.status ?? session.status))
+                    Text(SessionWords.status(feed?.status ?? session.status, theme: model.rowTheme))
                         .font(.caption).foregroundStyle(.secondary)
                 }
             }
