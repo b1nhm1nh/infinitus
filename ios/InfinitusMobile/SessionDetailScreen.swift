@@ -9,6 +9,39 @@ struct SessionDetailRoute: Hashable {
     let session: SessionDetail
 }
 
+/// The Mac's session vocabulary in the user's words — one word system
+/// across the list, the feed header and the detail screen.
+enum SessionWords {
+    static func status(_ raw: String) -> String {
+        switch raw {
+        case "busy": return "Working"
+        case "waiting": return "Waiting on you"
+        case "idle": return "Idle"
+        case "shell": return "At the shell"
+        case "": return "Unknown"
+        default: return raw.prefix(1).uppercased() + raw.dropFirst()
+        }
+    }
+
+    static func kind(_ raw: String) -> String {
+        switch raw {
+        case "interactive": return "Interactive"
+        case "headless", "print": return "Headless"
+        case "": return "Unknown"
+        default: return raw.prefix(1).uppercased() + raw.dropFirst()
+        }
+    }
+
+    /// Fresh sessions say "now", not "0m".
+    static func age(since epochMs: Double) -> String {
+        let s = Int(-Date(timeIntervalSince1970: epochMs / 1000).timeIntervalSinceNow)
+        if s < 60 { return "now" }
+        if s < 3600 { return "\(s / 60)m" }
+        if s < 86_400 { return "\(s / 3600)h" }
+        return "\(s / 86_400)d"
+    }
+}
+
 /// One-line + full-section formatting for `SessionAccountSummary` —
 /// shared by the feed header (compact) and this screen (full section).
 /// Pure string/color-name building, no view state.
@@ -66,16 +99,10 @@ struct SessionDetailScreen: View {
                     }
                 if let branch = p?.gitBranch { LabeledContent("Branch", value: branch) }
                 if let model = p?.model { LabeledContent("Model", value: model) }
-                LabeledContent("Kind", value: session.kind)
-                LabeledContent("Status", value: session.status)
-                Text("pid \(session.pid)")
-                    .font(.footnote).foregroundStyle(.secondary)
-                    .contextMenu {
-                        Button {
-                            UIPasteboard.general.string = String(session.pid)
-                        } label: { Label("Copy pid", systemImage: "doc.on.doc") }
-                    }
+                LabeledContent("Kind", value: SessionWords.kind(session.kind))
+                LabeledContent("Status", value: SessionWords.status(session.status))
                 LabeledContent("Started", value: date(session.startedAt).formatted(date: .abbreviated, time: .shortened))
+                    .monospacedDigit()
                 if let last = p?.lastActivityAt {
                     LabeledContent("Last activity", value: last.formatted(.relative(presentation: .numeric)))
                 }
@@ -88,7 +115,7 @@ struct SessionDetailScreen: View {
                     }
                 }
                 if let tokens = p?.outputTokens, tokens > 0 {
-                    LabeledContent("Output tokens", value: TokenFormat.compact(tokens))
+                    LabeledContent("Output tokens", value: TokenFormat.compact(tokens)).monospacedDigit()
                 }
                 if p?.retrying == true {
                     Label("Retrying after an API error", systemImage: "arrow.clockwise")
@@ -98,7 +125,7 @@ struct SessionDetailScreen: View {
 
             if let todos = p?.todos {
                 Section("Todos") {
-                    LabeledContent("Done", value: "\(todos.done)/\(todos.total)")
+                    LabeledContent("Done", value: "\(todos.done)/\(todos.total)").monospacedDigit()
                     if let activeForm = todos.activeForm {
                         Text(activeForm).foregroundStyle(.secondary)
                     }
@@ -107,9 +134,19 @@ struct SessionDetailScreen: View {
 
             accountSection
 
-            Section("Connection") {
-                Text(model.transportStatus.isEmpty ? "looking for a Mac on this Wi-Fi…" : model.transportStatus)
+            Section {
+                Text(model.transportStatus.isEmpty ? "Looking for the Mac…" : model.transportStatus)
                     .font(.caption).foregroundStyle(.secondary)
+            } header: {
+                Text("Connection")
+            } footer: {
+                // The process id is for the terminal, not the eye.
+                Text("Process \(session.pid) on the Mac.").monospacedDigit()
+                    .contextMenu {
+                        Button {
+                            UIPasteboard.general.string = String(session.pid)
+                        } label: { Label("Copy process id", systemImage: "doc.on.doc") }
+                    }
             }
         }
         .listStyle(.insetGrouped)
@@ -170,6 +207,7 @@ struct SessionDetailScreen: View {
                     Text("resets \(reset)").font(.caption).foregroundStyle(.tertiary)
                 }
             }
+            .monospacedDigit()
         }
         .padding(.vertical, 2)
     }

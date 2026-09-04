@@ -32,12 +32,13 @@ struct FleetScreen: View {
                     Image(systemName: "gearshape")
                         .font(.callout)
                         .foregroundStyle(.secondary)
-                        .padding(8)
+                        .frame(width: 44, height: 44)
                 }
+                .accessibilityLabel("Settings")
             }
             .onAppear { model.isLandscape = geo.size.width > geo.size.height }
             .onChange(of: geo.size) { _, size in
-                withAnimation(.easeInOut(duration: 0.3)) {
+                withAnimation(UIAccessibility.isReduceMotionEnabled ? nil : .easeInOut(duration: 0.3)) {
                     model.isLandscape = size.width > size.height
                 }
             }
@@ -91,10 +92,8 @@ struct FleetScreen: View {
             ContentUnavailableView(
                 "Waiting for the fleet",
                 systemImage: "antenna.radiowaves.left.and.right",
-                description: Text("No snapshot yet. The Mac app "
-                    + "exports one automatically; in the simulator, "
-                    + "launch with INFINITUS_MIRROR_PATH pointing at "
-                    + "its mirror-snapshot.json."))
+                description: Text("Pair with the Mac in Settings — "
+                    + "its accounts show up as soon as it answers."))
         }
         if let snapshot = model.snapshot, isStale(snapshot.capturedAt) {
             StalenessBanner(capturedAt: snapshot.capturedAt)

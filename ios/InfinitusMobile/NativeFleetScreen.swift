@@ -14,6 +14,9 @@ struct NativeFleetScreen: View {
     @ObservedObject var usage: MobileUsage
     @Environment(\.horizontalSizeClass) private var sizeClass
     @State private var detail: AccountRef?
+    @State private var scanning = false
+    @State private var pairedWith: String?
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// Row width, for the wide (landscape / regular) row order. Measured
     /// from a background probe rather than a GeometryReader WRAPPER — a
     /// wrapper between the navigation stack and the list breaks the
@@ -65,16 +68,35 @@ struct NativeFleetScreen: View {
 
     @ViewBuilder private func content(wide: Bool) -> some View {
         if model.fleets.allSatisfy({ $0.accounts.isEmpty }) {
+            // Pairing starts here (critique 2026-09-04: it had no
+            // beginning — the empty state described a path in prose).
             ContentUnavailableView {
-                Label("Waiting for the fleet", systemImage: "antenna.radiowaves.left.and.right")
+                Label("Not paired with a Mac", systemImage: "antenna.radiowaves.left.and.right")
             } description: {
-                Text(model.error ?? "No snapshot yet. The Mac app exports "
-                     + "one automatically — check Settings › Mac connection "
-                     + "if this stays empty.")
+                Text(model.error ?? "Scan the QR code in the Mac app's Settings → Devices to see its accounts here.")
+            } actions: {
+                if PairScanner.isSupported {
+                    Button { scanning = true } label: {
+                        Label("Scan the Mac's QR code", systemImage: "qrcode.viewfinder")
+                    }
+                    .buttonStyle(.borderedProminent)
+                }
             }
+            .sheet(isPresented: $scanning) {
+                PairScannerSheet { payload in
+                    if model.applyPairing(payload) { pairedWith = "the Mac" }
+                }
+            }
+            .alert("Paired", isPresented: Binding(get: { pairedWith != nil }, set: { if !$0 { pairedWith = nil } })) {
+                Button("OK") {}
+            } message: {
+                Text("Paired with \(model.snapshot?.machineName ?? pairedWith ?? "the Mac"). Its accounts and sessions show up as soon as it answers.")
+            }
+            .sensoryFeedback(.success, trigger: pairedWith)
         } else {
             List {
                 allDeadSection
+                heroSection
                 outlookSection
                 ForEach(model.fleets) { fleet in
                     accountSection(fleet, isFirst: fleet.id == model.fleets.first?.id, wide: wide)
@@ -82,6 +104,45 @@ struct NativeFleetScreen: View {
             }
             .listStyle(.insetGrouped)
         }
+    }
+
+    /// The one-second glance the lock screen already gives (critique
+    /// 2026-09-04): the active account in full, who's next, and the
+    /// sessions line — tap it for what's waiting.
+    @ViewBuilder private var heroSection: some View {
+        if let fleet = model.primary, let active = fleet.accounts.first(where: { $0.active }) {
+            Section {
+                row(active, fleet: fleet, index: 0, wide: false, full: true)
+                HStack(spacing: 12) {
+                    if let next = fleet.nextCandidate.flatMap({ n in fleet.accounts.first { $0.number == n } }) {
+                        Label(AccountSummaryFormat.accountShortName(next), systemImage: "arrow.right.circle")
+                            .lineLimit(1).truncationMode(.middle)
+                            .accessibilityLabel("Next: \(AccountSummaryFormat.accountShortName(next))")
+                    }
+                    Spacer(minLength: 0)
+                    if let live = fleet.liveSessions {
+                        Button { model.requestedTab = "sessions" } label: {
+                            HStack(spacing: 4) {
+                                Text(sessionsLine(live)).monospacedDigit()
+                                Image(systemName: "chevron.right").font(.caption2).foregroundStyle(.tertiary)
+                            }
+                        }
+                        .buttonStyle(.plain)
+                        .foregroundStyle((live.waiting ?? 0) > 0 ? Color.orange : Color.secondary)
+                    }
+                }
+                .font(.subheadline)
+                .padding(.vertical, 2)
+            } header: {
+                statusHeader
+            }
+        }
+    }
+
+    private func sessionsLine(_ live: LiveSessions) -> String {
+        var parts = ["\(live.busy) of \(live.total) working"]
+        if let waiting = live.waiting, waiting > 0 { parts.append("\(waiting) waiting on you") }
+        return parts.joined(separator: " · ")
     }
 
     /// The large title's subtitle line — `.navigationSubtitle` is macOS
@@ -160,14 +221,17 @@ struct NativeFleetScreen: View {
     /// "provider · engine" line, the native equivalent of the Mac
     /// popup's `FleetHeader`.
     private func accountSection(_ fleet: MirrorFleetModel, isFirst: Bool, wide: Bool) -> some View {
-        Section {
-            ForEach(Array(fleet.displayAccounts.enumerated()),
+        // The primary fleet's active account lives in the hero above.
+        let accounts = fleet.displayAccounts.filter { !(fleet.id == model.primary?.id && $0.active) }
+        return Section {
+            ForEach(Array(accounts.enumerated()),
                     id: \.element.number) { index, account in
-                row(account, fleet: fleet, index: index, wide: wide)
+                row(account, fleet: fleet, index: index, wide: wide,
+                    full: account.active || fleet.nextCandidate == account.number || needsFullLines(account))
             }
         } header: {
             VStack(alignment: .leading, spacing: 6) {
-                if isFirst { statusHeader }
+                if isFirst, model.primary?.accounts.contains(where: { $0.active }) != true { statusHeader }
                 if model.fleets.count > 1, let label = fleet.fleetLabel {
                     HStack(spacing: 6) {
                         Text(label.provider.displayName).fontWeight(.semibold)
@@ -181,20 +245,44 @@ struct NativeFleetScreen: View {
         }
     }
 
-    private func row(_ account: Account, fleet: MirrorFleetModel, index: Int, wide: Bool) -> some View {
+    /// Limited or attention-needing accounts keep their full lines — the
+    /// reset time and the re-login action are the point of the row.
+    private func needsFullLines(_ account: Account) -> Bool {
+        SentinelNotes.note(for: account.usageStatus) != nil || AccountRowVitals.isDead(account)
+    }
+
+    /// Standby accounts in one line: name · worst window · reset.
+    private func compactUsage(_ account: Account) -> String {
+        var parts: [String] = []
+        if let five = account.usage?.fiveHour { parts.append("5h \(Int(five.pct))%") }
+        if let seven = account.usage?.sevenDay { parts.append("7d \(Int(seven.pct))%") }
+        if let reset = ResetLabel.compact(account.usage?.fiveHour) { parts.append("resets \(reset)") }
+        return parts.isEmpty ? "no usage yet" : parts.joined(separator: " · ")
+    }
+
+    private func row(_ account: Account, fleet: MirrorFleetModel, index: Int, wide: Bool,
+                     full: Bool) -> some View {
         // A Button, not an onTapGesture: inside a List that's the tap
         // target that actually fires (and gets the press highlight for
         // free) — a gesture on the row content never did.
         Button {
             detail = AccountRef(engineID: fleet.engineID, number: account.number)
         } label: {
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: full ? 8 : 3) {
                 AccountHeaderLine(model: fleet, usage: usage, account: account)
-                AccountUsageLines(model: fleet, usage: usage,
-                                  account: account, wide: wide)
-                    // The gauges carry no tap of their own on a phone;
-                    // the whole row is the target.
-                    .allowsHitTesting(false)
+                if full {
+                    AccountUsageLines(model: fleet, usage: usage,
+                                      account: account, wide: wide)
+                        // The gauges carry no tap of their own on a phone;
+                        // the whole row is the target.
+                        .allowsHitTesting(false)
+                } else {
+                    Text(compactUsage(account))
+                        .font(.caption).monospacedDigit()
+                        .foregroundStyle(ThemeColor.resolve(
+                            AccountHeadroom.colorName(forPct: AccountHeadroom.worstPct(account))))
+                        .lineLimit(1)
+                }
             }
             .padding(.vertical, 6)
             .frame(minHeight: 44)
@@ -214,14 +302,15 @@ struct NativeFleetScreen: View {
         .listRowBackground(rowBackground(account, fleet: fleet))
         // The Mac's dying alarm, over the row's own bounds.
         .overlay {
-            if AccountRowVitals.isCritical(account) { CriticalPulse() }
+            if AccountRowVitals.isCritical(account), !reduceMotion { CriticalPulse() }
         }
-        // Same effect chain, same order as the Mac's stacked cards.
-        .switchFlash(account.active ? fleet.switchFlashTick : 0,
+        // Same effect chain, same order as the Mac's stacked cards —
+        // none of it under Reduce Motion.
+        .switchFlash(account.active && !reduceMotion ? fleet.switchFlashTick : 0,
                      color: ThemeColor.flash(fleet.rowTheme))
-        .deathFlash(fleet.deathTicks[account.number] ?? 0)
-        .reviveFlash(fleet.reviveTicks[account.number] ?? 0)
-        .introRow(fleet, index: index)
+        .deathFlash(reduceMotion ? 0 : fleet.deathTicks[account.number] ?? 0)
+        .reviveFlash(reduceMotion ? 0 : fleet.reviveTicks[account.number] ?? 0)
+        .introRowUnlessReduced(fleet, index: index, reduced: reduceMotion)
     }
 
     /// The Mac's active band, as a native row fill: the theme's flash
@@ -310,5 +399,13 @@ private struct AccountDetailSheet: View {
         if AccountRowVitals.isDead(account) { return "at a limit" }
         if fleet.nextCandidate == account.number { return "next up" }
         return "standby"
+    }
+}
+
+private extension View {
+    /// The rows' entrance slide, skipped under Reduce Motion.
+    @ViewBuilder
+    func introRowUnlessReduced<M: FleetModel>(_ model: M, index: Int, reduced: Bool) -> some View {
+        if reduced { self } else { introRow(model, index: index) }
     }
 }

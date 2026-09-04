@@ -327,6 +327,16 @@ final class ControlServer {
             }
             return ControlReply(ok: true, result: try .of(rows))
 
+        case "events":
+            // The switch log Infinitus2 had to reconstruct from
+            // usage-history (2026-09-04 "auto switch hell").
+            let limit = Int(r.options["limit"] ?? "") ?? 100
+            let rows = model.eventLog.suffix(max(0, limit)).map { e in
+                ["at": JSONValue.string(ISO8601DateFormatter().string(from: e.at)),
+                 "icon": .string(e.icon), "text": .string(e.text)]
+            }
+            return ControlReply(ok: true, result: .array(rows.map(JSONValue.object)))
+
         case "perf":
             var usage = rusage()
             getrusage(RUSAGE_SELF, &usage)

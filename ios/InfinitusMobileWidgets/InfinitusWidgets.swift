@@ -18,7 +18,8 @@ struct RevivalLiveActivity: Widget {
     var body: some WidgetConfiguration {
         ActivityConfiguration(for: RevivalActivity.self) { context in
             RevivalLockScreen(state: context.state)
-                .activityBackgroundTint(Color.black.opacity(0.6))
+                .activityBackgroundTint(nil)
+                .widgetURL(URL(string: "infinitus://sessions"))
         } dynamicIsland: { context in
             let accent = ThemeColor.resolve(context.state.accent)
             return DynamicIsland {
@@ -94,7 +95,8 @@ struct WorkingLiveActivity: Widget {
     var body: some WidgetConfiguration {
         ActivityConfiguration(for: WorkingActivity.self) { context in
             WorkingLockScreen(state: context.state)
-                .activityBackgroundTint(Color.black.opacity(0.6))
+                .activityBackgroundTint(nil)
+                .widgetURL(URL(string: "infinitus://sessions"))
         } dynamicIsland: { context in
             let state = context.state
             let binding = state.binding.map { state.windows[$0] }
@@ -204,8 +206,10 @@ private struct WindowRow: View {
         Text(window.label).font(.caption.weight(.semibold)).foregroundStyle(color)
         // GaugeBar draws the remaining % itself, the popup's way
         // (HP left, not damage taken).
+        // A flexible width with a floor: a fixed 120 pt clipped the
+        // reset text at accessibility sizes.
         GaugeBar(remaining: max(0, 100 - window.pct), color: color, animated: false)
-            .frame(width: 120, height: 8)
+            .frame(minWidth: 60, idealWidth: 120, maxWidth: 160, minHeight: 8, maxHeight: 8)
         Text(window.reset ?? "").font(.caption2).monospacedDigit().foregroundStyle(.secondary).lineLimit(1)
     }
 }
@@ -216,7 +220,8 @@ private struct TokenRow: View {
     let fraction: Double
     var body: some View {
         Image(systemName: "bolt.horizontal.fill").font(.caption).foregroundStyle(.yellow)
-        TokenRateBar(fraction: fraction).frame(width: 120, height: 6)
+        TokenRateBar(fraction: fraction)
+            .frame(minWidth: 60, idealWidth: 120, maxWidth: 160, minHeight: 6, maxHeight: 6)
         Text(perMinute >= 1000 ? String(format: "%.1fk tok/min", Double(perMinute) / 1000)
                                : "\(perMinute) tok/min")
             .font(.caption2).monospacedDigit().foregroundStyle(.secondary)
