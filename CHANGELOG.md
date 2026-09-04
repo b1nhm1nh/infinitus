@@ -1,21 +1,24 @@
 # Changelog
 
 Product notes: concise, what you get and why it matters — no commit
-links, no internals or workflow detail (user 2026-09-04). The release
-workflow publishes the matching section as the GitHub release body.
+links, no internals or workflow detail; one feature note is one line,
+a single short sentence (user 2026-09-04). The release workflow
+publishes the matching section as the GitHub release body.
 
 ## 0.4.3 (unreleased)
 
 ### Fixes
-- Haiku session names now reach the sessions Claude Code named itself
-  (`limitless-bf`, `banyan-51`…) — those count as unnamed.
-- Phone dictation can't sit on "Translating…" any more: a missing
-  language pack asks to download, and after ten seconds the take goes
-  out as spoken with the English-reply note. Sending mid-translation
-  does the same.
+- AWS logins survive a Mac relaunch, and a need that failed just before a launch still reaches the phone.
+- Haiku session names now cover the sessions Claude Code named itself (`limitless-bf`, `banyan-51`…).
+- Phone dictation never sits on "Translating…": a missing language pack asks to download, and after ten seconds the take goes out as spoken.
+
 ### Phone
-- **A message from another session reads as that session's words**, not
-  the delivery wrapper around them.
+- A lighter chat header: compact by default, or a stat strip with mini gauges (Settings › Appearance › Chat header).
+- Screenshots go out in one tap: the camera button in a chat, any screenshot you take offered in the next chat, or a shake anywhere.
+- A message from another session shows as "Message from @name" with a preview, the full text a tap away.
+- Your own turns render Markdown too.
+- Live Activities are back on the lock screen and Dynamic Island.
+- The tab bar shrinks to its icon as a list scrolls, Safari-style (iOS 26).
 
 ## 0.4.2
 

@@ -43,7 +43,7 @@ targets:
         NSCameraUsageDescription: Infinitus scans the pairing QR your Mac shows, and takes photos you attach to a session message.
         # PhotosPicker attachments on a message (2026-09-03 "add features
         # to allow attachments").
-        NSPhotoLibraryUsageDescription: Infinitus attaches photos you pick to a message sent into a session.
+        NSPhotoLibraryUsageDescription: Infinitus attaches photos you pick to a message sent into a session, and offers screenshots you just took for one-tap sending.
         # Dictation into the composer (2026-09-03 "smart dictation for mobile").
         NSSpeechRecognitionUsageDescription: Infinitus turns what you say into a message for a session, on this phone where it can.
         NSMicrophoneUsageDescription: Infinitus listens while you dictate a message to a session.

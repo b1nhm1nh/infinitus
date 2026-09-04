@@ -32,6 +32,13 @@ struct SessionFeedScreen: View {
     @State private var awsLoginItem: AwsLogin.Item?
     @State private var lastRowVisible = true
     @Environment(\.scenePhase) private var scenePhase
+    @StateObject private var screenshots = ScreenshotWatch()
+    /// "compact" (avatar + three lines) or "strip" (title row + a gauge
+    /// strip) — both built for the user to compare (2026-09-04 "this UI
+    /// needs big overhaul"; "also build option 2 for me to see").
+    @AppStorage("chat_header") private var headerStyle = "compact"
+    /// Peer messages opened to their full text (keyed by time + text).
+    @State private var expandedPeers: Set<String> = []
     @Environment(\.dismiss) private var dismiss
     /// Bumped on foreground return: `.task(id:)` drops the long-poll that
     /// was in flight when the app left — its connection may be dead until
@@ -198,8 +205,12 @@ struct SessionFeedScreen: View {
             let theme = model.rowTheme
             VStack(spacing: 0) {
                 VStack(spacing: 0) {
-                    titleRow
-                    accountBar
+                    if headerStyle == "strip" {
+                        titleRow
+                        statStrip
+                    } else {
+                        compactHeader
+                    }
                 }
                 .background(theme.plain ? Color.clear : ThemeColor.flash(theme).opacity(0.16))
                 .background(.bar)
@@ -211,7 +222,20 @@ struct SessionFeedScreen: View {
         .safeAreaInset(edge: .bottom, spacing: 0) {
             VStack(spacing: 0) {
                 if let item = pendingPrompt { promptCard(item) }
+                if !screenshots.found.isEmpty { screenshotOffer }
                 composer
+            }
+        }
+        .onAppear { screenshots.check() }
+        // A screenshot taken while the app is in front: the first one
+        // asks for Photos access (that's the discovery moment), later
+        // ones show up in the library a beat after the shutter.
+        .onReceive(NotificationCenter.default.publisher(for: UIApplication.userDidTakeScreenshotNotification)) { _ in
+            guard ScreenshotWatch.enabled else { return }
+            Task {
+                if !screenshots.hasAccess { await screenshots.requestAccess() }
+                try? await Task.sleep(for: .seconds(1.5))
+                screenshots.check()
             }
         }
         // The composer owns the bottom edge; the floating tab bar would
@@ -253,7 +277,11 @@ struct SessionFeedScreen: View {
         // left may sit on a dead connection until its timeout; start a
         // fresh one (the stale one's answer is dropped in `load`).
         .onChange(of: scenePhase) { _, phase in
-            if phase == .active { pollGeneration += 1 }
+            if phase == .active {
+                pollGeneration += 1
+                // Back from another app: anything shot meanwhile.
+                screenshots.check()
+            }
         }
     }
 
@@ -315,14 +343,7 @@ struct SessionFeedScreen: View {
     private var titleRow: some View {
         let status = feed?.status ?? session.status
         return HStack(spacing: 4) {
-            Button { dismiss() } label: {
-                Image(systemName: "chevron.left")
-                    .font(.title3.weight(.semibold))
-                    .frame(width: 40, height: 40)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Back")
+            backButton
             NavigationLink(value: SessionDetailRoute(session: session)) {
                 HStack(spacing: 6) {
                     VStack(alignment: .leading, spacing: 2) {
@@ -331,8 +352,17 @@ struct SessionFeedScreen: View {
                         HStack(spacing: 5) {
                             Circle().fill(SessionWords.color(status)).frame(width: 7, height: 7)
                             Text(SessionWords.status(status, theme: model.rowTheme))
-                                .font(.caption).foregroundStyle(.secondary)
+                            if headerStyle == "strip", let pair = headerAccount {
+                                Text("·").foregroundStyle(.tertiary)
+                                Text(Self.accountName(pair.account)).lineLimit(1)
+                                if let plan = pair.account.plan {
+                                    Text(model.rowTheme.plain ? plan : model.rowTheme.planLabel(plan, compact: true))
+                                        .padding(.horizontal, 5).padding(.vertical, 1)
+                                        .background(Color.primary.opacity(0.08), in: Capsule())
+                                }
+                            }
                         }
+                        .font(.caption).foregroundStyle(.secondary)
                     }
                     Image(systemName: "chevron.right")
                         .font(.caption2.weight(.semibold))
@@ -343,38 +373,192 @@ struct SessionFeedScreen: View {
             .buttonStyle(.plain)
             .accessibilityLabel("Session details")
             Spacer(minLength: 0)
+            screenshotButton
         }
-        .padding(.leading, 4).padding(.trailing, 16).padding(.top, 2)
+        .padding(.leading, 4).padding(.trailing, 8).padding(.top, 2)
     }
 
-    /// The account serving this session, under the title. A theme makes
-    /// it the account's own fleet row — the same header line and usage
-    /// cells the Fleet tab draws (glyphs, gauges, the per-model window,
-    /// spend). Off keeps the plain line.
-    @ViewBuilder private var accountBar: some View {
-        let summary = model.accountSummary(forSessionPid: session.pid)
-        if let line = AccountSummaryFormat.headerLine(summary) {
-            let theme = model.rowTheme
-            let fleet = summary.flatMap { s in model.fleets.first { $0.engineID == s.engineID } }
-            Group {
-                if !theme.plain, let account = summary?.account, let fleet {
-                    VStack(alignment: .leading, spacing: 5) {
-                        AccountHeaderLine(model: fleet, usage: fleet, account: account)
-                        AccountUsageLines(model: fleet, usage: fleet, account: account)
-                            .allowsHitTesting(false)
-                    }
-                    .padding(.vertical, 3)
-                } else {
-                    HStack(spacing: 6) {
-                        Circle().fill(ThemeColor.resolve(line.colorName)).frame(width: 7, height: 7)
-                        Text(line.text).font(.caption).foregroundStyle(.secondary)
-                            .lineLimit(1).monospacedDigit()
-                        Spacer(minLength: 0)
+    private var backButton: some View {
+        Button { dismiss() } label: {
+            Image(systemName: "chevron.left")
+                .font(.title3.weight(.semibold))
+                .frame(width: 40, height: 40)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Back")
+    }
+
+    /// One tap sends what's on screen (user 2026-09-04: "a lot of
+    /// screenshots that come from this app … send it right away").
+    private var screenshotButton: some View {
+        Button { sendAppScreenshot() } label: {
+            Image(systemName: "camera.viewfinder")
+                .font(.title3)
+                .frame(width: 40, height: 40)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(sendingMessage)
+        .accessibilityLabel("Send a screenshot of this screen")
+    }
+
+    /// The account behind this session: the summary's account and the
+    /// fleet that renders it, when there is one.
+    private var headerAccount: (account: Account, fleet: MirrorFleetModel)? {
+        guard let summary = model.accountSummary(forSessionPid: session.pid),
+              let account = summary.account,
+              let fleet = model.fleets.first(where: { $0.engineID == summary.engineID }) else { return nil }
+        return (account, fleet)
+    }
+
+    private static func accountName(_ account: Account) -> String {
+        account.alias ?? String(account.email.prefix(while: { $0 != "@" }))
+    }
+
+    /// Every window on the account, in row order: session, weekly, then
+    /// the per-model ones — glyph, color and value, ready for a line.
+    private struct WindowChip: Identifiable {
+        let id: String
+        let glyph: String
+        let color: Color
+        let window: UsageWindow
+        let session: Bool
+    }
+
+    private func windowChips(_ account: Account, theme: RowTheme) -> [WindowChip] {
+        var out: [WindowChip] = []
+        if let w = account.usage?.fiveHour {
+            out.append(.init(id: "5h", glyph: theme.plain ? theme.sessionLabel : PopupGlyph.text(theme.sessionLabel),
+                             color: ThemeColor.resolve(theme.sessionColor), window: w, session: true))
+        }
+        if let w = account.usage?.sevenDay {
+            out.append(.init(id: "7d", glyph: theme.plain ? theme.weeklyLabel : PopupGlyph.text(theme.weeklyLabel),
+                             color: ThemeColor.resolve(theme.weeklyColor), window: w, session: false))
+        }
+        for w in account.usage?.scoped ?? [] {
+            out.append(.init(id: "m:" + (w.name ?? "?"),
+                             glyph: theme.plain ? (w.name ?? "?") : PopupGlyph.text(theme.scopedPrefix) + theme.modelName(w.name),
+                             color: ThemeColor.resolve(theme.scopedColor), window: w, session: false))
+        }
+        return out
+    }
+
+    // MARK: header, option 1 — Messenger-style, one tier
+
+    /// Back · avatar (the theme's glyph on its tint) · name, then the
+    /// state and account on one caption line, then every window as
+    /// glyph + value on a third · camera. The whole middle is the tap
+    /// into the details, where the full Fleet row lives.
+    private var compactHeader: some View {
+        let theme = model.rowTheme
+        let status = feed?.status ?? session.status
+        let pair = headerAccount
+        return HStack(spacing: 8) {
+            backButton
+            NavigationLink(value: SessionDetailRoute(session: session)) {
+                HStack(spacing: 10) {
+                    avatar(theme: theme, status: status)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(feed?.name ?? repoName(session.cwd))
+                            .font(.headline).lineLimit(1)
+                        HStack(spacing: 4) {
+                            Text(SessionWords.status(status, theme: theme))
+                                .foregroundStyle(SessionWords.color(status))
+                            if let pair {
+                                Text("·").foregroundStyle(.tertiary)
+                                Text(Self.accountName(pair.account)).lineLimit(1)
+                                if let plan = pair.account.plan {
+                                    Text(theme.plain ? plan : theme.planLabel(plan, compact: true))
+                                        .foregroundStyle(.secondary)
+                                        .padding(.horizontal, 5).padding(.vertical, 1)
+                                        .background(Color.primary.opacity(0.08), in: Capsule())
+                                }
+                            }
+                        }
+                        .font(.caption).foregroundStyle(.secondary)
+                        if let pair {
+                            HStack(spacing: 10) {
+                                ForEach(windowChips(pair.account, theme: theme)) { chip in
+                                    HStack(spacing: 2) {
+                                        Text(chip.glyph).foregroundStyle(chip.color)
+                                        Text("\(Int(GaugeMath.remaining(usedPct: chip.window.pct)))%")
+                                            .monospacedDigit()
+                                            .foregroundStyle(chip.window.pct >= 100 ? .red : .primary)
+                                    }
+                                }
+                            }
+                            .font(.caption2.weight(.semibold))
+                            .lineLimit(1)
+                        }
                     }
                 }
+                .contentShape(Rectangle())
             }
-            .padding(.horizontal, 16).padding(.top, 6).padding(.bottom, 8)
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .buttonStyle(.plain)
+            .accessibilityLabel("Session details")
+            Spacer(minLength: 0)
+            screenshotButton
+        }
+        .padding(.leading, 4).padding(.trailing, 8).padding(.vertical, 6)
+    }
+
+    /// The theme's glyph on its tint; the Off theme gets the session's
+    /// initial on its state color.
+    private func avatar(theme: RowTheme, status: String) -> some View {
+        let glyph = theme.plain ? "" : PopupGlyph.text(theme.activeIcon.isEmpty ? theme.sessionLabel : theme.activeIcon)
+        let name = feed?.name ?? repoName(session.cwd)
+        return ZStack {
+            Circle().fill(theme.plain ? SessionWords.color(status).opacity(0.22)
+                                      : ThemeColor.flash(theme).opacity(0.28))
+            if glyph.isEmpty {
+                Text(String(name.prefix(1)).uppercased())
+                    .font(.headline).foregroundStyle(SessionWords.color(status))
+            } else {
+                Text(glyph).font(.title3)
+            }
+        }
+        .frame(width: 38, height: 38)
+        .overlay(alignment: .bottomTrailing) {
+            Circle().fill(SessionWords.color(status)).frame(width: 10, height: 10)
+                .overlay(Circle().stroke(Color(.systemBackground), lineWidth: 2))
+                .offset(x: 1, y: 1)
+        }
+    }
+
+    // MARK: header, option 2 — title row + stat strip
+
+    /// Every window as a mini gauge on one row; no times, no resets —
+    /// those live in the details. The account itself sits on the title
+    /// row's state line.
+    @ViewBuilder private var statStrip: some View {
+        if let pair = headerAccount {
+            let theme = model.rowTheme
+            // Sideways scroll rather than a wrap when a fourth window
+            // shows up; three fit.
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 14) {
+                    ForEach(windowChips(pair.account, theme: theme)) { chip in
+                        HStack(spacing: 3) {
+                            Text(chip.glyph).font(.caption2.weight(.bold)).foregroundStyle(chip.color)
+                            if theme.plain {
+                                Text("\(Int(GaugeMath.remaining(usedPct: chip.window.pct)))%")
+                                    .font(.caption2.weight(.semibold)).monospacedDigit()
+                            } else {
+                                GaugeBar(remaining: GaugeMath.remaining(usedPct: chip.window.pct),
+                                         color: chip.color,
+                                         paceRemaining: chip.window.expectedPct.map { 100 - $0 },
+                                         dividers: chip.session ? (1..<5).map { Double($0) * 20 }
+                                                                : (1..<7).map { Double($0) * 100 / 7 })
+                            }
+                        }
+                        .fixedSize()
+                    }
+                }
+                .padding(.horizontal, 16)
+            }
+            .environment(\.gaugeScale, 0.8)
+            .padding(.top, 2).padding(.bottom, 8)
         }
     }
 
@@ -762,27 +946,7 @@ struct SessionFeedScreen: View {
                                              data: jpeg, thumbnail: UIImage(data: jpeg)))
     }
 
-    private static func downscaledJPEG(_ image: UIImage, maxDimension: CGFloat = 2048,
-                                       quality: CGFloat = 0.85) -> Data? {
-        let longest = max(image.size.width, image.size.height)
-        let scale = min(1, maxDimension / longest)
-        let targetSize = CGSize(width: image.size.width * scale, height: image.size.height * scale)
-        // Points, not pixels: the renderer's default format renders at
-        // the screen's 3× scale, which sent a "2048 px" photo out at
-        // 6144×4608 (the first photo through, 2026-09-03).
-        let format = UIGraphicsImageRendererFormat()
-        format.scale = 1
-        let resized = UIGraphicsImageRenderer(size: targetSize, format: format).image { _ in
-            image.draw(in: CGRect(origin: .zero, size: targetSize))
-        }
-        // A busy 2048 px frame can still pass the Mac's 5 MiB cap at 0.85;
-        // step the quality down before giving up on it.
-        for q in [quality, 0.7, 0.55, 0.4] {
-            if let data = resized.jpegData(compressionQuality: q),
-               data.count <= SessionInput.maxAttachmentBytes { return data }
-        }
-        return resized.jpegData(compressionQuality: 0.4)
-    }
+    private static func downscaledJPEG(_ image: UIImage) -> Data? { ScreenshotWatch.jpeg(image) }
 
     /// PDFs/text ride as-is (≤ 5 MiB, same cap the Mac enforces) — no
     /// re-encoding, unlike photos.
@@ -808,6 +972,98 @@ struct SessionFeedScreen: View {
             }
             attachments.append(PendingAttachment(name: url.lastPathComponent, mime: mime,
                                                  data: data, thumbnail: nil))
+        }
+    }
+
+    // MARK: screenshots (user 2026-09-04: "send it right away")
+
+    /// Screenshots taken since the phone last looked, offered above the
+    /// composer: send them all in one tap, or wave them off.
+    private var screenshotOffer: some View {
+        let shots = screenshots.found
+        return HStack(spacing: 10) {
+            if let thumb = shots.last?.thumbnail {
+                Image(uiImage: thumb)
+                    .resizable().scaledToFill()
+                    .frame(width: 36, height: 36)
+                    .clipShape(RoundedRectangle(cornerRadius: 6))
+            }
+            VStack(alignment: .leading, spacing: 2) {
+                Text(shots.count == 1 ? "New screenshot" : "\(shots.count) new screenshots")
+                    .font(.subheadline.weight(.semibold))
+                Text(shots.count > SessionInput.maxAttachments
+                     ? "The newest \(SessionInput.maxAttachments) go" : "Send to this session?")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 0)
+            Button("Send") { sendFoundScreenshots() }
+                .buttonStyle(.borderedProminent)
+                .disabled(sendingMessage)
+            Button { screenshots.dismiss() } label: {
+                Image(systemName: "xmark").font(.caption.weight(.semibold))
+                    .frame(width: 30, height: 30).contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Not now")
+        }
+        .padding(.horizontal, 16).padding(.vertical, 8)
+        .background(.bar)
+        .overlay(alignment: .top) { Divider() }
+    }
+
+    private func sendAppScreenshot() {
+        guard let image = ScreenshotWatch.captureApp() else {
+            messageResult = "couldn't capture the screen"
+            return
+        }
+        sendImages([image], prefix: "app-screenshot",
+                   caption: "Screenshot of the Infinitus app, taken on the phone just now.")
+    }
+
+    private func sendFoundScreenshots() {
+        let images = screenshots.images(limit: SessionInput.maxAttachments)
+        guard !images.isEmpty else {
+            messageResult = "couldn't read those screenshots"
+            screenshots.dismiss()
+            return
+        }
+        // The offer stays up until the Mac has them — a failed send
+        // shouldn't lose the batch.
+        sendImages(images, prefix: "screenshot",
+                   caption: images.count == 1 ? "Screenshot taken on the phone just now."
+                                              : "\(images.count) screenshots taken on the phone just now.",
+                   onDelivered: { screenshots.dismiss() })
+    }
+
+    /// Straight out, bypassing the draft and its attachments — the
+    /// composer's own text stays where it is.
+    private func sendImages(_ images: [UIImage], prefix: String, caption: String,
+                            onDelivered: @escaping () -> Void = {}) {
+        var picked: [SessionInput.Attachment] = []
+        var thumbs: [UIImage] = []
+        for (i, image) in images.enumerated() {
+            guard let jpeg = Self.downscaledJPEG(image), jpeg.count <= SessionInput.maxAttachmentBytes else { continue }
+            picked.append(.init(name: "\(prefix)-\(i + 1).jpg", mime: "image/jpeg", data: jpeg))
+            thumbs.append(UIImage(data: jpeg) ?? image)
+        }
+        guard !picked.isEmpty else { messageResult = "couldn't read that screenshot"; return }
+        sendingMessage = true
+        messageResult = nil
+        Task {
+            await send(.init(kind: .message, text: caption, attachments: picked)) { reply in
+                if reply.outcome == "delivered" {
+                    pendingSent.append(PendingSent(text: caption, images: thumbs, files: []))
+                    deliveredTick += 1
+                    onDelivered()
+                } else {
+                    messageResult = reply.detail.map { "\(Self.describe(reply.outcome)) — \($0)" }
+                        ?? Self.describe(reply.outcome)
+                }
+            } onFailure: {
+                messageResult = "couldn't reach the Mac"
+            } finished: {
+                sendingMessage = false
+            }
         }
     }
 
@@ -1027,8 +1283,43 @@ struct SessionFeedScreen: View {
         }
     }
 
+    /// Another session's message, the way the CLI shows it: one
+    /// "Message from @<sender>" line with a short preview, the full text
+    /// a tap away (user 2026-09-04: "same on ios but indicative").
+    private func peerMessage(_ item: SessionFeedItem, sender: String) -> some View {
+        let key = "\(item.at?.timeIntervalSince1970 ?? 0)|\(item.text.prefix(40))"
+        let open = expandedPeers.contains(key)
+        return VStack(alignment: .leading, spacing: 3) {
+            HStack(spacing: 4) {
+                Image(systemName: "chevron.right")
+                    .font(.caption2.weight(.semibold))
+                    .rotationEffect(.degrees(open ? 90 : 0))
+                Text("Message from @\(sender)")
+                    .font(.caption.weight(.semibold))
+            }
+            .foregroundStyle(.secondary)
+            if open {
+                Text(item.text).font(.callout).textSelection(.enabled)
+            } else {
+                Text(item.text.split(whereSeparator: \.isNewline).first.map(String.init) ?? item.text)
+                    .font(.callout).italic().foregroundStyle(.secondary)
+                    .lineLimit(2)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.vertical, 4)
+        .contentShape(Rectangle())
+        .onTapGesture {
+            withAnimation(.easeInOut(duration: 0.15)) {
+                if open { expandedPeers.remove(key) } else { expandedPeers.insert(key) }
+            }
+        }
+    }
+
     @ViewBuilder private func row(_ item: SessionFeedItem) -> some View {
         switch item.kind {
+        case .user where item.sender != nil:
+            peerMessage(item, sender: item.sender ?? "peer")
         case .user:
             let (text, attached) = Self.splitAttached(item.text)
             let images = item.images ?? []
@@ -1037,7 +1328,9 @@ struct SessionFeedScreen: View {
             HStack {
                 Spacer(minLength: 40)
                 VStack(alignment: .trailing, spacing: 6) {
-                    if !text.isEmpty { Text(text) }
+                    // Skill bodies and pasted notes arrive as user turns and are
+                    // markdown too (phone screenshot 2026-09-04: "Md not shown").
+                    if !text.isEmpty { MarkdownText(text: text) }
                     if !images.isEmpty {
                         HStack(spacing: 6) {
                             ForEach(images, id: \.self) { FeedThumbnail(pid: Int32(session.pid), id: $0) }

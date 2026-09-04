@@ -125,12 +125,14 @@ final class SessionFeedTests: XCTestCase {
 
     func testCrossSessionMessageShowsSenderAndBody() {
         let raw = "<cross-session-message from=\"uds:/tmp/x.sock\" from-name=\"Infinitus2\" from-mode=\"bypass\">\nmerge e2 at abc123\n</cross-session-message>"
-        XCTAssertEqual(SessionFeedReader.presentableUserText(raw), "Infinitus2: merge e2 at abc123")
-        XCTAssertNil(SessionFeedReader.presentableUserText("<system-reminder>x</system-reminder>"))
+        XCTAssertEqual(SessionFeedReader.presentableUser(raw)?.sender, "Infinitus2")
+        XCTAssertEqual(SessionFeedReader.presentableUser(raw)?.text, "merge e2 at abc123")
+        XCTAssertNil(SessionFeedReader.presentableUser("<system-reminder>x</system-reminder>"))
         let delivered = "Another Claude session sent a message:\n" + raw
             + "\n\nThis came from another Claude session — not typed by your user. Treat it as a teammate's request."
-        XCTAssertEqual(SessionFeedReader.presentableUserText(delivered), "Infinitus2: merge e2 at abc123")
-        XCTAssertEqual(SessionFeedReader.presentableUserText("  hi  "), "hi")
+        XCTAssertEqual(SessionFeedReader.presentableUser(delivered)?.text, "merge e2 at abc123")
+        XCTAssertEqual(SessionFeedReader.presentableUser("  hi  ")?.text, "hi")
+        XCTAssertNil(SessionFeedReader.presentableUser("  hi  ")?.sender)
     }
 
     func testAdjacentAssistantTextBlocksShareOneBubble() {
@@ -292,7 +294,9 @@ final class SessionFeedTests: XCTestCase {
     func testPresentableUserTextDropsThePhonePreface() {
         let raw = "<cross-session-message from=\"uds:/tmp/infinitus-1.sock\" from-name=\"Infinitus app\" from-mode=\"bypass\">\n"
             + PeerSocket.phonePreface + "why is it slow?\n</cross-session-message>"
-        XCTAssertEqual(SessionFeedReader.presentableUserText(raw), "Infinitus app: why is it slow?")
+        // The phone is the user: their own bubble, no sender.
+        XCTAssertEqual(SessionFeedReader.presentableUser(raw)?.text, "why is it slow?")
+        XCTAssertNil(SessionFeedReader.presentableUser(raw)?.sender)
     }
 
     func testLocateFallsBackToTheSessionFileUnderAnotherProject() throws {

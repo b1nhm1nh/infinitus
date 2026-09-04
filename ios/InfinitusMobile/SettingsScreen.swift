@@ -11,6 +11,8 @@ import InfinitusUI
 /// with it off these are the mac's own Display / Themes / Animations
 /// choices, same values and same labels.
 struct SettingsForm: View {
+    @AppStorage("chat_header") private var chatHeader = "compact"
+
     @ObservedObject var model: MirrorModel
     /// The QR scanner (#9 remote access) is a sheet, not a screen: it
     /// exists for the ten seconds it takes to pair.
@@ -128,9 +130,14 @@ struct SettingsForm: View {
                      + "finds the Mac by itself; add an address for anywhere else.")
             }
             DictationSettings()
+            ScreenshotSettings()
             // The 1:1 Mac rendering isn't lost, just off by default
             // (#9 native shell): this flips the whole app back to it.
             Section("Appearance") {
+                Picker("Chat header", selection: $chatHeader) {
+                    Text("Compact").tag("compact")
+                    Text("Stat strip").tag("strip")
+                }
                 Toggle("Show as Mac popup", isOn: $model.macPopupView)
                 Text("Renders the Mac popup itself — the same layout, "
                      + "chrome and scaling, on dark. Off is the native "
@@ -245,6 +252,29 @@ private struct DictationSettings: View {
                  + "session's names, branch and tools so English terms survive a "
                  + (localeID.isEmpty ? "non-English" : Dictation.displayName(Locale(identifier: localeID)))
                  + " take.")
+        }
+    }
+}
+
+/// Screenshots offered for one-tap sending (user 2026-09-04: "react
+/// system screenshots too as I may take screenshots from other apps").
+private struct ScreenshotSettings: View {
+    @AppStorage(ScreenshotWatch.enabledKey) private var offerScreenshots = true
+
+    var body: some View {
+        Section {
+            Toggle("Offer new screenshots", isOn: $offerScreenshots)
+                .onChange(of: offerScreenshots) { _, on in
+                    ScreenshotWatch.enabled = on
+                    if on { Task { await ScreenshotWatch().requestAccess() } }
+                }
+        } header: {
+            Text("Screenshots")
+        } footer: {
+            Text("A screenshot you take — in this app or any other — is offered on a session's chat "
+                 + "for one-tap sending. Needs full Photos access. Without it: the camera button in a "
+                 + "chat's header sends that screen, and a shake on any screen captures it and asks "
+                 + "which session to send it to.")
         }
     }
 }

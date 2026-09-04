@@ -30,6 +30,8 @@ struct RootView: View {
                 tabs
             }
         }
+        // Shake on any screen: capture it, pick a session, sent.
+        .background(ShakeToSend(model: model))
         .task {
             while !Task.isCancelled {
                 await model.refresh()
@@ -48,7 +50,18 @@ struct RootView: View {
         }
     }
 
-    private var tabs: some View {
+    @ViewBuilder private var tabs: some View {
+        // iOS 26: the floating tab bar shrinks to its selected icon as a
+        // list scrolls, like Safari's (user 2026-09-04 from the phone:
+        // "when scroll up, make the bottom bar collapse like this").
+        if #available(iOS 26, *) {
+            tabView.tabBarMinimizeBehavior(.onScrollDown)
+        } else {
+            tabView
+        }
+    }
+
+    private var tabView: some View {
         TabView(selection: $tab) {
             SessionsScreen(model: model, progress: model.sessionProgress)
                 .tabItem { tabLabel("sessions") }
