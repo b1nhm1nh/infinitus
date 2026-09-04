@@ -64,6 +64,10 @@ public struct PushTriggers: Sendable {
     private var seededWaiting = false
     private var announcedAwsLogins: Set<String> = []
     private var seededAwsLogins = false
+    /// A need that failed this recently is pushed even on the seeding
+    /// look: the relaunch (or the first scan) swallowed it, and the user
+    /// has likely not seen it (#29). Older ones seed silently as before.
+    public static let awsLoginFreshWindow: TimeInterval = 10 * 60
 
     public init() {}
 
@@ -79,7 +83,8 @@ public struct PushTriggers: Sendable {
     public mutating func tick(busy: Int?, total: Int?,
                               accounts: [Account], flags: Flags,
                               sessions: [SessionDetail]? = nil,
-                              awsLogins: [AwsLogin.Item]? = nil) -> [String] {
+                              awsLogins: [AwsLogin.Item]? = nil,
+                              now: Date = Date()) -> [String] {
         var out: [String] = []
 
         // nil until the transcripts have been scanned once: seeding on
@@ -88,14 +93,20 @@ public struct PushTriggers: Sendable {
             let needs = awsLogins.filter { $0.pid != nil }
             let seeded = seededAwsLogins
             seededAwsLogins = true
-            for item in needs where !announcedAwsLogins.contains(item.id) {
-                announcedAwsLogins.insert(item.id)
-                if flags.awsLogin, seeded {
+            // Keyed on the failure time too: the same session on the same
+            // profile failing again later is news again.
+            func key(_ item: AwsLogin.Item) -> String {
+                "\(item.id)|\(Int(item.failedAt?.timeIntervalSince1970 ?? 0))"
+            }
+            for item in needs where !announcedAwsLogins.contains(key(item)) {
+                announcedAwsLogins.insert(key(item))
+                let fresh = item.failedAt.map { now.timeIntervalSince($0) < Self.awsLoginFreshWindow } ?? false
+                if flags.awsLogin, seeded || fresh {
                     let who = item.sessionLabel ?? "session \(item.pid ?? 0)"
                     out.append("needs AWS login — \(who) (\(item.profile))")
                 }
             }
-            announcedAwsLogins = announcedAwsLogins.intersection(needs.map(\.id))
+            announcedAwsLogins = announcedAwsLogins.intersection(needs.map(key))
         }
 
         if let sessions {

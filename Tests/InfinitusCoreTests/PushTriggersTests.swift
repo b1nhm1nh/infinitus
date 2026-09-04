@@ -137,8 +137,32 @@ final class PushTriggersTests: XCTestCase {
                               sessions: [session(3, "waiting")]).count, 1)
     }
 
-    private func need(_ pid: Int?, _ profile: String, label: String? = "repo") -> AwsLogin.Item {
-        AwsLogin.Item(profile: profile, flow: .relay, pid: pid, sessionLabel: label, state: nil)
+    private func need(_ pid: Int?, _ profile: String, label: String? = "repo",
+                      failedAt: Date? = nil) -> AwsLogin.Item {
+        AwsLogin.Item(profile: profile, flow: .relay, pid: pid, sessionLabel: label, state: nil,
+                      failedAt: failedAt)
+    }
+
+    /// #29: a need that failed minutes ago is pushed even on the seeding
+    /// look (the relaunch swallowed it); an old one seeds silently; the
+    /// same session failing again later on the same profile fires again.
+    func testAwsLoginFreshNeedAtLaunchIsPushedAndRefailureRearms() {
+        var t = PushTriggers()
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        XCTAssertEqual(t.tick(busy: 0, total: 1, accounts: [], flags: all,
+                              awsLogins: [need(3, "p", failedAt: now.addingTimeInterval(-60)),
+                                          need(4, "q", failedAt: now.addingTimeInterval(-3600))],
+                              now: now),
+                       ["needs AWS login — repo (p)"])
+        XCTAssertEqual(t.tick(busy: 0, total: 1, accounts: [], flags: all,
+                              awsLogins: [need(3, "p", failedAt: now.addingTimeInterval(-60)),
+                                          need(4, "q", failedAt: now.addingTimeInterval(-3600))],
+                              now: now), [])
+        // Same session, same profile, a later failure: news again.
+        XCTAssertEqual(t.tick(busy: 0, total: 1, accounts: [], flags: all,
+                              awsLogins: [need(3, "p", failedAt: now.addingTimeInterval(600))],
+                              now: now.addingTimeInterval(660)),
+                       ["needs AWS login — repo (p)"])
     }
 
     func testAwsLoginNeedFiresOncePerSessionAndProfileAndRearms() {

@@ -7,6 +7,10 @@ workflow publishes the matching section as the GitHub release body.
 ## 0.4.3 (unreleased)
 
 ### Fixes
+- AWS logins survive a Mac relaunch: a met need stays met, and a login
+  the relaunch cut short says so instead of vanishing. A need that
+  failed in the last few minutes is pushed to the phone even when the
+  app has just started, and a session failing again later is news again.
 - Haiku session names now reach the sessions Claude Code named itself
   (`limitless-bf`, `banyan-51`…) — those count as unnamed.
 - Phone dictation can't sit on "Translating…" any more: a missing
