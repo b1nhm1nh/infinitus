@@ -170,4 +170,32 @@ final class StatsTests: XCTestCase {
         StatsScanner.ingest(entry(#"{"type":"user","timestamp":"2026-09-02T01:00:00.000Z","origin":{"kind":"human"},"message":{"role":"user","content":"back"}}"#), sessionID: "s", into: &e, calendar: cal)
         XCTAssertEqual(e.days.values.map(\.waitingSeconds).reduce(0, +), 8 * 3600, accuracy: 0.5)
     }
+
+    func testScanIsIncrementalAndResetsOnShrink() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("stats-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir.appendingPathComponent("p"), withIntermediateDirectories: true)
+        let file = dir.appendingPathComponent("p/abc.jsonl")
+        let cache = dir.appendingPathComponent("cache.json")
+        let l1 = #"{"type":"user","cwd":"/r/a","timestamp":"2026-09-04T01:00:00.000Z","origin":{"kind":"human"},"message":{"role":"user","content":"one"}}"#
+        try (l1 + "\n").write(to: file, atomically: true, encoding: .utf8)
+        var r = StatsScanner.scan(projectsDir: dir, cacheURL: cache, calendar: cal)
+        XCTAssertEqual(r.days["2026-09-04"]?.humanMessages, 1)
+        XCTAssertEqual(r.cwds, ["/r/a"])
+        XCTAssertEqual(r.files, 1)
+        // Append: only the new line is read.
+        let h = try FileHandle(forWritingTo: file); h.seekToEndOfFile()
+        h.write(Data((l1 + "\n").utf8)); try h.close()
+        r = StatsScanner.scan(projectsDir: dir, cacheURL: cache, calendar: cal)
+        XCTAssertEqual(r.days["2026-09-04"]?.humanMessages, 2)
+        // A partial last line waits.
+        let h2 = try FileHandle(forWritingTo: file); h2.seekToEndOfFile()
+        h2.write(Data(#"{"type":"user","timest"#.utf8)); try h2.close()
+        r = StatsScanner.scan(projectsDir: dir, cacheURL: cache, calendar: cal)
+        XCTAssertEqual(r.days["2026-09-04"]?.humanMessages, 2)
+        // Shrink: the file is re-read from zero.
+        try (l1 + "\n").write(to: file, atomically: true, encoding: .utf8)
+        r = StatsScanner.scan(projectsDir: dir, cacheURL: cache, calendar: cal)
+        XCTAssertEqual(r.days["2026-09-04"]?.humanMessages, 1)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: cache.path))
+    }
 }

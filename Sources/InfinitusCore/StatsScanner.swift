@@ -164,4 +164,80 @@ public enum StatsScanner {
         }
         entry.days[key] = day
     }
+
+    public struct Result: Sendable {
+        public var days: [String: Stats.Day] = [:]
+        public var cwds: Set<String> = []
+        public var files = 0
+    }
+
+    struct Cache: Codable {
+        var version = 1
+        var files: [String: FileEntry] = [:]
+    }
+
+    public static func defaultCacheURL() -> URL {
+        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("Infinitus/stats/transcripts.json")
+    }
+
+    /// Every `*.jsonl` under `projectsDir` (one directory per project),
+    /// parsed from each file's byte watermark. Files untouched for
+    /// `maxAge` are skipped. The cache keeps only files that still exist.
+    public static func scan(projectsDir: URL, cacheURL: URL?, calendar: Calendar = .current,
+                            maxAge: TimeInterval = 400 * 86_400, now: Date = Date()) -> Result {
+        var cache = cacheURL.flatMap { try? Data(contentsOf: $0) }
+            .flatMap { try? JSONDecoder().decode(Cache.self, from: $0) } ?? Cache()
+        if cache.version != 1 { cache = Cache() }
+        var live: [String: FileEntry] = [:]
+        var result = Result()
+        let fm = FileManager.default
+        for project in (try? fm.contentsOfDirectory(at: projectsDir, includingPropertiesForKeys: nil)) ?? [] {
+            for url in (try? fm.contentsOfDirectory(at: project, includingPropertiesForKeys: [.fileSizeKey, .contentModificationDateKey])) ?? []
+            where url.pathExtension == "jsonl" {
+                guard let values = try? url.resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey]),
+                      let size = values.fileSize else { continue }
+                if let mtime = values.contentModificationDate, now.timeIntervalSince(mtime) > maxAge { continue }
+                var entry = cache.files[url.path] ?? FileEntry()
+                if size < entry.size { entry = FileEntry() }
+                if size != entry.size {
+                    parse(url: url, sessionID: url.deletingPathExtension().lastPathComponent,
+                          into: &entry, calendar: calendar)
+                    entry.size = size
+                }
+                live[url.path] = entry
+                result.files += 1
+                if let cwd = entry.cwd { result.cwds.insert(cwd) }
+                for (key, day) in entry.days { result.days[key] = (result.days[key] ?? Stats.Day()) + day }
+            }
+        }
+        cache.files = live
+        if let cacheURL, let data = try? JSONEncoder().encode(cache) {
+            try? fm.createDirectory(at: cacheURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try? data.write(to: cacheURL, options: .atomic)
+        }
+        return result
+    }
+
+    static func parse(url: URL, sessionID: String, into entry: inout FileEntry, calendar: Calendar) {
+        guard let handle = try? FileHandle(forReadingFrom: url) else { return }
+        defer { try? handle.close() }
+        guard (try? handle.seek(toOffset: UInt64(entry.offset))) != nil,
+              let data = try? handle.readToEnd(), !data.isEmpty else { return }
+        let newline = UInt8(ascii: "\n")
+        guard let lastNewline = data.lastIndex(of: newline) else { return }
+        let complete = data[data.startIndex...lastNewline]
+        var lineStart = complete.startIndex
+        while lineStart < complete.endIndex {
+            let lineEnd = complete[lineStart...].firstIndex(of: newline) ?? complete.endIndex
+            let line = complete[lineStart..<lineEnd]
+            lineStart = lineEnd + 1
+            // Cheap pre-filter: only user/assistant entries matter.
+            guard line.range(of: Data("\"type\":\"user\"".utf8)) != nil
+                    || line.range(of: Data("\"type\":\"assistant\"".utf8)) != nil,
+                  let obj = try? JSONSerialization.jsonObject(with: line) as? [String: Any] else { continue }
+            ingest(obj, sessionID: sessionID, into: &entry, calendar: calendar)
+        }
+        entry.offset += complete.count
+    }
 }
