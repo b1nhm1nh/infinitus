@@ -27,6 +27,10 @@ final class MirrorModel: ObservableObject, FleetModel {
     func awsLogin(for pid: Int) -> AwsLogin.Item? {
         awsLogins.first { $0.pid == pid }
     }
+    /// The Stats tab's four-period bundle, verbatim from the snapshot
+    /// (2026-09-04); `nil` for snapshots captured before this field
+    /// existed, or before the Mac's first scan finished.
+    var stats: Stats.Bundle? { snapshot?.stats }
     /// One engine's fleet per element, in the Mac's popup order.
     @Published private(set) var fleets: [MirrorFleetModel] = []
     private var fleetSinks: [String: AnyCancellable] = [:]

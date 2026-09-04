@@ -44,6 +44,10 @@ public struct MirrorSnapshot: Codable, Sendable {
     /// Sessions whose AWS sign-in lapsed, with any login in flight
     /// (AwsLogin.swift, 2026-09-03). Additive optional.
     public let awsLogins: [AwsLogin.Item]?
+    /// The Stats pane's four-period bundle (2026-09-04), day series
+    /// dropped and its sets compacted so the whole thing stays small.
+    /// Additive optional.
+    public let stats: Stats.Bundle?
 
     public init(capturedAt: Date, machineName: String, listJSON: Data,
                 sessions: [SessionPanelRow], prefs: FleetPrefs? = nil,
@@ -55,7 +59,8 @@ public struct MirrorSnapshot: Codable, Sendable {
                 tokenRate: TokenRate? = nil,
                 forecast: UsageForecast? = nil,
                 plan: WindowPlanner.Plan? = nil,
-                awsLogins: [AwsLogin.Item]? = nil) {
+                awsLogins: [AwsLogin.Item]? = nil,
+                stats: Stats.Bundle? = nil) {
         self.capturedAt = capturedAt
         self.machineName = machineName
         self.listJSON = listJSON
@@ -70,6 +75,7 @@ public struct MirrorSnapshot: Codable, Sendable {
         self.forecast = forecast
         self.plan = plan
         self.awsLogins = awsLogins
+        self.stats = stats
     }
 }
 
