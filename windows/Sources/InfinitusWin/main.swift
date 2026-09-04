@@ -22,6 +22,7 @@ let commands: [String: ([String]) -> Int32] = [
     "message": message,
     "resume": resume,
     "serve": serve,
+    "control": control,
 ]
 
 func fail(_ message: String) -> Never {
@@ -294,7 +295,9 @@ func serve(_ args: [String]) -> Int32 {
         print("token \(MirrorPairing.mask(token)) — `infinitus-win pair` prints the pairing URL")
         print("if the phone can't reach it, allow inbound TCP \(bound):")
         print("  netsh advfirewall firewall add rule name=\"Infinitus \(bound)\" dir=in action=allow protocol=TCP localport=\(bound)")
-        WinBonjour.advertise(port: bound)
+        let advertised = WinBonjour.advertise(port: bound)
+        ControlServer.start(claudeDir: claudeDir, snapshot: snapshot)
+        ControlServer.recordState(port: bound, bonjour: advertised)
         fflush(stdout)
         RunLoop.main.run()
     } catch {
