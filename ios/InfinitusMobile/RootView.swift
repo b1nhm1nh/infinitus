@@ -1,9 +1,11 @@
 import SwiftUI
 import InfinitusUI
 
-/// The app shell (#9 native shell): three tabs on a phone, or — for
-/// anyone who wants the 1:1 rendering back — the Mac popup itself
-/// ("Show as Mac popup", Settings, default off).
+/// The app shell (#9 native shell): three tabs on a phone — Sessions is
+/// home (user 2026-09-04: the phone is opened for what's waiting; the
+/// fleet is the detail) — or, for anyone who wants the 1:1 rendering
+/// back, the Mac popup itself ("Show as Mac popup", Settings, default
+/// off).
 ///
 /// The mirror polling and the intro replay live HERE, not in a screen:
 /// both shells read the same model, and only one of them is on screen.
@@ -15,7 +17,7 @@ struct RootView: View {
     /// `INFINITUS_MIRROR_PATH` is, so a headless simulator capture can
     /// show a screen no one can tap to.
     @State private var tab = ProcessInfo.processInfo
-        .environment["INFINITUS_TAB"] ?? "fleet"
+        .environment["INFINITUS_TAB"] ?? "sessions"
 
     var body: some View {
         Group {
@@ -39,16 +41,22 @@ struct RootView: View {
         .onChange(of: scenePhase) { _, phase in
             if phase == .active, model.snapshotLoaded { model.replayIntro() }
         }
+        .onChange(of: model.requestedTab) { _, requested in
+            guard let requested else { return }
+            tab = requested
+            model.requestedTab = nil
+        }
     }
 
     private var tabs: some View {
         TabView(selection: $tab) {
-            NativeFleetScreen(model: model, usage: usage)
-                .tabItem { Label("Fleet", systemImage: "gauge.with.dots.needle.67percent") }
-                .tag("fleet")
             SessionsScreen(model: model, progress: model.sessionProgress)
                 .tabItem { Label("Sessions", systemImage: "brain") }
                 .tag("sessions")
+                .badge(model.liveSessions?.waiting ?? 0)
+            NativeFleetScreen(model: model, usage: usage)
+                .tabItem { Label("Fleet", systemImage: "gauge.with.dots.needle.67percent") }
+                .tag("fleet")
             NavigationStack {
                 SettingsForm(model: model)
                     .navigationTitle("Settings")

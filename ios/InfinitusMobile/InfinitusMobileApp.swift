@@ -59,7 +59,12 @@ struct InfinitusMobileApp: App {
             RootView(model: model)
                 // `infinitus://pair?url=…&token=…` — the QR the Mac shows,
                 // opened from anywhere on the phone (#9 remote access).
-                .onOpenURL { url in model.applyPairing(url.absoluteString) }
+                .onOpenURL { url in
+                    // `infinitus://sessions` — a Live Activity tap lands on
+                    // whatever is waiting, not the fleet.
+                    if url.host == "sessions" { model.requestedTab = "sessions" }
+                    else { model.applyPairing(url.absoluteString) }
+                }
         }
         .onChange(of: scenePhase) { _, phase in
             // Leaving: ask for a background refresh so the Live Activities

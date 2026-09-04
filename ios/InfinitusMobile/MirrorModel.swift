@@ -272,6 +272,9 @@ final class MirrorModel: ObservableObject, FleetModel {
     var battlePlan: WindowPlanner.Plan? { snapshot?.plan }
     /// The "at this pace" line's tap: NativeFleetScreen pushes OutlookScreen.
     @Published var outlookShown = false
+    /// A screen asking the shell to switch tabs (the Fleet hero's
+    /// sessions line, a Live Activity tap); RootView consumes it.
+    @Published var requestedTab: String?
     func openForecast() { outlookShown = true }
     var switchFlashTick: Int { primary?.switchFlashTick ?? 0 }
     var deathTicks: [Int: Int] { primary?.deathTicks ?? [:] }
