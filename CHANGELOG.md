@@ -7,6 +7,9 @@ publishes the matching section as the GitHub release body.
 
 ## 0.4.3 (unreleased)
 
+### Stats
+- Where the effort went: minutes, tokens and spend per activity (review, tests, plan, debugging, browser, simulator, explanations, coding) and per model, on the Mac and the phone — heuristic labels, one full rescan on first refresh.
+
 ### Fixes
 - AWS logins survive a Mac relaunch, and a need that failed just before a launch still reaches the phone.
 - Haiku session names now cover the sessions Claude Code named itself (`limitless-bf`, `banyan-51`…).
