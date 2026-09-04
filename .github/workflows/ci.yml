@@ -58,3 +58,16 @@ jobs:
       - uses: actions/checkout@v4
       - run: swift build
       - run: swift test
+  # Best-effort until swift-crypto, zlib and sockets are confirmed on
+  # Windows (docs/superpowers/specs/2026-09-05-team-design.md §9):
+  # failures here don't block a merge yet.
+  windows:
+    runs-on: windows-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: compnerd/gha-setup-swift@v3
+        with:
+          branch: swift-6.1-release
+          tag: 6.1-RELEASE
+      - run: swift build --product infinitusctl
