@@ -1,88 +1,43 @@
 # Changelog
 
-Composed release notes — what changed and why it matters, not a list of
-commit links. The release workflow publishes the matching section as the
-GitHub release body.
+Product notes: concise, what you get and why it matters — no commit
+links, no internals or workflow detail (user 2026-09-04). The release
+workflow publishes the matching section as the GitHub release body.
 
 ## 0.4.2 (unreleased)
 
 ### All accounts limited
-- **A floating revival countdown** (issue #1's macOS half). When every
-  account is limited, a small always-on-top panel shows who recovers
-  first and a live countdown, with the sessions waiting to resume.
-  Click it for the popup; ✕ hides it until the next revival. Settings →
-  Display → "Floating countdown when every account is limited" (on by
-  default). The same state the phone's Live Activity shows.
+- **Floating revival countdown.** When every account is limited, a small
+  always-on-top panel shows who recovers first, a live countdown and
+  the sessions waiting to resume. Settings → Display to turn it off.
 
 ### Forecast
-- **Projections anchor to the sample, not the poll.** "Binds at",
-  "all accounts out" and the battle plan's bind extrapolate from when
-  the engine read the percentages; anchored to the wall clock they
-  crept later on every poll between fetches and snapped back on the
-  next sample.
+- "Binds at", "all accounts out" and the battle plan no longer drift
+  later between polls.
 
 ### Phone
-- **Idle sessions carry their names.** The mirror snapshot now ships
-  the Mac's scan of every listed session, so an idle session's name
-  and AWS need reach the phone, not only the busy six.
-- **Notifications reach the phone directly** (issue #3). Every alert the
-  Mac posts — a switch, a resumed session, an account back in rotation,
-  every account at its limit, the "Also push when" triggers — also goes
-  to any phone that registered for alerts, as a plain APNs notification
-  with the same key that drives the Live Activities. No Slack or
-  Telegram in between. Needs the phone build that registers an `alert`
-  token; until one does, nothing is sent.
-- **Dictate a message.** A mic in the session composer streams what you
-  say into the draft as you speak (Apple's on-device recognizer where
-  the language allows, punctuation added); stop, edit, send. No server
-  of ours, no tokens.
-- **Paste an image.** The paperclip menu offers "Paste Image" when the
-  clipboard holds one — a screenshot goes in like a photo.
-- **Continue a stopped session from the phone** (Mac half). A `resume`
-  input asks the Mac to send its own "continue where you left off"
-  message into the session — whatever stopped it: a limit, a crash, a
-  closed terminal — socket first, terminal fallback, the same replies as
-  a message. The phone's Continue button lands with the next phone build.
-- **Tool runs stay grouped through errors.** A failed call no longer
-  splits the run into a stack of chips; the chip counts the errors
-  ("(×7 · 2 errors)") and shows the latest call or error.
+- **Continue a stopped session** from the phone — one button, whatever
+  stopped it (a limit, a crash, a closed terminal).
+- **Dictate a message.** A mic in the composer; on-device, no server.
+- **Paste an image** from the clipboard, straight into the chat.
+- **Notifications straight to the phone** (issue #3) — every alert the
+  Mac posts, no Slack or Telegram in between. Ships once the phone
+  build can register for them.
+- Idle sessions show their names, not just the busy ones.
+- Tool runs stay grouped through errors, with an error count on the chip.
 
 ### Linux tray
-- **Needs-AWS-login line and connected phones** (parity with the Mac).
-  A session whose AWS session expired says "needs AWS login · profile"
-  on its row, and the footer names the phone last heard by
-  `infinitus-tray serve` ("Titan · Wi-Fi · 4 s ago", green while
-  inside the Mac's 90 s window). APNs pushes stay Mac-only: the .p8
-  key lives in the macOS keychain, and the tray already reaches the
-  phone through the engine's own push channels and `notify-send`.
+- Sessions that need an AWS login say so; the footer names the
+  connected phone.
 
 ### Site
-- **infinitus.run after a design critique** (Impeccable, 19/36 → the
-  P0 and P1s fixed): phones no longer scroll sideways (the install
-  grid's `1fr` tracks took each code block's longest line as a minimum;
-  the hero and demo lost the wrapper's side padding); secondary text
-  lifted from 2.8:1 to AA contrast; the popup video has controls and
-  stays still under reduced motion; the tray pill is hidden from
-  assistive tech; the unsigned-build and claude-swap facts sit under the
-  install command instead of five screens down, with claude-swap linked
-  everywhere it's named; the 19 feature cards are grouped (Watch &
-  switch / Phone / Wall & history / Integrations & agents); the lede
-  opens with the premise; a closing Download band before the footer;
-  the eyebrow above the headline is gone; the FAQ says the phone app
-  builds from source today.
+- infinitus.run reads well on phones: no sideways scroll, better
+  contrast, feature cards grouped by what they do.
 
 ### Fixes
-- **The popup no longer pegs the main thread while an account is in
-  the 90s.** The critical-row pulse re-ran the whole headroom sort on
-  every frame, and each sort built fresh ISO date formatters (an ICU
-  calendar per parse). With one such account the app sat at 80% CPU,
-  the control socket stopped answering and `infinitusctl switch` hung
-  — the e2e's "switch didn't take" flake was this. The sort now runs
-  once per fleet change, and date parsing uses cached formatters.
-- **A refused engine no longer reads as a crash.** The supervisor
-  decided crash-vs-refused when the child exited, which could beat the
-  pipe delivering its last line under load; it now waits for the pipe
-  to drain too (2 s cap for a grandchild holding it open).
+- The popup no longer burns CPU (and stops answering `infinitusctl`)
+  while an account sits in the 90s.
+- An engine that refuses to start no longer shows as a crash.
 
 ## 0.4.1
 
