@@ -136,35 +136,7 @@ Copy-Item (Join-Path $releaseDir "infinitus-win.exe") $installDir -Force
 Copy-Item (Join-Path $releaseDir "infinitus-tray-win.exe") $installDir -Force
 
 Write-Host "Copying Swift runtime DLLs from $runtimeBin..."
-# Transitive DLL dependency closure determined via dumpbin /dependents:
-$requiredDlls = @(
-    "_FoundationICU.dll",
-    "BlocksRuntime.dll",
-    "dispatch.dll",
-    "Foundation.dll",
-    "FoundationEssentials.dll",
-    "FoundationInternationalization.dll",
-    "FoundationNetworking.dll",
-    "MSVCP140.dll",
-    "swift_Concurrency.dll",
-    "swift_RegexParser.dll",
-    "swift_StringProcessing.dll",
-    "swiftCore.dll",
-    "swiftCRT.dll",
-    "swiftDispatch.dll",
-    "swiftWinSDK.dll",
-    "VCRUNTIME140.dll",
-    "VCRUNTIME140_1.dll"
-)
-
-foreach ($dll in $requiredDlls) {
-    $src = Join-Path $runtimeBin $dll
-    if (Test-Path $src) {
-        Copy-Item $src $installDir -Force
-    } else {
-        Write-Warning "Runtime DLL not found: $src"
-    }
-}
+& (Join-Path $PSScriptRoot "stage-dlls.ps1") -RuntimeBin $runtimeBin -TargetDir $installDir
 
 if ($Autostart) {
     Write-Host "Configuring autostart in HKCU Run..."

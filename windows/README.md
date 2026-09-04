@@ -58,13 +58,31 @@ Binary location: `.\.build\debug\infinitus-win.exe`.
 
 Debug binaries in `.\.build\debug` require Swift toolchain runtime DLLs on `PATH`
 (or sourcing `windows\env.ps1`). A bare double-click or autostart without the
-environment fails with exit `3221225781` (`0xC0000135`, `STATUS_DLL_NOT_FOUND`).
+environment fails with exit `3221225781` (`0xC0000135`, `STATUS_DLL_NOT_FOUND`)
+— and it fails **silently**, with no window, no message and an empty stderr, so
+it reads as "the app did nothing" rather than as an error.
 Furthermore, pointing autostart at `.build\` breaks whenever `.build\` is cleaned.
 
+To run a debug binary without `env.ps1` — a double-click, a smoke script, any
+launcher that doesn't inherit your shell — stage the DLLs beside it once:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\windows\stage-dlls.ps1 -TargetDir .build\debug
+```
+
+Re-run it after any toolchain upgrade. It is idempotent and safe while the tray
+or daemon is running: identical files are skipped, and anything genuinely locked
+is reported rather than throwing.
+
+A **debug** build needs one DLL a release build does not — `swiftSwiftOnoneSupport.dll`,
+the unoptimized-stdlib shim that `-Onone` imports. `stage-dlls.ps1` adds it
+automatically when the target directory is named `debug` (or with `-DebugBuild`);
+without it you get the same silent `0xC0000135` even though the other 17 are present.
+
 `windows\install.ps1` builds both `infinitus-win` and `infinitus-tray-win` in release
-configuration, copies them to `%LOCALAPPDATA%\Infinitus\bin\`, and bundles the 17
-required Swift runtime DLLs alongside them so they run standalone anywhere without
-sourcing `env.ps1`.
+configuration, copies them to `%LOCALAPPDATA%\Infinitus\bin\`, and stages the 17
+required Swift runtime DLLs alongside them (via the same script) so they run
+standalone anywhere without sourcing `env.ps1`.
 
 ### Install to `%LOCALAPPDATA%\Infinitus\bin`
 
