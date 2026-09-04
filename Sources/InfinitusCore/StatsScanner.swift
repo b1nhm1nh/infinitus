@@ -101,6 +101,8 @@ public enum StatsScanner {
         if entry.state.firstAt[key] == nil { entry.state.firstAt[key] = t }
         entry.state.lastAt[key] = t
         day.sessionSeconds = entry.state.lastAt[key]! - entry.state.firstAt[key]!
+        day.sessionBuckets = [0, 0, 0, 0]
+        day.sessionBuckets[Stats.Day.sessionBucket(seconds: day.sessionSeconds)] = 1
 
         if type == "user" {
             if obj["toolDenialKind"] != nil { day.denials += 1 }

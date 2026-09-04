@@ -28,6 +28,22 @@ final class StatsTests: XCTestCase {
         XCTAssertEqual(c.hours[3], 3)
     }
 
+    func testDayAddsSessionBuckets() {
+        var a = Stats.Day(); a.sessionBuckets = [1, 0, 0, 0]
+        var b = Stats.Day(); b.sessionBuckets = [0, 1, 1, 0]
+        let c = a + b
+        XCTAssertEqual(c.sessionBuckets, [1, 1, 1, 0])
+    }
+
+    func testSessionBucketBoundaries() {
+        XCTAssertEqual(Stats.Day.sessionBucket(seconds: 899), 0)
+        XCTAssertEqual(Stats.Day.sessionBucket(seconds: 900), 1)
+        XCTAssertEqual(Stats.Day.sessionBucket(seconds: 3599), 1)
+        XCTAssertEqual(Stats.Day.sessionBucket(seconds: 3600), 2)
+        XCTAssertEqual(Stats.Day.sessionBucket(seconds: 14399), 2)
+        XCTAssertEqual(Stats.Day.sessionBucket(seconds: 14400), 3)
+    }
+
     func testDerivedRatiosAreNilOnZero() {
         var d = Stats.Day()
         XCTAssertNil(d.messagesPerCommit)
@@ -164,10 +180,23 @@ final class StatsTests: XCTestCase {
         XCTAssertGreaterThan(d.usd, 0)
         XCTAssertEqual(d.sessions, ["s1"])
         XCTAssertEqual(d.sessionSeconds, 3611, accuracy: 0.5) // 01:00:00 → 02:00:11
+        XCTAssertEqual(d.sessionBuckets, [0, 0, 1, 0])        // 3611s falls in the 1-4h bucket
         XCTAssertEqual(d.waitingSeconds, 3600, accuracy: 0.5) // turn end 01:00:11 → phone message 02:00:11
         XCTAssertEqual(d.longestUnattended, 4)              // Bash, Bash, Agent, AskUserQuestion between the two human messages
         XCTAssertEqual(d.hours.reduce(0, +), 10)            // every entry lands in a slot
         XCTAssertEqual(e.cwd, "/r/a")
+    }
+
+    func testIngestSessionBucketMovesAsTheSpanCrossesFifteenMinutes() {
+        var e = StatsScanner.FileEntry()
+        StatsScanner.ingest(entry(#"{"type":"user","timestamp":"2026-09-04T01:00:00.000Z","origin":{"kind":"human"},"message":{"role":"user","content":"start"}}"#), sessionID: "s1", into: &e, calendar: cal)
+        var d = e.days["2026-09-04"]!
+        XCTAssertEqual(d.sessionSeconds, 0)
+        XCTAssertEqual(d.sessionBuckets, [1, 0, 0, 0])        // a single entry is a 0s span: <15m
+        StatsScanner.ingest(entry(#"{"type":"user","timestamp":"2026-09-04T01:20:00.000Z","origin":{"kind":"human"},"message":{"role":"user","content":"continue"}}"#), sessionID: "s1", into: &e, calendar: cal)
+        d = e.days["2026-09-04"]!
+        XCTAssertEqual(d.sessionSeconds, 1200, accuracy: 0.5) // 20 minutes
+        XCTAssertEqual(d.sessionBuckets, [0, 1, 0, 0])        // moved to 15-60m, exactly one 1
     }
 
     func testWaitingGapIsCappedAtEightHours() {

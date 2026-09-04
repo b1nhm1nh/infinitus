@@ -214,13 +214,24 @@ struct StatsPane: View {
     }
 
     private func sessionLengths(_ s: Stats.Summary) -> some View {
+        let labels = ["< 15 min", "15–60 min", "1–4 h", "> 4 h"]
+        let buckets = s.total.sessionBuckets
         let total = s.total.sessionSeconds
         let n = max(1, s.total.sessionCount)
-        return HStack {
-            Text("Session time").font(.caption).foregroundStyle(.secondary)
-            Spacer()
-            Text("\(Int(total / 3600)) h total · \(Int(total / Double(n) / 60)) min per session")
-                .font(.caption).monospacedDigit()
+        return VStack(alignment: .leading, spacing: 3) {
+            Text("Session lengths").font(.caption).foregroundStyle(.secondary)
+            Chart(Array(labels.enumerated()), id: \.offset) { i, label in
+                BarMark(x: .value("Sessions", buckets[i]), y: .value("Bucket", label))
+                    .foregroundStyle(Color.accentColor)
+            }
+            .chartXAxis(.hidden)
+            .frame(height: 90)
+            HStack {
+                Spacer()
+                Text("\(Int(total / 3600)) h total · \(Int(total / Double(n) / 60)) min per session")
+                    .font(.caption).foregroundStyle(.secondary).monospacedDigit()
+            }
         }
+        .padding(.vertical, 4)
     }
 }

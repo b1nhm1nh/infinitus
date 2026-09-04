@@ -30,6 +30,7 @@ public enum Stats {
         // Sessions
         public var sessions: Set<String> = []
         public var sessionSeconds = 0.0
+        public var sessionBuckets = [0, 0, 0, 0]   // <15m, 15-60m, 1-4h, >4h; one session per file-day
         public var hours: [Int] = Array(repeating: 0, count: 168)   // weekday(Mon=0)*24 + hour
         // Git
         public var commits = 0
@@ -75,6 +76,7 @@ public enum Stats {
             c.usd += b.usd
             c.sessions.formUnion(b.sessions)
             c.sessionSeconds += b.sessionSeconds
+            for i in 0..<4 { c.sessionBuckets[i] = a.sessionBuckets[i] + b.sessionBuckets[i] }
             for i in 0..<168 { c.hours[i] = a.hours[i] + b.hours[i] }
             c.commits += b.commits
             c.linesAdded += b.linesAdded
@@ -108,6 +110,14 @@ public enum Stats {
         public var humanShare: Double? { ratio(Double(messages), Double(messages + agentMessages + nudges)) }
         public var meanMergeHours: Double? { ratio(mergeHoursTotal, Double(mergeCount)) }
         private func ratio(_ n: Double, _ d: Double) -> Double? { d > 0 ? n / d : nil }
+
+        /// 0..3 by <15m, <1h, <4h, else >4h.
+        public static func sessionBucket(seconds: Double) -> Int {
+            if seconds < 900 { return 0 }
+            if seconds < 3600 { return 1 }
+            if seconds < 14400 { return 2 }
+            return 3
+        }
     }
 
     public enum Period: String, Codable, CaseIterable, Sendable {
