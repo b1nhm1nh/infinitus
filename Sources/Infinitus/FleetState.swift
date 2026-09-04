@@ -217,6 +217,23 @@ final class FleetState: ObservableObject, Identifiable {
         perform { try await engine.remove(fleet: provider, number: number) }
     }
 
+    /// Every account gets a fresh name from the theme's pool, in one
+    /// pass (user 2026-09-04 "randomize account names").
+    func randomizeNames() {
+        let engine = engine, provider = provider
+        let names = rowTheme.randomAccountNames(count: accounts.count)
+        let pairs = Array(zip(accounts.map(\.number), names))
+        Task {
+            do {
+                for (number, name) in pairs {
+                    try await engine.rename(fleet: provider, number: number, name)
+                }
+                host.reorderError = nil
+            } catch { host.reorderError = "\(error)" }
+            await host.refreshSnapshot()
+        }
+    }
+
     /// Rename = set/clear the account's alias, so every frontend
     /// (TUI, CLI, popup) shows the same name.
     func rename(_ number: Int, to name: String) {

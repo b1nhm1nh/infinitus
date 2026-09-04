@@ -12,6 +12,9 @@ publishes the matching section as the GitHub release body.
 - Haiku session names now cover the sessions Claude Code named itself (`limitless-bf`, `banyan-51`…).
 - Phone dictation never sits on "Translating…": a missing language pack asks to download, and after ten seconds the take goes out as spoken.
 
+### Accounts
+- Randomize names: every account gets a fresh name from the current theme's pool (Settings › Accounts, or `infinitusctl randomize-names`).
+
 ### Phone
 - A lighter chat header: compact by default, or a stat strip with mini gauges (Settings › Appearance › Chat header).
 - Screenshots go out in one tap: the camera button in a chat, any screenshot you take offered in the next chat, or a shake anywhere.

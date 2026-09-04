@@ -212,6 +212,19 @@ final class ControlServer {
             await model.refreshSnapshot()
             return ControlReply(ok: true, result: try .of(["fleet": fleetPayload(fleet)]))
 
+        case "randomize-names":
+            guard let key = r.args.first, let fleet = model.fleets.first(where: { $0.id == key }) else {
+                throw Fail("usage: randomize-names <fleet>")
+            }
+            guard fleet.capabilities.contains(.rename) else { throw Fail("\(fleet.id) does not support rename") }
+            let names = model.rowTheme.randomAccountNames(count: fleet.accounts.count)
+            for (account, name) in zip(fleet.accounts, names) {
+                try await fleet.engine.rename(fleet: fleet.provider, number: account.number, name)
+            }
+            await model.refreshSnapshot()
+            struct Payload: Encodable { let fleet: FleetPayload; let names: [String] }
+            return ControlReply(ok: true, result: try .of(Payload(fleet: fleetPayload(fleet), names: names)))
+
         case "rotate":
             let fleet = try fleet(r)
             guard fleet.capabilities.contains(.rotate) else { throw Fail("\(fleet.id) does not support rotate") }
