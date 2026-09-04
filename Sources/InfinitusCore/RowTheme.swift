@@ -70,6 +70,17 @@ public struct RowTheme: Codable, Equatable, Sendable, Identifiable {
     /// from the supported themes"). Empty on Off and on custom themes
     /// that don't define one; the picker then draws from every built-in.
     public var accountNames: [String]
+    /// The phone's placeholder copy, keyed "loading" (a feed on its
+    /// way), "empty" (a feed with nothing in it), "noSessions" (the
+    /// list with nothing live) and "searching" (no Mac reachable yet);
+    /// missing keys keep the plain words (user 2026-09-05: "themify the
+    /// loading texts, animation, icons too").
+    public var loadingWords: [String: String]
+    /// The icon those placeholders show ("sf:<symbol>" or an emoji) and
+    /// how it moves: "spin", "pulse", "bounce" or "flicker". Empty keeps
+    /// the system spinner.
+    public var loadingIcon: String
+    public var loadingMotion: String
 
     public init(
         id: String, name: String, plain: Bool = false,
@@ -88,7 +99,9 @@ public struct RowTheme: Codable, Equatable, Sendable, Identifiable {
         nextIcon: String = "", activeIcon: String = "",
         sessionWords: [String: String] = [:],
         tabLabels: [String: String] = [:], tabIcons: [String: String] = [:],
-        accountNames: [String] = []
+        accountNames: [String] = [],
+        loadingWords: [String: String] = [:],
+        loadingIcon: String = "", loadingMotion: String = ""
     ) {
         self.id = id
         self.name = name
@@ -118,10 +131,17 @@ public struct RowTheme: Codable, Equatable, Sendable, Identifiable {
         self.tabLabels = tabLabels
         self.tabIcons = tabIcons
         self.accountNames = accountNames
+        self.loadingWords = loadingWords
+        self.loadingIcon = loadingIcon
+        self.loadingMotion = loadingMotion
     }
 
     public static let plainSessionWords = [
         "busy": "Working", "waiting": "Waiting on you", "idle": "Idle", "shell": "At the shell",
+    ]
+    public static let plainLoadingWords = [
+        "loading": "Loading…", "empty": "Nothing here yet",
+        "noSessions": "No live sessions", "searching": "Looking for the Mac…",
     ]
     public static let plainTabLabels = ["sessions": "Sessions", "fleet": "Fleet", "settings": "Settings"]
     public static let plainTabIcons = [
@@ -135,6 +155,7 @@ public struct RowTheme: Codable, Equatable, Sendable, Identifiable {
     }
     public func tabLabel(_ tab: String) -> String { tabLabels[tab] ?? Self.plainTabLabels[tab] ?? tab }
     public func tabIcon(_ tab: String) -> String { tabIcons[tab] ?? Self.plainTabIcons[tab] ?? "sf:circle" }
+    public func loadingWord(_ key: String) -> String { loadingWords[key] ?? Self.plainLoadingWords[key] ?? key }
 
     /// Theme name for a model ("Fable" -> "Dragon"); real name otherwise.
     public func modelName(_ name: String?) -> String {
@@ -181,7 +202,10 @@ public struct RowTheme: Codable, Equatable, Sendable, Identifiable {
             sessionWords: try c.decodeIfPresent([String: String].self, forKey: .sessionWords) ?? [:],
             tabLabels: try c.decodeIfPresent([String: String].self, forKey: .tabLabels) ?? [:],
             tabIcons: try c.decodeIfPresent([String: String].self, forKey: .tabIcons) ?? [:],
-            accountNames: try c.decodeIfPresent([String].self, forKey: .accountNames) ?? []
+            accountNames: try c.decodeIfPresent([String].self, forKey: .accountNames) ?? [],
+            loadingWords: try c.decodeIfPresent([String: String].self, forKey: .loadingWords) ?? [:],
+            loadingIcon: try c.decodeIfPresent(String.self, forKey: .loadingIcon) ?? "",
+            loadingMotion: try c.decodeIfPresent(String.self, forKey: .loadingMotion) ?? ""
         )
     }
 
@@ -235,7 +259,9 @@ public struct RowTheme: Codable, Equatable, Sendable, Identifiable {
         sessionWords: ["busy": "Questing", "waiting": "Awaiting orders", "idle": "Resting at camp", "shell": "In the forge"],
         tabLabels: ["sessions": "Quests", "fleet": "Party", "settings": "Inventory"],
         tabIcons: ["sessions": "sf:scroll", "fleet": "sf:person.3.fill", "settings": "sf:bag.fill"],
-        accountNames: ["Paladin", "Ranger", "Rogue", "Cleric", "Wizard", "Warlock", "Druid", "Monk", "Knight", "Archer", "Sorcerer", "Barbarian", "Alchemist", "Sentinel", "Necromancer", "Bard"])
+        accountNames: ["Paladin", "Ranger", "Rogue", "Cleric", "Wizard", "Warlock", "Druid", "Monk", "Knight", "Archer", "Sorcerer", "Barbarian", "Alchemist", "Sentinel", "Necromancer", "Bard"],
+        loadingWords: ["loading": "Rolling initiative…", "empty": "The quest log is blank", "noSessions": "No quests underway", "searching": "Scouting for the Mac…"],
+        loadingIcon: "sf:dice.fill", loadingMotion: "spin")
 
     public static let movie = RowTheme(
         id: "movie", name: "Movie — reels & box office",
@@ -252,7 +278,9 @@ public struct RowTheme: Codable, Equatable, Sendable, Identifiable {
         sessionWords: ["busy": "Rolling", "waiting": "Waiting for the cue", "idle": "Intermission", "shell": "Backstage"],
         tabLabels: ["sessions": "Scenes", "fleet": "Cast", "settings": "Studio"],
         tabIcons: ["sessions": "sf:film", "fleet": "sf:person.3.fill", "settings": "sf:slider.horizontal.3"],
-        accountNames: ["Director", "Producer", "Stuntman", "Cameo", "Montage", "Premiere", "Sequel", "Matinee", "Blockbuster", "Cliffhanger", "Trailer", "Voiceover", "Screenplay", "Boxoffice", "Redcarpet", "Cutscene"])
+        accountNames: ["Director", "Producer", "Stuntman", "Cameo", "Montage", "Premiere", "Sequel", "Matinee", "Blockbuster", "Cliffhanger", "Trailer", "Voiceover", "Screenplay", "Boxoffice", "Redcarpet", "Cutscene"],
+        loadingWords: ["loading": "Rolling film…", "empty": "Nothing on the reel yet", "noSessions": "No reels rolling", "searching": "Finding the projector…"],
+        loadingIcon: "sf:film", loadingMotion: "spin")
 
     public static let hades = RowTheme(
         id: "hades", name: "Hades — blades & darkness",
@@ -269,7 +297,9 @@ public struct RowTheme: Codable, Equatable, Sendable, Identifiable {
         sessionWords: ["busy": "Fighting", "waiting": "Awaiting the call", "idle": "In the lounge", "shell": "At the forge"],
         tabLabels: ["sessions": "Runs", "fleet": "Pantheon", "settings": "Mirror"],
         tabIcons: ["sessions": "sf:flame", "fleet": "sf:person.3.fill", "settings": "sf:sparkles"],
-        accountNames: ["Zagreus", "Megaera", "Thanatos", "Cerberus", "Nyx", "Chaos", "Charon", "Hypnos", "Achilles", "Patroclus", "Orpheus", "Eurydice", "Sisyphus", "Dusa", "Skelly", "Hermes"])
+        accountNames: ["Zagreus", "Megaera", "Thanatos", "Cerberus", "Nyx", "Chaos", "Charon", "Hypnos", "Achilles", "Patroclus", "Orpheus", "Eurydice", "Sisyphus", "Dusa", "Skelly", "Hermes"],
+        loadingWords: ["loading": "Crossing the Styx…", "empty": "The river is still", "noSessions": "No fights underway", "searching": "Calling for Charon…"],
+        loadingIcon: "sf:flame.fill", loadingMotion: "flicker")
 
     public static let mgs = RowTheme(
         id: "mgs", name: "Metal Gear — tactical espionage",
@@ -286,7 +316,9 @@ public struct RowTheme: Codable, Equatable, Sendable, Identifiable {
         sessionWords: ["busy": "On mission", "waiting": "Awaiting orders", "idle": "In the box", "shell": "At the armory"],
         tabLabels: ["sessions": "Missions", "fleet": "Squad", "settings": "Codec"],
         tabIcons: ["sessions": "sf:target", "fleet": "sf:person.3.fill", "settings": "sf:antenna.radiowaves.left.and.right"],
-        accountNames: ["Snake", "Otacon", "Raiden", "Ocelot", "Meryl", "Gray-Fox", "Sniper-Wolf", "Psycho-Mantis", "Vulcan-Raven", "Liquid", "Solidus", "Big-Boss", "Campbell", "Naomi", "Mei-Ling", "Kaz"])
+        accountNames: ["Snake", "Otacon", "Raiden", "Ocelot", "Meryl", "Gray-Fox", "Sniper-Wolf", "Psycho-Mantis", "Vulcan-Raven", "Liquid", "Solidus", "Big-Boss", "Campbell", "Naomi", "Mei-Ling", "Kaz"],
+        loadingWords: ["loading": "Establishing codec link…", "empty": "No intel yet", "noSessions": "No missions active", "searching": "Contacting HQ…"],
+        loadingIcon: "sf:antenna.radiowaves.left.and.right", loadingMotion: "flicker")
 
     public static let agent = RowTheme(
         id: "agent", name: "AI Agentic — tokens & context",
@@ -303,7 +335,9 @@ public struct RowTheme: Codable, Equatable, Sendable, Identifiable {
         sessionWords: ["busy": "Reasoning", "waiting": "Blocked on a human", "idle": "Idle", "shell": "In the shell"],
         tabLabels: ["sessions": "Agents", "fleet": "Providers", "settings": "Config"],
         tabIcons: ["sessions": "sf:cpu", "fleet": "sf:server.rack", "settings": "sf:gearshape"],
-        accountNames: ["Planner", "Executor", "Router", "Retriever", "Critic", "Verifier", "Summarizer", "Orchestrator", "Scout", "Worker", "Reviewer", "Indexer", "Sampler", "Toolsmith", "Tokenizer", "Grader"])
+        accountNames: ["Planner", "Executor", "Router", "Retriever", "Critic", "Verifier", "Summarizer", "Orchestrator", "Scout", "Worker", "Reviewer", "Indexer", "Sampler", "Toolsmith", "Tokenizer", "Grader"],
+        loadingWords: ["loading": "Streaming tokens…", "empty": "Empty context", "noSessions": "No agents running", "searching": "Resolving the Mac…"],
+        loadingIcon: "sf:cpu", loadingMotion: "pulse")
 
     public static let swe = RowTheme(
         id: "swe", name: "Classic SWE — hand-written, no AI",
@@ -320,7 +354,9 @@ public struct RowTheme: Codable, Equatable, Sendable, Identifiable {
         sessionWords: ["busy": "Coding", "waiting": "Needs review", "idle": "Idle", "shell": "At the terminal"],
         tabLabels: ["sessions": "Tickets", "fleet": "Team", "settings": "Preferences"],
         tabIcons: ["sessions": "sf:ticket", "fleet": "sf:person.3.fill", "settings": "sf:gearshape"],
-        accountNames: ["Compiler", "Linker", "Debugger", "Kernel", "Daemon", "Pointer", "Mutex", "Segfault", "Bytecode", "Makefile", "Heap", "Stack", "Register", "Opcode", "Syscall", "Refactor"])
+        accountNames: ["Compiler", "Linker", "Debugger", "Kernel", "Daemon", "Pointer", "Mutex", "Segfault", "Bytecode", "Makefile", "Heap", "Stack", "Register", "Opcode", "Syscall", "Refactor"],
+        loadingWords: ["loading": "Compiling…", "empty": "Empty log", "noSessions": "No builds running", "searching": "Pinging the Mac…"],
+        loadingIcon: "sf:terminal", loadingMotion: "pulse")
 
     public static let scifi = RowTheme(
         id: "scifi", name: "Sci-Fi — warp cores & shields",
@@ -337,7 +373,9 @@ public struct RowTheme: Codable, Equatable, Sendable, Identifiable {
         sessionWords: ["busy": "Warping", "waiting": "Awaiting command", "idle": "Docked", "shell": "In engineering"],
         tabLabels: ["sessions": "Missions", "fleet": "Fleet", "settings": "Bridge"],
         tabIcons: ["sessions": "sf:scope", "fleet": "sf:airplane", "settings": "sf:slider.horizontal.3"],
-        accountNames: ["Nebula", "Warpcore", "Photon", "Andromeda", "Quasar", "Deflector", "Hyperdrive", "Replicator", "Tachyon", "Starboard", "Airlock", "Cryopod", "Phaser", "Nacelle", "Wormhole", "Singularity"])
+        accountNames: ["Nebula", "Warpcore", "Photon", "Andromeda", "Quasar", "Deflector", "Hyperdrive", "Replicator", "Tachyon", "Starboard", "Airlock", "Cryopod", "Phaser", "Nacelle", "Wormhole", "Singularity"],
+        loadingWords: ["loading": "Charging the warp core…", "empty": "No transmissions yet", "noSessions": "No ships underway", "searching": "Hailing the Mac…"],
+        loadingIcon: "sf:atom", loadingMotion: "spin")
 
     public static let west = RowTheme(
         id: "west", name: "Wild West — six-guns & gold rush",
@@ -354,7 +392,9 @@ public struct RowTheme: Codable, Equatable, Sendable, Identifiable {
         sessionWords: ["busy": "Riding", "waiting": "At the saloon", "idle": "Camped", "shell": "At the smithy"],
         tabLabels: ["sessions": "Posses", "fleet": "Ranch", "settings": "Saddlebag"],
         tabIcons: ["sessions": "sf:hare", "fleet": "sf:house", "settings": "sf:bag"],
-        accountNames: ["Sheriff", "Outlaw", "Marshal", "Deputy", "Wrangler", "Gunslinger", "Prospector", "Bandit", "Drifter", "Rancher", "Saloon", "Stagecoach", "Tumbleweed", "Maverick", "Bronco", "Mustang"])
+        accountNames: ["Sheriff", "Outlaw", "Marshal", "Deputy", "Wrangler", "Gunslinger", "Prospector", "Bandit", "Drifter", "Rancher", "Saloon", "Stagecoach", "Tumbleweed", "Maverick", "Bronco", "Mustang"],
+        loadingWords: ["loading": "Saddling up…", "empty": "Tumbleweeds only", "noSessions": "Nobody's riding", "searching": "Tracking the Mac…"],
+        loadingIcon: "sf:sun.max.fill", loadingMotion: "spin")
 
     public static let cyber = RowTheme(
         id: "cyber", name: "Cyberpunk — chrome & neon",
@@ -371,7 +411,9 @@ public struct RowTheme: Codable, Equatable, Sendable, Identifiable {
         sessionWords: ["busy": "Jacked in", "waiting": "Awaiting handshake", "idle": "Idle", "shell": "In the terminal"],
         tabLabels: ["sessions": "Runs", "fleet": "Rig", "settings": "Deck"],
         tabIcons: ["sessions": "sf:bolt", "fleet": "sf:cpu", "settings": "sf:slider.horizontal.3"],
-        accountNames: ["Netrunner", "Chrome", "Neon", "Glitch", "Static", "Proxy", "Cipher", "Ghost", "Wetware", "Blackice", "Datajack", "Overclock", "Synth", "Mainframe", "Firewall", "Zero-Day"])
+        accountNames: ["Netrunner", "Chrome", "Neon", "Glitch", "Static", "Proxy", "Cipher", "Ghost", "Wetware", "Blackice", "Datajack", "Overclock", "Synth", "Mainframe", "Firewall", "Zero-Day"],
+        loadingWords: ["loading": "Jacking in…", "empty": "Empty buffer", "noSessions": "No runs active", "searching": "Scanning for the Mac…"],
+        loadingIcon: "sf:bolt.fill", loadingMotion: "flicker")
 
     public static let gothic = RowTheme(
         id: "gothic", name: "Gothic — candles & cathedrals",
@@ -388,7 +430,9 @@ public struct RowTheme: Codable, Equatable, Sendable, Identifiable {
         sessionWords: ["busy": "Chanting", "waiting": "Awaiting confession", "idle": "At rest", "shell": "In the crypt"],
         tabLabels: ["sessions": "Rites", "fleet": "Coven", "settings": "Sacristy"],
         tabIcons: ["sessions": "sf:flame", "fleet": "sf:person.3.fill", "settings": "sf:gearshape"],
-        accountNames: ["Raven", "Belfry", "Gargoyle", "Candle", "Crypt", "Requiem", "Cathedral", "Vesper", "Nocturne", "Wraith", "Ember", "Sepulcher", "Lantern", "Moth", "Thorn", "Abbey"])
+        accountNames: ["Raven", "Belfry", "Gargoyle", "Candle", "Crypt", "Requiem", "Cathedral", "Vesper", "Nocturne", "Wraith", "Ember", "Sepulcher", "Lantern", "Moth", "Thorn", "Abbey"],
+        loadingWords: ["loading": "Lighting the candles…", "empty": "The nave is silent", "noSessions": "No rites tonight", "searching": "Listening for the bell…"],
+        loadingIcon: "sf:flame", loadingMotion: "flicker")
 
     public static let musical = RowTheme(
         id: "musical", name: "Musical — tempo & encores",
@@ -405,7 +449,9 @@ public struct RowTheme: Codable, Equatable, Sendable, Identifiable {
         sessionWords: ["busy": "Performing", "waiting": "Awaiting the conductor", "idle": "Between sets", "shell": "Tuning"],
         tabLabels: ["sessions": "Sets", "fleet": "Ensemble", "settings": "Mixer"],
         tabIcons: ["sessions": "sf:music.note.list", "fleet": "sf:person.3.fill", "settings": "sf:slider.horizontal.3"],
-        accountNames: ["Overture", "Encore", "Tempo", "Crescendo", "Allegro", "Sonata", "Cadenza", "Aria", "Rondo", "Fugue", "Prelude", "Finale", "Vibrato", "Staccato", "Maestro", "Coda"])
+        accountNames: ["Overture", "Encore", "Tempo", "Crescendo", "Allegro", "Sonata", "Cadenza", "Aria", "Rondo", "Fugue", "Prelude", "Finale", "Vibrato", "Staccato", "Maestro", "Coda"],
+        loadingWords: ["loading": "Tuning the orchestra…", "empty": "An empty score", "noSessions": "No sets playing", "searching": "Finding the conductor…"],
+        loadingIcon: "sf:music.note", loadingMotion: "bounce")
 
     public static let earth = RowTheme(
         id: "earth", name: "Planet Earth — wild documentary",
@@ -422,7 +468,9 @@ public struct RowTheme: Codable, Equatable, Sendable, Identifiable {
         sessionWords: ["busy": "Hunting", "waiting": "Waiting for the herd", "idle": "Grazing", "shell": "Burrowing"],
         tabLabels: ["sessions": "Herds", "fleet": "Habitat", "settings": "Field notes"],
         tabIcons: ["sessions": "sf:leaf", "fleet": "sf:globe.americas", "settings": "sf:book"],
-        accountNames: ["Falcon", "Orca", "Panther", "Condor", "Wolf", "Otter", "Lynx", "Heron", "Bison", "Jaguar", "Puffin", "Gecko", "Mantis", "Ibex", "Marlin", "Osprey"])
+        accountNames: ["Falcon", "Orca", "Panther", "Condor", "Wolf", "Otter", "Lynx", "Heron", "Bison", "Jaguar", "Puffin", "Gecko", "Mantis", "Ibex", "Marlin", "Osprey"],
+        loadingWords: ["loading": "Tracking the herd…", "empty": "Nothing stirs", "noSessions": "No hunts underway", "searching": "Following the migration…"],
+        loadingIcon: "sf:leaf.fill", loadingMotion: "bounce")
 
     public static let cosmo = RowTheme(
         id: "cosmo", name: "Cosmos — stars & black holes",
@@ -439,7 +487,9 @@ public struct RowTheme: Codable, Equatable, Sendable, Identifiable {
         sessionWords: ["busy": "Orbiting", "waiting": "Awaiting ground control", "idle": "Drifting", "shell": "In the airlock"],
         tabLabels: ["sessions": "Missions", "fleet": "Constellation", "settings": "Mission control"],
         tabIcons: ["sessions": "sf:moon.stars", "fleet": "sf:sparkles", "settings": "sf:gearshape"],
-        accountNames: ["Andromeda", "Orion", "Vega", "Sirius", "Pulsar", "Quasar", "Cassiopeia", "Lyra", "Altair", "Rigel", "Antares", "Polaris", "Kepler", "Halley", "Titan", "Europa"])
+        accountNames: ["Andromeda", "Orion", "Vega", "Sirius", "Pulsar", "Quasar", "Cassiopeia", "Lyra", "Altair", "Rigel", "Antares", "Polaris", "Kepler", "Halley", "Titan", "Europa"],
+        loadingWords: ["loading": "Aligning the telescope…", "empty": "Empty sky", "noSessions": "No orbits active", "searching": "Calling ground control…"],
+        loadingIcon: "sf:sparkles", loadingMotion: "pulse")
 
     public static let ocean = RowTheme(
         id: "ocean", name: "Ocean — tides & deep water",
@@ -456,7 +506,9 @@ public struct RowTheme: Codable, Equatable, Sendable, Identifiable {
         sessionWords: ["busy": "Diving", "waiting": "Surfacing", "idle": "Adrift", "shell": "In the hold"],
         tabLabels: ["sessions": "Voyages", "fleet": "Fleet", "settings": "Galley"],
         tabIcons: ["sessions": "sf:water.waves", "fleet": "sf:sailboat", "settings": "sf:gearshape"],
-        accountNames: ["Tide", "Kelp", "Coral", "Nautilus", "Abyss", "Trench", "Reef", "Kraken", "Manta", "Narwhal", "Lagoon", "Riptide", "Anchor", "Seafoam", "Marlin", "Barnacle"])
+        accountNames: ["Tide", "Kelp", "Coral", "Nautilus", "Abyss", "Trench", "Reef", "Kraken", "Manta", "Narwhal", "Lagoon", "Riptide", "Anchor", "Seafoam", "Marlin", "Barnacle"],
+        loadingWords: ["loading": "Diving…", "empty": "Still water", "noSessions": "No dives underway", "searching": "Sounding for the Mac…"],
+        loadingIcon: "sf:water.waves", loadingMotion: "bounce")
 
     public static let builtins: [RowTheme] = [
         off, rpg, movie, hades, mgs, agent, swe, scifi, west, cyber,
@@ -530,7 +582,10 @@ public struct RowTheme: Codable, Equatable, Sendable, Identifiable {
         "sessionWords": {"busy": "Rendering", "waiting": "Awaiting input",
                          "idle": "On standby", "shell": "In the console"},
         "tabLabels": {"sessions": "Tracks", "fleet": "Grid", "settings": "Console"},
-        "tabIcons": {"sessions": "sf:waveform", "fleet": "sf:square.grid.3x3", "settings": "sf:slider.horizontal.3"}
+        "tabIcons": {"sessions": "sf:waveform", "fleet": "sf:square.grid.3x3", "settings": "sf:slider.horizontal.3"},
+        "loadingWords": {"loading": "Booting the grid…", "empty": "Empty track",
+                         "noSessions": "No tracks playing", "searching": "Scanning for the Mac…"},
+        "loadingIcon": "sf:waveform", "loadingMotion": "pulse"
       }
     ]
     """
