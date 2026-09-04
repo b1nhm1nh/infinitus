@@ -177,6 +177,10 @@ public enum StatsScanner {
         public var days: [String: Stats.Day] = [:]
         public var cwds: Set<String> = []
         public var files = 0
+        /// Files that still need a parse after this call (size changed,
+        /// budget exhausted before reaching them) — 0 means the corpus
+        /// is fully caught up as of this call.
+        public var remaining = 0
     }
 
     struct Cache: Codable {
@@ -189,46 +193,119 @@ public enum StatsScanner {
             .appendingPathComponent("Infinitus/stats/transcripts.json")
     }
 
+    private static func writeCache(_ cache: Cache, to cacheURL: URL, fm: FileManager) {
+        guard let data = try? JSONEncoder().encode(cache) else { return }
+        try? fm.createDirectory(at: cacheURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try? data.write(to: cacheURL, options: .atomic)
+    }
+
     /// Every `*.jsonl` under `projectsDir` (one directory per project),
-    /// parsed from each file's byte watermark. Files untouched for
-    /// `maxAge` are skipped. The cache keeps only files that still exist.
+    /// parsed from each file's byte watermark, newest-modified first.
+    /// Files untouched for `maxAge` are skipped. The cache keeps only
+    /// files that still exist.
+    ///
+    /// `limitFiles` caps how many files get actually PARSED this call —
+    /// files whose size is unchanged cost nothing and don't count against
+    /// it. `remaining` in the result says how many still need a parse;
+    /// callers backfilling a large corpus call repeatedly (newest data
+    /// first) until it hits 0. `progress` reports (parsed-so-far, total
+    /// needing a parse this call) after each file. The cache is written
+    /// atomically every 200 parses and once more at the end, so an
+    /// interrupted backfill loses at most one checkpoint's worth of work.
     public static func scan(projectsDir: URL, cacheURL: URL?, calendar: Calendar = .current,
-                            maxAge: TimeInterval = 400 * 86_400, now: Date = Date()) -> Result {
+                            maxAge: TimeInterval = 400 * 86_400, now: Date = Date(),
+                            limitFiles: Int? = nil, progress: ((Int, Int) -> Void)? = nil) -> Result {
         var cache = cacheURL.flatMap { try? Data(contentsOf: $0) }
             .flatMap { try? JSONDecoder().decode(Cache.self, from: $0) } ?? Cache()
         if cache.version != 1 { cache = Cache() }
-        var live: [String: FileEntry] = [:]
-        var result = Result()
         let fm = FileManager.default
+
+        struct Candidate { let url: URL; let size: Int; let mtime: Date }
+        var candidates: [Candidate] = []
         for project in (try? fm.contentsOfDirectory(at: projectsDir, includingPropertiesForKeys: nil)) ?? [] {
             for url in (try? fm.contentsOfDirectory(at: project, includingPropertiesForKeys: [.fileSizeKey, .contentModificationDateKey])) ?? []
             where url.pathExtension == "jsonl" {
                 guard let values = try? url.resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey]),
                       let size = values.fileSize else { continue }
-                if let mtime = values.contentModificationDate, now.timeIntervalSince(mtime) > maxAge { continue }
-                var entry = cache.files[url.path] ?? FileEntry()
-                if size < entry.size { entry = FileEntry() }
-                if size != entry.size {
-                    parse(url: url, sessionID: url.deletingPathExtension().lastPathComponent,
-                          into: &entry, calendar: calendar)
-                    entry.size = size
-                }
-                live[url.path] = entry
-                result.files += 1
-                if let cwd = entry.cwd { result.cwds.insert(cwd) }
-                for (key, day) in entry.days { result.days[key] = (result.days[key] ?? Stats.Day()) + day }
+                let mtime = values.contentModificationDate ?? .distantPast
+                if now.timeIntervalSince(mtime) > maxAge { continue }
+                candidates.append(Candidate(url: url, size: size, mtime: mtime))
             }
         }
-        cache.files = live
-        if let cacheURL, let data = try? JSONEncoder().encode(cache) {
-            try? fm.createDirectory(at: cacheURL.deletingLastPathComponent(), withIntermediateDirectories: true)
-            try? data.write(to: cacheURL, options: .atomic)
+        candidates.sort { $0.mtime > $1.mtime }
+        let totalDirty = candidates.reduce(into: 0) { total, c in
+            let cached = cache.files[c.url.path]
+            if cached == nil || cached!.size != c.size { total += 1 }
         }
+
+        var live: [String: FileEntry] = [:]
+        var result = Result()
+        var parsedCount = 0
+        for (i, c) in candidates.enumerated() {
+            var entry = cache.files[c.url.path] ?? FileEntry()
+            let dirty = entry.size != c.size || cache.files[c.url.path] == nil
+            if dirty {
+                if let limitFiles, parsedCount >= limitFiles {
+                    // Budget spent — leave this file's cached state untouched
+                    // so the next call retries it from where it left off.
+                    result.remaining += 1
+                    live[c.url.path] = entry
+                    result.files += 1
+                    if let cwd = entry.cwd { result.cwds.insert(cwd) }
+                    for (key, day) in entry.days { result.days[key] = (result.days[key] ?? Stats.Day()) + day }
+                    continue
+                }
+                if c.size < entry.size { entry = FileEntry() }
+                parse(url: c.url, sessionID: c.url.deletingPathExtension().lastPathComponent,
+                      into: &entry, calendar: calendar)
+                entry.size = c.size
+                parsedCount += 1
+                progress?(parsedCount, totalDirty)
+                if let cacheURL, parsedCount % 200 == 0 {
+                    var checkpoint = live
+                    checkpoint[c.url.path] = entry
+                    for other in candidates[(i + 1)...] where cache.files[other.url.path] != nil {
+                        checkpoint[other.url.path] = cache.files[other.url.path]
+                    }
+                    var cp = cache
+                    cp.files = checkpoint
+                    writeCache(cp, to: cacheURL, fm: fm)
+                }
+            }
+            live[c.url.path] = entry
+            result.files += 1
+            if let cwd = entry.cwd { result.cwds.insert(cwd) }
+            for (key, day) in entry.days { result.days[key] = (result.days[key] ?? Stats.Day()) + day }
+        }
+        cache.files = live
+        if let cacheURL { writeCache(cache, to: cacheURL, fm: fm) }
         return result
     }
 
     private static let userMarker = Data("\"type\":\"user\"".utf8)
     private static let assistantMarker = Data("\"type\":\"assistant\"".utf8)
+    private static let toolResultMarker = Data("\"tool_result\"".utf8)
+    private static let timestampRegex = try! NSRegularExpression(pattern: "\"timestamp\":\"([^\"]+)\"")
+    private static let isErrorTrueMarker = "\"is_error\":true"
+    private static let toolDenialKindMarker = "\"toolDenialKind\""
+
+    /// Avoids `JSONSerialization` on a big tool_result line (a giant
+    /// command output can run hundreds of KB): a `"timestamp"` regex plus
+    /// substring counts of `"is_error":true`/`"toolDenialKind"` feed a
+    /// small synthesized object into the same `ingest`, so counting stays
+    /// in one place. Returns nil (fall back to the real parse) if the
+    /// timestamp can't be found.
+    static func fastParseToolResult(_ line: Data) -> [String: Any]? {
+        let s = String(decoding: line, as: UTF8.self)
+        guard let match = timestampRegex.firstMatch(in: s, range: NSRange(s.startIndex..., in: s)),
+              let range = Range(match.range(at: 1), in: s) else { return nil }
+        let errorCount = s.components(separatedBy: isErrorTrueMarker).count - 1
+        var obj: [String: Any] = ["type": "user", "timestamp": String(s[range])]
+        if s.contains(toolDenialKindMarker) { obj["toolDenialKind"] = true }
+        let blocks = (0..<errorCount).map { _ in ["type": "tool_result", "is_error": true] as [String: Any] }
+        obj["message"] = ["content": blocks]
+        return obj
+    }
 
     static func parse(url: URL, sessionID: String, into entry: inout FileEntry, calendar: Calendar) {
         guard let handle = try? FileHandle(forReadingFrom: url) else { return }
@@ -244,8 +321,16 @@ public enum StatsScanner {
             let line = complete[lineStart..<lineEnd]
             lineStart = lineEnd + 1
             // Cheap pre-filter: only user/assistant entries matter.
-            guard line.range(of: userMarker) != nil || line.range(of: assistantMarker) != nil,
-                  let obj = try? JSONSerialization.jsonObject(with: line) as? [String: Any] else { continue }
+            let isUser = line.range(of: userMarker) != nil
+            guard isUser || line.range(of: assistantMarker) != nil else { continue }
+            var obj: [String: Any]?
+            if isUser, line.range(of: toolResultMarker) != nil {
+                obj = fastParseToolResult(line)
+            }
+            if obj == nil {
+                obj = try? JSONSerialization.jsonObject(with: line) as? [String: Any]
+            }
+            guard let obj else { continue }
             ingest(obj, sessionID: sessionID, into: &entry, calendar: calendar)
         }
         entry.offset += complete.count

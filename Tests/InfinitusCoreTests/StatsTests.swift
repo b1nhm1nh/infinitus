@@ -206,6 +206,46 @@ final class StatsTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: cache.path))
     }
 
+    func testScanHonorsLimitAndReportsRemaining() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("stats-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        try FileManager.default.createDirectory(at: dir.appendingPathComponent("p"), withIntermediateDirectories: true)
+        for i in 1...3 {
+            let line = #"{"type":"user","cwd":"/r/\#(i)","timestamp":"2026-09-0\#(i)T01:00:00.000Z","origin":{"kind":"human"},"message":{"role":"user","content":"msg \#(i)"}}"#
+            try (line + "\n").write(to: dir.appendingPathComponent("p/f\(i).jsonl"), atomically: true, encoding: .utf8)
+        }
+        // Baseline: one unbounded scan into its own cache, for comparison.
+        let full = StatsScanner.scan(projectsDir: dir, cacheURL: dir.appendingPathComponent("full.json"), calendar: cal)
+        XCTAssertEqual(full.files, 3)
+        XCTAssertEqual(full.remaining, 0)
+
+        let cache = dir.appendingPathComponent("cache.json")
+        var r = StatsScanner.scan(projectsDir: dir, cacheURL: cache, calendar: cal, limitFiles: 2)
+        XCTAssertEqual(r.files, 3)
+        XCTAssertEqual(r.remaining, 1)
+        r = StatsScanner.scan(projectsDir: dir, cacheURL: cache, calendar: cal, limitFiles: 2)
+        XCTAssertEqual(r.remaining, 0)
+        XCTAssertEqual(r.days, full.days)
+    }
+
+    func testFastPathParsesBigToolResultLineWithoutFullJSON() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("stats-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let file = dir.appendingPathComponent("sess1.jsonl")
+        let pad = String(repeating: "x", count: 200_000)
+        let bigLine = #"{"type":"user","timestamp":"2026-09-04T03:00:00.000Z","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"t1","is_error":true,"content":"\#(pad)"},{"type":"tool_result","tool_use_id":"t2","is_error":true,"content":"ok"}]}}"#
+        XCTAssertGreaterThan(bigLine.utf8.count, 200_000)
+        try (bigLine + "\n").write(to: file, atomically: true, encoding: .utf8)
+        var entry = StatsScanner.FileEntry()
+        StatsScanner.parse(url: file, sessionID: "sess1", into: &entry, calendar: cal)
+        let day = entry.days["2026-09-04"]
+        XCTAssertEqual(day?.toolErrors, 2)
+        XCTAssertEqual(day?.sessions, ["sess1"])
+        let slot = Stats.hourSlot(date("2026-09-04T03:00:00Z"), calendar: cal)
+        XCTAssertEqual(day?.hours[slot], 1)
+    }
+
     func testParseGitLogWithNumstatAndTrailers() {
         let log = """
         \u{1e}abc123\u{1f}2026-09-04T08:10:00+07:00\u{1f}me@x.com\u{1f}feat: thing\u{1f}Claude Code <noreply@anthropic.com>

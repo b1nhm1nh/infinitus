@@ -110,6 +110,7 @@ final class AppModel: ObservableObject {
     }
     @Published var eventLog: [EventEntry] = []
     let eventStore = EventStore()
+    lazy var statsModel = StatsModel(eventStore: eventStore)
 
     /// Every event goes through here: the Activity pane's tail and the
     /// durable log Stats reads. `kind` is StatsEvents' vocabulary
@@ -1574,6 +1575,7 @@ final class AppModel: ObservableObject {
                                         report: usageModel?.report,
                                         tokenRate: sessionProgress.tokenRate)
             }
+            statsModel.refreshIfStale()
             Task.detached(priority: .utility) { [mirrorExporter] in
                 await mirrorExporter.record(listJSON: raw, prefs: prefs,
                                             serviceStatus: serviceStatus,
