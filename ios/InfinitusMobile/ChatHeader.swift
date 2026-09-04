@@ -55,14 +55,15 @@ struct ChatHeaderData {
     }
 
     /// The Settings preview: a busy session on a Max account, part-way
-    /// through its windows.
+    /// through its windows, under the first name in the theme's pool.
     static func sample(theme: RowTheme) -> ChatHeaderData {
-        let account = Account(number: 1, email: "death2@example.com", active: true,
+        let alias = theme.accountNames.first ?? "player1"
+        let account = Account(number: 1, email: "\(alias.lowercased())@example.com", active: true,
                               usage: Usage(fiveHour: UsageWindow(pct: 71, expectedPct: 58),
                                            sevenDay: UsageWindow(pct: 34, expectedPct: 41),
                                            scoped: [UsageWindow(pct: 53, name: "Fable")]),
-                              alias: "death2", plan: "Max 20x")
-        return ChatHeaderData(name: "limitless", status: "busy", accountName: "death2", plan: "Max 20x",
+                              alias: alias, plan: "Max 20x")
+        return ChatHeaderData(name: "limitless", status: "busy", accountName: alias, plan: "Max 20x",
                               chips: chips(account, theme: theme))
     }
 }
@@ -474,6 +475,9 @@ struct ChatHeaderPicker: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            // Room for the whole header: the Form's default insets
+            // clipped the strip's third gauge.
+            .listRowInsets(EdgeInsets(top: 10, leading: 12, bottom: 10, trailing: 12))
             .accessibilityAddTraits(selection == tag ? .isSelected : [])
         }
     }
