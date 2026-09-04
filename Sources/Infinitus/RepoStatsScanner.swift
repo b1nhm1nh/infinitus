@@ -11,9 +11,12 @@ actor RepoStatsScanner {
     struct Outcome: Sendable {
         var days: [String: Stats.Day] = [:]
         var repos: [String] = []
-        var skipped: [String] = []       // no user.email
+        var skipped: [String] = []       // no user.email, or "<root> (timed out)"
         /// PR data comes from gh (a fetch succeeded at some point) — sticky across scans.
         var ghUsed = false
+        /// Fixed, informational — carried here (not hardcoded in StatsModel)
+        /// so the scanner owns the wording for what its own scope means.
+        var notes: [String] = []
     }
 
     private struct RepoCache: Codable {
@@ -28,6 +31,7 @@ actor RepoStatsScanner {
         .urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
         .appendingPathComponent("Infinitus/stats/repos")
     private static let ghInterval: TimeInterval = 3600
+    private static let branchNote = "commits on unmerged branches aren't counted"
 
     func scan(cwds: Set<String>, since: Date) async -> Outcome {
         var outcome = Outcome()
@@ -52,13 +56,28 @@ actor RepoStatsScanner {
             let head = (try? await git(["rev-parse", "HEAD"], cwd: root))?
                 .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
             if loaded == nil || cache.head != head || cache.emails != authors {
-                var args = ["log", "--all", "--no-merges", "--numstat", "--date=iso-strict",
-                            "--format=\(RepoStats.logFormat)", "--since=\(ISO8601DateFormatter().string(from: since))"]
+                // HEAD only — not --all: an unbounded ref walk on a repo with
+                // many branches (worktrees, scratch branches) can run for
+                // many minutes and pin gigabytes of numstat text in memory
+                // (measured: one repo, 90s+, 1.6 GB RSS). --max-count is a
+                // second belt against a single branch with a huge history.
+                var args = ["log", "HEAD", "--no-merges", "--numstat", "--date=iso-strict",
+                            "--max-count=20000", "--format=\(RepoStats.logFormat)",
+                            "--since=\(ISO8601DateFormatter().string(from: since))"]
                 for a in authors { args.append("--author=\(a)") }
-                let text = (try? await git(args, cwd: root)) ?? ""
-                let days = RepoStats.days(commits: RepoStats.parseLog(text), prs: [], repo: root)
-                cache = RepoCache(head: head, emails: authors, days: days,
-                                  prsFetchedAt: cache.prsFetchedAt, prDays: cache.prDays)
+                do {
+                    let text = try await git(args, cwd: root)
+                    let days = RepoStats.days(commits: RepoStats.parseLog(text), prs: [], repo: root)
+                    cache = RepoCache(head: head, emails: authors, days: days,
+                                      prsFetchedAt: cache.prsFetchedAt, prDays: cache.prDays)
+                } catch is TimedOut {
+                    outcome.skipped.append(root + " (timed out)")
+                    continue
+                } catch {
+                    let days = RepoStats.days(commits: [], prs: [], repo: root)
+                    cache = RepoCache(head: head, emails: authors, days: days,
+                                      prsFetchedAt: cache.prsFetchedAt, prDays: cache.prDays)
+                }
             }
             if let ghPath = Self.ghPath,
                cache.prsFetchedAt.map({ Date().timeIntervalSince($0) > Self.ghInterval }) ?? true,
@@ -76,6 +95,7 @@ actor RepoStatsScanner {
             for (k, d) in cache.days { outcome.days[k] = (outcome.days[k] ?? Stats.Day()) + d }
             for (k, d) in cache.prDays { outcome.days[k] = (outcome.days[k] ?? Stats.Day()) + d }
         }
+        if !outcome.repos.isEmpty { outcome.notes.append(Self.branchNote) }
         return outcome
     }
 
@@ -91,9 +111,14 @@ actor RepoStatsScanner {
         try await Self.run("/usr/bin/git", args, cwd: cwd)
     }
 
+    private struct TimedOut: Error {}
+
     /// CswapCLI.run's shape: the blocking Process on a GCD thread, bridged
-    /// by a continuation (running it inline hung on macOS 26).
-    private static func run(_ exe: String, _ args: [String], cwd: String) async throws -> String {
+    /// by a continuation (running it inline hung on macOS 26). A repo with
+    /// a huge history (or a stuck `gh`) must not stall the whole scan —
+    /// `timeout` seconds after launch, an armed `DispatchWorkItem`
+    /// terminates the child; a clean exit cancels it first.
+    private static func run(_ exe: String, _ args: [String], cwd: String, timeout: TimeInterval = 90) async throws -> String {
         try await withCheckedThrowingContinuation { cont in
             DispatchQueue.global(qos: .utility).async {
                 let p = Process()
@@ -108,8 +133,15 @@ actor RepoStatsScanner {
                 p.standardOutput = out
                 p.standardError = FileHandle.nullDevice
                 do { try p.run() } catch { cont.resume(throwing: error); return }
+                let timeoutItem = DispatchWorkItem { p.terminate() }
+                DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + timeout, execute: timeoutItem)
                 let data = out.fileHandleForReading.readDataToEndOfFile()
                 p.waitUntilExit()
+                timeoutItem.cancel()
+                if p.terminationReason == .uncaughtSignal, p.terminationStatus != 0 {
+                    cont.resume(throwing: TimedOut())
+                    return
+                }
                 guard p.terminationStatus == 0 else {
                     cont.resume(throwing: NSError(domain: "RepoStatsScanner", code: Int(p.terminationStatus)))
                     return
