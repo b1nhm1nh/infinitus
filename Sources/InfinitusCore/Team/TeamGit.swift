@@ -137,10 +137,7 @@ public final class TeamGit: TeamStore {
         let parent = try head(of: branch)
         let index = dir.appendingPathComponent("index-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: index) }
-        // update-index --force-remove refuses to run without a work tree
-        // even though it only touches the index; `dir` already exists and
-        // is never scanned (we never `git add .` or run status).
-        let env = [ "GIT_INDEX_FILE": index.path, "GIT_WORK_TREE": dir.path ]
+        let env = [ "GIT_INDEX_FILE": index.path ]
         if let parent { _ = try run(["read-tree", parent], env: env) }
         for (rest, data) in items {
             if let data {
@@ -148,7 +145,10 @@ public final class TeamGit: TeamStore {
                     .trimmingCharacters(in: .whitespacesAndNewlines)
                 _ = try run(["update-index", "--add", "--cacheinfo", "100644,\(blob),\(rest)"], env: env)
             } else {
-                _ = try run(["update-index", "--force-remove", rest], env: env)
+                // Removal without a work tree: a zero-mode, null-sha entry
+                // through --index-info drops the path from the private index.
+                let line = Data("0 0000000000000000000000000000000000000000\t\(rest)\n".utf8)
+                _ = try run(["update-index", "--index-info"], stdin: line, env: env)
             }
         }
         let treeSha = String(decoding: try run(["write-tree"], env: env), as: UTF8.self)
