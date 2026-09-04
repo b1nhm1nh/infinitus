@@ -41,7 +41,11 @@ workflow publishes the matching section as the GitHub release body.
   from the phone shows as a thumbnail in the message; tap for full
   size. Images inside tool results stay text.
 - Tool runs stay grouped through errors, with an error count on the chip.
-
+- **Snappier chat.** A sent message shows in the feed at once, marked
+  until the session reads it; a reply that streams in lands as it is
+  written instead of up to two seconds late; coming back to the app
+  refreshes the feed immediately; and on the Mac a message being typed
+  into a terminal no longer holds up every other phone request.
 ### Agents
 - `infinitusctl events` — the app's switch/death/revival log, so a
   "why did it switch?" question has a record to read.

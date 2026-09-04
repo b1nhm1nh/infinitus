@@ -31,6 +31,15 @@ struct SessionFeedScreen: View {
     @State private var attachmentError: String?
     @State private var awsLoginItem: AwsLogin.Item?
     @State private var lastRowVisible = true
+    @Environment(\.scenePhase) private var scenePhase
+    /// Bumped on foreground return: `.task(id:)` drops the long-poll that
+    /// was in flight when the app left — its connection may be dead until
+    /// a 35 s timeout — and starts a fresh one.
+    @State private var pollGeneration = 0
+    /// Messages the Mac accepted that the transcript hasn't shown yet
+    /// (user 2026-09-04 "sending … not responsive": the draft cleared and
+    /// nothing else moved until the session read its inbox).
+    @State private var pendingSent: [PendingSent] = []
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     // MARK: pending prompt (critique 2026-09-04 P0: a permission was one
     // unguarded tap on a prominent button that auto-scroll could move)
@@ -52,6 +61,15 @@ struct SessionFeedScreen: View {
         let mime: String
         let data: Data
         let thumbnail: UIImage?
+    }
+
+    /// A sent message as the phone showed it, until the transcript does.
+    private struct PendingSent: Identifiable {
+        let id = UUID()
+        let text: String
+        let images: [UIImage]
+        let files: [String]
+        let at = Date()
     }
 
     /// The session hit an expired AWS session; the login runs on the
@@ -112,6 +130,12 @@ struct SessionFeedScreen: View {
                     .onAppear { if index == (feed?.items.count ?? 0) - 1 { lastRowVisible = true } }
                     .onDisappear { if index == (feed?.items.count ?? 0) - 1 { lastRowVisible = false } }
                 }
+                ForEach(pendingSent) { pending in
+                    pendingRow(pending)
+                        .id(pending.id)
+                        .listRowSeparator(.hidden)
+                        .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
+                }
             }
             .listStyle(.plain)
             .overlay {
@@ -127,9 +151,16 @@ struct SessionFeedScreen: View {
             .scrollDismissesKeyboard(.interactively)
             .simultaneousGesture(TapGesture().onEnded { composerFocused = false })
             .onChange(of: feed?.items.count) { _, _ in
+                reconcilePending()
+                if let pending = pendingSent.last { scrollToNewest(proxy, pending.id); return }
                 guard let last = feed?.items.indices.last else { return }
                 scrollToNewest(proxy, last)
             }
+            .onChange(of: pendingSent.count) { _, _ in
+                guard let last = pendingSent.last else { return }
+                scrollToNewest(proxy, last.id)
+            }
+            .onChange(of: feed?.stamp) { _, _ in reconcilePending() }
             .overlay(alignment: .bottomTrailing) {
                 if !lastRowVisible, (feed?.items.count ?? 0) > 1 {
                     Button {
@@ -193,26 +224,87 @@ struct SessionFeedScreen: View {
         .sensoryFeedback(.success, trigger: deliveredTick)
         .sensoryFeedback(.warning, trigger: deniedTick)
         .refreshable { await load() }
-        .task {
+        .task(id: pollGeneration) {
             // Long-poll loop: each request returns when the transcript
             // changes (or after the Mac's wait cap), so a reply lands
-            // within a second of being written. Against a Mac that
-            // ignores `since`/`wait` the floor below keeps it a 2 s poll.
+            // within a second of being written. A long-poll that came
+            // back with news re-arms almost at once — the Mac paced it,
+            // and a reply streams in over many writes (user 2026-09-04
+            // "receiving … not responsive": each landed up to 2 s late).
+            // The floor is for the plain fetch (a Mac that ignores
+            // `since`/`wait`) and for failures.
             while !Task.isCancelled {
                 let started = Date()
-                let ok = await load(longPoll: feed?.stamp != nil)
+                let before = feed?.stamp
+                let ok = await load(longPoll: before != nil)
+                if Task.isCancelled { return }
+                let changed = before != nil && feed?.stamp != before
+                let floor: TimeInterval = !ok ? 3 : changed ? 0.5 : 2
                 let elapsed = Date().timeIntervalSince(started)
-                let floor: TimeInterval = ok ? 2 : 3
                 if elapsed < floor {
                     try? await Task.sleep(nanoseconds: UInt64((floor - elapsed) * 1_000_000_000))
                 }
             }
         }
+        // Back in the foreground: the long-poll in flight when the app
+        // left may sit on a dead connection until its timeout; start a
+        // fresh one (the stale one's answer is dropped in `load`).
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active { pollGeneration += 1 }
+        }
     }
 
-    private func scrollToNewest(_ proxy: ScrollViewProxy, _ index: Int) {
-        if reduceMotion { proxy.scrollTo(index, anchor: .bottom) }
-        else { withAnimation { proxy.scrollTo(index, anchor: .bottom) } }
+    private func scrollToNewest(_ proxy: ScrollViewProxy, _ id: some Hashable) {
+        if reduceMotion { proxy.scrollTo(id, anchor: .bottom) }
+        else { withAnimation { proxy.scrollTo(id, anchor: .bottom) } }
+    }
+
+    /// The echo of a sent message: the user bubble, lighter, with a line
+    /// saying where it stands. Honest about it — "sent" is the Mac's
+    /// word; the session shows it here once it has read its inbox.
+    private func pendingRow(_ pending: PendingSent) -> some View {
+        HStack {
+            Spacer(minLength: 40)
+            VStack(alignment: .trailing, spacing: 6) {
+                if !pending.text.isEmpty { Text(pending.text) }
+                if !pending.images.isEmpty {
+                    HStack(spacing: 6) {
+                        ForEach(Array(pending.images.enumerated()), id: \.offset) { _, image in
+                            Image(uiImage: image).resizable().scaledToFill()
+                                .frame(width: 120, height: 120)
+                                .clipShape(RoundedRectangle(cornerRadius: 10))
+                        }
+                    }
+                }
+                ForEach(pending.files, id: \.self) { name in
+                    Label(name, systemImage: "paperclip")
+                        .font(.caption).foregroundStyle(.secondary)
+                        .lineLimit(1).truncationMode(.middle)
+                }
+                Text("Sent · shows here once the session reads it")
+                    .font(.caption2).foregroundStyle(.secondary)
+            }
+            .padding(10)
+            .background(Color.accentColor.opacity(0.10), in: RoundedRectangle(cornerRadius: 14))
+        }
+        .accessibilityElement(children: .combine)
+    }
+
+    /// Drops an echo once the transcript carries the message: a user
+    /// entry no older than the send (a minute of clock slack) whose text
+    /// contains it — or any such entry for an attachments-only send,
+    /// whose text the Mac wrote. A never-read one goes after ten minutes.
+    private func reconcilePending() {
+        guard !pendingSent.isEmpty else { return }
+        let users = (feed?.items ?? []).filter { $0.kind == .user }
+        let now = Date()
+        pendingSent.removeAll { pending in
+            if now.timeIntervalSince(pending.at) > 600 { return true }
+            return users.contains { item in
+                guard let at = item.at, at >= pending.at.addingTimeInterval(-60) else { return false }
+                return pending.text.isEmpty || item.text.contains(pending.text)
+            }
+        }
     }
 
     /// The account serving this session, one slim line under the title.
@@ -325,9 +417,14 @@ struct SessionFeedScreen: View {
         do {
             if longPoll, let since = feed?.stamp {
                 do {
-                    feed = try await NetworkFleetMirror.shared.sessionTail(
+                    let fresh = try await NetworkFleetMirror.shared.sessionTail(
                         pid: Int32(session.pid), limit: 30, since: since,
                         wait: MirrorTransport.tailWaitMax)
+                    // A poll loop that was replaced (foreground return)
+                    // must not overwrite the new loop's feed with its
+                    // late answer.
+                    if Task.isCancelled { return false }
+                    feed = fresh
                     errorText = nil
                     return true
                 } catch {
@@ -335,10 +432,13 @@ struct SessionFeedScreen: View {
                     // below walks every route again.
                 }
             }
-            feed = try await NetworkFleetMirror.shared.sessionTail(pid: Int32(session.pid), limit: 30)
+            let fresh = try await NetworkFleetMirror.shared.sessionTail(pid: Int32(session.pid), limit: 30)
+            if Task.isCancelled { return false }
+            feed = fresh
             errorText = nil
             return true
         } catch {
+            if Task.isCancelled { return false }
             errorText = feed == nil ? "couldn't reach the Mac: \(error.localizedDescription)"
                 : "offline — showing the last feed"
             return false
@@ -668,6 +768,9 @@ struct SessionFeedScreen: View {
             await send(.init(kind: .message, text: text,
                              attachments: picked.isEmpty ? nil : picked)) { reply in
                 if reply.outcome == "delivered" {
+                    pendingSent.append(PendingSent(
+                        text: text, images: attachments.compactMap(\.thumbnail),
+                        files: attachments.filter { $0.thumbnail == nil }.map(\.name)))
                     draft = ""
                     attachments = []
                     messageResult = nil
