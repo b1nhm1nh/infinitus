@@ -67,6 +67,9 @@ public actor NineRouterEngine: AccountEngine {
         var req = URLRequest(url: baseURL.appendingPathComponent("api/" + path))
         req.httpMethod = method
         req.timeoutInterval = 20   // usage relays an upstream round-trip
+        if let cliToken = NineRouterLocalAuth.cliToken() {
+            req.setValue(cliToken, forHTTPHeaderField: "x-9r-cli-token")
+        }
         if let json {
             req.setValue("application/json", forHTTPHeaderField: "Content-Type")
             req.httpBody = try JSONSerialization.data(withJSONObject: json, options: [.withoutEscapingSlashes])

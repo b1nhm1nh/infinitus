@@ -537,6 +537,22 @@ func run() -> Int32 {
             print("  [\(ok ? "ok" : "FAIL")] \(label) → \(lines.count) (want \(expected)) \(lines)")
         }
         print("transitions: \(failures == 0 ? "all pass" : "\(failures) FAILED")")
+        _ = TrayFleet.menuLines()
+        for _ in 0..<10 {
+            Thread.sleep(forTimeInterval: 0.5)
+            if let list = TrayFleet.cached(), !list.accounts.isEmpty { break }
+        }
+        let lines = TrayFleet.menuLines()
+        print("tray menu lines: \(lines.count)")
+        for l in lines { print("  \(l.text) (enabled=\(l.enabled), account=\(String(describing: l.account)))") }
+        let cachedPanel = FleetLayout.panel(list: TrayFleet.cached(), live: nil, engineInstalled: TrayFleet.hasEngine())
+        print("panel rows: \(cachedPanel.rows.count)")
+        for r in cachedPanel.rows {
+            print("  #\(r.number) \(r.name) (\(r.email)) active=\(r.active) gauges=\(r.gauges.count)")
+            for g in r.gauges {
+                print("    [\(g.label)] \(g.usedPct)% remaining=\(g.remaining)% reset=\(g.reset ?? "nil")")
+            }
+        }
         return failures == 0 ? 0 : 1
     }
     let instance = GetModuleHandleW(nil)

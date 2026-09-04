@@ -34,9 +34,9 @@ enum TrayFleet {
     private nonisolated(unsafe) static var cachedAt: Date?
     private nonisolated(unsafe) static var isRefreshing = false
 
-    /// Nil when no engine is installed — the caller then omits the section entirely.
+    /// True when either cswap or 9Router is available.
     static func hasEngine() -> Bool {
-        CswapLocator.locate() != nil
+        CswapLocator.locate() != nil || NineRouterFleet.isAvailable()
     }
 
     /// Account + usage lines for the tray menu, newest data within a cache window.
@@ -44,6 +44,9 @@ enum TrayFleet {
     /// Summary line when no accounts: "no accounts — `cswap add` registers one".
     static func menuLines() -> [MenuLine] {
         guard hasEngine() else { return [] }
+        if NineRouterFleet.shouldUseNineRouter(), let nrList = NineRouterFleet.list() {
+            return formatLines(from: nrList)
+        }
         lock.lock()
         let list = cachedList
         let at = cachedAt
@@ -53,7 +56,7 @@ enum TrayFleet {
             // First access: trigger asynchronous fetch so UI does not stall.
             refresh()
         }
-        return formatLines(from: list)
+        return formatLines(from: list ?? (NineRouterFleet.isAvailable() ? NineRouterFleet.list() : nil))
     }
 
     /// Formats an AccountList (or nil) into menu lines.
@@ -127,6 +130,11 @@ enum TrayFleet {
     static func refresh(force: Bool = false, now: Date = Date()) {
         guard hasEngine() else { return }
 
+        // If 9Router should be used, refresh 9Router
+        if NineRouterFleet.shouldUseNineRouter() {
+            NineRouterFleet.refresh(force: force, now: now)
+        }
+
         lock.lock()
         if isRefreshing {
             lock.unlock()
@@ -155,16 +163,20 @@ enum TrayFleet {
     /// view (the account panel) that renders the same data the menu does
     /// and must not shell out on its own paint.
     static func cached() -> AccountList? {
+        if NineRouterFleet.shouldUseNineRouter(), let nrList = NineRouterFleet.list() {
+            return nrList
+        }
         lock.lock()
         let list = cachedList
         let at = cachedAt
         lock.unlock()
         if list == nil, at == nil { refresh() }
-        return list
+        return list ?? (NineRouterFleet.isAvailable() ? NineRouterFleet.list() : nil)
     }
 
     /// Invalidate cache for manual refresh.
     static func invalidate() {
+        NineRouterFleet.invalidate()
         lock.lock()
         defer { lock.unlock() }
         cachedList = nil
@@ -184,7 +196,17 @@ enum TrayFleet {
             return
         }
         Thread.detachNewThread {
-            let outcome = switchTo(number)
+            let outcome: SwitchOutcome
+            if NineRouterFleet.shouldUseNineRouter() {
+                let nrOutcome = NineRouterFleet.switchTo(number)
+                switch nrOutcome {
+                case .switched(let n): outcome = .switched(to: n)
+                case .noEngine: outcome = .noEngine
+                case .failed(let d): outcome = .failed(detail: d)
+                }
+            } else {
+                outcome = switchTo(number)
+            }
             invalidate()
             refresh(force: true)
             report(outcome.message)

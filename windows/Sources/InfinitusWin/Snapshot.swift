@@ -72,24 +72,57 @@ enum Snapshot {
         // via 9Router (ANTHROPIC_BASE_URL in settings.json pointed at port 20128).
         // If routed to 9Router, the synthetic fleet reflects that routing so
         // mirrors and paired devices distinguish routed hosts from unmanaged standalone logins.
-        let accountList = CswapFleet.list()
+        let cswapList = CswapFleet.list()
         let isRouted = ClaudeCodeRouting.isRouted(
             ClaudeCodeRouting.anthropicBaseURL(configHome: claudeDir), to: nil)
         let fallbackEngineID = isRouted ? routedEngineID : engineID
-        let fleet = accountList.map {
-            EngineFleet(engineID: CswapFleet.engineID, provider: .claude,
-                        accounts: $0.accounts, activeNumber: $0.activeAccountNumber,
-                        nextCandidate: $0.nextCandidate, nextRecovery: $0.nextRecovery,
-                        liveSessions: live)
-        } ?? EngineFleet(engineID: fallbackEngineID, provider: .claude,
-                         accounts: [], liveSessions: live)
+
+        // Multi-engine check: if routed through 9Router,
+        // use live 9Router fleets and account list (wait=true on cold access so snapshot contains real accounts).
+        let useNineRouter = isRouted
+        let nineRouterFleets = useNineRouter ? NineRouterFleet.fleets(now: now, wait: true) : nil
+        let nineRouterList = useNineRouter ? NineRouterFleet.list(now: now, wait: true) : nil
+
+        let activeFleets: [EngineFleet]
+        let activeAccountList: AccountList?
+
+        if let nrFleets = nineRouterFleets, !nrFleets.isEmpty {
+            // Annotate liveSessions onto the primary Claude fleet
+            activeFleets = nrFleets.map { f in
+                if f.provider == Provider.claude {
+                    return EngineFleet(engineID: f.engineID, provider: f.provider,
+                                       accounts: f.accounts, activeNumber: f.activeNumber,
+                                       nextCandidate: f.nextCandidate, nextRecovery: f.nextRecovery,
+                                       liveSessions: live, raw: f.raw)
+                }
+                return f
+            }
+            activeAccountList = nineRouterList ?? nrFleets.first(where: { $0.provider == Provider.claude }).map {
+                AccountList(schemaVersion: 1, activeAccountNumber: $0.activeNumber,
+                            accounts: $0.accounts, nextCandidate: $0.nextCandidate,
+                            nextRecovery: $0.nextRecovery, liveSessions: live)
+            }
+        } else if let cswap = cswapList, !cswap.accounts.isEmpty {
+            let fleet = EngineFleet(engineID: CswapFleet.engineID, provider: Provider.claude,
+                                    accounts: cswap.accounts, activeNumber: cswap.activeAccountNumber,
+                                    nextCandidate: cswap.nextCandidate, nextRecovery: cswap.nextRecovery,
+                                    liveSessions: live)
+            activeFleets = [fleet]
+            activeAccountList = cswap
+        } else {
+            let fleet = EngineFleet(engineID: fallbackEngineID, provider: Provider.claude,
+                                    accounts: [], liveSessions: live)
+            activeFleets = [fleet]
+            activeAccountList = nil
+        }
+
         // listJSON keeps a phone older than `fleets` working: it decodes
         // this as the primary fleet and finds the sessions there.
         let listJSON = (try? JSONEncoder().encode(
-            AccountList(activeAccountNumber: accountList?.activeAccountNumber,
-                        accounts: accountList?.accounts ?? [],
-                        nextCandidate: accountList?.nextCandidate,
-                        nextRecovery: accountList?.nextRecovery,
+            AccountList(activeAccountNumber: activeAccountList?.activeAccountNumber,
+                        accounts: activeAccountList?.accounts ?? [],
+                        nextCandidate: activeAccountList?.nextCandidate,
+                        nextRecovery: activeAccountList?.nextRecovery,
                         liveSessions: live))) ?? Data()
 
         return MirrorSnapshot(
@@ -98,7 +131,7 @@ enum Snapshot {
             listJSON: listJSON,
             sessions: Array(sessions),
             progressByPid: progressByPid,
-            fleets: [fleet])
+            fleets: activeFleets)
     }
 
     /// The status breakdown, counting every live record. `unknown` covers
