@@ -60,10 +60,27 @@ enum Snapshot {
             }
 
         let live = liveSessions(records, startedAt: startedAt)
+        // cswap runs on Windows too (PyPI ships a Windows wheel; `uv tool
+        // install claude-swap` puts cswap.exe in ~/.local/bin). When it is
+        // there the fleet is the REAL one — accounts, quota, active
+        // account — exactly as on the Mac. Without it the fleet stays
+        // synthetic and account-less, and the phone hides that section.
+        let accountList = CswapFleet.list()
+        let fleet = accountList.map {
+            EngineFleet(engineID: CswapFleet.engineID, provider: .claude,
+                        accounts: $0.accounts, activeNumber: $0.activeAccountNumber,
+                        nextCandidate: $0.nextCandidate, nextRecovery: $0.nextRecovery,
+                        liveSessions: live)
+        } ?? EngineFleet(engineID: engineID, provider: .claude,
+                         accounts: [], liveSessions: live)
         // listJSON keeps a phone older than `fleets` working: it decodes
         // this as the primary fleet and finds the sessions there.
         let listJSON = (try? JSONEncoder().encode(
-            AccountList(activeAccountNumber: nil, accounts: [], liveSessions: live))) ?? Data()
+            AccountList(activeAccountNumber: accountList?.activeAccountNumber,
+                        accounts: accountList?.accounts ?? [],
+                        nextCandidate: accountList?.nextCandidate,
+                        nextRecovery: accountList?.nextRecovery,
+                        liveSessions: live))) ?? Data()
 
         return MirrorSnapshot(
             capturedAt: now,
@@ -71,8 +88,7 @@ enum Snapshot {
             listJSON: listJSON,
             sessions: Array(sessions),
             progressByPid: progressByPid,
-            fleets: [EngineFleet(engineID: engineID, provider: .claude,
-                                 accounts: [], liveSessions: live)])
+            fleets: [fleet])
     }
 
     /// The status breakdown, counting every live record. `unknown` covers

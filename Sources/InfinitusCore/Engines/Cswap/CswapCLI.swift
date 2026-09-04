@@ -4,11 +4,23 @@ import Foundation
 /// Where the `cswap` binary lives. Checked in order; first hit wins.
 public enum CswapLocator {
     public static func defaultCandidates(home: String = NSHomeDirectory()) -> [String] {
-        [
+        #if os(Windows)
+        // uv/pipx both land here; the .exe suffix is what
+        // isExecutableFile matches (verified on this box 2026-09-04).
+        let localAppData = ProcessInfo.processInfo.environment["LOCALAPPDATA"]
+            ?? "\(home)\\AppData\\Local"
+        return [
+            "\(home)\\.local\\bin\\cswap.exe",
+            "\(localAppData)\\Programs\\cswap\\cswap.exe",
+            "\(localAppData)\\pipx\\venvs\\claude-swap\\Scripts\\cswap.exe",
+        ]
+        #else
+        return [
             "\(home)/.local/bin/cswap",
             "/opt/homebrew/bin/cswap",
             "/usr/local/bin/cswap",
         ]
+        #endif
     }
 
     public static func locate(

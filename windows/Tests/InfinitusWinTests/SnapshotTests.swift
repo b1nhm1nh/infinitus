@@ -12,13 +12,16 @@ final class SnapshotTests: XCTestCase {
     func testDecodesOnPhoneShape() throws {
         try DaemonHarness.scratch { dir in
             try self.writeRecord(pid: SelfProcess.pid, status: "busy", to: dir)
-            let snapshot = try self.snapshot(claudeDir: dir)
+            // Engine pinned off so the shape is the same on a box with
+            // cswap installed and one without; the engine-present fleet is
+            // the Mac's own EngineFleet, covered by the core's tests.
+            let snapshot = try self.snapshot(claudeDir: dir, environment: ["INFINITUS_CSWAP": ""])
 
             XCTAssertFalse(snapshot.machineName.isEmpty, "the phone labels the host with this")
             let fleet = try XCTUnwrap(snapshot.fleets?.first)
             XCTAssertEqual(fleet.engineID, "claude-code-windows")
             XCTAssertEqual(fleet.provider, .claude)
-            XCTAssertTrue(fleet.accounts.isEmpty, "Windows runs no swap engine")
+            XCTAssertTrue(fleet.accounts.isEmpty, "no engine on this run")
             XCTAssertEqual(fleet.liveSessions?.total, 1)
             XCTAssertEqual(fleet.liveSessions?.busy, 1)
             XCTAssertEqual(fleet.liveSessions?.sessions?.first?.pid, Int(SelfProcess.pid))
@@ -56,13 +59,30 @@ final class SnapshotTests: XCTestCase {
         }
     }
 
+    /// With no swap engine on the box the fleet stays synthetic and
+    /// account-less — the phone hides that section rather than showing a
+    /// pane of zeros. `INFINITUS_CSWAP=""` is CswapLocator's own "no
+    /// engine" switch.
+    func testFleetIsSyntheticWithoutTheEngine() throws {
+        try DaemonHarness.scratch { dir in
+            try self.writeRecord(pid: SelfProcess.pid, status: "idle", to: dir)
+            let snapshot = try self.snapshot(claudeDir: dir, environment: ["INFINITUS_CSWAP": ""])
+            let fleet = try XCTUnwrap(snapshot.fleets?.first)
+            XCTAssertEqual(fleet.engineID, "claude-code-windows")
+            XCTAssertTrue(fleet.accounts.isEmpty)
+            XCTAssertNil(fleet.activeNumber)
+            XCTAssertEqual(fleet.liveSessions?.total, 1, "sessions serve with or without an engine")
+        }
+    }
+
     // MARK: plumbing
 
     /// The daemon's snapshot for a synthetic `~/.claude` dir, decoded the
     /// way the phone decodes it (`.iso8601`).
-    private func snapshot(claudeDir: URL) throws -> MirrorSnapshot {
+    private func snapshot(claudeDir: URL,
+                          environment: [String: String] = [:]) throws -> MirrorSnapshot {
         let (lines, error, status) = try DaemonHarness.run(
-            ["snapshot", "--claude-dir", claudeDir.path])
+            ["snapshot", "--claude-dir", claudeDir.path], environment: environment)
         XCTAssertEqual(status, 0, error.joined(separator: "\n"))
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
