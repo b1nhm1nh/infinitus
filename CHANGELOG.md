@@ -31,6 +31,7 @@ publishes the matching section as the GitHub release body.
 - Gauges hold still on open and on tab switches; Settings › Replay intro plays the entrance on demand.
 - A third chat header, Game HUD: a ringed portrait with the level on its rim, a name plate, HP/MP-style bars and a buff square per model, all in the theme's colors.
 - Loading, empty and "looking for the Mac" placeholders speak the theme, with the theme's icon in motion.
+- Settings › Chat header previews every style live, in the current theme; the Game HUD frame gets a glossy unit-frame redo with the portrait riding the panel.
 
 ## 0.4.2
 

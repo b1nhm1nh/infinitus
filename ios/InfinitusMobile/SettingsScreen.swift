@@ -134,11 +134,7 @@ struct SettingsForm: View {
             // The 1:1 Mac rendering isn't lost, just off by default
             // (#9 native shell): this flips the whole app back to it.
             Section("Appearance") {
-                Picker("Chat header", selection: $chatHeader) {
-                    Text("Compact").tag("compact")
-                    Text("Stat strip").tag("strip")
-                    Text("Game HUD").tag("hud")
-                }
+                ChatHeaderPicker(selection: $chatHeader, theme: model.rowTheme)
                 Toggle("Show as Mac popup", isOn: $model.macPopupView)
                 Text("Renders the Mac popup itself — the same layout, "
                      + "chrome and scaling, on dark. Off is the native "
