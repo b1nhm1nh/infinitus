@@ -134,7 +134,7 @@ public enum Stats {
         public let from: String          // first day key, inclusive
         public let to: String            // last day key, inclusive
         public var total: Day
-        public var previous: Day         // the same-length period before `from`
+        public var previous: Day         // the calendar period before `from`
         public var daily: [DayPoint]     // every day from `from` to `to`, empty days included
         public var streak: Int           // consecutive days ending today with a commit or a human message
     }
@@ -191,8 +191,18 @@ public enum Stats {
     public static func fold(days: [String: Day], period: Period, now: Date = Date(),
                             calendar: Calendar = .current) -> Summary {
         let (start, end) = range(period, now: now, calendar: calendar)
-        let length = calendar.dateComponents([.day], from: start, to: end).day ?? 1
-        let previousStart = calendar.date(byAdding: .day, value: -length, to: start)!
+        let previousStart: Date
+        switch period {
+        case .day:
+            previousStart = calendar.date(byAdding: .day, value: -1, to: start)!
+        case .week:
+            previousStart = calendar.date(byAdding: .day, value: -7, to: start)!
+        case .month:
+            previousStart = calendar.date(byAdding: .month, value: -1, to: start)!
+        case .year:
+            previousStart = calendar.date(byAdding: .year, value: -1, to: start)!
+        }
+        let previousEnd = start
         var total = Day(), previous = Day(), daily: [DayPoint] = []
         var cursor = start
         while cursor < end {
@@ -203,7 +213,7 @@ public enum Stats {
             cursor = calendar.date(byAdding: .day, value: 1, to: cursor)!
         }
         cursor = previousStart
-        while cursor < start {
+        while cursor < previousEnd {
             previous = previous + (days[dayKey(cursor, calendar: calendar)] ?? Day())
             cursor = calendar.date(byAdding: .day, value: 1, to: cursor)!
         }

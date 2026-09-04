@@ -92,4 +92,19 @@ final class StatsTests: XCTestCase {
         let data = try! JSONEncoder().encode(b)
         XCTAssertLessThan(data.count, 12_000)
     }
+
+    func testFoldMonthPreviousIsTheCalendarMonth() {
+        func day(_ commits: Int) -> Stats.Day {
+            var d = Stats.Day(); d.commits = commits; return d
+        }
+        let days: [String: Stats.Day] = [
+            "2026-01-31": day(5),   // Jan 31, should be excluded from Feb's previous
+            "2026-02-01": day(1),   // Feb 1, should be in Feb's previous
+        ]
+        let now = date("2026-03-04T03:00:00Z")   // 10:00 local Mar 4
+        let s = Stats.fold(days: days, period: .month, now: now, calendar: cal)
+        XCTAssertEqual(s.period, .month)
+        XCTAssertEqual(s.from, "2026-03-01")
+        XCTAssertEqual(s.previous.commits, 1)  // Only Feb 1, not Jan 31
+    }
 }
