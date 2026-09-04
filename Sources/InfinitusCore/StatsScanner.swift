@@ -251,7 +251,7 @@ public enum StatsScanner {
                     }
                 }
                 if let id { entry.state.lastMessageID = id }
-                if !isSubagent, entry.state.stretch != nil {
+                if !isSubagent, entry.state.stretch != nil, !model.hasPrefix("<") {
                     entry.state.stretch!.entries += 1
                     entry.state.stretch!.lastAt = max(entry.state.stretch!.lastAt, t)
                 }

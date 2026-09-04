@@ -340,6 +340,17 @@ final class StatsTests: XCTestCase {
         XCTAssertEqual(e.daysWithOpenStretch(), e.days)
     }
 
+    func testIngestAnAPIErrorRetryIsNotEffort() {
+        var e = StatsScanner.FileEntry()
+        StatsScanner.ingest(entry(#"{"type":"user","timestamp":"2026-09-04T01:00:00.000Z","origin":{"kind":"human"},"message":{"role":"user","content":"go"}}"#), sessionID: "s1", into: &e, calendar: cal)
+        StatsScanner.ingest(entry(#"{"type":"assistant","timestamp":"2026-09-04T01:00:05.000Z","isApiErrorMessage":true,"message":{"id":"x","model":"<synthetic>","content":[{"type":"text","text":"retry"}]}}"#), sessionID: "s1", into: &e, calendar: cal)
+        // The retry alone must not make the open stretch look like effort.
+        XCTAssertTrue(e.daysWithOpenStretch()["2026-09-04"]?.activities.isEmpty ?? true)
+        StatsScanner.ingest(entry(#"{"type":"user","timestamp":"2026-09-04T01:00:10.000Z","origin":{"kind":"human"},"message":{"role":"user","content":"again"}}"#), sessionID: "s1", into: &e, calendar: cal)
+        // Closed: the retry-only stretch had 0 entries, so it adds nothing.
+        XCTAssertNil(e.days["2026-09-04"]?.activities["other"])
+    }
+
     func testScanResultIncludesTheOpenStretch() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("stats-v2-\(UUID().uuidString)")
         let project = root.appendingPathComponent("-r-a")
