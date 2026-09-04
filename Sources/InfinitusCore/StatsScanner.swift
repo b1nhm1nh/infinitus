@@ -62,14 +62,22 @@ public enum StatsScanner {
         guard raw.hasPrefix("<cross-session-message") else { return .machinery }
         let fromApp: Bool = {
             guard let r = raw.range(of: "from-name=\""), let q = raw[r.upperBound...].firstIndex(of: "\"") else { return false }
-            return raw[r.upperBound..<q] == "Infinitus"
+            let name = raw[r.upperBound..<q]
+            return name == "Infinitus" || name == PeerSocket.senderName
         }()
         return peerKind(fromApp: fromApp, body: wrappedBody(raw))
     }
 
+    /// The socket preface's first 48 characters — enough to tell a phone
+    /// message from the app's own "[Infinitus] …" nudge text without
+    /// retyping the whole preface.
+    private static let phoneMarker = String(PeerSocket.phonePreface.prefix(48))
+
     private static func peerKind(fromApp: Bool, body: String) -> UserKind {
         guard fromApp else { return .agent }
-        return body.hasPrefix("[Infinitus]") ? .nudge : .phone
+        if body.hasPrefix(phoneMarker) { return .phone }
+        if body.hasPrefix("[Infinitus]") { return .nudge }
+        return .phone
     }
 
     /// The text inside a `<cross-session-message …>` wrapper (or the text itself).

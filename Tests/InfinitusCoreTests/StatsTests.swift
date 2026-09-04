@@ -125,6 +125,12 @@ final class StatsTests: XCTestCase {
         XCTAssertEqual(StatsScanner.classifyUser(entry(#"{"type":"user","origin":{"kind":"task-notification"},"message":{"role":"user","content":"done"}}"#)), .machinery)
         XCTAssertEqual(StatsScanner.classifyUser(entry(#"{"type":"user","promptSource":"queued","message":{"role":"user","content":[{"type":"text","text":"also this"}]}}"#)), .human)
         XCTAssertEqual(StatsScanner.classifyUser(entry(#"{"type":"user","origin":{"kind":"human"},"message":{"role":"user","content":[{"type":"image","source":{}}]}}"#)), .human)
+        // Phone messages now carry the socket preface (PeerSocket.phonePreface);
+        // sender is "Infinitus app". Bare "[Infinitus] ..." stays a nudge.
+        let phoneBody = PeerSocket.phonePreface.replacingOccurrences(of: "\n", with: "\\n") + "fix it"
+        XCTAssertEqual(StatsScanner.classifyUser(entry(#"{"type":"user","origin":{"kind":"peer","from":"uds:/tmp/infinitus-1.sock"},"message":{"role":"user","content":"<cross-session-message from=\"uds:/tmp/infinitus-1.sock\" from-name=\"Infinitus\" from-mode=\"bypass\">\#(phoneBody)</cross-session-message>"}}"#)), .phone)
+        XCTAssertEqual(StatsScanner.classifyUser(entry(#"{"type":"user","message":{"role":"user","content":"<cross-session-message from=\"uds:/tmp/infinitus-9.sock\" from-name=\"Infinitus app\" from-mode=\"bypass\">\nhello\n</cross-session-message>"}}"#)), .phone)
+        XCTAssertEqual(StatsScanner.classifyUser(entry(#"{"type":"user","message":{"role":"user","content":"<cross-session-message from=\"uds:/tmp/cc-socks/2.sock\" from-name=\"Infinitus2\" from-mode=\"bypass\">\n[Infinitus] x\n</cross-session-message>"}}"#)), .agent)
     }
 
     func testIngestCountsAConversation() {
