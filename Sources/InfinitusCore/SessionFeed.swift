@@ -48,9 +48,17 @@ public struct SessionFeedItem: Codable, Sendable, Equatable {
     /// meta file (`toolUseId`) finds its row. Not on the wire.
     let toolUseId: String?
 
+    /// Images in a user prompt (new optional field): ids for the mirror's
+    /// `/sessions/<pid>/images/<id>` route — `t:<uuid>:<block>` for one
+    /// pasted in the terminal (a base64 block in the transcript entry),
+    /// `a:<file>` for one sent from the phone (saved by SessionInput).
+    public let images: [String]?
+
     public init(kind: Kind, text: String, at: Date? = nil, toolName: String? = nil,
-                options: [String]? = nil, agent: Agent? = nil, toolUseId: String? = nil) {
+                options: [String]? = nil, agent: Agent? = nil, toolUseId: String? = nil,
+                images: [String]? = nil) {
         self.kind = kind
+        self.images = images
         self.text = text
         self.at = at
         self.toolName = toolName
@@ -59,7 +67,7 @@ public struct SessionFeedItem: Codable, Sendable, Equatable {
         self.toolUseId = toolUseId
     }
 
-    enum CodingKeys: String, CodingKey { case kind, text, at, toolName, options, agent }
+    enum CodingKeys: String, CodingKey { case kind, text, at, toolName, options, agent, images }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -69,6 +77,7 @@ public struct SessionFeedItem: Codable, Sendable, Equatable {
         toolName = try c.decodeIfPresent(String.self, forKey: .toolName)
         options = try c.decodeIfPresent([String].self, forKey: .options)
         agent = try c.decodeIfPresent(Agent.self, forKey: .agent)
+        images = try c.decodeIfPresent([String].self, forKey: .images)
         toolUseId = nil
     }
 }
@@ -356,15 +365,18 @@ public enum SessionFeedReader {
                (attachment["type"] as? String) == "queued_command",
                let prompt = attachment["prompt"] as? String {
                 if let text = presentableUserText(prompt) {
+                    let images = attachedImageIds(text)
                     append(SessionFeedItem(kind: .user, text: String(text.prefix(textCap)),
-                                           at: timestamp(entry)))
+                                           at: timestamp(entry), images: images.isEmpty ? nil : images))
                 }
                 continue
             }
             if type == "user" {
                 if let text = realUserText(entry) {
-                    append(SessionFeedItem(kind: .user, text: String(text.prefix(textCap)),
-                                           at: timestamp(entry)))
+                    let images = imageIds(entry: entry, text: text)
+                    append(SessionFeedItem(kind: .user,
+                                           text: String(bubbleText(text, images: images).prefix(textCap)),
+                                           at: timestamp(entry), images: images.isEmpty ? nil : images))
                     continue
                 }
                 guard let message = entry["message"] as? [String: Any],
@@ -429,6 +441,95 @@ public enum SessionFeedReader {
                                    at: run.item.at, toolName: toolName, options: run.item.options)
         }
         return Array(items.suffix(max(0, limit)))
+    }
+
+    // MARK: - Images in a prompt (phone thumbnails, 2026-09-04)
+
+    static let imageExtensions: Set<String> = ["png", "jpg", "jpeg", "heic", "gif", "webp"]
+
+    static func fileExtension(_ name: String) -> String {
+        guard name.contains(".") else { return "" }
+        return String(name.split(separator: ".").last ?? "").lowercased()
+    }
+
+    static func mime(forExtension ext: String) -> String {
+        switch ext {
+        case "jpg", "jpeg": return "image/jpeg"
+        case "heic": return "image/heic"
+        case "gif": return "image/gif"
+        case "webp": return "image/webp"
+        default: return "image/png"
+        }
+    }
+
+    /// Ids for the images of a real user entry: every base64 image block
+    /// (a terminal paste), then the image files in its `[attached: …]`
+    /// line (a phone send).
+    static func imageIds(entry: [String: Any], text: String) -> [String] {
+        var ids: [String] = []
+        if let uuid = entry["uuid"] as? String,
+           let content = (entry["message"] as? [String: Any])?["content"] as? [[String: Any]] {
+            for (i, block) in content.enumerated() where (block["type"] as? String) == "image" {
+                ids.append("t:\(uuid):\(i)")
+            }
+        }
+        return ids + attachedImageIds(text)
+    }
+
+    /// `a:<file>` for each image path in the text's `[attached: a, b]`
+    /// line — the file name only; the route resolves it in the
+    /// attachments folder and nowhere else.
+    static func attachedImageIds(_ text: String) -> [String] {
+        guard let range = text.range(of: "[attached: ", options: .backwards),
+              let close = text[range.upperBound...].firstIndex(of: "]") else { return [] }
+        return text[range.upperBound..<close].split(separator: ", ").compactMap { path in
+            let name = path.split(separator: "/").last.map(String.init) ?? String(path)
+            return imageExtensions.contains(fileExtension(name)) ? "a:\(name)" : nil
+        }
+    }
+
+    /// The bubble's text once its images are shown as thumbnails: Claude
+    /// Code's "[Image #N]" placeholders go.
+    static func bubbleText(_ text: String, images: [String]) -> String {
+        guard !images.isEmpty else { return text }
+        return text.replacingOccurrences(of: #"\[Image #\d+\]"#, with: "", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// Enough of the transcript's tail to hold a few pasted screenshots
+    /// (~200 KB of base64 each); the feed's own 512 KiB holds two.
+    static let imageTailBytes = 16 * 1024 * 1024
+
+    /// The bytes behind a feed image id, for the mirror's image route: a
+    /// saved attachment by file name (a name with a separator or `..` is
+    /// refused, so nothing outside the attachments folder is ever served)
+    /// or the base64 block out of the transcript entry with that uuid.
+    /// Nil when it's gone — the entry aged out of the tail, the file was
+    /// cleaned up.
+    public static func imageData(record: ClaudeSessionRecord, id: String, claudeDir: URL,
+                                 attachmentsDir: URL) -> (data: Data, mime: String)? {
+        if id.hasPrefix("a:") {
+            let name = String(id.dropFirst(2))
+            let ext = fileExtension(name)
+            guard !name.isEmpty, !name.contains("/"), !name.contains(".."), imageExtensions.contains(ext),
+                  let data = try? Data(contentsOf: attachmentsDir.appendingPathComponent(name)) else { return nil }
+            return (data, mime(forExtension: ext))
+        }
+        guard id.hasPrefix("t:") else { return nil }
+        let parts = id.dropFirst(2).split(separator: ":")
+        guard parts.count == 2, let index = Int(parts[1]), index >= 0 else { return nil }
+        let uuid = String(parts[0])
+        guard !uuid.isEmpty, uuid.allSatisfy({ $0.isLetter || $0.isNumber || $0 == "-" }) else { return nil }
+        let url = Transcript.locate(cwd: record.cwd, sessionId: record.sessionId, claudeDir: claudeDir)
+        let needle = "\"uuid\":\"\(uuid)\""
+        for line in tail(of: url, maxBytes: imageTailBytes).reversed() where line.contains(needle) {
+            guard let entry = decodeLine(line), (entry["uuid"] as? String) == uuid,
+                  let content = (entry["message"] as? [String: Any])?["content"] as? [[String: Any]],
+                  index < content.count, let source = content[index]["source"] as? [String: Any],
+                  let b64 = source["data"] as? String, let data = Data(base64Encoded: b64) else { return nil }
+            return (data, source["media_type"] as? String ?? "image/png")
+        }
+        return nil
     }
 
     /// A user prompt worth a bubble: plain text as is; a cross-session

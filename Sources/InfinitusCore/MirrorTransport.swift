@@ -24,6 +24,21 @@ public enum MirrorTransport {
         guard parts.count == 3, parts[0] == "sessions", parts[2] == "tail" else { return nil }
         return Int32(parts[1])
     }
+    /// A user prompt's image as a thumbnail: `GET /sessions/<pid>/images/<id>`,
+    /// the id from a feed item's `images` (phone thumbnails, 2026-09-04).
+    public static func sessionImagePath(pid: Int32, id: String) -> String {
+        let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-_.:"))
+        return "/sessions/\(pid)/images/" + (id.addingPercentEncoding(withAllowedCharacters: allowed) ?? id)
+    }
+    /// The `pid` and image id out of a request path, when it matches
+    /// `/sessions/<pid>/images/<id>` exactly.
+    public static func sessionImageRef(_ path: String) -> (pid: Int32, id: String)? {
+        let parts = path.split(separator: "/", omittingEmptySubsequences: true)
+        guard parts.count == 4, parts[0] == "sessions", parts[2] == "images",
+              let pid = Int32(parts[1]), let id = String(parts[3]).removingPercentEncoding, !id.isEmpty
+        else { return nil }
+        return (pid, id)
+    }
     /// The per-session input route (#17 layer 2): `POST /sessions/<pid>/input`.
     public static func sessionInputPath(pid: Int32) -> String { "/sessions/\(pid)/input" }
     /// The `pid` out of a request path, when it matches
@@ -214,6 +229,13 @@ public enum MirrorTransport {
     /// for now that there's more than one JSON route.
     public static func jsonResponse(_ body: Data) -> Data {
         response(status: 200, reason: "OK", contentType: "application/json", body: body)
+    }
+
+    /// An image body (`/sessions/<pid>/images/<id>`); a thumbnail never
+    /// changes for its id, so the phone may keep it.
+    public static func imageResponse(_ body: Data, contentType: String) -> Data {
+        response(status: 200, reason: "OK", contentType: contentType, body: body,
+                 extraHeaders: ["Cache-Control": "private, max-age=86400"])
     }
 
     public static func notFoundResponse() -> Data {

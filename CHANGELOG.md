@@ -36,6 +36,9 @@ workflow publishes the matching section as the GitHub release body.
   Mac posts, no Slack or Telegram in between. Ships once the phone
   build can register for them.
 - Idle sessions show their names, not just the busy ones.
+- **Pictures in the feed.** An image pasted in the terminal or sent
+  from the phone shows as a thumbnail in the message; tap for full
+  size. Images inside tool results stay text.
 - Tool runs stay grouped through errors, with an error count on the chip.
 
 ### Agents
@@ -61,9 +64,10 @@ workflow publishes the matching section as the GitHub release body.
   transcript stays under the repo's own folder).
 - Keys and typed messages reach sessions inside cmux, where the
   terminal reports no process ids — matched by the session's name.
-- The pop-out no longer freezes the app when its content measures a
-  fractional height (the window rounded up, the fit never matched, and
-  the resize loop pinned the main thread).
+- The pop-out no longer freezes the app when it and its content
+  disagree on size (a fractional height, a screen clamp, or content
+  that measures differently in two window sizes kept the resize loop
+  spinning on the main thread).
 - Bright apps behind the popup, and window-only captures (CleanShot),
   no longer wash the glass out: it caps at a legible level at every
   transparency setting, and dark backdrops pass through untouched.

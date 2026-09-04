@@ -729,11 +729,19 @@ struct SessionFeedScreen: View {
         switch item.kind {
         case .user:
             let (text, attached) = Self.splitAttached(item.text)
+            let images = item.images ?? []
+            // A file shown as a thumbnail needs no paperclip line.
+            let files = attached.filter { name in !images.contains { $0.hasSuffix("-" + name) } }
             HStack {
                 Spacer(minLength: 40)
                 VStack(alignment: .trailing, spacing: 6) {
                     if !text.isEmpty { Text(text) }
-                    ForEach(attached, id: \.self) { name in
+                    if !images.isEmpty {
+                        HStack(spacing: 6) {
+                            ForEach(images, id: \.self) { FeedThumbnail(pid: Int32(session.pid), id: $0) }
+                        }
+                    }
+                    ForEach(files, id: \.self) { name in
                         Label(name, systemImage: "paperclip")
                             .font(.caption).foregroundStyle(.secondary)
                             .lineLimit(1).truncationMode(.middle)

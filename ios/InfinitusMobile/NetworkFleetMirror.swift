@@ -220,6 +220,23 @@ actor NetworkFleetMirror: FleetMirror {
         return try Self.decodeFeed(data)
     }
 
+    /// A feed image's thumbnail (`SessionFeedItem.images`, 2026-09-04):
+    /// the bytes, since AsyncImage can't carry the pairing token. Same
+    /// stored-endpoint → discovery path as the plain feed fetch.
+    func sessionImage(pid: Int32, id: String) async throws -> Data {
+        let token = MirrorPairing.normalize(
+            UserDefaults.standard.string(forKey: Self.tokenKey) ?? "")
+        let path = MirrorTransport.sessionImagePath(pid: pid, id: id)
+        if let data = try await fetchFromStored(path: path, token: token, timeout: Self.candidateTimeout) {
+            return data
+        }
+        startBrowsing()
+        guard let discovered = await firstEndpoint() else { throw MirrorTransportError.timedOut }
+        let (data, _) = try await fetch(discovered, path: path, hostHeader: "infinitus",
+                                        useTLS: false, token: token, timeout: Self.candidateTimeout)
+        return data
+    }
+
     /// Tries every stored endpoint (last-good first), same as `latest()`'s
     /// own loop — `nil` means none of them answered for network reasons;
     /// a bad pairing token still throws, since that's equally actionable

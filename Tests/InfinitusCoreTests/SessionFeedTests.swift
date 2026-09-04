@@ -211,6 +211,56 @@ final class SessionFeedTests: XCTestCase {
         XCTAssertEqual(fresh.last?.kind, .permission)
     }
 
+    func testUserPromptImagesGetIdsAndThePlaceholderGoes() throws {
+        let pasted: [String: Any] = [
+            "type": "user", "uuid": "u-1", "timestamp": "2026-09-04T03:00:00.000Z",
+            "message": ["role": "user", "content": [
+                ["type": "text", "text": "[Image #1] why is this red?"],
+                ["type": "image", "source": ["type": "base64", "media_type": "image/png", "data": "AAAA"]]]]]
+        let phone: [String: Any] = [
+            "type": "user", "uuid": "u-2", "timestamp": "2026-09-04T03:00:01.000Z",
+            "message": ["role": "user", "content": "look\n\n[attached: /var/a/UUID-shot.png, /var/a/UUID-notes.txt]"]]
+        let lines = try [pasted, phone].map { String(decoding: try JSONSerialization.data(withJSONObject: $0), as: UTF8.self) }
+        let items = SessionFeedReader.parse(lines: lines, limit: 10)
+        XCTAssertEqual(items.map(\.text), ["why is this red?", "look\n\n[attached: /var/a/UUID-shot.png, /var/a/UUID-notes.txt]"])
+        XCTAssertEqual(items.map(\.images), [["t:u-1:1"], ["a:UUID-shot.png"]])
+        XCTAssertNil(SessionFeedReader.parse(lines: [#"{"type":"user","uuid":"u-3","message":{"role":"user","content":"plain"}}"#], limit: 1).first?.images)
+    }
+
+    func testImageDataServesAttachmentsByNameOnlyAndTranscriptBlocks() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("feed-images-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let attachments = root.appendingPathComponent("attachments")
+        try FileManager.default.createDirectory(at: attachments, withIntermediateDirectories: true)
+        try Data([1, 2, 3]).write(to: attachments.appendingPathComponent("shot.png"))
+        try Data([9]).write(to: root.appendingPathComponent("secret.png"))
+        let record = ClaudeSessionRecord(pid: 1, sessionId: "sid", cwd: "/tmp/x")
+        let claudeDir = root.appendingPathComponent("claude")
+        XCTAssertEqual(SessionFeedReader.imageData(record: record, id: "a:shot.png", claudeDir: claudeDir,
+                                                   attachmentsDir: attachments)?.data, Data([1, 2, 3]))
+        XCTAssertEqual(SessionFeedReader.imageData(record: record, id: "a:shot.png", claudeDir: claudeDir,
+                                                   attachmentsDir: attachments)?.mime, "image/png")
+        for bad in ["a:../secret.png", "a:/etc/passwd", "a:shot.txt", "a:", "x:shot.png"] {
+            XCTAssertNil(SessionFeedReader.imageData(record: record, id: bad, claudeDir: claudeDir,
+                                                     attachmentsDir: attachments), bad)
+        }
+        let url = Transcript.path(cwd: record.cwd, sessionId: record.sessionId, claudeDir: claudeDir)
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        let entry: [String: Any] = [
+            "type": "user", "uuid": "u-1",
+            "message": ["role": "user", "content": [
+                ["type": "text", "text": "[Image #1]"],
+                ["type": "image", "source": ["type": "base64", "media_type": "image/jpeg",
+                                             "data": Data([4, 5]).base64EncodedString()]]]]]
+        try (String(decoding: try JSONSerialization.data(withJSONObject: entry), as: UTF8.self) + "\n")
+            .write(to: url, atomically: true, encoding: .utf8)
+        let got = SessionFeedReader.imageData(record: record, id: "t:u-1:1", claudeDir: claudeDir, attachmentsDir: attachments)
+        XCTAssertEqual(got?.data, Data([4, 5]))
+        XCTAssertEqual(got?.mime, "image/jpeg")
+        XCTAssertNil(SessionFeedReader.imageData(record: record, id: "t:u-1:0", claudeDir: claudeDir, attachmentsDir: attachments), "not an image block")
+        XCTAssertNil(SessionFeedReader.imageData(record: record, id: "t:u-9:1", claudeDir: claudeDir, attachmentsDir: attachments))
+    }
+
     func testPresentableUserTextDropsThePhonePreface() {
         let raw = "<cross-session-message from=\"uds:/tmp/infinitus-1.sock\" from-name=\"Infinitus app\" from-mode=\"bypass\">\n"
             + PeerSocket.phonePreface + "why is it slow?\n</cross-session-message>"

@@ -61,6 +61,24 @@ final class MirrorSessionFeedBox: @unchecked Sendable {
 
 /// The `POST /activities/token` handler (Live Activity pushes): the
 /// phone's APNs tokens, handed to AppModel's pusher on the main actor.
+/// The `/sessions/<pid>/images/<id>` handler (phone thumbnails): the
+/// image bytes and content type, nil for 404. Reads a transcript tail
+/// and scales an image, so the route runs it off the network queue.
+final class MirrorSessionImageBox: @unchecked Sendable {
+    typealias Provider = @Sendable (_ pid: Int32, _ id: String) -> (data: Data, contentType: String)?
+    private let lock = NSLock()
+    private var provider: Provider?
+
+    func set(_ new: @escaping Provider) {
+        lock.lock(); provider = new; lock.unlock()
+    }
+
+    func call(_ pid: Int32, _ id: String) -> (data: Data, contentType: String)? {
+        lock.lock(); let current = provider; lock.unlock()
+        return current?(pid, id)
+    }
+}
+
 final class MirrorActivityTokenBox: @unchecked Sendable {
     private let lock = NSLock()
     private var sink: (@Sendable (ActivityPushRegistration) -> Void)?
@@ -164,6 +182,8 @@ final class MirrorServer: ObservableObject {
     /// Answers `POST /sessions/<pid>/input` (#17 layer 2); set by AppModel
     /// once at start.
     let sessionInput = MirrorSessionInputBox()
+    /// Answers `/sessions/<pid>/images/<id>`; set by AppModel once at start.
+    let sessionImage = MirrorSessionImageBox()
     let awsLogin = MirrorAwsLoginBox()
     /// Event-log sink (icon, text), set by AppModel.
     var log: ((String, String) -> Void)?
@@ -216,6 +236,7 @@ final class MirrorServer: ObservableObject {
         let token = self.token
         let sessionFeed = self.sessionFeed
         let sessionInput = self.sessionInput
+        let sessionImage = self.sessionImage
         let activityTokens = self.activityTokens
         let awsLogin = self.awsLogin
         let served: @Sendable (MirrorTransport.Request) -> Void = { [weak self] request in
@@ -228,7 +249,7 @@ final class MirrorServer: ObservableObject {
         }
         listener.newConnectionHandler = { [queue] connection in
             Self.serve(connection, payload: payload, token: token, sessionFeed: sessionFeed,
-                       sessionInput: sessionInput, activityTokens: activityTokens,
+                       sessionInput: sessionInput, sessionImage: sessionImage, activityTokens: activityTokens,
                        awsLogin: awsLogin, queue: queue, onServed: served)
         }
         listener.stateUpdateHandler = { [weak self] state in
@@ -273,13 +294,14 @@ final class MirrorServer: ObservableObject {
                                           token: MirrorTokenBox,
                                           sessionFeed: MirrorSessionFeedBox,
                                           sessionInput: MirrorSessionInputBox,
+                                            sessionImage: MirrorSessionImageBox,
                                           activityTokens: MirrorActivityTokenBox,
                                           awsLogin: MirrorAwsLoginBox,
                                           queue: DispatchQueue,
                                           onServed: @escaping @Sendable (MirrorTransport.Request) -> Void) {
         connection.start(queue: queue)
         receive(connection, buffer: Data(), payload: payload, token: token,
-               sessionFeed: sessionFeed, sessionInput: sessionInput,
+               sessionFeed: sessionFeed, sessionInput: sessionInput, sessionImage: sessionImage,
                activityTokens: activityTokens, awsLogin: awsLogin, onServed: onServed)
     }
 
@@ -289,6 +311,7 @@ final class MirrorServer: ObservableObject {
                                             token: MirrorTokenBox,
                                             sessionFeed: MirrorSessionFeedBox,
                                             sessionInput: MirrorSessionInputBox,
+                                            sessionImage: MirrorSessionImageBox,
                                             activityTokens: MirrorActivityTokenBox,
                                             awsLogin: MirrorAwsLoginBox,
                                             onServed: @escaping @Sendable (MirrorTransport.Request) -> Void) {
@@ -348,6 +371,18 @@ final class MirrorServer: ObservableObject {
                     response = sessionFeed.call(pid, limit).map(MirrorTransport.snapshotResponse)
                         ?? MirrorTransport.notFoundResponse()
                     onServed(request)
+                } else if request.method == "GET",
+                          let ref = MirrorTransport.sessionImageRef(request.path) {
+                    // A transcript tail read and an image decode: off this queue.
+                    DispatchQueue.global(qos: .utility).async {
+                        let response = sessionImage.call(ref.pid, ref.id)
+                            .map { MirrorTransport.imageResponse($0.data, contentType: $0.contentType) }
+                            ?? MirrorTransport.notFoundResponse()
+                        onServed(request)
+                        connection.send(content: response,
+                                        completion: .contentProcessed { _ in connection.cancel() })
+                    }
+                    return
                 } else if request.method == "POST",
                           let pid = MirrorTransport.sessionInputPid(request.path) {
                     if let decoded = try? JSONDecoder().decode(SessionInput.Request.self, from: request.body) {
@@ -414,7 +449,7 @@ final class MirrorServer: ObservableObject {
                 return
             }
             receive(connection, buffer: buffer, payload: payload, token: token,
-                   sessionFeed: sessionFeed, sessionInput: sessionInput,
+                   sessionFeed: sessionFeed, sessionInput: sessionInput, sessionImage: sessionImage,
                    activityTokens: activityTokens, awsLogin: awsLogin, onServed: onServed)
         }
     }

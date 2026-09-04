@@ -921,6 +921,18 @@ final class AppModel: ObservableObject {
                 guard let self else { return AwsLogin.Reply(ok: false, error: "app gone") }
                 return await self.awsLoginRunner.relay(profile: request.profile, url: request.url)
             })
+        let thumbnails = ThumbnailCache()
+        mirrorServer.sessionImage.set { pid, id in
+            let key = "\(pid)/\(id)"
+            if let hit = thumbnails[key] { return (hit, "image/jpeg") }
+            let claudeDir = ClaudeSessions.configHome()
+            guard let record = ClaudeSessions.list(claudeDir: claudeDir).first(where: { $0.pid == pid }),
+                  let image = SessionFeedReader.imageData(record: record, id: id, claudeDir: claudeDir,
+                                                          attachmentsDir: SessionInput.defaultAttachmentsDir),
+                  let thumb = ImageThumbnail.jpeg(image.data, maxPixels: 640) else { return nil }
+            thumbnails[key] = thumb
+            return (thumb, "image/jpeg")
+        }
         mirrorServer.sessionInput.set { [weak self] pid, request in
             let claudeDir = ClaudeSessions.configHome()
             guard let record = ClaudeSessions.list(claudeDir: claudeDir).first(where: { $0.pid == pid })

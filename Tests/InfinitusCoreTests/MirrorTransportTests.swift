@@ -120,6 +120,12 @@ final class MirrorTransportTests: XCTestCase {
     func testSessionTailPathRoundTrips() {
         XCTAssertEqual(MirrorTransport.sessionTailPath(pid: 123), "/sessions/123/tail")
         XCTAssertEqual(MirrorTransport.sessionTailPid("/sessions/123/tail"), 123)
+        let ref = MirrorTransport.sessionImageRef(MirrorTransport.sessionImagePath(pid: 7, id: "t:ab-1:1"))
+        XCTAssertEqual(ref?.pid, 7)
+        XCTAssertEqual(ref?.id, "t:ab-1:1")
+        XCTAssertEqual(MirrorTransport.sessionImageRef("/sessions/7/images/a:x%20y.png")?.id, "a:x y.png")
+        XCTAssertNil(MirrorTransport.sessionImageRef("/sessions/7/images"))
+        XCTAssertNil(MirrorTransport.sessionImageRef("/sessions/7/images/"))
     }
 
     func testSessionTailPidRejectsNonNumericOrWrongShape() {
