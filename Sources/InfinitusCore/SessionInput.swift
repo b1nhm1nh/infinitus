@@ -189,7 +189,7 @@ extension SessionInput {
             }
             for host in hosts {
                 switch PtyNudge.press(host: host, pid: record.pid, key: request.text,
-                                      tty: tty, ancestors: ancestors, sleep: sleep) {
+                                      tty: tty, ancestors: ancestors, name: record.name, sleep: sleep) {
                 case .delivered, .typedUnverified:
                     return Reply(outcome: "delivered", channel: "pty")
                 case .running:
@@ -236,7 +236,11 @@ extension SessionInput {
             // Claude Code's own inbox first — a message, line breaks kept,
             // rather than keystrokes (user 2026-09-03). The terminal is
             // the fallback for a record without a socket or a dead one.
-            if !record.messagingSocketPath.isEmpty, socketSend(record, deliveredText) {
+            // The Mac's own texts (Continue) carry their "[Infinitus]"
+            // marker already; a phone message gets the preface.
+            let framed = deliveredText.hasPrefix("[Infinitus]")
+                ? deliveredText : PeerSocket.phonePreface + deliveredText
+            if !record.messagingSocketPath.isEmpty, socketSend(record, framed) {
                 return Reply(outcome: "delivered", channel: "socket")
             }
             var sawRunning = false
@@ -246,7 +250,7 @@ extension SessionInput {
                 .joined(separator: " ")
             for host in hosts {
                 switch PtyNudge.nudge(host: host, pid: record.pid, text: typed,
-                                      tty: tty, ancestors: ancestors, sleep: sleep) {
+                                      tty: tty, ancestors: ancestors, name: record.name, sleep: sleep) {
                 case .delivered, .typedUnverified:
                     return Reply(outcome: "delivered", channel: "pty")
                 case .running:

@@ -43,8 +43,9 @@ public enum PtyNudge {
 
     static func isRunning(_ flat: String) -> Bool { flat.contains(runningMarker) }
 
-    static func locate(_ host: any PtyHost, pid: Int32, tty: String?, ancestors: [Int32]) -> PtySurface? {
-        ((try? host.surfaces()) ?? []).surface(for: pid, tty: tty, ancestors: ancestors)
+    static func locate(_ host: any PtyHost, pid: Int32, tty: String?, ancestors: [Int32],
+                       name: String?) -> PtySurface? {
+        ((try? host.surfaces()) ?? []).surface(for: pid, tty: tty, ancestors: ancestors, name: name)
     }
 
     /// Deliver `text` to the session's terminal. The state machine:
@@ -52,8 +53,10 @@ public enum PtyNudge {
     /// menu → capturedInput; else type. Never more than one Esc: a second
     /// one lands in a freed prompt as an interrupt.
     public static func nudge(host: any PtyHost, pid: Int32, text: String, tty: String?,
-                             ancestors: [Int32], sleep: (TimeInterval) -> Void) -> Status {
-        guard let surface = locate(host, pid: pid, tty: tty, ancestors: ancestors) else { return .noSurface }
+                             ancestors: [Int32], name: String? = nil,
+                             sleep: (TimeInterval) -> Void) -> Status {
+        guard let surface = locate(host, pid: pid, tty: tty, ancestors: ancestors, name: name)
+        else { return .noSurface }
         var screen = flat((try? host.readScreen(surface.ref, lines: screenLines)) ?? "")
         if isRunning(screen) { return .running }
         if inputCaptured(screen) {
@@ -80,8 +83,10 @@ public enum PtyNudge {
     /// the terminal's escape, everything else is typed as a line (a digit
     /// selects an option, the trailing Enter confirms it).
     public static func press(host: any PtyHost, pid: Int32, key: String, tty: String?,
-                             ancestors: [Int32], sleep: (TimeInterval) -> Void) -> Status {
-        guard let surface = locate(host, pid: pid, tty: tty, ancestors: ancestors) else { return .noSurface }
+                             ancestors: [Int32], name: String? = nil,
+                             sleep: (TimeInterval) -> Void) -> Status {
+        guard let surface = locate(host, pid: pid, tty: tty, ancestors: ancestors, name: name)
+        else { return .noSurface }
         let screen = flat((try? host.readScreen(surface.ref, lines: screenLines)) ?? "")
         if isRunning(screen) { return .running }
         do {
@@ -160,7 +165,8 @@ public enum PtyNudge {
             let ancestors = ancestorsOf(session.pid)
             var hit: (any PtyHost, PtySurface)?
             for (host, list) in surfaces {
-                if let s = list.surface(for: session.pid, tty: tty, ancestors: ancestors) { hit = (host, s); break }
+                if let s = list.surface(for: session.pid, tty: tty, ancestors: ancestors,
+                                        name: session.name) { hit = (host, s); break }
             }
             guard let (host, surface) = hit else { result.noSurface += 1; continue }
             let key = "\(host.name):\(surface.ref)"

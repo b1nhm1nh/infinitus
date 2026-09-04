@@ -43,7 +43,7 @@ final class SessionProgressModel: SessionProgressSource {
             var newStamps = stampsCopy
             var newCached = cachedCopy
             for (session, record) in pairs {
-                let url = Transcript.path(cwd: record.cwd, sessionId: record.sessionId, claudeDir: claudeDir)
+                let url = Transcript.locate(cwd: record.cwd, sessionId: record.sessionId, claudeDir: claudeDir)
                 let attrs = try? FileManager.default.attributesOfItem(atPath: url.path)
                 let size = (attrs?[.size] as? Int) ?? -1
                 let mtime = (attrs?[.modificationDate] as? Date) ?? .distantPast

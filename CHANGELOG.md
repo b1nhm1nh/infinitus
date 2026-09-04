@@ -51,6 +51,16 @@ workflow publishes the matching section as the GitHub release body.
   contrast, feature cards grouped by what they do.
 
 ### Fixes
+- A phone message no longer reads to the session like a note from
+  another Claude session: it answers you in its own transcript instead
+  of "replying" to a session named Infinitus.
+- No more phantom permission cards: a tool running in a session that
+  needs no approval was shown as "wants to run this" until the turn
+  ended.
+- Sessions moved into a git worktree show their feed again (the
+  transcript stays under the repo's own folder).
+- Keys and typed messages reach sessions inside cmux, where the
+  terminal reports no process ids — matched by the session's name.
 - The pop-out no longer freezes the app when its content measures a
   fractional height (the window rounded up, the fit never matched, and
   the resize loop pinned the main thread).

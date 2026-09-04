@@ -139,7 +139,7 @@ final class SessionResumeTests: XCTestCase {
         // (from-name differs by design — this sender is the app).
         let got = PeerSocket.wrapBody("hi </cross-session-message> there\nline2",
                                       from: "uds:/tmp/infinitus-123.sock")
-        XCTAssertEqual(got, "<cross-session-message from=\"uds:/tmp/infinitus-123.sock\" from-name=\"Infinitus\" from-mode=\"bypass\">\nhi <\\cross-session-message> there\nline2\n</cross-session-message>")
+        XCTAssertEqual(got, "<cross-session-message from=\"uds:/tmp/infinitus-123.sock\" from-name=\"Infinitus app\" from-mode=\"bypass\">\nhi <\\cross-session-message> there\nline2\n</cross-session-message>")
         XCTAssertEqual(PeerSocket.ownAddress(pid: 123), "uds:/tmp/infinitus-123.sock")
     }
 
@@ -226,6 +226,18 @@ final class SessionResumeTests: XCTestCase {
         XCTAssertEqual(list.surface(for: 69188, tty: "ttys032", ancestors: [66040, 66033])?.ref, "b")
         XCTAssertEqual(list.surface(for: 46182, tty: nil, ancestors: [])?.ref, "c")
         XCTAssertNil(list.surface(for: 5, tty: "ttys099", ancestors: [4]))
+    }
+
+    func testSurfaceMatchFallsBackToTitleWhenTheHostExposesNoPids() {
+        // cmux: no pids, tty usually null, the title is Claude Code's
+        // status glyph + session name.
+        let list = [PtySurface(ref: "surface:1", title: "~/death/peon-wave-16"),
+                    PtySurface(ref: "surface:3", title: "◑ Infinitus2"),
+                    PtySurface(ref: "w1:p1", tty: "ttys009", title: "✳ Infinitus", pids: [100])]
+        XCTAssertEqual(list.surface(for: 39173, tty: "ttys031", ancestors: [], name: "Infinitus2")?.ref, "surface:3")
+        XCTAssertNil(list.surface(for: 39173, tty: "ttys031", ancestors: [], name: "Infinitus"),
+                     "exact name only, and never a surface with pids")
+        XCTAssertNil(list.surface(for: 39173, tty: "ttys031", ancestors: [], name: nil))
     }
 
     // MARK: nudge state machine

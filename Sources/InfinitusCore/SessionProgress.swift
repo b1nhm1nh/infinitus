@@ -364,7 +364,7 @@ public struct SessionProgress: Sendable, Equatable, Codable {
 
     public static func read(sessionId: String, cwd: String, claudeDir: URL,
                              name: String? = nil, maxBytes: Int = 512 * 1024) -> SessionProgress {
-        let url = Transcript.path(cwd: cwd, sessionId: sessionId, claudeDir: claudeDir)
+        let url = Transcript.locate(cwd: cwd, sessionId: sessionId, claudeDir: claudeDir)
         let headGoal = readGoal(sessionId: sessionId, cwd: cwd, claudeDir: claudeDir)
         func withGoal(_ progress: SessionProgress) -> SessionProgress {
             SessionProgress(lastActivityAt: progress.lastActivityAt, nowDoing: progress.nowDoing,
@@ -391,7 +391,7 @@ public struct SessionProgress: Sendable, Equatable, Codable {
     /// the HEAD, the opposite end from everything else `read` extracts.
     public static func readGoal(sessionId: String, cwd: String, claudeDir: URL,
                                  maxBytes: Int = 64 * 1024) -> String? {
-        let url = Transcript.path(cwd: cwd, sessionId: sessionId, claudeDir: claudeDir)
+        let url = Transcript.locate(cwd: cwd, sessionId: sessionId, claudeDir: claudeDir)
         guard let handle = try? FileHandle(forReadingFrom: url) else { return nil }
         defer { try? handle.close() }
         guard let blob = try? handle.read(upToCount: maxBytes) else { return nil }

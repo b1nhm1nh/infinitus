@@ -9,6 +9,9 @@ public struct ClaudeSessionRecord: Sendable, Equatable {
     public let cwd: String
     public let kind: String        // "interactive", "bg", "daemon", …
     public let status: String?     // "busy", "idle", "waiting", "shell"
+    /// When `status` last changed (the record's `statusUpdatedAt`, epoch
+    /// ms); nil on older builds.
+    public let statusUpdatedAt: Date?
     /// Unix socket the session listens on for cross-session messages;
     /// empty when the record carries none (older builds, non-messaging
     /// sessions). Never derived from the pid — a stale socket file outlives
@@ -21,7 +24,7 @@ public struct ClaudeSessionRecord: Sendable, Equatable {
 
     public init(pid: Int32, sessionId: String, cwd: String, kind: String = "interactive",
                 status: String? = nil, messagingSocketPath: String = "", peerProtocol: Int = 0,
-                name: String? = nil) {
+                name: String? = nil, statusUpdatedAt: Date? = nil) {
         self.pid = pid
         self.sessionId = sessionId
         self.cwd = cwd
@@ -30,6 +33,7 @@ public struct ClaudeSessionRecord: Sendable, Equatable {
         self.messagingSocketPath = messagingSocketPath
         self.peerProtocol = peerProtocol
         self.name = name
+        self.statusUpdatedAt = statusUpdatedAt
     }
 }
 
@@ -82,7 +86,9 @@ public enum ClaudeSessions {
                 status: obj["status"] as? String,
                 messagingSocketPath: obj["messagingSocketPath"] as? String ?? "",
                 peerProtocol: proto.map { isBool($0) ? 0 : $0.intValue } ?? 0,
-                name: (obj["name"] as? String).flatMap { $0.isEmpty ? nil : $0 }))
+                name: (obj["name"] as? String).flatMap { $0.isEmpty ? nil : $0 },
+                statusUpdatedAt: (obj["statusUpdatedAt"] as? NSNumber)
+                    .flatMap { isBool($0) ? nil : Date(timeIntervalSince1970: $0.doubleValue / 1000) }))
         }
         return out.sorted { $0.pid < $1.pid }
     }

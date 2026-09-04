@@ -56,7 +56,7 @@ public struct ResumeCoordinator {
         let ancestors = ancestorsOf(session.pid)
         for host in hosts {
             switch PtyNudge.nudge(host: host, pid: session.pid, text: text, tty: tty,
-                                  ancestors: ancestors, sleep: sleep) {
+                                  ancestors: ancestors, name: session.name, sleep: sleep) {
             case .delivered, .typedUnverified: return host.name
             case .running: return nil
             case .capturedInput, .noSurface: continue

@@ -194,6 +194,51 @@ final class SessionFeedTests: XCTestCase {
         XCTAssertEqual(busyFinalized.last?.kind, .tool)
     }
 
+    func testFinalizeIgnoresWaitingOlderThanTheOpenTool() {
+        let t0 = Date(timeIntervalSince1970: 1_000)
+        let items = [SessionFeedItem(kind: .user, text: "go", at: t0),
+                     SessionFeedItem(kind: .tool, text: "swift build", at: t0 + 9, toolName: "Bash")]
+        // The record went "waiting" at the END of the previous turn; this
+        // tool call came later — a peer-message turn, not a prompt.
+        let (stale, staleWaiting) = SessionFeedReader.finalize(
+            items: items, status: "waiting", statusUpdatedAt: t0 - 1)
+        XCTAssertFalse(staleWaiting)
+        XCTAssertEqual(stale.last?.kind, .tool)
+        // A "waiting" stamped after the tool call is the real prompt.
+        let (fresh, freshWaiting) = SessionFeedReader.finalize(
+            items: items, status: "waiting", statusUpdatedAt: t0 + 10)
+        XCTAssertTrue(freshWaiting)
+        XCTAssertEqual(fresh.last?.kind, .permission)
+    }
+
+    func testPresentableUserTextDropsThePhonePreface() {
+        let raw = "<cross-session-message from=\"uds:/tmp/infinitus-1.sock\" from-name=\"Infinitus app\" from-mode=\"bypass\">\n"
+            + PeerSocket.phonePreface + "why is it slow?\n</cross-session-message>"
+        XCTAssertEqual(SessionFeedReader.presentableUserText(raw), "Infinitus app: why is it slow?")
+    }
+
+    func testLocateFallsBackToTheSessionFileUnderAnotherProject() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("locate-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let rootSlug = root.appendingPathComponent("projects/-Users-me-repo")
+        try FileManager.default.createDirectory(at: rootSlug, withIntermediateDirectories: true)
+        let id = UUID().uuidString
+        let worktree = "/Users/me/repo/.claude/worktrees/wave-16"
+        // Started in the repo root, moved into a worktree: the transcript
+        // stays under the root's slug.
+        try "{}\n".write(to: rootSlug.appendingPathComponent("\(id).jsonl"), atomically: true, encoding: .utf8)
+        XCTAssertEqual(Transcript.locate(cwd: worktree, sessionId: id, claudeDir: root),
+                       rootSlug.appendingPathComponent("\(id).jsonl"))
+        // Once the cwd slug has its own file, that wins.
+        let direct = Transcript.path(cwd: worktree, sessionId: id, claudeDir: root)
+        try FileManager.default.createDirectory(at: direct.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try "{}\n".write(to: direct, atomically: true, encoding: .utf8)
+        XCTAssertEqual(Transcript.locate(cwd: worktree, sessionId: id, claudeDir: root), direct)
+        // Nothing anywhere: the cwd slug path, so a fresh session is polled there.
+        XCTAssertEqual(Transcript.locate(cwd: worktree, sessionId: "none", claudeDir: root),
+                       Transcript.path(cwd: worktree, sessionId: "none", claudeDir: root))
+    }
+
     func testFinalizeWaitingOnQuestionEvenWithoutRecordStatus() {
         let items = [SessionFeedItem(kind: .question, text: "Which approach?", options: ["A", "B"])]
         let (_, waiting) = SessionFeedReader.finalize(items: items, status: "busy")

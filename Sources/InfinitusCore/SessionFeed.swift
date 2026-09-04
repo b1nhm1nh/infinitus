@@ -122,10 +122,11 @@ public enum SessionFeedReader {
     public static func read(record: ClaudeSessionRecord, claudeDir: URL,
                              limit: Int = 30) -> SessionFeed? {
         guard !record.sessionId.isEmpty else { return nil }
-        let url = Transcript.path(cwd: record.cwd, sessionId: record.sessionId, claudeDir: claudeDir)
+        let url = Transcript.locate(cwd: record.cwd, sessionId: record.sessionId, claudeDir: claudeDir)
         let lines = tail(of: url, maxBytes: tailBytes)
         let raw = attachAgents(parse(lines: lines, limit: limit), transcript: url)
-        let (items, waiting) = finalize(items: raw, status: record.status)
+        let (items, waiting) = finalize(items: raw, status: record.status,
+                                        statusUpdatedAt: record.statusUpdatedAt)
         return SessionFeed(pid: record.pid, sessionId: record.sessionId, cwd: record.cwd,
                            status: record.status, waiting: waiting, items: items,
                            name: record.name, stamp: stamp(record: record, claudeDir: claudeDir))
@@ -135,7 +136,7 @@ public enum SessionFeedReader {
     /// status flip (busy → waiting) counts as a change too. Nil when the
     /// transcript isn't there yet.
     public static func stamp(record: ClaudeSessionRecord, claudeDir: URL) -> String? {
-        let url = Transcript.path(cwd: record.cwd, sessionId: record.sessionId, claudeDir: claudeDir)
+        let url = Transcript.locate(cwd: record.cwd, sessionId: record.sessionId, claudeDir: claudeDir)
         guard let attrs = try? FileManager.default.attributesOfItem(atPath: url.path) else { return nil }
         let size = (attrs[.size] as? NSNumber)?.int64Value ?? 0
         let mtime = (attrs[.modificationDate] as? Date)?.timeIntervalSince1970 ?? 0
@@ -229,15 +230,24 @@ public enum SessionFeedReader {
     /// The record-level finishing touch `read` applies after `parse`,
     /// factored out so it's testable without touching disk: a tool call
     /// still open when the record says "waiting" is a permission prompt,
-    /// not just a tool in flight.
-    public static func finalize(items: [SessionFeedItem], status: String?)
+    /// not just a tool in flight — unless the "waiting" predates the
+    /// newest item: a turn started by a peer message runs under the
+    /// previous turn's "waiting" (Claude Code doesn't flip the record
+    /// back), and that made every tool call a permission card on the
+    /// phone in a bypass-permissions session (2026-09-04).
+    public static func finalize(items: [SessionFeedItem], status: String?,
+                                statusUpdatedAt: Date? = nil)
         -> (items: [SessionFeedItem], waiting: Bool) {
         var items = items
-        if status == "waiting", let last = items.last, last.kind == .tool {
+        var recordWaiting = status == "waiting"
+        if recordWaiting, let flipped = statusUpdatedAt, let at = items.last?.at, flipped < at {
+            recordWaiting = false
+        }
+        if recordWaiting, let last = items.last, last.kind == .tool {
             items[items.count - 1] = SessionFeedItem(kind: .permission, text: last.text,
                                                       at: last.at, toolName: last.toolName)
         }
-        let waiting = status == "waiting"
+        let waiting = recordWaiting
             || (items.last.map { $0.kind == .question || $0.kind == .permission } ?? false)
         return (items, waiting)
     }
@@ -434,6 +444,8 @@ public enum SessionFeedReader {
         let head = trimmed[..<headEnd]
         var body = String(trimmed[trimmed.index(after: headEnd)...])
         if let close = body.range(of: "</cross-session-message>") { body = String(body[..<close.lowerBound]) }
+        body = body.trimmingCharacters(in: .whitespacesAndNewlines)
+        if body.hasPrefix(PeerSocket.phonePreface) { body = String(body.dropFirst(PeerSocket.phonePreface.count)) }
         body = body.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !body.isEmpty else { return nil }
         var sender = "peer"
