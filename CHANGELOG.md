@@ -91,6 +91,10 @@ workflow publishes the matching section as the GitHub release body.
 - The popup no longer burns CPU (and stops answering `infinitusctl`)
   while an account sits in the 90s.
 - An engine that refuses to start no longer shows as a crash.
+- "All accounts down" no longer appears while the active account is
+  fine and only the spares are limited — the countdown panel, the popup
+  banner, the wall, the phone and the Linux panel all wait for the
+  account you're actually on to hit its limit.
 
 ## 0.4.1
 

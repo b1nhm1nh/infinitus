@@ -38,6 +38,10 @@ Native macOS menu bar app for the claude-swap engine. Split out of
 - Secrets (webhook URLs, bot tokens) travel over stdin, never argv; shown
   masked only. Usage-cost figures are estimates, never billing truth.
 - Surgical changes; match existing style; no speculative abstractions.
+- **Todos and research notes go to GitHub issues, never to files**
+  (user 2026-09-04: "stop noting TODO file to avoid a PR, just log to
+  issue"). `gh issue create` / `gh issue comment`; docs/TODO.md is the
+  shipped log only.
 - **Account policy lives in the engines** (user 2026-09-03). Auto-swap,
   pick-first, ordering come from each engine's own knobs (cswap
   `autoswitch.*`, the proxy's priority); the app only sets those and

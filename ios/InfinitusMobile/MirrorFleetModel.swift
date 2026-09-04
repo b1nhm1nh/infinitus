@@ -72,7 +72,7 @@ final class MirrorFleetModel: ObservableObject, Identifiable {
             accounts = list
             activeNumber = fleet.activeNumber
             nextCandidate = fleet.nextCandidate
-            nextRecovery = RecoveryMath.corrected(engine: fleet.nextRecovery, accounts: list)
+            nextRecovery = RecoveryMath.corrected(engine: fleet.nextRecovery, accounts: list, activeNumber: fleet.activeNumber)
             liveSessions = fleet.liveSessions
         }
         if let now = fleet.activeNumber, let previousActive,
