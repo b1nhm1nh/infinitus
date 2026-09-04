@@ -1,6 +1,6 @@
 // infinitus-win — the Windows mirror daemon (docs/plan-windows/01-stack.md).
-// W3: `sessions`, W5: `pair`. W4 (HTTP listener) and W7 (`serve`) come
-// next, on top of InfinitusCore's feed, pairing and snapshot code.
+// W3: `sessions`, W4: `listen`, W5: `pair`. W7 (`serve` — full snapshot,
+// tail and image routes) builds on W4's listener next.
 import Foundation
 import InfinitusCore
 #if os(Windows)
@@ -13,12 +13,14 @@ let infinitusWinVersion = "0.4.1"
 /// The Mac's mirror port, so a QR from either host scans the same.
 let defaultMirrorPort: UInt16 = 47824
 
-/// Subcommand dispatch — W4/W6/W7 add their entries here, bodies below.
+/// Subcommand dispatch — W6/W7 add their entries here, bodies below.
 let commands: [String: ([String]) -> Int32] = [
     "sessions": sessions,
+    "listen": listen,
     "pair": pair,
     "snapshot": snapshot,
     "message": message,
+    "resume": resume,
 ]
 
 func fail(_ message: String) -> Never {
@@ -222,4 +224,58 @@ func which(_ name: String) -> String? {
         }
     }
     return nil
+}
+
+// MARK: - listen (W4)
+
+/// `infinitus-win listen --token-file P [--port N]` — the W4 HTTP
+/// listener with the mirror-shaped routes W7 will replace wholesale:
+/// `GET /snapshot` → 200, anything else → 404, bad token → 401 checked
+/// off the head alone. The token travels by file, never argv, so the
+/// test harness (and a caller wrapping this) doesn't leak it in a
+/// process list. Blocks until killed.
+func listen(_ args: [String]) -> Int32 {
+    var tokenFile: String?, port: UInt16 = defaultMirrorPort
+    var index = args.startIndex
+    while index < args.endIndex {
+        switch args[index] {
+        case "--token-file":
+            index += 1
+            guard index < args.endIndex else { fail("listen: --token-file needs a path") }
+            tokenFile = args[index]
+        case "--port":
+            index += 1
+            guard index < args.endIndex, let parsed = UInt16(args[index]) else {
+                fail("listen: --port needs a number")
+            }
+            port = parsed
+        default:
+            fail("listen: unknown flag \(args[index])")
+        }
+        index += 1
+    }
+    guard let tokenFile else { fail("listen: --token-file is required") }
+    let token = MirrorPairing.normalize(
+        (try? String(contentsOfFile: tokenFile, encoding: .utf8)) ?? "")
+    guard !token.isEmpty else { fail("listen: \(tokenFile) holds no token") }
+
+    let server = WinHTTPServer(authorize: { MirrorTransport.isAuthorized($0, token: token) }) { request in
+        guard MirrorTransport.isAuthorized(request, token: token) else {
+            return MirrorTransport.unauthorizedResponse()
+        }
+        guard request.method == "GET", request.path == MirrorTransport.snapshotPath else {
+            return MirrorTransport.notFoundResponse()
+        }
+        return MirrorTransport.snapshotResponse(
+            Data(#"{"machineName":"infinitus-win-listen"}"#.utf8))
+    }
+    do {
+        let bound = try server.start(port: port)
+        print("listening on \(bound)")
+        fflush(stdout)   // the harness reads this line to know it's up
+        RunLoop.main.run()
+    } catch {
+        fail("listen: \(error)")
+    }
+    return 0
 }
