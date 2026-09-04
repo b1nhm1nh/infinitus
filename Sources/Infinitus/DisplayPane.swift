@@ -95,10 +95,10 @@ struct DisplayPane: View {
             Section("Popup transparency") {
                 glassSlider("Transparency", value: $model.glassFocused)
                 Text("Higher is clearer — the backdrop shows through with "
-                     + "a soft glass blur. Lower is frostier, and window "
-                     + "captures (CleanShot) match the live look best near "
-                     + "0%. One value for every state; the popup never "
-                     + "shifts with focus.")
+                     + "a soft glass blur. Lower is frostier. Bright apps "
+                     + "behind the popup are capped to a legible level at "
+                     + "every setting. One value for every state; the "
+                     + "popup never shifts with focus.")
                     .font(.caption).foregroundStyle(.secondary)
             }
             Toggle("Compact popup (one-line accounts, icon controls)",

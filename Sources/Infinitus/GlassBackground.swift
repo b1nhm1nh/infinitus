@@ -235,10 +235,10 @@ final class GlassScrimView: NSView {
         wantsLayer = true
     }
 
-    /// Dial → scrim: frosty (0) lays 0.85 so captures match the live
-    /// window; clear (1) lays 0.25, enough for legibility over a white
-    /// app with the backdrop obviously present. One monotone ramp, so
-    /// the dial is the only knob.
+    /// Dial → scrim: frosty (0) lays 0.85, clear (1) lays 0.25 with the
+    /// backdrop obviously present. One monotone ramp, so the dial is the
+    /// only knob; GlassCeilingView underneath handles bright backdrops
+    /// and window captures at every setting.
     static func strength(forClarity clarity: Double) -> CGFloat {
         CGFloat(0.85 - 0.60 * min(max(clarity, 0), 1))
     }
@@ -251,6 +251,41 @@ final class GlassScrimView: NSView {
         layer?.backgroundColor = dark
             ? NSColor.black.withAlphaComponent(strength).cgColor
             : NSColor.white.withAlphaComponent(strength + 0.05).cgColor
+    }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        needsDisplay = true
+    }
+
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+}
+
+/// Luminance ceiling over the backdrop blur: a darken blend against a
+/// dark gray (light appearance: a lighten blend against a light gray),
+/// so a bright app behind the window is clamped to a legible level while
+/// a dark backdrop passes through untouched — unlike the alpha wash,
+/// which scales every backdrop the same. A per-window capture renders
+/// the blur as a flat light gray (probed 2026-09-04: a red view under
+/// the blur shows in neither the live window nor the capture), which is
+/// exactly the bright-backdrop case, so captures clamp too (#4).
+final class GlassCeilingView: NSView {
+    /// Clamp level (0…1 luminance). Dark appearance: backdrop brighter
+    /// than this is pulled down to it.
+    static let level: CGFloat = 0.35
+
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        wantsLayer = true
+    }
+
+    required init?(coder: NSCoder) { fatalError() }
+
+    override func updateLayer() {
+        super.updateLayer()
+        let dark = effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+        layer?.compositingFilter = dark ? "darkenBlendMode" : "lightenBlendMode"
+        layer?.backgroundColor = NSColor(white: dark ? Self.level : 1 - Self.level, alpha: 1).cgColor
     }
 
     override func viewDidChangeEffectiveAppearance() {
@@ -329,6 +364,9 @@ final class GlassContainerView: NSView {
             // what sits behind. Settings only: the popup/pop-out carry
             // ThemedGlassChrome's wash and the transparency dial.
             if scrim {
+                let ceiling = GlassCeilingView(frame: container.bounds)
+                ceiling.autoresizingMask = [.width, .height]
+                container.addSubview(ceiling)
                 let wash = GlassScrimView(frame: container.bounds, strength: scrimStrength)
                 wash.autoresizingMask = [.width, .height]
                 container.addSubview(wash)

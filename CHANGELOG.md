@@ -72,6 +72,12 @@ GitHub release body.
   builds from source today.
 
 ### Fixes
+
+- **Window captures and bright backdrops.** The popup and pop-out cap
+  how bright the glass can get: a light app behind the window, or a
+  window-only capture (CleanShot) that can't sample the backdrop, now
+  reads at the same legible level as the live window over a dark app,
+  at every transparency setting. Dark backdrops pass through untouched.
 - **The popup no longer pegs the main thread while an account is in
   the 90s.** The critical-row pulse re-ran the whole headroom sort on
   every frame, and each sort built fresh ISO date formatters (an ICU
