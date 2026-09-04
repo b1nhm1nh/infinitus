@@ -14,5 +14,9 @@ final class TeamDeflateTests: XCTestCase {
         XCTAssertThrowsError(try Deflate.decompress(Data([1, 2, 3, 4])))
         let big = Data(repeating: 0, count: 100_000)
         XCTAssertThrowsError(try Deflate.decompress(try Deflate.compress(big), maxBytes: 50_000))
+        // A cap below the 1 KiB floor still holds.
+        let small = Data(repeating: 7, count: 512)
+        XCTAssertThrowsError(try Deflate.decompress(try Deflate.compress(small), maxBytes: 16))
+        XCTAssertEqual(try Deflate.decompress(try Deflate.compress(small), maxBytes: 512), small)
     }
 }

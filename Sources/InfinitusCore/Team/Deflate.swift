@@ -25,7 +25,7 @@ public enum Deflate {
     /// Grows the output buffer until zlib stops reporting Z_BUF_ERROR,
     /// capped at `maxBytes` so a hostile envelope can't balloon memory.
     public static func decompress(_ data: Data, maxBytes: Int = 64 << 20) throws -> Data {
-        var capacity = max(1024, min(maxBytes, data.count * 4))
+        var capacity = min(maxBytes, max(1024, data.count * 4))
         while true {
             var destLen = uLong(capacity)
             var out = Data(count: capacity)
