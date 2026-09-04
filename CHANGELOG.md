@@ -17,7 +17,11 @@ workflow publishes the matching section as the GitHub release body.
 
 ### Phone
 - **Continue a stopped session** from the phone — one button, whatever
-  stopped it (a limit, a crash, a closed terminal).
+  stopped it (a limit, a crash, a closed terminal). It shows only when
+  the turn ended without a final answer; after one, the composer is
+  the way on.
+- **The whole conversation stays readable.** A pasted screenshot no
+  longer pushes everything before it out of a session's chat.
 - **Sessions is home.** The app opens on what's waiting for you, with a
   badge for how many; the Fleet tab opens with the active account, who's
   next and how many sessions are working.

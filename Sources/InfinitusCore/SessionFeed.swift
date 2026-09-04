@@ -116,6 +116,11 @@ public enum SessionFeedReader {
     /// for how far back "recent important messages" needs to look rather
     /// than a full limit-stop check.
     static let tailBytes = 256 * 1024
+    /// One pasted screenshot is a 400-600 KB line (its base64 tool
+    /// result), wider than the whole tail: the window quadruples until
+    /// it holds `limit` items or reaches this (user 2026-09-04 "session
+    /// msgs are getting trimmed I cant read anything").
+    static let tailBytesMax = 4 * 1024 * 1024
     /// Assistant AND user text items are capped here — the sessions this
     /// serves are dispatch-driven, so user prompts run multi-KB too, and
     /// this feed is polled every 5s from the phone.
@@ -132,8 +137,14 @@ public enum SessionFeedReader {
                              limit: Int = 30) -> SessionFeed? {
         guard !record.sessionId.isEmpty else { return nil }
         let url = Transcript.locate(cwd: record.cwd, sessionId: record.sessionId, claudeDir: claudeDir)
-        let lines = tail(of: url, maxBytes: tailBytes)
-        let raw = attachAgents(parse(lines: lines, limit: limit), transcript: url)
+        var window = tailBytes
+        var parsed = parse(lines: tail(of: url, maxBytes: window), limit: limit)
+        let size = ((try? FileManager.default.attributesOfItem(atPath: url.path))?[.size] as? NSNumber)?.intValue ?? 0
+        while parsed.count < limit, window < size, window < tailBytesMax {
+            window *= 4
+            parsed = parse(lines: tail(of: url, maxBytes: window), limit: limit)
+        }
+        let raw = attachAgents(parsed, transcript: url)
         let (items, waiting) = finalize(items: raw, status: record.status,
                                         statusUpdatedAt: record.statusUpdatedAt)
         return SessionFeed(pid: record.pid, sessionId: record.sessionId, cwd: record.cwd,

@@ -227,6 +227,31 @@ final class SessionFeedTests: XCTestCase {
         XCTAssertNil(SessionFeedReader.parse(lines: [#"{"type":"user","uuid":"u-3","message":{"role":"user","content":"plain"}}"#], limit: 1).first?.images)
     }
 
+    /// One pasted screenshot is a 400-600 KB transcript line (the base64
+    /// tool result), wider than the whole 256 KiB tail: the phone then saw
+    /// only what came after the last image (user 2026-09-04 "session msgs
+    /// are getting trimmed I cant read anything"). The window grows until
+    /// it holds the asked-for items.
+    func testTailGrowsPastOversizedLines() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("feed-tail-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let record = ClaudeSessionRecord(pid: 1, sessionId: "sid", cwd: "/tmp/x")
+        let claudeDir = root.appendingPathComponent("claude")
+        let url = Transcript.path(cwd: record.cwd, sessionId: record.sessionId, claudeDir: claudeDir)
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        var lines = (1...5).map {
+            #"{"type":"user","timestamp":"2026-09-01T10:00:0\#($0).000Z","message":{"content":"older \#($0)"}}"#
+        }
+        let blob = String(repeating: "A", count: 400 * 1024)
+        lines.append(#"{"type":"user","timestamp":"2026-09-01T10:01:00.000Z","message":{"content":"\#(blob)"}}"#)
+        lines.append(#"{"type":"assistant","timestamp":"2026-09-01T10:01:01.000Z","message":{"content":[{"type":"text","text":"after"}]}}"#)
+        try lines.joined(separator: "\n").write(to: url, atomically: true, encoding: .utf8)
+        let items = SessionFeedReader.read(record: record, claudeDir: claudeDir, limit: 30)?.items ?? []
+        XCTAssertEqual(items.count, 7)
+        XCTAssertEqual(items.first?.text, "older 1")
+        XCTAssertEqual(items.last?.text, "after")
+    }
+
     func testImageDataServesAttachmentsByNameOnlyAndTranscriptBlocks() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("feed-images-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: root) }
