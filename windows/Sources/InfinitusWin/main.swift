@@ -17,6 +17,7 @@ let defaultMirrorPort: UInt16 = 47824
 let commands: [String: ([String]) -> Int32] = [
     "sessions": sessions,
     "pair": pair,
+    "snapshot": snapshot,
 ]
 
 func fail(_ message: String) -> Never {
@@ -49,6 +50,30 @@ func sessions(_ args: [String]) -> Int32 {
     encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
     guard let data = try? encoder.encode(rows) else { fail("sessions: couldn't encode") }
     print(String(data: data, encoding: .utf8) ?? "[]")
+    return 0
+}
+
+// MARK: - snapshot (W6)
+
+/// `infinitus-win snapshot [--claude-dir P]` — the `GET /snapshot` body
+/// on stdout, so the phone's payload can be inspected without a server.
+func snapshot(_ args: [String]) -> Int32 {
+    var claudeDir = ClaudeSessions.configHome()
+    var index = args.startIndex
+    while index < args.endIndex {
+        switch args[index] {
+        case "--claude-dir":
+            index += 1
+            guard index < args.endIndex else { fail("snapshot: --claude-dir needs a path") }
+            claudeDir = URL(fileURLWithPath: args[index])
+        default:
+            fail("snapshot: unknown flag \(args[index])")
+        }
+        index += 1
+    }
+    let data = SnapshotCache(claudeDir: claudeDir).data()
+    guard !data.isEmpty else { fail("snapshot: couldn't encode") }
+    print(String(data: data, encoding: .utf8) ?? "{}")
     return 0
 }
 
