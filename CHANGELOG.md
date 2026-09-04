@@ -31,7 +31,8 @@ workflow publishes the matching section as the GitHub release body.
   to the session's details. Plain words for status; no process ids.
 - Honors Reduce Motion; bigger tap targets and labels for VoiceOver.
 - **Dictate a message.** A mic in the composer; on-device, no server.
-- **Paste an image** from the clipboard, straight into the chat.
+- **Paste an image** from the clipboard, straight into the chat — the
+  keyboard's "Paste from Screenshots" chip and the edit menu both work.
 - **Notifications straight to the phone** (issue #3) — every alert the
   Mac posts, no Slack or Telegram in between. Ships once the phone
   build can register for them.

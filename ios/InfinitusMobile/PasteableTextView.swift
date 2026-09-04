@@ -1,13 +1,17 @@
 import SwiftUI
 import UIKit
-import UniformTypeIdentifiers
 
 /// SessionFeedScreen's composer field, as a UITextView: a SwiftUI
 /// TextField only accepts text pastes, so the iOS keyboard's paste chip
 /// ("Photo — Paste from Screenshots") did nothing (user 2026-09-04
 /// "pasting an image from the keyboard chip into Reply does nothing").
-/// This accepts an image paste via UITextPasteDelegate and hands it to
-/// the screen's existing addImage; a text paste falls through untouched.
+/// An image paste hands the image to the screen's existing addImage; a
+/// text paste falls through untouched. The text view itself decides the
+/// paste: UITextView.canPerformAction(paste:) says no to an image-only
+/// pasteboard even with an image-accepting pasteConfiguration, so the
+/// chip and the edit menu never called paste: and a UITextPasteDelegate
+/// never ran (simulator probe, 2026-09-04 "still can't paste from
+/// screenshots") — ImagePasteTextView answers both itself.
 struct PasteableTextView: UIViewRepresentable {
     @Binding var text: String
     @Binding var isFocused: Bool
@@ -18,7 +22,8 @@ struct PasteableTextView: UIViewRepresentable {
     static let maxHeight: CGFloat = 120 // ~6 lines at body size
 
     func makeUIView(context: Context) -> UITextView {
-        let view = UITextView()
+        let view = ImagePasteTextView()
+        view.onPasteImage = onPasteImage
         view.font = UIFont.preferredFont(forTextStyle: .body)
         view.isScrollEnabled = false
         view.backgroundColor = .clear
@@ -28,16 +33,13 @@ struct PasteableTextView: UIViewRepresentable {
         view.layer.borderColor = UIColor.separator.cgColor
         view.layer.cornerRadius = 6
         view.delegate = context.coordinator
-        view.pasteDelegate = context.coordinator
-        view.pasteConfiguration = UIPasteConfiguration(acceptableTypeIdentifiers: [
-            UTType.image.identifier, UTType.utf8PlainText.identifier, UTType.plainText.identifier
-        ])
         view.text = text
         return view
     }
 
     func updateUIView(_ view: UITextView, context: Context) {
         context.coordinator.parent = self
+        (view as? ImagePasteTextView)?.onPasteImage = onPasteImage
         if view.text != text { view.text = text }
         if isFocused, !view.isFirstResponder {
             view.becomeFirstResponder()
@@ -57,7 +59,7 @@ struct PasteableTextView: UIViewRepresentable {
         return CGSize(width: width, height: height)
     }
 
-    final class Coordinator: NSObject, UITextViewDelegate, UITextPasteDelegate {
+    final class Coordinator: NSObject, UITextViewDelegate {
         var parent: PasteableTextView
 
         init(_ parent: PasteableTextView) { self.parent = parent }
@@ -77,20 +79,26 @@ struct PasteableTextView: UIViewRepresentable {
         func textViewDidEndEditing(_ textView: UITextView) {
             DispatchQueue.main.async { self.parent.isFocused = false }
         }
+    }
+}
 
-        func textPasteConfigurationSupporting(
-            _ textPasteConfigurationSupporting: UITextPasteConfigurationSupporting,
-            transform item: UITextPasteItem
-        ) {
-            guard item.itemProvider.canLoadObject(ofClass: UIImage.self) else {
-                item.setDefaultResult()
-                return
-            }
-            item.itemProvider.loadObject(ofClass: UIImage.self) { [onPasteImage = parent.onPasteImage] object, _ in
-                guard let image = object as? UIImage else { return }
-                DispatchQueue.main.async { onPasteImage(image) }
-            }
-            item.setNoResult()
+/// A UITextView that takes an image paste itself. The image is read the
+/// way the composer's "Paste Image" menu item reads it; a pasteboard
+/// with no image pastes as text, as before.
+final class ImagePasteTextView: UITextView {
+    var onPasteImage: ((UIImage) -> Void)?
+
+    override func canPerformAction(_ action: Selector, withSender sender: Any?) -> Bool {
+        // hasImages reads no content, so no paste banner until chosen.
+        if action == #selector(paste(_:)), UIPasteboard.general.hasImages { return true }
+        return super.canPerformAction(action, withSender: sender)
+    }
+
+    override func paste(_ sender: Any?) {
+        if UIPasteboard.general.hasImages, let image = UIPasteboard.general.image {
+            onPasteImage?(image)
+            return
         }
+        super.paste(sender)
     }
 }
