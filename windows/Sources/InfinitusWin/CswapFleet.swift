@@ -115,12 +115,81 @@ enum CswapFleet {
         return .switched(to: list()?.activeAccountNumber ?? 0)
     }
 
+    // MARK: - backup
+
+    /// What an export or import did.
+    enum BackupOutcome {
+        case ok(detail: String)
+        case noEngine
+        case failed(detail: String)
+
+        var message: String {
+            switch self {
+            case .ok(let detail): return detail
+            case .noEngine: return "no swap engine installed"
+            case .failed(let detail):
+                return detail.isEmpty ? "the engine refused" : detail
+            }
+        }
+        var succeeded: Bool {
+            if case .ok = self { return true }
+            return false
+        }
+    }
+
+    /// `cswap export <path>` — every managed account in one file.
+    ///
+    /// The file holds CREDENTIALS (each account's `oauthAccount`; with
+    /// `full`, all of `~/.claude.json`). The caller says so out loud —
+    /// this only writes where it was told to.
+    static func exportAccounts(to path: String, account: Int? = nil,
+                               full: Bool = false) -> BackupOutcome {
+        guard CswapLocator.locate() != nil else { return .noEngine }
+        var arguments = ["export", path]
+        if let account { arguments += ["--account", String(account)] }
+        if full { arguments.append("--full") }
+        guard let result = run(arguments) else {
+            return .failed(detail: "engine did not run")
+        }
+        guard result.status == 0 else { return .failed(detail: failureDetail(result)) }
+        // Report the file's real size rather than trusting exit 0: an
+        // export the user can't find is the failure that matters here.
+        let size = (try? FileManager.default
+            .attributesOfItem(atPath: path)[.size] as? Int) ?? nil
+        let bytes = size.map { " (\($0) bytes)" } ?? ""
+        return .ok(detail: "exported to \(path)\(bytes)")
+    }
+
+    /// `cswap import <path>` — read accounts back.
+    ///
+    /// `force` overwrites accounts that already exist and so needs the
+    /// caller's confirmation. Without it cswap still repairs slots whose
+    /// refresh token is dead, which is why plain import is not itself
+    /// destructive.
+    static func importAccounts(from path: String, force: Bool = false) -> BackupOutcome {
+        guard CswapLocator.locate() != nil else { return .noEngine }
+        var arguments = ["import", path]
+        if force { arguments.append("--force") }
+        guard let result = run(arguments) else {
+            return .failed(detail: "engine did not run")
+        }
+        guard result.status == 0 else { return .failed(detail: failureDetail(result)) }
+        // Accounts just changed — a cached list would show the old fleet.
+        invalidate()
+        let text = String(decoding: result.output, as: UTF8.self)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return .ok(detail: text.isEmpty ? "imported from \(path)" : text)
+    }
+
     // MARK: - subprocess
 
     private struct Result {
         let status: Int32
         let output: Data
         let errors: Data
+        /// The subcommand that ran, for a message when neither stream
+        /// said anything ("`cswap import` exited 1", not "switch").
+        let verb: String
     }
 
     /// Why a `--json` run failed, in the engine's own words.
@@ -140,12 +209,18 @@ enum CswapFleet {
                 return message
             }
         }
+        // export/import are the other way round: plain text on STDERR,
+        // stdout empty, and each line already prefixed "Error: " — which
+        // would read twice once the caller labels it.
         let text = String(decoding: result.errors, as: UTF8.self)
             .trimmingCharacters(in: .whitespacesAndNewlines)
         if !text.isEmpty {
-            return text.split(separator: "\n").last.map(String.init) ?? text
+            let line = text.split(separator: "\n").last.map(String.init) ?? text
+            return line.hasPrefix("Error: ")
+                ? String(line.dropFirst("Error: ".count))
+                : line
         }
-        return "`cswap switch` exited \(result.status)"
+        return "`cswap \(result.verb)` exited \(result.status)"
     }
 
     /// One `cswap …` run under `timeout`. nil only when the process never
@@ -172,6 +247,7 @@ enum CswapFleet {
             process.terminate()
             return nil
         }
-        return Result(status: process.terminationStatus, output: data, errors: errorData)
+        return Result(status: process.terminationStatus, output: data, errors: errorData,
+                      verb: arguments.first ?? "cswap")
     }
 }

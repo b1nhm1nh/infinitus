@@ -23,6 +23,8 @@ let commands: [String: ([String]) -> Int32] = [
     "resume": resume,
     "serve": serve,
     "control": control,
+    "export": exportAccounts,
+    "import": importAccounts,
 ]
 
 func fail(_ message: String) -> Never {

@@ -634,6 +634,46 @@ cswap reports failures as JSON on **stdout** with an empty stderr
 bare exit code. A refusal carried in the body on exit 0 is treated as a
 failure too, rather than reported as a switch that never happened.
 
+## Backup & restore
+
+```powershell
+.\.build\debug\infinitus-win.exe export accounts.json            # every account
+.\.build\debug\infinitus-win.exe export one.json --account 2     # just slot 2
+.\.build\debug\infinitus-win.exe export all.json --full          # + ~/.claude.json
+.\.build\debug\infinitus-win.exe import accounts.json            # additive restore
+.\.build\debug\infinitus-win.exe import accounts.json --force --yes
+```
+
+**The backup file is a credential file.** It carries each account's
+`credentials.claudeAiOauth` block in plain text — cswap's own header says
+`"encrypted": false` (verified 2026-09-04). Anyone who reads it can use those
+accounts. Keep it out of git and off shared drives, and delete it once you have
+restored what you needed. `export` says this every time unless you pass
+`--quiet`.
+
+Guards, because both verbs are one typo from something you can't undo:
+
+- **`export` never overwrites.** An existing file at that path is refused — it
+  may be your only copy of a credential.
+- **`import` is additive by default**, and cswap also repairs slots whose
+  refresh token has died. That is the common restore and it does not touch live
+  accounts, so try it before reaching for `--force`.
+- **`import --force` replaces existing accounts and requires `--yes`.** There is
+  no dry-run and no undo; what is in the file wins. Unconfirmed, it exits 2 and
+  prints how to proceed. It also reports how many slots stand to be replaced —
+  from `cswap list`, since CLAUDE.md forbids reading `~/.claude-swap-backup`.
+
+Verified round trip (2026-09-04): a throwaway API-key slot exported to an
+808-byte file, the slot removed, then restored from the backup with its number
+and email intact — plus `--force --yes` over a live slot, and both `--account`
+and `--full`. `BackupTests` pins the guards; `CswapBackupTests` pins the
+`--force` detection.
+
+On the Mac the same thing is in **Settings → Accounts**: "Back up accounts…" and
+"Restore…", with the plaintext-credential warning always on screen. A restore
+tries the safe import first and only asks about replacing accounts if the engine
+says it would have to.
+
 ## Not Yet Implemented
 
 1. **WIC Thumbnails**:
