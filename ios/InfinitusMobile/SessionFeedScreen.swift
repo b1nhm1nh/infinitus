@@ -32,6 +32,7 @@ struct SessionFeedScreen: View {
     @State private var awsLoginItem: AwsLogin.Item?
     @State private var lastRowVisible = true
     @Environment(\.scenePhase) private var scenePhase
+    @StateObject private var screenshots = ScreenshotWatch()
     @Environment(\.dismiss) private var dismiss
     /// Bumped on foreground return: `.task(id:)` drops the long-poll that
     /// was in flight when the app left — its connection may be dead until
@@ -211,7 +212,20 @@ struct SessionFeedScreen: View {
         .safeAreaInset(edge: .bottom, spacing: 0) {
             VStack(spacing: 0) {
                 if let item = pendingPrompt { promptCard(item) }
+                if !screenshots.found.isEmpty { screenshotOffer }
                 composer
+            }
+        }
+        .onAppear { screenshots.check() }
+        // A screenshot taken while the app is in front: the first one
+        // asks for Photos access (that's the discovery moment), later
+        // ones show up in the library a beat after the shutter.
+        .onReceive(NotificationCenter.default.publisher(for: UIApplication.userDidTakeScreenshotNotification)) { _ in
+            guard ScreenshotWatch.enabled else { return }
+            Task {
+                if !screenshots.hasAccess { await screenshots.requestAccess() }
+                try? await Task.sleep(for: .seconds(1.5))
+                screenshots.check()
             }
         }
         // The composer owns the bottom edge; the floating tab bar would
@@ -253,7 +267,11 @@ struct SessionFeedScreen: View {
         // left may sit on a dead connection until its timeout; start a
         // fresh one (the stale one's answer is dropped in `load`).
         .onChange(of: scenePhase) { _, phase in
-            if phase == .active { pollGeneration += 1 }
+            if phase == .active {
+                pollGeneration += 1
+                // Back from another app: anything shot meanwhile.
+                screenshots.check()
+            }
         }
     }
 
@@ -343,8 +361,19 @@ struct SessionFeedScreen: View {
             .buttonStyle(.plain)
             .accessibilityLabel("Session details")
             Spacer(minLength: 0)
+            // One tap sends what's on screen (user 2026-09-04: "a lot of
+            // screenshots that come from this app … send it right away").
+            Button { sendAppScreenshot() } label: {
+                Image(systemName: "camera.viewfinder")
+                    .font(.title3)
+                    .frame(width: 40, height: 40)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .disabled(sendingMessage)
+            .accessibilityLabel("Send a screenshot of this screen")
         }
-        .padding(.leading, 4).padding(.trailing, 16).padding(.top, 2)
+        .padding(.leading, 4).padding(.trailing, 8).padding(.top, 2)
     }
 
     /// The account serving this session, under the title. A theme makes
@@ -808,6 +837,98 @@ struct SessionFeedScreen: View {
             }
             attachments.append(PendingAttachment(name: url.lastPathComponent, mime: mime,
                                                  data: data, thumbnail: nil))
+        }
+    }
+
+    // MARK: screenshots (user 2026-09-04: "send it right away")
+
+    /// Screenshots taken since the phone last looked, offered above the
+    /// composer: send them all in one tap, or wave them off.
+    private var screenshotOffer: some View {
+        let shots = screenshots.found
+        return HStack(spacing: 10) {
+            if let thumb = shots.last?.thumbnail {
+                Image(uiImage: thumb)
+                    .resizable().scaledToFill()
+                    .frame(width: 36, height: 36)
+                    .clipShape(RoundedRectangle(cornerRadius: 6))
+            }
+            VStack(alignment: .leading, spacing: 2) {
+                Text(shots.count == 1 ? "New screenshot" : "\(shots.count) new screenshots")
+                    .font(.subheadline.weight(.semibold))
+                Text(shots.count > SessionInput.maxAttachments
+                     ? "The newest \(SessionInput.maxAttachments) go" : "Send to this session?")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 0)
+            Button("Send") { sendFoundScreenshots() }
+                .buttonStyle(.borderedProminent)
+                .disabled(sendingMessage)
+            Button { screenshots.dismiss() } label: {
+                Image(systemName: "xmark").font(.caption.weight(.semibold))
+                    .frame(width: 30, height: 30).contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Not now")
+        }
+        .padding(.horizontal, 16).padding(.vertical, 8)
+        .background(.bar)
+        .overlay(alignment: .top) { Divider() }
+    }
+
+    private func sendAppScreenshot() {
+        guard let image = ScreenshotWatch.captureApp() else {
+            messageResult = "couldn't capture the screen"
+            return
+        }
+        sendImages([image], prefix: "app-screenshot",
+                   caption: "Screenshot of the Infinitus app, taken on the phone just now.")
+    }
+
+    private func sendFoundScreenshots() {
+        let images = screenshots.images(limit: SessionInput.maxAttachments)
+        guard !images.isEmpty else {
+            messageResult = "couldn't read those screenshots"
+            screenshots.dismiss()
+            return
+        }
+        // The offer stays up until the Mac has them — a failed send
+        // shouldn't lose the batch.
+        sendImages(images, prefix: "screenshot",
+                   caption: images.count == 1 ? "Screenshot taken on the phone just now."
+                                              : "\(images.count) screenshots taken on the phone just now.",
+                   onDelivered: { screenshots.dismiss() })
+    }
+
+    /// Straight out, bypassing the draft and its attachments — the
+    /// composer's own text stays where it is.
+    private func sendImages(_ images: [UIImage], prefix: String, caption: String,
+                            onDelivered: @escaping () -> Void = {}) {
+        var picked: [SessionInput.Attachment] = []
+        var thumbs: [UIImage] = []
+        for (i, image) in images.enumerated() {
+            guard let jpeg = Self.downscaledJPEG(image), jpeg.count <= SessionInput.maxAttachmentBytes else { continue }
+            picked.append(.init(name: "\(prefix)-\(i + 1).jpg", mime: "image/jpeg", data: jpeg))
+            thumbs.append(UIImage(data: jpeg) ?? image)
+        }
+        guard !picked.isEmpty else { messageResult = "couldn't read that screenshot"; return }
+        sendingMessage = true
+        messageResult = nil
+        Task {
+            await send(.init(kind: .message, text: caption, attachments: picked)) { reply in
+                if reply.outcome == "delivered" {
+                    pendingSent.append(PendingSent(text: caption, images: thumbs, files: []))
+                    deliveredTick += 1
+                    onDelivered()
+                } else {
+                    messageResult = reply.detail.map { "\(Self.describe(reply.outcome)) — \($0)" }
+                        ?? Self.describe(reply.outcome)
+                }
+            } onFailure: {
+                messageResult = "couldn't reach the Mac"
+            } finished: {
+                sendingMessage = false
+            }
         }
     }
 

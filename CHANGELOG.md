@@ -14,6 +14,12 @@ workflow publishes the matching section as the GitHub release body.
   out as spoken with the English-reply note. Sending mid-translation
   does the same.
 ### Phone
+- **Screenshots go out in one tap.** The camera button in a chat's header
+  sends a picture of the screen you're looking at, straight to that
+  session — no composer, no paste. Take a screenshot anywhere on the
+  phone and the next chat you open offers it (or several) for one-tap
+  sending; Settings › Screenshots turns the offer off. Needs full Photos
+  access for shots from other apps; the in-app button never does.
 - **A message from another session reads as that session's words**, not
   the delivery wrapper around them.
 
