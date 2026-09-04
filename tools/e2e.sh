@@ -101,6 +101,7 @@ echo "Updated profile $profile to use arn:aws:iam::1:user/e2e credentials."
 STUB
 chmod +x "$SOCKDIR/aws"
 export INFINITUS_AWS_CLI="$SOCKDIR/aws"
+export INFINITUS_AWS_LEDGER="$SOCKDIR/aws-logins.json"
 # The fake Claude session: a process with no tty (setsid, so the nudge
 # can't fall back to typing into THIS terminal) listening on the record's
 # messaging socket, writing every frame it receives to an inbox file.

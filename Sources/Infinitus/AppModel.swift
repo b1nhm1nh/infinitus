@@ -157,8 +157,11 @@ final class AppModel: ObservableObject {
         let runner = AwsLoginRunner(
             onChange: { [weak self] states in Task { @MainActor in self?.awsLoginStates = states; self?.rebuildAwsLogins() } },
             onDone: { [weak self] state in Task { @MainActor in self?.awsLoginLanded(state) } },
-            ledgerURL: FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-                .appendingPathComponent("Infinitus/aws-logins.json"))
+            // INFINITUS_AWS_LEDGER: the e2e gate's own file, so its stub
+            // logins never land in (or read) the real app's ledger.
+            ledgerURL: ProcessInfo.processInfo.environment["INFINITUS_AWS_LEDGER"].map { URL(fileURLWithPath: $0) }
+                ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+                    .appendingPathComponent("Infinitus/aws-logins.json"))
         // A CLI left behind at quit keeps its localhost listener alive.
         awsLoginQuitWatch = NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)
             .sink { _ in runner.killAll() }
@@ -1029,7 +1032,8 @@ final class AppModel: ObservableObject {
                 .map { URL(fileURLWithPath: $0.cwd).lastPathComponent }
             items.append(AwsLogin.Item(profile: profile,
                                        flow: AwsLogin.flow(profile: profile, configText: configText),
-                                       pid: pid, sessionLabel: label, state: byProfile[profile],
+                                       pid: pid, sessionLabel: label,
+                                       state: AwsLogin.current(byProfile[profile], needFailedAt: progress.awsLoginFailedAt),
                                        failedAt: progress.awsLoginFailedAt))
         }
         // Logins started by hand (no session asked) still show while they
@@ -1055,7 +1059,10 @@ final class AppModel: ObservableObject {
         guard !isPlayground, !mockMode || ProcessInfo.processInfo.environment["INFINITUS_AWS_CLI"] != nil
         else { return AwsLogin.Reply(ok: false, error: "not in a demo instance") }
         if !local, remote == nil {
-            let state = await awsLoginRunner.state(profile: profile)
+            // Against the profile's need, when a session has one: a login
+            // finished before that need failed isn't this need's login.
+            let need = awsLogins.first { $0.profile == profile && $0.pid != nil }
+            let state = AwsLogin.current(await awsLoginRunner.state(profile: profile), needFailedAt: need?.failedAt)
             return AwsLogin.Reply(ok: state != nil, state: state, error: state == nil ? "no login in flight for \(profile)" : nil)
         }
         let configText = (try? String(contentsOf: AwsLogin.defaultConfigURL(), encoding: .utf8)) ?? ""

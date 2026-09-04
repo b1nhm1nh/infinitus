@@ -93,6 +93,17 @@ public enum AwsLogin {
         }
     }
 
+    /// The login that belongs to a profile's CURRENT need: one still in
+    /// flight, or one that finished after the need's CLI call failed. A
+    /// finished login older than that failure is history — the ledger
+    /// keeps a day of it — not this need's login (a stale "done" made a
+    /// fresh need report as signed in, e2e 2026-09-04).
+    public static func current(_ state: State?, needFailedAt: Date?) -> State? {
+        guard let state else { return nil }
+        guard state.phase == .done || state.phase == .failed, let needFailedAt else { return state }
+        return needFailedAt.timeIntervalSince1970 > state.startedAt ? nil : state
+    }
+
     /// What the runner keeps across a relaunch (#29: a Mac relaunch
     /// wiped every login it knew about, so a met need came back as
     /// unmet). Finished logins survive as they are; a run in flight for a

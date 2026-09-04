@@ -35,4 +35,16 @@ final class AwsLoginLedgerTests: XCTestCase {
         XCTAssertEqual(back.map(\.profile), ["fresh-done", "fresh-failed"])
         XCTAssertEqual(AwsLogin.Ledger.decode(Data("nope".utf8), now: now), [])
     }
+
+    func testCurrentDropsOutcomesOlderThanTheNeed() {
+        let need = Date(timeIntervalSince1970: 1000)
+        let older = state("p", phase: .done, pid: 1, startedAt: 900)
+        let newer = state("p", phase: .done, pid: 1, startedAt: 1100)
+        let inFlight = state("p", phase: .waitingForCode, pid: 1, startedAt: 900)
+        XCTAssertNil(AwsLogin.current(older, needFailedAt: need))
+        XCTAssertEqual(AwsLogin.current(newer, needFailedAt: need), newer)
+        XCTAssertEqual(AwsLogin.current(inFlight, needFailedAt: need), inFlight)
+        XCTAssertEqual(AwsLogin.current(older, needFailedAt: nil), older)
+        XCTAssertNil(AwsLogin.current(nil, needFailedAt: need))
+    }
 }
