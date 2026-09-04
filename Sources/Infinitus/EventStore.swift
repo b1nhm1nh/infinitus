@@ -32,7 +32,7 @@ actor EventStore {
             defer { try? handle.close() }
             _ = try? handle.seekToEnd()
             try? handle.write(contentsOf: data)
-        } else {
+        } else if !FileManager.default.fileExists(atPath: url.path) {
             try? data.write(to: url, options: .atomic)
         }
     }

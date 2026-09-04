@@ -1455,8 +1455,8 @@ final class AppModel: ObservableObject {
                 let state = registry.state(for: fleet)
                 let change = state.apply(fleet)
                 anyChanged = anyChanged || change.changed
-                if state === primary { primaryResult = (fleet, change) }
                 if state === primary {
+                    primaryResult = (fleet, change)
                     for n in change.newlyDead {
                         let name = fleet.accounts.first { $0.number == n }.map { $0.alias ?? $0.email } ?? "#\(n)"
                         logEvent("death", icon: "heart.slash", "\(name) hit a limit")
