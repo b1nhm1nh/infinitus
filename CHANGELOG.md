@@ -22,6 +22,7 @@ publishes the matching section as the GitHub release body.
 - Your own turns render Markdown too.
 - Live Activities are back on the lock screen and Dynamic Island.
 - The tab bar shrinks to its icon as a list scrolls, Safari-style (iOS 26).
+- Gauges hold still on open and on tab switches; Settings › Replay intro plays the entrance on demand.
 
 ## 0.4.2
 
