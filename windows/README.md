@@ -674,6 +674,38 @@ On the Mac the same thing is in **Settings → Accounts**: "Back up accounts…"
 tries the safe import first and only asks about replacing accounts if the engine
 says it would have to.
 
+## Accounts panel
+
+`Open accounts panel…` in the tray menu (or `infinitus-tray-win --panel`) is
+the Windows answer to the Mac popup's account grid: one row per account with
+its 5h / 7d / per-model gauges, reset countdowns, the active account banded,
+spent windows in red, and a click to switch.
+
+It is **owner-drawn GDI**, because there is no alternative. SwiftUI, AppKit and
+UIKit ship only inside Apple's SDKs — the Windows Swift SDK has 25 modules
+and none of them is a UI framework (verified 2026-09-04) — so the Mac's
+18,478 lines of SwiftUI (`Sources/Infinitus` + `Sources/InfinitusUI`) cannot
+compile here at all, which is why `Package.swift` fences them behind
+`#if os(macOS)`. Every rectangle in this panel is placed by hand.
+
+The numbers and strings come from **InfinitusCore**, never a second
+implementation: `GaugeMath` for remaining/pace, `WeeklyRoll.displayPct` for the
+weekly roll-over, `ResetLabel` for countdowns, `AccountVitals` for death. That
+is what stops the panel and the Mac popup disagreeing about the same account.
+
+What it deliberately does not copy: the burn overlays, HP-drop zooms and intro
+choreography. Those are CAAnimations on the Mac, and CLAUDE.md's hard-won fact
+is that five SwiftUI-driven effects at 20 fps idled the pop-out at 43% CPU
+(0.4% as layer animations). GDI has no equivalent compositor, so imitating them
+would need a repaint timer — the exact thing that rule forbids. Pace is still
+shown, statically: a warm marker where the burn should be when usage runs ahead
+of the clock, cool when it runs behind. Measured idle with the panel open:
+**0.13% CPU, 30 MB**.
+
+`INFINITUS_ACCOUNTS_JSON=<path>` renders a fixture instead of the engine — the
+only way to exercise the gauge painting locally, since a token account reports
+`usage: null` and draws no bars.
+
 ## Not Yet Implemented
 
 1. **WIC Thumbnails**:

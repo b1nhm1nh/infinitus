@@ -24,6 +24,7 @@ let commandRefresh: UINT = 0x0F03
 let commandExit: UINT = 0x0F04
 let commandAutostart: UINT = 0x0F05
 let commandRotate: UINT = 0x0F06
+let commandAccountPanel: UINT = 0x0F07
 /// Session row + this offset raises that session's terminal instead of
 /// opening its window (the submenu's second entry).
 let commandRaiseBase: UINT = 0x2000
@@ -249,6 +250,8 @@ func showMenu(_ window: HWND) {
         // Rotation target is the engine's own next pick, not ours.
         AppendMenuW(menu, UINT(MF_STRING), UINT_PTR(commandRotate),
                     "Switch to next account".wide)
+        AppendMenuW(menu, UINT(MF_STRING), UINT_PTR(commandAccountPanel),
+                    "Open accounts panel\u{2026}".wide)
     }
     AppendMenuW(menu, UINT(MF_SEPARATOR), 0, nil)
     AppendMenuW(menu, UINT(MF_STRING), UINT_PTR(commandCopyPair), "Copy pairing URL".wide)
@@ -278,12 +281,21 @@ func showMenu(_ window: HWND) {
 /// main queue, so a dispatched block would simply never run.
 func switchAccount(to account: Int?) {
     TrayFleet.requestSwitch(to: account) { message in
-        state.pending.lock()
-        state.pendingReports.append(message)
-        state.pending.unlock()
-        if let window = state.window {
-            PostMessageW(window, engineReportMessage, 0, 0)
-        }
+        postEngineReport(message)
+    }
+}
+
+/// Hands an engine reply to the tray window for display. Called from
+/// worker threads (the menu's switch, the account panel's), so it queues
+/// the text under a lock and POSTS — this process pumps a Win32
+/// GetMessageW loop and never drains DispatchQueue.main, so a dispatched
+/// block would simply never run.
+func postEngineReport(_ message: String) {
+    state.pending.lock()
+    state.pendingReports.append(message)
+    state.pending.unlock()
+    if let window = state.window {
+        PostMessageW(window, engineReportMessage, 0, 0)
     }
 }
 
@@ -301,6 +313,8 @@ func handleCommand(_ id: UINT) {
         TrayAutostart.setEnabled(!TrayAutostart.isEnabled())
     case commandRotate:
         switchAccount(to: nil)
+    case commandAccountPanel:
+        FleetWindow.show()
     case commandAccountBase..<(commandAccountBase + 0x1000):
         guard let account = state.accountCommands[id] else { return }
         switchAccount(to: account)
@@ -360,6 +374,10 @@ let windowProc: @convention(c) (HWND?, UINT, WPARAM, LPARAM) -> LRESULT = {
         // Engine data refreshes off the same tick, in the background —
         // the menu must never wait on a subprocess to open.
         TrayFleet.refresh()
+        // The account panel rides this tick rather than running a timer
+        // of its own, and only while it is actually on screen: an idle
+        // panel must cost nothing (CLAUDE.md's idle-CPU rule).
+        if FleetWindow.isOpen { FleetWindow.refresh() }
         return 0
     case WM_DESTROY:
         // Never leave a ghost icon behind.
@@ -402,6 +420,18 @@ func run() -> Int32 {
             return 1
         }
         SessionWindow.open(pid: row.pid, name: row.name)
+        var message = MSG()
+        while GetMessageW(&message, nil, 0, 0) {
+            TranslateMessage(&message)
+            DispatchMessageW(&message)
+        }
+        return 0
+    }
+    // `--panel` opens the accounts panel alone, with its own message
+    // loop — the tray's path without the tray, so the window can be
+    // exercised (and screenshotted) directly.
+    if CommandLine.arguments.dropFirst().first == "--panel" {
+        FleetWindow.show()
         var message = MSG()
         while GetMessageW(&message, nil, 0, 0) {
             TranslateMessage(&message)

@@ -141,6 +141,18 @@ enum TrayFleet {
         }
     }
 
+    /// The cached list as-is, without triggering a fetch — for a second
+    /// view (the account panel) that renders the same data the menu does
+    /// and must not shell out on its own paint.
+    static func cached() -> AccountList? {
+        lock.lock()
+        let list = cachedList
+        let at = cachedAt
+        lock.unlock()
+        if list == nil, at == nil { refresh() }
+        return list
+    }
+
     /// Invalidate cache for manual refresh.
     static func invalidate() {
         lock.lock()
