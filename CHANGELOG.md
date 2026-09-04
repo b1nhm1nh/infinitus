@@ -21,7 +21,9 @@ workflow publishes the matching section as the GitHub release body.
   the turn ended without a final answer; after one, the composer is
   the way on.
 - **The whole conversation stays readable.** A pasted screenshot no
-  longer pushes everything before it out of a session's chat.
+  longer pushes everything before it out of a session's chat, and a
+  message from another session shows as that session's words, not
+  the delivery wrapper around them.
 - **Sessions is home.** The app opens on what's waiting for you, with a
   badge for how many; the Fleet tab opens with the active account, who's
   next and how many sessions are working.
