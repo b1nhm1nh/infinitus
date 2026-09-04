@@ -18,7 +18,18 @@ private let sysSockStream = Int32(SOCK_STREAM.rawValue)   // Glibc enum
 public enum PeerSocket {
     public static let protocolVersion = 1
     public static let messageVersion = 1
-    public static let senderName = "Infinitus"
+    /// Not "Infinitus": a Claude session of that name exists on this Mac,
+    /// and a receiver that took the phone's message for a peer's replied
+    /// to that session instead of answering in its own terminal
+    /// (2026-09-04) — see `phonePreface`.
+    public static let senderName = "Infinitus app"
+
+    /// Prepended to a phone message on the socket channel. The envelope
+    /// makes the text look like a peer session's message, and a receiver
+    /// then "replies" with SendMessage — to a sender that has no inbox —
+    /// while the user waits on the phone for an answer in the transcript.
+    /// The feed strips it back off (`SessionFeedReader.presentableUserText`).
+    public static let phonePreface = "[Infinitus] The user sent this from their phone. Answer it here in this session, as you would a message typed at the keyboard — the phone reads your reply from this transcript. The sender is the Infinitus app, not a Claude session: it has no inbox, so do not reply with SendMessage.\n\n"
 
     /// The receiver's envelope parser accepts exactly this set unescaped
     /// in a `from` address; everything else is percent-encoded.

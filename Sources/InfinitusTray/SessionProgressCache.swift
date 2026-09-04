@@ -21,7 +21,7 @@ enum SessionProgressCache {
     /// Current size/mtime of a session's transcript file; -1 when it
     /// can't be stat'd (never matches a cached stamp, so it's re-read).
     static func stamp(sessionId: String, cwd: String, claudeDir: URL) -> (size: Int, mtime: Double) {
-        let path = Transcript.path(cwd: cwd, sessionId: sessionId, claudeDir: claudeDir).path
+        let path = Transcript.locate(cwd: cwd, sessionId: sessionId, claudeDir: claudeDir).path
         let attrs = try? FileManager.default.attributesOfItem(atPath: path)
         let size = (attrs?[.size] as? Int) ?? -1
         let mtime = (attrs?[.modificationDate] as? Date)?.timeIntervalSince1970 ?? -1

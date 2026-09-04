@@ -105,7 +105,7 @@ final class SessionInputTests: XCTestCase {
     func testMessageWithASocketIsNeverTyped() {
         let h = host(["> ", "> hi there"])
         let reply = deliver(.init(kind: .message, text: "hi\nthere"), hosts: [h],
-                            socket: "/tmp/x.sock", socketSend: { _, text in text == "hi\nthere" })
+                            socket: "/tmp/x.sock", socketSend: { _, text in text == PeerSocket.phonePreface + "hi\nthere" })
         XCTAssertEqual(reply, .init(outcome: "delivered", channel: "socket"))
         XCTAssertEqual(h.commands, [], "line breaks kept, terminal untouched")
     }
@@ -118,7 +118,7 @@ final class SessionInputTests: XCTestCase {
             return true
         })
         XCTAssertEqual(reply, .init(outcome: "delivered", channel: "socket"))
-        XCTAssertEqual(sent?.1, "hi there")
+        XCTAssertEqual(sent?.1, PeerSocket.phonePreface + "hi there")
     }
 
     func testMessageWhileRunningWithNoUsableSocketReportsRunning() {
@@ -227,7 +227,7 @@ final class SessionInputTests: XCTestCase {
                             hosts: [], socket: "/tmp/x.sock", attachmentsDir: dir,
                             socketSend: { _, text in sent = text; return true })
         XCTAssertEqual(reply, .init(outcome: "delivered", channel: "socket"))
-        XCTAssertTrue(sent?.hasPrefix("Please look at the attached file(s):") ?? false, sent ?? "<nil>")
+        XCTAssertTrue(sent?.hasPrefix(PeerSocket.phonePreface + "Please look at the attached file(s):") ?? false, sent ?? "<nil>")
         XCTAssertTrue(sent?.contains("[attached:") ?? false, sent ?? "<nil>")
     }
 

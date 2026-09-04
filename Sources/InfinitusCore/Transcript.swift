@@ -18,10 +18,12 @@ public struct StoppedSession: Sendable, Equatable {
     /// When the limit stop landed (the entry's own timestamp); nil when
     /// the transcript doesn't carry one.
     public var stoppedAt: Date?
+    /// The session's name, for the terminal-title match (cmux).
+    public var name: String?
 
     public init(sessionId: String, pid: Int32, cwd: String, socketPath: String = "",
                 peerProtocol: Int = 0, message: String = "", stopUuid: String = "",
-                stoppedAt: Date? = nil) {
+                stoppedAt: Date? = nil, name: String? = nil) {
         self.sessionId = sessionId
         self.pid = pid
         self.cwd = cwd
@@ -30,6 +32,7 @@ public struct StoppedSession: Sendable, Equatable {
         self.message = message
         self.stopUuid = stopUuid
         self.stoppedAt = stoppedAt
+        self.name = name
     }
 
     public var canUseSocket: Bool { !socketPath.isEmpty && peerProtocol == PeerSocket.protocolVersion }
@@ -52,6 +55,36 @@ public enum Transcript {
             .appendingPathComponent(slug)
             .appendingPathComponent("\(sessionId).jsonl")
     }
+
+    /// The session's transcript: the cwd slug's file when it exists, else
+    /// the same file under any other project dir — a session started in a
+    /// repo root and moved into a worktree keeps writing under the root's
+    /// slug (peon, 2026-09-04: empty feed). Hits are remembered per
+    /// session id; a miss is looked up again so a fresh session's
+    /// transcript is found the moment it appears.
+    public static func locate(cwd: String, sessionId: String, claudeDir: URL) -> URL {
+        let direct = path(cwd: cwd, sessionId: sessionId, claudeDir: claudeDir)
+        let fm = FileManager.default
+        if fm.fileExists(atPath: direct.path) { return direct }
+        located.lock.lock(); defer { located.lock.unlock() }
+        if let hit = located.byId[sessionId], fm.fileExists(atPath: hit.path) { return hit }
+        let projects = claudeDir.appendingPathComponent("projects")
+        guard let dirs = try? fm.contentsOfDirectory(atPath: projects.path) else { return direct }
+        for dir in dirs {
+            let candidate = projects.appendingPathComponent(dir).appendingPathComponent("\(sessionId).jsonl")
+            if fm.fileExists(atPath: candidate.path) {
+                located.byId[sessionId] = candidate
+                return candidate
+            }
+        }
+        return direct
+    }
+
+    private final class LocateCache: @unchecked Sendable {
+        let lock = NSLock()
+        var byId: [String: URL] = [:]
+    }
+    private static let located = LocateCache()
 
     /// Only conversation turns and a retryable mid-turn 429 say anything
     /// about whether work has stopped; bookkeeping entries are skipped.
@@ -108,15 +141,16 @@ public enum Transcript {
     public static func findStopped(sessions: [ClaudeSessionRecord], claudeDir: URL) -> [StoppedSession] {
         var out: [StoppedSession] = []
         for session in sessions where !session.sessionId.isEmpty {
-            let entry = lastTurnEntry(at: path(cwd: session.cwd, sessionId: session.sessionId,
-                                              claudeDir: claudeDir))
+            let entry = lastTurnEntry(at: locate(cwd: session.cwd, sessionId: session.sessionId,
+                                                claudeDir: claudeDir))
             guard isLimitStop(entry), let entry else { continue }
             out.append(StoppedSession(
                 sessionId: session.sessionId, pid: session.pid, cwd: session.cwd,
                 socketPath: session.messagingSocketPath, peerProtocol: session.peerProtocol,
                 message: limitText(entry), stopUuid: entry["uuid"] as? String ?? "",
                 stoppedAt: (entry["timestamp"] as? String)
-                    .flatMap(UsageHistory.parseISO)))
+                    .flatMap(UsageHistory.parseISO),
+                name: session.name))
         }
         return out
     }

@@ -106,11 +106,22 @@ extension Array where Element == PtySurface {
     /// The surface hosting `pid`: by tty when the host exposes ttys (a
     /// Claude inside tmux sits on a NESTED pty, so the pane's own tty never
     /// matches — the pid ancestry does), else by the pid or any ancestor
-    /// appearing among the surface's foreground processes.
-    public func surface(for pid: Int32, tty: String?, ancestors: [Int32]) -> PtySurface? {
+    /// appearing among the surface's foreground processes, else — for a
+    /// host that exposes no pids at all (cmux) — by title: Claude Code
+    /// titles its terminal with the session's name behind a status glyph
+    /// ("◑ Infinitus2"), exact match after the glyph (2026-09-04).
+    public func surface(for pid: Int32, tty: String?, ancestors: [Int32],
+                        name: String? = nil) -> PtySurface? {
         if let tty, let hit = first(where: { $0.tty == tty }) { return hit }
         let lineage = Set([pid] + ancestors)
-        return first { !$0.pids.isEmpty && !lineage.isDisjoint(with: $0.pids) }
+        if let hit = first(where: { !$0.pids.isEmpty && !lineage.isDisjoint(with: $0.pids) }) { return hit }
+        guard let name, !name.isEmpty else { return nil }
+        return first { $0.pids.isEmpty && Self.titleName($0.title) == name }
+    }
+
+    static func titleName(_ title: String) -> String {
+        String(title.drop(while: { !$0.isLetter && !$0.isNumber }))
+            .trimmingCharacters(in: .whitespaces)
     }
 }
 
