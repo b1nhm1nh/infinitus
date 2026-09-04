@@ -50,7 +50,7 @@ public enum RepoStats {
         return out
     }
 
-    /// `gh pr list --json number,createdAt,mergedAt,closedAt`.
+    /// `gh pr list --json number,createdAt,mergedAt`.
     public static func parsePRs(_ data: Data) -> [PR] {
         let iso = ISO8601DateFormatter()
         guard let rows = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else { return [] }

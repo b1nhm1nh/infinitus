@@ -45,9 +45,15 @@ final class StatsModel: ObservableObject {
     private var transcriptDays: [String: Stats.Day] = [:]
     private var repoDays: [String: Stats.Day] = [:]
 
-    init(eventStore: EventStore) { self.eventStore = eventStore }
+    /// What the mirror exporter sends: eight folds, two of them
+    /// full-year. Built OFF the main actor after every `recomputeDays`
+    /// and stored — building it in the exporter's path meant folding a
+    /// year twice per refresh tick on the MainActor. nil until the
+    /// first scan publishes (a disabled instance never publishes).
+    @Published private(set) var bundle: Stats.Bundle?
+    private var bundleGeneration = 0
 
-    var bundle: Stats.Bundle { Stats.Bundle(days: days) }
+    init(eventStore: EventStore) { self.eventStore = eventStore }
 
     func loadIfNeeded() { if days.isEmpty, !scanning { refresh() } }
 
@@ -64,6 +70,22 @@ final class StatsModel: ObservableObject {
         summaries = Dictionary(uniqueKeysWithValues: Stats.Period.allCases.map {
             ($0, Stats.fold(days: merged, period: $0, calendar: calendar))
         })
+        rebuildBundle(days: merged, calendar: calendar)
+    }
+
+    /// The mirrored bundle, rebuilt off the main actor. `generation`
+    /// drops a build that finishes after a newer one started (the
+    /// transcript chunk loop and the repo scan both land here).
+    private func rebuildBundle(days: [String: Stats.Day], calendar: Calendar) {
+        bundleGeneration += 1
+        let generation = bundleGeneration
+        Task.detached(priority: .utility) {
+            let built = Stats.Bundle(days: days, calendar: calendar)
+            await MainActor.run {
+                guard self.bundleGeneration == generation else { return }
+                self.bundle = built
+            }
+        }
     }
 
     /// Both the transcript loop and the repo scan can finish in either
@@ -191,7 +213,7 @@ final class StatsModel: ObservableObject {
                                 if !repoOutcome.timedOut.isEmpty {
                                     built.append("timed out: " + repoOutcome.timedOut.map { ($0 as NSString).lastPathComponent }.joined(separator: ", "))
                                 }
-                                built.append(repoOutcome.ghUsed ? "PRs from GitHub (gh)" : "PRs from git only — install and sign in to gh for opened/merged")
+                                built.append(repoOutcome.ghUsed ? "PRs from GitHub (gh)" : "PRs need gh: install and sign in (`gh auth login`)")
                                 built.append(contentsOf: repoOutcome.notes)
                                 self.repoNotes = built
                                 self.recomputeNotes()

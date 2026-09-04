@@ -39,20 +39,30 @@ actor RepoStatsScanner {
         var outcome = Outcome()
         var seen: Set<String> = []
         var emails: Set<String> = []
-        var roots: [(root: String, email: String?)] = []
+        var roots: [(root: String, common: String, email: String?)] = []
         for cwd in cwds.sorted() where FileManager.default.fileExists(atPath: cwd) {
-            guard let root = try? await git(["rev-parse", "--show-toplevel"], cwd: cwd)
-                    .trimmingCharacters(in: .whitespacesAndNewlines), !root.isEmpty, !seen.contains(root) else { continue }
-            seen.insert(root)
+            // INVARIANT: one repo = one `--git-common-dir`, whatever its
+            // worktrees are called. `--show-toplevel` differs per linked
+            // worktree, so deduping on it counted every history once per
+            // worktree (banyan ×7, this repo ×5 on the dev Mac). The
+            // common dir is the dedupe key and the repo cache's key; the
+            // FIRST worktree's toplevel stays the directory git/gh run
+            // in. rev-parse answers in the order the options are given.
+            guard let out = try? await git(["rev-parse", "--path-format=absolute",
+                                            "--git-common-dir", "--show-toplevel"], cwd: cwd) else { continue }
+            let lines = out.split(separator: "\n").map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            guard lines.count >= 2, !lines[0].isEmpty, !lines[1].isEmpty, !seen.contains(lines[0]) else { continue }
+            let (common, root) = (lines[0], lines[1])
+            seen.insert(common)
             let email = (try? await git(["config", "user.email"], cwd: root)
                 .trimmingCharacters(in: .whitespacesAndNewlines)).flatMap { $0.isEmpty ? nil : $0 }
             if let email { emails.insert(email) }
-            roots.append((root, email))
+            roots.append((root, common, email))
         }
         let authors = emails.sorted()
-        for (root, email) in roots {
+        for (root, common, email) in roots {
             guard email != nil, !authors.isEmpty else { outcome.skipped.append(root); continue }
-            let cacheURL = Self.dir.appendingPathComponent(Self.key(root) + ".json")
+            let cacheURL = Self.dir.appendingPathComponent(Self.key(common) + ".json")
             let decoded = (try? Data(contentsOf: cacheURL)).flatMap { try? JSONDecoder().decode(RepoCache.self, from: $0) }
             // A cache from a stale schema (Stats.Day's fields changed) is
             // treated the same as no cache at all — same idiom as
@@ -67,7 +77,16 @@ actor RepoStatsScanner {
                 // many minutes and pin gigabytes of numstat text in memory
                 // (measured: one repo, 90s+, 1.6 GB RSS). --max-count is a
                 // second belt against a single branch with a huge history.
-                var args = ["log", "HEAD", "--no-merges", "--numstat", "--date=iso-strict",
+                //
+                // `-F`: --author is a limiting PATTERN, matched as a
+                // regex by default. An email is full of metacharacters
+                // (`.`, and `+` in a plus-alias), and escaping them is
+                // not safe either — git's default is POSIX BASIC regex,
+                // where `\+` is GNU's one-or-more quantifier, so
+                // `me\+work@x` matches `mework@x` and not the address
+                // it was built from (probed 2026-09-04). Fixed strings
+                // are what "this exact author" actually means.
+                var args = ["log", "HEAD", "-F", "--no-merges", "--numstat", "--date=iso-strict",
                             "--max-count=20000", "--format=\(RepoStats.logFormat)",
                             "--since=\(ISO8601DateFormatter().string(from: since))"]
                 for a in authors { args.append("--author=\(a)") }
@@ -92,8 +111,12 @@ actor RepoStatsScanner {
             }
             if let ghPath = Self.ghPath,
                cache.prsFetchedAt.map({ Date().timeIntervalSince($0) > Self.ghInterval }) ?? true,
+               // `--limit 200` silently truncated a busy year; the search
+               // filter bounds the query by date instead of by count.
                let json = try? await Self.run(ghPath, ["pr", "list", "--author", "@me", "--state", "all",
-                                                       "--limit", "200", "--json", "number,createdAt,mergedAt"], cwd: root) {
+                                                       "--limit", "1000",
+                                                       "--search", "created:>=\(Self.ghDay.string(from: since))",
+                                                       "--json", "number,createdAt,mergedAt"], cwd: root) {
                 cache.prDays = RepoStats.days(commits: [], prs: RepoStats.parsePRs(Data(json.utf8)), repo: root)
                 cache.prsFetchedAt = Date()
                 outcome.ghUsed = true
@@ -114,6 +137,14 @@ actor RepoStatsScanner {
         // Full-path SHA-256 hex — no truncation, no collisions on shared tails.
         SHA256.hash(data: Data(root.utf8)).map { String(format: "%02x", $0) }.joined()
     }
+
+    /// GitHub search qualifiers take a plain `yyyy-MM-dd`.
+    private static let ghDay: DateFormatter = {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = "yyyy-MM-dd"
+        return f
+    }()
 
     private static let ghPath: String? = ["/opt/homebrew/bin/gh", "/usr/local/bin/gh"]
         .first { FileManager.default.isExecutableFile(atPath: $0) }

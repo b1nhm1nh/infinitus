@@ -118,6 +118,12 @@ final class AppModel: ObservableObject {
     func logEvent(_ kind: String, icon: String, _ text: String) {
         eventLog.append(EventEntry(icon: icon, text: text))
         if eventLog.count > 100 { eventLog.removeFirst(eventLog.count - 100) }
+        // The durable log belongs to the real instance alone. A mock,
+        // playground or e2e instance shares the same App Support path
+        // (only the defaults domain and the control socket differ), and
+        // would otherwise write demo switches into the user's own
+        // months of history — the same gate `statsModel.enabled` uses.
+        guard !isPlayground, !mockMode else { return }
         let event = StatsEvent(at: Date(), kind: kind, icon: icon, text: text)
         Task.detached(priority: .utility) { [eventStore] in await eventStore.append(event) }
     }
@@ -835,7 +841,11 @@ final class AppModel: ObservableObject {
     func startFeeds() {
         detectOnboarding()
         seedRecentSamples()
-        Task.detached(priority: .utility) { [eventStore] in await eventStore.prune() }
+        // Same gate as logEvent: a mock instance must not rewrite the
+        // real events log either.
+        if !isPlayground, !mockMode {
+            Task.detached(priority: .utility) { [eventStore] in await eventStore.prune() }
+        }
         resume.log = { [weak self] icon, text in
             self?.logEvent("nudge", icon: icon, text)
         }
@@ -1580,7 +1590,7 @@ final class AppModel: ObservableObject {
                                         tokenRate: sessionProgress.tokenRate)
             }
             statsModel.refreshIfStale()
-            let stats = statsModel.days.isEmpty ? nil : statsModel.bundle
+            let stats = statsModel.bundle
             Task.detached(priority: .utility) { [mirrorExporter] in
                 await mirrorExporter.record(listJSON: raw, prefs: prefs,
                                             serviceStatus: serviceStatus,

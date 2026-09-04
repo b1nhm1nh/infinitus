@@ -342,7 +342,9 @@ final class ControlServer {
             model.statsModel.loadIfNeeded()
             let summary = model.statsModel.summaries[period]
                 ?? Stats.fold(days: model.statsModel.days, period: period)
-            return ControlReply(ok: true, result: try .of(summary))
+            // Compacted: `DayPoint.day` carries the 168-slot histogram
+            // and the session set, which made `--period year` ~0.5 MB.
+            return ControlReply(ok: true, result: try .of(summary.compacted()))
 
         case "perf":
             var usage = rusage()
