@@ -35,6 +35,9 @@ workflow publishes the matching section as the GitHub release body.
   "Message from @Infinitus" line with a short preview, the full text a
   tap away — not a wall of delivery wrapper, and not your own bubble.
   Your own phone messages lose the "Infinitus app:" prefix.
+- Your own turns render Markdown too — a skill body or a pasted note no
+  longer shows its `**` and `#` marks.
+- Live Activities are back on the lock screen and Dynamic Island.
 
 ## 0.4.2
 
