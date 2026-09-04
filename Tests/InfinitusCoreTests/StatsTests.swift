@@ -199,4 +199,42 @@ final class StatsTests: XCTestCase {
         XCTAssertEqual(r.days["2026-09-04"]?.humanMessages, 1)
         XCTAssertTrue(FileManager.default.fileExists(atPath: cache.path))
     }
+
+    func testParseGitLogWithNumstatAndTrailers() {
+        let log = """
+        \u{1e}abc123\u{1f}2026-09-04T08:10:00+07:00\u{1f}me@x.com\u{1f}feat: thing\u{1f}Claude Code <noreply@anthropic.com>
+        3\t1\tSources/A.swift
+        -\t-\tassets/icon.png
+        \u{1e}def456\u{1f}2026-09-03T23:59:00+07:00\u{1f}me@x.com\u{1f}Revert "feat: thing"\u{1f}
+        0\t3\tSources/A.swift
+        """
+        let commits = RepoStats.parseLog(log)
+        XCTAssertEqual(commits.count, 2)
+        XCTAssertEqual(commits[0].sha, "abc123")
+        XCTAssertEqual(commits[0].added, 3)
+        XCTAssertEqual(commits[0].removed, 1)
+        XCTAssertEqual(commits[0].files, 2)
+        XCTAssertTrue(commits[0].coAuthoredByClaude)
+        XCTAssertFalse(commits[0].revert)
+        XCTAssertTrue(commits[1].revert)
+        XCTAssertFalse(commits[1].coAuthoredByClaude)
+        XCTAssertEqual(commits[1].at, date("2026-09-03T16:59:00Z"))
+    }
+
+    func testParsePRsAndFoldDays() throws {
+        let json = Data(#"[{"number":1,"createdAt":"2026-09-01T10:00:00Z","mergedAt":"2026-09-03T10:00:00Z","closedAt":"2026-09-03T10:00:00Z"},{"number":2,"createdAt":"2026-09-04T01:00:00Z","mergedAt":null,"closedAt":null}]"#.utf8)
+        let prs = RepoStats.parsePRs(json)
+        XCTAssertEqual(prs.count, 2)
+        XCTAssertNil(prs[1].mergedAt)
+        let commits = RepoStats.parseLog("\u{1e}a\u{1f}2026-09-04T08:10:00+07:00\u{1f}me@x.com\u{1f}x\u{1f}\n1\t0\tf\n")
+        let days = RepoStats.days(commits: commits, prs: prs, repo: "/r/a", calendar: cal)
+        XCTAssertEqual(days["2026-09-04"]?.commits, 1)
+        XCTAssertEqual(days["2026-09-04"]?.linesAdded, 1)
+        XCTAssertEqual(days["2026-09-04"]?.repos, ["/r/a"])
+        XCTAssertEqual(days["2026-09-04"]?.prsOpened, 1)
+        XCTAssertEqual(days["2026-09-01"]?.prsOpened, 1)
+        XCTAssertEqual(days["2026-09-03"]?.prsMerged, 1)
+        XCTAssertEqual(days["2026-09-03"]?.mergeHoursTotal ?? 0, 48, accuracy: 0.01)
+        XCTAssertEqual(days["2026-09-03"]?.mergeCount, 1)
+    }
 }
