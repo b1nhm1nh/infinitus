@@ -662,6 +662,10 @@ final class AppModel: ObservableObject {
                 registry.state(for: fleet).seed(fleet)
             }
         }
+        // A mock/playground instance must never start a real cold
+        // backfill or write real App Support caches under
+        // Infinitus/stats/ (matches the historyRecorder guard above).
+        statsModel.enabled = !isPlayground && !mockMode
     }
 
     /// App-side cache of our own subprocess output (never an engine

@@ -206,6 +206,31 @@ final class StatsTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: cache.path))
     }
 
+    /// A file whose last line never gets a trailing newline (a still-open
+    /// transcript stalled between JSON entries — not the same as an
+    /// mid-write partial line, which does eventually complete) must not
+    /// keep `remaining` stuck above 0 forever: `parse` returns 0 for it,
+    /// so the second scan must latch `size` and report the corpus caught
+    /// up rather than spinning the caller (`StatsModel`'s chunk loop)
+    /// with no way out.
+    func testScanLatchesUnterminatedTailAndStopsBeingRemaining() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("stats-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        try FileManager.default.createDirectory(at: dir.appendingPathComponent("p"), withIntermediateDirectories: true)
+        let file = dir.appendingPathComponent("p/tail.jsonl")
+        let cache = dir.appendingPathComponent("cache.json")
+        let l1 = #"{"type":"user","cwd":"/r/a","timestamp":"2026-09-04T01:00:00.000Z","origin":{"kind":"human"},"message":{"role":"user","content":"one"}}"#
+        // First line complete; last line has no trailing newline at all.
+        try (l1 + "\n" + #"{"type":"user","timest"#).write(to: file, atomically: true, encoding: .utf8)
+        var r = StatsScanner.scan(projectsDir: dir, cacheURL: cache, calendar: cal)
+        XCTAssertEqual(r.days["2026-09-04"]?.humanMessages, 1)
+        XCTAssertEqual(r.remaining, 0)
+        // Scanned again with no change to the file: still caught up.
+        r = StatsScanner.scan(projectsDir: dir, cacheURL: cache, calendar: cal)
+        XCTAssertEqual(r.remaining, 0)
+        XCTAssertEqual(r.bytesRemaining, 0)
+    }
+
     /// A window smaller than the file forces multiple `parse` calls per
     /// file; a budget smaller than the file's total size must stop mid
     /// file (not mid line — every line that gets counted is a whole one).

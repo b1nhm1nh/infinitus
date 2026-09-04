@@ -11,7 +11,8 @@ actor RepoStatsScanner {
     struct Outcome: Sendable {
         var days: [String: Stats.Day] = [:]
         var repos: [String] = []
-        var skipped: [String] = []       // no user.email, or "<root> (timed out)"
+        var skipped: [String] = []       // no user.email
+        var timedOut: [String] = []      // git log exceeded the timeout — cached days still counted
         /// PR data comes from gh (a fetch succeeded at some point) — sticky across scans.
         var ghUsed = false
         /// Fixed, informational — carried here (not hardcoded in StatsModel)
@@ -71,7 +72,12 @@ actor RepoStatsScanner {
                     cache = RepoCache(head: head, emails: authors, days: days,
                                       prsFetchedAt: cache.prsFetchedAt, prDays: cache.prDays)
                 } catch is TimedOut {
-                    outcome.skipped.append(root + " (timed out)")
+                    // The fresh git log didn't finish, but yesterday's
+                    // cached days are still good — merge them in so a
+                    // slow repo regresses to stale data, never to zero.
+                    for (k, d) in cache.days { outcome.days[k] = (outcome.days[k] ?? Stats.Day()) + d }
+                    for (k, d) in cache.prDays { outcome.days[k] = (outcome.days[k] ?? Stats.Day()) + d }
+                    outcome.timedOut.append(root)
                     continue
                 } catch {
                     let days = RepoStats.days(commits: [], prs: [], repo: root)

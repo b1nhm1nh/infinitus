@@ -206,6 +206,15 @@ public enum StatsScanner {
         try? data.write(to: cacheURL, options: .atomic)
     }
 
+    /// Bytes a file still owes given its cached read watermark. A file
+    /// that shrank below where we'd already read owes its FULL size (the
+    /// scan below resets and re-reads it from zero), not `size - offset`
+    /// (which would go negative and clamp to 0 — silently reporting a
+    /// file that needs a full re-read as needing nothing at all).
+    private static func owed(size: Int, offset: Int) -> Int {
+        offset > size ? size : size - offset
+    }
+
     /// Every `*.jsonl` under `projectsDir` (one directory per project),
     /// parsed from each file's byte watermark in bounded windows
     /// (`parse`), newest-modified first. Files untouched for `maxAge`
@@ -257,7 +266,7 @@ public enum StatsScanner {
         for c in candidates {
             let cached = cache.files[c.url.path]
             if cached == nil || cached!.size != c.size {
-                bytesTotal += max(0, c.size - (cached?.offset ?? 0))
+                bytesTotal += owed(size: c.size, offset: cached?.offset ?? 0)
             }
         }
 
@@ -283,7 +292,7 @@ public enum StatsScanner {
                 for (key, day) in cached?.days ?? [:] { result.days[key] = (result.days[key] ?? Stats.Day()) + day }
                 if dirty {
                     result.remaining += 1
-                    result.bytesRemaining += max(0, c.size - (cached?.offset ?? 0))
+                    result.bytesRemaining += owed(size: c.size, offset: cached?.offset ?? 0)
                 }
                 continue
             }
@@ -295,7 +304,20 @@ public enum StatsScanner {
                     if let left = budgetLeft, left <= 0 { budgetSpent = true; break }
                     let consumed = parse(url: c.url, sessionID: c.url.deletingPathExtension().lastPathComponent,
                                         into: &entry, calendar: calendar, windowBytes: windowBytes)
-                    if consumed <= 0 { break }   // unreadable, or a genuinely incomplete trailing line — wait
+                    if consumed <= 0 {
+                        // Nothing more to read right now: an unreadable
+                        // file, or a trailing line that hasn't been
+                        // newline-terminated yet. Retrying this call
+                        // can't help either way, so latch `size` now —
+                        // leaving it dirty forever would spin the caller
+                        // (StatsModel's chunk loop) with no way out. The
+                        // file becomes dirty again on its own once it
+                        // actually grows (e.g. that last line finally
+                        // gets its newline), picking up right where
+                        // `offset` was left.
+                        entry.size = c.size
+                        break
+                    }
                     if budgetLeft != nil { budgetLeft! -= consumed }
                 }
                 if entry.offset >= c.size { entry.size = c.size }   // caught up — only now does size==entry.size latch
@@ -317,7 +339,7 @@ public enum StatsScanner {
             for (key, day) in entry.days { result.days[key] = (result.days[key] ?? Stats.Day()) + day }
             if entry.size != c.size {
                 result.remaining += 1
-                result.bytesRemaining += max(0, c.size - entry.offset)
+                result.bytesRemaining += owed(size: c.size, offset: entry.offset)
             }
         }
         cache.files = live
@@ -340,7 +362,11 @@ public enum StatsScanner {
     /// timestamp can't be found.
     static func fastParseToolResult(_ line: Data) -> [String: Any]? {
         let s = String(decoding: line, as: UTF8.self)
-        guard let match = timestampRegex.firstMatch(in: s, range: NSRange(s.startIndex..., in: s)),
+        // The LAST match, not the first: the entry's own timestamp field
+        // follows `message` in the JSON, and a tool result's content can
+        // itself contain an embedded `"timestamp":"…"` (e.g. echoed API
+        // output) that would otherwise be picked up instead.
+        guard let match = timestampRegex.matches(in: s, range: NSRange(s.startIndex..., in: s)).last,
               let range = Range(match.range(at: 1), in: s) else { return nil }
         let errorCount = s.components(separatedBy: isErrorTrueMarker).count - 1
         var obj: [String: Any] = ["type": "user", "timestamp": String(s[range])]
