@@ -19,6 +19,7 @@ let commandCopyPair: UINT = 0x0F01
 let commandToggleServe: UINT = 0x0F02
 let commandRefresh: UINT = 0x0F03
 let commandExit: UINT = 0x0F04
+let commandAutostart: UINT = 0x0F05
 /// Re-read sessions this often. Every tick tails transcripts, so this is
 /// the one knob that decides idle cost (CLAUDE.md: keep it near zero).
 let refreshMilliseconds: UINT = 5000
@@ -39,6 +40,9 @@ final class TrayState {
     var icon: HICON?
     var rows: [SessionRow] = []
     var busy = 0
+    /// Last tick's pid → status, so a balloon fires on a real change and
+    /// not on every refresh. Empty until the first refresh has run.
+    var lastStatuses: [Int32: String] = [:]
     /// The `infinitus-win serve` child, when this tray started one. A
     /// daemon someone else started is not ours to stop.
     var daemon: Process?
@@ -162,6 +166,16 @@ func refresh() {
     state.rows = rows
     state.busy = busy
     guard let window = state.window else { return }
+
+    // Announce only what the user would want pulled away for: a session
+    // now waiting on them, or one that died mid-turn.
+    let statuses = Dictionary(uniqueKeysWithValues: rows.map { ($0.pid, $0.status) })
+    let names = Dictionary(uniqueKeysWithValues: rows.map { ($0.pid, $0.name) })
+    for line in TrayNotify.transitions(previous: state.lastStatuses,
+                                       current: statuses, names: names) {
+        TrayNotify.balloon(window, title: "Infinitus", body: line)
+    }
+    state.lastStatuses = statuses
     let wasBusy = state.icon != nil && busy > 0
     if let fresh = TrayIcon.make(busy: busy > 0) {
         let previous = state.icon
@@ -191,6 +205,9 @@ func showMenu(_ window: HWND) {
     AppendMenuW(menu, UINT(MF_STRING), UINT_PTR(commandToggleServe),
                 (state.serving ? "Stop mirror daemon" : "Start mirror daemon").wide)
     AppendMenuW(menu, UINT(MF_STRING), UINT_PTR(commandRefresh), "Refresh".wide)
+    let autostart = TrayAutostart.isEnabled()
+    AppendMenuW(menu, UINT(MF_STRING | (autostart ? MF_CHECKED : MF_UNCHECKED)),
+                UINT_PTR(commandAutostart), "Start with Windows".wide)
     AppendMenuW(menu, UINT(MF_SEPARATOR), 0, nil)
     AppendMenuW(menu, UINT(MF_STRING), UINT_PTR(commandExit), "Exit".wide)
 
@@ -212,6 +229,8 @@ func handleCommand(_ id: UINT) {
         if let url = WinPairing.pairingURL() { WinPairing.setClipboardText(url) }
     case commandToggleServe:
         state.serving ? stopDaemon() : startDaemon()
+    case commandAutostart:
+        TrayAutostart.setEnabled(!TrayAutostart.isEnabled())
     default:
         let index = Int(id - commandBase)
         if index >= 0, index < state.rows.count {
@@ -275,7 +294,29 @@ func run() -> Int32 {
         let (rows, busy) = readSessions()
         print("sessions: \(rows.count) (\(busy) busy)")
         print("pair url: \(WinPairing.pairingURL() ?? "none — run `infinitus-win pair` first")")
-        return 0
+        print("autostart: \(TrayAutostart.isEnabled() ? "on" : "off")")
+        // The balloon rules, exercised — this decides when the user gets
+        // interrupted, and the target can't be unit tested (executables
+        // can't be imported by a test target).
+        let names: [Int32: String] = [1: "alpha", 2: "beta"]
+        let cases: [(String, [Int32: String], [Int32: String], Int)] = [
+            ("first tick stays silent", [:], [1: "waiting", 2: "busy"], 0),
+            ("idle → waiting announces", [1: "idle"], [1: "waiting"], 1),
+            ("busy → idle stays silent", [1: "busy"], [1: "idle"], 0),
+            ("still waiting stays silent", [1: "waiting"], [1: "waiting"], 0),
+            ("busy → gone announces", [1: "busy"], [:], 1),
+            ("idle → gone stays silent", [1: "idle"], [:], 0),
+            ("new session already waiting stays silent", [2: "idle"], [1: "waiting", 2: "idle"], 0),
+        ]
+        var failures = 0
+        for (label, previous, current, expected) in cases {
+            let lines = TrayNotify.transitions(previous: previous, current: current, names: names)
+            let ok = lines.count == expected
+            if !ok { failures += 1 }
+            print("  [\(ok ? "ok" : "FAIL")] \(label) → \(lines.count) (want \(expected)) \(lines)")
+        }
+        print("transitions: \(failures == 0 ? "all pass" : "\(failures) FAILED")")
+        return failures == 0 ? 0 : 1
     }
     let instance = GetModuleHandleW(nil)
     let className = "InfinitusTrayWindow".wide
