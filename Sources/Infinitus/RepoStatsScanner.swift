@@ -1,5 +1,6 @@
 // Sources/Infinitus/RepoStatsScanner.swift
 import Foundation
+import CryptoKit
 import InfinitusCore
 
 /// Commits / lines / PRs from the repos Claude Code sessions worked in.
@@ -11,6 +12,7 @@ actor RepoStatsScanner {
         var days: [String: Stats.Day] = [:]
         var repos: [String] = []
         var skipped: [String] = []       // no user.email
+        /// PR data comes from gh (a fetch succeeded at some point) — sticky across scans.
         var ghUsed = false
     }
 
@@ -31,55 +33,55 @@ actor RepoStatsScanner {
         var outcome = Outcome()
         var seen: Set<String> = []
         var emails: Set<String> = []
-        var roots: [String] = []
+        var roots: [(root: String, email: String?)] = []
         for cwd in cwds.sorted() where FileManager.default.fileExists(atPath: cwd) {
             guard let root = try? await git(["rev-parse", "--show-toplevel"], cwd: cwd)
                     .trimmingCharacters(in: .whitespacesAndNewlines), !root.isEmpty, !seen.contains(root) else { continue }
             seen.insert(root)
-            roots.append(root)
-            if let email = try? await git(["config", "user.email"], cwd: root)
-                .trimmingCharacters(in: .whitespacesAndNewlines), !email.isEmpty {
-                emails.insert(email)
-            }
+            let email = (try? await git(["config", "user.email"], cwd: root)
+                .trimmingCharacters(in: .whitespacesAndNewlines)).flatMap { $0.isEmpty ? nil : $0 }
+            if let email { emails.insert(email) }
+            roots.append((root, email))
         }
         let authors = emails.sorted()
-        for root in roots {
-            guard !authors.isEmpty else { outcome.skipped.append(root); continue }
+        for (root, email) in roots {
+            guard email != nil, !authors.isEmpty else { outcome.skipped.append(root); continue }
             let cacheURL = Self.dir.appendingPathComponent(Self.key(root) + ".json")
-            var cache = (try? Data(contentsOf: cacheURL)).flatMap { try? JSONDecoder().decode(RepoCache.self, from: $0) }
+            let loaded = (try? Data(contentsOf: cacheURL)).flatMap { try? JSONDecoder().decode(RepoCache.self, from: $0) }
+            var cache = loaded ?? RepoCache(head: "", emails: [], days: [:], prsFetchedAt: nil, prDays: [:])
             let head = (try? await git(["rev-parse", "HEAD"], cwd: root))?
                 .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-            if cache == nil || cache!.head != head || cache!.emails != authors {
+            if loaded == nil || cache.head != head || cache.emails != authors {
                 var args = ["log", "--all", "--no-merges", "--numstat", "--date=iso-strict",
                             "--format=\(RepoStats.logFormat)", "--since=\(ISO8601DateFormatter().string(from: since))"]
                 for a in authors { args.append("--author=\(a)") }
                 let text = (try? await git(args, cwd: root)) ?? ""
                 let days = RepoStats.days(commits: RepoStats.parseLog(text), prs: [], repo: root)
                 cache = RepoCache(head: head, emails: authors, days: days,
-                                  prsFetchedAt: cache?.prsFetchedAt, prDays: cache?.prDays ?? [:])
+                                  prsFetchedAt: cache.prsFetchedAt, prDays: cache.prDays)
             }
             if let ghPath = Self.ghPath,
-               cache!.prsFetchedAt.map({ Date().timeIntervalSince($0) > Self.ghInterval }) ?? true,
+               cache.prsFetchedAt.map({ Date().timeIntervalSince($0) > Self.ghInterval }) ?? true,
                let json = try? await Self.run(ghPath, ["pr", "list", "--author", "@me", "--state", "all",
                                                        "--limit", "200", "--json", "number,createdAt,mergedAt"], cwd: root) {
-                cache!.prDays = RepoStats.days(commits: [], prs: RepoStats.parsePRs(Data(json.utf8)), repo: root)
-                cache!.prsFetchedAt = Date()
+                cache.prDays = RepoStats.days(commits: [], prs: RepoStats.parsePRs(Data(json.utf8)), repo: root)
+                cache.prsFetchedAt = Date()
                 outcome.ghUsed = true
-            } else if cache!.prsFetchedAt != nil {
+            } else if cache.prsFetchedAt != nil {
                 outcome.ghUsed = true
             }
             try? FileManager.default.createDirectory(at: Self.dir, withIntermediateDirectories: true)
-            if let data = try? JSONEncoder().encode(cache!) { try? data.write(to: cacheURL, options: .atomic) }
+            if let data = try? JSONEncoder().encode(cache) { try? data.write(to: cacheURL, options: .atomic) }
             outcome.repos.append(root)
-            for (k, d) in cache!.days { outcome.days[k] = (outcome.days[k] ?? Stats.Day()) + d }
-            for (k, d) in cache!.prDays { outcome.days[k] = (outcome.days[k] ?? Stats.Day()) + d }
+            for (k, d) in cache.days { outcome.days[k] = (outcome.days[k] ?? Stats.Day()) + d }
+            for (k, d) in cache.prDays { outcome.days[k] = (outcome.days[k] ?? Stats.Day()) + d }
         }
         return outcome
     }
 
     private static func key(_ root: String) -> String {
-        // Stable, filesystem-safe: the path's UTF-8 as hex, capped.
-        String(root.utf8.map { String(format: "%02x", $0) }.joined().suffix(120))
+        // Full-path SHA-256 hex — no truncation, no collisions on shared tails.
+        SHA256.hash(data: Data(root.utf8)).map { String(format: "%02x", $0) }.joined()
     }
 
     private static let ghPath: String? = ["/opt/homebrew/bin/gh", "/usr/local/bin/gh"]
@@ -104,7 +106,7 @@ actor RepoStatsScanner {
                 p.environment = env
                 let out = Pipe()
                 p.standardOutput = out
-                p.standardError = Pipe()
+                p.standardError = FileHandle.nullDevice
                 do { try p.run() } catch { cont.resume(throwing: error); return }
                 let data = out.fileHandleForReading.readDataToEndOfFile()
                 p.waitUntilExit()
