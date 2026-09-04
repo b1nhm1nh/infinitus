@@ -46,10 +46,11 @@ workflow publishes the matching section as the GitHub release body.
   written instead of up to two seconds late; coming back to the app
   refreshes the feed immediately; and on the Mac a message being typed
   into a terminal no longer holds up every other phone request.
-- **Session headers wear the theme.** A session's account bar becomes
-  the account's own Fleet row — glyphs, gauges, the per-model window,
-  the plan badge — on the theme's tint, and the Sessions list header
-  shows the theme's glyph. The Off theme keeps the plain lines.
+- **A header of its own on a session's chat.** Back, the session's name
+  and state (tap for its details), and the account's own Fleet row —
+  glyphs, gauges, the per-model window, the plan badge — on the theme's
+  tint; the Sessions list header shows the theme's glyph. The Off theme
+  keeps the plain lines.
 
 ### Stats
 - **Your engineering week, in numbers.** Settings → Stats: commits,
@@ -76,6 +77,16 @@ workflow publishes the matching section as the GitHub release body.
 - **The Codex slots tab is gone.** The manual auth.json slot switcher
   never grew usage tracking or auto-switch; Codex accounts still show
   as fleets through CLIProxyAPI and 9Router.
+
+### AWS sign-in
+- **Your phone hears when a session needs an AWS login** — one push per
+  session and profile (Notifications → "A session needs an AWS login"),
+  so the need no longer waits for you to open the app.
+- **One login, every session.** When two sessions are stuck on the same
+  sign-in, or one profile's login signs another in underneath (a broker
+  profile over its anchor), every stuck session is told to continue and
+  its "needs login" clears — the app checks the other profiles with the
+  CLI instead of guessing from the config.
 
 ### Fixes
 - A phone message no longer reads to the session like a note from
