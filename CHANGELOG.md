@@ -46,6 +46,9 @@ workflow publishes the matching section as the GitHub release body.
   written instead of up to two seconds late; coming back to the app
   refreshes the feed immediately; and on the Mac a message being typed
   into a terminal no longer holds up every other phone request.
+- **The sessions header wears the theme**: its glyph and colors, like
+  the Mac popup's gauges. The Off theme keeps the plain header.
+
 ### Agents
 - `infinitusctl events` — the app's switch/death/revival log, so a
   "why did it switch?" question has a record to read.

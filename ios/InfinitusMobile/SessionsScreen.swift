@@ -84,9 +84,7 @@ struct SessionsScreen: View {
                             NavigationLink(value: session) { row(session) }
                         }
                     } header: {
-                        Text(model.fleets.count > 1
-                             ? "\(fleet.fleetLabel?.engineName ?? fleet.engineID) — \(SessionSummary.tooltip(live))"
-                             : SessionSummary.tooltip(live))
+                        sectionHeader(fleet: fleet, live: live)
                     }
                 }
             }
@@ -159,6 +157,35 @@ struct SessionsScreen: View {
                 UIPasteboard.general.string = session.cwd
             } label: {
                 Label("Copy path", systemImage: "doc.on.doc")
+            }
+        }
+    }
+
+    /// The summary line wears the theme (user 2026-09-04 "style the
+    /// header info of sessions with theme"): the theme's session glyph in
+    /// its gauge color on a wash of the theme's accent — the tint the
+    /// Fleet screen's rows already wear. The Off theme keeps the stock
+    /// list header.
+    private func sectionHeader(fleet: MirrorFleetModel, live: LiveSessions) -> some View {
+        let theme = fleet.rowTheme
+        let summary = model.fleets.count > 1
+            ? "\(fleet.fleetLabel?.engineName ?? fleet.engineID) — \(SessionSummary.tooltip(live))"
+            : SessionSummary.tooltip(live)
+        return Group {
+            if theme.plain {
+                Text(summary)
+            } else {
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Text(PopupGlyph.text(theme.sessionLabel))
+                        .font(.footnote.weight(.bold))
+                        .foregroundStyle(ThemeColor.resolve(theme.sessionColor))
+                    Text(summary)
+                        .font(.footnote)
+                        .foregroundStyle(.primary)
+                }
+                .padding(.horizontal, 10).padding(.vertical, 6)
+                .background(ThemeColor.flash(theme).opacity(0.16), in: RoundedRectangle(cornerRadius: 10))
+                .textCase(nil)
             }
         }
     }
