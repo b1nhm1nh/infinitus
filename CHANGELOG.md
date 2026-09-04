@@ -41,6 +41,15 @@ workflow publishes the matching section as the GitHub release body.
   from the phone shows as a thumbnail in the message; tap for full
   size. Images inside tool results stay text.
 - Tool runs stay grouped through errors, with an error count on the chip.
+- **The theme names the phone.** Tab bar icons and names, the screen
+  titles and every session's status word come from the theme — RPG
+  sessions are Questing, Resting at camp or Awaiting orders under
+  Quests / Party / Inventory. Custom themes set `sessionWords`,
+  `tabLabels` and `tabIcons`; Off keeps the plain words.
+- **Unnamed sessions get a name.** Claude Haiku titles any session you
+  haven't named from what it's working on, and re-titles it as the work
+  moves on — in the sessions list on the Mac and the phone. One short
+  Haiku turn on the active account; Settings → Display to turn it off.
 - **Snappier chat.** A sent message shows in the feed at once, marked
   until the session reads it; a reply that streams in lands as it is
   written instead of up to two seconds late; coming back to the app
