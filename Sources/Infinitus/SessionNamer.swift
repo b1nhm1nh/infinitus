@@ -46,10 +46,10 @@ final class SessionNamer: ObservableObject {
     func title(for sessionId: String) -> String? { names[sessionId]?.title }
 
     /// Called after every progress refresh with the unnamed sessions.
-    func consider(_ sessions: [(id: String, progress: SessionProgress)], now: Date = Date()) {
+    func consider(_ sessions: [(id: String, cwd: String, progress: SessionProgress)], now: Date = Date()) {
         guard enabled, Self.claudePath() != nil else { return }
-        for (id, p) in sessions {
-            guard p.name == nil, let goal = p.goal, !goal.isEmpty else { continue }
+        for (id, cwd, p) in sessions {
+            guard SessionNaming.isPlaceholder(p.name, cwd: cwd), let goal = p.goal, !goal.isEmpty else { continue }
             let fp = SessionNaming.fingerprint(p)
             if let have = names[id], have.fingerprint == fp || now.timeIntervalSince(have.at) < Self.minInterval { continue }
             if inFlight.contains(id) || queue.contains(where: { $0.id == id }) { continue }

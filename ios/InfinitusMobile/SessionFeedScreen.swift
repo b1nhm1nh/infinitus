@@ -648,6 +648,7 @@ struct SessionFeedScreen: View {
             dictationEnded()
         }
         .dictationTranslate(translateRequest) { result in
+            guard translating else { return }   // timed out or sent already
             translating = false
             translateRequest = nil
             switch result {
@@ -870,6 +871,9 @@ struct SessionFeedScreen: View {
 
     private func sendMessage() {
         dictation.stop()
+        // Sending mid-translation: the take goes as spoken, with the note.
+        translating = false
+        translateRequest = nil
         var text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty || !attachments.isEmpty else { return }
         // A non-English dictation that wasn't translated on the phone
@@ -946,7 +950,17 @@ struct SessionFeedScreen: View {
         switch Dictation.policy {
         case "phone":
             translating = true
-            translateRequest = DictationTranslateRequest(text: spoken, from: locale)
+            let request = DictationTranslateRequest(text: spoken, from: locale)
+            translateRequest = request
+            // Nothing spins forever: past the deadline the take goes out
+            // as spoken with the English-reply note.
+            Task { @MainActor in
+                try? await Task.sleep(for: .seconds(10))
+                guard translating, translateRequest == request else { return }
+                translating = false
+                translateRequest = nil
+                dictationNote = "Translation is taking too long — sending as spoken, with a note asking for an English reply."
+            }
         case "note":
             dictationNote = "Sending as spoken, with a note asking for an English reply."
         default:

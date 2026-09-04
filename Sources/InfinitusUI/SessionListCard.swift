@@ -42,7 +42,7 @@ public struct SessionListCard<P: SessionProgressSource>: View {
                             Circle()
                                 .fill(color(for: s.status))
                                 .frame(width: 7, height: 7)
-                            Text(progress.byPid[s.pid]?.name ?? progress.byPid[s.pid]?.autoName ?? shortCwd(s.cwd))
+                            Text(SessionNaming.displayName(name: progress.byPid[s.pid]?.name, autoName: progress.byPid[s.pid]?.autoName, cwd: s.cwd))
                                 .font(PopupFont.caption)
                                 .lineLimit(1)
                                 .truncationMode(.head)

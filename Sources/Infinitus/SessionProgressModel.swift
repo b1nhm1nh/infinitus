@@ -51,8 +51,10 @@ final class SessionProgressModel: SessionProgressSource {
             var newStamps = stampsCopy
             var newCached = cachedCopy
             var ids: [Int: String] = [:]
+            var cwds: [Int: String] = [:]
             for (session, record) in pairs {
                 ids[session.pid] = record.sessionId
+                cwds[session.pid] = record.cwd
                 let url = Transcript.locate(cwd: record.cwd, sessionId: record.sessionId, claudeDir: claudeDir)
                 let attrs = try? FileManager.default.attributesOfItem(atPath: url.path)
                 let size = (attrs?[.size] as? Int) ?? -1
@@ -68,12 +70,12 @@ final class SessionProgressModel: SessionProgressSource {
                 newStamps[record.sessionId] = stamp
                 newCached[record.sessionId] = progress
             }
-            await self?.finish(byPid: newByPid, stamps: newStamps, cached: newCached, ids: ids)
+            await self?.finish(byPid: newByPid, stamps: newStamps, cached: newCached, ids: ids, cwds: cwds)
         }
     }
 
     private func finish(byPid: [Int: SessionProgress], stamps: [String: Stamp],
-                        cached: [String: SessionProgress], ids: [Int: String]) {
+                        cached: [String: SessionProgress], ids: [Int: String], cwds: [Int: String]) {
         busy = false
         sessionIDByPid = ids
         scanned = true
@@ -82,7 +84,7 @@ final class SessionProgressModel: SessionProgressSource {
         self.cached = cached
         applyAutoNames()
         if let namer {
-            namer.consider(byPid.compactMap { pid, p in ids[pid].map { ($0, p) } })
+            namer.consider(byPid.compactMap { pid, p in ids[pid].map { ($0, cwds[pid] ?? "", p) } })
             namer.prune(keeping: Set(ids.values))
         }
         let perMinute = TokenRate.perMinute(byPid)
@@ -97,7 +99,7 @@ final class SessionProgressModel: SessionProgressSource {
         guard let namer else { return }
         var changed = false
         var next = byPid
-        for (pid, p) in next where p.name == nil {
+        for (pid, p) in next {
             guard let id = sessionIDByPid[pid], let title = namer.title(for: id), !title.isEmpty,
                   p.autoName != title else { continue }
             next[pid]!.autoName = title
