@@ -405,6 +405,14 @@ final class AppModel: ObservableObject {
         }
     }
     private lazy var revivalPanel = RevivalPanelController()
+    /// Haiku names unnamed sessions (SessionNamer). On by default; one
+    /// short Haiku turn per session on the active account.
+    @Published var sessionAutoNames: Bool {
+        didSet {
+            defaults.set(sessionAutoNames, forKey: "session_auto_names")
+            sessionProgress.namer?.enabled = sessionAutoNames
+        }
+    }
     /// Hold a power assertion while any session is mid-turn (KeepAwake).
     /// Display-only: rows sorted most-headroom-first with the active
     /// account and the next candidate pinned on top (todo 2026-09-01).
@@ -584,6 +592,7 @@ final class AppModel: ObservableObject {
         titleIconOnly = defaults.object(forKey: "title_icon_only") as? Bool ?? false
         popoverPinned = defaults.object(forKey: "popover_pinned") as? Bool ?? false
         revivalPanelShown = defaults.object(forKey: "revival_panel") as? Bool ?? true
+        sessionAutoNames = defaults.object(forKey: "session_auto_names") as? Bool ?? true
         popupLayout = defaults.string(forKey: "popup_layout") ?? "wide"
         popupTextSize = defaults.string(forKey: "popup_text_size") ?? "default"
         glassFocused = defaults.object(forKey: "glass_focused") as? Double ?? 0.7
@@ -672,6 +681,13 @@ final class AppModel: ObservableObject {
         // backfill or write real App Support caches under
         // Infinitus/stats/ (matches the historyRecorder guard above).
         statsModel.enabled = !isPlayground && !mockMode
+        if !isPlayground, !mockMode {
+            let namer = SessionNamer(appSupport: FileManager.default
+                .urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+                .appendingPathComponent("Infinitus", isDirectory: true))
+            namer.enabled = sessionAutoNames
+            sessionProgress.namer = namer
+        }
     }
 
     /// App-side cache of our own subprocess output (never an engine

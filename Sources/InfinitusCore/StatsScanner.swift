@@ -325,6 +325,9 @@ public enum StatsScanner {
             candidates.append(Candidate(url: url, size: size, mtime: mtime, subagent: subagent, sessionID: sessionID))
         }
         for project in (try? fm.contentsOfDirectory(at: projectsDir, includingPropertiesForKeys: nil)) ?? [] {
+            // The app's own Haiku session-namer runs `claude -p` in
+            // Infinitus/namer — its transcripts are not your work.
+            if project.lastPathComponent.hasSuffix("-Infinitus-namer") { continue }
             for url in (try? fm.contentsOfDirectory(at: project, includingPropertiesForKeys: [.fileSizeKey, .contentModificationDateKey, .isDirectoryKey])) ?? [] {
                 if url.pathExtension == "jsonl" {
                     addCandidate(url, subagent: false, sessionID: url.deletingPathExtension().lastPathComponent)

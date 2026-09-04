@@ -45,6 +45,10 @@ public struct SessionProgress: Sendable, Equatable, Codable {
     /// sessions use their names?") — rows show it instead of the repo.
     /// New optional field; absent in old cached JSON.
     public let name: String?
+    /// Haiku's title for a session with no name of its own (user
+    /// 2026-09-04) — the app's SessionNamer fills it; rows show it after
+    /// `name` and before the repo. New optional field.
+    public var autoName: String?
     /// Git branch and model from the newest transcript entry that carries
     /// them (user 2026-09-03: "populate other metadata into the session
     /// list"). New optional fields; absent in old cached JSON.

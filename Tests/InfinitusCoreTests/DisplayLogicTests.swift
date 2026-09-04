@@ -301,3 +301,31 @@ final class RecoveryCountdownTests: XCTestCase {
         XCTAssertEqual(RecoveryCountdown.label(until: until, now: now), "00:00:00")
     }
 }
+
+final class SessionNamingTests: XCTestCase {
+    func testCleanStripsFlourishes() {
+        XCTAssertEqual(SessionNaming.clean("\"Theming iOS Bottom Bars.\"\n"), "Theming iOS Bottom Bars")
+        XCTAssertEqual(SessionNaming.clean("\n\nTitle: Stats tab backfill"), "Stats tab backfill")
+        XCTAssertNil(SessionNaming.clean("   \n"))
+        XCTAssertNil(SessionNaming.clean(String(repeating: "x", count: 81)))
+    }
+
+    func testFingerprintMovesWithGoalTodosAndPhase() {
+        let a = SessionProgress(goal: "fix the popup", phase: "building")
+        let b = SessionProgress(todos: .init(done: 1, total: 3, activeForm: "Editing"), goal: "fix the popup", phase: "building")
+        let c = SessionProgress(goal: "fix the popup", phase: "verifying")
+        XCTAssertNotEqual(SessionNaming.fingerprint(a), SessionNaming.fingerprint(b))
+        XCTAssertNotEqual(SessionNaming.fingerprint(a), SessionNaming.fingerprint(c))
+        XCTAssertEqual(SessionNaming.fingerprint(a), SessionNaming.fingerprint(SessionProgress(goal: "fix the popup", phase: "building")))
+    }
+
+    func testPromptCarriesTheInfinitusPrefixAndTheGoal() {
+        let p = SessionProgress(nowDoing: "Editing RowTheme.swift", todos: .init(done: 0, total: 2, activeForm: "Theming tabs"),
+                                goal: String(repeating: "g", count: 700), phase: "building")
+        let prompt = SessionNaming.prompt(p)
+        XCTAssertTrue(prompt.hasPrefix("[Infinitus] "))
+        XCTAssertTrue(prompt.contains("Goal: " + String(repeating: "g", count: 600) + "\n"))
+        XCTAssertTrue(prompt.contains("Todos: 0 of 2 done — now: Theming tabs"))
+        XCTAssertTrue(prompt.contains("Phase: building"))
+    }
+}

@@ -22,6 +22,12 @@ final class SessionProgressModel: SessionProgressSource {
     private var stamps: [String: Stamp] = [:]
     private var cached: [String: SessionProgress] = [:]
     private var busy = false
+    /// Haiku names for unnamed sessions (SessionNamer.swift); nil on
+    /// playground/mock instances.
+    var namer: SessionNamer? {
+        didSet { namer?.onChange = { [weak self] in self?.applyAutoNames() } }
+    }
+    private var sessionIDByPid: [Int: String] = [:]
 
     /// `sessions`: the engine's current per-session detail (busy-first,
     /// capped) — only those get matched to a transcript and read.
@@ -42,7 +48,9 @@ final class SessionProgressModel: SessionProgressSource {
             var newByPid: [Int: SessionProgress] = [:]
             var newStamps = stampsCopy
             var newCached = cachedCopy
+            var ids: [Int: String] = [:]
             for (session, record) in pairs {
+                ids[session.pid] = record.sessionId
                 let url = Transcript.locate(cwd: record.cwd, sessionId: record.sessionId, claudeDir: claudeDir)
                 let attrs = try? FileManager.default.attributesOfItem(atPath: url.path)
                 let size = (attrs?[.size] as? Int) ?? -1
@@ -58,19 +66,40 @@ final class SessionProgressModel: SessionProgressSource {
                 newStamps[record.sessionId] = stamp
                 newCached[record.sessionId] = progress
             }
-            await self?.finish(byPid: newByPid, stamps: newStamps, cached: newCached)
+            await self?.finish(byPid: newByPid, stamps: newStamps, cached: newCached, ids: ids)
         }
     }
 
     private func finish(byPid: [Int: SessionProgress], stamps: [String: Stamp],
-                        cached: [String: SessionProgress]) {
+                        cached: [String: SessionProgress], ids: [Int: String]) {
         busy = false
+        sessionIDByPid = ids
         self.byPid = byPid
         self.stamps = stamps
         self.cached = cached
+        applyAutoNames()
+        if let namer {
+            namer.consider(byPid.compactMap { pid, p in ids[pid].map { ($0, p) } })
+            namer.prune(keeping: Set(ids.values))
+        }
         let perMinute = TokenRate.perMinute(byPid)
         tokenRate = TokenRate(perMinute: perMinute,
                               peakPerMinute: TokenRate.nextPeak(tokenRate?.peakPerMinute ?? 0,
                                                                 seeing: perMinute))
+    }
+
+    /// Stamp Haiku's titles onto the unnamed rows (SessionNamer's
+    /// cache is keyed by session id; rows are keyed by pid).
+    private func applyAutoNames() {
+        guard let namer else { return }
+        var changed = false
+        var next = byPid
+        for (pid, p) in next where p.name == nil {
+            guard let id = sessionIDByPid[pid], let title = namer.title(for: id), !title.isEmpty,
+                  p.autoName != title else { continue }
+            next[pid]!.autoName = title
+            changed = true
+        }
+        if changed { byPid = next }
     }
 }
