@@ -47,8 +47,8 @@ workflow publishes the matching section as the GitHub release body.
   refreshes the feed immediately; and on the Mac a message being typed
   into a terminal no longer holds up every other phone request.
 - **Session headers wear the theme.** A session's account bar shows
-  the theme's gauge glyphs in their colors on its tint ("MP 29% ·
-  HP 6%"), and the Sessions list header its glyph, like the Mac
+  the theme's glyphs and gauge bars on its tint ("MP ▮▮▮▯ 69% ·
+  HP ▮▮▮▮ 93%"), and the Sessions list header its glyph, like the Mac
   popup's gauges. The Off theme keeps the plain headers.
 
 ### Stats
