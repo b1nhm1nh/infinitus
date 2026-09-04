@@ -36,11 +36,15 @@ enum Resume {
     }
 }
 
-/// `infinitus-win resume [--pid N] [--dry-run] [--claude-dir P]` — nudge
-/// every limit-stopped session, or just one. `--dry-run` lists what it
-/// would nudge and writes nothing.
+/// `infinitus-win resume [--pid N] [--dry-run] [--explain] [--claude-dir P]`
+/// — nudge every limit-stopped session, or just one. `--dry-run` lists
+/// what it would nudge and writes nothing; `--explain` shows what the
+/// AUTOMATIC pass (`serve --auto-resume`) would decide right now and why,
+/// which is the only way to see the gate's reasoning without waiting for
+/// a tick.
 func resume(_ args: [String]) -> Int32 {
-    var pid: Int32?, dryRun = false, claudeDir = ClaudeSessions.configHome()
+    var pid: Int32?, dryRun = false, explain = false
+    var claudeDir = ClaudeSessions.configHome()
     var index = args.startIndex
     while index < args.endIndex {
         switch args[index] {
@@ -55,10 +59,56 @@ func resume(_ args: [String]) -> Int32 {
             guard index < args.endIndex else { fail("resume: --claude-dir needs a path") }
             claudeDir = URL(fileURLWithPath: args[index])
         case "--dry-run": dryRun = true
+        case "--explain": explain = true
         default:
             fail("resume: unknown flag \(args[index])")
         }
         index += 1
+    }
+
+    if explain {
+        // The automatic pass's own decision, printed. Writes nothing.
+        //
+        // `INFINITUS_ACCOUNTS_JSON=<path>` substitutes a file for the
+        // engine's `list --json`, so the gate can be driven over a known
+        // account state. A test seam: `Process.run()` goes through
+        // CreateProcess and cannot launch a `.cmd`, so a stub engine
+        // script is located fine and then silently fails to run.
+        let supervisor = ResumeSupervisor(claudeDir: claudeDir, log: { _ in })
+        var override: AccountList?
+        if let path = ProcessInfo.processInfo.environment["INFINITUS_ACCOUNTS_JSON"],
+           !path.isEmpty {
+            guard let data = try? Data(contentsOf: URL(fileURLWithPath: path)),
+                  let decoded = try? JSONDecoder().decode(AccountList.self, from: data) else {
+                fail("resume --explain: cannot read accounts JSON at \(path)")
+            }
+            override = decoded
+        }
+        let plan = supervisor.plan(list: override)
+        if override != nil {
+            print("engine: accounts from INFINITUS_ACCOUNTS_JSON")
+        } else {
+            print("engine: \(CswapLocator.locate() ?? "not installed")")
+        }
+        if let account = plan.activeAccount {
+            print("active account \(account) — \(plan.activeAlive ? "can take work" : "at a limit")")
+        } else {
+            print("active account: none")
+        }
+        if let skipped = plan.skipped {
+            print("would nudge nothing: \(skipped)")
+            return 0
+        }
+        for stop in plan.eligible {
+            print("would nudge \(stop.pid) \(stop.name ?? "unnamed") — gate clear")
+        }
+        for (stop, reason) in plan.held {
+            print("would hold  \(stop.pid) \(stop.name ?? "unnamed") — \(reason)")
+        }
+        if plan.eligible.isEmpty, plan.held.isEmpty {
+            print("would nudge nothing: no limit stops")
+        }
+        return 0
     }
 
     var stopped = Resume.stopped(claudeDir: claudeDir)

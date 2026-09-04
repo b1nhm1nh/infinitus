@@ -11,6 +11,17 @@ enum TrayFleet {
     struct MenuLine: Equatable {
         let text: String
         let enabled: Bool
+        /// The account this line switches to when clicked, or nil for a
+        /// caption ("refreshing accounts…", "no accounts"). The active
+        /// account carries nil too: switching to where you already are is
+        /// a no-op the engine would refuse.
+        let account: Int?
+
+        init(text: String, enabled: Bool, account: Int? = nil) {
+            self.text = text
+            self.enabled = enabled
+            self.account = account
+        }
     }
 
     /// Cache duration matching CswapFleet (30s).
@@ -71,7 +82,12 @@ enum TrayFleet {
             let usageText = formatUsage(account.usage, now: now)
             let fullText = "\(prefix)\(name) — \(usageText)"
             let clamped = fullText.count > 60 ? String(fullText.prefix(59)) + "…" : fullText
-            return MenuLine(text: clamped, enabled: false)
+            // Clickable unless it is where we already are, or the engine
+            // has it held out of rotation — in both cases a click would
+            // only earn a refusal.
+            let selectable = !active && !(account.disabled ?? false)
+            return MenuLine(text: clamped, enabled: selectable,
+                            account: selectable ? account.number : nil)
         }
     }
 
@@ -131,6 +147,108 @@ enum TrayFleet {
         defer { lock.unlock() }
         cachedList = nil
         cachedAt = nil
+    }
+
+    /// Asks the engine to switch, off the UI thread, then refreshes so the
+    /// menu shows the new active account on its next open. `report` is
+    /// called with a line fit for a balloon.
+    ///
+    /// CLAUDE.md: the engine owns account policy. This forwards a click
+    /// and reports the engine's answer — including a refusal, verbatim,
+    /// rather than a cheerful "switched" the engine never agreed to.
+    static func requestSwitch(to number: Int?, report: @escaping @Sendable (String) -> Void) {
+        guard hasEngine() else {
+            report("no swap engine installed")
+            return
+        }
+        Thread.detachNewThread {
+            let outcome = switchTo(number)
+            invalidate()
+            refresh(force: true)
+            report(outcome.message)
+        }
+    }
+
+    /// What a switch attempt did. Mirrors the daemon's `CswapFleet` —
+    /// separate processes, so the tray runs `cswap` itself rather than
+    /// reaching through a daemon that may not be running.
+    enum SwitchOutcome {
+        case switched(to: Int)
+        case noEngine
+        case failed(detail: String)
+
+        var message: String {
+            switch self {
+            case .switched(let number): return "switched to account \(number)"
+            case .noEngine: return "no swap engine installed"
+            case .failed(let detail):
+                return detail.isEmpty ? "engine refused the switch" : detail
+            }
+        }
+    }
+
+    /// Why a `--json` run failed, in the engine's own words.
+    ///
+    /// cswap reports failures as JSON on STDOUT and leaves stderr empty
+    /// (`{"error":{"type":"ConfigError","message":"No accounts are
+    /// managed yet"}}`, exit 1 — verified 2026-09-04), so reading stderr
+    /// alone shows a bare exit code in the balloon.
+    static func failureDetail(output: Data, errors: Data, status: Int32) -> String {
+        if let object = try? JSONSerialization.jsonObject(with: output) as? [String: Any] {
+            if let error = object["error"] as? [String: Any],
+               let message = error["message"] as? String, !message.isEmpty {
+                return message
+            }
+            if let message = object["error"] as? String, !message.isEmpty {
+                return message
+            }
+        }
+        let text = String(decoding: errors, as: UTF8.self)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        if !text.isEmpty {
+            return text.split(separator: "\n").last.map(String.init) ?? text
+        }
+        return "`cswap switch` exited \(status)"
+    }
+
+    /// `cswap switch <n> --json`, or `cswap switch --json` to rotate.
+    static func switchTo(_ number: Int?) -> SwitchOutcome {
+        guard let binary = CswapLocator.locate() else { return .noEngine }
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: binary)
+        process.arguments = number.map { ["switch", String($0), "--json"] } ?? ["switch", "--json"]
+        let output = Pipe(), errors = Pipe()
+        process.standardOutput = output
+        process.standardError = errors
+        guard (try? process.run()) != nil else { return .failed(detail: "engine did not run") }
+
+        let data = output.fileHandleForReading.readDataToEndOfFile()
+        let errorData = errors.fileHandleForReading.readDataToEndOfFile()
+        let deadline = Date().addingTimeInterval(timeout)
+        while process.isRunning, Date() < deadline {
+            Thread.sleep(forTimeInterval: 0.05)
+        }
+        if process.isRunning {
+            process.terminate()
+            return .failed(detail: "`cswap switch` timed out")
+        }
+        guard process.terminationStatus == 0 else {
+            return .failed(detail: failureDetail(output: data, errors: errorData,
+                                                 status: process.terminationStatus))
+        }
+        let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        // A refusal can ride in the body on exit 0; balloon the reason
+        // rather than a "switched" the engine never agreed to.
+        if let object, object["error"] != nil {
+            return .failed(detail: failureDetail(output: data, errors: errorData, status: 0))
+        }
+        if let object,
+           let active = (object["activeAccountNumber"] as? NSNumber)?.intValue
+                     ?? (object["active"] as? NSNumber)?.intValue {
+            return .switched(to: active)
+        }
+        if let number { return .switched(to: number) }
+        return .failed(detail: "rotated, but the engine didn't name the account")
     }
 
     /// Shells out to `cswap list --json` with timeout.

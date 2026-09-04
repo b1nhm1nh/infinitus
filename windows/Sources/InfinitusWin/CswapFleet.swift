@@ -52,10 +52,110 @@ enum CswapFleet {
     }
 
     private static func read() -> AccountList? {
+        guard let result = run(["list", "--json"]), result.status == 0 else { return nil }
+        return try? JSONDecoder().decode(AccountList.self, from: result.output)
+    }
+
+    // MARK: - switching
+
+    /// What a switch attempt did, for a caller that has to report it.
+    enum SwitchOutcome {
+        case switched(to: Int)
+        case noEngine
+        /// The engine ran and refused (unknown number, disabled account,
+        /// nothing to rotate to). `detail` is its own stderr, trimmed.
+        case failed(detail: String)
+
+        var message: String {
+            switch self {
+            case .switched(let number): return "switched to account \(number)"
+            case .noEngine: return "no swap engine installed"
+            case .failed(let detail):
+                return detail.isEmpty ? "engine refused the switch" : detail
+            }
+        }
+    }
+
+    /// `cswap switch <n> --json`, or `cswap switch --json` to rotate.
+    ///
+    /// CLAUDE.md: account policy lives in the ENGINE. This asks the engine
+    /// to switch and reports what it says — it never picks the target
+    /// itself, never writes account state, and never second-guesses a
+    /// refusal. `nil` number means "engine, you choose", which is the
+    /// engine's own rotation order and not a policy of ours.
+    static func switchTo(_ number: Int?) -> SwitchOutcome {
+        guard CswapLocator.locate() != nil else { return .noEngine }
+        let args = number.map { ["switch", String($0), "--json"] } ?? ["switch", "--json"]
+        guard let result = run(args) else {
+            return .failed(detail: "engine did not run")
+        }
+        guard result.status == 0 else {
+            return .failed(detail: Self.failureDetail(result))
+        }
+        let object = try? JSONSerialization.jsonObject(with: result.output) as? [String: Any]
+        // A `--json` tool can carry a refusal in the body while still
+        // exiting 0. Reporting "switched" then would be a lie the caller
+        // has no way to catch.
+        if let object, object["error"] != nil {
+            return .failed(detail: Self.failureDetail(result))
+        }
+        // The active account just changed, so the cached list is a lie —
+        // drop it rather than show the old one for up to 30 s.
+        invalidate()
+        // Trust the engine's own answer for which account is now active;
+        // a rotation's target is only knowable from its reply.
+        if let object,
+           let active = (object["activeAccountNumber"] as? NSNumber)?.intValue
+                     ?? (object["active"] as? NSNumber)?.intValue {
+            return .switched(to: active)
+        }
+        if let number { return .switched(to: number) }
+        // Rotated, but the reply didn't name the target: re-read rather
+        // than invent a number.
+        return .switched(to: list()?.activeAccountNumber ?? 0)
+    }
+
+    // MARK: - subprocess
+
+    private struct Result {
+        let status: Int32
+        let output: Data
+        let errors: Data
+    }
+
+    /// Why a `--json` run failed, in the engine's own words.
+    ///
+    /// cswap reports failures as JSON on STDOUT and leaves stderr empty
+    /// (`{"error":{"type":"ConfigError","message":"No accounts are
+    /// managed yet"}}`, exit 1 — verified 2026-09-04). Reading stderr
+    /// first therefore threw the reason away and left a bare exit code.
+    private static func failureDetail(_ result: Result) -> String {
+        if let object = try? JSONSerialization.jsonObject(with: result.output) as? [String: Any] {
+            if let error = object["error"] as? [String: Any],
+               let message = error["message"] as? String, !message.isEmpty {
+                return message
+            }
+            // Older/other shapes: a plain string under the same key.
+            if let message = object["error"] as? String, !message.isEmpty {
+                return message
+            }
+        }
+        let text = String(decoding: result.errors, as: UTF8.self)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        if !text.isEmpty {
+            return text.split(separator: "\n").last.map(String.init) ?? text
+        }
+        return "`cswap switch` exited \(result.status)"
+    }
+
+    /// One `cswap …` run under `timeout`. nil only when the process never
+    /// started or had to be killed; a non-zero exit still returns, so a
+    /// caller can show the engine's own complaint.
+    private static func run(_ arguments: [String]) -> Result? {
         guard let binary = CswapLocator.locate() else { return nil }
         let process = Process()
         process.executableURL = URL(fileURLWithPath: binary)
-        process.arguments = ["list", "--json"]
+        process.arguments = arguments
         let output = Pipe(), errors = Pipe()
         process.standardOutput = output
         process.standardError = errors
@@ -63,7 +163,7 @@ enum CswapFleet {
 
         // Read before waiting: a full pipe buffer would deadlock the child.
         let data = output.fileHandleForReading.readDataToEndOfFile()
-        _ = errors.fileHandleForReading.readDataToEndOfFile()
+        let errorData = errors.fileHandleForReading.readDataToEndOfFile()
         let deadline = Date().addingTimeInterval(timeout)
         while process.isRunning, Date() < deadline {
             Thread.sleep(forTimeInterval: 0.05)
@@ -72,7 +172,6 @@ enum CswapFleet {
             process.terminate()
             return nil
         }
-        guard process.terminationStatus == 0 else { return nil }
-        return try? JSONDecoder().decode(AccountList.self, from: data)
+        return Result(status: process.terminationStatus, output: data, errors: errorData)
     }
 }

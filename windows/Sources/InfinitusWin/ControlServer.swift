@@ -238,6 +238,26 @@ enum ControlServer {
             data.append(0x0A)
             return data
 
+        case "switch":
+            // Account policy is the engine's (CLAUDE.md): this forwards
+            // the ask. A missing `account` rotates — the engine's own
+            // order, not ours.
+            let number = (json["account"] as? NSNumber)?.intValue ?? (json["account"] as? Int)
+            let outcome = CswapFleet.switchTo(number)
+            var payload: [String: Any] = ["outcome": "\(outcome)"]
+            switch outcome {
+            case .switched(let active):
+                payload = ["outcome": "switched", "activeAccountNumber": active]
+            case .noEngine:
+                payload = ["error": "no swap engine installed"]
+            case .failed(let detail):
+                payload = ["error": detail.isEmpty ? "engine refused the switch" : detail]
+            }
+            var data = (try? JSONSerialization.data(withJSONObject: payload))
+                ?? Data(#"{"error":"failed to encode switch reply"}"#.utf8)
+            data.append(0x0A)
+            return data
+
         case "message":
             guard let pid = (json["pid"] as? NSNumber)?.int32Value ?? (json["pid"] as? Int).map(Int32.init),
                   let text = json["text"] as? String, !text.isEmpty else {
@@ -275,7 +295,7 @@ enum ControlServer {
 
 func control(_ args: [String]) -> Int32 {
     guard let cmd = args.first else {
-        FileHandle.standardError.write(Data("usage: infinitus-win control status|sessions|snapshot|message [--pid N <text>]\n".utf8))
+        FileHandle.standardError.write(Data("usage: infinitus-win control status|sessions|snapshot|message [--pid N <text>]|switch [N]\n".utf8))
         return 2
     }
 
@@ -284,6 +304,18 @@ func control(_ args: [String]) -> Int32 {
     switch cmd {
     case "status", "sessions", "snapshot":
         requestPayload["cmd"] = cmd
+
+    case "switch":
+        // `control switch` rotates; `control switch 3` targets account 3.
+        requestPayload["cmd"] = "switch"
+        if let word = args.dropFirst().first {
+            guard let number = Int(word) else {
+                FileHandle.standardError.write(
+                    Data("control switch: '\(word)' is not an account number\n".utf8))
+                return 2
+            }
+            requestPayload["account"] = number
+        }
 
     case "message":
         var pid: Int32?

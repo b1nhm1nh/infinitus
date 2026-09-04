@@ -13,6 +13,9 @@ import WinSDK
 
 /// Tray callback message (WM_APP+1) and the menu command id base.
 let trayMessage = UINT(WM_APP) + 1
+/// Posted by a background switch when the engine has answered, so the
+/// balloon goes up on the thread that owns the window.
+let engineReportMessage = UINT(WM_APP) + 2
 let commandBase: UINT = 0x1000
 /// Fixed command ids, above any session row.
 let commandCopyPair: UINT = 0x0F01
@@ -20,9 +23,13 @@ let commandToggleServe: UINT = 0x0F02
 let commandRefresh: UINT = 0x0F03
 let commandExit: UINT = 0x0F04
 let commandAutostart: UINT = 0x0F05
+let commandRotate: UINT = 0x0F06
 /// Session row + this offset raises that session's terminal instead of
 /// opening its window (the submenu's second entry).
 let commandRaiseBase: UINT = 0x2000
+/// Account row + this offset switches to that account. Above the session
+/// range so the two can never collide.
+let commandAccountBase: UINT = 0x3000
 /// Re-read sessions this often. Every tick tails transcripts, so this is
 /// the one knob that decides idle cost (CLAUDE.md: keep it near zero).
 let refreshMilliseconds: UINT = 5000
@@ -46,6 +53,13 @@ final class TrayState {
     /// Last tick's pid → status, so a balloon fires on a real change and
     /// not on every refresh. Empty until the first refresh has run.
     var lastStatuses: [Int32: String] = [:]
+    /// The account each account-row command id switches to, rebuilt every
+    /// time the menu opens (the list can change between opens).
+    var accountCommands: [UINT: Int] = [:]
+    /// Engine replies waiting to be shown, written by a worker thread and
+    /// drained by the window procedure — hence the lock.
+    let pending = NSLock()
+    var pendingReports: [String] = []
     /// The `infinitus-win serve` child, when this tray started one. A
     /// daemon someone else started is not ours to stop.
     var daemon: Process?
@@ -215,13 +229,26 @@ func showMenu(_ window: HWND) {
         }
     }
     // Accounts, when a swap engine is installed. Absent engine means no
-    // section at all rather than a row of zeros.
+    // section at all rather than a row of zeros. Clicking a row asks the
+    // engine to switch to it — the engine decides, we forward and report.
+    state.accountCommands = [:]
     if TrayFleet.hasEngine() {
         AppendMenuW(menu, UINT(MF_SEPARATOR), 0, nil)
+        var slot: UINT = 0
         for line in TrayFleet.menuLines() {
+            var id: UINT_PTR = 0
+            if line.enabled, let account = line.account {
+                let command = commandAccountBase + slot
+                state.accountCommands[command] = account
+                id = UINT_PTR(command)
+                slot += 1
+            }
             AppendMenuW(menu, UINT(MF_STRING | (line.enabled ? MF_ENABLED : MF_GRAYED)),
-                        0, line.text.wide)
+                        id, line.text.wide)
         }
+        // Rotation target is the engine's own next pick, not ours.
+        AppendMenuW(menu, UINT(MF_STRING), UINT_PTR(commandRotate),
+                    "Switch to next account".wide)
     }
     AppendMenuW(menu, UINT(MF_SEPARATOR), 0, nil)
     AppendMenuW(menu, UINT(MF_STRING), UINT_PTR(commandCopyPair), "Copy pairing URL".wide)
@@ -242,6 +269,24 @@ func showMenu(_ window: HWND) {
     PostMessageW(window, UINT(WM_NULL), 0, 0)
 }
 
+/// Asks the engine to switch and balloons whatever it answers. The shell
+/// out runs off the UI thread — `cswap switch` may refresh a token, and a
+/// blocked window procedure would freeze the whole tray.
+///
+/// The reply comes back by POSTING a message, not via DispatchQueue.main:
+/// this process pumps a Win32 `GetMessageW` loop and never drains the
+/// main queue, so a dispatched block would simply never run.
+func switchAccount(to account: Int?) {
+    TrayFleet.requestSwitch(to: account) { message in
+        state.pending.lock()
+        state.pendingReports.append(message)
+        state.pending.unlock()
+        if let window = state.window {
+            PostMessageW(window, engineReportMessage, 0, 0)
+        }
+    }
+}
+
 func handleCommand(_ id: UINT) {
     switch id {
     case commandExit:
@@ -254,6 +299,11 @@ func handleCommand(_ id: UINT) {
         state.serving ? stopDaemon() : startDaemon()
     case commandAutostart:
         TrayAutostart.setEnabled(!TrayAutostart.isEnabled())
+    case commandRotate:
+        switchAccount(to: nil)
+    case commandAccountBase..<(commandAccountBase + 0x1000):
+        guard let account = state.accountCommands[id] else { return }
+        switchAccount(to: account)
     case commandRaiseBase..<(commandRaiseBase + 0x1000):
         let index = Int(id - commandRaiseBase)
         if index >= 0, index < state.rows.count {
@@ -287,6 +337,20 @@ let windowProc: @convention(c) (HWND?, UINT, WPARAM, LPARAM) -> LRESULT = {
             refresh()
             if let window { showMenu(window) }
         }
+        return 0
+    case Int32(engineReportMessage):
+        // An engine reply landed. Show it, and refresh so the menu's
+        // active marker matches what just happened.
+        state.pending.lock()
+        let reports = state.pendingReports
+        state.pendingReports = []
+        state.pending.unlock()
+        if let window {
+            for report in reports {
+                TrayNotify.balloon(window, title: "Infinitus", body: report)
+            }
+        }
+        if !reports.isEmpty { refresh() }
         return 0
     case WM_COMMAND:
         handleCommand(UINT(wParam & 0xFFFF))

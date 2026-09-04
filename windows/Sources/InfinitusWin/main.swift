@@ -246,6 +246,7 @@ func which(_ name: String) -> String? {
 func serve(_ args: [String]) -> Int32 {
     var tokenFile: String?, port: UInt16 = defaultMirrorPort
     var claudeDir = ClaudeSessions.configHome()
+    var autoResume = false
     var index = args.startIndex
     while index < args.endIndex {
         switch args[index] {
@@ -263,6 +264,7 @@ func serve(_ args: [String]) -> Int32 {
                 fail("serve: --port needs a number")
             }
             port = parsed
+        case "--auto-resume": autoResume = true
         default:
             fail("serve: unknown flag \(args[index])")
         }
@@ -298,6 +300,18 @@ func serve(_ args: [String]) -> Int32 {
         let advertised = WinBonjour.advertise(port: bound)
         ControlServer.start(claudeDir: claudeDir, snapshot: snapshot)
         ControlServer.recordState(port: bound, bonjour: advertised)
+        // Opt-in, like the Mac's toggle: a nudge types into someone's
+        // session. Held alive by the run loop below.
+        var supervisor: ResumeSupervisor?
+        if autoResume {
+            let started = ResumeSupervisor(claudeDir: claudeDir) { line in
+                print(line)
+                fflush(stdout)
+            }
+            started.start()
+            supervisor = started
+        }
+        _ = supervisor
         fflush(stdout)
         RunLoop.main.run()
     } catch {

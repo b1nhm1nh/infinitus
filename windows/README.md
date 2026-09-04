@@ -454,6 +454,42 @@ Supported flags:
 - `--dry-run`: Format and print NDJSON wire frames without connecting
 - `--claude-dir <path>`: Override Claude configuration root
 
+### Resume: `resume`
+
+Nudges every limit-stopped session, or one with `--pid`. `--dry-run` lists what
+it would nudge; `--explain` shows what the AUTOMATIC pass would decide right
+now and why — the only way to read the gate's reasoning without waiting for a
+tick. Neither writes anything.
+
+```powershell
+.\.build\debug\infinitus-win.exe resume --explain
+```
+```text
+engine: C:\Users\BM\.local\bin\cswap.exe
+active account: none
+would nudge nothing: no active account
+```
+
+Supported flags:
+- `--pid <number>`: Only this session
+- `--dry-run`: List stopped sessions and their pipe reachability
+- `--explain`: Print the automatic pass's decision, with the gate's reason
+- `--claude-dir <path>`: Override Claude configuration root
+
+### Account switch: `control switch`
+
+Asks the engine to switch; no number rotates. The engine decides — a refusal is
+reported in its own words.
+
+```powershell
+.\.build\debug\infinitus-win.exe control switch 3
+```
+```text
+{
+  "error" : "No accounts are managed yet"
+}
+```
+
 ---
 
 ## Pairing Security & Storage
@@ -483,9 +519,10 @@ netsh advfirewall firewall add rule name="Infinitus" dir=in action=allow protoco
 
 ## `serve` — the phone's HTTP surface
 
-`infinitus-win serve [--port N] [--claude-dir P] [--token-file P]` runs the
-server the phone talks to. Without `--token-file` it uses the stored pairing
-token, so `pair` then `serve` is the whole setup.
+`infinitus-win serve [--port N] [--claude-dir P] [--token-file P] [--auto-resume]`
+runs the server the phone talks to. Without `--token-file` it uses the stored
+pairing token, so `pair` then `serve` is the whole setup. `--auto-resume` adds
+the nudge pass described under [Automatic resume](#automatic-resume).
 
 ```
 > infinitus-win serve
@@ -542,16 +579,66 @@ This host runs Claude Code configured with a local swap proxy (`ANTHROPIC_BASE_U
 
 ---
 
+## Automatic resume
+
+`serve --auto-resume` runs the nudge pass on a 60 s tick: a Claude Code
+session stopped at a usage limit is messaged back to work over its named
+pipe, the same `ResumeCoordinator` the Mac runs (CLAUDE.md: this mechanism
+lives in Infinitus, never engine-side).
+
+**Off unless asked for** — a nudge types into someone's session — and it
+needs the swap engine, which is the quota signal it reasons about. Without
+cswap it says so once and stays idle; `infinitus-win resume` still nudges
+by hand.
+
+Every guard the Mac learned the hard way is kept, because they are the
+difference between resuming work and the 2026-09-01 runaway that fired
+three nudges in one minute into a session that was still limited:
+
+- **`ResumeGate`** — something must have changed SINCE the stop: a switch,
+  or a usage poll that postdates it. An "account is alive" verdict that
+  predates the stop is exactly the stale read that caused the loop.
+- **Standing stops are never retried** — only a new one is, so a message
+  held for review can't be queued twice.
+- **A 600 s per-session cooldown** — each burned retry mints a fresh stop
+  id, which is how the runaway escaped the "already nudged" set.
+
+No pty fallback: `hosts: []`, so a session whose pipe is gone is reported
+unreachable rather than typed at (Windows Terminal has no send-keys).
+
+To see what it would decide right now, without writing anything:
+
+```powershell
+.\.build\debug\infinitus-win.exe resume --explain
+```
+
+It prints the active account, whether that account can take work, and one
+line per limit stop — nudge or hold, with the gate's reason. `ResumeSupervisorTests`
+pins the decisions, driving account state through `INFINITUS_ACCOUNTS_JSON`
+so no real credential is involved.
+
+## Switching accounts
+
+Clicking an account in the tray asks the engine to switch to it; "Switch to
+next account" rotates. `infinitus-win control switch [N]` does the same over
+the control pipe.
+
+Account policy stays the **engine's** (CLAUDE.md): these forward the ask and
+report the engine's answer, including a refusal verbatim. The active account
+and any account the engine holds out of rotation are shown greyed — a click
+would only earn a refusal.
+
+cswap reports failures as JSON on **stdout** with an empty stderr
+(`{"error":{"message":"No accounts are managed yet"}}`, exit 1 — verified
+2026-09-04), so the reason is read from stdout; reading stderr alone showed a
+bare exit code. A refusal carried in the body on exit 0 is treated as a
+failure too, rather than reported as a switch that never happened.
+
 ## Not Yet Implemented
 
-The following features from the Windows architecture plan (`docs/plan-windows/`)
-are pending and **not yet present in `main.swift` today**:
-
-1. **Bonjour Advertising**:
-   Zero-configuration service advertisement (`_infinitus._tcp.local:47824`) via `DnsServiceRegister`. Until then the phone needs the host typed in manually (`pair` prints the addresses).
-2. **WIC Thumbnails**:
+1. **WIC Thumbnails**:
    Image downscaling to ≤ 640px JPEG using Windows Imaging Component (`IWICImagingFactory`). The image route serves original bytes today.
-3. **Phone-side multi-host UI**:
-   The storage and transport layer ships (`MirrorHost`, per-host tokens); the merged sessions list, per-host sections and Settings UI are still to come.
-4. **Automatic Resume / Nudge Daemon**:
-   Automated background detection of limit-stopped sessions and quota release triggers. `infinitus-win resume` does it manually; the automatic quota monitor is macOS-only because this box runs no swap engine to ask.
+2. **Engines other than cswap**:
+   The Mac registers CLIProxy, NineRouter and Codex as well; Windows reads cswap only.
+3. **Cloudflare tunnel**:
+   `NamedTunnel` is macOS-only, so remote access is LAN/tailnet (or your own tunnel) rather than a managed hostname.
