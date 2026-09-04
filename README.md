@@ -158,10 +158,14 @@ to drive the running app.
 - **"At this pace"** — measured burn per window, when each runs out,
   when the fleet is out, a full per-account forecast dashboard, and a
   plain-words battle plan for the next reset.
+- **Stats** — commits, lines, PRs, messages (keyboard, phone, agents),
+  sessions, tool calls, time spent waiting on you, switches and limits,
+  cost — today, this week, month or year, each with its trend. On the
+  phone and the wall too.
 - **`infinitusctl`** — an agent-facing control CLI over a same-user
   socket: status, fleets, switch/rotate/hold/rename/prefer/reorder,
-  proxy settings, AWS logins, windows and perf probes; the same calls
-  the panes make. An onboarding "Copy for an AI agent" brief and
+  proxy settings, AWS logins, stats, windows and perf probes; the same
+  calls the panes make. An onboarding "Copy for an AI agent" brief and
   `docs/guides/agent-setup.md` walk a coding agent through the whole
   setup (engine, accounts, proxy, phone).
 
