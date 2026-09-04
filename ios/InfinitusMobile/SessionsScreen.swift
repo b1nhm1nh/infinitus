@@ -14,7 +14,7 @@ struct SessionsScreen: View {
     var body: some View {
         NavigationStack(path: $path) {
             content
-                .navigationTitle("Sessions")
+                .navigationTitle(model.rowTheme.tabLabel("sessions"))
                 .refreshable { await model.refresh() }
                 .navigationDestination(for: SessionDetail.self) { session in
                     SessionFeedScreen(model: model, session: session)
@@ -132,7 +132,7 @@ struct SessionsScreen: View {
                     Text(title(session))
                         .font(.headline).lineLimit(1)
                     Spacer(minLength: 8)
-                    Text(SessionWords.status(session.status))
+                    Text(SessionWords.status(session.status, theme: model.rowTheme))
                         .font(.caption).foregroundStyle(.secondary)
                     Text(SessionWords.age(since: session.startedAt))
                         .font(.caption).monospacedDigit()
@@ -203,7 +203,8 @@ struct SessionsScreen: View {
 
     private func title(_ session: SessionDetail) -> String {
         let repo = repoName(session.cwd)
-        guard let name = progress.byPid[session.pid]?.name, !name.isEmpty, name != repo else { return repo }
+        let p = progress.byPid[session.pid]
+        guard let name = p?.name ?? p?.autoName, !name.isEmpty, name != repo else { return repo }
         return "\(name) · \(repo)"
     }
 

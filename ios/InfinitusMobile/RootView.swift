@@ -51,18 +51,33 @@ struct RootView: View {
     private var tabs: some View {
         TabView(selection: $tab) {
             SessionsScreen(model: model, progress: model.sessionProgress)
-                .tabItem { Label("Sessions", systemImage: "brain") }
+                .tabItem { tabLabel("sessions") }
                 .tag("sessions")
                 .badge(model.liveSessions?.waiting ?? 0)
             NativeFleetScreen(model: model, usage: usage)
-                .tabItem { Label("Fleet", systemImage: "gauge.with.dots.needle.67percent") }
+                .tabItem { tabLabel("fleet") }
                 .tag("fleet")
             NavigationStack {
                 SettingsForm(model: model)
-                    .navigationTitle("Settings")
+                    .navigationTitle(model.rowTheme.tabLabel("settings"))
             }
-            .tabItem { Label("Settings", systemImage: "gearshape") }
+            .tabItem { tabLabel("settings") }
             .tag("settings")
+        }
+    }
+
+    /// The theme's tab: "Quests" with a scroll under RPG, plain
+    /// Sessions/Fleet/Settings under Off (user 2026-09-04: "themify ios:
+    /// bottom bars: icons and names"). "sf:" icons are SF Symbols,
+    /// anything else is drawn as text.
+    private func tabLabel(_ tab: String) -> some View {
+        let theme = model.rowTheme
+        let icon = theme.tabIcon(tab)
+        return Label {
+            Text(theme.tabLabel(tab))
+        } icon: {
+            if icon.hasPrefix("sf:") { Image(systemName: String(icon.dropFirst(3))) }
+            else { Text(icon) }
         }
     }
 }

@@ -112,6 +112,10 @@ struct DisplayPane: View {
                 .help("A small always-on-top panel: who recovers first and "
                       + "when. Click it for the popup; ✕ hides it until the "
                       + "next revival.")
+            Toggle("Name unnamed sessions with Claude Haiku", isOn: $model.sessionAutoNames)
+                .help("One short Haiku turn per session on the active account, "
+                      + "re-asked when the work moves on; the title shows in "
+                      + "the sessions list and on the phone.")
             Toggle("Show menu bar icon", isOn: $model.menuBarIconShown)
                 .help("Hide lasts until quit — it always returns on the next "
                       + "launch, so the app can never strand itself with no UI.")

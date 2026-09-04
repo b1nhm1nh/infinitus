@@ -322,7 +322,7 @@ struct SessionFeedScreen: View {
                             .font(.headline).lineLimit(1)
                         HStack(spacing: 5) {
                             Circle().fill(SessionWords.color(status)).frame(width: 7, height: 7)
-                            Text(SessionWords.status(status))
+                            Text(SessionWords.status(status, theme: model.rowTheme))
                                 .font(.caption).foregroundStyle(.secondary)
                         }
                     }
