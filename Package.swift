@@ -3,18 +3,35 @@ import PackageDescription
 
 // The AppKit app exists only on macOS. The manifest itself is Swift and
 // evaluates on the build host, so the app target is appended only there —
-// plain `swift build` / `swift test` work on Linux too (core + tray)
+// plain `swift build` / `swift test` work on Linux too (core + tray + CLI)
 // without #if litter through the app sources.
 var targets: [Target] = [
+    // System zlib: the team envelope deflates plaintext before sealing
+    // (docs/superpowers/specs/2026-09-05-team-design.md §3). Same bytes
+    // on macOS, Linux and iOS; the Apple SDK and the swift docker image
+    // both ship zlib.
+    .systemLibrary(name: "CZlib", path: "Sources/CZlib", pkgConfig: "zlib",
+                   providers: [.apt(["zlib1g-dev"])]),
     // Pure layer: models, feed decoding, supervisor state machine.
     // No AppKit import — everything here runs under `swift test`.
-    .target(name: "InfinitusCore", path: "Sources/InfinitusCore"),
+    .target(name: "InfinitusCore",
+            dependencies: [.product(name: "Crypto", package: "swift-crypto"), "CZlib"],
+            path: "Sources/InfinitusCore"),
     // Linux/Omarchy frontend: a Waybar custom module over the same core
     // (packaging/omarchy). The engine stays behind `cswap … --json`.
     .executableTarget(
         name: "InfinitusTray",
         dependencies: ["InfinitusCore"],
         path: "Sources/InfinitusTray"
+    ),
+    // Agent-facing control CLI: talks to the running app over its control
+    // socket (ControlProtocol.swift); bundled into Infinitus.app/Contents/MacOS.
+    // `infinitusctl team …` runs in-process, so the binary is built on every
+    // platform; the socket-backed commands answer "needs the Mac app" elsewhere.
+    .executableTarget(
+        name: "InfinitusCLI",
+        dependencies: ["InfinitusCore"],
+        path: "Sources/InfinitusCLI"
     ),
     .testTarget(
         name: "InfinitusCoreTests",
@@ -25,6 +42,7 @@ var targets: [Target] = [
 ]
 var products: [Product] = [
     .executable(name: "infinitus-tray", targets: ["InfinitusTray"]),
+    .executable(name: "infinitusctl", targets: ["InfinitusCLI"]),
     .library(name: "InfinitusCore", targets: ["InfinitusCore"]),
 ]
 #if os(macOS)
@@ -45,19 +63,14 @@ targets.append(.executableTarget(
     // (docs/guides/hot-reload.md). Release links exactly as before.
     linkerSettings: [.unsafeFlags(["-Xlinker", "-interposable"], .when(configuration: .debug))]
 ))
-// Agent-facing control CLI: talks to the running app over its control
-// socket (ControlProtocol.swift); bundled into Infinitus.app/Contents/MacOS.
-targets.append(.executableTarget(
-    name: "InfinitusCLI",
-    dependencies: ["InfinitusCore"],
-    path: "Sources/InfinitusCLI"
-))
-products.append(.executable(name: "infinitusctl", targets: ["InfinitusCLI"]))
 #endif
 
 let package = Package(
     name: "Infinitus",
     platforms: [.macOS(.v14), .iOS(.v17)],
     products: products,
+    dependencies: [
+        .package(url: "https://github.com/apple/swift-crypto.git", from: "3.10.0"),
+    ],
     targets: targets
 )

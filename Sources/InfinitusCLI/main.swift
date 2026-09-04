@@ -62,6 +62,7 @@ let request = ControlRequest(command: command, args: positional, options: option
 
 // MARK: socket round-trip (blocking; a CLI has no reason to be async)
 
+#if canImport(Darwin)
 func connect(path: String) -> Int32? {
     let fd = socket(AF_UNIX, SOCK_STREAM, 0)
     guard fd >= 0 else { return nil }
@@ -135,3 +136,7 @@ if reply.restarting {
     }
 }
 exit(reply.ok ? 0 : 1)
+#else
+FileHandle.standardError.write(Data("\(command) needs the Infinitus Mac app (control socket); only `team` runs here\n".utf8))
+exit(3)
+#endif
