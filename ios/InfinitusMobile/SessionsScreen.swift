@@ -77,7 +77,10 @@ struct SessionsScreen: View {
                 ForEach(fleetsWithSessions) { fleet in
                     let live = fleet.liveSessions!
                     Section {
-                        ForEach(live.sessions ?? [], id: \.pid) { session in
+                        // Sessions waiting on you first — they're what
+                        // the phone is opened for.
+                        ForEach((live.sessions ?? []).sorted { ($0.status == "waiting" ? 0 : 1) < ($1.status == "waiting" ? 0 : 1) },
+                                id: \.pid) { session in
                             NavigationLink(value: session) { row(session) }
                         }
                     } header: {
@@ -97,8 +100,7 @@ struct SessionsScreen: View {
         } else {
             ContentUnavailableView("Waiting for the fleet",
                                    systemImage: "antenna.radiowaves.left.and.right",
-                                   description: Text("No snapshot yet — check "
-                                                     + "Settings › Mac connection."))
+                                   description: Text("Pair with the Mac in Settings to see its sessions."))
         }
     }
 
@@ -132,19 +134,19 @@ struct SessionsScreen: View {
                     Text(title(session))
                         .font(.headline).lineLimit(1)
                     Spacer(minLength: 8)
-                    Text(session.status)
+                    Text(SessionWords.status(session.status))
                         .font(.caption).foregroundStyle(.secondary)
-                    Text(age(session.startedAt))
+                    Text(SessionWords.age(since: session.startedAt))
                         .font(.caption).monospacedDigit()
                         .foregroundStyle(.tertiary)
                 }
                 Text(shortCwd(session.cwd))
                     .font(.caption).foregroundStyle(.secondary)
                     .lineLimit(1).truncationMode(.head)
-                // Metadata line: branch · model · kind · pid · output tokens.
+                // Metadata line: branch · model · kind · output tokens.
                 Text(metadata(session))
-                    .font(.caption2).foregroundStyle(.tertiary)
-                    .lineLimit(1)
+                    .font(.caption2).foregroundStyle(.tertiary).monospacedDigit()
+                    .lineLimit(1).truncationMode(.middle)
                 if let p = progress.byPid[session.pid], p.hasProgressSignal {
                     SessionProgressLine(progress: p)
                 }
@@ -191,8 +193,7 @@ struct SessionsScreen: View {
         var parts: [String] = []
         if let branch = p?.gitBranch { parts.append("⎇ \(branch)") }
         if let model = p?.model { parts.append(shortModel(model)) }
-        if session.kind != "interactive", !session.kind.isEmpty { parts.append(session.kind) }
-        parts.append("pid \(session.pid)")
+        if session.kind != "interactive", !session.kind.isEmpty { parts.append(SessionWords.kind(session.kind)) }
         if let tokens = p?.outputTokens, tokens > 0 { parts.append("\(compact(tokens)) out") }
         return parts.joined(separator: " · ")
     }
@@ -213,11 +214,4 @@ struct SessionsScreen: View {
             : n >= 1000 ? "\(n / 1000)k" : "\(n)"
     }
 
-    private func age(_ epochMs: Double) -> String {
-        let started = Date(timeIntervalSince1970: epochMs / 1000)
-        let s = Int(-started.timeIntervalSinceNow)
-        if s < 3600 { return "\(s / 60)m" }
-        if s < 86_400 { return "\(s / 3600)h" }
-        return "\(s / 86_400)d"
-    }
 }

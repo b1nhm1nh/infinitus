@@ -31,6 +31,13 @@ struct SessionFeedScreen: View {
     @State private var attachmentError: String?
     @State private var awsLoginItem: AwsLogin.Item?
     @State private var lastRowVisible = true
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    // MARK: pending prompt (critique 2026-09-04 P0: a permission was one
+    // unguarded tap on a prominent button that auto-scroll could move)
+    @State private var confirmingAllow = false
+    @State private var selectedOption: Int?
+    @State private var deliveredTick = 0
+    @State private var deniedTick = 0
     // MARK: dictation (user 2026-09-03 "build a smart dictation for mobile")
     @StateObject private var dictation = Dictation()
     /// The draft as it stood when the mic went on; the transcript
@@ -86,47 +93,48 @@ struct SessionFeedScreen: View {
     var body: some View {
         ScrollViewReader { proxy in
             List {
-                if feed?.waiting == true {
-                    Label("Waiting on you", systemImage: "hand.raised.fill")
-                        .foregroundStyle(.orange)
-                        .listRowSeparator(.hidden)
-                }
                 ForEach(Array((feed?.items ?? []).enumerated()), id: \.offset) { index, item in
                     VStack(alignment: .leading, spacing: 6) {
                         row(item)
-                        if index == (feed?.items.count ?? 0) - 1 {
-                            actionRow(item)
-                            if Self.canContinue(after: item, status: session.status) { continueRow }
+                        if index == (feed?.items.count ?? 0) - 1, pendingPrompt == nil,
+                           Self.canContinue(after: item, status: feed?.status ?? session.status) {
+                            continueRow
                         }
                     }
                     .id(index)
                     .listRowSeparator(.hidden)
-                    .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
+                    // Tool chips are the bulk of a transcript; they sit
+                    // tight so the conversation isn't 85% dead space.
+                    .listRowInsets(EdgeInsets(top: item.kind == .tool ? 2 : 4, leading: 16,
+                                              bottom: item.kind == .tool ? 2 : 4, trailing: 16))
                     // The last row's visibility drives the scroll-to-
                     // bottom button (user 2026-09-03 from the phone).
                     .onAppear { if index == (feed?.items.count ?? 0) - 1 { lastRowVisible = true } }
                     .onDisappear { if index == (feed?.items.count ?? 0) - 1 { lastRowVisible = false } }
                 }
-                if let errorText {
-                    Text(errorText)
-                        .font(.caption).foregroundStyle(.secondary)
-                        .listRowSeparator(.hidden)
-                }
             }
             .listStyle(.plain)
+            .overlay {
+                if feed == nil, errorText == nil {
+                    ProgressView("Loading…")
+                } else if feed?.items.isEmpty == true {
+                    ContentUnavailableView("Nothing here yet", systemImage: "bubble.left.and.bubble.right",
+                                           description: Text("Messages show up here as the session works."))
+                }
+            }
             // Dragging the feed tucks the keyboard away; so does a tap on
             // it (user 2026-09-03 from the phone: "I can't hide keyboard").
             .scrollDismissesKeyboard(.interactively)
             .simultaneousGesture(TapGesture().onEnded { composerFocused = false })
             .onChange(of: feed?.items.count) { _, _ in
                 guard let last = feed?.items.indices.last else { return }
-                withAnimation { proxy.scrollTo(last, anchor: .bottom) }
+                scrollToNewest(proxy, last)
             }
             .overlay(alignment: .bottomTrailing) {
                 if !lastRowVisible, (feed?.items.count ?? 0) > 1 {
                     Button {
                         guard let last = feed?.items.indices.last else { return }
-                        withAnimation { proxy.scrollTo(last, anchor: .bottom) }
+                        scrollToNewest(proxy, last)
                     } label: {
                         Image(systemName: "arrow.down")
                             .font(.body.weight(.semibold))
@@ -140,43 +148,50 @@ struct SessionFeedScreen: View {
                     .transition(.opacity.combined(with: .scale(scale: 0.8)))
                 }
             }
-            .animation(.easeInOut(duration: 0.2), value: lastRowVisible)
+            .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: lastRowVisible)
         }
         .sheet(item: $awsLoginItem) { AwsLoginScreen(item: $0) }
         // Pinned above the transcript, not in it: the feed opens scrolled
         // to the newest message, so a card at the top was out of reach
         // (user 2026-09-03 "have to scroll to top").
-        .safeAreaInset(edge: .top) { awsLoginBar }
-        .safeAreaInset(edge: .bottom) { composer }
+        .safeAreaInset(edge: .top, spacing: 0) {
+            VStack(spacing: 0) {
+                accountBar
+                offlineBanner
+                awsLoginBar
+            }
+        }
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            VStack(spacing: 0) {
+                if let item = pendingPrompt { promptCard(item) }
+                composer
+            }
+        }
+        // The composer owns the bottom edge; the floating tab bar would
+        // sit under it.
+        .toolbar(.hidden, for: .tabBar)
         .navigationTitle(feed?.name ?? repoName(session.cwd))
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            // The whole header is a tap target into the detail screen
-            // (user 2026-09-03: "a more detail screen when tap on its
-            // header title") — same NavigationPath the row tap already
-            // pushes onto, one level deeper.
             ToolbarItem(placement: .principal) {
-                NavigationLink(value: SessionDetailRoute(session: session)) {
-                    VStack(spacing: 1) {
-                        Text(feed?.name ?? repoName(session.cwd)).font(.headline)
-                        Text(feed?.status ?? session.status)
-                            .font(.caption2).foregroundStyle(.secondary)
-                        if let line = AccountSummaryFormat.headerLine(
-                            model.accountSummary(forSessionPid: session.pid)) {
-                            HStack(spacing: 4) {
-                                Circle().fill(ThemeColor.resolve(line.colorName))
-                                    .frame(width: 6, height: 6)
-                                Text(line.text)
-                                    .font(.caption2).foregroundStyle(.secondary)
-                                    .lineLimit(1)
-                            }
-                        }
-                    }
+                VStack(spacing: 1) {
+                    Text(feed?.name ?? repoName(session.cwd)).font(.headline).lineLimit(1)
+                    Text(SessionWords.status(feed?.status ?? session.status))
+                        .font(.caption).foregroundStyle(.secondary)
                 }
-                .buttonStyle(.plain)
-                .foregroundStyle(.primary)
+            }
+            // An explicit route into the detail screen (user 2026-09-03
+            // "a more detail screen when tap on its header title"; the
+            // header itself was the only, unlabeled, way in).
+            ToolbarItem(placement: .topBarTrailing) {
+                NavigationLink(value: SessionDetailRoute(session: session)) {
+                    Image(systemName: "info.circle")
+                }
+                .accessibilityLabel("Session details")
             }
         }
+        .sensoryFeedback(.success, trigger: deliveredTick)
+        .sensoryFeedback(.warning, trigger: deniedTick)
         .refreshable { await load() }
         .task {
             // Long-poll loop: each request returns when the transcript
@@ -193,6 +208,116 @@ struct SessionFeedScreen: View {
                 }
             }
         }
+    }
+
+    private func scrollToNewest(_ proxy: ScrollViewProxy, _ index: Int) {
+        if reduceMotion { proxy.scrollTo(index, anchor: .bottom) }
+        else { withAnimation { proxy.scrollTo(index, anchor: .bottom) } }
+    }
+
+    /// The account serving this session, one slim line under the title.
+    @ViewBuilder private var accountBar: some View {
+        if let line = AccountSummaryFormat.headerLine(model.accountSummary(forSessionPid: session.pid)) {
+            HStack(spacing: 6) {
+                Circle().fill(ThemeColor.resolve(line.colorName)).frame(width: 7, height: 7)
+                Text(line.text).font(.caption).foregroundStyle(.secondary)
+                    .lineLimit(1).monospacedDigit()
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 16).padding(.vertical, 5)
+            .frame(maxWidth: .infinity)
+            .background(.bar)
+            .overlay(alignment: .bottom) { Divider() }
+        }
+    }
+
+    /// Reachability, where it's seen: a banner up top, not a caption at
+    /// the end of a list that's scrolled elsewhere.
+    @ViewBuilder private var offlineBanner: some View {
+        if let errorText {
+            Label(errorText, systemImage: "wifi.exclamationmark")
+                .font(.caption).foregroundStyle(.orange)
+                .lineLimit(2)
+                .padding(.horizontal, 16).padding(.vertical, 6)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Color.orange.opacity(0.12))
+                .overlay(alignment: .bottom) { Divider() }
+        }
+    }
+
+    /// The prompt the session is stopped on, while it is stopped on it —
+    /// pinned above the composer so it never moves under a thumb.
+    private var pendingPrompt: SessionFeedItem? {
+        guard feed?.waiting == true, let last = feed?.items.last,
+              last.kind == .permission || last.kind == .question else { return nil }
+        return last
+    }
+
+    @ViewBuilder private func promptCard(_ item: SessionFeedItem) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            if item.kind == .permission {
+                Label("\(item.toolName ?? "A tool") wants to run this on the Mac",
+                      systemImage: "hand.raised.fill")
+                    .font(.subheadline.weight(.semibold)).foregroundStyle(.orange)
+                Text(item.text)
+                    .font(.system(.caption, design: .monospaced))
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(8)
+                    .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: 8))
+                HStack(spacing: 10) {
+                    Button("Deny") { deniedTick += 1; sendKey("3") }
+                        .buttonStyle(.bordered).tint(.primary)
+                    Button("Allow…") { confirmingAllow = true }
+                        .buttonStyle(.bordered)
+                    if actionSending { ProgressView() }
+                    Spacer()
+                }
+                .disabled(actionSending)
+                .confirmationDialog("Run this on the Mac?", isPresented: $confirmingAllow, titleVisibility: .visible) {
+                    Button("Allow") { sendKey("1") }
+                } message: {
+                    Text(item.text).lineLimit(6)
+                }
+            } else {
+                Label(item.text, systemImage: "questionmark.circle.fill")
+                    .font(.subheadline.weight(.semibold)).foregroundStyle(.yellow)
+                let options = item.options ?? []
+                ForEach(Array(options.enumerated()), id: \.offset) { i, option in
+                    Button {
+                        selectedOption = selectedOption == i ? nil : i
+                    } label: {
+                        HStack(alignment: .firstTextBaseline, spacing: 8) {
+                            Image(systemName: selectedOption == i ? "checkmark.circle.fill" : "circle")
+                                .foregroundStyle(selectedOption == i ? Color.accentColor : Color.secondary)
+                            Text(option).multilineTextAlignment(.leading)
+                            Spacer(minLength: 0)
+                        }
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Option \(i + 1) of \(options.count): \(option)")
+                    .accessibilityAddTraits(selectedOption == i ? .isSelected : [])
+                }
+                HStack(spacing: 10) {
+                    Button(selectedOption.map { "Send answer \($0 + 1) of \(options.count)" } ?? "Pick an answer") {
+                        if let i = selectedOption { sendKey(String(i + 1)) }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(selectedOption == nil || actionSending)
+                    if actionSending { ProgressView() }
+                }
+            }
+            if let actionResult {
+                Label(actionResult, systemImage: "exclamationmark.circle")
+                    .font(.caption).foregroundStyle(.red)
+            }
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.bar)
+        .overlay(alignment: .top) { Divider() }
+        .onChange(of: item.text) { _, _ in selectedOption = nil }
     }
 
     @discardableResult
@@ -269,9 +394,12 @@ struct SessionFeedScreen: View {
                     }
                 } label: {
                     Image(systemName: "paperclip").font(.title2)
+                        .frame(width: 44, height: 44)
                 }
+                .accessibilityLabel("Attach")
                 .disabled(sendingMessage || attachments.count >= SessionInput.maxAttachments)
                 TextField(dictation.listening ? "Listening…" : "Reply…", text: $draft, axis: .vertical)
+                    .lineLimit(1...6)
                     .textFieldStyle(.roundedBorder)
                     .focused($composerFocused)
                     .disabled(sendingMessage)
@@ -297,6 +425,8 @@ struct SessionFeedScreen: View {
                         Image(systemName: "arrow.up.circle.fill").font(.title2)
                     }
                 }
+                .frame(width: 44, height: 44)
+                .accessibilityLabel("Send")
                 .disabled(sendingMessage
                           || (draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                               && attachments.isEmpty))
@@ -357,8 +487,10 @@ struct SessionFeedScreen: View {
             } label: {
                 Image(systemName: "xmark.circle.fill")
                     .foregroundStyle(.white, .black.opacity(0.6))
+                    .padding(12)
             }
-            .offset(x: 6, y: -6)
+            .offset(x: 12, y: -12)
+            .accessibilityLabel("Remove \(attachment.name)")
         }
     }
 
@@ -458,30 +590,6 @@ struct SessionFeedScreen: View {
         }
     }
 
-    @ViewBuilder private func actionRow(_ item: SessionFeedItem) -> some View {
-        switch item.kind {
-        case .permission:
-            HStack(spacing: 8) {
-                Button("Yes") { sendKey("1") }.buttonStyle(.borderedProminent)
-                Button("No") { sendKey("3") }.buttonStyle(.bordered)
-                if actionSending { ProgressView() }
-            }
-            .disabled(actionSending)
-            if let actionResult { Text(actionResult).font(.caption).foregroundStyle(.secondary) }
-        case .question:
-            VStack(alignment: .leading, spacing: 6) {
-                ForEach(Array((item.options ?? []).enumerated()), id: \.offset) { i, option in
-                    Button(option) { sendKey(String(i + 1)) }.buttonStyle(.bordered)
-                }
-                if actionSending { ProgressView() }
-            }
-            .disabled(actionSending)
-            if let actionResult { Text(actionResult).font(.caption).foregroundStyle(.secondary) }
-        default:
-            EmptyView()
-        }
-    }
-
     // MARK: continue (user 2026-09-04: "a button on ios when clicked it
     // continues the session that maybe stopped by various reasons")
 
@@ -553,7 +661,7 @@ struct SessionFeedScreen: View {
                 if reply.outcome == "delivered" {
                     draft = ""
                     attachments = []
-                    messageResult = reply.channel == "socket" ? "sent as a message (no terminal)" : nil
+                    messageResult = nil
                 } else {
                     // The Mac says why ("attachment too large", "unsupported
                     // attachment type"…) — show it, a bare "wasn't valid"
@@ -574,6 +682,7 @@ struct SessionFeedScreen: View {
         actionResult = nil
         Task {
             await send(.init(kind: .key, text: key)) { reply in
+                if reply.outcome == "delivered" { deliveredTick += 1; selectedOption = nil }
                 actionResult = reply.outcome == "delivered" ? nil : Self.describe(reply.outcome)
             } onFailure: {
                 actionResult = "couldn't reach the Mac"
@@ -599,8 +708,8 @@ struct SessionFeedScreen: View {
     private static func describe(_ outcome: String) -> String {
         switch outcome {
         case "running": return "session is mid-turn — try again when it's waiting"
-        case "noSurface": return "no terminal found for this session"
-        case "noChannel": return "no terminal or messaging channel for this session"
+        case "noSurface": return "this session has nowhere to receive input right now"
+        case "noChannel": return "this session can't receive messages right now"
         case "captured": return "a menu is on screen — try again"
         case "rejected": return "that wasn't a valid reply"
         default: return outcome
@@ -634,6 +743,7 @@ struct SessionFeedScreen: View {
         case .tool:
             HStack(spacing: 6) {
                 Image(systemName: "terminal").font(.caption2)
+                    .foregroundStyle(Self.hasErrors(item) ? Color.red : Color.primary)
                 Text("\(item.toolName ?? "Tool") · \(item.text)")
                     .font(.system(.caption, design: .monospaced))
                     .lineLimit(1)
@@ -684,6 +794,11 @@ struct SessionFeedScreen: View {
             .padding(10)
             .background(Color.accentColor.opacity(0.08), in: RoundedRectangle(cornerRadius: 12))
         }
+    }
+
+    /// The Core's grouped chip ends "(×6 · 3 errors)".
+    static func hasErrors(_ item: SessionFeedItem) -> Bool {
+        item.text.hasSuffix(" error)") || item.text.hasSuffix(" errors)")
     }
 
     /// "[attached: /a/x.jpg, /b/y.pdf]" at the end of a sent message
