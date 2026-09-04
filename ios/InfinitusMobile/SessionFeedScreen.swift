@@ -11,7 +11,21 @@ import InfinitusUI
 /// `POST /sessions/<pid>/input`.
 struct SessionFeedScreen: View {
     @ObservedObject var model: MirrorModel
-    let session: SessionDetail
+    let hostSession: HostSession
+
+    init(model: MirrorModel, hostSession: HostSession) {
+        self.model = model
+        self.hostSession = hostSession
+    }
+
+    init(model: MirrorModel, session: SessionDetail) {
+        self.model = model
+        let host = model.hosts.first ?? MirrorHost(label: "Mac", emoji: "🍎")
+        self.hostSession = HostSession(host: host, session: session)
+    }
+
+    private var session: SessionDetail { hostSession.session }
+    private var host: MirrorHost { hostSession.host }
 
     @State private var feed: SessionFeed?
     @State private var errorText: String?
@@ -170,12 +184,12 @@ struct SessionFeedScreen: View {
         // The composer owns the bottom edge; the floating tab bar would
         // sit under it.
         .toolbar(.hidden, for: .tabBar)
-        .navigationTitle(feed?.name ?? repoName(session.cwd))
+        .navigationTitle(navigationTitleText)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .principal) {
                 VStack(spacing: 1) {
-                    Text(feed?.name ?? repoName(session.cwd)).font(.headline).lineLimit(1)
+                    Text(navigationTitleText).font(.headline).lineLimit(1)
                     Text(SessionWords.status(feed?.status ?? session.status))
                         .font(.caption).foregroundStyle(.secondary)
                 }
@@ -184,7 +198,7 @@ struct SessionFeedScreen: View {
             // "a more detail screen when tap on its header title"; the
             // header itself was the only, unlabeled, way in).
             ToolbarItem(placement: .topBarTrailing) {
-                NavigationLink(value: SessionDetailRoute(session: session)) {
+                NavigationLink(value: SessionDetailRoute(hostSession: hostSession)) {
                     Image(systemName: "info.circle")
                 }
                 .accessibilityLabel("Session details")
@@ -208,6 +222,15 @@ struct SessionFeedScreen: View {
                 }
             }
         }
+    }
+
+    private var navigationTitleText: String {
+        let name = feed?.name ?? repoName(session.cwd)
+        if model.hosts.count > 1 {
+            let emoji = host.emoji.isEmpty ? "🖥️" : host.emoji
+            return "\(emoji) \(name)"
+        }
+        return name
     }
 
     private func scrollToNewest(_ proxy: ScrollViewProxy, _ index: Int) {
@@ -254,9 +277,11 @@ struct SessionFeedScreen: View {
     }
 
     @ViewBuilder private func promptCard(_ item: SessionFeedItem) -> some View {
+        let keysAllowed = feed?.keys ?? true
+        let hostName = host.label.isEmpty ? (host.emoji == "🪟" ? "Windows" : "the Mac") : host.label
         VStack(alignment: .leading, spacing: 10) {
             if item.kind == .permission {
-                Label("\(item.toolName ?? "A tool") wants to run this on the Mac",
+                Label("\(item.toolName ?? "A tool") wants to run this on \(hostName)",
                       systemImage: "hand.raised.fill")
                     .font(.subheadline.weight(.semibold)).foregroundStyle(.orange)
                 Text(item.text)
@@ -265,19 +290,24 @@ struct SessionFeedScreen: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(8)
                     .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: 8))
-                HStack(spacing: 10) {
-                    Button("Deny") { deniedTick += 1; sendKey("3") }
-                        .buttonStyle(.bordered).tint(.primary)
-                    Button("Allow…") { confirmingAllow = true }
-                        .buttonStyle(.bordered)
-                    if actionSending { ProgressView() }
-                    Spacer()
-                }
-                .disabled(actionSending)
-                .confirmationDialog("Run this on the Mac?", isPresented: $confirmingAllow, titleVisibility: .visible) {
-                    Button("Allow") { sendKey("1") }
-                } message: {
-                    Text(item.text).lineLimit(6)
+                if keysAllowed {
+                    HStack(spacing: 10) {
+                        Button("Deny") { deniedTick += 1; sendKey("3") }
+                            .buttonStyle(.bordered).tint(.primary)
+                        Button("Allow…") { confirmingAllow = true }
+                            .buttonStyle(.bordered)
+                        if actionSending { ProgressView() }
+                        Spacer()
+                    }
+                    .disabled(actionSending)
+                    .confirmationDialog("Run this on \(hostName)?", isPresented: $confirmingAllow, titleVisibility: .visible) {
+                        Button("Allow") { sendKey("1") }
+                    } message: {
+                        Text(item.text).lineLimit(6)
+                    }
+                } else {
+                    Text("approve in the session's terminal")
+                        .font(.caption).foregroundStyle(.secondary)
                 }
             } else {
                 Label(item.text, systemImage: "questionmark.circle.fill")
@@ -285,7 +315,9 @@ struct SessionFeedScreen: View {
                 let options = item.options ?? []
                 ForEach(Array(options.enumerated()), id: \.offset) { i, option in
                     Button {
-                        selectedOption = selectedOption == i ? nil : i
+                        if keysAllowed {
+                            selectedOption = selectedOption == i ? nil : i
+                        }
                     } label: {
                         HStack(alignment: .firstTextBaseline, spacing: 8) {
                             Image(systemName: selectedOption == i ? "checkmark.circle.fill" : "circle")
@@ -296,16 +328,22 @@ struct SessionFeedScreen: View {
                         .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
+                    .disabled(!keysAllowed)
                     .accessibilityLabel("Option \(i + 1) of \(options.count): \(option)")
                     .accessibilityAddTraits(selectedOption == i ? .isSelected : [])
                 }
-                HStack(spacing: 10) {
-                    Button(selectedOption.map { "Send answer \($0 + 1) of \(options.count)" } ?? "Pick an answer") {
-                        if let i = selectedOption { sendKey(String(i + 1)) }
+                if keysAllowed {
+                    HStack(spacing: 10) {
+                        Button(selectedOption.map { "Send answer \($0 + 1) of \(options.count)" } ?? "Pick an answer") {
+                            if let i = selectedOption { sendKey(String(i + 1)) }
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(selectedOption == nil || actionSending)
+                        if actionSending { ProgressView() }
                     }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(selectedOption == nil || actionSending)
-                    if actionSending { ProgressView() }
+                } else {
+                    Text("approve in the session's terminal")
+                        .font(.caption).foregroundStyle(.secondary)
                 }
             }
             if let actionResult {
@@ -326,7 +364,7 @@ struct SessionFeedScreen: View {
             if longPoll, let since = feed?.stamp {
                 do {
                     feed = try await NetworkFleetMirror.shared.sessionTail(
-                        pid: Int32(session.pid), limit: 30, since: since,
+                        host: host, pid: Int32(session.pid), limit: 30, since: since,
                         wait: MirrorTransport.tailWaitMax)
                     errorText = nil
                     return true
@@ -335,11 +373,12 @@ struct SessionFeedScreen: View {
                     // below walks every route again.
                 }
             }
-            feed = try await NetworkFleetMirror.shared.sessionTail(pid: Int32(session.pid), limit: 30)
+            feed = try await NetworkFleetMirror.shared.sessionTail(host: host, pid: Int32(session.pid), limit: 30)
             errorText = nil
             return true
         } catch {
-            errorText = feed == nil ? "couldn't reach the Mac: \(error.localizedDescription)"
+            let hostName = host.label.isEmpty ? "the host" : host.label
+            errorText = feed == nil ? "couldn't reach \(hostName): \(error.localizedDescription)"
                 : "offline — showing the last feed"
             return false
         }
@@ -348,7 +387,8 @@ struct SessionFeedScreen: View {
     // MARK: - Layer 2: sending in
 
     private var composer: some View {
-        VStack(spacing: 4) {
+        let canMsg = feed?.canMessage ?? true
+        return VStack(spacing: 4) {
             if let messageResult {
                 Text(messageResult).font(.caption).foregroundStyle(.secondary)
                     .padding(.horizontal)
@@ -367,81 +407,88 @@ struct SessionFeedScreen: View {
                         .padding(.horizontal)
                 }
             }
-            HStack(spacing: 8) {
-                Menu {
-                    // A PhotosPicker inside a Menu never presents (the menu
-                    // dismisses first — user 2026-09-03 "Choose library
-                    // doesn't show anything"); the picker is a modifier
-                    // below, flipped from a plain button like the importer.
-                    if CameraCapture.isAvailable {
-                        Button { showCamera = true } label: {
-                            Label("Take Photo", systemImage: "camera")
+            if !canMsg {
+                Text("this host can't receive messages for this session")
+                    .font(.caption).foregroundStyle(.secondary)
+                    .padding(.vertical, 8)
+                    .frame(maxWidth: .infinity)
+            } else {
+                HStack(spacing: 8) {
+                    Menu {
+                        // A PhotosPicker inside a Menu never presents (the menu
+                        // dismisses first — user 2026-09-03 "Choose library
+                        // doesn't show anything"); the picker is a modifier
+                        // below, flipped from a plain button like the importer.
+                        if CameraCapture.isAvailable {
+                            Button { showCamera = true } label: {
+                                Label("Take Photo", systemImage: "camera")
+                            }
                         }
-                    }
-                    Button { showPhotoPicker = true } label: {
-                        Label("Photo Library", systemImage: "photo.on.rectangle")
-                    }
-                    Button { showFileImporter = true } label: {
-                        Label("Choose File", systemImage: "doc")
-                    }
-                    // A copied image/screenshot (user 2026-09-03 from the
-                    // phone: "allow pasting images"). The check reads no
-                    // pasteboard content, so no paste banner until chosen.
-                    if UIPasteboard.general.hasImages {
-                        Button { pasteImage() } label: {
-                            Label("Paste Image", systemImage: "doc.on.clipboard")
+                        Button { showPhotoPicker = true } label: {
+                            Label("Photo Library", systemImage: "photo.on.rectangle")
                         }
-                    }
-                } label: {
-                    Image(systemName: "paperclip").font(.title2)
-                        .frame(width: 44, height: 44)
-                }
-                .accessibilityLabel("Attach")
-                .disabled(sendingMessage || attachments.count >= SessionInput.maxAttachments)
-                ZStack(alignment: .topLeading) {
-                    if draft.isEmpty {
-                        Text(dictation.listening ? "Listening…" : "Reply…")
-                            .font(.body)
-                            .foregroundStyle(.secondary)
-                            .padding(.leading, 5)
-                            .padding(.top, 6)
-                            .allowsHitTesting(false)
-                    }
-                    PasteableTextView(text: $draft, isFocused: $composerFocused,
-                                      placeholder: dictation.listening ? "Listening…" : "Reply…") { image in
-                        addImage(image, prefix: "pasted")
-                    }
-                }
-                // No hide-keyboard button (user 2026-09-03 from the phone:
-                // "too much") — a drag on the feed or a tap outside the
-                // composer dismisses it.
-                if Dictation.isAvailable {
-                    Button {
-                        if !dictation.listening { draftBeforeDictation = draft }
-                        dictation.toggle()
+                        Button { showFileImporter = true } label: {
+                            Label("Choose File", systemImage: "doc")
+                        }
+                        // A copied image/screenshot (user 2026-09-03 from the
+                        // phone: "allow pasting images"). The check reads no
+                        // pasteboard content, so no paste banner until chosen.
+                        if UIPasteboard.general.hasImages {
+                            Button { pasteImage() } label: {
+                                Label("Paste Image", systemImage: "doc.on.clipboard")
+                            }
+                        }
                     } label: {
-                        Image(systemName: dictation.listening ? "stop.circle.fill" : "mic.circle")
-                            .font(.title2)
-                            .foregroundStyle(dictation.listening ? Color.red : Color.accentColor)
+                        Image(systemName: "paperclip").font(.title2)
+                            .frame(width: 44, height: 44)
                     }
-                    .disabled(sendingMessage)
-                    .accessibilityLabel(dictation.listening ? "Stop dictating" : "Dictate")
-                }
-                Button(action: sendMessage) {
-                    if sendingMessage {
-                        ProgressView()
-                    } else {
-                        Image(systemName: "arrow.up.circle.fill").font(.title2)
+                    .accessibilityLabel("Attach")
+                    .disabled(sendingMessage || attachments.count >= SessionInput.maxAttachments)
+                    ZStack(alignment: .topLeading) {
+                        if draft.isEmpty {
+                            Text(dictation.listening ? "Listening…" : "Reply…")
+                                .font(.body)
+                                .foregroundStyle(.secondary)
+                                .padding(.leading, 5)
+                                .padding(.top, 6)
+                                .allowsHitTesting(false)
+                        }
+                        PasteableTextView(text: $draft, isFocused: $composerFocused,
+                                          placeholder: dictation.listening ? "Listening…" : "Reply…") { image in
+                            addImage(image, prefix: "pasted")
+                        }
                     }
+                    // No hide-keyboard button (user 2026-09-03 from the phone:
+                    // "too much") — a drag on the feed or a tap outside the
+                    // composer dismisses it.
+                    if Dictation.isAvailable {
+                        Button {
+                            if !dictation.listening { draftBeforeDictation = draft }
+                            dictation.toggle()
+                        } label: {
+                            Image(systemName: dictation.listening ? "stop.circle.fill" : "mic.circle")
+                                .font(.title2)
+                                .foregroundStyle(dictation.listening ? Color.red : Color.accentColor)
+                        }
+                        .disabled(sendingMessage)
+                        .accessibilityLabel(dictation.listening ? "Stop dictating" : "Dictate")
+                    }
+                    Button(action: sendMessage) {
+                        if sendingMessage {
+                            ProgressView()
+                        } else {
+                            Image(systemName: "arrow.up.circle.fill").font(.title2)
+                        }
+                    }
+                    .frame(width: 44, height: 44)
+                    .accessibilityLabel("Send")
+                    .disabled(sendingMessage
+                              || (draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                                  && attachments.isEmpty))
                 }
-                .frame(width: 44, height: 44)
-                .accessibilityLabel("Send")
-                .disabled(sendingMessage
-                          || (draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                              && attachments.isEmpty))
+                .padding(.horizontal)
+                .padding(.vertical, 8)
             }
-            .padding(.horizontal)
-            .padding(.vertical, 8)
         }
         .background(.bar)
         .onChange(of: dictation.transcript) { _, text in
@@ -639,15 +686,19 @@ struct SessionFeedScreen: View {
         Task {
             do {
                 let reply = try await NetworkFleetMirror.shared.sessionInput(
-                    pid: Int32(session.pid), request: .init(kind: .resume, text: ""))
+                    host: host, pid: Int32(session.pid), request: .init(kind: .resume, text: ""))
+                let machine = host.label.isEmpty ? "the host" : host.label
                 continueResult = reply.outcome == "delivered"
                     ? "asked to continue" + (reply.channel == "socket" ? "" : " (typed into the terminal)")
-                    : reply.detail.map { "\(Self.describe(reply.outcome)) — \($0)" } ?? Self.describe(reply.outcome)
+                    : reply.detail.map { "\(Self.describe(reply.outcome, mode: feed?.permissionMode)) — \($0)" }
+                        ?? Self.describe(reply.outcome, mode: feed?.permissionMode)
             } catch MirrorTransportError.http(let status) where status == 400 {
-                // An older Mac doesn't know the `resume` kind.
-                continueResult = "update Infinitus on the Mac to continue sessions from the phone"
+                // An older host doesn't know the `resume` kind.
+                let machine = host.label.isEmpty ? "the host" : host.label
+                continueResult = "update Infinitus on \(machine) to continue sessions from the phone"
             } catch {
-                continueResult = "couldn't reach the Mac"
+                let machine = host.label.isEmpty ? "the host" : host.label
+                continueResult = "couldn't reach \(machine)"
             }
             continuing = false
             await load()
@@ -670,16 +721,17 @@ struct SessionFeedScreen: View {
                 if reply.outcome == "delivered" {
                     draft = ""
                     attachments = []
-                    messageResult = nil
+                    messageResult = Self.describeDelivered(channel: reply.channel, mode: feed?.permissionMode)
                 } else {
-                    // The Mac says why ("attachment too large", "unsupported
+                    // The host says why ("attachment too large", "unsupported
                     // attachment type"…) — show it, a bare "wasn't valid"
                     // sent the user guessing (2026-09-03).
-                    messageResult = reply.detail.map { "\(Self.describe(reply.outcome)) — \($0)" }
-                        ?? Self.describe(reply.outcome)
+                    messageResult = reply.detail.map { "\(Self.describe(reply.outcome, mode: feed?.permissionMode)) — \($0)" }
+                        ?? Self.describe(reply.outcome, mode: feed?.permissionMode)
                 }
             } onFailure: {
-                messageResult = "couldn't reach the Mac"
+                let machine = host.label.isEmpty ? "the host" : host.label
+                messageResult = "couldn't reach \(machine)"
             } finished: {
                 sendingMessage = false
             }
@@ -692,9 +744,10 @@ struct SessionFeedScreen: View {
         Task {
             await send(.init(kind: .key, text: key)) { reply in
                 if reply.outcome == "delivered" { deliveredTick += 1; selectedOption = nil }
-                actionResult = reply.outcome == "delivered" ? nil : Self.describe(reply.outcome)
+                actionResult = reply.outcome == "delivered" ? nil : Self.describe(reply.outcome, mode: feed?.permissionMode)
             } onFailure: {
-                actionResult = "couldn't reach the Mac"
+                let machine = host.label.isEmpty ? "the host" : host.label
+                actionResult = "couldn't reach \(machine)"
             } finished: {
                 actionSending = false
             }
@@ -704,7 +757,8 @@ struct SessionFeedScreen: View {
     private func send(_ request: SessionInput.Request, onReply: @escaping (SessionInput.Reply) -> Void,
                       onFailure: @escaping () -> Void, finished: @escaping () -> Void) async {
         do {
-            let reply = try await NetworkFleetMirror.shared.sessionInput(pid: Int32(session.pid),
+            let reply = try await NetworkFleetMirror.shared.sessionInput(host: host,
+                                                                         pid: Int32(session.pid),
                                                                          request: request)
             onReply(reply)
         } catch {
@@ -714,8 +768,20 @@ struct SessionFeedScreen: View {
         await load()
     }
 
-    private static func describe(_ outcome: String) -> String {
+    private static func describeDelivered(channel: String?, mode: String?) -> String? {
+        if mode == "default" && channel == "socket" {
+            return "delivered — the session may hold it for approval in its terminal"
+        }
+        return nil
+    }
+
+    private static func describe(_ outcome: String, mode: String? = nil) -> String {
         switch outcome {
+        case "delivered":
+            if mode == "default" {
+                return "delivered — the session may hold it for approval in its terminal"
+            }
+            return "delivered"
         case "running": return "session is mid-turn — try again when it's waiting"
         case "noSurface": return "this session has nowhere to receive input right now"
         case "noChannel": return "this session can't receive messages right now"
@@ -738,7 +804,7 @@ struct SessionFeedScreen: View {
                     if !text.isEmpty { Text(text) }
                     if !images.isEmpty {
                         HStack(spacing: 6) {
-                            ForEach(images, id: \.self) { FeedThumbnail(pid: Int32(session.pid), id: $0) }
+                            ForEach(images, id: \.self) { FeedThumbnail(host: host, pid: Int32(session.pid), id: $0) }
                         }
                     }
                     ForEach(files, id: \.self) { name in

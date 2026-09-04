@@ -153,10 +153,10 @@ final class MirrorModel: ObservableObject, FleetModel {
     /// is the same machine — every route the QR carries replaces that
     /// host's list (#9 pair once, every route) — any other token is a
     /// NEW host appended to the list, so a scan never unpairs the Mac.
-    /// Returns false for anything that isn't one of our pair URLs.
+    /// Returns the paired host, or nil for anything that isn't one of our pair URLs.
     @discardableResult
-    func applyPairing(_ text: String) -> Bool {
-        guard let pairing = MirrorPairing.parsePairURL(text) else { return false }
+    func applyPairing(_ text: String) -> MirrorHost? {
+        guard let pairing = MirrorPairing.parsePairURL(text) else { return nil }
         let paired = MirrorHostStore.upsert(endpoints: pairing.endpoints,
                                             token: pairing.token, defaults)
         if usesLAN {
@@ -165,7 +165,7 @@ final class MirrorModel: ObservableObject, FleetModel {
             hosts.append(paired)   // fixture mode: a host the store doesn't hold
         }
         Task { await refresh() }
-        return true
+        return paired
     }
 
     /// Adds an endpoint typed into Settings, de-duplicated — the field
@@ -189,6 +189,22 @@ final class MirrorModel: ObservableObject, FleetModel {
         stored.remove(atOffsets: offsets)
         MirrorHostStore.save(stored, defaults)
         hosts = stored
+    }
+
+    /// Delete a single host by its id.
+    func removeHost(id: String) {
+        guard usesLAN else { return }
+        var stored = MirrorHostStore.load(defaults)
+        stored.removeAll { $0.id == id }
+        MirrorHostStore.save(stored, defaults)
+        hosts = stored
+    }
+
+    /// Update a host's properties in the store and reload.
+    func updateHost(_ id: String, _ change: (inout MirrorHost) -> Void) {
+        guard usesLAN else { return }
+        MirrorHostStore.update(id, defaults, change)
+        hosts = MirrorHostStore.load(defaults)
     }
 
     /// `INFINITUS_MIRROR_PATH` lets a simulator point at one machine's

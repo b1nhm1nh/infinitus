@@ -11,7 +11,7 @@ import InfinitusCore
 // accepts.
 
 /// One paired machine's record.
-struct MirrorHost: Codable, Identifiable, Equatable, Sendable {
+struct MirrorHost: Codable, Identifiable, Equatable, Hashable, Sendable {
     /// Minted once at pairing. Snapshots, fleets, feed calls and the
     /// sessions list all key off it — never off a pid or a name alone,
     /// since two machines can run the same pid.
@@ -63,6 +63,20 @@ struct MirrorHost: Codable, Identifiable, Equatable, Sendable {
         if engine.isEmpty || engine == MirrorFleetModel.cswapEngineID { return "🍎" }
         return "🖥️"
     }
+}
+
+/// A session's address once two hosts merge into one list — a pid
+/// alone can't tell two machines' sessions apart.
+typealias SessionKey = MobileSessionProgress.SessionKey
+
+/// A session scoped to the host that owns it — feeds, inputs, and detail
+/// screens route through this pair.
+struct HostSession: Hashable, Identifiable {
+    let host: MirrorHost
+    let session: SessionDetail
+
+    var id: SessionKey { SessionKey(hostID: host.id, pid: session.pid) }
+    var pid: Int { session.pid }
 }
 
 /// `mirror_hosts` — where the host list lives and the pairing rules that
