@@ -211,6 +211,51 @@ actor AwsLoginRunner {
         run.process.terminate()
     }
 
+    /// Records a profile as signed in without a run of its own — its need
+    /// was met by another profile's login — so the need clears and the
+    /// sessions on it get their nudge.
+    func markDone(profile: String, via: String) {
+        guard runs[profile] == nil else { return }
+        finished[profile] = AwsLogin.State(profile: profile, flow: .local, phase: .done,
+                                           message: "signed in with \(via)",
+                                           startedAt: Date().timeIntervalSince1970, pid: nil)
+        publish()
+    }
+
+    /// Whether the profile's credentials work right now: `aws sts
+    /// get-caller-identity`, nothing interactive (no browser, no stdin),
+    /// 30 s at most. Off the actor — a broker profile can take a while.
+    nonisolated static func signedIn(profile: String) async -> Bool {
+        guard let aws = ProcessInfo.processInfo.environment["INFINITUS_AWS_CLI"]
+                ?? Subprocess.find(awsCandidates) else { return false }
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: aws)
+        process.arguments = ["sts", "get-caller-identity", "--profile", profile]
+        var env = ProcessInfo.processInfo.environment
+        env["AWS_PAGER"] = ""
+        env["BROWSER"] = "/usr/bin/true"
+        process.environment = env
+        process.standardInput = FileHandle.nullDevice
+        process.standardOutput = FileHandle.nullDevice
+        process.standardError = FileHandle.nullDevice
+        return await withCheckedContinuation { continuation in
+            process.terminationHandler = { continuation.resume(returning: $0.terminationStatus == 0) }
+            do { try process.run() } catch {
+                process.terminationHandler = nil
+                continuation.resume(returning: false)
+                return
+            }
+            DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 30) {
+                if process.isRunning { process.terminate() }
+                // A broker that ignores SIGTERM would hold the continuation
+                // forever; SIGKILL is what actually fires terminationHandler.
+                DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 5) {
+                    if process.isRunning { kill(process.processIdentifier, SIGKILL) }
+                }
+            }
+        }
+    }
+
     /// Drops a finished entry (after the session has moved on).
     func forget(profile: String) {
         finished[profile] = nil

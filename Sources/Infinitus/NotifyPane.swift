@@ -118,6 +118,10 @@ struct NotifyPane: View {
                     .help("Fires once per session when it stops at a "
                           + "permission prompt or a question — answer it "
                           + "from the phone's session feed.")
+                Toggle("A session needs an AWS login", isOn: $app.pushAwsLogin)
+                    .help("Fires once per session and profile when an aws "
+                          + "command fails on an expired sign-in — sign in "
+                          + "from the phone's sessions list.")
             }
             Section("Slack") {
                 LabeledContent("Configured", value: model.slackStatus ?? "no")

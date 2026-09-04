@@ -144,6 +144,12 @@ final class AppModel: ObservableObject {
     @Published var forecast: UsageForecast?
     /// Sessions whose AWS sign-in lapsed + logins in flight (AwsLogin.swift).
     @Published var awsLogins: [AwsLogin.Item] = []
+    /// True once `awsLogins` reflects a finished transcript scan. The
+    /// push trigger seeds off it, not off the scanner's own flag: the
+    /// list rebuilds one run-loop hop after the scan lands, and a poll
+    /// in that gap would seed on the stale (empty) list and push every
+    /// pre-existing need on the next one.
+    private var awsLoginsScanned = false
     private var awsLoginStates: [AwsLogin.State] = []
     private var awsLoginNeedsWatch: AnyCancellable?
     private var awsLoginQuitWatch: AnyCancellable?
@@ -425,6 +431,7 @@ final class AppModel: ObservableObject {
     @Published var pushAllDead: Bool { didSet { defaults.set(pushAllDead, forKey: "push_all_dead") } }
     @Published var pushLastAlive: Bool { didSet { defaults.set(pushLastAlive, forKey: "push_last_alive") } }
     @Published var pushWaiting: Bool { didSet { defaults.set(pushWaiting, forKey: "push_waiting") } }
+    @Published var pushAwsLogin: Bool { didSet { defaults.set(pushAwsLogin, forKey: "push_aws_login") } }
     // Phone companion (#9): serve the mirror snapshot over the LAN when
     // the Sync pane's toggle is on. Off by default — it's an open port.
     @Published var mirrorLANEnabled: Bool {
@@ -613,6 +620,7 @@ final class AppModel: ObservableObject {
         pushAllDead = defaults.object(forKey: "push_all_dead") as? Bool ?? true
         pushLastAlive = defaults.object(forKey: "push_last_alive") as? Bool ?? true
         pushWaiting = defaults.object(forKey: "push_waiting") as? Bool ?? true
+        pushAwsLogin = defaults.object(forKey: "push_aws_login") as? Bool ?? true
         if playground {
             // Isolation is the contract: no demo script, no data at all
             // (never fall back to the real engine here).
@@ -719,6 +727,7 @@ final class AppModel: ObservableObject {
         pushAllDead = defaults.object(forKey: "push_all_dead") as? Bool ?? true
         pushLastAlive = defaults.object(forKey: "push_last_alive") as? Bool ?? true
         pushWaiting = defaults.object(forKey: "push_waiting") as? Bool ?? true
+        pushAwsLogin = defaults.object(forKey: "push_aws_login") as? Bool ?? true
     }
 
     /// Playground reset (user 2026-08-31): wipe the sandbox suite so
@@ -1010,6 +1019,7 @@ final class AppModel: ObservableObject {
                                        sessionLabel: nil, state: state))
         }
         if items != awsLogins { awsLogins = items }
+        if sessionProgress.scanned { awsLoginsScanned = true }
     }
 
     /// `remote` nil = no flow asked for: this only REPORTS the profile's
@@ -1049,9 +1059,33 @@ final class AppModel: ObservableObject {
     /// the phone's own message path, so it works wherever replies do.
     private func awsLoginLanded(_ state: AwsLogin.State) {
         logMirrorInput("🔐", "aws login for \(state.profile) signed in")
-        guard let pid = state.pid ?? sessionProgress.byPid.first(where: { $0.value.awsLoginProfile == state.profile })?.key
-        else { return }
-        let text = AwsLogin.continueMessage(profile: state.profile, fromPhone: state.flow != .local)
+        let fromPhone = state.flow != .local
+        // Every session that needed this profile, not only the one the
+        // login was started for (two sessions, one sign-in, 2026-09-04).
+        var pids = Set(sessionProgress.byPid.filter { $0.value.awsLoginProfile == state.profile }.map(\.key))
+        if let pid = state.pid { pids.insert(pid) }
+        for pid in pids { nudgeAfterAwsLogin(pid: pid, profile: state.profile, fromPhone: fromPhone) }
+        // A login often signs other profiles in underneath — a broker
+        // profile over its anchor `aws login` profile, an SSO session
+        // several profiles share — and the config can't say which. Ask
+        // the CLI: whichever other outstanding profile works now is met.
+        let others = Set(sessionProgress.byPid.values.compactMap(\.awsLoginProfile)).subtracting([state.profile])
+        for profile in others {
+            Task { [weak self] in
+                guard await AwsLoginRunner.signedIn(profile: profile), let self else { return }
+                await self.awsLoginRunner.markDone(profile: profile, via: state.profile)
+                self.logMirrorInput("🔐", "aws login for \(state.profile) also signed \(profile) in")
+                for (pid, progress) in self.sessionProgress.byPid where progress.awsLoginProfile == profile {
+                    self.nudgeAfterAwsLogin(pid: pid, profile: profile, fromPhone: fromPhone)
+                }
+            }
+        }
+    }
+
+    /// Tells a session that needed the login to carry on — the phone's
+    /// own message path, so it works wherever replies do.
+    private func nudgeAfterAwsLogin(pid: Int, profile: String, fromPhone: Bool) {
+        let text = AwsLogin.continueMessage(profile: profile, fromPhone: fromPhone)
         let request = SessionInput.Request(kind: .message, text: text)
         Task.detached(priority: .utility) { [weak self] in
             let claudeDir = ClaudeSessions.configHome()
@@ -1696,8 +1730,9 @@ final class AppModel: ObservableObject {
             accounts: health,
             flags: .init(sessionsDone: pushSessionsDone,
                          allDead: pushAllDead, lastAlive: pushLastAlive,
-                         waiting: pushWaiting),
-            sessions: list.liveSessions?.sessions)
+                         waiting: pushWaiting, awsLogin: pushAwsLogin),
+            sessions: list.liveSessions?.sessions,
+            awsLogins: awsLoginsScanned ? awsLogins : nil)
         for msg in pushes where !isPlayground {
             notify(msg)
             // Text over stdin, matching the channel-setup commands;

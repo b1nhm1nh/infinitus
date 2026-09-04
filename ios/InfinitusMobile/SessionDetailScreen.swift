@@ -23,6 +23,17 @@ enum SessionWords {
         }
     }
 
+    /// Same colors the Mac's sessions card uses for each status.
+    static func color(_ raw: String) -> Color {
+        switch raw {
+        case "busy": return .orange
+        case "waiting": return .yellow
+        case "idle": return .green
+        case "shell": return .blue
+        default: return .gray
+        }
+    }
+
     static func kind(_ raw: String) -> String {
         switch raw {
         case "interactive": return "Interactive"
