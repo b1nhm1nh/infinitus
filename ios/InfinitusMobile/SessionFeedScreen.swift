@@ -577,6 +577,7 @@ struct SessionFeedScreen: View {
         let status = feed?.status ?? session.status
         let pair = headerAccount
         let ring = theme.plain ? Color.secondary : ThemeColor.flash(theme)
+        let plate = Self.hudPlate(theme)
         let chips = pair.map { windowChips($0.account, theme: theme) } ?? []
         let bars = chips.filter { $0.id == "5h" || $0.id == "7d" }
         let buffs = chips.filter { $0.id.hasPrefix("m:") }
@@ -599,12 +600,15 @@ struct SessionFeedScreen: View {
                         }
                         .font(.caption2.weight(.semibold)).lineLimit(1)
                         .padding(.horizontal, 8).padding(.vertical, 4)
-                        .background(Color.black.opacity(0.55), in: RoundedRectangle(cornerRadius: 4))
+                        .background(plate, in: RoundedRectangle(cornerRadius: 4))
                         .overlay(RoundedRectangle(cornerRadius: 4).stroke(ring.opacity(0.6), lineWidth: 1))
                         ForEach(bars) { chip in hudBar(chip, ring: ring) }
                         if !buffs.isEmpty {
-                            HStack(spacing: 4) {
-                                ForEach(buffs) { chip in hudBuff(chip, ring: ring) }
+                            // Sideways scroll past the third model, like the strip.
+                            ScrollView(.horizontal, showsIndicators: false) {
+                                HStack(spacing: 4) {
+                                    ForEach(buffs) { chip in hudBuff(chip, ring: ring) }
+                                }
                             }
                         }
                     }
@@ -613,9 +617,21 @@ struct SessionFeedScreen: View {
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Session details")
+            Spacer(minLength: 0)
             screenshotButton
         }
         .padding(.leading, 4).padding(.trailing, 8).padding(.vertical, 6)
+    }
+
+    /// The dark plate behind the HUD's text; Off keeps the compact
+    /// header's faint tint so primary ink stays readable in light mode.
+    private static func hudPlate(_ theme: RowTheme) -> Color {
+        theme.plain ? Color.primary.opacity(0.08) : Color.black.opacity(0.55)
+    }
+
+    /// Ink on a plate: white on the dark one, primary on Off's tint.
+    private static func hudInk(_ theme: RowTheme) -> Color {
+        theme.plain ? Color.primary : Color.white
     }
 
     /// The medallion: the theme's glyph inside a double ring, the plan
@@ -642,7 +658,7 @@ struct SessionFeedScreen: View {
                     .font(.system(size: 9, weight: .heavy)).monospacedDigit().lineLimit(1)
                     .foregroundStyle(theme.plain ? Color.primary : ring)
                     .padding(.horizontal, 4).padding(.vertical, 2)
-                    .background(Color.black.opacity(0.75), in: Capsule())
+                    .background(theme.plain ? Color(.systemBackground) : Color.black.opacity(0.75), in: Capsule())
                     .overlay(Capsule().stroke(ring, lineWidth: 1))
                     .offset(x: -6, y: 3)
             }
@@ -656,10 +672,11 @@ struct SessionFeedScreen: View {
     /// A unit-frame bar: the window's glyph at the left, what's left at
     /// the right, the fill in the window's color.
     private func hudBar(_ chip: WindowChip, ring: Color) -> some View {
+        let theme = model.rowTheme
         let remaining = GaugeMath.remaining(usedPct: chip.window.pct)
         return GeometryReader { geo in
             ZStack(alignment: .leading) {
-                RoundedRectangle(cornerRadius: 3).fill(Color.black.opacity(0.55))
+                RoundedRectangle(cornerRadius: 3).fill(Self.hudPlate(theme))
                 RoundedRectangle(cornerRadius: 3)
                     .fill(LinearGradient(colors: [chip.color.opacity(0.95), chip.color.opacity(0.6)],
                                          startPoint: .top, endPoint: .bottom))
@@ -670,8 +687,8 @@ struct SessionFeedScreen: View {
                     Text("\(Int(remaining))%")
                 }
                 .font(.system(size: 10, weight: .bold)).monospacedDigit().lineLimit(1)
-                .foregroundStyle(.white)
-                .shadow(color: .black.opacity(0.8), radius: 1)
+                .foregroundStyle(Self.hudInk(theme))
+                .shadow(color: .black.opacity(theme.plain ? 0 : 0.8), radius: 1)
                 .padding(.horizontal, 5)
             }
             .overlay(RoundedRectangle(cornerRadius: 3).stroke(ring.opacity(0.6), lineWidth: 1))
@@ -682,14 +699,15 @@ struct SessionFeedScreen: View {
 
     /// A buff square: the model's name over what's left of its window.
     private func hudBuff(_ chip: WindowChip, ring: Color) -> some View {
-        VStack(spacing: 0) {
+        let theme = model.rowTheme
+        return VStack(spacing: 0) {
             Text(chip.glyph).foregroundStyle(chip.color)
             Text("\(Int(GaugeMath.remaining(usedPct: chip.window.pct)))%")
-                .monospacedDigit().foregroundStyle(.white)
+                .monospacedDigit().foregroundStyle(Self.hudInk(theme))
         }
         .font(.system(size: 9, weight: .bold)).lineLimit(1)
         .padding(.horizontal, 4).padding(.vertical, 2)
-        .background(Color.black.opacity(0.55), in: RoundedRectangle(cornerRadius: 3))
+        .background(Self.hudPlate(theme), in: RoundedRectangle(cornerRadius: 3))
         .overlay(RoundedRectangle(cornerRadius: 3).stroke(ring.opacity(0.6), lineWidth: 1))
     }
 

@@ -12,7 +12,6 @@ struct ThemedIcon: View {
     var moving = true
     var font: Font = .largeTitle
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var turns = 0.0
 
     var body: some View {
         let icon = theme.loadingIcon
@@ -28,11 +27,13 @@ struct ThemedIcon: View {
                 case "flicker":
                     image.symbolEffect(.variableColor.iterative.reversing, options: .repeating, isActive: active)
                 default:
-                    image.rotationEffect(.degrees(turns * 360))
-                        .onAppear {
-                            guard active, theme.loadingMotion == "spin" else { return }
-                            withAnimation(.linear(duration: 1.8).repeatForever(autoreverses: false)) { turns = 1 }
-                        }
+                    // "spin": a system-driven symbol effect, never a
+                    // repeatForever animation (CLAUDE.md); iOS 17 pulses.
+                    if #available(iOS 18, *) {
+                        image.symbolEffect(.rotate, options: .repeating, isActive: active)
+                    } else {
+                        image.symbolEffect(.pulse, options: .repeating, isActive: active)
+                    }
                 }
             } else {
                 Text(icon)
