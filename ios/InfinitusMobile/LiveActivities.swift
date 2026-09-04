@@ -18,27 +18,42 @@ final class LiveActivities {
     private var working: Activity<WorkingActivity>?
     private var tokenWatchers: [String: Task<Void, Never>] = [:]
     private var themeID: String?
+    /// Logged once per stretch of old snapshots, not every 10 s.
+    private var skippingOld = false
 
     private init() {
         // Adopt activities that survived an app relaunch (or that the
         // Mac started by push while the app was closed).
-        revival = Activity<RevivalActivity>.activities.first
-        working = Activity<WorkingActivity>.activities.first
+        revival = Self.adopt(Activity<RevivalActivity>.activities)
+        working = Self.adopt(Activity<WorkingActivity>.activities)
         if let revival { watchToken(of: revival, kind: .revival) }
         if let working { watchToken(of: working, kind: .working) }
         watchPushToStartTokens()
     }
 
-    func sync(fleet: MirrorFleetModel?, machine: String, tokenRate: TokenRate?) {
+    func sync(fleet: MirrorFleetModel?, machine: String, tokenRate: TokenRate?, capturedAt: Date) {
         guard let fleet else { return }
         guard ActivityAuthorizationInfo().areActivitiesEnabled else {
             log.notice("live activities disabled for this app")
             return
         }
+        // An old snapshot — the Documents fallback when the Mac is out of
+        // reach — names whichever account was active when the phone last
+        // heard from it; the cards wait for a fresh one (user 2026-09-05:
+        // the card still showed the old account after the Mac had switched).
+        guard Date().timeIntervalSince(capturedAt) < LiveActivityBuilder.workingStale else {
+            if !skippingOld { log.notice("snapshot from \(capturedAt) is too old to drive the live activities") }
+            skippingOld = true
+            return
+        }
+        skippingOld = false
         themeID = fleet.rowTheme.id
-        // A push may have started/ended one behind our back.
-        if working?.activityState != .active { working = Activity<WorkingActivity>.activities.first { $0.activityState == .active } }
-        if revival?.activityState != .active { revival = Activity<RevivalActivity>.activities.first { $0.activityState == .active } }
+        // A push may have started/ended one behind our back, and a card
+        // past its stale date is still ours: `.stale` is not `.active`,
+        // and adopting only the latter requested a second card while the
+        // old one stayed on the lock screen with the old account.
+        working = Self.adopt(Activity<WorkingActivity>.activities, current: working)
+        revival = Self.adopt(Activity<RevivalActivity>.activities, current: revival)
         let engineFleet = EngineFleet(engineID: fleet.id, provider: fleet.provider, accounts: fleet.accounts,
                                       activeNumber: fleet.activeNumber, nextCandidate: fleet.nextCandidate,
                                       nextRecovery: fleet.nextRecovery, liveSessions: fleet.liveSessions, raw: nil)
@@ -52,8 +67,10 @@ final class LiveActivities {
     private func syncRevival(_ state: RevivalActivityState?, machine: String) {
         if let state {
             let content = ActivityContent(state: state, staleDate: state.revivesAt.addingTimeInterval(60))
-            if let revival, revival.activityState == .active {
-                if revival.content.state != state { Task { await revival.update(content) } }
+            if let revival, Self.isLive(revival) {
+                if revival.activityState == .stale || revival.content.state != state {
+                    Task { await revival.update(content) }
+                }
             } else {
                 do {
                     let (activity, pushed) = try request(attributes: RevivalActivity(machine: machine), content: content)
@@ -64,7 +81,7 @@ final class LiveActivities {
                     log.error("revival activity refused: \(error.localizedDescription)")
                 }
             }
-        } else if let revival, revival.activityState == .active {
+        } else if let revival, Self.isLive(revival) {
             // Back from the dead: a brief "revived" card, then gone.
             var final = revival.content.state
             final.revived = true
@@ -82,8 +99,10 @@ final class LiveActivities {
         if let state {
             let content = ActivityContent(state: state,
                                           staleDate: Date().addingTimeInterval(LiveActivityBuilder.workingStale))
-            if let working, working.activityState == .active {
-                if LiveActivityBuilder.differs(working.content.state, state) { Task { await working.update(content) } }
+            if let working, Self.isLive(working) {
+                if working.activityState == .stale || LiveActivityBuilder.differs(working.content.state, state) {
+                    Task { await working.update(content) }
+                }
             } else {
                 do {
                     let (activity, pushed) = try request(attributes: WorkingActivity(machine: machine), content: content)
@@ -94,10 +113,31 @@ final class LiveActivities {
                     log.error("working activity refused: \(error.localizedDescription)")
                 }
             }
-        } else if let working, working.activityState == .active {
+        } else if let working, Self.isLive(working) {
             self.working = nil
             Task { await working.end(nil, dismissalPolicy: .immediate) }
         }
+    }
+
+    /// Active, or past its stale date and still on the lock screen.
+    private static func isLive<A: ActivityAttributes>(_ activity: Activity<A>) -> Bool {
+        activity.activityState == .active || activity.activityState == .stale
+    }
+
+    /// The one card of a type to keep driving — the current one while it
+    /// lives, else an active one, else a stale one — with every other
+    /// live card of that type ended: two on the lock screen is how a
+    /// switch went unseen.
+    private static func adopt<A: ActivityAttributes>(_ all: [Activity<A>], current: Activity<A>? = nil) -> Activity<A>? {
+        let live = all.filter(isLive)
+        // The current card stays even before `activities` lists it (it
+        // was requested a moment ago) — else this would request a twin.
+        let keep = current.flatMap { isLive($0) ? $0 : nil }
+            ?? live.first { $0.activityState == .active } ?? live.first
+        for extra in live where extra.id != keep?.id {
+            Task { await extra.end(nil, dismissalPolicy: .immediate) }
+        }
+        return keep
     }
 
     /// With a push token where the build can have one, plain otherwise:
