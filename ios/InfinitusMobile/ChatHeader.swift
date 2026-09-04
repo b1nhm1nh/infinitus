@@ -471,6 +471,7 @@ struct ChatHeaderPicker: View {
                     .clipShape(RoundedRectangle(cornerRadius: 10))
                     .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.primary.opacity(0.12)))
                     .allowsHitTesting(false)
+                    .accessibilityHidden(true)
                 }
                 .contentShape(Rectangle())
             }
