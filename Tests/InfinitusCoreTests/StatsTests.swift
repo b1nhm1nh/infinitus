@@ -769,6 +769,81 @@ final class StatsTests: XCTestCase {
         XCTAssertEqual(Stats.Activity(rawValue: "review")?.title, "Code & PR review")
     }
 
+    func testActivitySignalsRuleOneMap() {
+        typealias S = StatsScanner.ActivitySignals
+        XCTAssertEqual(S.label(tool: "Skill", input: ["skill": "code-review"]), .review)
+        XCTAssertEqual(S.label(tool: "Skill", input: ["skill": "pr-review-toolkit:review-pr"]), .review)
+        XCTAssertEqual(S.label(tool: "Skill", input: ["skill": "superpowers:brainstorming"]), .plan)
+        XCTAssertEqual(S.label(tool: "Skill", input: ["skill": "superpowers:writing-plans"]), .plan)
+        XCTAssertEqual(S.label(tool: "Skill", input: ["skill": "superpowers:systematic-debugging"]), .debug)
+        XCTAssertEqual(S.label(tool: "Skill", input: ["skill": "playwright-cli"]), .browser)
+        XCTAssertNil(S.label(tool: "Skill", input: ["skill": "sync-main"]))
+        XCTAssertEqual(S.label(tool: "Agent", input: ["subagent_type": "pr-review-toolkit:code-reviewer"]), .review)
+        XCTAssertEqual(S.label(tool: "Agent", input: ["subagent_type": "silent-failure-hunter"]), .review)
+        XCTAssertEqual(S.label(tool: "Agent", input: ["subagent_type": "pr-test-analyzer"]), .review)
+        XCTAssertNil(S.label(tool: "Agent", input: ["subagent_type": "coder"]))
+        XCTAssertEqual(S.label(tool: "EnterPlanMode", input: [:]), .plan)
+        XCTAssertEqual(S.label(tool: "ReportFindings", input: [:]), .review)
+        XCTAssertEqual(S.label(tool: "mcp__claude-in-chrome__navigate", input: [:]), .browser)
+        XCTAssertEqual(S.label(tool: "computer", input: [:]), .browser)
+        XCTAssertEqual(S.label(tool: "Bash", input: ["command": "xcrun simctl boot 'iPhone 16'"]), .simulator)
+        XCTAssertEqual(S.label(tool: "Bash", input: ["command": "xcodebuild -destination 'platform=iOS Simulator,name=X' build"]), .simulator)
+        XCTAssertEqual(S.label(tool: "Bash", input: ["command": "xcrun devicectl device install app --device 1 x.app"]), .simulator)
+        XCTAssertEqual(S.label(tool: "Bash", input: ["command": "gh pr diff 12"]), .review)
+        XCTAssertNil(S.label(tool: "Bash", input: ["command": "swift test"]))
+        XCTAssertNil(S.label(tool: "Edit", input: ["file_path": "/r/Tests/ATests.swift"]))
+    }
+
+    func testActivitySignalsTestPathConvention() {
+        typealias S = StatsScanner.ActivitySignals
+        for p in ["/r/Tests/InfinitusCoreTests/StatsTests.swift", "/r/src/FooTest.swift", "/r/web/__tests__/a.ts",
+                  "/r/web/a.test.ts", "/r/web/a.spec.js", "/r/py/tests/test_x.py", "/r/py/test_x.py", "/r/go/x_test.go",
+                  "/r/spec/models/user_spec.rb"] {
+            XCTAssertTrue(S.isTestPath(p), p)
+        }
+        for p in ["/r/Sources/InfinitusCore/Stats.swift", "/r/web/a.ts", "/r/testing-notes.md", "/r/contest/a.py"] {
+            XCTAssertFalse(S.isTestPath(p), p)
+        }
+    }
+
+    func testStretchLabelRulesInOrder() {
+        var s = StatsScanner.Stretch(dayKey: "2026-09-04", at: 0)
+        XCTAssertEqual(s.activity, .other)                        // nothing happened
+        s.endedInProse = true
+        XCTAssertEqual(s.activity, .explanation)                  // prose, no edits, no Bash
+        s.bash = 1
+        XCTAssertEqual(s.activity, .code)                         // a command ran
+        s.edits = 2; s.testEdits = 2
+        XCTAssertEqual(s.activity, .tests)                        // every edit is a test file
+        s.testEdits = 1
+        XCTAssertEqual(s.activity, .code)                         // a mix
+        s.label = "review"
+        XCTAssertEqual(s.activity, .review)                       // rule 1 beats everything
+        s.label = "not-a-label"
+        XCTAssertEqual(s.activity, .code)                         // unknown label → the path rules
+    }
+
+    func testDayAddStretchFeedsActivitiesAndModelStretchCounts() {
+        var s = StatsScanner.Stretch(dayKey: "2026-09-04", at: 100)
+        s.lastAt = 160; s.entries = 3; s.model = "claude-opus-5"; s.inputTokens = 10; s.outputTokens = 5; s.usd = 0.5; s.label = "plan"
+        var d = Stats.Day()
+        d.byModel["claude-opus-5"] = { var t = Stats.ActivityTally(); t.inputTokens = 10; t.outputTokens = 5; t.usd = 0.5; return t }()
+        d.add(stretch: s)
+        let plan = d.activities["plan"]!
+        XCTAssertEqual(plan.stretches, 1); XCTAssertEqual(plan.seconds, 60); XCTAssertEqual(plan.inputTokens, 10)
+        XCTAssertEqual(plan.outputTokens, 5); XCTAssertEqual(plan.usd, 0.5, accuracy: 1e-9)
+        let opus = d.byModel["claude-opus-5"]!
+        XCTAssertEqual(opus.stretches, 1); XCTAssertEqual(opus.seconds, 60)
+        XCTAssertEqual(opus.inputTokens, 10)                      // tokens were already there — not doubled
+        // A stretch that never saw a usage entry has no model: activities only.
+        var bare = StatsScanner.Stretch(dayKey: "2026-09-04", at: 0); bare.lastAt = 5; bare.entries = 1
+        var e = Stats.Day(); e.add(stretch: bare)
+        XCTAssertEqual(e.activities["other"]?.stretches, 1); XCTAssertTrue(e.byModel.isEmpty)
+        // A stretch with no assistant entry at all is not effort.
+        var empty = Stats.Day(); empty.add(stretch: StatsScanner.Stretch(dayKey: "2026-09-04", at: 0))
+        XCTAssertTrue(empty.activities.isEmpty)
+    }
+
     private func tally(usd: Double) -> Stats.ActivityTally {
         var t = Stats.ActivityTally(); t.stretches = 1; t.seconds = 60; t.inputTokens = 100; t.outputTokens = 10; t.usd = usd
         return t
