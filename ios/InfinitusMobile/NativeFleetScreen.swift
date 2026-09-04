@@ -77,7 +77,15 @@ struct NativeFleetScreen: View {
             // Pairing starts here (critique 2026-09-04: it had no
             // beginning — the empty state described a path in prose).
             ContentUnavailableView {
-                Label("Not paired with a Mac", systemImage: "antenna.radiowaves.left.and.right")
+                Label {
+                    Text("Not paired with a Mac")
+                } icon: {
+                    if model.rowTheme.plain || model.rowTheme.loadingIcon.isEmpty {
+                        Image(systemName: "antenna.radiowaves.left.and.right")
+                    } else {
+                        ThemedIcon(theme: model.rowTheme, moving: false)
+                    }
+                }
             } description: {
                 Text(model.error ?? "Scan the QR code in the Mac app's Settings → Devices to see its accounts here.")
             } actions: {

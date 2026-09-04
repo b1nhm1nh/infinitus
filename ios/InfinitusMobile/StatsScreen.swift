@@ -45,8 +45,8 @@ struct StatsScreen: View {
                         .font(.caption).foregroundStyle(.secondary).monospacedDigit()
                 }
             } else {
-                ContentUnavailableView("No stats yet", systemImage: "chart.bar",
-                                       description: Text("The Mac sends them once its first scan finishes."))
+                ThemedPlaceholder(theme: model.rowTheme, key: "empty", plainSymbol: "chart.bar",
+                                  description: "The Mac sends them once its first scan finishes.")
             }
         }
         .navigationTitle("Stats")

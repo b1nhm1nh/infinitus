@@ -95,7 +95,7 @@ struct SettingsForm: View {
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 Text(model.transportStatus.isEmpty
-                     ? "Looking for the Mac…"
+                     ? model.rowTheme.loadingWord("searching")
                      : model.transportStatus)
                     .font(.caption).foregroundStyle(.secondary)
                 ForEach(Array(model.manualEndpoints.enumerated()), id: \.element) { _, endpoint in
@@ -137,6 +137,7 @@ struct SettingsForm: View {
                 Picker("Chat header", selection: $chatHeader) {
                     Text("Compact").tag("compact")
                     Text("Stat strip").tag("strip")
+                    Text("Game HUD").tag("hud")
                 }
                 Toggle("Show as Mac popup", isOn: $model.macPopupView)
                 Text("Renders the Mac popup itself — the same layout, "

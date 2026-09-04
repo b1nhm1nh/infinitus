@@ -142,7 +142,7 @@ struct SessionDetailScreen: View {
             accountSection
 
             Section {
-                Text(model.transportStatus.isEmpty ? "Looking for the Mac…" : model.transportStatus)
+                Text(model.transportStatus.isEmpty ? model.rowTheme.loadingWord("searching") : model.transportStatus)
                     .font(.caption).foregroundStyle(.secondary)
             } header: {
                 Text("Connection")
