@@ -173,6 +173,7 @@ final class StatsTests: XCTestCase {
 
     func testScanIsIncrementalAndResetsOnShrink() throws {
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("stats-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: dir) }
         try FileManager.default.createDirectory(at: dir.appendingPathComponent("p"), withIntermediateDirectories: true)
         let file = dir.appendingPathComponent("p/abc.jsonl")
         let cache = dir.appendingPathComponent("cache.json")

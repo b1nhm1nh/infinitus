@@ -219,6 +219,9 @@ public enum StatsScanner {
         return result
     }
 
+    private static let userMarker = Data("\"type\":\"user\"".utf8)
+    private static let assistantMarker = Data("\"type\":\"assistant\"".utf8)
+
     static func parse(url: URL, sessionID: String, into entry: inout FileEntry, calendar: Calendar) {
         guard let handle = try? FileHandle(forReadingFrom: url) else { return }
         defer { try? handle.close() }
@@ -233,8 +236,7 @@ public enum StatsScanner {
             let line = complete[lineStart..<lineEnd]
             lineStart = lineEnd + 1
             // Cheap pre-filter: only user/assistant entries matter.
-            guard line.range(of: Data("\"type\":\"user\"".utf8)) != nil
-                    || line.range(of: Data("\"type\":\"assistant\"".utf8)) != nil,
+            guard line.range(of: userMarker) != nil || line.range(of: assistantMarker) != nil,
                   let obj = try? JSONSerialization.jsonObject(with: line) as? [String: Any] else { continue }
             ingest(obj, sessionID: sessionID, into: &entry, calendar: calendar)
         }
