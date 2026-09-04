@@ -77,6 +77,16 @@ workflow publishes the matching section as the GitHub release body.
   never grew usage tracking or auto-switch; Codex accounts still show
   as fleets through CLIProxyAPI and 9Router.
 
+### AWS sign-in
+- **Your phone hears when a session needs an AWS login** — one push per
+  session and profile (Notifications → "A session needs an AWS login"),
+  so the need no longer waits for you to open the app.
+- **One login, every session.** When two sessions are stuck on the same
+  sign-in, or one profile's login signs another in underneath (a broker
+  profile over its anchor), every stuck session is told to continue and
+  its "needs login" clears — the app checks the other profiles with the
+  CLI instead of guessing from the config.
+
 ### Fixes
 - A phone message no longer reads to the session like a note from
   another Claude session: it answers you in its own transcript instead

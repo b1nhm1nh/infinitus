@@ -11,6 +11,8 @@ final class SessionProgressModel: SessionProgressSource {
     /// Fleet-wide output tokens per minute with a slowly decaying peak
     /// (the footer's ⚡ gauge and the phone's Live Activity).
     @Published private(set) var tokenRate: TokenRate?
+    /// True once a scan has completed — the AWS-login push seeds on it.
+    @Published private(set) var scanned = false
 
     private let claudeDir = ClaudeSessions.configHome()
     private struct Stamp: Equatable { let size: Int; let mtime: Date }
@@ -65,6 +67,7 @@ final class SessionProgressModel: SessionProgressSource {
     private func finish(byPid: [Int: SessionProgress], stamps: [String: Stamp],
                         cached: [String: SessionProgress]) {
         busy = false
+        scanned = true
         self.byPid = byPid
         self.stamps = stamps
         self.cached = cached
