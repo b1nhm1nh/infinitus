@@ -70,6 +70,11 @@ workflow publishes the matching section as the GitHub release body.
 - infinitus.run reads well on phones: no sideways scroll, better
   contrast, feature cards grouped by what they do.
 
+### Settings
+- **The Codex slots tab is gone.** The manual auth.json slot switcher
+  never grew usage tracking or auto-switch; Codex accounts still show
+  as fleets through CLIProxyAPI and 9Router.
+
 ### Fixes
 - A phone message no longer reads to the session like a note from
   another Claude session: it answers you in its own transcript instead
