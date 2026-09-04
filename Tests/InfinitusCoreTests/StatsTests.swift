@@ -206,25 +206,45 @@ final class StatsTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: cache.path))
     }
 
-    func testScanHonorsLimitAndReportsRemaining() throws {
+    /// A window smaller than the file forces multiple `parse` calls per
+    /// file; a budget smaller than the file's total size must stop mid
+    /// file (not mid line — every line that gets counted is a whole one).
+    func testScanHonorsByteBudgetAndReportsRemaining() throws {
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("stats-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: dir) }
         try FileManager.default.createDirectory(at: dir.appendingPathComponent("p"), withIntermediateDirectories: true)
-        for i in 1...3 {
-            let line = #"{"type":"user","cwd":"/r/\#(i)","timestamp":"2026-09-0\#(i)T01:00:00.000Z","origin":{"kind":"human"},"message":{"role":"user","content":"msg \#(i)"}}"#
-            try (line + "\n").write(to: dir.appendingPathComponent("p/f\(i).jsonl"), atomically: true, encoding: .utf8)
+        let day = "2026-09-04"
+        // Three lines, each exactly 220 bytes (219 + trailing newline) —
+        // padded so the byte math below is exact, not approximate.
+        func line(_ seq: Int, targetBytes: Int) -> String {
+            func build(_ padLen: Int) -> String {
+                #"{"type":"user","cwd":"/r/a","timestamp":"\#(day)T0\#(seq):00:00.000Z","origin":{"kind":"human"},"message":{"role":"user","content":"\#(String(repeating: "x", count: padLen))"}}"#
+            }
+            var padLen = 0
+            while build(padLen).utf8.count < targetBytes { padLen += 1 }
+            return build(padLen)
         }
+        let lines = (1...3).map { line($0, targetBytes: 219) + "\n" }
+        XCTAssertEqual(lines[0].utf8.count, 220)
+        try lines.joined().write(to: dir.appendingPathComponent("p/f.jsonl"), atomically: true, encoding: .utf8)
+
         // Baseline: one unbounded scan into its own cache, for comparison.
         let full = StatsScanner.scan(projectsDir: dir, cacheURL: dir.appendingPathComponent("full.json"), calendar: cal)
-        XCTAssertEqual(full.files, 3)
+        XCTAssertEqual(full.days[day]?.humanMessages, 3)
         XCTAssertEqual(full.remaining, 0)
 
         let cache = dir.appendingPathComponent("cache.json")
-        var r = StatsScanner.scan(projectsDir: dir, cacheURL: cache, calendar: cal, limitFiles: 2)
-        XCTAssertEqual(r.files, 3)
+        // windowBytes bigger than one line but smaller than two, so each
+        // `parse` call reads exactly one line; a 300-byte budget (less
+        // than the 660-byte file) affords exactly two of the three.
+        var r = StatsScanner.scan(projectsDir: dir, cacheURL: cache, calendar: cal, byteBudget: 300, windowBytes: 300)
         XCTAssertEqual(r.remaining, 1)
-        r = StatsScanner.scan(projectsDir: dir, cacheURL: cache, calendar: cal, limitFiles: 2)
+        XCTAssertGreaterThan(r.bytesRemaining, 0)
+        XCTAssertEqual(r.days[day]?.humanMessages, 2)
+
+        r = StatsScanner.scan(projectsDir: dir, cacheURL: cache, calendar: cal, byteBudget: 300, windowBytes: 300)
         XCTAssertEqual(r.remaining, 0)
+        XCTAssertEqual(r.bytesRemaining, 0)
         XCTAssertEqual(r.days, full.days)
     }
 
@@ -238,7 +258,7 @@ final class StatsTests: XCTestCase {
         XCTAssertGreaterThan(bigLine.utf8.count, 200_000)
         try (bigLine + "\n").write(to: file, atomically: true, encoding: .utf8)
         var entry = StatsScanner.FileEntry()
-        StatsScanner.parse(url: file, sessionID: "sess1", into: &entry, calendar: cal)
+        _ = StatsScanner.parse(url: file, sessionID: "sess1", into: &entry, calendar: cal)
         let day = entry.days["2026-09-04"]
         XCTAssertEqual(day?.toolErrors, 2)
         XCTAssertEqual(day?.sessions, ["sess1"])

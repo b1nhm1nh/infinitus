@@ -178,9 +178,16 @@ public enum StatsScanner {
         public var cwds: Set<String> = []
         public var files = 0
         /// Files that still need a parse after this call (size changed,
-        /// budget exhausted before reaching them) — 0 means the corpus
+        /// budget exhausted before catching them up) — 0 means the corpus
         /// is fully caught up as of this call.
         public var remaining = 0
+        /// Bytes still owed across every file counted in `remaining` — 0
+        /// once `remaining` is 0.
+        public var bytesRemaining = 0
+        /// Bytes owed across every dirty file as of the START of this
+        /// call, before this call's budget spent any of it — the
+        /// denominator for a "scanned X of Y" readout.
+        public var bytesTotal = 0
     }
 
     struct Cache: Codable {
@@ -200,21 +207,32 @@ public enum StatsScanner {
     }
 
     /// Every `*.jsonl` under `projectsDir` (one directory per project),
-    /// parsed from each file's byte watermark, newest-modified first.
-    /// Files untouched for `maxAge` are skipped. The cache keeps only
-    /// files that still exist.
+    /// parsed from each file's byte watermark in bounded windows
+    /// (`parse`), newest-modified first. Files untouched for `maxAge`
+    /// are skipped. The cache keeps only files that still exist.
     ///
-    /// `limitFiles` caps how many files get actually PARSED this call —
-    /// files whose size is unchanged cost nothing and don't count against
-    /// it. `remaining` in the result says how many still need a parse;
-    /// callers backfilling a large corpus call repeatedly (newest data
-    /// first) until it hits 0. `progress` reports (parsed-so-far, total
-    /// needing a parse this call) after each file. The cache is written
-    /// atomically every 200 parses and once more at the end, so an
-    /// interrupted backfill loses at most one checkpoint's worth of work.
+    /// `byteBudget` caps how many bytes get actually READ this call
+    /// (nil = unbounded) — files whose size is unchanged cost nothing
+    /// and don't count against it. A file only latches its cached `size`
+    /// (marking it caught up) once it's been read all the way to the end
+    /// — a file the budget ran out partway through stays "dirty" for the
+    /// next call, however much of it this call got through. That's what
+    /// keeps one huge (654 MB seen in practice) transcript from either
+    /// blocking every chunk until it's fully read or getting silently
+    /// marked done half-read. `Result.remaining`/`bytesRemaining` say
+    /// what's still owed; callers backfilling a large corpus call
+    /// repeatedly (newest data first) until `remaining` hits 0. The
+    /// cache is written atomically every 200 files touched inside a pass
+    /// and once more at the end, so an interrupted backfill loses at
+    /// most one checkpoint's worth of work.
+    ///
+    /// `windowBytes` (default `Self.windowBytes`, 8 MB) exists as a
+    /// parameter only so tests can shrink it to exercise multi-window
+    /// files deterministically without a multi-MB fixture; every real
+    /// caller uses the default.
     public static func scan(projectsDir: URL, cacheURL: URL?, calendar: Calendar = .current,
                             maxAge: TimeInterval = 400 * 86_400, now: Date = Date(),
-                            limitFiles: Int? = nil, progress: ((Int, Int) -> Void)? = nil) -> Result {
+                            byteBudget: Int? = nil, windowBytes: Int = StatsScanner.windowBytes) -> Result {
         var cache = cacheURL.flatMap { try? Data(contentsOf: $0) }
             .flatMap { try? JSONDecoder().decode(Cache.self, from: $0) } ?? Cache()
         if cache.version != 1 { cache = Cache() }
@@ -233,35 +251,56 @@ public enum StatsScanner {
             }
         }
         candidates.sort { $0.mtime > $1.mtime }
-        let totalDirty = candidates.reduce(into: 0) { total, c in
+
+        // Bytes still owed across every dirty file, before this call spends any budget.
+        var bytesTotal = 0
+        for c in candidates {
             let cached = cache.files[c.url.path]
-            if cached == nil || cached!.size != c.size { total += 1 }
+            if cached == nil || cached!.size != c.size {
+                bytesTotal += max(0, c.size - (cached?.offset ?? 0))
+            }
         }
 
         var live: [String: FileEntry] = [:]
         var result = Result()
-        var parsedCount = 0
+        result.bytesTotal = bytesTotal
+        var budgetLeft = byteBudget
+        var budgetSpent = false
+        var filesTouched = 0
+
         for (i, c) in candidates.enumerated() {
-            var entry = cache.files[c.url.path] ?? FileEntry()
-            let dirty = entry.size != c.size || cache.files[c.url.path] == nil
-            if dirty {
-                if let limitFiles, parsedCount >= limitFiles {
-                    // Budget spent — leave this file's cached state untouched
-                    // so the next call retries it from where it left off.
+            let cached = cache.files[c.url.path]
+            let dirty = cached == nil || cached!.size != c.size
+
+            if budgetSpent {
+                // The pass is over — carry the cached state forward
+                // untouched (a brand-new never-cached file is simply left
+                // out; it's picked up fresh next call) and count every
+                // still-dirty one toward what's owed.
+                if let cached { live[c.url.path] = cached }
+                result.files += 1
+                if let cwd = cached?.cwd { result.cwds.insert(cwd) }
+                for (key, day) in cached?.days ?? [:] { result.days[key] = (result.days[key] ?? Stats.Day()) + day }
+                if dirty {
                     result.remaining += 1
-                    live[c.url.path] = entry
-                    result.files += 1
-                    if let cwd = entry.cwd { result.cwds.insert(cwd) }
-                    for (key, day) in entry.days { result.days[key] = (result.days[key] ?? Stats.Day()) + day }
-                    continue
+                    result.bytesRemaining += max(0, c.size - (cached?.offset ?? 0))
                 }
-                if c.size < entry.size { entry = FileEntry() }
-                parse(url: c.url, sessionID: c.url.deletingPathExtension().lastPathComponent,
-                      into: &entry, calendar: calendar)
-                entry.size = c.size
-                parsedCount += 1
-                progress?(parsedCount, totalDirty)
-                if let cacheURL, parsedCount % 200 == 0 {
+                continue
+            }
+
+            var entry = cached ?? FileEntry()
+            if dirty {
+                if c.size < entry.offset { entry = FileEntry() }   // shrink: start over
+                while entry.offset < c.size {
+                    if let left = budgetLeft, left <= 0 { budgetSpent = true; break }
+                    let consumed = parse(url: c.url, sessionID: c.url.deletingPathExtension().lastPathComponent,
+                                        into: &entry, calendar: calendar, windowBytes: windowBytes)
+                    if consumed <= 0 { break }   // unreadable, or a genuinely incomplete trailing line — wait
+                    if budgetLeft != nil { budgetLeft! -= consumed }
+                }
+                if entry.offset >= c.size { entry.size = c.size }   // caught up — only now does size==entry.size latch
+                filesTouched += 1
+                if let cacheURL, filesTouched % 200 == 0 {
                     var checkpoint = live
                     checkpoint[c.url.path] = entry
                     for other in candidates[(i + 1)...] where cache.files[other.url.path] != nil {
@@ -276,6 +315,10 @@ public enum StatsScanner {
             result.files += 1
             if let cwd = entry.cwd { result.cwds.insert(cwd) }
             for (key, day) in entry.days { result.days[key] = (result.days[key] ?? Stats.Day()) + day }
+            if entry.size != c.size {
+                result.remaining += 1
+                result.bytesRemaining += max(0, c.size - entry.offset)
+            }
         }
         cache.files = live
         if let cacheURL { writeCache(cache, to: cacheURL, fm: fm) }
@@ -307,13 +350,41 @@ public enum StatsScanner {
         return obj
     }
 
-    static func parse(url: URL, sessionID: String, into entry: inout FileEntry, calendar: Calendar) {
-        guard let handle = try? FileHandle(forReadingFrom: url) else { return }
+    /// One read window's worth of bytes: 8 MB. `parse` never holds more
+    /// than this (doubled only when a single line exceeds it) in memory
+    /// at once, however large the file is.
+    public static let windowBytes = 8 * 1024 * 1024
+
+    /// Reads at most one bounded window starting at `entry.offset`,
+    /// ingests every complete line in it, advances `entry.offset` past
+    /// what it consumed, and returns the number of bytes consumed (0 if
+    /// nothing could be — an unreadable file, or a trailing line that
+    /// isn't newline-terminated yet).
+    ///
+    /// A window that comes back with no newline at all is ambiguous: it
+    /// might be a single line bigger than the window (more data follows
+    /// — double the window and re-read from the same offset; a line can
+    /// never wedge the scan this way), or it might be the genuine end of
+    /// the file with an in-progress last line (a short read: fewer bytes
+    /// came back than asked for). Only the second case waits — same as
+    /// the old unbounded `parse`, which held any line without a trailing
+    /// newline for the next call.
+    static func parse(url: URL, sessionID: String, into entry: inout FileEntry, calendar: Calendar,
+                      windowBytes: Int = StatsScanner.windowBytes) -> Int {
+        guard let handle = try? FileHandle(forReadingFrom: url) else { return 0 }
         defer { try? handle.close() }
-        guard (try? handle.seek(toOffset: UInt64(entry.offset))) != nil,
-              let data = try? handle.readToEnd(), !data.isEmpty else { return }
         let newline = UInt8(ascii: "\n")
-        guard let lastNewline = data.lastIndex(of: newline) else { return }
+        var windowSize = windowBytes
+        var data = Data()
+        while true {
+            guard (try? handle.seek(toOffset: UInt64(entry.offset))) != nil,
+                  let chunk = try? handle.read(upToCount: windowSize), !chunk.isEmpty else { return 0 }
+            data = chunk
+            if data.lastIndex(of: newline) != nil { break }
+            if chunk.count < windowSize { return 0 }   // real EOF, partial trailing line — wait
+            windowSize *= 2
+        }
+        guard let lastNewline = data.lastIndex(of: newline) else { return 0 }
         let complete = data[data.startIndex...lastNewline]
         var lineStart = complete.startIndex
         while lineStart < complete.endIndex {
@@ -334,5 +405,6 @@ public enum StatsScanner {
             ingest(obj, sessionID: sessionID, into: &entry, calendar: calendar)
         }
         entry.offset += complete.count
+        return complete.count
     }
 }

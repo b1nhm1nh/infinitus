@@ -25,10 +25,17 @@ final class StatsModel: ObservableObject {
     private var repoScanRunning = false
     private var transcriptsFinished = false
     /// Rebuilt separately (transcript+event facts vs. repo facts) and
-    /// combined into `notes` — the transcript chunk loop and the repo
-    /// scan publish independently and must not stomp each other's half.
+    /// combined into `notes`/`days`/`summaries` — the transcript chunk
+    /// loop and the repo scan publish independently and on their own
+    /// schedules, so neither may overwrite `days` from scratch: doing
+    /// that once silently discarded the other side's already-merged
+    /// contribution (a transcript chunk publishing after the repo scan
+    /// finished dropped its commits back to 0 — caught live during the
+    /// round-2 real-corpus probe).
     private var transcriptNotes: [String] = []
     private var repoNotes: [String] = []
+    private var transcriptDays: [String: Stats.Day] = [:]
+    private var repoDays: [String: Stats.Day] = [:]
 
     init(eventStore: EventStore) { self.eventStore = eventStore }
 
@@ -42,6 +49,15 @@ final class StatsModel: ObservableObject {
 
     private func recomputeNotes() { notes = transcriptNotes + repoNotes }
 
+    private func recomputeDays(calendar: Calendar) {
+        var merged = transcriptDays
+        for (k, d) in repoDays { merged[k] = (merged[k] ?? Stats.Day()) + d }
+        days = merged
+        summaries = Dictionary(uniqueKeysWithValues: Stats.Period.allCases.map {
+            ($0, Stats.fold(days: merged, period: $0, calendar: calendar))
+        })
+    }
+
     /// Both the transcript loop and the repo scan can finish in either
     /// order; `scanning` only drops once both say they're done.
     private func markTranscriptsDone() {
@@ -54,17 +70,24 @@ final class StatsModel: ObservableObject {
         if transcriptsFinished { scanning = false }
     }
 
+    /// Per-chunk transcript read budget (bytes) — `StatsScanner.scan`
+    /// stops reading once it's spent this much, however far through any
+    /// one file that leaves it (a 654 MB transcript, seen in practice,
+    /// gets read across many chunks instead of blocking the first one).
+    private static let chunkByteBudget = 64 * 1024 * 1024
+
     /// A cold backfill (months of transcripts, first launch or an
     /// emptied cache) can take minutes; scanning the whole corpus in one
     /// shot would show nothing until it finished — and a slow repo (a
     /// long git history) must never block that. So this runs two
     /// independent loops:
     ///
-    /// - The transcript chunk loop: `StatsScanner.scan` 300 files at a
-    ///   time (newest first), merging in the once-loaded event days and
-    ///   publishing `days`/`summaries`/`notes` after every chunk, until
-    ///   nothing's left to parse. `progress` carries "scanned n of N
-    ///   transcripts" while it runs.
+    /// - The transcript chunk loop: `StatsScanner.scan` reads up to
+    ///   `chunkByteBudget` bytes at a time (newest files first), merging
+    ///   in the once-loaded event days and publishing
+    ///   `days`/`summaries`/`notes` after every chunk, until nothing's
+    ///   left to parse. `progress` carries "scanned X MB of Y MB (n
+    ///   files left)" while it runs.
     /// - The repo scan: started once, right after the first transcript
     ///   chunk (it needs that chunk's `cwds`), as its own detached task.
     ///   When it finishes — however long that takes — it merges its days
@@ -87,23 +110,23 @@ final class StatsModel: ObservableObject {
             var remaining = 1
             repeat {
                 let transcripts = StatsScanner.scan(projectsDir: projectsDir, cacheURL: cacheURL,
-                                                    calendar: calendar, limitFiles: 300) { done, total in
-                    Task { @MainActor in self.progress = "scanned \(done) of \(total) transcripts" }
-                }
+                                                    calendar: calendar, byteBudget: Self.chunkByteBudget)
                 remaining = transcripts.remaining
                 var merged = transcripts.days
                 for (k, d) in eventDays { merged[k] = (merged[k] ?? Stats.Day()) + d }
                 var chunkNotes: [String] = ["\(transcripts.files) transcripts"]
                 if let first = events.first { chunkNotes.append("switches and limits since \(first.at.formatted(date: .abbreviated, time: .omitted))") }
-                let folded = Dictionary(uniqueKeysWithValues: Stats.Period.allCases.map {
-                    ($0, Stats.fold(days: merged, period: $0, calendar: calendar))
-                })
+                let scannedMB = (transcripts.bytesTotal - transcripts.bytesRemaining) / (1024 * 1024)
+                let totalMB = transcripts.bytesTotal / (1024 * 1024)
                 await MainActor.run {
-                    self.days = merged
-                    self.summaries = folded
+                    self.transcriptDays = merged
+                    self.recomputeDays(calendar: calendar)
                     self.transcriptNotes = chunkNotes
                     self.recomputeNotes()
                     self.lastRefresh = Date()
+                    self.progress = remaining > 0
+                        ? "scanned \(scannedMB) MB of \(totalMB) MB (\(remaining) files left)"
+                        : nil
                 }
                 if firstChunk {
                     firstChunk = false
@@ -118,12 +141,8 @@ final class StatsModel: ObservableObject {
                             let since = calendar.date(byAdding: .day, value: -400, to: Date())!
                             let repoOutcome = await repos.scan(cwds: cwds, since: since)
                             await MainActor.run {
-                                var merged = self.days
-                                for (k, d) in repoOutcome.days { merged[k] = (merged[k] ?? Stats.Day()) + d }
-                                self.days = merged
-                                self.summaries = Dictionary(uniqueKeysWithValues: Stats.Period.allCases.map {
-                                    ($0, Stats.fold(days: merged, period: $0, calendar: calendar))
-                                })
+                                self.repoDays = repoOutcome.days
+                                self.recomputeDays(calendar: calendar)
                                 var built: [String] = ["\(repoOutcome.repos.count) repos"]
                                 if !repoOutcome.skipped.isEmpty {
                                     built.append("no user.email — skipped: " + repoOutcome.skipped.map { ($0 as NSString).lastPathComponent }.joined(separator: ", "))
