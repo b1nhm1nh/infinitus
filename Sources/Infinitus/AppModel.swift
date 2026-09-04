@@ -1616,7 +1616,9 @@ final class AppModel: ObservableObject {
         // resumed (todo 2026-09-01), reusing the resume mechanism's
         // own detection — Claude Code's files, never engine internals.
         // Throttled: the transcript tails re-read at most every 20s.
-        if list.nextCandidate == nil, list.nextRecovery != nil {
+        if list.nextCandidate == nil,
+           RecoveryMath.corrected(engine: list.nextRecovery, accounts: list.accounts,
+                                  activeNumber: list.activeAccountNumber) != nil {
             if Date().timeIntervalSince(waitingScanAt) > 20 {
                 waitingScanAt = Date()
                 Task.detached(priority: .utility) { [weak self] in

@@ -79,7 +79,7 @@ final class FleetState: ObservableObject, Identifiable {
         accounts = fleet.accounts
         activeNumber = fleet.activeNumber
         nextCandidate = fleet.nextCandidate
-        nextRecovery = RecoveryMath.corrected(engine: fleet.nextRecovery, accounts: fleet.accounts)
+        nextRecovery = RecoveryMath.corrected(engine: fleet.nextRecovery, accounts: fleet.accounts, activeNumber: fleet.activeNumber)
         liveSessions = fleet.liveSessions
         lastFleet = fleet
     }
@@ -115,7 +115,7 @@ final class FleetState: ObservableObject, Identifiable {
             accounts = list
             if activeNumber != fleet.activeNumber { activeNumber = fleet.activeNumber }
             if nextCandidate != fleet.nextCandidate { nextCandidate = fleet.nextCandidate }
-            let recovery = RecoveryMath.corrected(engine: fleet.nextRecovery, accounts: list)
+            let recovery = RecoveryMath.corrected(engine: fleet.nextRecovery, accounts: list, activeNumber: fleet.activeNumber)
             if nextRecovery != recovery { nextRecovery = recovery }
             if liveSessions != fleet.liveSessions { liveSessions = fleet.liveSessions }
         }

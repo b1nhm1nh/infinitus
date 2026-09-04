@@ -41,7 +41,7 @@ final class RecoveryMathTests: XCTestCase {
     // value stays nil even if every account looks dead client-side.
     func testCorrectedNilWhenEngineNil() throws {
         let dead = try account(#"{"number": 7, \#(base), "active": true, "usageStatus": "ok", "usage": {"fiveHour": {"pct": 100, "resetsAt": "2026-09-05T00:00:00Z"}}}"#)
-        XCTAssertNil(RecoveryMath.corrected(engine: nil, accounts: [dead]))
+        XCTAssertNil(RecoveryMath.corrected(engine: nil, accounts: [dead], activeNumber: 7))
     }
 
     // (e) falls back to the engine's value when the client can't rank
@@ -49,8 +49,23 @@ final class RecoveryMathTests: XCTestCase {
     func testCorrectedFallsBackWhenUnrankable() throws {
         let unrankable = try account(#"{"number": 8, \#(base), "active": true, "usageStatus": "ok", "usage": {"fiveHour": {"pct": 100}}}"#)
         let engineValue = NextRecovery(number: 8, at: "2026-09-05T00:00:00Z")
-        let result = RecoveryMath.corrected(engine: engineValue, accounts: [unrankable])
+        let result = RecoveryMath.corrected(engine: engineValue, accounts: [unrankable], activeNumber: 8)
         XCTAssertEqual(result?.number, 8)
         XCTAssertEqual(result?.at, "2026-09-05T00:00:00Z")
+    }
+
+    // (f) the engine names a reviver whenever no OTHER account is a
+    // switch target — with the active account healthy that is not
+    // "all limited" (user 2026-09-04: "All accounts down" over a
+    // working fleet). corrected() returns nil; a limited active account
+    // keeps the advisory; no active account keeps it too.
+    func testCorrectedNilWhileTheActiveAccountIsHealthy() throws {
+        let healthy = try account(#"{"number": 5, \#(base), "active": true, "usageStatus": "ok", "usage": {"fiveHour": {"pct": 25, "resetsAt": "2026-09-04T15:59:59Z"}, "sevenDay": {"pct": 5, "resetsAt": "2026-09-11T00:59:59Z"}}}"#)
+        let limited = try account(#"{"number": 4, \#(base), "active": false, "usageStatus": "ok", "usage": {"fiveHour": {"pct": 100, "resetsAt": "2026-09-04T14:00:00Z"}}}"#)
+        let engineValue = NextRecovery(number: 4, at: "2026-09-04T14:00:00Z")
+        XCTAssertNil(RecoveryMath.corrected(engine: engineValue, accounts: [healthy, limited], activeNumber: 5))
+        let activeLimited = try account(#"{"number": 5, \#(base), "active": true, "usageStatus": "ok", "usage": {"fiveHour": {"pct": 100, "resetsAt": "2026-09-04T16:00:00Z"}}}"#)
+        XCTAssertEqual(RecoveryMath.corrected(engine: engineValue, accounts: [activeLimited, limited], activeNumber: 5)?.number, 4)
+        XCTAssertEqual(RecoveryMath.corrected(engine: engineValue, accounts: [healthy, limited], activeNumber: nil)?.number, 4)
     }
 }
