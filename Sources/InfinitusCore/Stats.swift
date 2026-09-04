@@ -77,9 +77,10 @@ public enum Stats {
             c.outputTokens += b.outputTokens
             c.usd += b.usd
             c.sessions.formUnion(b.sessions)
+            c.sessionTally += b.sessionTally
             c.sessionSeconds += b.sessionSeconds
-            for i in 0..<4 { c.sessionBuckets[i] = a.sessionBuckets[i] + b.sessionBuckets[i] }
-            for i in 0..<168 { c.hours[i] = a.hours[i] + b.hours[i] }
+            c.sessionBuckets = summed(a.sessionBuckets, b.sessionBuckets)
+            c.hours = summed(a.hours, b.hours)
             c.commits += b.commits
             c.linesAdded += b.linesAdded
             c.linesRemoved += b.linesRemoved
@@ -87,6 +88,7 @@ public enum Stats {
             c.coAuthoredByClaude += b.coAuthoredByClaude
             c.reverts += b.reverts
             c.repos.formUnion(b.repos)
+            c.repoTally += b.repoTally
             c.prsOpened += b.prsOpened
             c.prsMerged += b.prsMerged
             c.mergeHoursTotal += b.mergeHoursTotal
@@ -98,6 +100,84 @@ public enum Stats {
             c.resumes += b.resumes
             c.minutesLostToLimits += b.minutesLostToLimits
             return c
+        }
+
+        /// Element-wise sum that survives a `compacted()` operand: the
+        /// two histograms are only the same length while both days are
+        /// full-fat, so iterate the shorter and keep the longer's tail
+        /// rather than trapping on an index.
+        private static func summed(_ a: [Int], _ b: [Int]) -> [Int] {
+            var out = a.count >= b.count ? a : b
+            for i in 0..<min(a.count, b.count) { out[i] = a[i] + b[i] }
+            return out
+        }
+
+        /// The travelling form: identity sets folded into their tallies
+        /// and the per-hour histogram dropped. `hours[168]` riding on
+        /// eight Days is what made the mirrored bundle 14.8 KB (spec:
+        /// ≤ 4 KB) and `infinitusctl stats --period year` ~0.5 MB.
+        /// Idempotent — `sessionCount`/`repoCount` already read the
+        /// tally once the set is empty.
+        public func compacted() -> Day {
+            var d = self
+            d.sessionTally = sessionCount
+            d.sessions = []
+            d.repoTally = repoCount
+            d.repos = []
+            d.hours = []
+            return d
+        }
+
+        /// Hand-written so a Day written by a NEWER build still decodes:
+        /// every field falls back to its memberwise default. The
+        /// synthesized initializer throws on the first missing key,
+        /// which would drop both stats caches on the ground every time
+        /// a field is added AND make an older phone fail to decode the
+        /// whole `MirrorSnapshot`, not just its stats. Encoding stays
+        /// synthesized.
+        public init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            let d = Day()
+            humanMessages = try c.decodeIfPresent(Int.self, forKey: .humanMessages) ?? d.humanMessages
+            phoneMessages = try c.decodeIfPresent(Int.self, forKey: .phoneMessages) ?? d.phoneMessages
+            agentMessages = try c.decodeIfPresent(Int.self, forKey: .agentMessages) ?? d.agentMessages
+            nudges = try c.decodeIfPresent(Int.self, forKey: .nudges) ?? d.nudges
+            turns = try c.decodeIfPresent(Int.self, forKey: .turns) ?? d.turns
+            toolCalls = try c.decodeIfPresent([String: Int].self, forKey: .toolCalls) ?? d.toolCalls
+            toolErrors = try c.decodeIfPresent(Int.self, forKey: .toolErrors) ?? d.toolErrors
+            questions = try c.decodeIfPresent(Int.self, forKey: .questions) ?? d.questions
+            denials = try c.decodeIfPresent(Int.self, forKey: .denials) ?? d.denials
+            waitingSeconds = try c.decodeIfPresent(Double.self, forKey: .waitingSeconds) ?? d.waitingSeconds
+            subagents = try c.decodeIfPresent(Int.self, forKey: .subagents) ?? d.subagents
+            compactions = try c.decodeIfPresent(Int.self, forKey: .compactions) ?? d.compactions
+            retries = try c.decodeIfPresent(Int.self, forKey: .retries) ?? d.retries
+            longestUnattended = try c.decodeIfPresent(Int.self, forKey: .longestUnattended) ?? d.longestUnattended
+            inputTokens = try c.decodeIfPresent(Int.self, forKey: .inputTokens) ?? d.inputTokens
+            outputTokens = try c.decodeIfPresent(Int.self, forKey: .outputTokens) ?? d.outputTokens
+            usd = try c.decodeIfPresent(Double.self, forKey: .usd) ?? d.usd
+            sessions = try c.decodeIfPresent(Set<String>.self, forKey: .sessions) ?? d.sessions
+            sessionTally = try c.decodeIfPresent(Int.self, forKey: .sessionTally) ?? d.sessionTally
+            sessionSeconds = try c.decodeIfPresent(Double.self, forKey: .sessionSeconds) ?? d.sessionSeconds
+            sessionBuckets = try c.decodeIfPresent([Int].self, forKey: .sessionBuckets) ?? d.sessionBuckets
+            hours = try c.decodeIfPresent([Int].self, forKey: .hours) ?? d.hours
+            commits = try c.decodeIfPresent(Int.self, forKey: .commits) ?? d.commits
+            linesAdded = try c.decodeIfPresent(Int.self, forKey: .linesAdded) ?? d.linesAdded
+            linesRemoved = try c.decodeIfPresent(Int.self, forKey: .linesRemoved) ?? d.linesRemoved
+            filesTouched = try c.decodeIfPresent(Int.self, forKey: .filesTouched) ?? d.filesTouched
+            coAuthoredByClaude = try c.decodeIfPresent(Int.self, forKey: .coAuthoredByClaude) ?? d.coAuthoredByClaude
+            reverts = try c.decodeIfPresent(Int.self, forKey: .reverts) ?? d.reverts
+            repos = try c.decodeIfPresent(Set<String>.self, forKey: .repos) ?? d.repos
+            repoTally = try c.decodeIfPresent(Int.self, forKey: .repoTally) ?? d.repoTally
+            prsOpened = try c.decodeIfPresent(Int.self, forKey: .prsOpened) ?? d.prsOpened
+            prsMerged = try c.decodeIfPresent(Int.self, forKey: .prsMerged) ?? d.prsMerged
+            mergeHoursTotal = try c.decodeIfPresent(Double.self, forKey: .mergeHoursTotal) ?? d.mergeHoursTotal
+            mergeCount = try c.decodeIfPresent(Int.self, forKey: .mergeCount) ?? d.mergeCount
+            switches = try c.decodeIfPresent(Int.self, forKey: .switches) ?? d.switches
+            limitStops = try c.decodeIfPresent(Int.self, forKey: .limitStops) ?? d.limitStops
+            revivals = try c.decodeIfPresent(Int.self, forKey: .revivals) ?? d.revivals
+            ignites = try c.decodeIfPresent(Int.self, forKey: .ignites) ?? d.ignites
+            resumes = try c.decodeIfPresent(Int.self, forKey: .resumes) ?? d.resumes
+            minutesLostToLimits = try c.decodeIfPresent(Double.self, forKey: .minutesLostToLimits) ?? d.minutesLostToLimits
         }
 
         // Derived — nil when the denominator is zero (tiles show "—").
@@ -150,6 +230,19 @@ public enum Stats {
         public var previous: Day         // the calendar period before `from`
         public var daily: [DayPoint]     // every day from `from` to `to`, empty days included
         public var streak: Int           // consecutive days ending today with a commit or a human message
+
+        /// Every Day in the summary in its travelling form — see
+        /// `Day.compacted()`. `daily` matters here too: a year's
+        /// series carried the 168-slot histogram and the session set
+        /// 365 times over (`infinitusctl stats --period year` was
+        /// ~0.5 MB).
+        public func compacted() -> Summary {
+            var s = self
+            s.total = s.total.compacted()
+            s.previous = s.previous.compacted()
+            s.daily = s.daily.map { DayPoint(key: $0.key, day: $0.day.compacted()) }
+            return s
+        }
     }
 
     /// What travels to the phone / the wall: the four periods without
@@ -162,15 +255,7 @@ public enum Stats {
             periods = Period.allCases.map { p in
                 var s = fold(days: days, period: p, now: now, calendar: calendar)
                 s.daily = []
-                s.total.sessionTally = s.total.sessions.count
-                s.total.sessions = []
-                s.total.repoTally = s.total.repos.count
-                s.total.repos = []
-                s.previous.sessionTally = s.previous.sessions.count
-                s.previous.sessions = []
-                s.previous.repoTally = s.previous.repos.count
-                s.previous.repos = []
-                return s
+                return s.compacted()
             }
         }
         public func summary(_ p: Period) -> Summary? { periods.first { $0.period == p } }
@@ -240,6 +325,14 @@ public enum Stats {
         }
         var streak = 0
         var back = calendar.startOfDay(for: now)
+        // Today hasn't necessarily started yet: at 09:00 with no commit
+        // and no message so far, counting from today would read a
+        // 40-day streak as 0. Nothing today → count from yesterday.
+        func active(_ d: Date) -> Bool {
+            guard let day = days[dayKey(d, calendar: calendar)] else { return false }
+            return day.commits > 0 || day.messages > 0
+        }
+        if !active(back) { back = calendar.date(byAdding: .day, value: -1, to: back)! }
         while let d = days[dayKey(back, calendar: calendar)], d.commits > 0 || d.messages > 0 {
             streak += 1
             back = calendar.date(byAdding: .day, value: -1, to: back)!
@@ -250,17 +343,22 @@ public enum Stats {
                        daily: daily, streak: streak)
     }
 
-    /// [start, end) of the period containing `now`; weeks start on the
-    /// calendar's first weekday.
+    /// [start, end) of the period containing `now`; weeks are Monday to
+    /// Sunday whatever the locale's own first weekday is (spec) — the
+    /// same Mon=0 convention `hourSlot` already hardcodes, so a US
+    /// calendar's Sunday start can't shift the week bucket off the
+    /// heatmap by a day.
     static func range(_ period: Period, now: Date, calendar: Calendar) -> (Date, Date) {
         let today = calendar.startOfDay(for: now)
         switch period {
         case .day:
             return (today, calendar.date(byAdding: .day, value: 1, to: today)!)
         case .week:
-            let comps = calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: today)
-            let start = calendar.date(from: comps)!
-            return (start, calendar.date(byAdding: .day, value: 7, to: start)!)
+            var mondays = calendar
+            mondays.firstWeekday = 2
+            let comps = mondays.dateComponents([.yearForWeekOfYear, .weekOfYear], from: today)
+            let start = mondays.date(from: comps)!
+            return (start, mondays.date(byAdding: .day, value: 7, to: start)!)
         case .month:
             let start = calendar.date(from: calendar.dateComponents([.year, .month], from: today))!
             return (start, calendar.date(byAdding: .month, value: 1, to: start)!)

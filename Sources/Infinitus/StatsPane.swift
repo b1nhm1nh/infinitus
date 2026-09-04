@@ -86,7 +86,11 @@ struct StatsPane: View {
 
     // MARK: rhythm
 
-    private func heatmap(_ hours: [Int]) -> some View {
+    private func heatmap(_ raw: [Int]) -> some View {
+        // `model.summaries` is never compacted (that's the exporter's
+        // form, which empties `hours`) — but index math on a 168-slot
+        // array is not worth a trap if that ever changes.
+        let hours = raw.count == 168 ? raw : Array(repeating: 0, count: 168)
         let peak = max(1, hours.max() ?? 1)
         let days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
         return VStack(alignment: .leading, spacing: 3) {

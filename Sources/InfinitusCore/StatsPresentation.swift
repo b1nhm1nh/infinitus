@@ -32,6 +32,10 @@ extension Stats {
                     tile("Turns", s, \.turns),
                     tile("Tool calls", s, \.totalToolCalls),
                     tile("Output tokens", s, \.outputTokens),
+                    tile("Files touched", s, \.filesTouched),
+                    tile("Co-authored by Claude", s, \.coAuthoredByClaude),
+                    tile("Reverts", s, \.reverts),
+                    tile("Repos", s, \.repoCount),
                 ]),
                 Group(id: "Messages & sessions", tiles: [
                     tile("Keyboard", s, \.humanMessages),
@@ -65,6 +69,7 @@ extension Stats {
                 ]),
                 Group(id: "Cost (API-equivalent estimate)", tiles: [
                     money("Spend", s, \.usd),
+                    tile("Input tokens", s, \.inputTokens),
                     money("Per commit", s, \.usdPerCommit),
                     money("Per PR", s, \.usdPerPR),
                     ratio("Tokens / line", s, \.tokensPerLine),
@@ -86,6 +91,26 @@ extension Stats {
             return "\(Int(total / 3600)) h total · \(Int(total / Double(n) / 60)) min per session"
         }
 
+        /// A year's series is 365 marks per tile — ~25k Charts marks
+        /// across the catalogue, which is what a year sparkline row
+        /// actually costs. Anything past ~two months collapses to
+        /// weekly buckets (≤ 53 points for a full year): sums for
+        /// counts, means for money and ratios — a week's worth of
+        /// "tool calls / message" added together means nothing.
+        static func bucketed(_ series: [Double], mean: Bool) -> [Double] {
+            guard series.count > 62 else { return series }
+            var out: [Double] = []
+            out.reserveCapacity(series.count / 7 + 1)
+            var i = 0
+            while i < series.count {
+                let j = min(i + 7, series.count)
+                let week = series[i..<j].reduce(0, +)
+                out.append(mean ? week / Double(j - i) : week)
+                i = j
+            }
+            return out
+        }
+
         // MARK: tile builders (verbatim from the Mac pane, 2026-09-04)
 
         private static func tile(_ name: String, _ s: Stats.Summary, _ key: KeyPath<Stats.Day, Int>,
@@ -93,24 +118,25 @@ extension Stats {
             let v = s.total[keyPath: key], p = s.previous[keyPath: key]
             return Tile(id: name, value: v.formatted() + (unit.map { " \($0)" } ?? ""),
                        delta: deltaText(Double(v), Double(p)),
-                       series: s.daily.map { Double($0.day[keyPath: key]) })
+                       series: bucketed(s.daily.map { Double($0.day[keyPath: key]) }, mean: false))
         }
 
         private static func tile(_ name: String, _ s: Stats.Summary, _ key: KeyPath<Stats.Day, Double>,
-                                 format: @escaping (Double) -> String) -> Tile {
+                                 mean: Bool = false, format: @escaping (Double) -> String) -> Tile {
             let v = s.total[keyPath: key], p = s.previous[keyPath: key]
-            return Tile(id: name, value: format(v), delta: deltaText(v, p), series: s.daily.map { $0.day[keyPath: key] })
+            return Tile(id: name, value: format(v), delta: deltaText(v, p),
+                        series: bucketed(s.daily.map { $0.day[keyPath: key] }, mean: mean))
         }
 
         private static func ratio(_ name: String, _ s: Stats.Summary, _ key: KeyPath<Stats.Day, Double?>) -> Tile {
             Tile(id: name, value: s.total[keyPath: key].map { String(format: "%.1f", $0) } ?? "—",
                 delta: zip2(s.total[keyPath: key], s.previous[keyPath: key]).map { deltaText($0, $1) } ?? nil,
-                series: s.daily.map { $0.day[keyPath: key] ?? 0 })
+                series: bucketed(s.daily.map { $0.day[keyPath: key] ?? 0 }, mean: true))
         }
 
         private static func percent(_ name: String, _ s: Stats.Summary, _ key: KeyPath<Stats.Day, Double?>) -> Tile {
             Tile(id: name, value: s.total[keyPath: key].map { "\(Int($0 * 100))%" } ?? "—", delta: nil,
-                series: s.daily.map { ($0.day[keyPath: key] ?? 0) * 100 })
+                series: bucketed(s.daily.map { ($0.day[keyPath: key] ?? 0) * 100 }, mean: true))
         }
 
         private static func minutes(_ name: String, _ s: Stats.Summary, _ key: KeyPath<Stats.Day, Double>) -> Tile {
@@ -121,12 +147,12 @@ extension Stats {
         }
 
         private static func money(_ name: String, _ s: Stats.Summary, _ key: KeyPath<Stats.Day, Double>) -> Tile {
-            tile(name, s, key) { "$" + String(format: $0 >= 100 ? "%.0f" : "%.2f", $0) }
+            tile(name, s, key, mean: true) { "$" + String(format: $0 >= 100 ? "%.0f" : "%.2f", $0) }
         }
 
         private static func money(_ name: String, _ s: Stats.Summary, _ key: KeyPath<Stats.Day, Double?>) -> Tile {
             Tile(id: name, value: s.total[keyPath: key].map { "$" + String(format: "%.2f", $0) } ?? "—", delta: nil,
-                series: s.daily.map { $0.day[keyPath: key] ?? 0 })
+                series: bucketed(s.daily.map { $0.day[keyPath: key] ?? 0 }, mean: true))
         }
 
         private static func deltaText(_ v: Double, _ p: Double) -> String? {
