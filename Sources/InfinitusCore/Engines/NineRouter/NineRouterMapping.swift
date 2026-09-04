@@ -120,7 +120,7 @@ public enum NineRouterUsage {
 
     static let authExpiredMarkers = ["expired", "authentication", "unauthorized", "401", "re-authorize"]
 
-    public static func parse(_ data: Data, now: Date = Date()) -> Outcome {
+    public static func parse(_ data: Data, hidden: Set<String> = [], now: Date = Date()) -> Outcome {
         guard let wire = try? JSONDecoder().decode(Wire.self, from: data) else {
             return .unavailable("unreadable usage reply")
         }
@@ -171,7 +171,29 @@ public enum NineRouterUsage {
                     .trimmingCharacters(in: .whitespaces)
                 guard !model.isEmpty, let w = window(quota, name: model.capitalized) else { continue }
                 scoped.append(w)
+            } else {
+                // Everything else is a per-model quota row — the
+                // dashboard's quota tracker ("gemini-3.8-flash-high" →
+                // "Gemini 3.8 Flash (High)", Antigravity's nine rows,
+                // 2026-09-04). Rows the user hid in 9Router's own
+                // dashboard (settings.quotaVisibility, keyed by the raw
+                // slug per provider) stay hidden here too.
+                guard !hidden.contains(key) else { continue }
+                guard let w = window(quota, name: Self.modelName(key)) else { continue }
+                scoped.append(w)
             }
+        }
+        // Most-burned first — the order the binding-window logic and
+        // the eye expect. Hidden rows were honored above; the cap is
+        // only the layout backstop for a connection with everything
+        // visible (the popup grid grows a row per scoped window). Ties
+        // stay alphabetical so the order is deterministic across polls
+        // (the grid re-renders on change).
+        if scoped.count > 1 {
+            scoped.sort { $0.pct != $1.pct ? $0.pct > $1.pct : ($0.name ?? "") < ($1.name ?? "") }
+        }
+        if scoped.count > Self.scopedCap {
+            scoped = Array(scoped.prefix(Self.scopedCap))
         }
         if let eu = wire.extraUsage, eu.isEnabled == true,
            let used = eu.usedCredits, let limit = eu.monthlyLimit, let pct = eu.utilization {
@@ -187,6 +209,30 @@ public enum NineRouterUsage {
         if fiveHour == nil, sevenDay == nil, scoped.isEmpty, spend == nil { return .ok(nil, plan: wire.plan) }
         return .ok(Usage(fiveHour: fiveHour, sevenDay: sevenDay,
                          scoped: scoped.isEmpty ? nil : scoped, spend: spend), plan: wire.plan)
+    }
+
+    /// The most-burned per-model rows a row shows — the grid grows a
+    /// scoped gauge per entry, so a nine-model Antigravity connection
+    /// can't have them all (the 9Router dashboard hides the rest
+    /// behind a "Hidden:" row; same idea).
+    static let scopedCap = 4
+
+    /// "gemini-3.8-flash-high" → "Gemini 3.8 Flash (High)" — the
+    /// dashboard's row label. Version and size tokens ("3.8", "120b")
+    /// ride along; known acronyms uppercase; an effort-level word
+    /// becomes the parenthetical the dashboard puts on the end.
+    static func modelName(_ slug: String) -> String {
+        let acronyms = ["gpt", "glm", "oss", "ai", "llm", "tts"]
+        let efforts = ["high", "medium", "low", "thinking", "max"]
+        var words: [String] = [], effort: String?
+        for token in slug.split(separator: "-") {
+            let t = token.lowercased()
+            if efforts.contains(t) { effort = t.capitalized; continue }
+            if t.first?.isNumber == true || acronyms.contains(t) { words.append(token.uppercased()) }
+            else { words.append(token.capitalized) }
+        }
+        if let effort { words.append("(\(effort))") }
+        return words.joined(separator: " ")
     }
 }
 

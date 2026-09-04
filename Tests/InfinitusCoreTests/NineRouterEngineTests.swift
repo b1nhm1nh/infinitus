@@ -182,5 +182,45 @@ final class NineRouterEngineTests: XCTestCase {
             XCTAssertEqual(u?.scoped?.map(\.name), ["Opus"])
         } else { XCTFail("expected ok") }
     }
+
+    func testPerModelQuotasBecomeScopedRows() {
+        // Antigravity's tracker: quotas keyed by raw model slug, plus
+        // the claude-style windows on the same account.
+        let data = Data(#"""
+        {"plan":"Antigravity","quotas":{
+            "gemini-3.8-flash-high":{"used":10,"total":1000,"resetAt":"2026-09-05T00:00:00Z"},
+            "gemini-3.1-flash-image":{"used":0,"total":1000},
+            "gpt-oss-120b-medium":{"used":50,"total":100},
+            "session (5h)":{"used":20,"resetAt":"2026-09-05T00:00:00Z"}}}
+        """#.utf8)
+        if case .ok(let u, let plan) = NineRouterUsage.parse(data) {
+            XCTAssertEqual(plan, "Antigravity")
+            XCTAssertEqual(u?.fiveHour?.pct, 20)
+            XCTAssertEqual(u?.scoped?.map(\.name),
+                           ["GPT OSS 120B (Medium)", "Gemini 3.8 Flash (High)", "Gemini 3.1 Flash Image"])
+        } else { XCTFail("expected ok") }
+    }
+
+    func testHiddenQuotasFollowTheDashboard() {
+        // settings.quotaVisibility hides by raw slug; the rest survive,
+        // and the layout cap keeps only the most-burned of those.
+        let data = Data(#"""
+        {"plan":"Antigravity","quotas":{
+            "gemini-3.8-flash-high":{"used":10,"total":1000},
+            "gemini-3.1-flash-image":{"used":0,"total":1000},
+            "gemini-3.7-flash-medium":{"used":0,"total":1000},
+            "gemini-3.7-flash-low":{"used":0,"total":1000},
+            "gemini-3.5-flash-extra-low":{"used":0,"total":1000},
+            "gemini-pro-agent":{"used":90,"total":100}}}
+        """#.utf8)
+        let hidden: Set<String> = ["gemini-pro-agent"]
+        if case .ok(let u, _) = NineRouterUsage.parse(data, hidden: hidden) {
+            let names = u?.scoped?.map(\.name) ?? []
+            XCTAssertFalse(names.contains("Gemini Pro Agent"), "hidden row must not appear")
+            XCTAssertTrue(names.contains("Gemini 3.8 Flash (High)"))
+            XCTAssertEqual(names.count, NineRouterUsage.scopedCap, "layout cap still applies")
+            XCTAssertEqual(names.first, "Gemini 3.8 Flash (High)", "most-burned visible row leads")
+        } else { XCTFail("expected ok") }
+    }
 }
 #endif
