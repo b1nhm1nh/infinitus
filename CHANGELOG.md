@@ -51,6 +51,9 @@ workflow publishes the matching section as the GitHub release body.
   contrast, feature cards grouped by what they do.
 
 ### Fixes
+- The pop-out no longer freezes the app when its content measures a
+  fractional height (the window rounded up, the fit never matched, and
+  the resize loop pinned the main thread).
 - Bright apps behind the popup, and window-only captures (CleanShot),
   no longer wash the glass out: it caps at a legible level at every
   transparency setting, and dark backdrops pass through untouched.

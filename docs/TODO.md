@@ -61,6 +61,35 @@
 - ~~Sync "pushed" under an off toggle~~ → disable-mid-tick race; tick()
   re-checks `enabled` after its await before any write.
 
+## Listing PRs to open (user 2026-09-04: "save the list for later")
+
+Docs-only "list Infinitus" PRs, like CLIProxyAPI's "Who is with us?"
+(router-for-me/CLIProxyAPI#5452, merged). Verified 2026-09-04 by reading
+each README + CONTRIBUTING; best first.
+
+- **jaywcjlove/awesome-mac** (112k★) — Utilities → Menu Bar Tools.
+  Fork+PR, alphabetical, one-sentence title-cased description, OSS +
+  Freeware icons; no star/age gate. Precedent: cctop, Agent Island,
+  CodexIsland.
+- **rohitg00/awesome-claude-code-toolkit** (2.6k★) — "Companion Apps &
+  GUIs" table (`| [name](url) | stars | description |`). Fork+PR, no
+  gate. Precedent: TokenEater.
+- **hesreallyhim/awesome-claude-code** (53k★) — Observability &
+  Monitoring → Usage & Cost (or Session Monitors). NOT a PR: web issue
+  form only (gh CLI disallowed); needs 14+ days old with active commits
+  OR 100+ stars; one resource per submission; no emojis / sales copy.
+  Precedent: ClaudeBar.
+- **jqueryscript/awesome-claude-code** (508★) — Clients & GUIs or Usage
+  & Observability. Guidelines "under construction"; fork+PR. Medium.
+- **iCHAIT/awesome-macOS** (19k★) — macOS Utilities. Fork+PR, informal;
+  no AI precedent there. Weak.
+
+Checked, no community/related section (not viable): decolua/9router,
+musistudio/claude-code-router, ccusage/ccusage,
+Maciek-roboblog/Claude-Code-Usage-Monitor, nguyenphutrong/quotio,
+vlondon/awesome-swiftui; the other "Who is with us?" siblings keep no
+list of their own.
+
 ## Open — tracked as GitHub issues since 2026-09-01
 
 - **Phone: a Continue button for a stopped session** (user 2026-09-04
