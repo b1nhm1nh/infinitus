@@ -361,9 +361,6 @@ struct AddHostSheet: View {
         }
     }
 }
-        .sensoryFeedback(.success, trigger: paired)
-    }
-}
 
 /// The gear sheet the Mac-popup view puts up — the tab's Form, wrapped
 /// in the navigation chrome a sheet needs.
