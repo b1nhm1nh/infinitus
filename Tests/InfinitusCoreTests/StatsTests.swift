@@ -199,6 +199,38 @@ final class StatsTests: XCTestCase {
         XCTAssertEqual(d.sessionBuckets, [0, 1, 0, 0])        // moved to 15-60m, exactly one 1
     }
 
+    func testIngestGatesSessionAndMessageFieldsForSubagentFiles() {
+        var e = StatsScanner.FileEntry()
+        e.subagent = true
+        // (a) the subagent's first "user" entry is its prompt FROM the
+        // parent — must never count as a human message, session, or hour.
+        StatsScanner.ingest(entry(#"{"type":"user","timestamp":"2026-09-04T01:00:00.000Z","origin":{"kind":"human"},"message":{"role":"user","content":"do the subtask"}}"#), sessionID: "parent-session", into: &e, calendar: cal)
+        var d = e.days["2026-09-04"]!
+        XCTAssertEqual(d.humanMessages, 0)
+        XCTAssertTrue(d.sessions.isEmpty)
+        XCTAssertEqual(d.hours.reduce(0, +), 0)
+        XCTAssertEqual(d.sessionSeconds, 0)
+
+        // (b) an assistant usage entry: tokens/usd counted, no turn.
+        StatsScanner.ingest(entry(#"{"type":"assistant","timestamp":"2026-09-04T01:00:05.000Z","message":{"id":"m1","model":"claude-opus-4-5-20250805","usage":{"input_tokens":10,"output_tokens":20},"content":[{"type":"text","text":"working"}]}}"#), sessionID: "parent-session", into: &e, calendar: cal)
+        d = e.days["2026-09-04"]!
+        XCTAssertEqual(d.inputTokens, 10)
+        XCTAssertEqual(d.outputTokens, 20)
+        XCTAssertGreaterThan(d.usd, 0)
+        XCTAssertEqual(d.turns, 0)
+
+        // (c) a tool_use block: toolCalls counted, still no turn.
+        StatsScanner.ingest(entry(#"{"type":"assistant","timestamp":"2026-09-04T01:00:06.000Z","message":{"id":"m2","model":"claude-opus-4-5-20250805","usage":{"input_tokens":1,"output_tokens":1},"content":[{"type":"tool_use","id":"t1","name":"Bash","input":{"command":"ls"}}]}}"#), sessionID: "parent-session", into: &e, calendar: cal)
+        d = e.days["2026-09-04"]!
+        XCTAssertEqual(d.toolCalls, ["Bash": 1])
+        XCTAssertEqual(d.turns, 0)
+
+        // (d) a tool_result is_error: toolErrors counted.
+        StatsScanner.ingest(entry(#"{"type":"user","timestamp":"2026-09-04T01:00:07.000Z","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"t1","is_error":true,"content":"boom"}]}}"#), sessionID: "parent-session", into: &e, calendar: cal)
+        d = e.days["2026-09-04"]!
+        XCTAssertEqual(d.toolErrors, 1)
+    }
+
     func testWaitingGapIsCappedAtEightHours() {
         var e = StatsScanner.FileEntry()
         StatsScanner.ingest(entry(#"{"type":"assistant","timestamp":"2026-09-01T01:00:00.000Z","message":{"id":"m1","model":"claude-opus-4-5-20250805","usage":{"input_tokens":1,"output_tokens":1},"content":[{"type":"text","text":"done"}]}}"#), sessionID: "s", into: &e, calendar: cal)
@@ -233,6 +265,34 @@ final class StatsTests: XCTestCase {
         r = StatsScanner.scan(projectsDir: dir, cacheURL: cache, calendar: cal)
         XCTAssertEqual(r.days["2026-09-04"]?.humanMessages, 1)
         XCTAssertTrue(FileManager.default.fileExists(atPath: cache.path))
+    }
+
+    /// `<project>/<session-id>/subagents/agent-*.jsonl` is a subagent's
+    /// own transcript: `scan` must pick it up (one fixed depth below the
+    /// session dir) and its tokens must land on the day, but it must not
+    /// contribute a session — only the top-level file does.
+    func testScanPicksUpSubagentTranscriptsForTokensOnly() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("stats-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let sessionDir = dir.appendingPathComponent("p/sess-1")
+        let subagentsDir = sessionDir.appendingPathComponent("subagents")
+        try FileManager.default.createDirectory(at: subagentsDir, withIntermediateDirectories: true)
+        let topFile = dir.appendingPathComponent("p/sess-1.jsonl")
+        let subFile = subagentsDir.appendingPathComponent("agent-x.jsonl")
+        let cache = dir.appendingPathComponent("cache.json")
+
+        let topLine = #"{"type":"user","cwd":"/r/a","timestamp":"2026-09-04T01:00:00.000Z","origin":{"kind":"human"},"message":{"role":"user","content":"go"}}"#
+        try (topLine + "\n").write(to: topFile, atomically: true, encoding: .utf8)
+        let subLine = #"{"type":"assistant","timestamp":"2026-09-04T01:00:05.000Z","message":{"id":"m1","model":"claude-opus-4-5-20250805","usage":{"input_tokens":10,"output_tokens":20},"content":[{"type":"text","text":"subtask done"}]}}"#
+        try (subLine + "\n").write(to: subFile, atomically: true, encoding: .utf8)
+
+        let r = StatsScanner.scan(projectsDir: dir, cacheURL: cache, calendar: cal)
+        XCTAssertEqual(r.files, 2)
+        let d = r.days["2026-09-04"]!
+        XCTAssertEqual(d.humanMessages, 1)          // from the top-level file only
+        XCTAssertEqual(d.sessions, ["sess-1"])      // the subagent file added no session
+        XCTAssertEqual(d.inputTokens, 10)           // from the subagent file
+        XCTAssertEqual(d.outputTokens, 20)
     }
 
     /// A file whose last line never gets a trailing newline (a still-open

@@ -28,6 +28,14 @@ public enum StatsScanner {
         public var cwd: String?
         public var days: [String: Stats.Day] = [:]
         public var state = ScanState()
+        /// True for `<project>/<session-id>/subagents/agent-*.jsonl` — a
+        /// subagent's own transcript. `ingest` gates on this: only
+        /// tokens/usd/toolCalls/toolErrors/retries/compactions/subagents
+        /// count; everything session/message/turn-shaped is the
+        /// PARENT session's business, not this file's (the subagent's
+        /// first "user" entry is its prompt FROM the parent, which would
+        /// otherwise double as a human message).
+        public var subagent = false
         public init() {}
     }
 
@@ -88,27 +96,40 @@ public enum StatsScanner {
         return body.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
+    /// `sessionID`: the parent session id for a subagent file (the
+    /// `<session-id>` directory name it lives under) — unused when
+    /// `entry.subagent` is true, kept for an honest signature.
     public static func ingest(_ obj: [String: Any], sessionID: String, into entry: inout FileEntry,
                               calendar: Calendar = .current) {
         guard let type = obj["type"] as? String, type == "user" || type == "assistant",
               let stamp = obj["timestamp"] as? String, let t = TokenRateScanner.parseStamp(stamp) else { return }
         if entry.cwd == nil, let cwd = obj["cwd"] as? String, !cwd.isEmpty { entry.cwd = cwd }
+        let isSubagent = entry.subagent
         let date = Date(timeIntervalSince1970: t)
         let key = Stats.dayKey(date, calendar: calendar)
         var day = entry.days[key] ?? Stats.Day()
-        day.sessions.insert(sessionID)
-        day.hours[Stats.hourSlot(date, calendar: calendar)] += 1
-        if entry.state.firstAt[key] == nil { entry.state.firstAt[key] = t }
-        entry.state.lastAt[key] = t
-        day.sessionSeconds = entry.state.lastAt[key]! - entry.state.firstAt[key]!
-        day.sessionBuckets = [0, 0, 0, 0]
-        day.sessionBuckets[Stats.Day.sessionBucket(seconds: day.sessionSeconds)] = 1
+        // A subagent transcript is the parent session's own work under
+        // another name — it doesn't add a session, an hour-of-day entry,
+        // or its own session-length bucket; only the token/cost/tool
+        // facts below are its contribution.
+        if !isSubagent {
+            day.sessions.insert(sessionID)
+            day.hours[Stats.hourSlot(date, calendar: calendar)] += 1
+            if entry.state.firstAt[key] == nil { entry.state.firstAt[key] = t }
+            entry.state.lastAt[key] = t
+            day.sessionSeconds = entry.state.lastAt[key]! - entry.state.firstAt[key]!
+            day.sessionBuckets = [0, 0, 0, 0]
+            day.sessionBuckets[Stats.Day.sessionBucket(seconds: day.sessionSeconds)] = 1
+        }
 
         if type == "user" {
-            if obj["toolDenialKind"] != nil { day.denials += 1 }
+            if !isSubagent, obj["toolDenialKind"] != nil { day.denials += 1 }
             let kind = classifyUser(obj)
             switch kind {
             case .human, .phone:
+                // The trap: a subagent's first "user" entry is its prompt
+                // FROM the parent, not a human typing — never a message.
+                guard !isSubagent else { break }
                 if kind == .human { day.humanMessages += 1 } else { day.phoneMessages += 1 }
                 if let ended = entry.state.turnEndedAt {
                     day.waitingSeconds += min(waitingCap, max(0, t - ended))
@@ -116,8 +137,8 @@ public enum StatsScanner {
                 }
                 day.longestUnattended = max(day.longestUnattended, entry.state.toolsSinceHuman)
                 entry.state.toolsSinceHuman = 0
-            case .agent: day.agentMessages += 1
-            case .nudge: day.nudges += 1
+            case .agent: if !isSubagent { day.agentMessages += 1 }
+            case .nudge: if !isSubagent { day.nudges += 1 }
             case .compaction: day.compactions += 1
             case .toolResult:
                 if let blocks = (obj["message"] as? [String: Any])?["content"] as? [[String: Any]] {
@@ -151,9 +172,9 @@ public enum StatsScanner {
                         case "tool_use":
                             let name = block["name"] as? String ?? "?"
                             day.toolCalls[name, default: 0] += 1
-                            entry.state.toolsSinceHuman += 1
+                            if !isSubagent { entry.state.toolsSinceHuman += 1 }
                             if name == "Agent" { day.subagents += 1 }
-                            if name == "AskUserQuestion" {
+                            if name == "AskUserQuestion", !isSubagent {
                                 day.questions += 1
                                 if entry.state.turnEndedAt == nil { day.turns += 1 }
                                 entry.state.turnEndedAt = t
@@ -164,7 +185,8 @@ public enum StatsScanner {
                     }
                     // A text block with no tool call beside it ends the turn:
                     // the next thing the transcript needs is a person.
-                    if sawText, !blocks.contains(where: { ($0["type"] as? String) == "tool_use" }),
+                    // (Never for a subagent file — it has no turns of its own.)
+                    if !isSubagent, sawText, !blocks.contains(where: { ($0["type"] as? String) == "tool_use" }),
                        !model.hasPrefix("<") {
                         if entry.state.turnEndedAt == nil { day.turns += 1 }
                         entry.state.turnEndedAt = t
@@ -193,7 +215,7 @@ public enum StatsScanner {
     }
 
     struct Cache: Codable {
-        var version = 1
+        var version = 2
         var files: [String: FileEntry] = [:]
     }
 
@@ -246,19 +268,34 @@ public enum StatsScanner {
                             byteBudget: Int? = nil, windowBytes: Int = StatsScanner.windowBytes) -> Result {
         var cache = cacheURL.flatMap { try? Data(contentsOf: $0) }
             .flatMap { try? JSONDecoder().decode(Cache.self, from: $0) } ?? Cache()
-        if cache.version != 1 { cache = Cache() }
+        if cache.version != 2 { cache = Cache() }
         let fm = FileManager.default
 
-        struct Candidate { let url: URL; let size: Int; let mtime: Date }
+        // `subagent`: true for `<project>/<session-id>/subagents/*.jsonl`
+        // (one fixed depth below a session dir, not a recursive walk).
+        // `sessionID`: the file's own transcript id normally, or the
+        // PARENT session dir's name for a subagent file.
+        struct Candidate { let url: URL; let size: Int; let mtime: Date; let subagent: Bool; let sessionID: String }
         var candidates: [Candidate] = []
+        func addCandidate(_ url: URL, subagent: Bool, sessionID: String) {
+            guard let values = try? url.resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey]),
+                  let size = values.fileSize else { return }
+            let mtime = values.contentModificationDate ?? .distantPast
+            if now.timeIntervalSince(mtime) > maxAge { return }
+            candidates.append(Candidate(url: url, size: size, mtime: mtime, subagent: subagent, sessionID: sessionID))
+        }
         for project in (try? fm.contentsOfDirectory(at: projectsDir, includingPropertiesForKeys: nil)) ?? [] {
-            for url in (try? fm.contentsOfDirectory(at: project, includingPropertiesForKeys: [.fileSizeKey, .contentModificationDateKey])) ?? []
-            where url.pathExtension == "jsonl" {
-                guard let values = try? url.resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey]),
-                      let size = values.fileSize else { continue }
-                let mtime = values.contentModificationDate ?? .distantPast
-                if now.timeIntervalSince(mtime) > maxAge { continue }
-                candidates.append(Candidate(url: url, size: size, mtime: mtime))
+            for url in (try? fm.contentsOfDirectory(at: project, includingPropertiesForKeys: [.fileSizeKey, .contentModificationDateKey, .isDirectoryKey])) ?? [] {
+                if url.pathExtension == "jsonl" {
+                    addCandidate(url, subagent: false, sessionID: url.deletingPathExtension().lastPathComponent)
+                } else if (try? url.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true {
+                    let sessionID = url.lastPathComponent
+                    let subagentsDir = url.appendingPathComponent("subagents")
+                    for sub in (try? fm.contentsOfDirectory(at: subagentsDir, includingPropertiesForKeys: [.fileSizeKey, .contentModificationDateKey])) ?? []
+                    where sub.pathExtension == "jsonl" {
+                        addCandidate(sub, subagent: true, sessionID: sessionID)
+                    }
+                }
             }
         }
         candidates.sort { $0.mtime > $1.mtime }
@@ -300,11 +337,12 @@ public enum StatsScanner {
             }
 
             var entry = cached ?? FileEntry()
+            entry.subagent = c.subagent
             if dirty {
-                if c.size < entry.offset { entry = FileEntry() }   // shrink: start over
+                if c.size < entry.offset { entry = FileEntry(); entry.subagent = c.subagent }   // shrink: start over
                 while entry.offset < c.size {
                     if let left = budgetLeft, left <= 0 { budgetSpent = true; break }
-                    let consumed = parse(url: c.url, sessionID: c.url.deletingPathExtension().lastPathComponent,
+                    let consumed = parse(url: c.url, sessionID: c.sessionID,
                                         into: &entry, calendar: calendar, windowBytes: windowBytes)
                     if consumed <= 0 {
                         // Nothing more to read right now: an unreadable
