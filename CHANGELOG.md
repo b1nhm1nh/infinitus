@@ -18,6 +18,7 @@ publishes the matching section as the GitHub release body.
 - A message from another session shows as "Message from @name" with a preview, the full text a tap away.
 - Your own turns render Markdown too.
 - Live Activities are back on the lock screen and Dynamic Island.
+- The tab bar shrinks to its icon as a list scrolls, Safari-style (iOS 26).
 
 ## 0.4.2
 
