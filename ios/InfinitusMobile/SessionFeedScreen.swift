@@ -750,11 +750,14 @@ struct SessionFeedScreen: View {
     // continues the session that maybe stopped by various reasons")
 
     /// The Mac composes the nudge (`resume` kind); the button shows once
-    /// the session isn't mid-turn and isn't waiting on a prompt the
-    /// action row already handles.
+    /// the session isn't mid-turn and the turn ended without a final
+    /// answer — a limit stop, or a tool call / sub-agent / unfinished
+    /// text as the last thing in it. After a complete answer (`.result`)
+    /// the composer is the way on (user 2026-09-04: "Continue button
+    /// should only appear conditionally based on agent's last messages").
     static func canContinue(after item: SessionFeedItem, status: String) -> Bool {
         if item.kind == .limit { return true }
-        if item.kind == .permission || item.kind == .question { return false }
+        guard item.kind == .tool || item.kind == .agent || item.kind == .assistant else { return false }
         return status != "busy"
     }
 
