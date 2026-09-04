@@ -135,12 +135,29 @@ actor AwsLoginRunner {
             return AwsLogin.Reply(ok: false, state: run.state, error: "this flow takes no code")
         }
         guard AwsLogin.isValidCode(code) else { return AwsLogin.Reply(ok: false, state: run.state, error: "invalid code") }
-        run.stdin.fileHandleForWriting.write(Data((code + "\n").utf8))
+        guard Self.write(code + "\n", to: run) else {
+            return AwsLogin.Reply(ok: false, state: run.state, error: "the aws CLI is no longer waiting for a code")
+        }
         run.state.phase = .waitingForBrowser
         run.state.message = "code submitted"
         runs[profile] = run
         publish()
         return AwsLogin.Reply(ok: true, state: run.state)
+    }
+
+    /// A line to the CLI's stdin, or false when the CLI is gone: the
+    /// non-throwing `write(_:)` raises an uncaught Foundation exception
+    /// on a broken pipe, which took the whole app down in CI when the
+    /// stub `aws` exited before the runner answered its prompt (#39's
+    /// e2e run, 2026-09-04). `ended` then reports the login as failed.
+    private static func write(_ text: String, to run: Run) -> Bool {
+        guard run.process.isRunning else { return false }
+        do {
+            try run.stdin.fileHandleForWriting.write(contentsOf: Data(text.utf8))
+            return true
+        } catch {
+            return false
+        }
     }
 
     /// Replays the redirect the phone intercepted against the CLI's own
@@ -183,9 +200,12 @@ actor AwsLoginRunner {
         if prompt.wantsCode, run.state.message != "code submitted" { run.state.phase = .waitingForCode }
         if prompt.succeeded { run.state.phase = .done }
         if let refusal = prompt.rebindRefusal, run.state.phase != .failed {
-            run.stdin.fileHandleForWriting.write(Data("n\n".utf8))
+            // The verdict first, then the answer: a CLI that already gave
+            // up on its prompt makes the write fail, and the verdict must
+            // not depend on it.
             run.state.phase = .failed
             run.state.message = refusal
+            _ = Self.write("n\n", to: run)
         }
         runs[profile] = run
         publish()
