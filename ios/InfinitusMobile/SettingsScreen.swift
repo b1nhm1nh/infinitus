@@ -19,6 +19,7 @@ struct SettingsForm: View {
     /// the endpoint list rather than replacing it (#9 pair once, every
     /// route).
     @State private var newEndpoint = ""
+    @State private var paired = false
 
     var body: some View {
         Form {
@@ -40,7 +41,7 @@ struct SettingsForm: View {
                     ThemePreviewRow(theme: model.rowTheme)
                 }
                 Section("Display") {
-                    Toggle("Compact popup (one-line accounts, icon controls)",
+                    Toggle("Compact rows (one line per account)",
                            isOn: $model.localCompactRows)
                 }
                 Section("Pace fire (7d & model bars)") {
@@ -79,22 +80,22 @@ struct SettingsForm: View {
             // The transport (#9 remote access): which Mac is being
             // mirrored, the token that lets us read it, and the ways in
             // when Bonjour doesn't survive the network.
-            Section("Mac connection") {
-                Text(model.transportStatus.isEmpty
-                     ? "looking for a Mac on this Wi-Fi…"
-                     : model.transportStatus)
-                    .font(.caption).foregroundStyle(.secondary)
+            Section {
                 if PairScanner.isSupported {
                     Button {
                         scanning = true
                     } label: {
-                        Label("Scan QR", systemImage: "qrcode.viewfinder")
+                        Label("Scan the Mac's QR code", systemImage: "qrcode.viewfinder")
+                            .font(.body.weight(.semibold))
                     }
                 } else {
-                    Text("Camera scanning isn't available here (it needs a "
-                         + "real device) — type the address and token below.")
+                    Text("No camera here — type the address and token from the Mac's Settings → Devices below.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
+                Text(model.transportStatus.isEmpty
+                     ? "Looking for the Mac…"
+                     : model.transportStatus)
+                    .font(.caption).foregroundStyle(.secondary)
                 ForEach(Array(model.manualEndpoints.enumerated()), id: \.element) { _, endpoint in
                     Text(endpoint)
                         .font(.system(.caption, design: .monospaced))
@@ -117,17 +118,14 @@ struct SettingsForm: View {
                               text: $model.pairToken)
                         .multilineTextAlignment(.trailing)
                         .autocorrectionDisabled()
-                        .textInputAutocapitalization(.characters)
+                        .textInputAutocapitalization(.never)
                         .font(.system(.body, design: .monospaced))
                 }
-                Text("Scan the QR in the Mac's Settings → Devices to add every "
-                     + "route at once. The token is required — every request "
-                     + "carries it, even one to a Mac found automatically. "
-                     + "With no address saved the phone falls back to "
-                     + "Bonjour on the same Wi-Fi; a saved address is tried "
-                     + "first, in the order added, and the one that answers "
-                     + "is tried first next time.")
-                    .font(.caption).foregroundStyle(.secondary)
+            } header: {
+                Text("Mac connection")
+            } footer: {
+                Text("Scanning the QR code sets everything up. On the same Wi-Fi the phone "
+                     + "finds the Mac by itself; add an address for anywhere else.")
             }
             // The 1:1 Mac rendering isn't lost, just off by default
             // (#9 native shell): this flips the whole app back to it.
@@ -141,8 +139,16 @@ struct SettingsForm: View {
             }
         }
         .sheet(isPresented: $scanning) {
-            PairScannerSheet { payload in model.applyPairing(payload) }
+            PairScannerSheet { payload in
+                if model.applyPairing(payload) { paired = true }
+            }
         }
+        .alert("Paired", isPresented: $paired) {
+            Button("OK") { model.requestedTab = "fleet" }
+        } message: {
+            Text("Paired with \(model.snapshot?.machineName ?? "the Mac"). Its accounts are on the Fleet tab.")
+        }
+        .sensoryFeedback(.success, trigger: paired)
     }
 }
 

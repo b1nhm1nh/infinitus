@@ -18,6 +18,18 @@ workflow publishes the matching section as the GitHub release body.
 ### Phone
 - **Continue a stopped session** from the phone — one button, whatever
   stopped it (a limit, a crash, a closed terminal).
+- **Sessions is home.** The app opens on what's waiting for you, with a
+  badge for how many; the Fleet tab opens with the active account, who's
+  next and how many sessions are working.
+- **Safer approvals.** A permission request is a card pinned above the
+  composer with the full command; Allow asks once more, Deny is plain,
+  and the phone taps back when it lands. Questions pick, then send.
+- **Pairing starts on screen**: the empty Fleet tab scans the Mac's QR
+  code, and says so when it's paired.
+- Cleaner feed: tighter tool rows with errors in red, a loading and an
+  empty state, "offline" up top where you can see it, and an ⓘ button
+  to the session's details. Plain words for status; no process ids.
+- Honors Reduce Motion; bigger tap targets and labels for VoiceOver.
 - **Dictate a message.** A mic in the composer; on-device, no server.
 - **Paste an image** from the clipboard, straight into the chat.
 - **Notifications straight to the phone** (issue #3) — every alert the

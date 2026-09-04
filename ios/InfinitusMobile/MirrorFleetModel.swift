@@ -68,7 +68,7 @@ final class MirrorFleetModel: ObservableObject, Identifiable {
         let newlyAlive = list.filter {
             !AccountVitals.isDead($0.usage) && wasDead.contains($0.number)
         }.map(\.number)
-        withAnimation(.easeInOut(duration: 0.6)) {
+        withAnimation(UIAccessibility.isReduceMotionEnabled ? nil : .easeInOut(duration: 0.6)) {
             accounts = list
             activeNumber = fleet.activeNumber
             nextCandidate = fleet.nextCandidate

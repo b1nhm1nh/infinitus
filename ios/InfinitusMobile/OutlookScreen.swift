@@ -24,7 +24,7 @@ struct OutlookScreen: View {
                         }
                         if let binds = line.bindsWindow, let at = line.bindsAt {
                             Text("\(ForecastWords.gaugeName(binds, theme: model.rowTheme)) binds first, \(ForecastClock.label(at))")
-                                .font(.caption).foregroundStyle(.orange)
+                                .font(.caption).foregroundStyle(.orange).monospacedDigit()
                         }
                     } header: {
                         Text("\(accountName(line.number, line.email))"
@@ -58,7 +58,7 @@ struct OutlookScreen: View {
                     }
                     Text(forecast.basis).font(.caption).foregroundStyle(.secondary)
                     Text("computed \(Date(timeIntervalSince1970: forecast.computedAt).formatted(date: .omitted, time: .shortened))")
-                        .font(.caption2).foregroundStyle(.tertiary)
+                        .font(.caption2).foregroundStyle(.tertiary).monospacedDigit()
                 }
             } else {
                 Text("No projection yet — the Mac needs about an hour of usage samples.")

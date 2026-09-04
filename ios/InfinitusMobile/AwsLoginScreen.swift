@@ -210,7 +210,7 @@ struct AwsLoginScreen: View {
     private func outcome(icon: String, tint: Color, title: String, text: String,
                          @ViewBuilder actions: () -> some View = { EmptyView() }) -> some View {
         VStack(spacing: 14) {
-            Image(systemName: icon).font(.system(size: 44)).foregroundStyle(tint)
+            Image(systemName: icon).font(.largeTitle.weight(.regular)).imageScale(.large).foregroundStyle(tint)
             Text(title).font(.title2.bold())
             Text(text).font(.footnote).foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
@@ -270,7 +270,7 @@ struct AwsLoginScreen: View {
         VStack(spacing: 18) {
             Text("Enter this code on the AWS page:")
             Text(state.userCode ?? "…")
-                .font(.system(size: 34, weight: .bold, design: .monospaced))
+                .font(.system(.largeTitle, design: .monospaced).bold())
                 .textSelection(.enabled)
             HStack {
                 Button {
