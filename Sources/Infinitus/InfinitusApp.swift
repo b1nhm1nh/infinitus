@@ -195,7 +195,7 @@ struct InfinitusApp: App {
                     keywords: ["history", "utilization", "waste", "window",
                                "5h", "7d", "weekly", "chart", "over time"],
                     view: AnyView(UtilizationPane(model: utilizationModel))),
-        SettingsTab(title: "Stats", symbol: "chart.bar", tint: .indigo,
+        SettingsTab(title: "Stats", symbol: "chart.bar.xaxis", tint: .indigo,
                     keywords: ["stats", "metrics", "commits", "prs", "lines",
                                "messages", "sessions", "week", "month", "year"],
                     view: AnyView(StatsPane(model: statsModel))),
