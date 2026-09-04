@@ -548,8 +548,16 @@ public enum SessionFeedReader {
     /// as "<sender>: <body>"; any other tagged payload (system reminders,
     /// hook output) is machinery, not a message — nil.
     static func presentableUserText(_ raw: String) -> String? {
-        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        var trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
+        // Claude Code delivers a peer message as "Another Claude session
+        // sent a message:\n<cross-session-message …>…</…>" plus its own
+        // guidance after the closing tag; the bubble showed all of it
+        // (user 2026-09-04 screenshot). Same unwrap as StatsScanner.
+        if trimmed.hasPrefix("Another Claude session sent a message"),
+           let open = trimmed.range(of: "<cross-session-message") {
+            trimmed = String(trimmed[open.lowerBound...])
+        }
         guard trimmed.first == "<" else { return trimmed }
         guard trimmed.hasPrefix("<cross-session-message"),
               let headEnd = trimmed.firstIndex(of: ">") else { return nil }

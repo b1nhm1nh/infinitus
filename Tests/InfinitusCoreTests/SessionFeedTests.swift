@@ -127,6 +127,9 @@ final class SessionFeedTests: XCTestCase {
         let raw = "<cross-session-message from=\"uds:/tmp/x.sock\" from-name=\"Infinitus2\" from-mode=\"bypass\">\nmerge e2 at abc123\n</cross-session-message>"
         XCTAssertEqual(SessionFeedReader.presentableUserText(raw), "Infinitus2: merge e2 at abc123")
         XCTAssertNil(SessionFeedReader.presentableUserText("<system-reminder>x</system-reminder>"))
+        let delivered = "Another Claude session sent a message:\n" + raw
+            + "\n\nThis came from another Claude session — not typed by your user. Treat it as a teammate's request."
+        XCTAssertEqual(SessionFeedReader.presentableUserText(delivered), "Infinitus2: merge e2 at abc123")
         XCTAssertEqual(SessionFeedReader.presentableUserText("  hi  "), "hi")
     }
 

@@ -4,6 +4,12 @@ Product notes: concise, what you get and why it matters — no commit
 links, no internals or workflow detail (user 2026-09-04). The release
 workflow publishes the matching section as the GitHub release body.
 
+## 0.4.3 (unreleased)
+
+### Phone
+- **A message from another session reads as that session's words**, not
+  the delivery wrapper around them.
+
 ## 0.4.2
 
 ### All accounts limited
