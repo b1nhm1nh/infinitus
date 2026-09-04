@@ -54,6 +54,36 @@ public struct NineRouterConnection: Decodable, Sendable {
         self.lastError = lastError
         self.updatedAt = updatedAt
     }
+
+    /// 9Router 0.6.x grew a plain-string shape for `lastError`
+    /// ("[403]: model requires a subscription" — the ollama/grok-cli
+    /// rows on the user's router, 2026-09-04) alongside the older
+    /// `{status, message}` object. Decode either; a string carries no
+    /// status, so `lastError.status` stays nil and the row just shows
+    /// as errored rather than relogin_required.
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(String.self, forKey: .id)
+        provider = try c.decode(String.self, forKey: .provider)
+        authType = try c.decodeIfPresent(String.self, forKey: .authType)
+        name = try c.decodeIfPresent(String.self, forKey: .name)
+        email = try c.decodeIfPresent(String.self, forKey: .email)
+        priority = try c.decodeIfPresent(Int.self, forKey: .priority)
+        isActive = try c.decodeIfPresent(Bool.self, forKey: .isActive)
+        rateLimitedUntil = try c.decodeIfPresent(String.self, forKey: .rateLimitedUntil)
+        if let object = try? c.decodeIfPresent(LastError.self, forKey: .lastError) {
+            lastError = object
+        } else {
+            lastError = (try? c.decodeIfPresent(String.self, forKey: .lastError))
+                .flatMap { $0 }.map { LastError(status: nil, message: $0) }
+        }
+        updatedAt = try c.decodeIfPresent(String.self, forKey: .updatedAt)
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, provider, authType, name, email, priority, isActive
+        case rateLimitedUntil, lastError, updatedAt
+    }
 }
 
 public struct NineRouterConnectionList: Decodable, Sendable {

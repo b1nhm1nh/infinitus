@@ -484,6 +484,7 @@ final class ControlServer {
         let signInRunning: Bool
         let playground: Bool
         let socket: String
+        let errors: [String: String]
     }
 
     private func status() -> Status {
@@ -504,7 +505,8 @@ final class ControlServer {
             badge: model.engineBadge.map { "\($0)" } ?? "none",
             signInRunning: TokenFlow.shared.running || model.addingFirstAccount,
             playground: model.isPlayground,
-            socket: ControlProtocol.socketURL().path)
+            socket: ControlProtocol.socketURL().path,
+            errors: model.engineErrors)
     }
 
     static func names(_ caps: EngineCapabilities) -> [String] {

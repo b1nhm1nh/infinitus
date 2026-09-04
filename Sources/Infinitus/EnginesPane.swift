@@ -446,6 +446,17 @@ struct EngineToggleNotes: View {
                  + "for the same accounts they fight. Run one per account set.")
                 .font(.caption).foregroundStyle(.orange)
         }
+        if model.routedVia9Router {
+            Text(model.nineRouterEnabled
+                 ? "Claude Code is routed via 9Router \u{2014} env.ANTHROPIC_BASE_URL "
+                   + "in ~/.claude/settings.json points at it, and the 9Router fleet "
+                   + "is the one the title, resume nudge and pushes follow."
+                 : "Claude Code's env.ANTHROPIC_BASE_URL (~/.claude/settings.json) "
+                   + "points at 9Router, but the 9Router engine is off \u{2014} Claude "
+                   + "Code hits it unmanaged.")
+                .font(.caption)
+                .foregroundStyle(model.nineRouterEnabled ? Color.secondary : Color.orange)
+        }
         Text("Flipping an engine restarts the app.")
             .font(.caption).foregroundStyle(.secondary)
     }

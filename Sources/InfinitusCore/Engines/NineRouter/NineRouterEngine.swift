@@ -14,7 +14,11 @@ import FoundationNetworking   // URLSession lives here on Linux
 /// honor by only logging in after a 401. Never reads `~/.9router`.
 public actor NineRouterEngine: AccountEngine {
     public static let engineID = "9router"
-    public static let defaultBaseURL = URL(string: "http://127.0.0.1:20128")!
+    /// 9Router's well-known dashboard/gateway port — what makes a
+    /// settings.json `ANTHROPIC_BASE_URL` recognizable as 9Router even
+    /// when the configured base URL moved.
+    public static let defaultPort = 20128
+    public static let defaultBaseURL = URL(string: "http://127.0.0.1:\(defaultPort)")!
 
     public nonisolated let id = NineRouterEngine.engineID
     public nonisolated var displayName: String { "9Router" }
