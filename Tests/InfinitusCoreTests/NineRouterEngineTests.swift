@@ -204,6 +204,7 @@ final class NineRouterEngineTests: XCTestCase {
     func testHiddenQuotasFollowTheDashboard() {
         // settings.quotaVisibility hides by raw slug; the rest survive,
         // and the layout cap keeps only the most-burned of those.
+        // Also: when fiveHour is nil, newest Gemini model promotes to fiveHour.
         let data = Data(#"""
         {"plan":"Antigravity","quotas":{
             "gemini-3.8-flash-high":{"used":10,"total":1000},
@@ -215,11 +216,61 @@ final class NineRouterEngineTests: XCTestCase {
         """#.utf8)
         let hidden: Set<String> = ["gemini-pro-agent"]
         if case .ok(let u, _) = NineRouterUsage.parse(data, hidden: hidden) {
+            // gemini-3.8-flash-high is promoted to fiveHour (10 / 1000 = 1.0%)
+            XCTAssertEqual(u?.fiveHour?.pct, 1.0)
             let names = u?.scoped?.map(\.name) ?? []
             XCTAssertFalse(names.contains("Gemini Pro Agent"), "hidden row must not appear")
-            XCTAssertTrue(names.contains("Gemini 3.8 Flash (High)"))
+            XCTAssertFalse(names.contains("Gemini 3.8 Flash (High)"), "promoted to fiveHour")
             XCTAssertEqual(names.count, NineRouterUsage.scopedCap, "layout cap still applies")
-            XCTAssertEqual(names.first, "Gemini 3.8 Flash (High)", "most-burned visible row leads")
+        } else { XCTFail("expected ok") }
+    }
+
+    func testQuotaPercentageCalculations() {
+        let data = Data(#"""
+        {"plan":"Antigravity","quotas":{
+            "gemini-3.8-flash-high":{"displayName":"Gemini 3.8 Flash (High)","remainingPercentage":95.99583,"total":1000,"used":40,"unlimited":false},
+            "gemini-3.7-flash-medium":{"used":137,"total":1000,"unlimited":false},
+            "direct-pct":{"used":25.5,"unlimited":false},
+            "unlimited-row":{"used":50,"unlimited":true}
+        }}
+        """#.utf8)
+        if case .ok(let u, _) = NineRouterUsage.parse(data) {
+            // gemini-3.8-flash-high promoted to fiveHour: remainingPercentage 95.99583 -> 4.00417%
+            XCTAssertNotNil(u?.fiveHour)
+            if let five = u?.fiveHour {
+                XCTAssertEqual(five.pct, 100.0 - 95.99583, accuracy: 0.0001)
+            }
+            // gemini-3.7-flash-medium: 137 / 1000 * 100 = 13.7%
+            let medium = u?.scoped?.first(where: { $0.name == "Gemini 3.7 Flash (Medium)" })
+            XCTAssertNotNil(medium)
+            if let medium {
+                XCTAssertEqual(medium.pct, 13.7, accuracy: 0.0001)
+            }
+            // direct-pct: 25.5%
+            let direct = u?.scoped?.first(where: { $0.name == "Direct Pct" })
+            XCTAssertNotNil(direct)
+            if let direct {
+                XCTAssertEqual(direct.pct, 25.5, accuracy: 0.0001)
+            }
+            // unlimited-row is omitted
+            XCTAssertNil(u?.scoped?.first(where: { $0.name == "Unlimited Row" }))
+        } else { XCTFail("expected ok") }
+    }
+
+    func testGeminiModelRankingPromotionAndHiddenHandling() {
+        // When top Gemini model is hidden, the next newest visible Gemini model is promoted to fiveHour
+        let data = Data(#"""
+        {"plan":"Antigravity","quotas":{
+            "gemini-3.8-flash-high":{"used":40,"total":1000},
+            "gemini-3.7-flash-medium":{"used":20,"total":1000},
+            "gemini-3.1-flash-image":{"used":5,"total":1000}
+        }}
+        """#.utf8)
+        let hidden: Set<String> = ["gemini-3.8-flash-high"]
+        if case .ok(let u, _) = NineRouterUsage.parse(data, hidden: hidden) {
+            // gemini-3.8-flash-high is hidden -> gemini-3.7-flash-medium promoted to fiveHour
+            XCTAssertEqual(u?.fiveHour?.pct, 2.0)
+            XCTAssertEqual(u?.scoped?.map(\.name), ["Gemini 3.1 Flash Image"])
         } else { XCTFail("expected ok") }
     }
 }

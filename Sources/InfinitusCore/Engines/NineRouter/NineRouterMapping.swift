@@ -106,6 +106,7 @@ public enum NineRouterUsage {
         struct Quota: Decodable {
             let used: Double?
             let total: Double?
+            let remainingPercentage: Double?
             let resetAt: String?
             let unlimited: Bool?
         }
@@ -132,18 +133,28 @@ public enum NineRouterUsage {
         guard let quotas = wire.quotas else { return .ok(nil, plan: wire.plan) }
 
         func window(_ q: Wire.Quota, name: String? = nil) -> UsageWindow? {
-            guard let used = q.used, q.unlimited != true else { return nil }
+            guard q.unlimited != true else { return nil }
+            let pct: Double
+            if let rp = q.remainingPercentage {
+                pct = max(0, min(100, 100.0 - rp))
+            } else if let used = q.used, let total = q.total, total > 0 {
+                pct = max(0, min(100, (used / total) * 100.0))
+            } else if let used = q.used {
+                pct = used
+            } else {
+                return nil
+            }
             var countdown: String?, clock: String?
             if let resetAt = q.resetAt, let date = WeeklyRoll.parse(resetAt) {
                 countdown = ResetFormat.countdown(until: date, now: now)
                 clock = ResetFormat.clock(date, now: now)
             }
-            return UsageWindow(pct: used, resetsAt: q.resetAt, countdown: countdown,
+            return UsageWindow(pct: pct, resetsAt: q.resetAt, countdown: countdown,
                                clock: clock, name: name)
         }
 
         var fiveHour: UsageWindow?, sevenDay: UsageWindow?
-        var scoped: [UsageWindow] = []
+        var modelQuotas: [(key: String, quota: Wire.Quota)] = []
         var spend: Spend?
         for (key, quota) in quotas.sorted(by: { $0.key < $1.key }) {
             let lower = key.lowercased()
@@ -169,19 +180,39 @@ public enum NineRouterUsage {
                 let model = key.dropFirst("weekly ".count)
                     .replacingOccurrences(of: "(7d)", with: "")
                     .trimmingCharacters(in: .whitespaces)
-                guard !model.isEmpty, let w = window(quota, name: model.capitalized) else { continue }
-                scoped.append(w)
+                guard !model.isEmpty else { continue }
+                modelQuotas.append((key: key, quota: quota))
             } else {
-                // Everything else is a per-model quota row — the
-                // dashboard's quota tracker ("gemini-3.8-flash-high" →
-                // "Gemini 3.8 Flash (High)", Antigravity's nine rows,
-                // 2026-09-04). Rows the user hid in 9Router's own
-                // dashboard (settings.quotaVisibility, keyed by the raw
-                // slug per provider) stay hidden here too.
+                // Per-model quota row (e.g. "gemini-3.8-flash-high").
+                // Honor 9Router's hide feature: hidden quotas are excluded.
                 guard !hidden.contains(key) else { continue }
-                guard let w = window(quota, name: Self.modelName(key)) else { continue }
-                scoped.append(w)
+                modelQuotas.append((key: key, quota: quota))
             }
+        }
+
+        // When there is no explicit session (5h) window, promote the newest/biggest
+        // Gemini model to fiveHour so it displays in the first row.
+        if fiveHour == nil {
+            let geminiCandidates = modelQuotas.filter { $0.key.lowercased().contains("gemini") }
+            if let best = geminiCandidates.max(by: { isOlderGemini($0.key, than: $1.key) }) {
+                fiveHour = window(best.quota)
+                modelQuotas.removeAll { $0.key == best.key }
+            }
+        }
+
+        var scoped: [UsageWindow] = []
+        for item in modelQuotas {
+            let displayName: String
+            if item.key.lowercased().hasPrefix("weekly ") {
+                displayName = item.key.dropFirst("weekly ".count)
+                    .replacingOccurrences(of: "(7d)", with: "")
+                    .trimmingCharacters(in: .whitespaces)
+                    .capitalized
+            } else {
+                displayName = Self.modelName(item.key)
+            }
+            guard let w = window(item.quota, name: displayName) else { continue }
+            scoped.append(w)
         }
         // Most-burned first — the order the binding-window logic and
         // the eye expect. Hidden rows were honored above; the cap is
@@ -233,6 +264,60 @@ public enum NineRouterUsage {
         }
         if let effort { words.append("(\(effort))") }
         return words.joined(separator: " ")
+    }
+
+    struct GeminiRank: Comparable {
+        let major: Int
+        let minor: Int
+        let tier: Int
+        let isPro: Bool
+
+        static func < (lhs: GeminiRank, rhs: GeminiRank) -> Bool {
+            if lhs.major != rhs.major { return lhs.major < rhs.major }
+            if lhs.minor != rhs.minor { return lhs.minor < rhs.minor }
+            if lhs.tier != rhs.tier { return lhs.tier < rhs.tier }
+            if lhs.isPro != rhs.isPro { return !lhs.isPro && rhs.isPro }
+            return false
+        }
+    }
+
+    static func geminiRank(_ slug: String) -> GeminiRank {
+        let lower = slug.lowercased()
+        var major = 0
+        var minor = 0
+        let pattern = #"(?:^|[-_/])v?(\d{1,2})(?:\.(\d+))?(?:[-_/]|$)"#
+        if let regex = try? NSRegularExpression(pattern: pattern) {
+            let ns = lower as NSString
+            let matches = regex.matches(in: lower, range: NSRange(location: 0, length: ns.length))
+            for m in matches {
+                let matchedStr = ns.substring(with: m.range)
+                if matchedStr.contains("b") || matchedStr.contains("k") || matchedStr.contains("m") { continue }
+                let majStr = ns.substring(with: m.range(at: 1))
+                let minStr = m.range(at: 2).location != NSNotFound ? ns.substring(with: m.range(at: 2)) : "0"
+                if let maj = Int(majStr), let min = Int(minStr) {
+                    if maj < 50 {
+                        major = maj
+                        minor = min
+                        break
+                    }
+                }
+            }
+        }
+        let isPro = lower.contains("pro")
+        let tier: Int
+        if lower.contains("max") { tier = 5 }
+        else if lower.contains("high") { tier = 4 }
+        else if lower.contains("medium") { tier = 3 }
+        else if lower.contains("low") { tier = 2 }
+        else if lower.contains("image") { tier = 1 }
+        else { tier = 0 }
+        return GeminiRank(major: major, minor: minor, tier: tier, isPro: isPro)
+    }
+
+    static func isOlderGemini(_ a: String, than b: String) -> Bool {
+        let ra = geminiRank(a), rb = geminiRank(b)
+        if ra != rb { return ra < rb }
+        return a > b
     }
 }
 
