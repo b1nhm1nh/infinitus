@@ -37,6 +37,9 @@ Native macOS menu bar app for the claude-swap engine. Split out of
   briefs still say it explicitly.
 - Secrets (webhook URLs, bot tokens) travel over stdin, never argv; shown
   masked only. Usage-cost figures are estimates, never billing truth.
+- **Release notes: one feature, one line** (user 2026-09-04). A CHANGELOG
+  bullet is a single short sentence — no multi-sentence paragraphs, no
+  wrapped essays; details live in the site/README, not the note.
 - Surgical changes; match existing style; no speculative abstractions.
 - **Todos and research notes go to GitHub issues, never to files**
   (user 2026-09-04: "stop noting TODO file to avoid a PR, just log to

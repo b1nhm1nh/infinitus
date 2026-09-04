@@ -1,42 +1,22 @@
 # Changelog
 
 Product notes: concise, what you get and why it matters — no commit
-links, no internals or workflow detail (user 2026-09-04). The release
-workflow publishes the matching section as the GitHub release body.
+links, no internals or workflow detail; one feature note is one line,
+a single short sentence (user 2026-09-04). The release workflow
+publishes the matching section as the GitHub release body.
 
 ## 0.4.3 (unreleased)
 
 ### Fixes
-- AWS logins survive a Mac relaunch: a met need stays met, and a login
-  the relaunch cut short says so instead of vanishing. A need that
-  failed in the last few minutes is pushed to the phone even when the
-  app has just started, and a session failing again later is news again.
-- Haiku session names now reach the sessions Claude Code named itself
-  (`limitless-bf`, `banyan-51`…) — those count as unnamed.
-- Phone dictation can't sit on "Translating…" any more: a missing
-  language pack asks to download, and after ten seconds the take goes
-  out as spoken with the English-reply note. Sending mid-translation
-  does the same.
+- AWS logins survive a Mac relaunch, and a need that failed just before a launch still reaches the phone.
+- Haiku session names now cover the sessions Claude Code named itself (`limitless-bf`, `banyan-51`…).
+- Phone dictation never sits on "Translating…": a missing language pack asks to download, and after ten seconds the take goes out as spoken.
+
 ### Phone
-- **A lighter chat header, two ways.** Compact: the theme's glyph as an
-  avatar, the session's name, its state and account on one line, every
-  window as glyph + value on the next. Stat strip: the title row with a
-  row of mini gauges under it. Settings › Appearance › Chat header picks;
-  the full Fleet row lives in the session's details.
-- **Screenshots go out in one tap.** The camera button in a chat's header
-  sends a picture of the screen you're looking at, straight to that
-  session — no composer, no paste. Take a screenshot anywhere on the
-  phone and the next chat you open offers it (or several) for one-tap
-  sending; Settings › Screenshots turns the offer off. Needs full Photos
-  access for shots from other apps; the in-app button never does. On
-  any other screen, shake the phone: it captures the screen and asks
-  which session gets it.
-- **A message from another session reads the way the CLI shows it**: a
-  "Message from @Infinitus" line with a short preview, the full text a
-  tap away — not a wall of delivery wrapper, and not your own bubble.
-  Your own phone messages lose the "Infinitus app:" prefix.
-- Your own turns render Markdown too — a skill body or a pasted note no
-  longer shows its `**` and `#` marks.
+- A lighter chat header: compact by default, or a stat strip with mini gauges (Settings › Appearance › Chat header).
+- Screenshots go out in one tap: the camera button in a chat, any screenshot you take offered in the next chat, or a shake anywhere.
+- A message from another session shows as "Message from @name" with a preview, the full text a tap away.
+- Your own turns render Markdown too.
 - Live Activities are back on the lock screen and Dynamic Island.
 
 ## 0.4.2
