@@ -219,6 +219,29 @@ final class RowThemeTests: XCTestCase {
         XCTAssertFalse(themes.first?.plain ?? true)
     }
 
+    // Phone vocabulary (user 2026-09-04): a minimal theme keeps the plain
+    // words and tabs, a partial map fills only the keys it names, and
+    // every built-in skin names all four statuses and all three tabs.
+    func testSessionWordsAndTabsFallBackPerKey() throws {
+        let json = #"[{"id":"x","name":"X","sessionWords":{"busy":"Grinding"},"tabIcons":{"fleet":"🚀"}}]"#
+        let t = try XCTUnwrap(JSONDecoder().decode([RowTheme].self, from: Data(json.utf8)).first)
+        XCTAssertEqual(t.sessionWord("busy"), "Grinding")
+        XCTAssertEqual(t.sessionWord("waiting"), "Waiting on you")
+        XCTAssertEqual(t.sessionWord("weird"), "Weird")
+        XCTAssertEqual(t.sessionWord(""), "Unknown")
+        XCTAssertEqual(t.tabLabel("fleet"), "Fleet")
+        XCTAssertEqual(t.tabIcon("fleet"), "🚀")
+        XCTAssertEqual(t.tabIcon("sessions"), "sf:brain")
+        for theme in RowTheme.builtins where !theme.plain {
+            for k in ["busy", "waiting", "idle", "shell"] { XCTAssertNotNil(theme.sessionWords[k], "\(theme.id) \(k)") }
+            for k in ["sessions", "fleet", "settings"] {
+                XCTAssertNotNil(theme.tabLabels[k], "\(theme.id) \(k)")
+                XCTAssertNotNil(theme.tabIcons[k], "\(theme.id) \(k)")
+            }
+        }
+        XCTAssertEqual(RowTheme.off.sessionWord("busy"), "Working")
+    }
+
     func testTemplateJSONParses() throws {
         let themes = try JSONDecoder().decode(
             [RowTheme].self, from: Data(RowTheme.templateJSON.utf8))
@@ -276,5 +299,53 @@ final class RecoveryCountdownTests: XCTestCase {
         let now = Date(timeIntervalSince1970: 1000)
         let until = Date(timeIntervalSince1970: 0)
         XCTAssertEqual(RecoveryCountdown.label(until: until, now: now), "00:00:00")
+    }
+}
+
+final class SessionNamingTests: XCTestCase {
+    func testCleanStripsFlourishes() {
+        XCTAssertEqual(SessionNaming.clean("\"Theming iOS Bottom Bars.\"\n"), "Theming iOS Bottom Bars")
+        XCTAssertEqual(SessionNaming.clean("\n\nTitle: Stats tab backfill"), "Stats tab backfill")
+        XCTAssertNil(SessionNaming.clean("   \n"))
+        XCTAssertNil(SessionNaming.clean(String(repeating: "x", count: 81)))
+    }
+
+    func testFingerprintMovesWithGoalTodosAndPhase() {
+        let a = SessionProgress(goal: "fix the popup", phase: "building")
+        let b = SessionProgress(todos: .init(done: 1, total: 3, activeForm: "Editing"), goal: "fix the popup", phase: "building")
+        let c = SessionProgress(goal: "fix the popup", phase: "verifying")
+        XCTAssertNotEqual(SessionNaming.fingerprint(a), SessionNaming.fingerprint(b))
+        XCTAssertNotEqual(SessionNaming.fingerprint(a), SessionNaming.fingerprint(c))
+        XCTAssertEqual(SessionNaming.fingerprint(a), SessionNaming.fingerprint(SessionProgress(goal: "fix the popup", phase: "building")))
+    }
+
+    func testPromptCarriesTheInfinitusPrefixAndTheGoal() {
+        let p = SessionProgress(nowDoing: "Editing RowTheme.swift", todos: .init(done: 0, total: 2, activeForm: "Theming tabs"),
+                                goal: String(repeating: "g", count: 700), phase: "building")
+        let prompt = SessionNaming.prompt(p)
+        XCTAssertTrue(prompt.hasPrefix("[Infinitus] "))
+        XCTAssertTrue(prompt.contains("Goal: " + String(repeating: "g", count: 600) + "\n"))
+        XCTAssertTrue(prompt.contains("Todos: 0 of 2 done — now: Theming tabs"))
+        XCTAssertTrue(prompt.contains("Phase: building"))
+    }
+}
+
+final class SessionNamingPlaceholderTests: XCTestCase {
+    func testClaudeCodeAutoNamesArePlaceholders() {
+        XCTAssertTrue(SessionNaming.isPlaceholder("limitless-bf", cwd: "/Users/x/death/limitless"))
+        XCTAssertTrue(SessionNaming.isPlaceholder("banyan-51", cwd: "/Users/x/papaya/banyan"))
+        XCTAssertTrue(SessionNaming.isPlaceholder("green-suites-4-14", cwd: "/w/green-suites-4"))
+        XCTAssertTrue(SessionNaming.isPlaceholder(nil, cwd: "/w/limitless"))
+        XCTAssertTrue(SessionNaming.isPlaceholder("", cwd: "/w/limitless"))
+        XCTAssertFalse(SessionNaming.isPlaceholder("Infinitus", cwd: "/w/limitless"))
+        XCTAssertFalse(SessionNaming.isPlaceholder("limitless-release", cwd: "/w/limitless"))
+        XCTAssertFalse(SessionNaming.isPlaceholder("limitless-e2", cwd: "/w/limitless-e2"))
+    }
+
+    func testDisplayNamePrefersTheUsersNameThenHaikuThenTheRepo() {
+        XCTAssertEqual(SessionNaming.displayName(name: "Infinitus", autoName: "Stats tab", cwd: "/w/limitless"), "Infinitus")
+        XCTAssertEqual(SessionNaming.displayName(name: "limitless-bf", autoName: "Stats tab", cwd: "/w/limitless"), "Stats tab")
+        XCTAssertEqual(SessionNaming.displayName(name: "limitless-bf", autoName: nil, cwd: "/w/limitless"), "limitless-bf")
+        XCTAssertEqual(SessionNaming.displayName(name: nil, autoName: nil, cwd: "/w/limitless"), "limitless")
     }
 }

@@ -246,7 +246,7 @@ struct InfinitusTray {
             let prefs = TitlePrefs(showAccountName: true, titlePct: "both",
                                    titleScoped: false, titleRemaining: remaining,
                                    titleReset: "countdown")
-            let recovery = RecoveryMath.corrected(engine: list.nextRecovery, accounts: list.accounts)
+            let recovery = RecoveryMath.corrected(engine: list.nextRecovery, accounts: list.accounts, activeNumber: list.activeAccountNumber)
             let rows = list.accounts.map { row($0, list: list, recovery: recovery, theme: theme, now: now) }
             var tooltip = rows.joined(separator: "\n")
             if let live = list.liveSessions {
@@ -384,7 +384,7 @@ struct InfinitusTray {
             // Corrected, not the engine's verbatim value: its advisory
             // skips the active account, which misnames the reviver when
             // the active one is both dead and soonest (2026-09-02).
-            let recovery = RecoveryMath.corrected(engine: list.nextRecovery, accounts: list.accounts)
+            let recovery = RecoveryMath.corrected(engine: list.nextRecovery, accounts: list.accounts, activeNumber: list.activeAccountNumber)
             let accounts = ordered.map { a -> PanelAccount in
                 let name = a.alias ?? String(a.email.prefix(while: { $0 != "@" }))
                 let marker: String

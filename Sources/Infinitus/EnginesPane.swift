@@ -128,63 +128,6 @@ struct ClaudeEnginePane: View {
     }
 }
 
-/// Codex provider pane: the app-native auth.json slot switcher.
-struct CodexEnginePane: View {
-    @StateObject private var codex = CodexEngineModel()
-
-    var body: some View {
-        Form {
-            Section("Codex — OpenAI account slots") {
-                if !codex.authPresent && codex.slots.isEmpty {
-                    Text("No Codex CLI login found (\(CodexEngineModel.codexHome.path)/auth.json). "
-                         + "Log in with `codex login`, then save it as a slot here.")
-                        .font(.caption).foregroundStyle(.secondary)
-                }
-                ForEach(codex.slots) { slot in
-                    HStack {
-                        Image(systemName: slot.active
-                              ? "checkmark.circle.fill" : "circle")
-                            .foregroundStyle(slot.active ? .green : .secondary)
-                        VStack(alignment: .leading) {
-                            Text(slot.email ?? slot.mode)
-                            if let plan = slot.plan {
-                                Text(plan).font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
-                        Spacer()
-                        if !slot.active {
-                            Button("Switch") { codex.switchTo(slot.id) }
-                        }
-                        Button(role: .destructive) {
-                            codex.remove(slot.id)
-                        } label: { Image(systemName: "trash") }
-                            .buttonStyle(.borderless)
-                            .help("Forget this slot (the stored login is deleted)")
-                    }
-                }
-                Button("Save current Codex login as a slot") {
-                    codex.addCurrent()
-                }
-                if let status = codex.status {
-                    Text(status).font(.caption).foregroundStyle(.secondary)
-                }
-                Text("Slots are whole-file snapshots of auth.json; switching "
-                     + "saves the live login back first. Manual only — no "
-                     + "usage tracking or auto-switch for Codex yet.")
-                    .font(.caption).foregroundStyle(.secondary)
-            }
-            Section("Planned") {
-                Text("Gemini CLI and opencode store logins the same "
-                     + "file-swap way — candidates if ever needed.")
-                    .font(.caption).foregroundStyle(.tertiary)
-            }
-        }
-        .formStyle(.grouped)
-        .onAppear { codex.reload() }
-    }
-}
-
 extension CswapSupervisor.State {
     /// Sidebar live-dot: only a genuinely running engine counts.
     var isRunning: Bool {

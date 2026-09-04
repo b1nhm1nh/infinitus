@@ -108,7 +108,7 @@ delta. Local `Calendar.current`.
   in `settingsTabs` like `UtilizationModel`; AppModel feeds it the event
   store and the session cwds.
 - **Phone** — `MirrorSnapshot.stats: Stats.Bundle?` (additive optional,
-  the four periods' summaries without the heatmap series, ≤ 4 KB) written
+  the four periods' summaries without the heatmap series, ≤ 8 KB) written
   by the exporter every 5 min; a Stats screen pushed from the Fleet
   tab's toolbar, same groups as tiles. Parity: everything the Mac shows
   except the heatmap.

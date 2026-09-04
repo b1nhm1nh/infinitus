@@ -15,14 +15,21 @@ struct SessionDetailRoute: Hashable {
 /// The Mac's session vocabulary in the user's words — one word system
 /// across the list, the feed header and the detail screen.
 enum SessionWords {
-    static func status(_ raw: String) -> String {
+    /// The theme's word for a status ("Questing" for busy under RPG);
+    /// the Off theme keeps the plain ones (user 2026-09-04: "theme the
+    /// listing and its words too").
+    static func status(_ raw: String, theme: RowTheme) -> String {
+        theme.sessionWord(raw)
+    }
+
+    /// Same colors the Mac's sessions card uses for each status.
+    static func color(_ raw: String) -> Color {
         switch raw {
-        case "busy": return "Working"
-        case "waiting": return "Waiting on you"
-        case "idle": return "Idle"
-        case "shell": return "At the shell"
-        case "": return "Unknown"
-        default: return raw.prefix(1).uppercased() + raw.dropFirst()
+        case "busy": return .orange
+        case "waiting": return .yellow
+        case "idle": return .green
+        case "shell": return .blue
+        default: return .gray
         }
     }
 
@@ -109,7 +116,7 @@ struct SessionDetailScreen: View {
     var body: some View {
         List {
             Section("Session") {
-                LabeledContent("Name", value: p?.name ?? repoName(session.cwd))
+                LabeledContent("Name", value: SessionNaming.displayName(name: p?.name, autoName: p?.autoName, cwd: session.cwd))
                 Text(session.cwd)
                     .font(.system(.footnote, design: .monospaced))
                     .textSelection(.enabled)
@@ -121,7 +128,7 @@ struct SessionDetailScreen: View {
                 if let branch = p?.gitBranch { LabeledContent("Branch", value: branch) }
                 if let model = p?.model { LabeledContent("Model", value: model) }
                 LabeledContent("Kind", value: SessionWords.kind(session.kind))
-                LabeledContent("Status", value: SessionWords.status(session.status))
+                LabeledContent("Status", value: SessionWords.status(session.status, theme: model.rowTheme))
                 LabeledContent("Started", value: date(session.startedAt).formatted(date: .abbreviated, time: .shortened))
                     .monospacedDigit()
                 if let last = p?.lastActivityAt {

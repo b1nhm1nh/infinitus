@@ -137,6 +137,78 @@ final class PushTriggersTests: XCTestCase {
                               sessions: [session(3, "waiting")]).count, 1)
     }
 
+    private func need(_ pid: Int?, _ profile: String, label: String? = "repo",
+                      failedAt: Date? = nil) -> AwsLogin.Item {
+        AwsLogin.Item(profile: profile, flow: .relay, pid: pid, sessionLabel: label, state: nil,
+                      failedAt: failedAt)
+    }
+
+    /// #29: a need that failed minutes ago is pushed even on the seeding
+    /// look (the relaunch swallowed it); an old one seeds silently; the
+    /// same session failing again later on the same profile fires again.
+    func testAwsLoginFreshNeedAtLaunchIsPushedAndRefailureRearms() {
+        var t = PushTriggers()
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        XCTAssertEqual(t.tick(busy: 0, total: 1, accounts: [], flags: all,
+                              awsLogins: [need(3, "p", failedAt: now.addingTimeInterval(-60)),
+                                          need(4, "q", failedAt: now.addingTimeInterval(-3600))],
+                              now: now),
+                       ["needs AWS login — repo (p)"])
+        XCTAssertEqual(t.tick(busy: 0, total: 1, accounts: [], flags: all,
+                              awsLogins: [need(3, "p", failedAt: now.addingTimeInterval(-60)),
+                                          need(4, "q", failedAt: now.addingTimeInterval(-3600))],
+                              now: now), [])
+        // Same session, same profile, a later failure: news again.
+        XCTAssertEqual(t.tick(busy: 0, total: 1, accounts: [], flags: all,
+                              awsLogins: [need(3, "p", failedAt: now.addingTimeInterval(600))],
+                              now: now.addingTimeInterval(660)),
+                       ["needs AWS login — repo (p)"])
+    }
+
+    func testAwsLoginNeedFiresOncePerSessionAndProfileAndRearms() {
+        var t = PushTriggers()
+        // The first scanned look seeds silently, even when empty.
+        XCTAssertEqual(t.tick(busy: 0, total: 1, accounts: [], flags: all, awsLogins: []), [])
+        XCTAssertEqual(t.tick(busy: 0, total: 1, accounts: [], flags: all,
+                              awsLogins: [need(1, "banyan-login", label: "Nydus")]),
+                       ["needs AWS login — Nydus (banyan-login)"])
+        XCTAssertEqual(t.tick(busy: 0, total: 1, accounts: [], flags: all,
+                              awsLogins: [need(1, "banyan-login", label: "Nydus")]), [])
+        // A second session, its own profile: its own news.
+        XCTAssertEqual(t.tick(busy: 0, total: 1, accounts: [], flags: all,
+                              awsLogins: [need(1, "banyan-login", label: "Nydus"), need(2, "banyan", label: "peon")]),
+                       ["needs AWS login — peon (banyan)"])
+        // Signed in, then expired again later: fires again.
+        XCTAssertEqual(t.tick(busy: 0, total: 1, accounts: [], flags: all, awsLogins: []), [])
+        XCTAssertEqual(t.tick(busy: 0, total: 1, accounts: [], flags: all,
+                              awsLogins: [need(1, "banyan-login", label: "Nydus")]).count, 1)
+    }
+
+    func testAwsLoginNeedAtLaunchIsSeededSilentlyAndUnscannedLooksDoNotSeed() {
+        var t = PushTriggers()
+        // nil = transcripts not scanned yet: no seeding off an empty look.
+        XCTAssertEqual(t.tick(busy: 0, total: 1, accounts: [], flags: all, awsLogins: nil), [])
+        XCTAssertEqual(t.tick(busy: 0, total: 1, accounts: [], flags: all, awsLogins: [need(3, "p")]), [])
+        XCTAssertEqual(t.tick(busy: 0, total: 1, accounts: [], flags: all, awsLogins: [need(3, "p")]), [])
+        _ = t.tick(busy: 0, total: 1, accounts: [], flags: all, awsLogins: [])
+        XCTAssertEqual(t.tick(busy: 0, total: 1, accounts: [], flags: all, awsLogins: [need(3, "p")]).count, 1)
+    }
+
+    func testAwsLoginFlagOffStillAdvancesState() {
+        var t = PushTriggers()
+        var off = all; off.awsLogin = false
+        _ = t.tick(busy: 0, total: 1, accounts: [], flags: off, awsLogins: [])
+        XCTAssertEqual(t.tick(busy: 0, total: 1, accounts: [], flags: off, awsLogins: [need(7, "p")]), [])
+        XCTAssertEqual(t.tick(busy: 0, total: 1, accounts: [], flags: all, awsLogins: [need(7, "p")]), [])
+    }
+
+    func testHandStartedLoginWithoutSessionIsNotPushed() {
+        var t = PushTriggers()
+        _ = t.tick(busy: 0, total: 1, accounts: [], flags: all, awsLogins: [])
+        XCTAssertEqual(t.tick(busy: 0, total: 1, accounts: [], flags: all,
+                              awsLogins: [need(nil, "p", label: nil)]), [])
+    }
+
     func testWaitingFlagOffStillAdvancesState() {
         var t = PushTriggers()
         var off = all; off.waiting = false

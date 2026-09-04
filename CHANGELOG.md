@@ -1,10 +1,33 @@
 # Changelog
 
 Product notes: concise, what you get and why it matters — no commit
-links, no internals or workflow detail (user 2026-09-04). The release
-workflow publishes the matching section as the GitHub release body.
+links, no internals or workflow detail; one feature note is one line,
+a single short sentence (user 2026-09-04). The release workflow
+publishes the matching section as the GitHub release body.
 
-## 0.4.2 (unreleased)
+## 0.4.3 (unreleased)
+
+### Stats
+- Where the effort went: minutes, tokens and spend per activity (review, tests, plan, debugging, browser, simulator, explanations, coding) and per model, on the Mac and the phone — heuristic labels, one full rescan on first refresh.
+
+### Fixes
+- AWS logins survive a Mac relaunch, and a need that failed just before a launch still reaches the phone.
+- Haiku session names now cover the sessions Claude Code named itself (`limitless-bf`, `banyan-51`…).
+- Phone dictation never sits on "Translating…": a missing language pack asks to download, and after ten seconds the take goes out as spoken.
+
+### Accounts
+- Randomize names: every account gets a fresh name from the current theme's pool (Settings › Accounts, or `infinitusctl randomize-names`).
+
+### Phone
+- A lighter chat header: compact by default, or a stat strip with mini gauges (Settings › Appearance › Chat header).
+- Screenshots go out in one tap: the camera button in a chat, any screenshot you take offered in the next chat, or a shake anywhere.
+- A message from another session shows as "Message from @name" with a preview, the full text a tap away.
+- Your own turns render Markdown too.
+- Live Activities are back on the lock screen and Dynamic Island.
+- The tab bar shrinks to its icon as a list scrolls, Safari-style (iOS 26).
+- Gauges hold still on open and on tab switches; Settings › Replay intro plays the entrance on demand.
+
+## 0.4.2
 
 ### All accounts limited
 - **Floating revival countdown.** When every account is limited, a small
@@ -17,7 +40,11 @@ workflow publishes the matching section as the GitHub release body.
 
 ### Phone
 - **Continue a stopped session** from the phone — one button, whatever
-  stopped it (a limit, a crash, a closed terminal).
+  stopped it (a limit, a crash, a closed terminal). It shows only when
+  the turn ended without a final answer; after one, the composer is
+  the way on.
+- **The whole conversation stays readable.** A pasted screenshot no
+  longer pushes everything before it out of a session's chat.
 - **Sessions is home.** The app opens on what's waiting for you, with a
   badge for how many; the Fleet tab opens with the active account, who's
   next and how many sessions are working.
@@ -31,7 +58,15 @@ workflow publishes the matching section as the GitHub release body.
   to the session's details. Plain words for status; no process ids.
 - Honors Reduce Motion; bigger tap targets and labels for VoiceOver.
 - **Dictate a message.** A mic in the composer; on-device, no server.
-- **Paste an image** from the clipboard, straight into the chat.
+- **Dictate in any language.** Long-press the mic (or Settings →
+  Dictation) to pick the language — Vietnamese included. A non-English
+  take is translated on the phone (iOS 18, nothing leaves it) into an
+  editable English draft, with a chip to peek at what you said; or send
+  it as spoken with a note asking for an English reply, so the session
+  stays English. The recognizer is handed the session's names and
+  tools so "commit", "PR" and file names survive a Vietnamese take.
+- **Paste an image** from the clipboard, straight into the chat — the
+  keyboard's "Paste from Screenshots" chip and the edit menu both work.
 - **Notifications straight to the phone** (issue #3) — every alert the
   Mac posts, no Slack or Telegram in between. Ships once the phone
   build can register for them.
@@ -40,10 +75,38 @@ workflow publishes the matching section as the GitHub release body.
   from the phone shows as a thumbnail in the message; tap for full
   size. Images inside tool results stay text.
 - Tool runs stay grouped through errors, with an error count on the chip.
+- **The theme names the phone.** Tab bar icons and names, the screen
+  titles and every session's status word come from the theme — RPG
+  sessions are Questing, Resting at camp or Awaiting orders under
+  Quests / Party / Inventory. Custom themes set `sessionWords`,
+  `tabLabels` and `tabIcons`; Off keeps the plain words.
+- **Unnamed sessions get a name.** Claude Haiku titles any session you
+  haven't named from what it's working on, and re-titles it as the work
+  moves on — in the sessions list on the Mac and the phone. One short
+  Haiku turn on the active account; Settings → Display to turn it off.
+- **Snappier chat.** A sent message shows in the feed at once, marked
+  until the session reads it; a reply that streams in lands as it is
+  written instead of up to two seconds late; coming back to the app
+  refreshes the feed immediately; and on the Mac a message being typed
+  into a terminal no longer holds up every other phone request.
+- **A header of its own on a session's chat.** Back, the session's name
+  and state (tap for its details), and the account's own Fleet row —
+  glyphs, gauges, the per-model window, the plan badge — on the theme's
+  tint; the Sessions list header shows the theme's glyph. The Off theme
+  keeps the plain lines.
+
+### Stats
+- **Your engineering week, in numbers.** Settings → Stats: commits,
+  lines, PRs, messages (keyboard, phone, agents), sessions, tool calls,
+  time spent waiting on you, switches and limits, cost — today, this
+  week, month or year, each with its trend. On the phone and the wall
+  too; `infinitusctl stats` for scripts.
 
 ### Agents
 - `infinitusctl events` — the app's switch/death/revival log, so a
   "why did it switch?" question has a record to read.
+- `infinitusctl stats` — the same numbers as JSON for a period, for
+  scripts and agents.
 
 ### Linux tray
 - Sessions that need an AWS login say so; the footer names the
@@ -52,6 +115,21 @@ workflow publishes the matching section as the GitHub release body.
 ### Site
 - infinitus.run reads well on phones: no sideways scroll, better
   contrast, feature cards grouped by what they do.
+
+### Settings
+- **The Codex slots tab is gone.** The manual auth.json slot switcher
+  never grew usage tracking or auto-switch; Codex accounts still show
+  as fleets through CLIProxyAPI and 9Router.
+
+### AWS sign-in
+- **Your phone hears when a session needs an AWS login** — one push per
+  session and profile (Notifications → "A session needs an AWS login"),
+  so the need no longer waits for you to open the app.
+- **One login, every session.** When two sessions are stuck on the same
+  sign-in, or one profile's login signs another in underneath (a broker
+  profile over its anchor), every stuck session is told to continue and
+  its "needs login" clears — the app checks the other profiles with the
+  CLI instead of guessing from the config.
 
 ### Fixes
 - A phone message no longer reads to the session like a note from
@@ -74,6 +152,10 @@ workflow publishes the matching section as the GitHub release body.
 - The popup no longer burns CPU (and stops answering `infinitusctl`)
   while an account sits in the 90s.
 - An engine that refuses to start no longer shows as a crash.
+- "All accounts down" no longer appears while the active account is
+  fine and only the spares are limited — the countdown panel, the popup
+  banner, the wall, the phone and the Linux panel all wait for the
+  account you're actually on to hit its limit.
 
 ## 0.4.1
 

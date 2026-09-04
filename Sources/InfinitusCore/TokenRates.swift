@@ -188,7 +188,7 @@ public enum TokenRateScanner {
     }()
     nonisolated(unsafe) private static let plain = ISO8601DateFormatter()
 
-    static func parseStamp(_ s: String) -> Double? {
+    public static func parseStamp(_ s: String) -> Double? {
         (fractional.date(from: s) ?? plain.date(from: s))?.timeIntervalSince1970
     }
 }

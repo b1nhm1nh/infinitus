@@ -38,6 +38,11 @@ public struct SessionFeedItem: Codable, Sendable, Equatable {
     public let kind: Kind
     public let text: String
     public let at: Date?
+    /// `.user` items only: the other Claude session that sent this
+    /// (its from-name), so the phone can show it the way the CLI does —
+    /// a "Message from @<sender>" line, not the user's own bubble
+    /// (2026-09-04). Nil for the user's own words, phone included.
+    public let sender: String?
     /// Set only for `.tool`/`.permission` items.
     public let toolName: String?
     /// Set only for `.question` items — the option labels, read-only.
@@ -56,9 +61,10 @@ public struct SessionFeedItem: Codable, Sendable, Equatable {
 
     public init(kind: Kind, text: String, at: Date? = nil, toolName: String? = nil,
                 options: [String]? = nil, agent: Agent? = nil, toolUseId: String? = nil,
-                images: [String]? = nil) {
+                images: [String]? = nil, sender: String? = nil) {
         self.kind = kind
         self.images = images
+        self.sender = sender
         self.text = text
         self.at = at
         self.toolName = toolName
@@ -67,7 +73,7 @@ public struct SessionFeedItem: Codable, Sendable, Equatable {
         self.toolUseId = toolUseId
     }
 
-    enum CodingKeys: String, CodingKey { case kind, text, at, toolName, options, agent, images }
+    enum CodingKeys: String, CodingKey { case kind, text, at, toolName, options, agent, images, sender }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -78,6 +84,7 @@ public struct SessionFeedItem: Codable, Sendable, Equatable {
         options = try c.decodeIfPresent([String].self, forKey: .options)
         agent = try c.decodeIfPresent(Agent.self, forKey: .agent)
         images = try c.decodeIfPresent([String].self, forKey: .images)
+        sender = try c.decodeIfPresent(String.self, forKey: .sender)
         toolUseId = nil
     }
 }
@@ -135,6 +142,11 @@ public enum SessionFeedReader {
     /// for how far back "recent important messages" needs to look rather
     /// than a full limit-stop check.
     static let tailBytes = 256 * 1024
+    /// One pasted screenshot is a 400-600 KB line (its base64 tool
+    /// result), wider than the whole tail: the window quadruples until
+    /// it holds `limit` items or reaches this (user 2026-09-04 "session
+    /// msgs are getting trimmed I cant read anything").
+    static let tailBytesMax = 4 * 1024 * 1024
     /// Assistant AND user text items are capped here — the sessions this
     /// serves are dispatch-driven, so user prompts run multi-KB too, and
     /// this feed is polled every 5s from the phone.
@@ -151,8 +163,16 @@ public enum SessionFeedReader {
                              limit: Int = 30) -> SessionFeed? {
         guard !record.sessionId.isEmpty else { return nil }
         let url = Transcript.locate(cwd: record.cwd, sessionId: record.sessionId, claudeDir: claudeDir)
-        let lines = tail(of: url, maxBytes: tailBytes)
-        let raw = attachAgents(parse(lines: lines, limit: limit), transcript: url)
+        var window = tailBytes
+        var lines = tail(of: url, maxBytes: window)
+        var parsed = parse(lines: lines, limit: limit)
+        let size = ((try? FileManager.default.attributesOfItem(atPath: url.path))?[.size] as? NSNumber)?.intValue ?? 0
+        while parsed.count < limit, window < size, window < tailBytesMax {
+            window *= 4
+            lines = tail(of: url, maxBytes: window)
+            parsed = parse(lines: lines, limit: limit)
+        }
+        let raw = attachAgents(parsed, transcript: url)
         let (items, waiting) = finalize(items: raw, status: record.status,
                                         statusUpdatedAt: record.statusUpdatedAt)
         return SessionFeed(pid: record.pid, sessionId: record.sessionId, cwd: record.cwd,
@@ -357,7 +377,7 @@ public enum SessionFeedReader {
         /// Trimmed first-line-or-whole text of a "real" user prompt
         /// entry — nil for a tool_result-only entry or a system-injected
         /// payload (`<command-name>`, `<system-reminder>`, …).
-        func realUserText(_ entry: [String: Any]) -> String? {
+        func realUserText(_ entry: [String: Any]) -> (sender: String?, text: String)? {
             guard (entry["type"] as? String) == "user",
                   let message = entry["message"] as? [String: Any] else { return nil }
             let text: String?
@@ -368,7 +388,7 @@ public enum SessionFeedReader {
             } else {
                 text = nil
             }
-            return text.flatMap(presentableUserText)
+            return text.flatMap(presentableUser)
         }
 
         /// Whether an assistant text block at `index` is the final answer
@@ -398,19 +418,21 @@ public enum SessionFeedReader {
                let attachment = entry["attachment"] as? [String: Any],
                (attachment["type"] as? String) == "queued_command",
                let prompt = attachment["prompt"] as? String {
-                if let text = presentableUserText(prompt) {
-                    let images = attachedImageIds(text)
-                    append(SessionFeedItem(kind: .user, text: String(text.prefix(textCap)),
-                                           at: timestamp(entry), images: images.isEmpty ? nil : images))
+                if let user = presentableUser(prompt) {
+                    let images = attachedImageIds(user.text)
+                    append(SessionFeedItem(kind: .user, text: String(user.text.prefix(textCap)),
+                                           at: timestamp(entry), images: images.isEmpty ? nil : images,
+                                           sender: user.sender))
                 }
                 continue
             }
             if type == "user" {
-                if let text = realUserText(entry) {
-                    let images = imageIds(entry: entry, text: text)
+                if let user = realUserText(entry) {
+                    let images = imageIds(entry: entry, text: user.text)
                     append(SessionFeedItem(kind: .user,
-                                           text: String(bubbleText(text, images: images).prefix(textCap)),
-                                           at: timestamp(entry), images: images.isEmpty ? nil : images))
+                                           text: String(bubbleText(user.text, images: images).prefix(textCap)),
+                                           at: timestamp(entry), images: images.isEmpty ? nil : images,
+                                           sender: user.sender))
                     continue
                 }
                 guard let message = entry["message"] as? [String: Any],
@@ -573,28 +595,39 @@ public enum SessionFeedReader {
     }
 
     /// A user prompt worth a bubble: plain text as is; a cross-session
-    /// message (another Claude session, or the phone via the peer socket)
-    /// as "<sender>: <body>"; any other tagged payload (system reminders,
-    /// hook output) is machinery, not a message — nil.
-    static func presentableUserText(_ raw: String) -> String? {
-        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+    /// message as its body, with `sender` set for another Claude session
+    /// and nil for the phone (the user's own words, via the peer socket);
+    /// any other tagged payload (system reminders, hook output) is
+    /// machinery, not a message — nil.
+    static func presentableUser(_ raw: String) -> (sender: String?, text: String)? {
+        var trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
-        guard trimmed.first == "<" else { return trimmed }
+        // Claude Code delivers a peer message as "Another Claude session
+        // sent a message:\n<cross-session-message …>…</…>" plus its own
+        // guidance after the closing tag; the bubble showed all of it
+        // (user 2026-09-04 screenshot). Same unwrap as StatsScanner.
+        if trimmed.hasPrefix("Another Claude session sent a message"),
+           let open = trimmed.range(of: "<cross-session-message") {
+            trimmed = String(trimmed[open.lowerBound...])
+        }
+        guard trimmed.first == "<" else { return (nil, trimmed) }
         guard trimmed.hasPrefix("<cross-session-message"),
               let headEnd = trimmed.firstIndex(of: ">") else { return nil }
         let head = trimmed[..<headEnd]
         var body = String(trimmed[trimmed.index(after: headEnd)...])
         if let close = body.range(of: "</cross-session-message>") { body = String(body[..<close.lowerBound]) }
         body = body.trimmingCharacters(in: .whitespacesAndNewlines)
-        if body.hasPrefix(PeerSocket.phonePreface) { body = String(body.dropFirst(PeerSocket.phonePreface.count)) }
+        let fromPhone = body.hasPrefix(PeerSocket.phonePreface)
+        if fromPhone { body = String(body.dropFirst(PeerSocket.phonePreface.count)) }
         body = body.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !body.isEmpty else { return nil }
+        if fromPhone { return (nil, body) }
         var sender = "peer"
         if let r = head.range(of: "from-name=\"") {
             let rest = head[r.upperBound...]
             if let q = rest.firstIndex(of: "\"") { sender = String(rest[..<q]) }
         }
-        return "\(sender): \(body)"
+        return (sender, body)
     }
 
     private static func errorSummary(_ block: [String: Any]) -> String {

@@ -73,6 +73,7 @@ public struct GaugeBar: View {
     // settings playground keeps its instant behavior).
     @Environment(\.introTick) private var introTick
     @Environment(\.introBarDelay) private var introBarDelay
+    @Environment(\.gaugeIntroOnAppear) private var introOnAppear
 
     public init(remaining: Double, color: Color, paceRemaining: Double? = nil,
                 dividers: [Double] = [], animated: Bool = true,
@@ -186,7 +187,16 @@ public struct GaugeBar: View {
                     .foregroundStyle(remaining <= 0 ? Color.red : color.opacity(0.9))
             }
         }
-        .onAppear { animated ? playFill() : (shown = remaining) }
+        .onAppear {
+            if animated, introOnAppear {
+                playFill()
+            } else {
+                // Straight to the value, burn armed: a bar that appears
+                // on a tab switch is not an entrance.
+                shown = remaining
+                burnArmed = true
+            }
+        }
         // Replay intro re-runs the fill too (it was missing from the
         // debug pane's Replay, user 2026-08-30).
         .onChange(of: introTick) { _, _ in playFill() }
@@ -323,7 +333,19 @@ private struct IntroTickKey: EnvironmentKey {
 private struct IntroBarDelayKey: EnvironmentKey {
     static let defaultValue = 0.0
 }
+/// Whether a bar plays its fill-from-empty when it first appears. The
+/// popup wants the entrance on every open; the phone, where SwiftUI
+/// re-creates a tab's bars on every switch, wants them still (user
+/// 2026-09-04: "switching screens the animations replay — supposed to
+/// stay static"). `introTick` still replays on demand.
+private struct GaugeIntroOnAppearKey: EnvironmentKey {
+    static let defaultValue = true
+}
 extension EnvironmentValues {
+    public var gaugeIntroOnAppear: Bool {
+        get { self[GaugeIntroOnAppearKey.self] }
+        set { self[GaugeIntroOnAppearKey.self] = newValue }
+    }
     public var introTick: Int {
         get { self[IntroTickKey.self] }
         set { self[IntroTickKey.self] = newValue }

@@ -104,6 +104,7 @@ struct InfinitusApp: App {
                         reliabilityModel: reliabilityModel,
                         notifyModel: notifyModel, usageModel: usage,
                         utilizationModel: utilization,
+                        statsModel: model.statsModel,
                         updateModel: update, appRelease: release)
                 })
         }
@@ -136,6 +137,7 @@ struct InfinitusApp: App {
                 reliabilityModel: reliabilityModel,
                 notifyModel: notifyModel, usageModel: usageModel,
                 utilizationModel: utilizationModel,
+                statsModel: model.statsModel,
                 updateModel: updateModel, appRelease: appRelease))
         }
         // ⌘, would raise that hidden scene window (and the controller
@@ -161,6 +163,7 @@ struct InfinitusApp: App {
     reliabilityModel: ResumeReliabilityModel,
     notifyModel: NotifyModel, usageModel: UsageModel,
     utilizationModel: UtilizationModel,
+    statsModel: StatsModel,
     updateModel: UpdateModel, appRelease: AppReleaseModel
 ) -> [SettingsTab] {
     // Ordered by how often each pane is reached for (user 2026-08-30:
@@ -192,6 +195,10 @@ struct InfinitusApp: App {
                     keywords: ["history", "utilization", "waste", "window",
                                "5h", "7d", "weekly", "chart", "over time"],
                     view: AnyView(UtilizationPane(model: utilizationModel))),
+        SettingsTab(title: "Stats", symbol: "chart.bar.xaxis", tint: .indigo,
+                    keywords: ["stats", "metrics", "commits", "prs", "lines",
+                               "messages", "sessions", "week", "month", "year"],
+                    view: AnyView(StatsPane(model: statsModel))),
         SettingsTab(title: "Activity", symbol: "clock.arrow.circlepath", tint: .teal,
                     keywords: ["history", "switches", "log", "events"],
                     view: AnyView(ActivityPane(model: model))),
@@ -243,11 +250,6 @@ struct InfinitusApp: App {
                                             && model.engineErrors[NineRouterEngine.engineID] == nil
                                             && model.fleets.contains { $0.engineID == NineRouterEngine.engineID }),
                     view: AnyView(NineRouterEnginePane(model: model))),
-        SettingsTab(title: "Codex", symbol: "circle.hexagongrid",
-                    keywords: ["openai", "codex", "provider", "slots",
-                               "accounts", "engine"],
-                    provider: ProviderBadge(),
-                    view: AnyView(CodexEnginePane())),
     ]
 }
 

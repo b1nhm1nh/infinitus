@@ -24,9 +24,27 @@ Native macOS menu bar app for the claude-swap engine. Split out of
   items prompt once. Never change the id casually again — the
   2026-08-29 casual change cost a day of ControlCenter-ban debugging.
 - **Push nothing to any remote** unless explicitly asked. Commit locally.
+- **main takes commits only through pull requests** (GitHub ruleset
+  "main via pull requests", user 2026-09-04): no direct push, no
+  force-push, no deletion; 0 required approvals (solo repo). Work on a
+  branch, `gh pr create`, merge with `gh pr merge --squash` (or
+  `--merge` when the branch history matters) once tests pass.
+- **Every commit carries `Co-Authored-By: Claude Code
+  <noreply@anthropic.com>`** (user 2026-09-04: "some commits still
+  missing Claude in author"). `tools/githooks/prepare-commit-msg`
+  appends it; each clone/worktree owner runs `git config core.hooksPath
+  tools/githooks` once (shared across worktrees of one clone). Subagent
+  briefs still say it explicitly.
 - Secrets (webhook URLs, bot tokens) travel over stdin, never argv; shown
   masked only. Usage-cost figures are estimates, never billing truth.
+- **Release notes: one feature, one line** (user 2026-09-04). A CHANGELOG
+  bullet is a single short sentence — no multi-sentence paragraphs, no
+  wrapped essays; details live in the site/README, not the note.
 - Surgical changes; match existing style; no speculative abstractions.
+- **Todos and research notes go to GitHub issues, never to files**
+  (user 2026-09-04: "stop noting TODO file to avoid a PR, just log to
+  issue"). `gh issue create` / `gh issue comment`; docs/TODO.md is the
+  shipped log only.
 - **Account policy lives in the engines** (user 2026-09-03). Auto-swap,
   pick-first, ordering come from each engine's own knobs (cswap
   `autoswitch.*`, the proxy's priority); the app only sets those and
@@ -105,8 +123,9 @@ Native macOS menu bar app for the claude-swap engine. Split out of
   (one `cd` there; separate `.build`). Main (`~/death/limitless`) is
   merge-only and owned by the first session, which also owns
   `Infinitus.app` rebuild/relaunch (always from a clean worktree at a
-  main sha) and pushes. Ship flow: e2 commits → "merge e2 at <sha>" →
-  `git merge` into main → rebuild → relaunch → push. Never edit the
+  main sha) and the PRs. Ship flow: e2 commits → "merge e2 at <sha>" →
+  push `e2` → `gh pr create --base main --head e2` → tests → `gh pr
+  merge --merge` → `git pull` main → rebuild → relaunch. Never edit the
   other session's tree; in either tree stage by explicit path.
 
 ## Release

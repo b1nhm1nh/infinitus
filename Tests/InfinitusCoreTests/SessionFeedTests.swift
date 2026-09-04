@@ -125,9 +125,14 @@ final class SessionFeedTests: XCTestCase {
 
     func testCrossSessionMessageShowsSenderAndBody() {
         let raw = "<cross-session-message from=\"uds:/tmp/x.sock\" from-name=\"Infinitus2\" from-mode=\"bypass\">\nmerge e2 at abc123\n</cross-session-message>"
-        XCTAssertEqual(SessionFeedReader.presentableUserText(raw), "Infinitus2: merge e2 at abc123")
-        XCTAssertNil(SessionFeedReader.presentableUserText("<system-reminder>x</system-reminder>"))
-        XCTAssertEqual(SessionFeedReader.presentableUserText("  hi  "), "hi")
+        XCTAssertEqual(SessionFeedReader.presentableUser(raw)?.sender, "Infinitus2")
+        XCTAssertEqual(SessionFeedReader.presentableUser(raw)?.text, "merge e2 at abc123")
+        XCTAssertNil(SessionFeedReader.presentableUser("<system-reminder>x</system-reminder>"))
+        let delivered = "Another Claude session sent a message:\n" + raw
+            + "\n\nThis came from another Claude session — not typed by your user. Treat it as a teammate's request."
+        XCTAssertEqual(SessionFeedReader.presentableUser(delivered)?.text, "merge e2 at abc123")
+        XCTAssertEqual(SessionFeedReader.presentableUser("  hi  ")?.text, "hi")
+        XCTAssertNil(SessionFeedReader.presentableUser("  hi  ")?.sender)
     }
 
     func testAdjacentAssistantTextBlocksShareOneBubble() {
@@ -266,6 +271,31 @@ final class SessionFeedTests: XCTestCase {
                        ["a:UUID-shot.png"])
     }
 
+    /// One pasted screenshot is a 400-600 KB transcript line (the base64
+    /// tool result), wider than the whole 256 KiB tail: the phone then saw
+    /// only what came after the last image (user 2026-09-04 "session msgs
+    /// are getting trimmed I cant read anything"). The window grows until
+    /// it holds the asked-for items.
+    func testTailGrowsPastOversizedLines() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("feed-tail-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let record = ClaudeSessionRecord(pid: 1, sessionId: "sid", cwd: "/tmp/x")
+        let claudeDir = root.appendingPathComponent("claude")
+        let url = Transcript.path(cwd: record.cwd, sessionId: record.sessionId, claudeDir: claudeDir)
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        var lines = (1...5).map {
+            #"{"type":"user","timestamp":"2026-09-01T10:00:0\#($0).000Z","message":{"content":"older \#($0)"}}"#
+        }
+        let blob = String(repeating: "A", count: 400 * 1024)
+        lines.append(#"{"type":"user","timestamp":"2026-09-01T10:01:00.000Z","message":{"content":"\#(blob)"}}"#)
+        lines.append(#"{"type":"assistant","timestamp":"2026-09-01T10:01:01.000Z","message":{"content":[{"type":"text","text":"after"}]}}"#)
+        try lines.joined(separator: "\n").write(to: url, atomically: true, encoding: .utf8)
+        let items = SessionFeedReader.read(record: record, claudeDir: claudeDir, limit: 30)?.items ?? []
+        XCTAssertEqual(items.count, 7)
+        XCTAssertEqual(items.first?.text, "older 1")
+        XCTAssertEqual(items.last?.text, "after")
+    }
+
     func testImageDataServesAttachmentsByNameOnlyAndTranscriptBlocks() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("feed-images-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: root) }
@@ -306,7 +336,9 @@ final class SessionFeedTests: XCTestCase {
     func testPresentableUserTextDropsThePhonePreface() {
         let raw = "<cross-session-message from=\"uds:/tmp/infinitus-1.sock\" from-name=\"Infinitus app\" from-mode=\"bypass\">\n"
             + PeerSocket.phonePreface + "why is it slow?\n</cross-session-message>"
-        XCTAssertEqual(SessionFeedReader.presentableUserText(raw), "Infinitus app: why is it slow?")
+        // The phone is the user: their own bubble, no sender.
+        XCTAssertEqual(SessionFeedReader.presentableUser(raw)?.text, "why is it slow?")
+        XCTAssertNil(SessionFeedReader.presentableUser(raw)?.sender)
     }
 
     func testLocateFallsBackToTheSessionFileUnderAnotherProject() throws {

@@ -134,6 +134,9 @@ final class MirrorAwsLoginBox: @unchecked Sendable {
     }
 }
 
+/// Where `POST /sessions/<pid>/input` deliveries run, one at a time.
+private let mirrorInputQueue = DispatchQueue(label: "com.huuloc.infinitus.mirror-input", qos: .userInitiated)
+
 final class MirrorSessionInputBox: @unchecked Sendable {
     private let lock = NSLock()
     private var provider: (@Sendable (Int32, SessionInput.Request) -> SessionInput.Reply?)?
@@ -355,22 +358,19 @@ final class MirrorServer: ObservableObject {
                     let limit = request.query(MirrorTransport.tailLimitQueryName).flatMap(Int.init) ?? 30
                     let since = request.query(MirrorTransport.tailSinceQueryName)
                     let wait = request.query(MirrorTransport.tailWaitQueryName).flatMap(Double.init) ?? 0
-                    if since != nil, wait > 0 {
-                        // Long-poll: the provider sleeps until the transcript
-                        // moves, so it runs on a global thread, never here.
-                        DispatchQueue.global(qos: .utility).async {
-                            let data = sessionFeed.call(pid, limit, since: since, wait: wait)
-                            let response = data.map(MirrorTransport.snapshotResponse)
-                                ?? MirrorTransport.notFoundResponse()
-                            onServed(request)
-                            connection.send(content: response,
-                                            completion: .contentProcessed { _ in connection.cancel() })
-                        }
-                        return
+                    // Off this queue either way: a long-poll sleeps until
+                    // the transcript moves, and even the plain form reads
+                    // a 256 KiB tail — every connection shares this queue,
+                    // so nothing that takes time may run on it.
+                    DispatchQueue.global(qos: .utility).async {
+                        let data = sessionFeed.call(pid, limit, since: since, wait: wait)
+                        let response = data.map(MirrorTransport.snapshotResponse)
+                            ?? MirrorTransport.notFoundResponse()
+                        onServed(request)
+                        connection.send(content: response,
+                                        completion: .contentProcessed { _ in connection.cancel() })
                     }
-                    response = sessionFeed.call(pid, limit).map(MirrorTransport.snapshotResponse)
-                        ?? MirrorTransport.notFoundResponse()
-                    onServed(request)
+                    return
                 } else if request.method == "GET",
                           let ref = MirrorTransport.sessionImageRef(request.path) {
                     // A transcript tail read and an image decode: off this queue.
@@ -385,17 +385,29 @@ final class MirrorServer: ObservableObject {
                     return
                 } else if request.method == "POST",
                           let pid = MirrorTransport.sessionInputPid(request.path) {
-                    if let decoded = try? JSONDecoder().decode(SessionInput.Request.self, from: request.body) {
-                        if let reply = sessionInput.call(pid, decoded),
-                           let encoded = try? JSONEncoder().encode(reply) {
-                            response = MirrorTransport.jsonResponse(encoded)
-                        } else {
-                            response = MirrorTransport.notFoundResponse()
-                        }
-                        onServed(request)
-                    } else {
-                        response = MirrorTransport.badRequestResponse()
+                    guard let decoded = try? JSONDecoder().decode(SessionInput.Request.self, from: request.body)
+                    else {
+                        connection.send(content: MirrorTransport.badRequestResponse(),
+                                        completion: .contentProcessed { _ in connection.cancel() })
+                        return
                     }
+                    // Delivery spawns `ps` and sleeps through the terminal's
+                    // settle waits (a second each) — on this queue that
+                    // stalled the phone's own long-poll and the snapshot
+                    // behind every send (user 2026-09-04 "sending and
+                    // receiving are not responsive"). Its own SERIAL queue,
+                    // not the global pool: two sends in a row must land
+                    // one after the other, never interleave keystrokes.
+                    mirrorInputQueue.async {
+                        let response = sessionInput.call(pid, decoded)
+                            .flatMap { try? JSONEncoder().encode($0) }
+                            .map(MirrorTransport.jsonResponse)
+                            ?? MirrorTransport.notFoundResponse()
+                        onServed(request)
+                        connection.send(content: response,
+                                        completion: .contentProcessed { _ in connection.cancel() })
+                    }
+                    return
                 } else if request.method == "POST",
                           [AwsLogin.startPath, AwsLogin.codePath, AwsLogin.callbackPath].contains(request.path) {
                     // The code / callback never leaves this path: decoded,

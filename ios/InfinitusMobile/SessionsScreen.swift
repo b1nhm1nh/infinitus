@@ -14,7 +14,7 @@ struct SessionsScreen: View {
     var body: some View {
         NavigationStack(path: $path) {
             content
-                .navigationTitle("Sessions")
+                .navigationTitle(model.rowTheme.tabLabel("sessions"))
                 .refreshable { await model.refresh() }
                 .navigationDestination(for: HostSession.self) { hostSession in
                     SessionFeedScreen(model: model, hostSession: hostSession)
@@ -108,7 +108,7 @@ struct SessionsScreen: View {
                             NavigationLink(value: hs) { row(hs) }
                         }
                     } header: {
-                        Text(headerTitle(group))
+                        sectionHeader(group: group)
                     }
                 }
             }
@@ -169,7 +169,7 @@ struct SessionsScreen: View {
                     Text(title(hs))
                         .font(.headline).lineLimit(1)
                     Spacer(minLength: 8)
-                    Text(SessionWords.status(session.status))
+                    Text(SessionWords.status(session.status, theme: model.rowTheme))
                         .font(.caption).foregroundStyle(.secondary)
                     Text(SessionWords.age(since: session.startedAt))
                         .font(.caption).monospacedDigit()
@@ -202,6 +202,33 @@ struct SessionsScreen: View {
         progress.byKey[hs.id] ?? progress.byPid[hs.session.pid]
     }
 
+    /// The summary line wears the theme (user 2026-09-04 "style the
+    /// header info of sessions with theme"): the theme's session glyph in
+    /// its gauge color on a wash of the theme's accent — the tint the
+    /// Fleet screen's rows already wear. The Off theme keeps the stock
+    /// list header.
+    private func sectionHeader(group: HostSessionGroup) -> some View {
+        let theme = model.rowTheme
+        let summary = headerTitle(group)
+        return Group {
+            if theme.plain {
+                Text(summary)
+            } else {
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Text(PopupGlyph.text(theme.sessionLabel))
+                        .font(.footnote.weight(.bold))
+                        .foregroundStyle(ThemeColor.resolve(theme.sessionColor))
+                    Text(summary)
+                        .font(.footnote)
+                        .foregroundStyle(.primary)
+                }
+                .padding(.horizontal, 10).padding(.vertical, 6)
+                .background(ThemeColor.flash(theme).opacity(0.16), in: RoundedRectangle(cornerRadius: 10))
+                .textCase(nil)
+            }
+        }
+    }
+
     /// Same colors the Mac's sessions card uses for each status.
     private func color(for status: String) -> Color {
         switch status {
@@ -216,7 +243,9 @@ struct SessionsScreen: View {
     private func title(_ hs: HostSession) -> String {
         let session = hs.session
         let repo = repoName(session.cwd)
-        guard let name = progressForKey(hs)?.name, !name.isEmpty, name != repo else { return repo }
+        let p = progressForKey(hs)
+        let name = SessionNaming.displayName(name: p?.name, autoName: p?.autoName, cwd: session.cwd)
+        guard name != repo else { return repo }
         return "\(name) · \(repo)"
     }
 

@@ -35,7 +35,7 @@ struct NativeFleetScreen: View {
     var body: some View {
         NavigationStack {
             content(wide: width > 600 || sizeClass == .regular)
-                .navigationTitle("Fleet")
+                .navigationTitle(model.rowTheme.tabLabel("fleet"))
                 .refreshable { await model.refresh() }
                 .background {
                     GeometryReader { geo in
@@ -46,6 +46,12 @@ struct NativeFleetScreen: View {
                 }
                 .onAppear { usage.loadIfNeeded() }
                 .navigationDestination(isPresented: $model.outlookShown) { OutlookScreen(model: model) }
+                .toolbar {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        NavigationLink { StatsScreen(model: model) } label: { Image(systemName: "chart.bar.xaxis") }
+                            .accessibilityLabel("Stats")
+                    }
+                }
         }
         // The one shared cue that has a phone equivalent: a switch is a
         // success beat, an account dying is a warning one. The trigger is

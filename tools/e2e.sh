@@ -101,6 +101,7 @@ echo "Updated profile $profile to use arn:aws:iam::1:user/e2e credentials."
 STUB
 chmod +x "$SOCKDIR/aws"
 export INFINITUS_AWS_CLI="$SOCKDIR/aws"
+export INFINITUS_AWS_LEDGER="$SOCKDIR/aws-logins.json"
 # The fake Claude session: a process with no tty (setsid, so the nudge
 # can't fall back to typing into THIS terminal) listening on the record's
 # messaging socket, writing every frame it receives to an inbox file.
@@ -187,11 +188,14 @@ REV="$(python3 -c "print(' '.join(reversed('$ORDER'.split())))")"
 "$CTL" reorder cswap/claude 1 >/dev/null 2>&1 && fail "partial reorder must be refused"
 "$CTL" reorder cswap/claude $ORDER | expect "[a['number'] for a in d['fleet']['accounts']]==[int(x) for x in '$ORDER'.split()]" || fail "reorder restore didn't take"
 "$CTL" switch cswap/claude 1 | expect "d['fleet']['activeNumber']==1" || fail "switch back to 1"
-echo "round-trips: ok (switch, rotate, hold, unhold, rename, prefer, reorder)"
+# Every account gets a distinct themed name in one command.
+"$CTL" randomize-names cswap/claude | expect "len(set(a.get('alias') for a in d['fleet']['accounts']))==len(d['fleet']['accounts']) and len(d['names'])==len(d['fleet']['accounts'])" || fail "randomize-names didn't give every account its own name"
+echo "round-trips: ok (switch, rotate, hold, unhold, rename, prefer, reorder, randomize-names)"
 "$CTL" plan | expect "'plan' in d and (d['plan'] is None or 'steps' in d['plan'])" || fail "plan verb"
 "$CTL" ignite cswap/claude 2 | expect "'fleet' in d" || fail "ignite verb"
 "$CTL" aws-logins | expect "'logins' in d and isinstance(d['logins'], list)" || fail "aws-logins verb"
 "$CTL" forecast | expect "'forecast' in d and (d['forecast'] is None or ('basis' in d['forecast'] and 'accounts' in d['forecast']))" || fail "forecast verb"
+"$CTL" stats --period week | expect "d['period']=='week' and 'total' in d and 'commits' in d['total'] and 'humanMessages' in d['total']" || fail "stats verb"
 
 # --- windows: the wall takes over from the pop-out and gives it back ----
 "$CTL" show wall | expect "d['shown']" || fail "show wall"

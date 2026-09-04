@@ -140,7 +140,9 @@ public enum LiveActivityBuilder {
     /// — `revived` is the caller's final frame).
     public static func revival(fleet: EngineFleet, theme: RowTheme, textGlyphs: Bool = true,
                                now: Date = Date()) -> RevivalActivityState? {
-        guard fleet.nextCandidate == nil, let rec = fleet.nextRecovery,
+        guard fleet.nextCandidate == nil,
+              let rec = RecoveryMath.corrected(engine: fleet.nextRecovery, accounts: fleet.accounts,
+                                               activeNumber: fleet.activeNumber),
               let at = WeeklyRoll.parse(rec.at), at > now else { return nil }
         let glyph = { (s: String) in textGlyphs ? GlyphText.textPresentation(s) : s }
         let account = fleet.accounts.first { $0.number == rec.number }

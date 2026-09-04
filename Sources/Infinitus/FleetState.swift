@@ -79,7 +79,7 @@ final class FleetState: ObservableObject, Identifiable {
         accounts = fleet.accounts
         activeNumber = fleet.activeNumber
         nextCandidate = fleet.nextCandidate
-        nextRecovery = RecoveryMath.corrected(engine: fleet.nextRecovery, accounts: fleet.accounts)
+        nextRecovery = RecoveryMath.corrected(engine: fleet.nextRecovery, accounts: fleet.accounts, activeNumber: fleet.activeNumber)
         liveSessions = fleet.liveSessions
         lastFleet = fleet
     }
@@ -115,7 +115,7 @@ final class FleetState: ObservableObject, Identifiable {
             accounts = list
             if activeNumber != fleet.activeNumber { activeNumber = fleet.activeNumber }
             if nextCandidate != fleet.nextCandidate { nextCandidate = fleet.nextCandidate }
-            let recovery = RecoveryMath.corrected(engine: fleet.nextRecovery, accounts: list)
+            let recovery = RecoveryMath.corrected(engine: fleet.nextRecovery, accounts: list, activeNumber: fleet.activeNumber)
             if nextRecovery != recovery { nextRecovery = recovery }
             if liveSessions != fleet.liveSessions { liveSessions = fleet.liveSessions }
         }
@@ -247,6 +247,23 @@ final class FleetState: ObservableObject, Identifiable {
             } catch let error as CLIError {
                 done(error.message)
             } catch { done("\(error)") }
+        }
+    }
+
+    /// Every account gets a fresh name from the theme's pool, in one
+    /// pass (user 2026-09-04 "randomize account names").
+    func randomizeNames() {
+        let engine = engine, provider = provider
+        let names = rowTheme.randomAccountNames(count: accounts.count)
+        let pairs = Array(zip(accounts.map(\.number), names))
+        Task {
+            do {
+                for (number, name) in pairs {
+                    try await engine.rename(fleet: provider, number: number, name)
+                }
+                host.reorderError = nil
+            } catch { host.reorderError = "\(error)" }
+            await host.refreshSnapshot()
         }
     }
 

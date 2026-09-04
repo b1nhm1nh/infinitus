@@ -36,11 +36,20 @@ actor AwsLoginRunner {
     private let onChange: @Sendable ([AwsLogin.State]) -> Void
     /// Called once per login that ends in `.done`.
     private let onDone: @Sendable (AwsLogin.State) -> Void
+    /// Where outcomes survive a relaunch (`AwsLogin.Ledger`); nil keeps
+    /// them in memory only (tests, the playground).
+    private let ledgerURL: URL?
 
     init(onChange: @escaping @Sendable ([AwsLogin.State]) -> Void,
-         onDone: @escaping @Sendable (AwsLogin.State) -> Void) {
+         onDone: @escaping @Sendable (AwsLogin.State) -> Void,
+         ledgerURL: URL? = nil) {
         self.onChange = onChange
         self.onDone = onDone
+        self.ledgerURL = ledgerURL
+        if let ledgerURL, let data = try? Data(contentsOf: ledgerURL) {
+            for state in AwsLogin.Ledger.decode(data) { finished[state.profile] = state }
+        }
+        if !finished.isEmpty { onChange(Array(finished.values)) }
     }
 
     static let awsCandidates = [
@@ -126,12 +135,29 @@ actor AwsLoginRunner {
             return AwsLogin.Reply(ok: false, state: run.state, error: "this flow takes no code")
         }
         guard AwsLogin.isValidCode(code) else { return AwsLogin.Reply(ok: false, state: run.state, error: "invalid code") }
-        run.stdin.fileHandleForWriting.write(Data((code + "\n").utf8))
+        guard Self.write(code + "\n", to: run) else {
+            return AwsLogin.Reply(ok: false, state: run.state, error: "the aws CLI is no longer waiting for a code")
+        }
         run.state.phase = .waitingForBrowser
         run.state.message = "code submitted"
         runs[profile] = run
         publish()
         return AwsLogin.Reply(ok: true, state: run.state)
+    }
+
+    /// A line to the CLI's stdin, or false when the CLI is gone: the
+    /// non-throwing `write(_:)` raises an uncaught Foundation exception
+    /// on a broken pipe, which took the whole app down in CI when the
+    /// stub `aws` exited before the runner answered its prompt (#39's
+    /// e2e run, 2026-09-04). `ended` then reports the login as failed.
+    private static func write(_ text: String, to run: Run) -> Bool {
+        guard run.process.isRunning else { return false }
+        do {
+            try run.stdin.fileHandleForWriting.write(contentsOf: Data(text.utf8))
+            return true
+        } catch {
+            return false
+        }
     }
 
     /// Replays the redirect the phone intercepted against the CLI's own
@@ -174,9 +200,12 @@ actor AwsLoginRunner {
         if prompt.wantsCode, run.state.message != "code submitted" { run.state.phase = .waitingForCode }
         if prompt.succeeded { run.state.phase = .done }
         if let refusal = prompt.rebindRefusal, run.state.phase != .failed {
-            run.stdin.fileHandleForWriting.write(Data("n\n".utf8))
+            // The verdict first, then the answer: a CLI that already gave
+            // up on its prompt makes the write fail, and the verdict must
+            // not depend on it.
             run.state.phase = .failed
             run.state.message = refusal
+            _ = Self.write("n\n", to: run)
         }
         runs[profile] = run
         publish()
@@ -211,11 +240,65 @@ actor AwsLoginRunner {
         run.process.terminate()
     }
 
+    /// Records a profile as signed in without a run of its own — its need
+    /// was met by another profile's login — so the need clears and the
+    /// sessions on it get their nudge.
+    func markDone(profile: String, via: String) {
+        guard runs[profile] == nil else { return }
+        finished[profile] = AwsLogin.State(profile: profile, flow: .local, phase: .done,
+                                           message: "signed in with \(via)",
+                                           startedAt: Date().timeIntervalSince1970, pid: nil)
+        publish()
+    }
+
+    /// Whether the profile's credentials work right now: `aws sts
+    /// get-caller-identity`, nothing interactive (no browser, no stdin),
+    /// 30 s at most. Off the actor — a broker profile can take a while.
+    nonisolated static func signedIn(profile: String) async -> Bool {
+        guard let aws = ProcessInfo.processInfo.environment["INFINITUS_AWS_CLI"]
+                ?? Subprocess.find(awsCandidates) else { return false }
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: aws)
+        process.arguments = ["sts", "get-caller-identity", "--profile", profile]
+        var env = ProcessInfo.processInfo.environment
+        env["AWS_PAGER"] = ""
+        env["BROWSER"] = "/usr/bin/true"
+        process.environment = env
+        process.standardInput = FileHandle.nullDevice
+        process.standardOutput = FileHandle.nullDevice
+        process.standardError = FileHandle.nullDevice
+        return await withCheckedContinuation { continuation in
+            process.terminationHandler = { continuation.resume(returning: $0.terminationStatus == 0) }
+            do { try process.run() } catch {
+                process.terminationHandler = nil
+                continuation.resume(returning: false)
+                return
+            }
+            DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 30) {
+                if process.isRunning { process.terminate() }
+                // A broker that ignores SIGTERM would hold the continuation
+                // forever; SIGKILL is what actually fires terminationHandler.
+                DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 5) {
+                    if process.isRunning { kill(process.processIdentifier, SIGKILL) }
+                }
+            }
+        }
+    }
+
     /// Drops a finished entry (after the session has moved on).
     func forget(profile: String) {
         finished[profile] = nil
         publish()
     }
 
-    private func publish() { onChange(states()) }
+    private func publish() {
+        onChange(states())
+        if let ledgerURL {
+            let snapshot = AwsLogin.Ledger.snapshot(running: runs.values.map(\.state),
+                                                    finished: Array(finished.values))
+            try? FileManager.default.createDirectory(at: ledgerURL.deletingLastPathComponent(),
+                                                     withIntermediateDirectories: true)
+            try? AwsLogin.Ledger.encode(snapshot).write(to: ledgerURL, options: .atomic)
+        }
+    }
 }

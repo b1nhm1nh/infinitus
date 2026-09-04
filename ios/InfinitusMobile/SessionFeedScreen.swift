@@ -45,6 +45,23 @@ struct SessionFeedScreen: View {
     @State private var attachmentError: String?
     @State private var awsLoginItem: AwsLogin.Item?
     @State private var lastRowVisible = true
+    @Environment(\.scenePhase) private var scenePhase
+    @StateObject private var screenshots = ScreenshotWatch()
+    /// "compact" (avatar + three lines) or "strip" (title row + a gauge
+    /// strip) — both built for the user to compare (2026-09-04 "this UI
+    /// needs big overhaul"; "also build option 2 for me to see").
+    @AppStorage("chat_header") private var headerStyle = "compact"
+    /// Peer messages opened to their full text (keyed by time + text).
+    @State private var expandedPeers: Set<String> = []
+    @Environment(\.dismiss) private var dismiss
+    /// Bumped on foreground return: `.task(id:)` drops the long-poll that
+    /// was in flight when the app left — its connection may be dead until
+    /// a 35 s timeout — and starts a fresh one.
+    @State private var pollGeneration = 0
+    /// Messages the Mac accepted that the transcript hasn't shown yet
+    /// (user 2026-09-04 "sending … not responsive": the draft cleared and
+    /// nothing else moved until the session read its inbox).
+    @State private var pendingSent: [PendingSent] = []
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     // MARK: pending prompt (critique 2026-09-04 P0: a permission was one
     // unguarded tap on a prominent button that auto-scroll could move)
@@ -57,6 +74,14 @@ struct SessionFeedScreen: View {
     /// The draft as it stood when the mic went on; the transcript
     /// appends to it.
     @State private var draftBeforeDictation = ""
+    /// A non-English dictation as spoken, kept beside its English
+    /// draft so the chip can show it and the send can fall back to it.
+    @State private var dictatedOriginal: String?
+    @State private var dictatedLocale: Locale?
+    @State private var translateRequest: DictationTranslateRequest?
+    @State private var translating = false
+    @State private var dictationNote: String?
+    @State private var showOriginal = false
 
     /// A picked file, already processed into the exact bytes/mime that
     /// will ride in `SessionInput.Attachment`.
@@ -66,6 +91,15 @@ struct SessionFeedScreen: View {
         let mime: String
         let data: Data
         let thumbnail: UIImage?
+    }
+
+    /// A sent message as the phone showed it, until the transcript does.
+    private struct PendingSent: Identifiable {
+        let id = UUID()
+        let text: String
+        let images: [UIImage]
+        let files: [String]
+        let at = Date()
     }
 
     /// The session hit an expired AWS session; the login runs on the
@@ -126,6 +160,12 @@ struct SessionFeedScreen: View {
                     .onAppear { if index == (feed?.items.count ?? 0) - 1 { lastRowVisible = true } }
                     .onDisappear { if index == (feed?.items.count ?? 0) - 1 { lastRowVisible = false } }
                 }
+                ForEach(pendingSent) { pending in
+                    pendingRow(pending)
+                        .id(pending.id)
+                        .listRowSeparator(.hidden)
+                        .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
+                }
             }
             .listStyle(.plain)
             .overlay {
@@ -141,9 +181,16 @@ struct SessionFeedScreen: View {
             .scrollDismissesKeyboard(.interactively)
             .simultaneousGesture(TapGesture().onEnded { composerFocused = false })
             .onChange(of: feed?.items.count) { _, _ in
+                reconcilePending()
+                if let pending = pendingSent.last { scrollToNewest(proxy, pending.id); return }
                 guard let last = feed?.items.indices.last else { return }
                 scrollToNewest(proxy, last)
             }
+            .onChange(of: pendingSent.count) { _, _ in
+                guard let last = pendingSent.last else { return }
+                scrollToNewest(proxy, last.id)
+            }
+            .onChange(of: feed?.stamp) { _, _ in reconcilePending() }
             .overlay(alignment: .bottomTrailing) {
                 if !lastRowVisible, (feed?.items.count ?? 0) > 1 {
                     Button {
@@ -169,8 +216,19 @@ struct SessionFeedScreen: View {
         // to the newest message, so a card at the top was out of reach
         // (user 2026-09-03 "have to scroll to top").
         .safeAreaInset(edge: .top, spacing: 0) {
+            let theme = model.rowTheme
             VStack(spacing: 0) {
-                accountBar
+                VStack(spacing: 0) {
+                    if headerStyle == "strip" {
+                        titleRow
+                        statStrip
+                    } else {
+                        compactHeader
+                    }
+                }
+                .background(theme.plain ? Color.clear : ThemeColor.flash(theme).opacity(0.16))
+                .background(.bar)
+                .overlay(alignment: .bottom) { Divider() }
                 offlineBanner
                 awsLoginBar
             }
@@ -178,79 +236,343 @@ struct SessionFeedScreen: View {
         .safeAreaInset(edge: .bottom, spacing: 0) {
             VStack(spacing: 0) {
                 if let item = pendingPrompt { promptCard(item) }
+                if !screenshots.found.isEmpty { screenshotOffer }
                 composer
+            }
+        }
+        .onAppear { screenshots.check() }
+        // A screenshot taken while the app is in front: the first one
+        // asks for Photos access (that's the discovery moment), later
+        // ones show up in the library a beat after the shutter.
+        .onReceive(NotificationCenter.default.publisher(for: UIApplication.userDidTakeScreenshotNotification)) { _ in
+            guard ScreenshotWatch.enabled else { return }
+            Task {
+                if !screenshots.hasAccess { await screenshots.requestAccess() }
+                try? await Task.sleep(for: .seconds(1.5))
+                screenshots.check()
             }
         }
         // The composer owns the bottom edge; the floating tab bar would
         // sit under it.
         .toolbar(.hidden, for: .tabBar)
-        .navigationTitle(navigationTitleText)
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .principal) {
-                VStack(spacing: 1) {
-                    Text(navigationTitleText).font(.headline).lineLimit(1)
-                    Text(SessionWords.status(feed?.status ?? session.status))
-                        .font(.caption).foregroundStyle(.secondary)
-                }
-            }
-            // An explicit route into the detail screen (user 2026-09-03
-            // "a more detail screen when tap on its header title"; the
-            // header itself was the only, unlabeled, way in).
-            ToolbarItem(placement: .topBarTrailing) {
-                NavigationLink(value: SessionDetailRoute(hostSession: hostSession)) {
-                    Image(systemName: "info.circle")
-                }
-                .accessibilityLabel("Session details")
-            }
-        }
+        // A header of its own — Messenger/Slack style (user 2026-09-04:
+        // "native header is too limited for future builds"): back, the
+        // session's name and state as the route into its details, the
+        // account's fleet row beneath, all on the theme's tint.
+        .toolbar(.hidden, for: .navigationBar)
+        .navigationBarBackButtonHidden(true)
+        .background(InteractivePopGesture())
         .sensoryFeedback(.success, trigger: deliveredTick)
         .sensoryFeedback(.warning, trigger: deniedTick)
         .refreshable { await load() }
-        .task {
+        .task(id: pollGeneration) {
             // Long-poll loop: each request returns when the transcript
             // changes (or after the Mac's wait cap), so a reply lands
-            // within a second of being written. Against a Mac that
-            // ignores `since`/`wait` the floor below keeps it a 2 s poll.
+            // within a second of being written. A long-poll that came
+            // back with news re-arms almost at once — the Mac paced it,
+            // and a reply streams in over many writes (user 2026-09-04
+            // "receiving … not responsive": each landed up to 2 s late).
+            // The floor is for the plain fetch (a Mac that ignores
+            // `since`/`wait`) and for failures.
             while !Task.isCancelled {
                 let started = Date()
-                let ok = await load(longPoll: feed?.stamp != nil)
+                let before = feed?.stamp
+                let ok = await load(longPoll: before != nil)
+                if Task.isCancelled { return }
+                let changed = before != nil && feed?.stamp != before
+                let floor: TimeInterval = !ok ? 3 : changed ? 0.5 : 2
                 let elapsed = Date().timeIntervalSince(started)
-                let floor: TimeInterval = ok ? 2 : 3
                 if elapsed < floor {
                     try? await Task.sleep(nanoseconds: UInt64((floor - elapsed) * 1_000_000_000))
                 }
             }
         }
-    }
-
-    private var navigationTitleText: String {
-        let name = feed?.name ?? repoName(session.cwd)
-        if model.hosts.count > 1 {
-            let emoji = host.emoji.isEmpty ? "🖥️" : host.emoji
-            return "\(emoji) \(name)"
-        }
-        return name
-    }
-
-    private func scrollToNewest(_ proxy: ScrollViewProxy, _ index: Int) {
-        if reduceMotion { proxy.scrollTo(index, anchor: .bottom) }
-        else { withAnimation { proxy.scrollTo(index, anchor: .bottom) } }
-    }
-
-    /// The account serving this session, one slim line under the title.
-    @ViewBuilder private var accountBar: some View {
-        if let line = AccountSummaryFormat.headerLine(model.accountSummary(forSessionPid: session.pid)) {
-            HStack(spacing: 6) {
-                Circle().fill(ThemeColor.resolve(line.colorName)).frame(width: 7, height: 7)
-                Text(line.text).font(.caption).foregroundStyle(.secondary)
-                    .lineLimit(1).monospacedDigit()
-                Spacer(minLength: 0)
+        // Back in the foreground: the long-poll in flight when the app
+        // left may sit on a dead connection until its timeout; start a
+        // fresh one (the stale one's answer is dropped in `load`).
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active {
+                pollGeneration += 1
+                // Back from another app: anything shot meanwhile.
+                screenshots.check()
             }
-            .padding(.horizontal, 16).padding(.vertical, 5)
-            .frame(maxWidth: .infinity)
-            .background(.bar)
-            .overlay(alignment: .bottom) { Divider() }
+        }
+    }
+
+    private func scrollToNewest(_ proxy: ScrollViewProxy, _ id: some Hashable) {
+        if reduceMotion { proxy.scrollTo(id, anchor: .bottom) }
+        else { withAnimation { proxy.scrollTo(id, anchor: .bottom) } }
+    }
+
+    /// The echo of a sent message: the user bubble, lighter, with a line
+    /// saying where it stands. Honest about it — "sent" is the Mac's
+    /// word; the session shows it here once it has read its inbox.
+    private func pendingRow(_ pending: PendingSent) -> some View {
+        HStack {
+            Spacer(minLength: 40)
+            VStack(alignment: .trailing, spacing: 6) {
+                if !pending.text.isEmpty { Text(pending.text) }
+                if !pending.images.isEmpty {
+                    HStack(spacing: 6) {
+                        ForEach(Array(pending.images.enumerated()), id: \.offset) { _, image in
+                            Image(uiImage: image).resizable().scaledToFill()
+                                .frame(width: 120, height: 120)
+                                .clipShape(RoundedRectangle(cornerRadius: 10))
+                        }
+                    }
+                }
+                ForEach(pending.files, id: \.self) { name in
+                    Label(name, systemImage: "paperclip")
+                        .font(.caption).foregroundStyle(.secondary)
+                        .lineLimit(1).truncationMode(.middle)
+                }
+                Text("Sent · shows here once the session reads it")
+                    .font(.caption2).foregroundStyle(.secondary)
+            }
+            .padding(10)
+            .background(Color.accentColor.opacity(0.10), in: RoundedRectangle(cornerRadius: 14))
+        }
+        .accessibilityElement(children: .combine)
+    }
+
+    /// Drops an echo once the transcript carries the message: a user
+    /// entry no older than the send (a minute of clock slack) whose text
+    /// contains it — or any such entry for an attachments-only send,
+    /// whose text the Mac wrote. A never-read one goes after ten minutes.
+    private func reconcilePending() {
+        guard !pendingSent.isEmpty else { return }
+        let users = (feed?.items ?? []).filter { $0.kind == .user }
+        let now = Date()
+        pendingSent.removeAll { pending in
+            if now.timeIntervalSince(pending.at) > 600 { return true }
+            return users.contains { item in
+                guard let at = item.at, at >= pending.at.addingTimeInterval(-60) else { return false }
+                return pending.text.isEmpty || item.text.contains(pending.text)
+            }
+        }
+    }
+
+    /// Back · name + state (the tap into the details) · room on the right
+    /// for what comes next.
+    private var titleRow: some View {
+        let status = feed?.status ?? session.status
+        return HStack(spacing: 4) {
+            backButton
+            NavigationLink(value: SessionDetailRoute(session: session)) {
+                HStack(spacing: 6) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(feed?.name ?? repoName(session.cwd))
+                            .font(.headline).lineLimit(1)
+                        HStack(spacing: 5) {
+                            Circle().fill(SessionWords.color(status)).frame(width: 7, height: 7)
+                            Text(SessionWords.status(status, theme: model.rowTheme))
+                            if headerStyle == "strip", let pair = headerAccount {
+                                Text("·").foregroundStyle(.tertiary)
+                                Text(Self.accountName(pair.account)).lineLimit(1)
+                                if let plan = pair.account.plan {
+                                    Text(model.rowTheme.plain ? plan : model.rowTheme.planLabel(plan, compact: true))
+                                        .padding(.horizontal, 5).padding(.vertical, 1)
+                                        .background(Color.primary.opacity(0.08), in: Capsule())
+                                }
+                            }
+                        }
+                        .font(.caption).foregroundStyle(.secondary)
+                    }
+                    Image(systemName: "chevron.right")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(.tertiary)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Session details")
+            Spacer(minLength: 0)
+            screenshotButton
+        }
+        .padding(.leading, 4).padding(.trailing, 8).padding(.top, 2)
+    }
+
+    private var backButton: some View {
+        Button { dismiss() } label: {
+            Image(systemName: "chevron.left")
+                .font(.title3.weight(.semibold))
+                .frame(width: 40, height: 40)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Back")
+    }
+
+    /// One tap sends what's on screen (user 2026-09-04: "a lot of
+    /// screenshots that come from this app … send it right away").
+    private var screenshotButton: some View {
+        Button { sendAppScreenshot() } label: {
+            Image(systemName: "camera.viewfinder")
+                .font(.title3)
+                .frame(width: 40, height: 40)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(sendingMessage)
+        .accessibilityLabel("Send a screenshot of this screen")
+    }
+
+    /// The account behind this session: the summary's account and the
+    /// fleet that renders it, when there is one.
+    private var headerAccount: (account: Account, fleet: MirrorFleetModel)? {
+        guard let summary = model.accountSummary(forSessionPid: session.pid),
+              let account = summary.account,
+              let fleet = model.fleets.first(where: { $0.engineID == summary.engineID }) else { return nil }
+        return (account, fleet)
+    }
+
+    private static func accountName(_ account: Account) -> String {
+        account.alias ?? String(account.email.prefix(while: { $0 != "@" }))
+    }
+
+    /// Every window on the account, in row order: session, weekly, then
+    /// the per-model ones — glyph, color and value, ready for a line.
+    private struct WindowChip: Identifiable {
+        let id: String
+        let glyph: String
+        let color: Color
+        let window: UsageWindow
+        let session: Bool
+    }
+
+    private func windowChips(_ account: Account, theme: RowTheme) -> [WindowChip] {
+        var out: [WindowChip] = []
+        if let w = account.usage?.fiveHour {
+            out.append(.init(id: "5h", glyph: theme.plain ? theme.sessionLabel : PopupGlyph.text(theme.sessionLabel),
+                             color: ThemeColor.resolve(theme.sessionColor), window: w, session: true))
+        }
+        if let w = account.usage?.sevenDay {
+            out.append(.init(id: "7d", glyph: theme.plain ? theme.weeklyLabel : PopupGlyph.text(theme.weeklyLabel),
+                             color: ThemeColor.resolve(theme.weeklyColor), window: w, session: false))
+        }
+        for w in account.usage?.scoped ?? [] {
+            out.append(.init(id: "m:" + (w.name ?? "?"),
+                             glyph: theme.plain ? (w.name ?? "?") : PopupGlyph.text(theme.scopedPrefix) + theme.modelName(w.name),
+                             color: ThemeColor.resolve(theme.scopedColor), window: w, session: false))
+        }
+        return out
+    }
+
+    // MARK: header, option 1 — Messenger-style, one tier
+
+    /// Back · avatar (the theme's glyph on its tint) · name, then the
+    /// state and account on one caption line, then every window as
+    /// glyph + value on a third · camera. The whole middle is the tap
+    /// into the details, where the full Fleet row lives.
+    private var compactHeader: some View {
+        let theme = model.rowTheme
+        let status = feed?.status ?? session.status
+        let pair = headerAccount
+        return HStack(spacing: 8) {
+            backButton
+            NavigationLink(value: SessionDetailRoute(session: session)) {
+                HStack(spacing: 10) {
+                    avatar(theme: theme, status: status)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(feed?.name ?? repoName(session.cwd))
+                            .font(.headline).lineLimit(1)
+                        HStack(spacing: 4) {
+                            Text(SessionWords.status(status, theme: theme))
+                                .foregroundStyle(SessionWords.color(status))
+                            if let pair {
+                                Text("·").foregroundStyle(.tertiary)
+                                Text(Self.accountName(pair.account)).lineLimit(1)
+                                if let plan = pair.account.plan {
+                                    Text(theme.plain ? plan : theme.planLabel(plan, compact: true))
+                                        .foregroundStyle(.secondary)
+                                        .padding(.horizontal, 5).padding(.vertical, 1)
+                                        .background(Color.primary.opacity(0.08), in: Capsule())
+                                }
+                            }
+                        }
+                        .font(.caption).foregroundStyle(.secondary)
+                        if let pair {
+                            HStack(spacing: 10) {
+                                ForEach(windowChips(pair.account, theme: theme)) { chip in
+                                    HStack(spacing: 2) {
+                                        Text(chip.glyph).foregroundStyle(chip.color)
+                                        Text("\(Int(GaugeMath.remaining(usedPct: chip.window.pct)))%")
+                                            .monospacedDigit()
+                                            .foregroundStyle(chip.window.pct >= 100 ? .red : .primary)
+                                    }
+                                }
+                            }
+                            .font(.caption2.weight(.semibold))
+                            .lineLimit(1)
+                        }
+                    }
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Session details")
+            Spacer(minLength: 0)
+            screenshotButton
+        }
+        .padding(.leading, 4).padding(.trailing, 8).padding(.vertical, 6)
+    }
+
+    /// The theme's glyph on its tint; the Off theme gets the session's
+    /// initial on its state color.
+    private func avatar(theme: RowTheme, status: String) -> some View {
+        let glyph = theme.plain ? "" : PopupGlyph.text(theme.activeIcon.isEmpty ? theme.sessionLabel : theme.activeIcon)
+        let name = feed?.name ?? repoName(session.cwd)
+        return ZStack {
+            Circle().fill(theme.plain ? SessionWords.color(status).opacity(0.22)
+                                      : ThemeColor.flash(theme).opacity(0.28))
+            if glyph.isEmpty {
+                Text(String(name.prefix(1)).uppercased())
+                    .font(.headline).foregroundStyle(SessionWords.color(status))
+            } else {
+                Text(glyph).font(.title3)
+            }
+        }
+        .frame(width: 38, height: 38)
+        .overlay(alignment: .bottomTrailing) {
+            Circle().fill(SessionWords.color(status)).frame(width: 10, height: 10)
+                .overlay(Circle().stroke(Color(.systemBackground), lineWidth: 2))
+                .offset(x: 1, y: 1)
+        }
+    }
+
+    // MARK: header, option 2 — title row + stat strip
+
+    /// Every window as a mini gauge on one row; no times, no resets —
+    /// those live in the details. The account itself sits on the title
+    /// row's state line.
+    @ViewBuilder private var statStrip: some View {
+        if let pair = headerAccount {
+            let theme = model.rowTheme
+            // Sideways scroll rather than a wrap when a fourth window
+            // shows up; three fit.
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 14) {
+                    ForEach(windowChips(pair.account, theme: theme)) { chip in
+                        HStack(spacing: 3) {
+                            Text(chip.glyph).font(.caption2.weight(.bold)).foregroundStyle(chip.color)
+                            if theme.plain {
+                                Text("\(Int(GaugeMath.remaining(usedPct: chip.window.pct)))%")
+                                    .font(.caption2.weight(.semibold)).monospacedDigit()
+                            } else {
+                                GaugeBar(remaining: GaugeMath.remaining(usedPct: chip.window.pct),
+                                         color: chip.color,
+                                         paceRemaining: chip.window.expectedPct.map { 100 - $0 },
+                                         dividers: chip.session ? (1..<5).map { Double($0) * 20 }
+                                                                : (1..<7).map { Double($0) * 100 / 7 })
+                            }
+                        }
+                        .fixedSize()
+                    }
+                }
+                .padding(.horizontal, 16)
+            }
+            .environment(\.gaugeScale, 0.8)
+            .padding(.top, 2).padding(.bottom, 8)
         }
     }
 
@@ -363,9 +685,14 @@ struct SessionFeedScreen: View {
         do {
             if longPoll, let since = feed?.stamp {
                 do {
-                    feed = try await NetworkFleetMirror.shared.sessionTail(
+                    let fresh = try await NetworkFleetMirror.shared.sessionTail(
                         host: host, pid: Int32(session.pid), limit: 30, since: since,
                         wait: MirrorTransport.tailWaitMax)
+                    // A poll loop that was replaced (foreground return)
+                    // must not overwrite the new loop's feed with its
+                    // late answer.
+                    if Task.isCancelled { return false }
+                    feed = fresh
                     errorText = nil
                     return true
                 } catch {
@@ -373,10 +700,13 @@ struct SessionFeedScreen: View {
                     // below walks every route again.
                 }
             }
-            feed = try await NetworkFleetMirror.shared.sessionTail(host: host, pid: Int32(session.pid), limit: 30)
+            let fresh = try await NetworkFleetMirror.shared.sessionTail(host: host, pid: Int32(session.pid), limit: 30)
+            if Task.isCancelled { return false }
+            feed = fresh
             errorText = nil
             return true
         } catch {
+            if Task.isCancelled { return false }
             let hostName = host.label.isEmpty ? "the host" : host.label
             errorText = feed == nil ? "couldn't reach \(hostName): \(error.localizedDescription)"
                 : "offline — showing the last feed"
@@ -400,6 +730,37 @@ struct SessionFeedScreen: View {
             if let dictationError = dictation.error {
                 Text(dictationError).font(.caption).foregroundStyle(.red)
                     .padding(.horizontal)
+            }
+            if translating {
+                HStack(spacing: 6) {
+                    ProgressView().controlSize(.small)
+                    Text("Translating…").font(.caption).foregroundStyle(.secondary)
+                }
+                .padding(.horizontal)
+            } else if let original = dictatedOriginal, let locale = dictatedLocale {
+                // The dictation as spoken: peek, or put it back.
+                HStack(spacing: 8) {
+                    Button {
+                        showOriginal.toggle()
+                    } label: {
+                        Text((locale.language.languageCode?.identifier ?? "?").uppercased())
+                            .font(.caption2.weight(.bold))
+                            .padding(.horizontal, 6).padding(.vertical, 2)
+                            .background(Color.accentColor.opacity(0.18), in: Capsule())
+                    }
+                    .accessibilityLabel("Show the dictation as spoken")
+                    if showOriginal {
+                        Text(original).font(.caption).foregroundStyle(.secondary).lineLimit(3)
+                        Button("Use it") { draft = original; dictatedOriginal = nil; dictationNote = "Sending as spoken, with a note asking for an English reply." }
+                            .font(.caption)
+                    } else if let note = dictationNote {
+                        Text(note).font(.caption).foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                }
+                .padding(.horizontal)
+            } else if let note = dictationNote {
+                Text(note).font(.caption).foregroundStyle(.secondary).padding(.horizontal)
             }
             if !attachments.isEmpty {
                 ScrollView(.horizontal, showsIndicators: false) {
@@ -463,7 +824,12 @@ struct SessionFeedScreen: View {
                     // composer dismisses it.
                     if Dictation.isAvailable {
                         Button {
-                            if !dictation.listening { draftBeforeDictation = draft }
+                            if !dictation.listening {
+                                draftBeforeDictation = draft
+                                dictatedOriginal = nil
+                                dictationNote = nil
+                                dictation.hints = dictationHints()
+                            }
                             dictation.toggle()
                         } label: {
                             Image(systemName: dictation.listening ? "stop.circle.fill" : "mic.circle")
@@ -472,6 +838,9 @@ struct SessionFeedScreen: View {
                         }
                         .disabled(sendingMessage)
                         .accessibilityLabel(dictation.listening ? "Stop dictating" : "Dictate")
+                        // Long-press: the language, without a trip to Settings
+                        // (user 2026-09-04 "can it accept Vietnamese?").
+                        .contextMenu { languageMenu }
                     }
                     Button(action: sendMessage) {
                         if sendingMessage {
@@ -495,6 +864,24 @@ struct SessionFeedScreen: View {
             guard !text.isEmpty else { return }
             let base = draftBeforeDictation
             draft = base.isEmpty || base.hasSuffix(" ") || base.hasSuffix("\n") ? base + text : base + " " + text
+        }
+        .onChange(of: dictation.listening) { was, now in
+            guard was, !now else { return }
+            dictationEnded()
+        }
+        .dictationTranslate(translateRequest) { result in
+            guard translating else { return }   // timed out or sent already
+            translating = false
+            translateRequest = nil
+            switch result {
+            case .success(let english):
+                let base = draftBeforeDictation
+                draft = base.isEmpty || base.hasSuffix(" ") || base.hasSuffix("\n") ? base + english : base + " " + english
+                dictationNote = nil
+            case .failure:
+                // No language pack (or iOS 17): send as spoken, and say so.
+                dictationNote = "Couldn't translate on the phone — sending as spoken, with a note asking for an English reply."
+            }
         }
         .onDisappear { dictation.stop() }
         .onChange(of: photoPickerItems) { _, items in
@@ -597,27 +984,7 @@ struct SessionFeedScreen: View {
                                              data: jpeg, thumbnail: UIImage(data: jpeg)))
     }
 
-    private static func downscaledJPEG(_ image: UIImage, maxDimension: CGFloat = 2048,
-                                       quality: CGFloat = 0.85) -> Data? {
-        let longest = max(image.size.width, image.size.height)
-        let scale = min(1, maxDimension / longest)
-        let targetSize = CGSize(width: image.size.width * scale, height: image.size.height * scale)
-        // Points, not pixels: the renderer's default format renders at
-        // the screen's 3× scale, which sent a "2048 px" photo out at
-        // 6144×4608 (the first photo through, 2026-09-03).
-        let format = UIGraphicsImageRendererFormat()
-        format.scale = 1
-        let resized = UIGraphicsImageRenderer(size: targetSize, format: format).image { _ in
-            image.draw(in: CGRect(origin: .zero, size: targetSize))
-        }
-        // A busy 2048 px frame can still pass the Mac's 5 MiB cap at 0.85;
-        // step the quality down before giving up on it.
-        for q in [quality, 0.7, 0.55, 0.4] {
-            if let data = resized.jpegData(compressionQuality: q),
-               data.count <= SessionInput.maxAttachmentBytes { return data }
-        }
-        return resized.jpegData(compressionQuality: 0.4)
-    }
+    private static func downscaledJPEG(_ image: UIImage) -> Data? { ScreenshotWatch.jpeg(image) }
 
     /// PDFs/text ride as-is (≤ 5 MiB, same cap the Mac enforces) — no
     /// re-encoding, unlike photos.
@@ -646,15 +1013,110 @@ struct SessionFeedScreen: View {
         }
     }
 
+    // MARK: screenshots (user 2026-09-04: "send it right away")
+
+    /// Screenshots taken since the phone last looked, offered above the
+    /// composer: send them all in one tap, or wave them off.
+    private var screenshotOffer: some View {
+        let shots = screenshots.found
+        return HStack(spacing: 10) {
+            if let thumb = shots.last?.thumbnail {
+                Image(uiImage: thumb)
+                    .resizable().scaledToFill()
+                    .frame(width: 36, height: 36)
+                    .clipShape(RoundedRectangle(cornerRadius: 6))
+            }
+            VStack(alignment: .leading, spacing: 2) {
+                Text(shots.count == 1 ? "New screenshot" : "\(shots.count) new screenshots")
+                    .font(.subheadline.weight(.semibold))
+                Text(shots.count > SessionInput.maxAttachments
+                     ? "The newest \(SessionInput.maxAttachments) go" : "Send to this session?")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 0)
+            Button("Send") { sendFoundScreenshots() }
+                .buttonStyle(.borderedProminent)
+                .disabled(sendingMessage)
+            Button { screenshots.dismiss() } label: {
+                Image(systemName: "xmark").font(.caption.weight(.semibold))
+                    .frame(width: 30, height: 30).contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Not now")
+        }
+        .padding(.horizontal, 16).padding(.vertical, 8)
+        .background(.bar)
+        .overlay(alignment: .top) { Divider() }
+    }
+
+    private func sendAppScreenshot() {
+        guard let image = ScreenshotWatch.captureApp() else {
+            messageResult = "couldn't capture the screen"
+            return
+        }
+        sendImages([image], prefix: "app-screenshot",
+                   caption: "Screenshot of the Infinitus app, taken on the phone just now.")
+    }
+
+    private func sendFoundScreenshots() {
+        let images = screenshots.images(limit: SessionInput.maxAttachments)
+        guard !images.isEmpty else {
+            messageResult = "couldn't read those screenshots"
+            screenshots.dismiss()
+            return
+        }
+        // The offer stays up until the Mac has them — a failed send
+        // shouldn't lose the batch.
+        sendImages(images, prefix: "screenshot",
+                   caption: images.count == 1 ? "Screenshot taken on the phone just now."
+                                              : "\(images.count) screenshots taken on the phone just now.",
+                   onDelivered: { screenshots.dismiss() })
+    }
+
+    /// Straight out, bypassing the draft and its attachments — the
+    /// composer's own text stays where it is.
+    private func sendImages(_ images: [UIImage], prefix: String, caption: String,
+                            onDelivered: @escaping () -> Void = {}) {
+        var picked: [SessionInput.Attachment] = []
+        var thumbs: [UIImage] = []
+        for (i, image) in images.enumerated() {
+            guard let jpeg = Self.downscaledJPEG(image), jpeg.count <= SessionInput.maxAttachmentBytes else { continue }
+            picked.append(.init(name: "\(prefix)-\(i + 1).jpg", mime: "image/jpeg", data: jpeg))
+            thumbs.append(UIImage(data: jpeg) ?? image)
+        }
+        guard !picked.isEmpty else { messageResult = "couldn't read that screenshot"; return }
+        sendingMessage = true
+        messageResult = nil
+        Task {
+            await send(.init(kind: .message, text: caption, attachments: picked)) { reply in
+                if reply.outcome == "delivered" {
+                    pendingSent.append(PendingSent(text: caption, images: thumbs, files: []))
+                    deliveredTick += 1
+                    onDelivered()
+                } else {
+                    messageResult = reply.detail.map { "\(Self.describe(reply.outcome)) — \($0)" }
+                        ?? Self.describe(reply.outcome)
+                }
+            } onFailure: {
+                messageResult = "couldn't reach the Mac"
+            } finished: {
+                sendingMessage = false
+            }
+        }
+    }
+
     // MARK: continue (user 2026-09-04: "a button on ios when clicked it
     // continues the session that maybe stopped by various reasons")
 
     /// The Mac composes the nudge (`resume` kind); the button shows once
-    /// the session isn't mid-turn and isn't waiting on a prompt the
-    /// action row already handles.
+    /// the session isn't mid-turn and the turn ended without a final
+    /// answer — a limit stop, or a tool call / sub-agent / unfinished
+    /// text as the last thing in it. After a complete answer (`.result`)
+    /// the composer is the way on (user 2026-09-04: "Continue button
+    /// should only appear conditionally based on agent's last messages").
     static func canContinue(after item: SessionFeedItem, status: String) -> Bool {
         if item.kind == .limit { return true }
-        if item.kind == .permission || item.kind == .question { return false }
+        guard item.kind == .tool || item.kind == .agent || item.kind == .assistant else { return false }
         return status != "busy"
     }
 
@@ -707,8 +1169,21 @@ struct SessionFeedScreen: View {
 
     private func sendMessage() {
         dictation.stop()
-        let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        // Sending mid-translation: the take goes as spoken, with the note.
+        translating = false
+        translateRequest = nil
+        var text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty || !attachments.isEmpty else { return }
+        // A non-English dictation that wasn't translated on the phone
+        // goes out as spoken; under the "note" policy the session is
+        // asked to read it as an English instruction so the chat stays
+        // English (user 2026-09-04: "force it to take it as English").
+        if let locale = dictatedLocale, !Dictation.isEnglish(locale),
+           let original = dictatedOriginal, text.contains(original.trimmingCharacters(in: .whitespacesAndNewlines)),
+           Dictation.policy != "none" {
+            let language = Locale(identifier: "en").localizedString(forLanguageCode: locale.language.languageCode?.identifier ?? "") ?? "another language"
+            text = "(Dictated in \(language) — read it as an English instruction and reply in English.)\n" + text
+        }
         sendingMessage = true
         messageResult = nil
         attachmentError = nil
@@ -719,9 +1194,15 @@ struct SessionFeedScreen: View {
             await send(.init(kind: .message, text: text,
                              attachments: picked.isEmpty ? nil : picked)) { reply in
                 if reply.outcome == "delivered" {
+                    pendingSent.append(PendingSent(
+                        text: text, images: attachments.compactMap(\.thumbnail),
+                        files: attachments.filter { $0.thumbnail == nil }.map(\.name)))
                     draft = ""
                     attachments = []
                     messageResult = Self.describeDelivered(channel: reply.channel, mode: feed?.permissionMode)
+                    dictatedOriginal = nil
+                    dictatedLocale = nil
+                    dictationNote = nil
                 } else {
                     // The host says why ("attachment too large", "unsupported
                     // attachment type"…) — show it, a bare "wasn't valid"
@@ -751,6 +1232,74 @@ struct SessionFeedScreen: View {
             } finished: {
                 actionSending = false
             }
+        }
+    }
+
+    // MARK: dictation language (user 2026-09-04)
+
+    /// The mic stopped: a non-English take is either translated on the
+    /// phone or kept as spoken for the note at send time.
+    private func dictationEnded() {
+        let spoken = dictation.transcript.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !spoken.isEmpty else { return }
+        let locale = dictation.locale
+        dictatedLocale = locale
+        guard !Dictation.isEnglish(locale) else { dictatedOriginal = nil; return }
+        dictatedOriginal = spoken
+        showOriginal = false
+        switch Dictation.policy {
+        case "phone":
+            translating = true
+            let request = DictationTranslateRequest(text: spoken, from: locale)
+            translateRequest = request
+            // Nothing spins forever: past the deadline the take goes out
+            // as spoken with the English-reply note.
+            Task { @MainActor in
+                try? await Task.sleep(for: .seconds(10))
+                guard translating, translateRequest == request else { return }
+                translating = false
+                translateRequest = nil
+                dictationNote = "Translation is taking too long — sending as spoken, with a note asking for an English reply."
+            }
+        case "note":
+            dictationNote = "Sending as spoken, with a note asking for an English reply."
+        default:
+            dictationNote = nil
+        }
+    }
+
+    /// Words the recognizer should keep verbatim: the session's own
+    /// names and the tools it has been using.
+    private func dictationHints() -> [String] {
+        var words: [String] = []
+        if let name = feed?.name { words.append(name) }
+        words.append(repoName(session.cwd))
+        if let branch = model.sessionProgress.byPid[session.pid]?.gitBranch { words.append(branch) }
+        if let modelName = model.sessionProgress.byPid[session.pid]?.model { words.append(modelName) }
+        for item in (feed?.items ?? []).suffix(40) {
+            if let tool = item.toolName { words.append(tool) }
+        }
+        words += ["Claude", "commit", "PR", "merge", "rebase", "Swift", "SwiftUI", "Xcode", "iOS", "macOS"]
+        var seen = Set<String>()
+        return words.filter { !$0.isEmpty && seen.insert($0.lowercased()).inserted }
+    }
+
+    @AppStorage(Dictation.localeKey) private var dictationLocaleID = ""
+
+    private var languageMenu: some View {
+        let current = dictationLocaleID
+        let quick = [Locale.current, Locale(identifier: "en-US"), Locale(identifier: "vi-VN")]
+        return Group {
+            Button { dictationLocaleID = "" } label: {
+                Label("Phone language (\(Dictation.displayName(Locale.current)))",
+                      systemImage: current.isEmpty ? "checkmark" : "")
+            }
+            ForEach(quick.dropFirst(), id: \.identifier) { locale in
+                Button { dictationLocaleID = locale.identifier } label: {
+                    Label(Dictation.displayName(locale), systemImage: current == locale.identifier ? "checkmark" : "")
+                }
+            }
+            Text("More languages and what happens to non-English dictation: Settings → Dictation")
         }
     }
 
@@ -791,8 +1340,43 @@ struct SessionFeedScreen: View {
         }
     }
 
+    /// Another session's message, the way the CLI shows it: one
+    /// "Message from @<sender>" line with a short preview, the full text
+    /// a tap away (user 2026-09-04: "same on ios but indicative").
+    private func peerMessage(_ item: SessionFeedItem, sender: String) -> some View {
+        let key = "\(item.at?.timeIntervalSince1970 ?? 0)|\(item.text.prefix(40))"
+        let open = expandedPeers.contains(key)
+        return VStack(alignment: .leading, spacing: 3) {
+            HStack(spacing: 4) {
+                Image(systemName: "chevron.right")
+                    .font(.caption2.weight(.semibold))
+                    .rotationEffect(.degrees(open ? 90 : 0))
+                Text("Message from @\(sender)")
+                    .font(.caption.weight(.semibold))
+            }
+            .foregroundStyle(.secondary)
+            if open {
+                Text(item.text).font(.callout).textSelection(.enabled)
+            } else {
+                Text(item.text.split(whereSeparator: \.isNewline).first.map(String.init) ?? item.text)
+                    .font(.callout).italic().foregroundStyle(.secondary)
+                    .lineLimit(2)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.vertical, 4)
+        .contentShape(Rectangle())
+        .onTapGesture {
+            withAnimation(.easeInOut(duration: 0.15)) {
+                if open { expandedPeers.remove(key) } else { expandedPeers.insert(key) }
+            }
+        }
+    }
+
     @ViewBuilder private func row(_ item: SessionFeedItem) -> some View {
         switch item.kind {
+        case .user where item.sender != nil:
+            peerMessage(item, sender: item.sender ?? "peer")
         case .user:
             let (text, attached) = Self.splitAttached(item.text)
             let images = item.images ?? []
@@ -801,7 +1385,9 @@ struct SessionFeedScreen: View {
             HStack {
                 Spacer(minLength: 40)
                 VStack(alignment: .trailing, spacing: 6) {
-                    if !text.isEmpty { Text(text) }
+                    // Skill bodies and pasted notes arrive as user turns and are
+                    // markdown too (phone screenshot 2026-09-04: "Md not shown").
+                    if !text.isEmpty { MarkdownText(text: text) }
                     if !images.isEmpty {
                         HStack(spacing: 6) {
                             ForEach(images, id: \.self) { FeedThumbnail(host: host, pid: Int32(session.pid), id: $0) }

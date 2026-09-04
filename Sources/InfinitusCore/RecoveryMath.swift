@@ -43,8 +43,18 @@ public enum RecoveryMath {
     /// strictly more candidates), else the engine's own value. `nil` when
     /// the engine reports `nil` — the "everyone limited" premise comes
     /// from the engine, and this never invents it.
-    public static func corrected(engine: NextRecovery?, accounts: [Account]) -> NextRecovery? {
+    ///
+    /// The engine emits `nextRecovery` whenever it has no OTHER account
+    /// to switch to — it never looks at the active one. With the active
+    /// account healthy and every spare limited, that read "All accounts
+    /// down" over a working fleet (user 2026-09-04). So: no active
+    /// account, or an active account that is itself at a limit, else
+    /// there is nothing to wait for.
+    public static func corrected(engine: NextRecovery?, accounts: [Account],
+                                 activeNumber: Int?) -> NextRecovery? {
         guard engine != nil else { return nil }
+        if let active = accounts.first(where: { $0.number == activeNumber }),
+           !AccountVitals.isDead(active.usage) { return nil }
         return nextRecovery(accounts: accounts) ?? engine
     }
 }

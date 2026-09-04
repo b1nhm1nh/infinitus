@@ -18,6 +18,9 @@ import Foundation
 ///  - "waiting on you" (#17) fires once per session when its status flips
 ///    to `waiting` (a permission prompt or a question) and re-arms when it
 ///    leaves that state.
+///  - "needs AWS login" fires once per session+profile when the need
+///    appears (2026-09-04: the user found it minutes late, by opening the
+///    app) and re-arms when it clears. Same launch seeding as waiting.
 public struct PushTriggers: Sendable {
     public struct Account: Sendable {
         public let number: Int
@@ -39,12 +42,14 @@ public struct PushTriggers: Sendable {
         public var allDead: Bool
         public var lastAlive: Bool
         public var waiting: Bool
+        public var awsLogin: Bool
         public init(sessionsDone: Bool = true, allDead: Bool = true,
-                    lastAlive: Bool = true, waiting: Bool = true) {
+                    lastAlive: Bool = true, waiting: Bool = true, awsLogin: Bool = true) {
             self.sessionsDone = sessionsDone
             self.allDead = allDead
             self.lastAlive = lastAlive
             self.waiting = waiting
+            self.awsLogin = awsLogin
         }
     }
 
@@ -57,6 +62,12 @@ public struct PushTriggers: Sendable {
     private var warnedLastAlive: Int?
     private var announcedWaiting: Set<Int> = []
     private var seededWaiting = false
+    private var announcedAwsLogins: Set<String> = []
+    private var seededAwsLogins = false
+    /// A need that failed this recently is pushed even on the seeding
+    /// look: the relaunch (or the first scan) swallowed it, and the user
+    /// has likely not seen it (#29). Older ones seed silently as before.
+    public static let awsLoginFreshWindow: TimeInterval = 10 * 60
 
     public init() {}
 
@@ -71,8 +82,32 @@ public struct PushTriggers: Sendable {
 
     public mutating func tick(busy: Int?, total: Int?,
                               accounts: [Account], flags: Flags,
-                              sessions: [SessionDetail]? = nil) -> [String] {
+                              sessions: [SessionDetail]? = nil,
+                              awsLogins: [AwsLogin.Item]? = nil,
+                              now: Date = Date()) -> [String] {
         var out: [String] = []
+
+        // nil until the transcripts have been scanned once: seeding on
+        // an empty first look would push every need already on screen.
+        if let awsLogins {
+            let needs = awsLogins.filter { $0.pid != nil }
+            let seeded = seededAwsLogins
+            seededAwsLogins = true
+            // Keyed on the failure time too: the same session on the same
+            // profile failing again later is news again.
+            func key(_ item: AwsLogin.Item) -> String {
+                "\(item.id)|\(Int(item.failedAt?.timeIntervalSince1970 ?? 0))"
+            }
+            for item in needs where !announcedAwsLogins.contains(key(item)) {
+                announcedAwsLogins.insert(key(item))
+                let fresh = item.failedAt.map { now.timeIntervalSince($0) < Self.awsLoginFreshWindow } ?? false
+                if flags.awsLogin, seeded || fresh {
+                    let who = item.sessionLabel ?? "session \(item.pid ?? 0)"
+                    out.append("needs AWS login — \(who) (\(item.profile))")
+                }
+            }
+            announcedAwsLogins = announcedAwsLogins.intersection(needs.map(key))
+        }
 
         if let sessions {
             let waiting = sessions.filter { $0.status == "waiting" }

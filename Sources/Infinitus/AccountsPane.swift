@@ -671,6 +671,12 @@ private struct FleetAccountsSection: View {
             if let err = model.reorderError {
                 Text(err).font(.caption).foregroundStyle(.red)
             }
+            if caps.contains(.rename), !fleet.accounts.isEmpty {
+                Button("Randomize names") { fleet.randomizeNames() }
+                    .help("Every account gets a fresh name drawn from the "
+                          + "\(model.rowTheme.name) theme's pool; the Off theme "
+                          + "and themes without a pool draw from every built-in.")
+            }
             if isCswap {
                 CswapAddFlow(model: model, flow: flow)
             } else if caps.contains(.addOAuth) {

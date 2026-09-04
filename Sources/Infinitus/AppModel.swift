@@ -109,6 +109,24 @@ final class AppModel: ObservableObject {
         let text: String
     }
     @Published var eventLog: [EventEntry] = []
+    let eventStore = EventStore()
+    lazy var statsModel = StatsModel(eventStore: eventStore)
+
+    /// Every event goes through here: the Activity pane's tail and the
+    /// durable log Stats reads. `kind` is StatsEvents' vocabulary
+    /// (switch/death/limit/revival/ignite/resume/nudge/pairing/other).
+    func logEvent(_ kind: String, icon: String, _ text: String) {
+        eventLog.append(EventEntry(icon: icon, text: text))
+        if eventLog.count > 100 { eventLog.removeFirst(eventLog.count - 100) }
+        // The durable log belongs to the real instance alone. A mock,
+        // playground or e2e instance shares the same App Support path
+        // (only the defaults domain and the control socket differ), and
+        // would otherwise write demo switches into the user's own
+        // months of history — the same gate `statsModel.enabled` uses.
+        guard !isPlayground, !mockMode else { return }
+        let event = StatsEvent(at: Date(), kind: kind, icon: icon, text: text)
+        Task.detached(priority: .utility) { [eventStore] in await eventStore.append(event) }
+    }
     /// App-side resume nudges + /rc re-arm (ResumeService.swift).
     let resume = ResumeService()
     /// Sessions popover's mini progress rows (SessionProgressModel.swift).
@@ -126,13 +144,24 @@ final class AppModel: ObservableObject {
     @Published var forecast: UsageForecast?
     /// Sessions whose AWS sign-in lapsed + logins in flight (AwsLogin.swift).
     @Published var awsLogins: [AwsLogin.Item] = []
+    /// True once `awsLogins` reflects a finished transcript scan. The
+    /// push trigger seeds off it, not off the scanner's own flag: the
+    /// list rebuilds one run-loop hop after the scan lands, and a poll
+    /// in that gap would seed on the stale (empty) list and push every
+    /// pre-existing need on the next one.
+    private var awsLoginsScanned = false
     private var awsLoginStates: [AwsLogin.State] = []
     private var awsLoginNeedsWatch: AnyCancellable?
     private var awsLoginQuitWatch: AnyCancellable?
     private(set) lazy var awsLoginRunner: AwsLoginRunner = {
         let runner = AwsLoginRunner(
             onChange: { [weak self] states in Task { @MainActor in self?.awsLoginStates = states; self?.rebuildAwsLogins() } },
-            onDone: { [weak self] state in Task { @MainActor in self?.awsLoginLanded(state) } })
+            onDone: { [weak self] state in Task { @MainActor in self?.awsLoginLanded(state) } },
+            // INFINITUS_AWS_LEDGER: the e2e gate's own file, so its stub
+            // logins never land in (or read) the real app's ledger.
+            ledgerURL: ProcessInfo.processInfo.environment["INFINITUS_AWS_LEDGER"].map { URL(fileURLWithPath: $0) }
+                ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+                    .appendingPathComponent("Infinitus/aws-logins.json"))
         // A CLI left behind at quit keeps its localhost listener alive.
         awsLoginQuitWatch = NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)
             .sink { _ in runner.killAll() }
@@ -401,6 +430,14 @@ final class AppModel: ObservableObject {
         }
     }
     private lazy var revivalPanel = RevivalPanelController()
+    /// Haiku names unnamed sessions (SessionNamer). On by default; one
+    /// short Haiku turn per session on the active account.
+    @Published var sessionAutoNames: Bool {
+        didSet {
+            defaults.set(sessionAutoNames, forKey: "session_auto_names")
+            sessionProgress.namer?.enabled = sessionAutoNames
+        }
+    }
     /// Hold a power assertion while any session is mid-turn (KeepAwake).
     /// Display-only: rows sorted most-headroom-first with the active
     /// account and the next candidate pinned on top (todo 2026-09-01).
@@ -421,6 +458,7 @@ final class AppModel: ObservableObject {
     @Published var pushAllDead: Bool { didSet { defaults.set(pushAllDead, forKey: "push_all_dead") } }
     @Published var pushLastAlive: Bool { didSet { defaults.set(pushLastAlive, forKey: "push_last_alive") } }
     @Published var pushWaiting: Bool { didSet { defaults.set(pushWaiting, forKey: "push_waiting") } }
+    @Published var pushAwsLogin: Bool { didSet { defaults.set(pushAwsLogin, forKey: "push_aws_login") } }
     // Phone companion (#9): serve the mirror snapshot over the LAN when
     // the Sync pane's toggle is on. Off by default — it's an open port.
     @Published var mirrorLANEnabled: Bool {
@@ -580,6 +618,7 @@ final class AppModel: ObservableObject {
         titleIconOnly = defaults.object(forKey: "title_icon_only") as? Bool ?? false
         popoverPinned = defaults.object(forKey: "popover_pinned") as? Bool ?? false
         revivalPanelShown = defaults.object(forKey: "revival_panel") as? Bool ?? true
+        sessionAutoNames = defaults.object(forKey: "session_auto_names") as? Bool ?? true
         popupLayout = defaults.string(forKey: "popup_layout") ?? "wide"
         popupTextSize = defaults.string(forKey: "popup_text_size") ?? "default"
         glassFocused = defaults.object(forKey: "glass_focused") as? Double ?? 0.7
@@ -628,6 +667,7 @@ final class AppModel: ObservableObject {
         pushAllDead = defaults.object(forKey: "push_all_dead") as? Bool ?? true
         pushLastAlive = defaults.object(forKey: "push_last_alive") as? Bool ?? true
         pushWaiting = defaults.object(forKey: "push_waiting") as? Bool ?? true
+        pushAwsLogin = defaults.object(forKey: "push_aws_login") as? Bool ?? true
         if playground {
             // Isolation is the contract: no demo script, no data at all
             // (never fall back to the real engine here).
@@ -690,6 +730,17 @@ final class AppModel: ObservableObject {
                 registry.state(for: fleet).seed(fleet)
             }
         }
+        // A mock/playground instance must never start a real cold
+        // backfill or write real App Support caches under
+        // Infinitus/stats/ (matches the historyRecorder guard above).
+        statsModel.enabled = !isPlayground && !mockMode
+        if !isPlayground, !mockMode {
+            let namer = SessionNamer(appSupport: FileManager.default
+                .urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+                .appendingPathComponent("Infinitus", isDirectory: true))
+            namer.enabled = sessionAutoNames
+            sessionProgress.namer = namer
+        }
     }
 
     /// App-side cache of our own subprocess output (never an engine
@@ -737,6 +788,7 @@ final class AppModel: ObservableObject {
         pushAllDead = defaults.object(forKey: "push_all_dead") as? Bool ?? true
         pushLastAlive = defaults.object(forKey: "push_last_alive") as? Bool ?? true
         pushWaiting = defaults.object(forKey: "push_waiting") as? Bool ?? true
+        pushAwsLogin = defaults.object(forKey: "push_aws_login") as? Bool ?? true
     }
 
     /// Playground reset (user 2026-08-31): wipe the sandbox suite so
@@ -840,15 +892,14 @@ final class AppModel: ObservableObject {
         let engine = primary.engine, provider = primary.provider
         let name = accounts.first { $0.number == number }
             .map { $0.alias ?? String($0.email.prefix(while: { $0 != "@" })) } ?? "#\(number)"
-        eventLog.append(EventEntry(icon: "flag.checkered", text: "igniting \(name)'s 5h window"))
+        logEvent("ignite", icon: "flag.checkered", "igniting \(name)'s 5h window")
         Task { [weak self] in
             do {
                 try await engine.ignite(fleet: provider, number: number)
-                self?.eventLog.append(EventEntry(icon: "flag.checkered", text: "ignited \(name) — window started"))
+                self?.logEvent("ignite", icon: "flag.checkered", "ignited \(name) — window started")
             } catch {
-                self?.eventLog.append(EventEntry(icon: "exclamationmark.triangle", text: "ignite \(name) failed: \(error.localizedDescription)"))
+                self?.logEvent("other", icon: "exclamationmark.triangle", "ignite \(name) failed: \(error.localizedDescription)")
             }
-            if let self, self.eventLog.count > 100 { self.eventLog.removeFirst(self.eventLog.count - 100) }
             self?.igniting = nil
             await self?.refreshSnapshot()
         }
@@ -860,20 +911,19 @@ final class AppModel: ObservableObject {
     func startFeeds() {
         detectOnboarding()
         seedRecentSamples()
+        // Same gate as logEvent: a mock instance must not rewrite the
+        // real events log either.
+        if !isPlayground, !mockMode {
+            Task.detached(priority: .utility) { [eventStore] in await eventStore.prune() }
+        }
         resume.log = { [weak self] icon, text in
-            guard let self else { return }
-            self.eventLog.append(EventEntry(icon: icon, text: text))
-            if self.eventLog.count > 100 { self.eventLog.removeFirst(self.eventLog.count - 100) }
+            self?.logEvent("nudge", icon: icon, text)
         }
         mirrorServer.log = { [weak self] icon, text in
-            guard let self else { return }
-            self.eventLog.append(EventEntry(icon: icon, text: text))
-            if self.eventLog.count > 100 { self.eventLog.removeFirst(self.eventLog.count - 100) }
+            self?.logEvent("other", icon: icon, text)
         }
         quickTunnel.log = { [weak self] icon, text in
-            guard let self else { return }
-            self.eventLog.append(EventEntry(icon: icon, text: text))
-            if self.eventLog.count > 100 { self.eventLog.removeFirst(self.eventLog.count - 100) }
+            self?.logEvent("other", icon: icon, text)
         }
         namedTunnel.log = quickTunnel.log
         liveActivityPusher.log = quickTunnel.log
@@ -1030,14 +1080,20 @@ final class AppModel: ObservableObject {
                 .map { URL(fileURLWithPath: $0.cwd).lastPathComponent }
             items.append(AwsLogin.Item(profile: profile,
                                        flow: AwsLogin.flow(profile: profile, configText: configText),
-                                       pid: pid, sessionLabel: label, state: byProfile[profile]))
+                                       pid: pid, sessionLabel: label,
+                                       state: AwsLogin.current(byProfile[profile], needFailedAt: progress.awsLoginFailedAt),
+                                       failedAt: progress.awsLoginFailedAt))
         }
-        // Logins started by hand (no session asked) still show while they run.
-        for state in awsLoginStates where !needed.contains(state.profile) && state.phase != .done {
+        // Logins started by hand (no session asked) still show while they
+        // run or after they fail; one a session asked for belongs with
+        // that session's need and goes when the need does.
+        for state in awsLoginStates where !needed.contains(state.profile) && state.phase != .done
+            && state.pid == nil {
             items.append(AwsLogin.Item(profile: state.profile, flow: state.flow, pid: state.pid,
                                        sessionLabel: nil, state: state))
         }
         if items != awsLogins { awsLogins = items }
+        if sessionProgress.scanned { awsLoginsScanned = true }
     }
 
     /// `remote` nil = no flow asked for: this only REPORTS the profile's
@@ -1051,7 +1107,10 @@ final class AppModel: ObservableObject {
         guard !isPlayground, !mockMode || ProcessInfo.processInfo.environment["INFINITUS_AWS_CLI"] != nil
         else { return AwsLogin.Reply(ok: false, error: "not in a demo instance") }
         if !local, remote == nil {
-            let state = await awsLoginRunner.state(profile: profile)
+            // Against the profile's need, when a session has one: a login
+            // finished before that need failed isn't this need's login.
+            let need = awsLogins.first { $0.profile == profile && $0.pid != nil }
+            let state = AwsLogin.current(await awsLoginRunner.state(profile: profile), needFailedAt: need?.failedAt)
             return AwsLogin.Reply(ok: state != nil, state: state, error: state == nil ? "no login in flight for \(profile)" : nil)
         }
         let configText = (try? String(contentsOf: AwsLogin.defaultConfigURL(), encoding: .utf8)) ?? ""
@@ -1077,9 +1136,33 @@ final class AppModel: ObservableObject {
     /// the phone's own message path, so it works wherever replies do.
     private func awsLoginLanded(_ state: AwsLogin.State) {
         logMirrorInput("🔐", "aws login for \(state.profile) signed in")
-        guard let pid = state.pid ?? sessionProgress.byPid.first(where: { $0.value.awsLoginProfile == state.profile })?.key
-        else { return }
-        let text = AwsLogin.continueMessage(profile: state.profile, fromPhone: state.flow != .local)
+        let fromPhone = state.flow != .local
+        // Every session that needed this profile, not only the one the
+        // login was started for (two sessions, one sign-in, 2026-09-04).
+        var pids = Set(sessionProgress.byPid.filter { $0.value.awsLoginProfile == state.profile }.map(\.key))
+        if let pid = state.pid { pids.insert(pid) }
+        for pid in pids { nudgeAfterAwsLogin(pid: pid, profile: state.profile, fromPhone: fromPhone) }
+        // A login often signs other profiles in underneath — a broker
+        // profile over its anchor `aws login` profile, an SSO session
+        // several profiles share — and the config can't say which. Ask
+        // the CLI: whichever other outstanding profile works now is met.
+        let others = Set(sessionProgress.byPid.values.compactMap(\.awsLoginProfile)).subtracting([state.profile])
+        for profile in others {
+            Task { [weak self] in
+                guard await AwsLoginRunner.signedIn(profile: profile), let self else { return }
+                await self.awsLoginRunner.markDone(profile: profile, via: state.profile)
+                self.logMirrorInput("🔐", "aws login for \(state.profile) also signed \(profile) in")
+                for (pid, progress) in self.sessionProgress.byPid where progress.awsLoginProfile == profile {
+                    self.nudgeAfterAwsLogin(pid: pid, profile: profile, fromPhone: fromPhone)
+                }
+            }
+        }
+    }
+
+    /// Tells a session that needed the login to carry on — the phone's
+    /// own message path, so it works wherever replies do.
+    private func nudgeAfterAwsLogin(pid: Int, profile: String, fromPhone: Bool) {
+        let text = AwsLogin.continueMessage(profile: profile, fromPhone: fromPhone)
         let request = SessionInput.Request(kind: .message, text: text)
         Task.detached(priority: .utility) { [weak self] in
             let claudeDir = ClaudeSessions.configHome()
@@ -1094,8 +1177,7 @@ final class AppModel: ObservableObject {
     }
 
     private func logMirrorInput(_ icon: String, _ text: String) {
-        eventLog.append(EventEntry(icon: icon, text: text))
-        if eventLog.count > 100 { eventLog.removeFirst(eventLog.count - 100) }
+        logEvent("other", icon: icon, text)
     }
 
     /// Starts or stops the Cloudflare quick tunnel (#9). It only ever
@@ -1155,7 +1237,7 @@ final class AppModel: ObservableObject {
     /// running listener picks it up without a restart.
     func regeneratePairToken() {
         mirrorPairToken = MirrorPairing.generateToken()
-        eventLog.append(EventEntry(icon: "🔑", text: "phone pairing token regenerated"))
+        logEvent("pairing", icon: "🔑", "phone pairing token regenerated")
         // A new token is a new rendezvous key; the old entry just expires.
         if let url = quickTunnel.url { publishRendezvous(url) }
     }
@@ -1174,10 +1256,10 @@ final class AppModel: ObservableObject {
             let code = (response as? HTTPURLResponse)?.statusCode ?? 0
             Task { @MainActor in
                 if code == 204 {
-                    self?.eventLog.append(EventEntry(icon: "📍", text: "tunnel address published to infinitus.run"))
+                    self?.logEvent("other", icon: "📍", "tunnel address published to infinitus.run")
                 } else {
                     let why = error?.localizedDescription ?? "HTTP \(code)"
-                    self?.eventLog.append(EventEntry(icon: "⚠️", text: "rendezvous publish failed: \(why)"))
+                    self?.logEvent("other", icon: "⚠️", "rendezvous publish failed: \(why)")
                 }
             }
         }.resume()
@@ -1243,11 +1325,20 @@ final class AppModel: ObservableObject {
         Task { await supervisor.start() }
     }
 
+    /// Engine event kinds → the durable log's vocabulary.
+    static func eventKind(_ engineKind: String) -> String {
+        switch engineKind {
+        case "switch": "switch"
+        case "all-exhausted": "limit"
+        case "session-resumed": "resume"
+        default: "other"
+        }
+    }
+
     private func consume(_ line: EventLine) {
         switch line {
         case .event(let event):
-            eventLog.append(EventEntry(icon: event.icon, text: event.summary))
-            if eventLog.count > 100 { eventLog.removeFirst(eventLog.count - 100) }
+            logEvent(Self.eventKind(event.kind), icon: event.icon, event.summary)
             switch event.kind {
             case "switch":
                 Task { await refreshSnapshot() }  // the snapshot diff posts the notification
@@ -1533,7 +1624,17 @@ final class AppModel: ObservableObject {
                 let state = registry.state(for: fleet)
                 let change = state.apply(fleet)
                 anyChanged = anyChanged || change.changed
-                if state === primary { primaryResult = (fleet, change) }
+                if state === primary {
+                    primaryResult = (fleet, change)
+                    for n in change.newlyDead {
+                        let name = fleet.accounts.first { $0.number == n }.map { $0.alias ?? $0.email } ?? "#\(n)"
+                        logEvent("death", icon: "heart.slash", "\(name) hit a limit")
+                    }
+                    for n in change.newlyAlive {
+                        let name = fleet.accounts.first { $0.number == n }.map { $0.alias ?? $0.email } ?? "#\(n)"
+                        logEvent("revival", icon: "heart.fill", "\(name) is back")
+                    }
+                }
             }
         }
         // The same account in two fleets: hand each engine the usage the
@@ -1642,19 +1743,24 @@ final class AppModel: ObservableObject {
                                         report: usageModel?.report,
                                         tokenRate: sessionProgress.tokenRate)
             }
+            statsModel.refreshIfStale()
+            let stats = statsModel.bundle
             Task.detached(priority: .utility) { [mirrorExporter] in
                 await mirrorExporter.record(listJSON: raw, prefs: prefs,
                                             serviceStatus: serviceStatus,
                                             engine: engine, fleets: allFleets,
                                             forecast: forecast, plan: plan,
-                                            awsLogins: awsLogins, progress: progress)
+                                            awsLogins: awsLogins, progress: progress,
+                                            stats: stats)
             }
         }
         // All-limited: count the limit-stopped sessions waiting to be
         // resumed (todo 2026-09-01), reusing the resume mechanism's
         // own detection — Claude Code's files, never engine internals.
         // Throttled: the transcript tails re-read at most every 20s.
-        if list.nextCandidate == nil, list.nextRecovery != nil {
+        if list.nextCandidate == nil,
+           RecoveryMath.corrected(engine: list.nextRecovery, accounts: list.accounts,
+                                  activeNumber: list.activeAccountNumber) != nil {
             if Date().timeIntervalSince(waitingScanAt) > 20 {
                 waitingScanAt = Date()
                 Task.detached(priority: .utility) { [weak self] in
@@ -1732,8 +1838,10 @@ final class AppModel: ObservableObject {
             accounts: health,
             flags: .init(sessionsDone: pushSessionsDone,
                          allDead: pushAllDead, lastAlive: pushLastAlive,
-                         waiting: pushWaiting),
-            sessions: list.liveSessions?.sessions)
+                         waiting: pushWaiting, awsLogin: pushAwsLogin),
+            sessions: list.liveSessions?.sessions,
+            awsLogins: awsLoginsScanned ? awsLogins : nil,
+            now: Date())
         for msg in pushes where !isPlayground {
             notify(msg)
             // Text over stdin, matching the channel-setup commands;
