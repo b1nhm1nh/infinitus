@@ -65,6 +65,19 @@ targets.append(.executableTarget(
     linkerSettings: [.linkedLibrary("ws2_32"), .linkedLibrary("dnsapi"), .linkedLibrary("iphlpapi")]
 ))
 products.append(.executable(name: "infinitus-win", targets: ["InfinitusWin"]))
+// Desktop tray: a Win32 notification-area icon over the same core — the
+// session list this box already has, without a browser or a phone. No
+// shared view code with the Mac (AppKit/SwiftUI don't exist here), so it
+// is its own target rather than a port of Sources/Infinitus.
+targets.append(.executableTarget(
+    name: "InfinitusTrayWin",
+    dependencies: ["InfinitusCore"],
+    path: "windows/Sources/InfinitusTrayWin",
+    linkerSettings: [.linkedLibrary("user32"), .linkedLibrary("shell32"),
+                     .linkedLibrary("gdi32"), .linkedLibrary("comctl32"),
+                     .linkedLibrary("ws2_32"), .linkedLibrary("iphlpapi")]
+))
+products.append(.executable(name: "infinitus-tray-win", targets: ["InfinitusTrayWin"]))
 targets.append(.testTarget(
     name: "InfinitusWinTests",
     dependencies: ["InfinitusWin"],
