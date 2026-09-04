@@ -4,6 +4,12 @@ Native macOS menu bar app for the claude-swap engine. Split out of
 `~/death/claude-swap/swift/CswapBar` on 2026-08-29 with history.
 
 ## Non-negotiables
+- **Infinitus is not tied to cswap — forever** (user 2026-09-05: "Infinitus
+  has nothing tight to cswap, not anymore. this is a forever decision").
+  cswap is one `AccountEngine` adapter among several; no feature, design,
+  data format, CLI or publisher may depend on cswap existing. Anything
+  cross-platform ships from THIS repo (InfinitusCore + InfinitusCLI on
+  Swift for macOS/Linux/Windows), never as a cswap subcommand.
 - **Everything is Swift; the engine is fully isolated.** Every engine
   touchpoint is a `cswap … --json` subprocess (InfinitusCore/Engines/Cswap/CswapCLI.swift).
   Never read engine internals (`~/.claude-swap-backup/*`). Reading
