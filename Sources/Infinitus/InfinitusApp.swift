@@ -250,11 +250,6 @@ struct InfinitusApp: App {
                                             && model.engineErrors[NineRouterEngine.engineID] == nil
                                             && model.fleets.contains { $0.engineID == NineRouterEngine.engineID }),
                     view: AnyView(NineRouterEnginePane(model: model))),
-        SettingsTab(title: "Codex", symbol: "circle.hexagongrid",
-                    keywords: ["openai", "codex", "provider", "slots",
-                               "accounts", "engine"],
-                    provider: ProviderBadge(),
-                    view: AnyView(CodexEnginePane())),
     ]
 }
 

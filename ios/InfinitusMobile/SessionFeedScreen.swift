@@ -308,19 +308,70 @@ struct SessionFeedScreen: View {
     }
 
     /// The account serving this session, one slim line under the title.
+    /// A theme dresses it like the phone's fleet rows: name and reset on
+    /// one line, the theme's glyph + gauge per window on the next, all on
+    /// the flash tint. The Off theme keeps the plain line.
     @ViewBuilder private var accountBar: some View {
-        if let line = AccountSummaryFormat.headerLine(model.accountSummary(forSessionPid: session.pid)) {
-            HStack(spacing: 6) {
-                Circle().fill(ThemeColor.resolve(line.colorName)).frame(width: 7, height: 7)
-                Text(line.text).font(.caption).foregroundStyle(.secondary)
-                    .lineLimit(1).monospacedDigit()
-                Spacer(minLength: 0)
+        let summary = model.accountSummary(forSessionPid: session.pid)
+        if let line = AccountSummaryFormat.headerLine(summary) {
+            let theme = model.rowTheme
+            Group {
+                if !theme.plain, let summary, let account = summary.account {
+                    themedBar(account, summary: summary, theme: theme, dotColor: line.colorName)
+                } else {
+                    HStack(spacing: 6) {
+                        Circle().fill(ThemeColor.resolve(line.colorName)).frame(width: 7, height: 7)
+                        Text(line.text).foregroundStyle(.secondary).lineLimit(1)
+                        Spacer(minLength: 0)
+                    }
+                }
             }
+            .font(.caption).monospacedDigit()
             .padding(.horizontal, 16).padding(.vertical, 5)
             .frame(maxWidth: .infinity)
+            .background(theme.plain ? Color.clear : ThemeColor.flash(theme).opacity(0.16))
             .background(.bar)
             .overlay(alignment: .bottom) { Divider() }
         }
+    }
+
+    private func themedBar(_ account: Account, summary: SessionAccountSummary,
+                           theme: RowTheme, dotColor: String) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            HStack(spacing: 6) {
+                Circle().fill(ThemeColor.resolve(dotColor)).frame(width: 7, height: 7)
+                Text(AccountSummaryFormat.accountShortName(account)
+                     + (summary.kind == .unknownFleet ? " (fleet's active account)" : ""))
+                    .foregroundStyle(.secondary).lineLimit(1)
+                Spacer(minLength: 8)
+                if let reset = ResetLabel.compact(account.usage?.fiveHour) {
+                    Text("resets \(reset)").foregroundStyle(.secondary).lineLimit(1)
+                }
+            }
+            HStack(spacing: 12) {
+                if let five = account.usage?.fiveHour {
+                    gauge(five, label: theme.sessionLabel, color: theme.sessionColor,
+                          dividers: (1..<5).map { Double($0) * 20 })
+                }
+                if let seven = account.usage?.sevenDay {
+                    gauge(seven, label: theme.weeklyLabel, color: theme.weeklyColor,
+                          dividers: (1..<7).map { Double($0) * 100 / 7 })
+                }
+                Spacer(minLength: 0)
+            }
+        }
+    }
+
+    private func gauge(_ w: UsageWindow, label: String, color: String,
+                       dividers: [Double]) -> some View {
+        HStack(spacing: 3) {
+            Text(PopupGlyph.text(label)).bold().foregroundStyle(ThemeColor.resolve(color))
+            GaugeBar(remaining: GaugeMath.remaining(usedPct: w.pct),
+                     color: ThemeColor.resolve(color),
+                     paceRemaining: w.expectedPct.map { 100 - $0 },
+                     dividers: dividers, animated: false)
+        }
+        .fixedSize()
     }
 
     /// Reachability, where it's seen: a banner up top, not a caption at

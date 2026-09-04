@@ -46,8 +46,10 @@ workflow publishes the matching section as the GitHub release body.
   written instead of up to two seconds late; coming back to the app
   refreshes the feed immediately; and on the Mac a message being typed
   into a terminal no longer holds up every other phone request.
-- **The sessions header wears the theme**: its glyph and colors, like
-  the Mac popup's gauges. The Off theme keeps the plain header.
+- **Session headers wear the theme.** A session's account bar shows
+  the theme's glyphs and gauge bars on its tint ("MP ▮▮▮▯ 69% ·
+  HP ▮▮▮▮ 93%"), and the Sessions list header its glyph, like the Mac
+  popup's gauges. The Off theme keeps the plain headers.
 
 ### Stats
 - **Your engineering week, in numbers.** Settings → Stats: commits,
@@ -69,6 +71,11 @@ workflow publishes the matching section as the GitHub release body.
 ### Site
 - infinitus.run reads well on phones: no sideways scroll, better
   contrast, feature cards grouped by what they do.
+
+### Settings
+- **The Codex slots tab is gone.** The manual auth.json slot switcher
+  never grew usage tracking or auto-switch; Codex accounts still show
+  as fleets through CLIProxyAPI and 9Router.
 
 ### Fixes
 - A phone message no longer reads to the session like a note from
