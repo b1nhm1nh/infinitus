@@ -483,7 +483,10 @@ public enum SessionFeedReader {
         guard let range = text.range(of: "[attached: ", options: .backwards),
               let close = text[range.upperBound...].firstIndex(of: "]") else { return [] }
         return text[range.upperBound..<close].split(separator: ", ").compactMap { path in
-            let name = path.split(separator: "/").last.map(String.init) ?? String(path)
+            // Both separators: a Windows attachment path is
+            // `C:\Users\…\Infinitus\attachments\<uuid>-<name>.png`.
+            let name = path.split(whereSeparator: { $0 == "/" || $0 == "\\" })
+                .last.map(String.init) ?? String(path)
             return imageExtensions.contains(fileExtension(name)) ? "a:\(name)" : nil
         }
     }
@@ -511,7 +514,10 @@ public enum SessionFeedReader {
         if id.hasPrefix("a:") {
             let name = String(id.dropFirst(2))
             let ext = fileExtension(name)
-            guard !name.isEmpty, !name.contains("/"), !name.contains(".."), imageExtensions.contains(ext),
+            // `\` and `:` join the refusal list so a Windows id can never
+            // escape the attachments folder (`..\x`, `C:\…`).
+            guard !name.isEmpty, !name.contains("/"), !name.contains("\\"), !name.contains(":"),
+                  !name.contains(".."), imageExtensions.contains(ext),
                   let data = try? Data(contentsOf: attachmentsDir.appendingPathComponent(name)) else { return nil }
             return (data, mime(forExtension: ext))
         }
