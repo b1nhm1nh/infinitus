@@ -215,7 +215,7 @@ public enum StatsScanner {
     }
 
     struct Cache: Codable {
-        var version = 2
+        var version = 3
         var files: [String: FileEntry] = [:]
     }
 
@@ -268,7 +268,7 @@ public enum StatsScanner {
                             byteBudget: Int? = nil, windowBytes: Int = StatsScanner.windowBytes) -> Result {
         var cache = cacheURL.flatMap { try? Data(contentsOf: $0) }
             .flatMap { try? JSONDecoder().decode(Cache.self, from: $0) } ?? Cache()
-        if cache.version != 2 { cache = Cache() }
+        if cache.version != 3 { cache = Cache() }
         let fm = FileManager.default
 
         // `subagent`: true for `<project>/<session-id>/subagents/*.jsonl`

@@ -21,6 +21,7 @@ actor RepoStatsScanner {
     }
 
     private struct RepoCache: Codable {
+        var version = 1
         var head: String
         var emails: [String]
         var days: [String: Stats.Day]
@@ -52,7 +53,11 @@ actor RepoStatsScanner {
         for (root, email) in roots {
             guard email != nil, !authors.isEmpty else { outcome.skipped.append(root); continue }
             let cacheURL = Self.dir.appendingPathComponent(Self.key(root) + ".json")
-            let loaded = (try? Data(contentsOf: cacheURL)).flatMap { try? JSONDecoder().decode(RepoCache.self, from: $0) }
+            let decoded = (try? Data(contentsOf: cacheURL)).flatMap { try? JSONDecoder().decode(RepoCache.self, from: $0) }
+            // A cache from a stale schema (Stats.Day's fields changed) is
+            // treated the same as no cache at all — same idiom as
+            // StatsScanner.Cache.version.
+            let loaded = decoded?.version == 1 ? decoded : nil
             var cache = loaded ?? RepoCache(head: "", emails: [], days: [:], prsFetchedAt: nil, prDays: [:])
             let head = (try? await git(["rev-parse", "HEAD"], cwd: root))?
                 .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
