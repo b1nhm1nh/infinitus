@@ -13,6 +13,9 @@ workflow publishes the matching section as the GitHub release body.
   language pack asks to download, and after ten seconds the take goes
   out as spoken with the English-reply note. Sending mid-translation
   does the same.
+### Phone
+- **A message from another session reads as that session's words**, not
+  the delivery wrapper around them.
 
 ## 0.4.2
 
