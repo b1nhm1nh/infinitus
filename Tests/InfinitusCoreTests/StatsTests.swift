@@ -124,6 +124,24 @@ final class StatsTests: XCTestCase {
         XCTAssertFalse(json.contains("s3"))
     }
 
+    func testPresentationGroupsFormatTilesDeltasAndSeries() {
+        var total = Stats.Day(); total.commits = 10
+        var previous = Stats.Day(); previous.commits = 5
+        let s = Stats.Summary(period: .week, from: "2026-09-01", to: "2026-09-07",
+                              total: total, previous: previous, daily: [], streak: 0)
+        let groups = Stats.Presentation.groups(s)
+        let throughput = groups.first { $0.id == "Throughput" }!
+        let commits = throughput.tiles.first { $0.id == "Commits" }!
+        XCTAssertEqual(commits.value, "10")
+        XCTAssertEqual(commits.delta, "+100%")
+        XCTAssertTrue(commits.series.isEmpty)   // daily empty (the mirrored bundle's shape)
+
+        let autonomy = groups.first { $0.id == "Autonomy" }!
+        let ratioTile = autonomy.tiles.first { $0.id == "Tool calls / message" }!
+        XCTAssertEqual(ratioTile.value, "—")   // messages == 0, zero-denominator ratio
+        XCTAssertNil(ratioTile.delta)
+    }
+
     func testFoldMonthPreviousIsTheCalendarMonth() {
         func day(_ commits: Int) -> Stats.Day {
             var d = Stats.Day(); d.commits = commits; return d

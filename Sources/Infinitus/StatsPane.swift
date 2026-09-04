@@ -4,7 +4,11 @@ import Charts
 import InfinitusCore
 
 /// Settings › Stats: engineering metrics per period (user 2026-09-04).
-/// Tiles = value, delta vs the previous period, sparkline of the days.
+/// Tiles = value, delta vs the previous period, sparkline of the days —
+/// the tile catalogue itself lives in `Stats.Presentation` (fix round 1)
+/// so the phone renders the exact same list; this file keeps only what's
+/// Mac-specific (picker, scanning line, sparklines, heatmap, session
+/// length chart, footnotes, Refresh).
 struct StatsPane: View {
     @ObservedObject var model: StatsModel
     @AppStorage("stats_period") private var periodRaw = Stats.Period.week.rawValue
@@ -29,53 +33,7 @@ struct StatsPane: View {
                 }
             }
             if let s = summary {
-                group("Throughput", [
-                    tile("Commits", s, \.commits),
-                    tile("Lines +", s, \.linesAdded),
-                    tile("Lines −", s, \.linesRemoved),
-                    tile("PRs opened", s, \.prsOpened),
-                    tile("PRs merged", s, \.prsMerged),
-                    tile("Turns", s, \.turns),
-                    tile("Tool calls", s, \.totalToolCalls),
-                    tile("Output tokens", s, \.outputTokens),
-                ])
-                group("Messages & sessions", [
-                    tile("Keyboard", s, \.humanMessages),
-                    tile("Phone", s, \.phoneMessages),
-                    tile("Agents", s, \.agentMessages),
-                    tile("Nudges", s, \.nudges),
-                    tile("Sessions", s, \.sessionCount),
-                    tile("Sub-agents", s, \.subagents),
-                ])
-                group("Autonomy", [
-                    ratio("Messages / commit", s, \.messagesPerCommit),
-                    ratio("Tool calls / message", s, \.toolCallsPerHumanMessage),
-                    tile("Longest unattended", s, \.longestUnattended, unit: "tool calls"),
-                    percent("Human share", s, \.humanShare),
-                ])
-                group("Friction", [
-                    minutes("Waiting on you", s, \.waitingSeconds),
-                    tile("Questions", s, \.questions),
-                    tile("Denied tools", s, \.denials),
-                    tile("Tool errors", s, \.toolErrors),
-                    tile("API retries", s, \.retries),
-                    tile("Compactions", s, \.compactions),
-                ])
-                group("Limits", [
-                    tile("Switches", s, \.switches),
-                    tile("Accounts hit a limit", s, \.limitStops),
-                    tile("Revivals", s, \.revivals),
-                    tile("Minutes lost, all out", s, \.minutesLostToLimits, format: { Int($0).formatted() }),
-                    tile("Ignites", s, \.ignites),
-                    tile("Resumes", s, \.resumes),
-                ])
-                group("Cost (API-equivalent estimate)", [
-                    money("Spend", s, \.usd),
-                    money("Per commit", s, \.usdPerCommit),
-                    money("Per PR", s, \.usdPerPR),
-                    ratio("Tokens / line", s, \.tokensPerLine),
-                    ratio("Mean hours to merge", s, \.meanMergeHours),
-                ])
+                ForEach(Stats.Presentation.groups(s)) { group($0) }
                 Section("Rhythm") {
                     heatmap(s.total.hours)
                     sessionLengths(s)
@@ -92,23 +50,16 @@ struct StatsPane: View {
 
     // MARK: tiles
 
-    private struct Tile: Identifiable {
-        let id: String
-        let value: String
-        let delta: String?
-        let series: [Double]
-    }
-
-    private func group(_ title: String, _ tiles: [Tile]) -> some View {
-        Section(title) {
+    private func group(_ g: Stats.Presentation.Group) -> some View {
+        Section(g.id) {
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 10)], spacing: 10) {
-                ForEach(tiles) { tileView($0) }
+                ForEach(g.tiles) { tileView($0) }
             }
             .padding(.vertical, 4)
         }
     }
 
-    private func tileView(_ t: Tile) -> some View {
+    private func tileView(_ t: Stats.Presentation.Tile) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(t.id).font(.caption).foregroundStyle(.secondary).lineLimit(1)
             HStack(alignment: .firstTextBaseline, spacing: 6) {
@@ -131,57 +82,6 @@ struct StatsPane: View {
         .padding(10)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(RoundedRectangle(cornerRadius: 8).fill(Color(.controlBackgroundColor)))
-    }
-
-    private func tile(_ name: String, _ s: Stats.Summary, _ key: KeyPath<Stats.Day, Int>, unit: String? = nil) -> Tile {
-        let v = s.total[keyPath: key], p = s.previous[keyPath: key]
-        return Tile(id: name, value: v.formatted() + (unit.map { " \($0)" } ?? ""),
-                    delta: deltaText(Double(v), Double(p)),
-                    series: s.daily.map { Double($0.day[keyPath: key]) })
-    }
-
-    private func tile(_ name: String, _ s: Stats.Summary, _ key: KeyPath<Stats.Day, Double>,
-                      format: @escaping (Double) -> String) -> Tile {
-        let v = s.total[keyPath: key], p = s.previous[keyPath: key]
-        return Tile(id: name, value: format(v), delta: deltaText(v, p), series: s.daily.map { $0.day[keyPath: key] })
-    }
-
-    private func ratio(_ name: String, _ s: Stats.Summary, _ key: KeyPath<Stats.Day, Double?>) -> Tile {
-        Tile(id: name, value: s.total[keyPath: key].map { String(format: "%.1f", $0) } ?? "—",
-             delta: zip2(s.total[keyPath: key], s.previous[keyPath: key]).map { deltaText($0, $1) } ?? nil,
-             series: s.daily.map { $0.day[keyPath: key] ?? 0 })
-    }
-
-    private func percent(_ name: String, _ s: Stats.Summary, _ key: KeyPath<Stats.Day, Double?>) -> Tile {
-        Tile(id: name, value: s.total[keyPath: key].map { "\(Int($0 * 100))%" } ?? "—", delta: nil,
-             series: s.daily.map { ($0.day[keyPath: key] ?? 0) * 100 })
-    }
-
-    private func minutes(_ name: String, _ s: Stats.Summary, _ key: KeyPath<Stats.Day, Double>) -> Tile {
-        tile(name, s, key) { secs in
-            let m = Int(secs / 60)
-            return m >= 120 ? "\(m / 60) h \(m % 60) m" : "\(m) min"
-        }
-    }
-
-    private func money(_ name: String, _ s: Stats.Summary, _ key: KeyPath<Stats.Day, Double>) -> Tile {
-        tile(name, s, key) { "$" + String(format: $0 >= 100 ? "%.0f" : "%.2f", $0) }
-    }
-
-    private func money(_ name: String, _ s: Stats.Summary, _ key: KeyPath<Stats.Day, Double?>) -> Tile {
-        Tile(id: name, value: s.total[keyPath: key].map { "$" + String(format: "%.2f", $0) } ?? "—", delta: nil,
-             series: s.daily.map { $0.day[keyPath: key] ?? 0 })
-    }
-
-    private func deltaText(_ v: Double, _ p: Double) -> String? {
-        guard p != 0 else { return v == 0 ? nil : "new" }
-        let pct = Int(((v - p) / p * 100).rounded())
-        return pct == 0 ? "±0%" : pct > 0 ? "+\(pct)%" : "−\(-pct)%"
-    }
-
-    private func zip2<A, B>(_ a: A?, _ b: B?) -> (A, B)? {
-        guard let a, let b else { return nil }
-        return (a, b)
     }
 
     // MARK: rhythm
@@ -214,21 +114,18 @@ struct StatsPane: View {
     }
 
     private func sessionLengths(_ s: Stats.Summary) -> some View {
-        let labels = ["< 15 min", "15–60 min", "1–4 h", "> 4 h"]
-        let buckets = s.total.sessionBuckets
-        let total = s.total.sessionSeconds
-        let n = max(1, s.total.sessionCount)
+        let rows = Stats.Presentation.sessionLengthRows(s)
         return VStack(alignment: .leading, spacing: 3) {
             Text("Session lengths").font(.caption).foregroundStyle(.secondary)
-            Chart(Array(labels.enumerated()), id: \.offset) { i, label in
-                BarMark(x: .value("Sessions", buckets[i]), y: .value("Bucket", label))
+            Chart(rows, id: \.label) { row in
+                BarMark(x: .value("Sessions", row.count), y: .value("Bucket", row.label))
                     .foregroundStyle(Color.accentColor)
             }
             .chartXAxis(.hidden)
             .frame(height: 90)
             HStack {
                 Spacer()
-                Text("\(Int(total / 3600)) h total · \(Int(total / Double(n) / 60)) min per session")
+                Text(Stats.Presentation.sessionTimeLine(s))
                     .font(.caption).foregroundStyle(.secondary).monospacedDigit()
             }
         }
