@@ -91,14 +91,11 @@ struct SessionsScreen: View {
             .listStyle(.insetGrouped)
             .sheet(item: $awsLoginItem) { AwsLoginScreen(item: $0) }
         } else if !model.fleets.isEmpty {
-            ContentUnavailableView("No live sessions",
-                                   systemImage: "brain",
-                                   description: Text("Nothing is running on the "
-                                                     + "Mac right now."))
+            ThemedPlaceholder(theme: model.rowTheme, key: "noSessions", plainSymbol: "brain",
+                              description: "Nothing is running on the Mac right now.")
         } else {
-            ContentUnavailableView("Waiting for the fleet",
-                                   systemImage: "antenna.radiowaves.left.and.right",
-                                   description: Text("Pair with the Mac in Settings to see its sessions."))
+            ThemedPlaceholder(theme: model.rowTheme, key: "searching", plainSymbol: "antenna.radiowaves.left.and.right",
+                              description: "Pair with the Mac in Settings to see its sessions.")
         }
     }
 

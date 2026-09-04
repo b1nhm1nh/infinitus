@@ -156,10 +156,10 @@ struct SessionFeedScreen: View {
             .listStyle(.plain)
             .overlay {
                 if feed == nil, errorText == nil {
-                    ProgressView("Loading…")
+                    ThemedPlaceholder(theme: model.rowTheme, key: "loading")
                 } else if feed?.items.isEmpty == true {
-                    ContentUnavailableView("Nothing here yet", systemImage: "bubble.left.and.bubble.right",
-                                           description: Text("Messages show up here as the session works."))
+                    ThemedPlaceholder(theme: model.rowTheme, key: "empty", plainSymbol: "bubble.left.and.bubble.right",
+                                      description: "Messages show up here as the session works.")
                 }
             }
             // Dragging the feed tucks the keyboard away; so does a tap on
@@ -208,6 +208,8 @@ struct SessionFeedScreen: View {
                     if headerStyle == "strip" {
                         titleRow
                         statStrip
+                    } else if headerStyle == "hud" {
+                        hudHeader
                     } else {
                         compactHeader
                     }
@@ -560,6 +562,135 @@ struct SessionFeedScreen: View {
             .environment(\.gaugeScale, 0.8)
             .padding(.top, 2).padding(.bottom, 8)
         }
+    }
+
+    // MARK: header, option 3 — game HUD (unit frame)
+
+    /// A WoW-style unit frame (user 2026-09-05: "game HUD like WoW's"):
+    /// the portrait in a ringed medallion with the level on its rim, a
+    /// name plate, the session and weekly windows as full-width bars
+    /// with the value inside, and every model window as a buff square.
+    /// The ring, plate trim and level take the theme's flash color; Off
+    /// keeps the frame in neutral grey.
+    private var hudHeader: some View {
+        let theme = model.rowTheme
+        let status = feed?.status ?? session.status
+        let pair = headerAccount
+        let ring = theme.plain ? Color.secondary : ThemeColor.flash(theme)
+        let chips = pair.map { windowChips($0.account, theme: theme) } ?? []
+        let bars = chips.filter { $0.id == "5h" || $0.id == "7d" }
+        let buffs = chips.filter { $0.id.hasPrefix("m:") }
+        return HStack(alignment: .center, spacing: 6) {
+            backButton
+            NavigationLink(value: SessionDetailRoute(session: session)) {
+                HStack(alignment: .center, spacing: 10) {
+                    hudPortrait(theme: theme, status: status, ring: ring, plan: pair?.account.plan)
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack(spacing: 6) {
+                            Text(feed?.name ?? repoName(session.cwd))
+                                .font(.subheadline.weight(.bold)).lineLimit(1)
+                                .foregroundStyle(theme.plain ? Color.primary : ring)
+                            Spacer(minLength: 4)
+                            Text(SessionWords.status(status, theme: theme))
+                                .foregroundStyle(SessionWords.color(status))
+                            if let pair {
+                                Text(Self.accountName(pair.account)).foregroundStyle(.secondary)
+                            }
+                        }
+                        .font(.caption2.weight(.semibold)).lineLimit(1)
+                        .padding(.horizontal, 8).padding(.vertical, 4)
+                        .background(Color.black.opacity(0.55), in: RoundedRectangle(cornerRadius: 4))
+                        .overlay(RoundedRectangle(cornerRadius: 4).stroke(ring.opacity(0.6), lineWidth: 1))
+                        ForEach(bars) { chip in hudBar(chip, ring: ring) }
+                        if !buffs.isEmpty {
+                            HStack(spacing: 4) {
+                                ForEach(buffs) { chip in hudBuff(chip, ring: ring) }
+                            }
+                        }
+                    }
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Session details")
+            screenshotButton
+        }
+        .padding(.leading, 4).padding(.trailing, 8).padding(.vertical, 6)
+    }
+
+    /// The medallion: the theme's glyph inside a double ring, the plan
+    /// tier docked on the rim bottom-left, the state dot top-right.
+    private func hudPortrait(theme: RowTheme, status: String, ring: Color, plan: String?) -> some View {
+        let glyph = theme.plain ? "" : PopupGlyph.text(theme.activeIcon.isEmpty ? theme.sessionLabel : theme.activeIcon)
+        let name = feed?.name ?? repoName(session.cwd)
+        return ZStack {
+            Circle().fill(theme.plain ? SessionWords.color(status).opacity(0.22)
+                                      : ThemeColor.flash(theme).opacity(0.28))
+            Circle().strokeBorder(ring, lineWidth: 3)
+            Circle().inset(by: 4).strokeBorder(Color.black.opacity(0.45), lineWidth: 1.5)
+            if glyph.isEmpty {
+                Text(String(name.prefix(1)).uppercased())
+                    .font(.title3.weight(.bold)).foregroundStyle(SessionWords.color(status))
+            } else {
+                Text(glyph).font(.title)
+            }
+        }
+        .frame(width: 56, height: 56)
+        .overlay(alignment: .bottomLeading) {
+            if let plan {
+                Text(theme.planLabel(plan, compact: true))
+                    .font(.system(size: 9, weight: .heavy)).monospacedDigit().lineLimit(1)
+                    .foregroundStyle(theme.plain ? Color.primary : ring)
+                    .padding(.horizontal, 4).padding(.vertical, 2)
+                    .background(Color.black.opacity(0.75), in: Capsule())
+                    .overlay(Capsule().stroke(ring, lineWidth: 1))
+                    .offset(x: -6, y: 3)
+            }
+        }
+        .overlay(alignment: .topTrailing) {
+            Circle().fill(SessionWords.color(status)).frame(width: 10, height: 10)
+                .overlay(Circle().stroke(Color(.systemBackground), lineWidth: 2))
+        }
+    }
+
+    /// A unit-frame bar: the window's glyph at the left, what's left at
+    /// the right, the fill in the window's color.
+    private func hudBar(_ chip: WindowChip, ring: Color) -> some View {
+        let remaining = GaugeMath.remaining(usedPct: chip.window.pct)
+        return GeometryReader { geo in
+            ZStack(alignment: .leading) {
+                RoundedRectangle(cornerRadius: 3).fill(Color.black.opacity(0.55))
+                RoundedRectangle(cornerRadius: 3)
+                    .fill(LinearGradient(colors: [chip.color.opacity(0.95), chip.color.opacity(0.6)],
+                                         startPoint: .top, endPoint: .bottom))
+                    .frame(width: max(0, geo.size.width * remaining / 100))
+                HStack {
+                    Text(chip.glyph)
+                    Spacer(minLength: 0)
+                    Text("\(Int(remaining))%")
+                }
+                .font(.system(size: 10, weight: .bold)).monospacedDigit().lineLimit(1)
+                .foregroundStyle(.white)
+                .shadow(color: .black.opacity(0.8), radius: 1)
+                .padding(.horizontal, 5)
+            }
+            .overlay(RoundedRectangle(cornerRadius: 3).stroke(ring.opacity(0.6), lineWidth: 1))
+        }
+        .frame(height: 14)
+        .animation(.easeOut(duration: 0.5), value: remaining)
+    }
+
+    /// A buff square: the model's name over what's left of its window.
+    private func hudBuff(_ chip: WindowChip, ring: Color) -> some View {
+        VStack(spacing: 0) {
+            Text(chip.glyph).foregroundStyle(chip.color)
+            Text("\(Int(GaugeMath.remaining(usedPct: chip.window.pct)))%")
+                .monospacedDigit().foregroundStyle(.white)
+        }
+        .font(.system(size: 9, weight: .bold)).lineLimit(1)
+        .padding(.horizontal, 4).padding(.vertical, 2)
+        .background(Color.black.opacity(0.55), in: RoundedRectangle(cornerRadius: 3))
+        .overlay(RoundedRectangle(cornerRadius: 3).stroke(ring.opacity(0.6), lineWidth: 1))
     }
 
     /// Reachability, where it's seen: a banner up top, not a caption at
