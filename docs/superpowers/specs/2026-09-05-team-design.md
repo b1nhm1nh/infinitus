@@ -73,11 +73,10 @@ every member's leader-shared data plus the same.
   in memory; the passkey PRF gesture happens once per launch (or when
   the cache is empty). The publish/fetch loop never prompts.
 - Deleting the passkey deletes the identity: the app says so and offers
-  an encrypted export (identity secret sealed with a passphrase, Argon2
-  not available in swift-crypto → HKDF over a 200k-round PBKDF2 sits in
-  CommonCrypto on Apple only; use scrypt from a vendored 200-line Swift
-  file, same on all platforms). A re-created identity gets a new `kid`
-  and must be re-approved by a leader.
+  an encrypted export: the identity secret sealed with a passphrase
+  through PBKDF2-HMAC-SHA256 (600k rounds, written over swift-crypto's
+  HMAC so it is the same on every platform) + ChaChaPoly. A re-created
+  identity gets a new `kid` and must be re-approved by a leader.
 
 ### 2.2 Biometric lock (app-wide option, required for teams)
 - Setting "Unlock with Face ID / Touch ID" (Mac: LocalAuthentication,
@@ -98,13 +97,13 @@ every member's leader-shared data plus the same.
 ## 3. Envelope (the file format, the contract)
 
 Every object in the store is one envelope: a JSON header line, `\n`,
-then ciphertext.
+then ciphertext (zlib from the system library on all three platforms).
 
 ```
 {"v":1,"kind":"stats","from":"<kid>","eph":"<base64 X25519 pub>",
  "to":[{"kid":"<kid>","wrap":"<base64>"},…],
  "nonce":"<base64 12B>","sig":"<base64 Ed25519 over header-without-sig + ciphertext>"}
-<ChaCha20-Poly1305 ciphertext of the plaintext JSON/JSONL, gzip'd>
+<ChaCha20-Poly1305 ciphertext of the plaintext JSON/JSONL, zlib-deflated>
 ```
 
 - One fresh 32-byte file key per envelope. For each recipient: X25519
@@ -156,9 +155,9 @@ Dropbox, OneDrive, iCloud Drive, NAS) and S3-compatible bucket.
 - Growth: ciphertext doesn't delta-compress, so transcripts are
   **append-only chunks** (§5.4) and `days/` files are tiny. A leader
   setting "keep N days of transcripts" (default 90) prunes old chunks
-  from the leader's clone; the remote keeps history until a leader runs
-  "Compact store" (a new orphan `m/<kid>` per member is out of scope;
-  v1 only prunes locally and says the remote grows).
+  from the leader's clone. The remote keeps history; v1 shows the store
+  size on the privacy page and leaves remote compaction to a later
+  version.
 - **Credential rotation** cannot be automated without a host API. On
   removal the app rotates the *roster* (the removed key stops being a
   recipient and its writes are ignored) and offers "Rotate store
