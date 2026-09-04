@@ -56,25 +56,53 @@ public enum StatsScanner {
             }
         }
         guard let raw = text?.trimmingCharacters(in: .whitespacesAndNewlines), !raw.isEmpty else { return .machinery }
+        if machineryPrefixes.contains(where: { raw.hasPrefix($0) }) { return .machinery }
         if let origin = obj["origin"] as? [String: Any], let kind = origin["kind"] as? String {
             switch kind {
             case "human": return .human
             case "peer":
                 let from = origin["from"] as? String ?? ""
-                return peerKind(fromApp: from.contains("/tmp/infinitus-"), body: wrappedBody(raw))
+                // `origin.body` is the sender's own text, already
+                // unwrapped — `raw` is Claude Code's rendering of it
+                // ("Another Claude session sent a message:\n<wrapper>…"),
+                // so a prefix test against the wrapper never matched and
+                // every nudge fell through to `.phone`.
+                let body = (origin["body"] as? String) ?? wrappedBody(raw)
+                return peerKind(fromApp: from.contains("/tmp/infinitus-"), body: body)
             default: return .machinery   // task-notification, auto-continuation, …
             }
         }
-        // Older transcripts: no origin. The text decides.
+        // Older transcripts: no origin. The text decides — and the
+        // wrapper sits INSIDE Claude Code's preamble, never at the very
+        // front, so this has to look for it before judging the first
+        // character.
+        if raw.contains(crossSessionTag) {
+            let fromApp: Bool = {
+                guard let r = raw.range(of: "from-name=\""), let q = raw[r.upperBound...].firstIndex(of: "\"") else { return false }
+                let name = raw[r.upperBound..<q]
+                return name == "Infinitus" || name == PeerSocket.senderName
+            }()
+            return peerKind(fromApp: fromApp, body: wrappedBody(raw))
+        }
         guard raw.first == "<" else { return .human }
-        guard raw.hasPrefix("<cross-session-message") else { return .machinery }
-        let fromApp: Bool = {
-            guard let r = raw.range(of: "from-name=\""), let q = raw[r.upperBound...].firstIndex(of: "\"") else { return false }
-            let name = raw[r.upperBound..<q]
-            return name == "Infinitus" || name == PeerSocket.senderName
-        }()
-        return peerKind(fromApp: fromApp, body: wrappedBody(raw))
+        return .machinery
     }
+
+    /// A `type=user` text the CLI wrote for the machine, not something
+    /// the person typed: interrupts, hook feedback, the resumed-session
+    /// caveat banner, the autonomous-loop preamble (spec defect, ruled
+    /// 2026-09-04). `[Image:` and pasted skill bodies deliberately stay
+    /// `.human` — the user pasted them / typed the slash command.
+    static let machineryPrefixes = [
+        "[Request interrupted",
+        "Stop hook feedback:",
+        "Caveat:",
+        "# Autonomous loop tick",
+        "[1 prior /loop",
+        "(Re-invocation of /",
+    ]
+
+    private static let crossSessionTag = "<cross-session-message"
 
     /// The socket preface's first 48 characters — enough to tell a phone
     /// message from the app's own "[Infinitus] …" nudge text without
@@ -88,9 +116,13 @@ public enum StatsScanner {
         return .phone
     }
 
-    /// The text inside a `<cross-session-message …>` wrapper (or the text itself).
+    /// The text inside a `<cross-session-message …>` wrapper (or the
+    /// text itself). The wrapper is not at the front: Claude Code
+    /// prefixes "Another Claude session sent a message:\n" and appends
+    /// its own guidance after the closing tag.
     static func wrappedBody(_ raw: String) -> String {
-        guard raw.hasPrefix("<cross-session-message"), let end = raw.firstIndex(of: ">") else { return raw }
+        guard let open = raw.range(of: crossSessionTag),
+              let end = raw[open.upperBound...].firstIndex(of: ">") else { return raw }
         var body = String(raw[raw.index(after: end)...])
         if let close = body.range(of: "</cross-session-message>") { body = String(body[..<close.lowerBound]) }
         return body.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -215,7 +247,10 @@ public enum StatsScanner {
     }
 
     struct Cache: Codable {
-        var version = 3
+        /// 4 (2026-09-04): every cached `FileEntry.days` before this was
+        /// classified by the broken peer branch — nudges counted as
+        /// phone messages and machinery as human.
+        var version = 4
         var files: [String: FileEntry] = [:]
     }
 
@@ -268,7 +303,7 @@ public enum StatsScanner {
                             byteBudget: Int? = nil, windowBytes: Int = StatsScanner.windowBytes) -> Result {
         var cache = cacheURL.flatMap { try? Data(contentsOf: $0) }
             .flatMap { try? JSONDecoder().decode(Cache.self, from: $0) } ?? Cache()
-        if cache.version != 3 { cache = Cache() }
+        if cache.version != Cache().version { cache = Cache() }
         let fm = FileManager.default
 
         // `subagent`: true for `<project>/<session-id>/subagents/*.jsonl`
@@ -382,8 +417,13 @@ public enum StatsScanner {
                 result.bytesRemaining += owed(size: c.size, offset: entry.offset)
             }
         }
+        // Nothing parsed and nothing vanished: what's on disk already
+        // says exactly this, and rewriting the whole corpus's JSON on
+        // every 5-minute refresh is pure IO. The checkpoint writes
+        // inside a backfill above are untouched.
+        let unchanged = filesTouched == 0 && live.count == cache.files.count
         cache.files = live
-        if let cacheURL { writeCache(cache, to: cacheURL, fm: fm) }
+        if let cacheURL, !unchanged { writeCache(cache, to: cacheURL, fm: fm) }
         return result
     }
 
