@@ -294,6 +294,7 @@ func serve(_ args: [String]) -> Int32 {
         print("token \(MirrorPairing.mask(token)) — `infinitus-win pair` prints the pairing URL")
         print("if the phone can't reach it, allow inbound TCP \(bound):")
         print("  netsh advfirewall firewall add rule name=\"Infinitus \(bound)\" dir=in action=allow protocol=TCP localport=\(bound)")
+        WinBonjour.advertise(port: bound)
         fflush(stdout)
         RunLoop.main.run()
     } catch {
