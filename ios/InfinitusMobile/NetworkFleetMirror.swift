@@ -337,6 +337,29 @@ actor NetworkFleetMirror: FleetMirror {
         return try JSONDecoder().decode(R.self, from: data)
     }
 
+    /// A crash/hang report to the Mac (`POST /crashes`). Best effort:
+    /// false when no Mac answered — the spool retries at the next launch.
+    func postCrash(_ report: CrashReport) async -> Bool {
+        let token = MirrorPairing.normalize(
+            UserDefaults.standard.string(forKey: Self.tokenKey) ?? "")
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        guard let body = try? encoder.encode(report),
+              let text = candidateEndpoints().first,
+              let manual = MirrorTransport.parseEndpoint(text) else { return false }
+        let endpoint = NWEndpoint.hostPort(
+            host: NWEndpoint.Host(manual.host),
+            port: NWEndpoint.Port(rawValue: manual.port) ?? .any)
+        do {
+            _ = try await fetch(endpoint, path: MirrorTransport.crashesPath, hostHeader: manual.host,
+                                useTLS: manual.useTLS, token: token, timeout: Self.attachmentInputTimeout,
+                                method: "POST", body: body)
+            return true
+        } catch {
+            return false
+        }
+    }
+
     /// Hands a Live Activity push token to the Mac (`POST
     /// /activities/token`) so its APNs pusher can reach this phone.
     /// Best effort: false when no Mac answered — the next token update

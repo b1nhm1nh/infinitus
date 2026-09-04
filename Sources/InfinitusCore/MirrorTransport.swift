@@ -52,6 +52,8 @@ public enum MirrorTransport {
     /// `POST /activities/token` — the phone's Live Activity push tokens
     /// (an `ActivityPushRegistration` body; 204 when stored).
     public static let activityTokenPath = "/activities/token"
+    /// `POST /crashes`: the phone's MetricKit crash/hang reports.
+    public static let crashesPath = "/crashes"
     public static let tailLimitQueryName = "n"
     /// Long-poll: `?since=<feed.stamp>&wait=<seconds>` holds the reply until
     /// the transcript's stamp differs from `since`, or `wait` elapses
