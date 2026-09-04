@@ -21,6 +21,7 @@ let commands: [String: ([String]) -> Int32] = [
     "snapshot": snapshot,
     "message": message,
     "resume": resume,
+    "serve": serve,
 ]
 
 func fail(_ message: String) -> Never {
@@ -234,6 +235,75 @@ func which(_ name: String) -> String? {
 /// off the head alone. The token travels by file, never argv, so the
 /// test harness (and a caller wrapping this) doesn't leak it in a
 /// process list. Blocks until killed.
+// MARK: - serve (W7)
+
+/// `infinitus-win serve [--port N] [--claude-dir P] [--token-file P]` —
+/// the real thing: the phone's whole HTTP surface (snapshot, feed tail
+/// with long-poll, images, input) over the pairing token. Without
+/// `--token-file` it uses the stored token, so `pair` then `serve` is the
+/// entire setup.
+func serve(_ args: [String]) -> Int32 {
+    var tokenFile: String?, port: UInt16 = defaultMirrorPort
+    var claudeDir = ClaudeSessions.configHome()
+    var index = args.startIndex
+    while index < args.endIndex {
+        switch args[index] {
+        case "--token-file":
+            index += 1
+            guard index < args.endIndex else { fail("serve: --token-file needs a path") }
+            tokenFile = args[index]
+        case "--claude-dir":
+            index += 1
+            guard index < args.endIndex else { fail("serve: --claude-dir needs a path") }
+            claudeDir = URL(fileURLWithPath: args[index])
+        case "--port":
+            index += 1
+            guard index < args.endIndex, let parsed = UInt16(args[index]) else {
+                fail("serve: --port needs a number")
+            }
+            port = parsed
+        default:
+            fail("serve: unknown flag \(args[index])")
+        }
+        index += 1
+    }
+
+    let token: String
+    if let tokenFile {
+        token = MirrorPairing.normalize(
+            (try? String(contentsOfFile: tokenFile, encoding: .utf8)) ?? "")
+        guard !token.isEmpty else { fail("serve: \(tokenFile) holds no token") }
+    } else {
+        do { token = try WinPairingStore.loadOrCreate() } catch { fail("serve: \(error)") }
+    }
+
+    let snapshot = SnapshotCache(claudeDir: claudeDir)
+    let handler = Routes.handler(claudeDir: claudeDir, snapshot: snapshot, token: token) { line in
+        print(line)
+        fflush(stdout)
+    }
+    let server = WinHTTPServer(
+        authorize: { MirrorTransport.isAuthorized($0, token: token) },
+        handler: handler)
+    do {
+        let bound = try server.start(port: port)
+        print("listening on \(bound)")
+        for endpoint in WinAddresses.ipv4().filter({ $0 != "127.0.0.1" }) {
+            print("  http://\(endpoint):\(bound)")
+        }
+        print("token \(MirrorPairing.mask(token)) — `infinitus-win pair` prints the pairing URL")
+        print("if the phone can't reach it, allow inbound TCP \(bound):")
+        print("  netsh advfirewall firewall add rule name=\"Infinitus \(bound)\" dir=in action=allow protocol=TCP localport=\(bound)")
+        fflush(stdout)
+        RunLoop.main.run()
+    } catch {
+        fail("serve: \(error)")
+    }
+    return 0
+}
+
+// MARK: - listen (W4)
+
 func listen(_ args: [String]) -> Int32 {
     var tokenFile: String?, port: UInt16 = defaultMirrorPort
     var index = args.startIndex
