@@ -18,6 +18,7 @@ let commands: [String: ([String]) -> Int32] = [
     "sessions": sessions,
     "pair": pair,
     "snapshot": snapshot,
+    "message": message,
 ]
 
 func fail(_ message: String) -> Never {
@@ -74,6 +75,55 @@ func snapshot(_ args: [String]) -> Int32 {
     let data = SnapshotCache(claudeDir: claudeDir).data()
     guard !data.isEmpty else { fail("snapshot: couldn't encode") }
     print(String(data: data, encoding: .utf8) ?? "{}")
+    return 0
+}
+
+// MARK: - message (W10)
+
+/// `infinitus-win message --pid N <text>` — deliver one message to a live
+/// session's inbox over its named pipe, the same bytes the phone's
+/// `POST /sessions/<pid>/input` will write. `--dry-run` prints the frames
+/// instead of writing them.
+func message(_ args: [String]) -> Int32 {
+    var pid: Int32?, dryRun = false, claudeDir = ClaudeSessions.configHome()
+    var text: [String] = []
+    var index = args.startIndex
+    while index < args.endIndex {
+        switch args[index] {
+        case "--pid":
+            index += 1
+            guard index < args.endIndex, let parsed = Int32(args[index]) else {
+                fail("message: --pid needs a number")
+            }
+            pid = parsed
+        case "--claude-dir":
+            index += 1
+            guard index < args.endIndex else { fail("message: --claude-dir needs a path") }
+            claudeDir = URL(fileURLWithPath: args[index])
+        case "--dry-run": dryRun = true
+        default: text.append(args[index])
+        }
+        index += 1
+    }
+    guard let pid else { fail("message: --pid is required") }
+    let body = text.joined(separator: " ")
+    guard !body.isEmpty else { fail("message: nothing to send") }
+    guard let record = ClaudeSessions.list(claudeDir: claudeDir).first(where: { $0.pid == pid })
+    else { fail("message: no live session with pid \(pid)") }
+    guard !record.messagingSocketPath.isEmpty else {
+        fail("message: session \(pid) carries no messaging pipe")
+    }
+    if dryRun {
+        let payload = PeerSocket.frames(
+            text: body, token: PeerSocket.peerToken(pid: pid, claudeDir: claudeDir),
+            from: NamedPipe.ownAddress())
+        print(String(data: payload, encoding: .utf8) ?? "")
+        return 0
+    }
+    guard NamedPipe.send(text: body, record: record, claudeDir: claudeDir) else {
+        fail("message: the pipe refused the write")
+    }
+    print("delivered to \(pid) (\(record.name ?? "unnamed"))")
     return 0
 }
 
