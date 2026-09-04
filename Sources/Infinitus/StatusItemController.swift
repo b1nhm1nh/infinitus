@@ -521,16 +521,47 @@ final class StatusItemController {
         // froze at 94% main-thread CPU (bundle 6b587b2, 2026-09-04).
         let want = NSSize(width: ceil(size.width), height: ceil(size.height))
         let current = pinned.contentRect(forFrameRect: pinned.frame).size
-        if abs(current.width - want.width) > 0.5 || abs(current.height - want.height) > 0.5 {
-            fittingPinned = true
-            defer { fittingPinned = false }
-            pinned.setContentSize(want)
-            clampOnScreen(pinned)
+        guard abs(current.width - want.width) > 0.5 || abs(current.height - want.height) > 0.5 else { return }
+        // The geometry callback comes back through SwiftUI's next update,
+        // not inside setContentSize, so a re-entrancy flag can't stop a
+        // loop: fitPinned → setContentSize → re-measure → fitPinned, ~450
+        // times a second with the main thread never idle (bundle b82d3d9
+        // froze after 1h30 with the rounding fix in, 2026-09-04). Two
+        // ways it loops, two guards: a size AppKit didn't take (a screen
+        // clamp) is never asked for again while it's refused; a size
+        // asked for again within a second means the content measures
+        // differently in each of two window sizes — settle on the larger,
+        // which clips nothing, and stop.
+        if let refusedFit, abs(refusedFit.width - want.width) < 0.5,
+           abs(refusedFit.height - want.height) < 0.5 { return }
+        let now = Date()
+        recentFits.removeAll { now.timeIntervalSince($0.at) > 1 }
+        var target = want
+        if recentFits.contains(where: { $0.size == want }) {
+            target = NSSize(width: max(want.width, current.width), height: max(want.height, current.height))
+            if abs(target.width - current.width) < 0.5, abs(target.height - current.height) < 0.5 { return }
+            NSLog("Infinitus pop-out: fit loop — content asks %.0f×%.0f in a %.0f×%.0f window; settling on %.0f×%.0f",
+                  want.width, want.height, current.width, current.height, target.width, target.height)
+        }
+        recentFits.append((target, now))
+        fittingPinned = true
+        defer { fittingPinned = false }
+        pinned.setContentSize(target)
+        clampOnScreen(pinned)
+        let got = pinned.contentRect(forFrameRect: pinned.frame).size
+        if abs(got.width - target.width) > 0.5 || abs(got.height - target.height) > 0.5 {
+            refusedFit = target
+            NSLog("Infinitus pop-out: asked for %.0f×%.0f, the window took %.0f×%.0f — not asking again",
+                  target.width, target.height, got.width, got.height)
+        } else {
+            refusedFit = nil
         }
     }
     /// Re-entrancy guard: setContentSize lays out synchronously, and the
-    /// content's geometry callback lands inside that call.
+    /// content's geometry callback can land inside that call.
     private var fittingPinned = false
+    private var recentFits: [(size: NSSize, at: Date)] = []
+    private var refusedFit: NSSize?
 
     /// Controller-owned Settings window. NOT the SwiftUI Settings scene:
     /// `NSApp.sendAction(showSettingsWindow:)` does nothing on macOS 26
