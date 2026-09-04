@@ -25,6 +25,7 @@ let commandExit: UINT = 0x0F04
 let commandAutostart: UINT = 0x0F05
 let commandRotate: UINT = 0x0F06
 let commandAccountPanel: UINT = 0x0F07
+let commandSettings: UINT = 0x0F08
 /// Session row + this offset raises that session's terminal instead of
 /// opening its window (the submenu's second entry).
 let commandRaiseBase: UINT = 0x2000
@@ -307,6 +308,8 @@ func showMenu(_ window: HWND) {
     AppendMenuW(menu, UINT(MF_SEPARATOR), 0, nil)
     AppendMenuW(menu, UINT(MF_STRING), UINT_PTR(commandAccountPanel),
                 "Open accounts panel\u{2026}".wide)
+    AppendMenuW(menu, UINT(MF_STRING), UINT_PTR(commandSettings),
+                "Settings\u{2026}".wide)
     AppendMenuW(menu, UINT(MF_SEPARATOR), 0, nil)
     AppendMenuW(menu, UINT(MF_STRING), UINT_PTR(commandCopyPair), "Copy pairing URL".wide)
     AppendMenuW(menu, UINT(MF_STRING), UINT_PTR(commandToggleServe),
@@ -369,6 +372,8 @@ func handleCommand(_ id: UINT) {
         switchAccount(to: nil)
     case commandAccountPanel:
         FleetWindow.show()
+    case commandSettings:
+        SettingsWindow.show()
     case commandAccountBase..<(commandAccountBase + 0x1000):
         guard let account = state.accountCommands[id] else { return }
         switchAccount(to: account)
@@ -474,6 +479,16 @@ func run() -> Int32 {
             return 1
         }
         SessionWindow.open(pid: row.pid, name: row.name)
+        var message = MSG()
+        while GetMessageW(&message, nil, 0, 0) {
+            TranslateMessage(&message)
+            DispatchMessageW(&message)
+        }
+        return 0
+    }
+    // `--settings` opens the settings window alone, with its own message loop.
+    if CommandLine.arguments.dropFirst().first == "--settings" {
+        SettingsWindow.show()
         var message = MSG()
         while GetMessageW(&message, nil, 0, 0) {
             TranslateMessage(&message)
