@@ -946,27 +946,7 @@ struct SessionFeedScreen: View {
                                              data: jpeg, thumbnail: UIImage(data: jpeg)))
     }
 
-    private static func downscaledJPEG(_ image: UIImage, maxDimension: CGFloat = 2048,
-                                       quality: CGFloat = 0.85) -> Data? {
-        let longest = max(image.size.width, image.size.height)
-        let scale = min(1, maxDimension / longest)
-        let targetSize = CGSize(width: image.size.width * scale, height: image.size.height * scale)
-        // Points, not pixels: the renderer's default format renders at
-        // the screen's 3× scale, which sent a "2048 px" photo out at
-        // 6144×4608 (the first photo through, 2026-09-03).
-        let format = UIGraphicsImageRendererFormat()
-        format.scale = 1
-        let resized = UIGraphicsImageRenderer(size: targetSize, format: format).image { _ in
-            image.draw(in: CGRect(origin: .zero, size: targetSize))
-        }
-        // A busy 2048 px frame can still pass the Mac's 5 MiB cap at 0.85;
-        // step the quality down before giving up on it.
-        for q in [quality, 0.7, 0.55, 0.4] {
-            if let data = resized.jpegData(compressionQuality: q),
-               data.count <= SessionInput.maxAttachmentBytes { return data }
-        }
-        return resized.jpegData(compressionQuality: 0.4)
-    }
+    private static func downscaledJPEG(_ image: UIImage) -> Data? { ScreenshotWatch.jpeg(image) }
 
     /// PDFs/text ride as-is (≤ 5 MiB, same cap the Mac enforces) — no
     /// re-encoding, unlike photos.

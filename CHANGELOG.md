@@ -28,7 +28,9 @@ workflow publishes the matching section as the GitHub release body.
   session — no composer, no paste. Take a screenshot anywhere on the
   phone and the next chat you open offers it (or several) for one-tap
   sending; Settings › Screenshots turns the offer off. Needs full Photos
-  access for shots from other apps; the in-app button never does.
+  access for shots from other apps; the in-app button never does. On
+  any other screen, shake the phone: it captures the screen and asks
+  which session gets it.
 - **A message from another session reads the way the CLI shows it**: a
   "Message from @Infinitus" line with a short preview, the full text a
   tap away — not a wall of delivery wrapper, and not your own bubble.

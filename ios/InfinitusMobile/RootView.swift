@@ -30,6 +30,8 @@ struct RootView: View {
                 tabs
             }
         }
+        // Shake on any screen: capture it, pick a session, sent.
+        .background(ShakeToSend(model: model))
         .task {
             while !Task.isCancelled {
                 await model.refresh()

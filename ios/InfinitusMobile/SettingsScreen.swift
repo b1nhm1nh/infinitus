@@ -272,8 +272,9 @@ private struct ScreenshotSettings: View {
             Text("Screenshots")
         } footer: {
             Text("A screenshot you take — in this app or any other — is offered on a session's chat "
-                 + "for one-tap sending. Needs full Photos access; the camera button in a chat's "
-                 + "header sends the app's own screen without it.")
+                 + "for one-tap sending. Needs full Photos access. Without it: the camera button in a "
+                 + "chat's header sends that screen, and a shake on any screen captures it and asks "
+                 + "which session to send it to.")
         }
     }
 }
