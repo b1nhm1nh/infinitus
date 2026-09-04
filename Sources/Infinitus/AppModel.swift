@@ -144,6 +144,12 @@ final class AppModel: ObservableObject {
     @Published var forecast: UsageForecast?
     /// Sessions whose AWS sign-in lapsed + logins in flight (AwsLogin.swift).
     @Published var awsLogins: [AwsLogin.Item] = []
+    /// True once `awsLogins` reflects a finished transcript scan. The
+    /// push trigger seeds off it, not off the scanner's own flag: the
+    /// list rebuilds one run-loop hop after the scan lands, and a poll
+    /// in that gap would seed on the stale (empty) list and push every
+    /// pre-existing need on the next one.
+    private var awsLoginsScanned = false
     private var awsLoginStates: [AwsLogin.State] = []
     private var awsLoginNeedsWatch: AnyCancellable?
     private var awsLoginQuitWatch: AnyCancellable?
@@ -1013,6 +1019,7 @@ final class AppModel: ObservableObject {
                                        sessionLabel: nil, state: state))
         }
         if items != awsLogins { awsLogins = items }
+        if sessionProgress.scanned { awsLoginsScanned = true }
     }
 
     /// `remote` nil = no flow asked for: this only REPORTS the profile's
@@ -1723,7 +1730,7 @@ final class AppModel: ObservableObject {
                          allDead: pushAllDead, lastAlive: pushLastAlive,
                          waiting: pushWaiting, awsLogin: pushAwsLogin),
             sessions: list.liveSessions?.sessions,
-            awsLogins: sessionProgress.scanned ? awsLogins : nil)
+            awsLogins: awsLoginsScanned ? awsLogins : nil)
         for msg in pushes where !isPlayground {
             notify(msg)
             // Text over stdin, matching the channel-setup commands;

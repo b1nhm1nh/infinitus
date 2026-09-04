@@ -247,6 +247,11 @@ actor AwsLoginRunner {
             }
             DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 30) {
                 if process.isRunning { process.terminate() }
+                // A broker that ignores SIGTERM would hold the continuation
+                // forever; SIGKILL is what actually fires terminationHandler.
+                DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 5) {
+                    if process.isRunning { kill(process.processIdentifier, SIGKILL) }
+                }
             }
         }
     }
