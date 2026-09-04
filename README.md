@@ -107,7 +107,8 @@ to drive the running app.
   Agentic, Classic SWE, Sci-Fi, Wild West, Cyberpunk, Gothic, Musical,
   Planet Earth, Cosmos, Ocean, or plain numbers; a Themes settings pane
   with card grid, your own skins via `themes.json`, and a community
-  gallery.
+  gallery. On the phone the theme names the tabs and every session's
+  status word too.
 - **Glass popup** — real backdrop blur in every focus state, with a
   transparency dial; a launch intro (slides, bar fill-up, title
   flourish — all tunable in the debug pane).
@@ -162,6 +163,18 @@ to drive the running app.
   sessions, tool calls, time spent waiting on you, switches and limits,
   cost — today, this week, month or year, each with its trend. On the
   phone and the wall too.
+- **Sessions, named and narrated** — sessions you haven't named get a
+  title from Claude Haiku and keep it fresh as the work moves; the
+  phone opens on what's waiting for you, with a Continue button for a
+  session a limit or a crash stopped.
+- **Dictate in any language** — the phone's mic takes Vietnamese (or
+  anything Apple's recognizer knows), translates on the phone into an
+  editable English draft or sends it as spoken with an English-reply
+  note, and is handed the session's own terms so "commit" and file
+  names survive.
+- **All accounts limited, handled** — a floating countdown to the first
+  account back, the sessions waiting to resume counted, and nothing
+  shown while the account you're on is still fine.
 - **`infinitusctl`** — an agent-facing control CLI over a same-user
   socket: status, fleets, switch/rotate/hold/rename/prefer/reorder,
   proxy settings, AWS logins, stats, windows and perf probes; the same
