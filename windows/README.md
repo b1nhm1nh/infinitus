@@ -54,6 +54,47 @@ Binary location: `.\.build\debug\infinitus-win.exe`.
 
 ---
 
+## Install & Release Flow
+
+Debug binaries in `.\.build\debug` require Swift toolchain runtime DLLs on `PATH`
+(or sourcing `windows\env.ps1`). A bare double-click or autostart without the
+environment fails with exit `3221225781` (`0xC0000135`, `STATUS_DLL_NOT_FOUND`).
+Furthermore, pointing autostart at `.build\` breaks whenever `.build\` is cleaned.
+
+`windows\install.ps1` builds both `infinitus-win` and `infinitus-tray-win` in release
+configuration, copies them to `%LOCALAPPDATA%\Infinitus\bin\`, and bundles the 17
+required Swift runtime DLLs alongside them so they run standalone anywhere without
+sourcing `env.ps1`.
+
+### Install to `%LOCALAPPDATA%\Infinitus\bin`
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\windows\install.ps1
+```
+
+### Install with Autostart (Start with Windows)
+
+Sets `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` (`Infinitus Tray`) to point at the installed release binary:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\windows\install.ps1 -Autostart
+```
+
+> **Debug vs Release Autostart Warning**: Toggling "Start with Windows" from the
+> debug tray UI sets the Run registry key to `.\.build\debug\infinitus-tray-win.exe`.
+> Always use `windows\install.ps1 -Autostart` so Windows starts the standalone release
+> binary at `%LOCALAPPDATA%\Infinitus\bin\infinitus-tray-win.exe` upon user login.
+
+### Uninstall
+
+Stops any running installed daemon or tray instances, removes the autostart Run key, and deletes `%LOCALAPPDATA%\Infinitus\bin`:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\windows\install.ps1 -Uninstall
+```
+
+---
+
 ## Subcommands & Real Output
 
 All examples below show verified output from `infinitus-win 0.4.1` on Windows 11.
@@ -459,6 +500,27 @@ session's transcript; a `key` answering `{"outcome":"noSurface"}`.
 modes differ in class, Claude Code holds the message for its user to approve
 rather than delivering it straight to the model. The daemon reports the write
 that succeeded; the phone shows `permissionMode` so it can say so.
+
+---
+
+## Custom API Acceptance (W12)
+
+Recorded 2026-09-04 against `docs/plan-windows/05-custom-api.md`:
+
+This host runs Claude Code configured with a local swap proxy (`ANTHROPIC_BASE_URL=http://127.0.0.1:20128/v1` in `~/.claude/settings.json`). The acceptance checks verify that the Infinitus remote path remains independent of the API endpoint:
+
+1. **Step 1 (Proxy active — baseline)**: **PASS**
+   - 7 live Claude Code sessions listed via `infinitus-win sessions` and `/snapshot` (`liveSessions.total: 7`, `alive: true`, `pipe: true`).
+   - Feed tail `/sessions/1840/tail` retrieved live turns, showing model `glm-5.3-flash` (proxy-aliased) alongside `canMessage: true`, `keys: false`, and `permissionMode: default`.
+   - Cross-session message injection via named pipe verified live: sending `infinitus-test-ping` to PID 1840 delivered `<cross-session-message from="uds:\\.\pipe\LOCAL\infinitus-..." from-name="Infinitus app" ...>` directly into the session inbox, and the session replied `"Pong. infinitus-ec alive."`.
+
+2. **Step 2 (Unset `ANTHROPIC_BASE_URL`)**: **NOT RUN (credential constraint)**
+   - The auth token on this host (`ANTHROPIC_AUTH_TOKEN: sk-9a...`) is issued by and scoped to the local proxy. Direct connection to `api.anthropic.com` fails authentication or requires interactive browser login (`claude login`), which cannot be run in headless automation.
+   - Code verification confirms independence: `infinitus-win` reads session descriptors, transcripts, and pipes directly from the filesystem (`%USERPROFILE%\.claude\sessions` and `projects`), never touching `ANTHROPIC_BASE_URL` in `settings.json`.
+
+3. **Step 3 (Unreachable upstream failure mode)**: **NOT RUN (production safety constraint)**
+   - The local proxy on port 20128 is a shared background service (PID 24776) powering all 7 active sessions, including the active orchestrator session (PID 24928). Pointing it to an unreachable upstream would disrupt live work across the host.
+   - Code verification in `Transcript.swift:119-125` confirms: `isLimitStop` only matches `entry["type"] == "assistant"` with `entry["error"] == "rate_limit"`. Upstream network/proxy errors surface as `system`/`api_error` entries, yielding `isLimitStop == false`; `findStopped` skips them and no resume nudge is attempted.
 
 ---
 
