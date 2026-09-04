@@ -96,6 +96,7 @@ struct SessionFeedScreen: View {
                         row(item)
                         if index == (feed?.items.count ?? 0) - 1 {
                             actionRow(item)
+                            if Self.canContinue(after: item, status: session.status) { continueRow }
                         }
                     }
                     .id(index)
@@ -478,6 +479,61 @@ struct SessionFeedScreen: View {
             if let actionResult { Text(actionResult).font(.caption).foregroundStyle(.secondary) }
         default:
             EmptyView()
+        }
+    }
+
+    // MARK: continue (user 2026-09-04: "a button on ios when clicked it
+    // continues the session that maybe stopped by various reasons")
+
+    /// The Mac composes the nudge (`resume` kind); the button shows once
+    /// the session isn't mid-turn and isn't waiting on a prompt the
+    /// action row already handles.
+    static func canContinue(after item: SessionFeedItem, status: String) -> Bool {
+        if item.kind == .limit { return true }
+        if item.kind == .permission || item.kind == .question { return false }
+        return status != "busy"
+    }
+
+    @State private var continuing = false
+    @State private var continueResult: String?
+
+    private var continueRow: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 8) {
+                Button {
+                    continueSession()
+                } label: {
+                    Label("Continue session", systemImage: "play.fill")
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(continuing || actionSending)
+                if continuing { ProgressView() }
+            }
+            if let continueResult {
+                Text(continueResult).font(.caption).foregroundStyle(.secondary)
+            }
+        }
+        .padding(.top, 4)
+    }
+
+    private func continueSession() {
+        continuing = true
+        continueResult = nil
+        Task {
+            do {
+                let reply = try await NetworkFleetMirror.shared.sessionInput(
+                    pid: Int32(session.pid), request: .init(kind: .resume, text: ""))
+                continueResult = reply.outcome == "delivered"
+                    ? "asked to continue" + (reply.channel == "socket" ? "" : " (typed into the terminal)")
+                    : reply.detail.map { "\(Self.describe(reply.outcome)) — \($0)" } ?? Self.describe(reply.outcome)
+            } catch MirrorTransportError.http(let status) where status == 400 {
+                // An older Mac doesn't know the `resume` kind.
+                continueResult = "update Infinitus on the Mac to continue sessions from the phone"
+            } catch {
+                continueResult = "couldn't reach the Mac"
+            }
+            continuing = false
+            await load()
         }
     }
 
