@@ -45,7 +45,7 @@ final class WallWindowController {
 
     func show(model: AppModel, usage: UsageModel) {
         guard !isVisible, let screen = Self.targetScreen() else { return }
-        let root = WallRoot(model: model, usage: usage,
+        let root = WallRoot(model: model, usage: usage, stats: model.statsModel,
                             close: { [weak self] in self?.close() })
         let host = NSHostingController(rootView: root)
         host.sizingOptions = []
@@ -89,6 +89,7 @@ final class WallWindowController {
 private struct WallRoot: View {
     @ObservedObject var model: AppModel
     @ObservedObject var usage: UsageModel
+    @ObservedObject var stats: StatsModel
     let close: () -> Void
     @State private var ideal: CGSize = .zero
 
@@ -96,7 +97,7 @@ private struct WallRoot: View {
         GeometryReader { geo in
             ZStack(alignment: .topTrailing) {
                 Color.black.ignoresSafeArea()
-                WallLayout(model: model)
+                WallLayout(model: model, stats: stats)
                     .frame(maxWidth: .infinity, maxHeight: .infinity,
                            alignment: .topLeading)
                 Button(action: close) {

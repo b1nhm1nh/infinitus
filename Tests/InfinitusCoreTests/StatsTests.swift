@@ -109,6 +109,21 @@ final class StatsTests: XCTestCase {
         XCTAssertLessThan(data.count, 12_000)
     }
 
+    func testBundleCompactsSessionAndRepoSetsIntoTallies() {
+        var d = Stats.Day(); d.sessions = ["s1", "s2", "s3"]; d.repos = ["r1"]
+        let b = Stats.Bundle(days: ["2026-09-04": d], now: date("2026-09-04T03:00:00Z"), calendar: cal)
+        let day = b.summary(.day)!
+        XCTAssertTrue(day.total.sessions.isEmpty)
+        XCTAssertEqual(day.total.sessionCount, 3)
+        XCTAssertTrue(day.total.repos.isEmpty)
+        XCTAssertEqual(day.total.repoCount, 1)
+        let data = try! JSONEncoder().encode(b)
+        let json = String(data: data, encoding: .utf8)!
+        XCTAssertFalse(json.contains("s1"))
+        XCTAssertFalse(json.contains("s2"))
+        XCTAssertFalse(json.contains("s3"))
+    }
+
     func testFoldMonthPreviousIsTheCalendarMonth() {
         func day(_ commits: Int) -> Stats.Day {
             var d = Stats.Day(); d.commits = commits; return d

@@ -29,6 +29,7 @@ public enum Stats {
         public var usd = 0.0
         // Sessions
         public var sessions: Set<String> = []
+        public var sessionTally = 0       // compact form for the phone: set emptied, count kept
         public var sessionSeconds = 0.0
         public var sessionBuckets = [0, 0, 0, 0]   // <15m, 15-60m, 1-4h, >4h; one session per file-day
         public var hours: [Int] = Array(repeating: 0, count: 168)   // weekday(Mon=0)*24 + hour
@@ -40,6 +41,7 @@ public enum Stats {
         public var coAuthoredByClaude = 0
         public var reverts = 0
         public var repos: Set<String> = []
+        public var repoTally = 0          // compact form for the phone: set emptied, count kept
         // GitHub
         public var prsOpened = 0
         public var prsMerged = 0
@@ -101,7 +103,8 @@ public enum Stats {
         // Derived — nil when the denominator is zero (tiles show "—").
         public var messages: Int { humanMessages + phoneMessages }
         public var totalToolCalls: Int { toolCalls.values.reduce(0, +) }
-        public var sessionCount: Int { sessions.count }
+        public var sessionCount: Int { sessions.isEmpty ? sessionTally : sessions.count }
+        public var repoCount: Int { repos.isEmpty ? repoTally : repos.count }
         public var messagesPerCommit: Double? { ratio(Double(messages), Double(commits)) }
         public var toolCallsPerHumanMessage: Double? { ratio(Double(totalToolCalls), Double(messages)) }
         public var usdPerCommit: Double? { ratio(usd, Double(commits)) }
@@ -159,6 +162,14 @@ public enum Stats {
             periods = Period.allCases.map { p in
                 var s = fold(days: days, period: p, now: now, calendar: calendar)
                 s.daily = []
+                s.total.sessionTally = s.total.sessions.count
+                s.total.sessions = []
+                s.total.repoTally = s.total.repos.count
+                s.total.repos = []
+                s.previous.sessionTally = s.previous.sessions.count
+                s.previous.sessions = []
+                s.previous.repoTally = s.previous.repos.count
+                s.previous.repos = []
                 return s
             }
         }

@@ -1580,12 +1580,14 @@ final class AppModel: ObservableObject {
                                         tokenRate: sessionProgress.tokenRate)
             }
             statsModel.refreshIfStale()
+            let stats = statsModel.days.isEmpty ? nil : statsModel.bundle
             Task.detached(priority: .utility) { [mirrorExporter] in
                 await mirrorExporter.record(listJSON: raw, prefs: prefs,
                                             serviceStatus: serviceStatus,
                                             engine: engine, fleets: allFleets,
                                             forecast: forecast, plan: plan,
-                                            awsLogins: awsLogins, progress: progress)
+                                            awsLogins: awsLogins, progress: progress,
+                                            stats: stats)
             }
         }
         // All-limited: count the limit-stopped sessions waiting to be
