@@ -724,4 +724,53 @@ final class StatsTests: XCTestCase {
         XCTAssertEqual(throughput.tiles.first { $0.id == "Repos" }?.value, "2")
         XCTAssertEqual(throughput.tiles.first { $0.id == "Files touched" }?.value, "12")
     }
+
+    func testActivityTallyAddsAndDecodesForwardCompatibly() throws {
+        var a = Stats.ActivityTally(); a.stretches = 1; a.seconds = 30; a.inputTokens = 10; a.outputTokens = 5; a.usd = 0.5
+        var b = Stats.ActivityTally(); b.stretches = 2; b.seconds = 15; b.inputTokens = 1; b.outputTokens = 1; b.usd = 0.25
+        let c = a + b
+        XCTAssertEqual(c.stretches, 3); XCTAssertEqual(c.seconds, 45); XCTAssertEqual(c.inputTokens, 11)
+        XCTAssertEqual(c.outputTokens, 6); XCTAssertEqual(c.usd, 0.75, accuracy: 1e-9)
+        // Short keys on the wire; a newer field is ignored, a missing one defaults.
+        let json = String(decoding: try JSONEncoder().encode(a), as: UTF8.self)
+        XCTAssertTrue(json.contains("\"n\":1") && json.contains("\"in\":10") && json.contains("\"out\":5"))
+        let sparse = try JSONDecoder().decode(Stats.ActivityTally.self, from: Data(#"{"n":4,"future":9}"#.utf8))
+        XCTAssertEqual(sparse.stretches, 4); XCTAssertEqual(sparse.usd, 0)
+    }
+
+    func testDayAddsActivitiesAndModelsAndDecodesWithoutThem() throws {
+        var a = Stats.Day(); a.activities["review"] = tally(usd: 1); a.byModel["claude-opus-5"] = tally(usd: 2)
+        var b = Stats.Day(); b.activities["review"] = tally(usd: 3); b.activities["code"] = tally(usd: 4); b.byModel["claude-sonnet-5"] = tally(usd: 5)
+        let c = a + b
+        XCTAssertEqual(c.activities["review"]?.usd ?? 0, 4, accuracy: 1e-9)
+        XCTAssertEqual(c.activities["code"]?.stretches, 1)
+        XCTAssertEqual(Set(c.byModel.keys), ["claude-opus-5", "claude-sonnet-5"])
+        // A Day written before v2 (no keys) still decodes.
+        let old = try JSONDecoder().decode(Stats.Day.self, from: Data(#"{"commits":3}"#.utf8))
+        XCTAssertTrue(old.activities.isEmpty && old.byModel.isEmpty); XCTAssertEqual(old.commits, 3)
+    }
+
+    func testCompactedKeepsSixModelsAndFoldsTheRest() {
+        var d = Stats.Day()
+        for i in 0..<9 { d.byModel["m\(i)"] = tally(usd: Double(i)) }
+        d.activities["code"] = tally(usd: 1)
+        let c = d.compacted()
+        XCTAssertEqual(c.byModel.count, 7)                       // six kept + "other"
+        XCTAssertNil(c.byModel["m0"]); XCTAssertNotNil(c.byModel["m8"])
+        XCTAssertEqual(c.byModel["other"]?.usd ?? 0, 0 + 1 + 2, accuracy: 1e-9)
+        XCTAssertEqual(c.byModel["other"]?.stretches, 3)
+        XCTAssertEqual(c.activities["code"]?.usd ?? 0, 1, accuracy: 1e-9)   // activities untouched
+        XCTAssertEqual(c.compacted().byModel.count, 7)           // idempotent
+    }
+
+    func testActivityTitlesCoverEveryCase() {
+        for a in Stats.Activity.allCases { XCTAssertFalse(a.title.isEmpty) }
+        XCTAssertEqual(Stats.Activity.other.title, "Other")
+        XCTAssertEqual(Stats.Activity(rawValue: "review")?.title, "Code & PR review")
+    }
+
+    private func tally(usd: Double) -> Stats.ActivityTally {
+        var t = Stats.ActivityTally(); t.stretches = 1; t.seconds = 60; t.inputTokens = 100; t.outputTokens = 10; t.usd = usd
+        return t
+    }
 }

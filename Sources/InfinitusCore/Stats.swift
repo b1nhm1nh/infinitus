@@ -6,6 +6,63 @@ import Foundation
 /// scanners in StatsScanner / RepoStats / StatsEvents produce days, the
 /// app merges and folds them.
 public enum Stats {
+    /// Where a stretch's effort went (issue #24). Raw values are the
+    /// `Day.activities` keys — they travel in the cache and the bundle,
+    /// so never rename one. The rule that picks a case lives in
+    /// `StatsScanner.Stretch.activity`.
+    public enum Activity: String, CaseIterable, Codable, Sendable {
+        case review, tests, plan, debug, browser, simulator, explanation, code, other
+
+        public var title: String {
+            switch self {
+            case .review: return "Code & PR review"
+            case .tests: return "Writing tests"
+            case .plan: return "Plan & design"
+            case .debug: return "Debugging"
+            case .browser: return "Browser & computer use"
+            case .simulator: return "Simulator & device"
+            case .explanation: return "Explanations"
+            case .code: return "Coding"
+            case .other: return "Other"
+            }
+        }
+    }
+
+    /// One bucket of effort — per activity, or per model. Short coding
+    /// keys: eight Days × (9 activities + 6 models) of these ride in
+    /// every mirrored bundle.
+    public struct ActivityTally: Codable, Equatable, Sendable {
+        public var stretches = 0
+        public var seconds = 0.0
+        public var inputTokens = 0
+        public var outputTokens = 0
+        public var usd = 0.0
+        public init() {}
+
+        enum CodingKeys: String, CodingKey {
+            case stretches = "n", seconds = "s", inputTokens = "in", outputTokens = "out", usd
+        }
+
+        public init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            stretches = try c.decodeIfPresent(Int.self, forKey: .stretches) ?? 0
+            seconds = try c.decodeIfPresent(Double.self, forKey: .seconds) ?? 0
+            inputTokens = try c.decodeIfPresent(Int.self, forKey: .inputTokens) ?? 0
+            outputTokens = try c.decodeIfPresent(Int.self, forKey: .outputTokens) ?? 0
+            usd = try c.decodeIfPresent(Double.self, forKey: .usd) ?? 0
+        }
+
+        public static func + (a: ActivityTally, b: ActivityTally) -> ActivityTally {
+            var c = a
+            c.stretches += b.stretches
+            c.seconds += b.seconds
+            c.inputTokens += b.inputTokens
+            c.outputTokens += b.outputTokens
+            c.usd += b.usd
+            return c
+        }
+    }
+
     public struct Day: Codable, Equatable, Sendable {
         // Messages
         public var humanMessages = 0      // typed at the keyboard
@@ -27,6 +84,11 @@ public enum Stats {
         public var inputTokens = 0
         public var outputTokens = 0
         public var usd = 0.0
+        /// Effort per `Activity.rawValue` (main transcripts only) and per
+        /// model id (sub-agent transcripts included). Additive like
+        /// everything else here, so folding needs nothing new.
+        public var activities: [String: ActivityTally] = [:]
+        public var byModel: [String: ActivityTally] = [:]
         // Sessions
         public var sessions: Set<String> = []
         public var sessionTally = 0       // compact form for the phone: set emptied, count kept
@@ -76,6 +138,8 @@ public enum Stats {
             c.inputTokens += b.inputTokens
             c.outputTokens += b.outputTokens
             c.usd += b.usd
+            c.activities.merge(b.activities, uniquingKeysWith: +)
+            c.byModel.merge(b.byModel, uniquingKeysWith: +)
             c.sessions.formUnion(b.sessions)
             c.sessionTally += b.sessionTally
             c.sessionSeconds += b.sessionSeconds
@@ -125,7 +189,24 @@ public enum Stats {
             d.repoTally = repoCount
             d.repos = []
             d.hours = []
+            d.byModel = Self.topModels(byModel, keep: 6)
             return d
+        }
+
+        /// The `keep` costliest models by $ stay; everything else sums
+        /// under "other" (which itself counts as one of the kept keys
+        /// when present, so a compacted Day compacts to itself).
+        static func topModels(_ models: [String: ActivityTally], keep: Int) -> [String: ActivityTally] {
+            var named = models
+            var other = named.removeValue(forKey: "other") ?? ActivityTally()
+            guard named.count > keep else { return models }
+            let sorted = named.sorted { $0.value.usd == $1.value.usd ? $0.key < $1.key : $0.value.usd > $1.value.usd }
+            var out: [String: ActivityTally] = [:]
+            for (i, (key, tally)) in sorted.enumerated() {
+                if i < keep { out[key] = tally } else { other = other + tally }
+            }
+            out["other"] = other
+            return out
         }
 
         /// Hand-written so a Day written by a NEWER build still decodes:
@@ -155,6 +236,8 @@ public enum Stats {
             inputTokens = try c.decodeIfPresent(Int.self, forKey: .inputTokens) ?? d.inputTokens
             outputTokens = try c.decodeIfPresent(Int.self, forKey: .outputTokens) ?? d.outputTokens
             usd = try c.decodeIfPresent(Double.self, forKey: .usd) ?? d.usd
+            activities = try c.decodeIfPresent([String: ActivityTally].self, forKey: .activities) ?? d.activities
+            byModel = try c.decodeIfPresent([String: ActivityTally].self, forKey: .byModel) ?? d.byModel
             sessions = try c.decodeIfPresent(Set<String>.self, forKey: .sessions) ?? d.sessions
             sessionTally = try c.decodeIfPresent(Int.self, forKey: .sessionTally) ?? d.sessionTally
             sessionSeconds = try c.decodeIfPresent(Double.self, forKey: .sessionSeconds) ?? d.sessionSeconds
