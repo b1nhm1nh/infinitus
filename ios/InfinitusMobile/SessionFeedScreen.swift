@@ -32,6 +32,7 @@ struct SessionFeedScreen: View {
     @State private var awsLoginItem: AwsLogin.Item?
     @State private var lastRowVisible = true
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.dismiss) private var dismiss
     /// Bumped on foreground return: `.task(id:)` drops the long-poll that
     /// was in flight when the app left — its connection may be dead until
     /// a 35 s timeout — and starts a fresh one.
@@ -186,8 +187,15 @@ struct SessionFeedScreen: View {
         // to the newest message, so a card at the top was out of reach
         // (user 2026-09-03 "have to scroll to top").
         .safeAreaInset(edge: .top, spacing: 0) {
+            let theme = model.rowTheme
             VStack(spacing: 0) {
-                accountBar
+                VStack(spacing: 0) {
+                    titleRow
+                    accountBar
+                }
+                .background(theme.plain ? Color.clear : ThemeColor.flash(theme).opacity(0.16))
+                .background(.bar)
+                .overlay(alignment: .bottom) { Divider() }
                 offlineBanner
                 awsLoginBar
             }
@@ -201,26 +209,13 @@ struct SessionFeedScreen: View {
         // The composer owns the bottom edge; the floating tab bar would
         // sit under it.
         .toolbar(.hidden, for: .tabBar)
-        .navigationTitle(feed?.name ?? repoName(session.cwd))
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .principal) {
-                VStack(spacing: 1) {
-                    Text(feed?.name ?? repoName(session.cwd)).font(.headline).lineLimit(1)
-                    Text(SessionWords.status(feed?.status ?? session.status))
-                        .font(.caption).foregroundStyle(.secondary)
-                }
-            }
-            // An explicit route into the detail screen (user 2026-09-03
-            // "a more detail screen when tap on its header title"; the
-            // header itself was the only, unlabeled, way in).
-            ToolbarItem(placement: .topBarTrailing) {
-                NavigationLink(value: SessionDetailRoute(session: session)) {
-                    Image(systemName: "info.circle")
-                }
-                .accessibilityLabel("Session details")
-            }
-        }
+        // A header of its own — Messenger/Slack style (user 2026-09-04:
+        // "native header is too limited for future builds"): back, the
+        // session's name and state as the route into its details, the
+        // account's fleet row beneath, all on the theme's tint.
+        .toolbar(.hidden, for: .navigationBar)
+        .navigationBarBackButtonHidden(true)
+        .background(InteractivePopGesture())
         .sensoryFeedback(.success, trigger: deliveredTick)
         .sensoryFeedback(.warning, trigger: deniedTick)
         .refreshable { await load() }
@@ -307,10 +302,47 @@ struct SessionFeedScreen: View {
         }
     }
 
-    /// The account serving this session, one slim line under the title.
-    /// A theme makes it the account's own fleet row — the same header
-    /// line and usage cells the Fleet tab draws (glyphs, gauges, the
-    /// per-model window, spend), on the flash tint. Off keeps the line.
+    /// Back · name + state (the tap into the details) · room on the right
+    /// for what comes next.
+    private var titleRow: some View {
+        let status = feed?.status ?? session.status
+        return HStack(spacing: 4) {
+            Button { dismiss() } label: {
+                Image(systemName: "chevron.left")
+                    .font(.title3.weight(.semibold))
+                    .frame(width: 40, height: 40)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Back")
+            NavigationLink(value: SessionDetailRoute(session: session)) {
+                HStack(spacing: 6) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(feed?.name ?? repoName(session.cwd))
+                            .font(.headline).lineLimit(1)
+                        HStack(spacing: 5) {
+                            Circle().fill(SessionWords.color(status)).frame(width: 7, height: 7)
+                            Text(SessionWords.status(status))
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
+                    Image(systemName: "chevron.right")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(.tertiary)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Session details")
+            Spacer(minLength: 0)
+        }
+        .padding(.leading, 4).padding(.trailing, 16).padding(.top, 2)
+    }
+
+    /// The account serving this session, under the title. A theme makes
+    /// it the account's own fleet row — the same header line and usage
+    /// cells the Fleet tab draws (glyphs, gauges, the per-model window,
+    /// spend). Off keeps the plain line.
     @ViewBuilder private var accountBar: some View {
         let summary = model.accountSummary(forSessionPid: session.pid)
         if let line = AccountSummaryFormat.headerLine(summary) {
@@ -333,12 +365,8 @@ struct SessionFeedScreen: View {
                     }
                 }
             }
-            .padding(.horizontal, 16).padding(.vertical, 5)
+            .padding(.horizontal, 16).padding(.top, 6).padding(.bottom, 8)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(theme.plain ? Color.clear : ThemeColor.flash(theme).opacity(0.16),
-                        ignoresSafeAreaEdges: [])
-            .background(.bar)
-            .overlay(alignment: .bottom) { Divider() }
         }
     }
 

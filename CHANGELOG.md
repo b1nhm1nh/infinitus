@@ -46,10 +46,11 @@ workflow publishes the matching section as the GitHub release body.
   written instead of up to two seconds late; coming back to the app
   refreshes the feed immediately; and on the Mac a message being typed
   into a terminal no longer holds up every other phone request.
-- **Session headers wear the theme.** A session's account bar becomes
-  the account's own Fleet row — glyphs, gauges, the per-model window,
-  the plan badge — on the theme's tint, and the Sessions list header
-  shows the theme's glyph. The Off theme keeps the plain lines.
+- **A header of its own on a session's chat.** Back, the session's name
+  and state (tap for its details), and the account's own Fleet row —
+  glyphs, gauges, the per-model window, the plan badge — on the theme's
+  tint; the Sessions list header shows the theme's glyph. The Off theme
+  keeps the plain lines.
 
 ### Stats
 - **Your engineering week, in numbers.** Settings → Stats: commits,
