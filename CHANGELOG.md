@@ -20,8 +20,10 @@ workflow publishes the matching section as the GitHub release body.
   phone and the next chat you open offers it (or several) for one-tap
   sending; Settings › Screenshots turns the offer off. Needs full Photos
   access for shots from other apps; the in-app button never does.
-- **A message from another session reads as that session's words**, not
-  the delivery wrapper around them.
+- **A message from another session reads the way the CLI shows it**: a
+  "Message from @Infinitus" line with a short preview, the full text a
+  tap away — not a wall of delivery wrapper, and not your own bubble.
+  Your own phone messages lose the "Infinitus app:" prefix.
 
 ## 0.4.2
 

@@ -33,6 +33,8 @@ struct SessionFeedScreen: View {
     @State private var lastRowVisible = true
     @Environment(\.scenePhase) private var scenePhase
     @StateObject private var screenshots = ScreenshotWatch()
+    /// Peer messages opened to their full text (keyed by time + text).
+    @State private var expandedPeers: Set<String> = []
     @Environment(\.dismiss) private var dismiss
     /// Bumped on foreground return: `.task(id:)` drops the long-poll that
     /// was in flight when the app left — its connection may be dead until
@@ -1148,8 +1150,43 @@ struct SessionFeedScreen: View {
         }
     }
 
+    /// Another session's message, the way the CLI shows it: one
+    /// "Message from @<sender>" line with a short preview, the full text
+    /// a tap away (user 2026-09-04: "same on ios but indicative").
+    private func peerMessage(_ item: SessionFeedItem, sender: String) -> some View {
+        let key = "\(item.at?.timeIntervalSince1970 ?? 0)|\(item.text.prefix(40))"
+        let open = expandedPeers.contains(key)
+        return VStack(alignment: .leading, spacing: 3) {
+            HStack(spacing: 4) {
+                Image(systemName: "chevron.right")
+                    .font(.caption2.weight(.semibold))
+                    .rotationEffect(.degrees(open ? 90 : 0))
+                Text("Message from @\(sender)")
+                    .font(.caption.weight(.semibold))
+            }
+            .foregroundStyle(.secondary)
+            if open {
+                Text(item.text).font(.callout).textSelection(.enabled)
+            } else {
+                Text(item.text.split(whereSeparator: \.isNewline).first.map(String.init) ?? item.text)
+                    .font(.callout).italic().foregroundStyle(.secondary)
+                    .lineLimit(2)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.vertical, 4)
+        .contentShape(Rectangle())
+        .onTapGesture {
+            withAnimation(.easeInOut(duration: 0.15)) {
+                if open { expandedPeers.remove(key) } else { expandedPeers.insert(key) }
+            }
+        }
+    }
+
     @ViewBuilder private func row(_ item: SessionFeedItem) -> some View {
         switch item.kind {
+        case .user where item.sender != nil:
+            peerMessage(item, sender: item.sender ?? "peer")
         case .user:
             let (text, attached) = Self.splitAttached(item.text)
             let images = item.images ?? []
