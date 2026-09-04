@@ -237,12 +237,16 @@ public enum StatsScanner {
                     day.outputTokens += output
                     day.usd += cost
                     // Per model, per entry — exact, and the only route a
-                    // sub-agent file's spend takes into v2.
-                    var m = day.byModel[model] ?? Stats.ActivityTally()
-                    m.inputTokens += input
-                    m.outputTokens += output
-                    m.usd += cost
-                    day.byModel[model] = m
+                    // sub-agent file's spend takes into v2. Skipped for an
+                    // empty model name (nothing to key the tally under);
+                    // the day totals above still count it.
+                    if !model.isEmpty {
+                        var m = day.byModel[model] ?? Stats.ActivityTally()
+                        m.inputTokens += input
+                        m.outputTokens += output
+                        m.usd += cost
+                        day.byModel[model] = m
+                    }
                     if entry.state.stretch != nil {
                         entry.state.stretch!.model = model
                         entry.state.stretch!.inputTokens += input
