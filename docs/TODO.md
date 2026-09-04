@@ -554,8 +554,3 @@ file keeps the shipped log and the deferred-by-design notes.
   `/api/providers` + `/api/usage/{id}` surface (roster paginated, 30-day
   cookie) — build it as NineRouterEngine with a second identity once a
   live instance confirms the Claude quota-key names.
-
-## Phone feed: render pasted images
-- The feed shows a pasted image as the transcript's "[Image: …]" placeholder
-  text (screenshot 2026-09-04). Render the saved attachment (the
-  `[attached: <path>]` line the Mac appends) as a thumbnail instead.
