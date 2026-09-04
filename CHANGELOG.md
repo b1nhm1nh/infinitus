@@ -14,6 +14,11 @@ workflow publishes the matching section as the GitHub release body.
   out as spoken with the English-reply note. Sending mid-translation
   does the same.
 ### Phone
+- **A lighter chat header, two ways.** Compact: the theme's glyph as an
+  avatar, the session's name, its state and account on one line, every
+  window as glyph + value on the next. Stat strip: the title row with a
+  row of mini gauges under it. Settings › Appearance › Chat header picks;
+  the full Fleet row lives in the session's details.
 - **Screenshots go out in one tap.** The camera button in a chat's header
   sends a picture of the screen you're looking at, straight to that
   session — no composer, no paste. Take a screenshot anywhere on the

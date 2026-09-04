@@ -11,6 +11,8 @@ import InfinitusUI
 /// with it off these are the mac's own Display / Themes / Animations
 /// choices, same values and same labels.
 struct SettingsForm: View {
+    @AppStorage("chat_header") private var chatHeader = "compact"
+
     @ObservedObject var model: MirrorModel
     /// The QR scanner (#9 remote access) is a sheet, not a screen: it
     /// exists for the ten seconds it takes to pair.
@@ -132,6 +134,10 @@ struct SettingsForm: View {
             // The 1:1 Mac rendering isn't lost, just off by default
             // (#9 native shell): this flips the whole app back to it.
             Section("Appearance") {
+                Picker("Chat header", selection: $chatHeader) {
+                    Text("Compact").tag("compact")
+                    Text("Stat strip").tag("strip")
+                }
                 Toggle("Show as Mac popup", isOn: $model.macPopupView)
                 Text("Renders the Mac popup itself — the same layout, "
                      + "chrome and scaling, on dark. Off is the native "
