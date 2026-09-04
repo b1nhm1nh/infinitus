@@ -903,9 +903,17 @@ final class AppModel: ObservableObject {
             else { return nil }
             guard let feed = SessionFeedReader.read(record: record, claudeDir: claudeDir, limit: limit)
             else { return nil }
+            // W9: the phone gates its composer on these. The Mac can always
+            // type into the session's terminal (PtyNudge), so `keys` is
+            // true; `canMessage` says whether the peer socket is listening.
+            let annotated = SessionFeed(
+                pid: feed.pid, sessionId: feed.sessionId, cwd: feed.cwd, status: feed.status,
+                waiting: feed.waiting, items: feed.items, name: feed.name, stamp: feed.stamp,
+                canMessage: !record.messagingSocketPath.isEmpty, keys: true,
+                permissionMode: feed.permissionMode)
             let encoder = JSONEncoder()
             encoder.dateEncodingStrategy = .iso8601
-            return try? encoder.encode(feed)
+            return try? encoder.encode(annotated)
         }
         mirrorServer.awsLogin.set(
             start: { [weak self] request in

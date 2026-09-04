@@ -96,10 +96,26 @@ public struct SessionFeed: Codable, Sendable {
     /// as `?since=` so the Mac can hold the reply until something changed
     /// (long-poll). New optional field.
     public let stamp: String?
+    /// Whether a message can be delivered to this session at all: a peer
+    /// channel is listening (Mac: the unix socket; Windows: the named
+    /// pipe). The phone gates its composer on it. Additive optional — an
+    /// older host omits it and the phone assumes yes, as it did before.
+    public let canMessage: Bool?
+    /// Whether the host can type into the session's terminal (the PTY
+    /// nudge path). True on the Mac, false on Windows: Windows Terminal
+    /// exposes no send-keys, so a session with no peer channel can't be
+    /// reached at all there.
+    public let keys: Bool?
+    /// The session's permission mode as its transcript last reported it
+    /// (`default`, `bypass`, …). A `default`-mode session HOLDS an
+    /// inbound peer message for its user's approval, so the phone says so
+    /// instead of implying the message was delivered.
+    public let permissionMode: String?
 
     public init(pid: Int32, sessionId: String, cwd: String, status: String?,
                 waiting: Bool, items: [SessionFeedItem], name: String? = nil,
-                stamp: String? = nil) {
+                stamp: String? = nil, canMessage: Bool? = nil, keys: Bool? = nil,
+                permissionMode: String? = nil) {
         self.pid = pid
         self.sessionId = sessionId
         self.cwd = cwd
@@ -108,6 +124,9 @@ public struct SessionFeed: Codable, Sendable {
         self.items = items
         self.name = name
         self.stamp = stamp
+        self.canMessage = canMessage
+        self.keys = keys
+        self.permissionMode = permissionMode
     }
 }
 
@@ -138,7 +157,22 @@ public enum SessionFeedReader {
                                         statusUpdatedAt: record.statusUpdatedAt)
         return SessionFeed(pid: record.pid, sessionId: record.sessionId, cwd: record.cwd,
                            status: record.status, waiting: waiting, items: items,
-                           name: record.name, stamp: stamp(record: record, claudeDir: claudeDir))
+                           name: record.name, stamp: stamp(record: record, claudeDir: claudeDir),
+                           permissionMode: permissionMode(lines: lines))
+    }
+
+    /// The newest `permission-mode` entry's mode in the transcript tail —
+    /// Claude Code writes one whenever the mode changes. Nil when the tail
+    /// holds none (the session never changed mode since it aged out).
+    public static func permissionMode(lines: [String]) -> String? {
+        for line in lines.reversed() where line.contains("\"permission-mode\"") {
+            guard let entry = decodeLine(line),
+                  (entry["subtype"] as? String) == "permission-mode" ||
+                  (entry["type"] as? String) == "permission-mode"
+            else { continue }
+            if let mode = entry["permissionMode"] as? String, !mode.isEmpty { return mode }
+        }
+        return nil
     }
 
     /// "size-mtime" of the transcript plus the record's status, so a
