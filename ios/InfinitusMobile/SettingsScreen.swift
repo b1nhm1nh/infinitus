@@ -127,6 +127,7 @@ struct SettingsForm: View {
                 Text("Scanning the QR code sets everything up. On the same Wi-Fi the phone "
                      + "finds the Mac by itself; add an address for anywhere else.")
             }
+            DictationSettings()
             // The 1:1 Mac rendering isn't lost, just off by default
             // (#9 native shell): this flips the whole app back to it.
             Section("Appearance") {
@@ -203,6 +204,47 @@ struct ThemePreviewRow: View {
                 GaugeBar(remaining: remaining, color: ThemeColor.resolve(color),
                          dividers: dividers, animated: false)
             }
+        }
+    }
+}
+
+
+/// Dictation language and what happens to a non-English take (user
+/// 2026-09-04: "can it accept Vietnamese? … build them configurable").
+private struct DictationSettings: View {
+    @AppStorage(Dictation.localeKey) private var localeID = ""
+    @AppStorage(Dictation.policyKey) private var policy = "phone"
+    @AppStorage(Dictation.hintsKey) private var hints = true
+
+    private var phoneTranslation: Bool {
+        if #available(iOS 18.0, *) { return true } else { return false }
+    }
+
+    var body: some View {
+        Section {
+            Picker("Language", selection: $localeID) {
+                Text("Phone language (\(Dictation.displayName(Locale.current)))").tag("")
+                ForEach(Dictation.supportedLocales, id: \.identifier) { locale in
+                    Text(Dictation.displayName(locale)).tag(locale.identifier)
+                }
+            }
+            .pickerStyle(.navigationLink)
+            Picker("Non-English dictation", selection: $policy) {
+                if phoneTranslation { Text("Translate on the phone").tag("phone") }
+                Text("Send as spoken, ask for an English reply").tag("note")
+                Text("Send as spoken").tag("none")
+            }
+            Toggle("Hint the session's terms", isOn: $hints)
+        } header: {
+            Text("Dictation")
+        } footer: {
+            Text((phoneTranslation
+                  ? "Translation runs on the phone — nothing leaves it; the first use downloads the language. "
+                  : "On-phone translation needs iOS 18. ")
+                 + "Long-press the mic to switch language. Hints hand the recognizer the "
+                 + "session's names, branch and tools so English terms survive a "
+                 + (localeID.isEmpty ? "non-English" : Dictation.displayName(Locale(identifier: localeID)))
+                 + " take.")
         }
     }
 }
