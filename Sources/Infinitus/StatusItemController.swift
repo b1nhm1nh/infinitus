@@ -512,14 +512,25 @@ final class StatusItemController {
     /// popup-size changes) — the popover's re-measure, done by hand.
     private func fitPinned(to size: CGSize) {
         pinnedIdeal = size
-        guard let pinned, size.width > 1, size.height > 1,
+        guard let pinned, !fittingPinned, size.width > 1, size.height > 1,
               size.width < 20_000, size.height < 20_000 else { return }
+        // Whole points only: AppKit floors a fractional content size to
+        // the pixel grid, so a 633.6-pt ideal made a 633-pt window that
+        // never matched within 0.5 — setContentSize lays the content out
+        // synchronously, the geometry callback fired again, and the app
+        // froze at 94% main-thread CPU (bundle 6b587b2, 2026-09-04).
+        let want = NSSize(width: ceil(size.width), height: ceil(size.height))
         let current = pinned.contentRect(forFrameRect: pinned.frame).size
-        if abs(current.width - size.width) > 0.5 || abs(current.height - size.height) > 0.5 {
-            pinned.setContentSize(NSSize(width: size.width, height: size.height))
+        if abs(current.width - want.width) > 0.5 || abs(current.height - want.height) > 0.5 {
+            fittingPinned = true
+            defer { fittingPinned = false }
+            pinned.setContentSize(want)
             clampOnScreen(pinned)
         }
     }
+    /// Re-entrancy guard: setContentSize lays out synchronously, and the
+    /// content's geometry callback lands inside that call.
+    private var fittingPinned = false
 
     /// Controller-owned Settings window. NOT the SwiftUI Settings scene:
     /// `NSApp.sendAction(showSettingsWindow:)` does nothing on macOS 26
