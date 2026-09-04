@@ -96,10 +96,10 @@ public final class TeamClient {
         let store = TeamGit(dir: paths.storeDir(code.team), remote: code.remote, token: code.token, author: me.kid)
         try store.open()
         let client = TeamClient(config: config, identity: me, roster: nil, paths: paths, secrets: secrets, store: store)
-        _ = try client.fetch()
         // The roster must be led by the leader the code named, or the code
-        // points at someone else's store.
-        guard client.roster?.doc.isLeader(code.leader.kid) == true else { throw ClientError.badCode }
+        // points at someone else's store: any roster-acceptance failure on
+        // this first fetch is the code's fault, not the store's.
+        do { _ = try client.fetch() } catch is TeamRoster.RosterError { throw ClientError.badCode }
         let request = TeamRequest(keys: me.keys, name: name, devices: devices, platform: platform, at: now, nonce: code.nonce)
         try store.put("requests/\(me.kid).json", try CanonicalJSON.encode(try Signed.make(request, by: me)))
         try client.persist()

@@ -59,6 +59,16 @@ final class TeamClientTests: XCTestCase {
         XCTAssertThrowsError(try TeamClient.request(code: code, name: "Late", devices: [], platform: "linux",
                                                     paths: sp, secrets: ss, now: 2_000))
 
+        // A code signed by someone who doesn't lead the store it points at.
+        let impostor = TeamIdentity.random()
+        let fake = try TeamCode(team: leader.config.id, name: "Papaya", remote: remote, token: nil,
+                                leader: impostor.keys, expires: 5_000).encoded(by: impostor)
+        let (ip, isec) = machine("impostor-joiner")
+        XCTAssertThrowsError(try TeamClient.request(code: fake, name: "X", devices: [], platform: "linux",
+                                                    paths: ip, secrets: isec, now: 1_005)) {
+            XCTAssertEqual($0 as? TeamClient.ClientError, .badCode)
+        }
+
         _ = try leader.fetch()
         let pending = try leader.requests()
         XCTAssertEqual(pending.map(\.doc.name), ["Bo"])
