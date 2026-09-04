@@ -38,6 +38,10 @@ workflow publishes the matching section as the GitHub release body.
 - Idle sessions show their names, not just the busy ones.
 - Tool runs stay grouped through errors, with an error count on the chip.
 
+### Agents
+- `infinitusctl events` — the app's switch/death/revival log, so a
+  "why did it switch?" question has a record to read.
+
 ### Linux tray
 - Sessions that need an AWS login say so; the footer names the
   connected phone.
