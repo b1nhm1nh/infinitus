@@ -95,7 +95,7 @@ struct SessionDetailScreen: View {
     var body: some View {
         List {
             Section("Session") {
-                LabeledContent("Name", value: p?.name ?? repoName(session.cwd))
+                LabeledContent("Name", value: SessionNaming.displayName(name: p?.name, autoName: p?.autoName, cwd: session.cwd))
                 Text(session.cwd)
                     .font(.system(.footnote, design: .monospaced))
                     .textSelection(.enabled)

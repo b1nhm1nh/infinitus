@@ -204,7 +204,8 @@ struct SessionsScreen: View {
     private func title(_ session: SessionDetail) -> String {
         let repo = repoName(session.cwd)
         let p = progress.byPid[session.pid]
-        guard let name = p?.name ?? p?.autoName, !name.isEmpty, name != repo else { return repo }
+        let name = SessionNaming.displayName(name: p?.name, autoName: p?.autoName, cwd: session.cwd)
+        guard name != repo else { return repo }
         return "\(name) · \(repo)"
     }
 

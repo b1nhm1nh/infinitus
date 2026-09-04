@@ -329,3 +329,23 @@ final class SessionNamingTests: XCTestCase {
         XCTAssertTrue(prompt.contains("Phase: building"))
     }
 }
+
+final class SessionNamingPlaceholderTests: XCTestCase {
+    func testClaudeCodeAutoNamesArePlaceholders() {
+        XCTAssertTrue(SessionNaming.isPlaceholder("limitless-bf", cwd: "/Users/x/death/limitless"))
+        XCTAssertTrue(SessionNaming.isPlaceholder("banyan-51", cwd: "/Users/x/papaya/banyan"))
+        XCTAssertTrue(SessionNaming.isPlaceholder("green-suites-4-14", cwd: "/w/green-suites-4"))
+        XCTAssertTrue(SessionNaming.isPlaceholder(nil, cwd: "/w/limitless"))
+        XCTAssertTrue(SessionNaming.isPlaceholder("", cwd: "/w/limitless"))
+        XCTAssertFalse(SessionNaming.isPlaceholder("Infinitus", cwd: "/w/limitless"))
+        XCTAssertFalse(SessionNaming.isPlaceholder("limitless-release", cwd: "/w/limitless"))
+        XCTAssertFalse(SessionNaming.isPlaceholder("limitless-e2", cwd: "/w/limitless-e2"))
+    }
+
+    func testDisplayNamePrefersTheUsersNameThenHaikuThenTheRepo() {
+        XCTAssertEqual(SessionNaming.displayName(name: "Infinitus", autoName: "Stats tab", cwd: "/w/limitless"), "Infinitus")
+        XCTAssertEqual(SessionNaming.displayName(name: "limitless-bf", autoName: "Stats tab", cwd: "/w/limitless"), "Stats tab")
+        XCTAssertEqual(SessionNaming.displayName(name: "limitless-bf", autoName: nil, cwd: "/w/limitless"), "limitless-bf")
+        XCTAssertEqual(SessionNaming.displayName(name: nil, autoName: nil, cwd: "/w/limitless"), "limitless")
+    }
+}
