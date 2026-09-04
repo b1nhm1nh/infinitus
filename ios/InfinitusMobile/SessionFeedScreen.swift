@@ -26,7 +26,7 @@ struct SessionFeedScreen: View {
     @State private var showFileImporter = false
     @State private var showPhotoPicker = false
     @State private var showCamera = false
-    @FocusState private var composerFocused: Bool
+    @State private var composerFocused = false
     @State private var previewing: PendingAttachment?
     @State private var attachmentError: String?
     @State private var awsLoginItem: AwsLogin.Item?
@@ -398,11 +398,20 @@ struct SessionFeedScreen: View {
                 }
                 .accessibilityLabel("Attach")
                 .disabled(sendingMessage || attachments.count >= SessionInput.maxAttachments)
-                TextField(dictation.listening ? "Listening…" : "Reply…", text: $draft, axis: .vertical)
-                    .lineLimit(1...6)
-                    .textFieldStyle(.roundedBorder)
-                    .focused($composerFocused)
-                    .disabled(sendingMessage)
+                ZStack(alignment: .topLeading) {
+                    if draft.isEmpty {
+                        Text(dictation.listening ? "Listening…" : "Reply…")
+                            .font(.body)
+                            .foregroundStyle(.secondary)
+                            .padding(.leading, 5)
+                            .padding(.top, 6)
+                            .allowsHitTesting(false)
+                    }
+                    PasteableTextView(text: $draft, isFocused: $composerFocused,
+                                      placeholder: dictation.listening ? "Listening…" : "Reply…") { image in
+                        addImage(image, prefix: "pasted")
+                    }
+                }
                 // No hide-keyboard button (user 2026-09-03 from the phone:
                 // "too much") — a drag on the feed or a tap outside the
                 // composer dismisses it.
