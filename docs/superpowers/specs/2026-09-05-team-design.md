@@ -58,7 +58,11 @@ every member's leader-shared data plus the same.
   server). The identity secret is the PRF output for the fixed salt
   `infinitus-team-identity-v1`. Nobody ever verifies an assertion; the
   passkey is a synced secret-derivation device. The same passkey on the
-  phone or a replacement Mac yields the same identity.
+  phone or a replacement Mac yields the same identity. The entitlement
+  needs a provisioning profile, so passkey identity works only in a
+  signed build (dev-signed builds already lose usernoted and Live
+  Activities push for the same reason); the local path below is the
+  default until then, which is why it builds first (§12).
 - **Local path** (no passkey, or declined): 32 random bytes in the OS
   credential store (macOS keychain `com.huuloc.infinitus.team`, Windows
   Credential Manager, Linux `~/.config/infinitus/identity` 0600) plus a
@@ -86,6 +90,8 @@ every member's leader-shared data plus the same.
   unlocked; re-lock after **immediately / 5 min / 1 h / on sleep**
   (default 1 h). Team data is decrypted only after unlock; the unlock
   is the moment the passkey PRF runs, so one prompt serves both.
+  Re-lock hides the team views; the working key stays in memory so the
+  publish/fetch loop keeps running without a prompt.
 - Create team, Accept invite, Request to join are disabled until the
   setting is on, with "Turn on biometric unlock first" and a button to
   the setting. Turning it off while in a team is allowed with a
@@ -102,7 +108,8 @@ then ciphertext (zlib from the system library on all three platforms).
 ```
 {"v":1,"kind":"stats","from":"<kid>","eph":"<base64 X25519 pub>",
  "to":[{"kid":"<kid>","wrap":"<base64>"},…],
- "nonce":"<base64 12B>","sig":"<base64 Ed25519 over header-without-sig + ciphertext>"}
+ "at":<unix seconds>,"nonce":"<base64 12B>",
+ "sig":"<base64 Ed25519 over header-without-sig + ciphertext>"}
 <ChaCha20-Poly1305 ciphertext of the plaintext JSON/JSONL, zlib-deflated>
 ```
 
@@ -138,7 +145,7 @@ Dropbox, OneDrive, iCloud Drive, NAS) and S3-compatible bucket.
 - **Members are never host collaborators**: everyone pushes with the
   team credential the invite carries. One repo serves any team size.
 - Branches: `roster` (leaders only: `team.json`, `aggregates/…`),
-  `requests` (anyone with the request-only credential: `requests/<kid>.json`),
+  `requests` (anyone with the credential: `requests/<kid>.json`),
   `m/<kid>` (that member only). Disjoint writers ⇒ no merge conflicts;
   a member fetches `roster`, `requests` (leaders only), its own branch,
   and the `m/*` branches of teammates who share to it (known from the
@@ -151,7 +158,8 @@ Dropbox, OneDrive, iCloud Drive, NAS) and S3-compatible bucket.
 - Push cadence: every 5 min while a session is alive, at day end, on
   audience change, on leave. Fetch cadence: on the Team pane opening,
   then every 5 min while open, every 30 min otherwise; `git fetch`
-  only, no network when the Mac is on battery-saver and idle.
+  only, no network when the Mac is on battery-saver and idle. A joiner
+  may wait up to 30 min for approval while the leader's pane is closed.
 - Growth: ciphertext doesn't delta-compress, so transcripts are
   **append-only chunks** (§5.4) and `days/` files are tiny. A leader
   setting "keep N days of transcripts" (default 90) prunes old chunks
@@ -207,19 +215,25 @@ pushes. The only out-of-app moment in the design.
 Invite button → `infinitus://join/<base64url payload>` + QR + share
 sheet. Payload: team id, name, remote URL, write credential, leader kid
 + enc key, expiry (default 7 days), one-time nonce, signed by the
-leader. Opening the link on Mac or phone: the app verifies the leader
+leader. Opening the link on the Mac: the app verifies the leader
 signature, clones, drops `requests/<kid>.json` (name, keys, devices,
-platform) and shows "Waiting for approval". Because the leader minted
+platform) and shows "Waiting for approval". Opening it on the phone:
+the phone verifies the signature and hands the payload to its Mac over
+the mirror, which does the rest (iOS has no git; phone-only members are
+phase 3). Because the leader minted
 the invite, the leader's app auto-approves requests whose nonce
 matches an invite it issued (one round trip, no tap); other requests
 need Approve.
 
 ### 6.3 Team code (person → leader)
-A team has a shareable code: same payload shape with a **request-only**
-credential (a second token the leader pastes, or the same one for hosts
-without scoped tokens — the app says which). Enter the code → request
-lands → leader taps Approve/Decline. Policy `requests: off` hides the
-code and makes the app ignore new requests.
+A team has a shareable code: the invite payload without a nonce and
+with a long expiry. Git hosts issue no branch-scoped tokens, so the code
+carries the **same write credential** as an invite; what limits it is
+`policy.requests: off` (the app ignores new requests and hides the
+code), code rotation (= credential rotation, §4.2), and the signature
+rules that make any other write ignorable. The vandalism surface (§4.2)
+grows with how widely the code is shared; the Team pane says so next to
+the code. Enter the code → request lands → leader taps Approve/Decline.
 
 ### 6.4 Nearby (same LAN)
 - The existing `_infinitus._tcp` advertisement (MirrorServer on Mac;
@@ -357,7 +371,7 @@ visible only if that teammate chose you.
 | store host / anyone with the credential | see file names, sizes, kids, timing; delete or garble files | read any content; forge a member's envelope or a roster |
 | a member | read what teammates chose to share to them and the leaders' aggregates | read other members' leader-only data, even with repo access |
 | a removed member | keep ciphertext already fetched and readable to them | read anything published after removal |
-| a stolen unlocked Mac | everything that Mac's identity can read | reach a passkey-derived identity after the passkey is removed from the account |
+| a stolen Mac while the app runs | everything that Mac's identity can read | reach a passkey-derived identity after the passkey is removed from the account |
 | the app vendor | nothing: no host, no telemetry | — |
 
 Not covered: a compromised leader machine; traffic analysis on the
@@ -385,7 +399,9 @@ design).
 ## 12. Build order (one spec, one plan, PRs in this order)
 1. Crypto + envelope + identity (local path) + `TeamStore` + git adapter
    + roster; `infinitusctl team create|request|approve|publish|fetch`
-   against a bare repo. Linux CI green.
+   against a bare repo. Linux CI green; a `windows-latest` Swift job
+   for InfinitusCore + InfinitusCLI added to ci.yml — Windows is
+   best-effort until that job exists.
 2. Publisher: Stats.Day / now / sessions / transcripts / crashes,
    exclusions, audiences, redaction, chunks; `TeamReader`.
 3. Biometric lock setting (Mac + phone) and the team gate.
