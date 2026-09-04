@@ -138,6 +138,15 @@ func raiseWindow(pid: Int32) -> Bool {
 /// stops a daemon it started itself.
 func startDaemon() {
     guard state.daemon?.isRunning != true else { return }
+    // Someone else's daemon may already hold the port — one started by
+    // hand, or an installed copy at login. Starting a second one lets it
+    // steal the listening socket, and the survivor is whichever bound
+    // last: that is how a `--auto-resume` daemon got silently replaced by
+    // one without it (2026-09-04). Refuse instead.
+    if daemonAlreadyServing() {
+        postEngineReport("a mirror daemon is already serving port \(defaultMirrorPort)")
+        return
+    }
     let binary = URL(fileURLWithPath: CommandLine.arguments[0])
         .deletingLastPathComponent()
         .appendingPathComponent("infinitus-win.exe")
@@ -155,6 +164,45 @@ func stopDaemon() {
     guard let daemon = state.daemon, daemon.isRunning else { return }
     daemon.terminate()
     state.daemon = nil
+}
+
+/// The mirror port the daemon serves by default — matched to
+/// `defaultMirrorPort` in the daemon's own main.swift (separate targets,
+/// so the constant can't be shared without moving it into core).
+let defaultMirrorPort: UInt16 = 47824
+
+/// Whether something already listens on the mirror port.
+///
+/// Read from the IP helper's TCP table rather than by connecting: this
+/// target never calls WSAStartup (only the daemon's WinHTTPServer does),
+/// so a socket() here returns INVALID_SOCKET and every probe would answer
+/// "nothing is serving" — the silent false negative that let a second
+/// daemon start. GetTcpTable2 needs no Winsock init.
+func daemonAlreadyServing(port: UInt16 = defaultMirrorPort) -> Bool {
+    var size: ULONG = 0
+    // First call sizes the buffer; ERROR_INSUFFICIENT_BUFFER is expected.
+    _ = GetTcpTable2(nil, &size, false)
+    guard size > 0 else { return false }
+    let buffer = UnsafeMutableRawPointer.allocate(
+        byteCount: Int(size), alignment: MemoryLayout<MIB_TCPTABLE2>.alignment)
+    defer { buffer.deallocate() }
+    let table = buffer.assumingMemoryBound(to: MIB_TCPTABLE2.self)
+    guard GetTcpTable2(table, &size, false) == NO_ERROR else { return false }
+
+    let count = Int(table.pointee.dwNumEntries)
+    // dwTable is a 1-element tail array; walk it as `count` rows.
+    return withUnsafePointer(to: &table.pointee.table) { rows in
+        let base = UnsafeRawPointer(rows).assumingMemoryBound(to: MIB_TCPROW2.self)
+        for index in 0..<count {
+            let row = base[index]
+            // dwLocalPort is in network byte order.
+            let localPort = UInt16(truncatingIfNeeded: row.dwLocalPort).byteSwapped
+            if row.dwState == UInt32(MIB_TCP_STATE_LISTEN.rawValue), localPort == port {
+                return true
+            }
+        }
+        return false
+    }
 }
 
 // MARK: - tray icon plumbing
@@ -250,9 +298,15 @@ func showMenu(_ window: HWND) {
         // Rotation target is the engine's own next pick, not ours.
         AppendMenuW(menu, UINT(MF_STRING), UINT_PTR(commandRotate),
                     "Switch to next account".wide)
-        AppendMenuW(menu, UINT(MF_STRING), UINT_PTR(commandAccountPanel),
-                    "Open accounts panel\u{2026}".wide)
     }
+    // The panel is offered whatever the engine situation, OUTSIDE the
+    // block above: with no engine or no accounts it is the thing that
+    // explains why (FleetLayout's empty states say what to run), and
+    // hiding it exactly when the user has nothing to look at is the
+    // wrong way round.
+    AppendMenuW(menu, UINT(MF_SEPARATOR), 0, nil)
+    AppendMenuW(menu, UINT(MF_STRING), UINT_PTR(commandAccountPanel),
+                "Open accounts panel\u{2026}".wide)
     AppendMenuW(menu, UINT(MF_SEPARATOR), 0, nil)
     AppendMenuW(menu, UINT(MF_STRING), UINT_PTR(commandCopyPair), "Copy pairing URL".wide)
     AppendMenuW(menu, UINT(MF_STRING), UINT_PTR(commandToggleServe),
