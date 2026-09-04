@@ -22,6 +22,8 @@ workflow publishes the matching section as the GitHub release body.
   access for shots from other apps; the in-app button never does.
 - **A message from another session reads as that session's words**, not
   the delivery wrapper around them.
+- Your own turns render Markdown too — a skill body or a pasted note no
+  longer shows its `**` and `#` marks.
 
 ## 0.4.2
 
