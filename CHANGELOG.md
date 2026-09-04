@@ -22,6 +22,7 @@ publishes the matching section as the GitHub release body.
 - Randomize names: every account gets a fresh name from the current theme's pool (Settings › Accounts, or `infinitusctl randomize-names`).
 
 ### Phone
+- The working Live Activity follows an account switch when the app opens, and a card nothing has reached says "out of date".
 - A lighter chat header: compact by default, or a stat strip with mini gauges (Settings › Appearance › Chat header).
 - Screenshots go out in one tap: the camera button in a chat, any screenshot you take offered in the next chat, or a shake anywhere.
 - A message from another session shows as "Message from @name" with a preview, the full text a tap away.
