@@ -14,6 +14,9 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
     func application(_ application: UIApplication,
                      didFinishLaunchingWithOptions options: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
         UNUserNotificationCenter.current().delegate = self
+        // Built-in crash reporting: MetricKit hands last launch's crashes
+        // to the subscriber; they go to the Mac over the mirror.
+        CrashReporter.shared.start()
         UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { granted, _ in
             self.log.notice("notification permission \(granted ? "granted" : "denied")")
             guard granted else { return }

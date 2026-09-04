@@ -166,6 +166,7 @@ struct SyncPane: View {
                 .onAppear { probeTailscale(); namedHost = app.mirrorNamedTunnelHost }
                 .onReceive(reprobe) { _ in probeTailscale() }
             }
+            CrashReportsSection(app: app)
             Section("Phone lock screen") {
                 liveActivityRows
             }
@@ -532,5 +533,50 @@ struct SyncPane: View {
         panel.allowsMultipleSelection = false
         guard panel.runModal() == .OK, let url = panel.url else { return }
         Task { await sync.importConfig(from: url) }
+    }
+}
+
+/// Crashes of the phone app (MetricKit, over the mirror) and of this
+/// Mac app (its own diagnostic reports): built-in, nothing leaves the
+/// machine. Each can go into a session's chat for triage.
+private struct CrashReportsSection: View {
+    @ObservedObject var app: AppModel
+
+    var body: some View {
+        Section("Crash reports") {
+            if app.crashReports.isEmpty {
+                Text("None. The phone reports its own crashes here on its next launch; "
+                     + "this Mac's land here after a relaunch.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            ForEach(app.crashReports.prefix(10)) { report in
+                HStack(spacing: 8) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(report.summary).lineLimit(1)
+                        Text("\(report.at.formatted(date: .abbreviated, time: .shortened)) · app \(report.appVersion) · \(report.osVersion)")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    let sessions = app.liveSessions?.sessions ?? []
+                    Menu("Send to session") {
+                        if sessions.isEmpty { Text("No live sessions") }
+                        ForEach(sessions, id: \.pid) { s in
+                            Button("\(app.sessionProgress.byPid[s.pid]?.name ?? URL(fileURLWithPath: s.cwd).lastPathComponent) · \(s.status)") {
+                                app.sendCrash(report, toPid: s.pid)
+                            }
+                        }
+                    }
+                    .fixedSize()
+                    Button {
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(report.transcript, forType: .string)
+                    } label: { Image(systemName: "doc.on.doc") }
+                    .buttonStyle(.borderless)
+                    .help("Copy the report")
+                    Button(role: .destructive) { app.removeCrash(report.id) } label: { Image(systemName: "trash") }
+                    .buttonStyle(.borderless)
+                }
+            }
+        }
     }
 }

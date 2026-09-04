@@ -144,6 +144,10 @@ final class AppModel: ObservableObject {
     @Published var forecast: UsageForecast?
     /// Sessions whose AWS sign-in lapsed + logins in flight (AwsLogin.swift).
     @Published var awsLogins: [AwsLogin.Item] = []
+    /// Crash reports from the phone (MetricKit, over the mirror) and this
+    /// Mac's own diagnostic reports; newest first (CrashReport.swift).
+    @Published private(set) var crashReports: [CrashReport] = []
+    let crashStore = CrashStore(directory: CrashStore.defaultDirectory())
     /// True once `awsLogins` reflects a finished transcript scan. The
     /// push trigger seeds off it, not off the scanner's own flag: the
     /// list rebuilds one run-loop hop after the scan lands, and a poll
@@ -890,6 +894,11 @@ final class AppModel: ObservableObject {
         mirrorServer.activityTokens.set { [weak self] registration in
             Task { @MainActor in self?.liveActivityPusher.register(registration) }
         }
+        mirrorServer.crashes.set { [weak self] report in
+            Task { @MainActor in self?.ingestCrash(report, announce: true) }
+        }
+        crashReports = crashStore.list()
+        scanMacCrashReports()
         quickTunnel.onURL = { [weak self] url in self?.publishRendezvous(url) }
         // The tunnels can only point at a bound port, which arrives later.
         mirrorServer.onReady = { [weak self] _ in
@@ -1113,6 +1122,66 @@ final class AppModel: ObservableObject {
 
     /// Tells a session that needed the login to carry on — the phone's
     /// own message path, so it works wherever replies do.
+    // MARK: crash reports (built-in, no third party — user 2026-09-04)
+
+    /// Stores a report, logs it, and — for the phone's — says so.
+    func ingestCrash(_ report: CrashReport, announce: Bool) {
+        guard !crashReports.contains(where: { $0.id == report.id }) else { return }
+        try? crashStore.save(report)
+        crashReports = crashStore.list()
+        logEvent("other", icon: "💥", "\(report.summary)")
+        if announce, !isPlayground { notify("phone app crashed — \(report.reason)") }
+    }
+
+    func removeCrash(_ id: String) {
+        crashStore.remove(id)
+        crashReports = crashStore.list()
+    }
+
+    /// This Mac's own crashes: `~/Library/Logs/DiagnosticReports/
+    /// Infinitus-*.ips` newer than the last look. The first look starts
+    /// the clock — old reports aren't news.
+    private func scanMacCrashReports() {
+        let key = "crash_scan_watermark"
+        let now = Date().timeIntervalSince1970
+        guard let since = defaults.object(forKey: key) as? Double else {
+            defaults.set(now, forKey: key)
+            return
+        }
+        defaults.set(now, forKey: key)
+        let dir = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Logs/DiagnosticReports")
+        guard let names = try? FileManager.default.contentsOfDirectory(atPath: dir.path) else { return }
+        for name in names where name.hasPrefix("Infinitus-") && name.hasSuffix(".ips") {
+            let url = dir.appendingPathComponent(name)
+            guard let mtime = (try? FileManager.default.attributesOfItem(atPath: url.path))?[.modificationDate] as? Date,
+                  mtime.timeIntervalSince1970 > since,
+                  let text = try? String(contentsOf: url, encoding: .utf8),
+                  let report = CrashReport.fromIPS(text, device: Host.current().localizedName ?? "Mac") else { continue }
+            ingestCrash(report, announce: false)
+        }
+    }
+
+    /// Hands a report to a session as a message with the report attached
+    /// (text), the way the phone sends attachments — the session reads
+    /// the stack and triages it.
+    func sendCrash(_ report: CrashReport, toPid pid: Int) {
+        let text = "The Infinitus \(report.platform == "ios" ? "phone app" : "Mac app") had a \(report.kind) on "
+            + "\(report.device) (\(report.reason)). The report is attached — please triage it and propose a fix."
+        let attachment = SessionInput.Attachment(name: "crash-\(report.id.prefix(8)).txt", mime: "text/plain",
+                                                 data: Data(report.transcript.utf8))
+        let request = SessionInput.Request(kind: .message, text: text, attachments: [attachment])
+        Task.detached(priority: .utility) { [weak self] in
+            let claudeDir = ClaudeSessions.configHome()
+            guard let record = ClaudeSessions.list(claudeDir: claudeDir).first(where: { Int($0.pid) == pid }) else { return }
+            let reply = SessionInput.deliver(request: request, record: record,
+                                             hosts: PtyHosts.available(), claudeDir: claudeDir)
+            await MainActor.run { [weak self] in
+                self?.logMirrorInput(reply.outcome == "delivered" ? "💥" : "⚠️",
+                                     "crash report sent to session \(pid): \(reply.outcome)")
+            }
+        }
+    }
+
     private func nudgeAfterAwsLogin(pid: Int, profile: String, fromPhone: Bool) {
         let text = AwsLogin.continueMessage(profile: profile, fromPhone: fromPhone)
         let request = SessionInput.Request(kind: .message, text: text)
