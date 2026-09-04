@@ -35,6 +35,13 @@ workflow publishes the matching section as the GitHub release body.
   to the session's details. Plain words for status; no process ids.
 - Honors Reduce Motion; bigger tap targets and labels for VoiceOver.
 - **Dictate a message.** A mic in the composer; on-device, no server.
+- **Dictate in any language.** Long-press the mic (or Settings →
+  Dictation) to pick the language — Vietnamese included. A non-English
+  take is translated on the phone (iOS 18, nothing leaves it) into an
+  editable English draft, with a chip to peek at what you said; or send
+  it as spoken with a note asking for an English reply, so the session
+  stays English. The recognizer is handed the session's names and
+  tools so "commit", "PR" and file names survive a Vietnamese take.
 - **Paste an image** from the clipboard, straight into the chat — the
   keyboard's "Paste from Screenshots" chip and the edit menu both work.
 - **Notifications straight to the phone** (issue #3) — every alert the
