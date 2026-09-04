@@ -56,10 +56,9 @@ final class LiveActivities {
                 if revival.content.state != state { Task { await revival.update(content) } }
             } else {
                 do {
-                    let activity = try Activity.request(attributes: RevivalActivity(machine: machine),
-                                                        content: content, pushType: .token)
+                    let (activity, pushed) = try request(attributes: RevivalActivity(machine: machine), content: content)
                     revival = activity
-                    watchToken(of: activity, kind: .revival)
+                    if pushed { watchToken(of: activity, kind: .revival) }
                     log.notice("revival activity started: \(state.reviver) at \(state.revivesAt)")
                 } catch {
                     log.error("revival activity refused: \(error.localizedDescription)")
@@ -87,10 +86,9 @@ final class LiveActivities {
                 if LiveActivityBuilder.differs(working.content.state, state) { Task { await working.update(content) } }
             } else {
                 do {
-                    let activity = try Activity.request(attributes: WorkingActivity(machine: machine),
-                                                        content: content, pushType: .token)
+                    let (activity, pushed) = try request(attributes: WorkingActivity(machine: machine), content: content)
                     working = activity
-                    watchToken(of: activity, kind: .working)
+                    if pushed { watchToken(of: activity, kind: .working) }
                     log.notice("working activity started: \(state.active) \(state.busy)/\(state.total)")
                 } catch {
                     log.error("working activity refused: \(error.localizedDescription)")
@@ -100,6 +98,20 @@ final class LiveActivities {
             self.working = nil
             Task { await working.end(nil, dismissalPolicy: .immediate) }
         }
+    }
+
+    /// With a push token where the build can have one, plain otherwise:
+    /// a build without the aps-environment entitlement (a personal
+    /// team's) has ActivityKit refuse every `.token` request outright
+    /// ("ActivityInput error 0"), which is how the lock screen went
+    /// blank after the APNs work (user 2026-09-04 "not seeing the ios
+    /// live activities anymore"). Second value: whether a token comes.
+    private func request<A: ActivityAttributes>(attributes: A, content: ActivityContent<A.ContentState>)
+        throws -> (Activity<A>, Bool) {
+        if let activity = try? Activity.request(attributes: attributes, content: content, pushType: .token) {
+            return (activity, true)
+        }
+        return (try Activity.request(attributes: attributes, content: content, pushType: nil), false)
     }
 
     // MARK: push tokens → the Mac

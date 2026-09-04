@@ -78,12 +78,71 @@ public enum AwsLogin {
         /// The session's display name (record name or repo folder).
         public let sessionLabel: String?
         public let state: State?
-        public init(profile: String, flow: Flow, pid: Int?, sessionLabel: String?, state: State?) {
+        /// When the session's CLI call failed on expired credentials —
+        /// the push keys on it, so a fresh failure after a relaunch is
+        /// news and a re-failure hours later is news again (#29).
+        public let failedAt: Date?
+        public init(profile: String, flow: Flow, pid: Int?, sessionLabel: String?, state: State?,
+                    failedAt: Date? = nil) {
             self.profile = profile
             self.flow = flow
             self.pid = pid
             self.sessionLabel = sessionLabel
             self.state = state
+            self.failedAt = failedAt
+        }
+    }
+
+    /// The login that belongs to a profile's CURRENT need: one still in
+    /// flight, or one that finished after the need's CLI call failed. A
+    /// finished login older than that failure is history — the ledger
+    /// keeps a day of it — not this need's login (a stale "done" made a
+    /// fresh need report as signed in, e2e 2026-09-04).
+    public static func current(_ state: State?, needFailedAt: Date?) -> State? {
+        guard let state else { return nil }
+        guard state.phase == .done || state.phase == .failed, let needFailedAt else { return state }
+        return needFailedAt.timeIntervalSince1970 > state.startedAt ? nil : state
+    }
+
+    /// What the runner keeps across a relaunch (#29: a Mac relaunch
+    /// wiped every login it knew about, so a met need came back as
+    /// unmet). Finished logins survive as they are; a run in flight for a
+    /// session survives as a failure that says why — its CLI died with
+    /// the app — while a hand-started run just goes with its CLI.
+    public enum Ledger {
+        public static let doneMaxAge: TimeInterval = 24 * 3600
+        public static let failedMaxAge: TimeInterval = 3600
+        public static let relaunchMessage = "the app relaunched mid-login — start it again"
+
+        public static func snapshot(running: [State], finished: [State]) -> [State] {
+            finished + running.compactMap { state in
+                guard state.pid != nil else { return nil }
+                var failed = state
+                failed.phase = .failed
+                failed.message = relaunchMessage
+                failed.url = nil
+                failed.userCode = nil
+                failed.callbackPort = nil
+                return failed
+            }
+        }
+
+        public static func encode(_ states: [State]) throws -> Data {
+            try JSONEncoder().encode(states)
+        }
+
+        /// Only outcomes, and only recent ones: a done login older than
+        /// a day says nothing about today's credentials.
+        public static func decode(_ data: Data, now: Date = Date()) -> [State] {
+            guard let states = try? JSONDecoder().decode([State].self, from: data) else { return [] }
+            return states.filter { state in
+                let age = now.timeIntervalSince1970 - state.startedAt
+                switch state.phase {
+                case .done: return age < doneMaxAge
+                case .failed: return age < failedMaxAge
+                default: return false
+                }
+            }
         }
     }
 

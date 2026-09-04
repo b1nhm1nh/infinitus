@@ -36,11 +36,20 @@ actor AwsLoginRunner {
     private let onChange: @Sendable ([AwsLogin.State]) -> Void
     /// Called once per login that ends in `.done`.
     private let onDone: @Sendable (AwsLogin.State) -> Void
+    /// Where outcomes survive a relaunch (`AwsLogin.Ledger`); nil keeps
+    /// them in memory only (tests, the playground).
+    private let ledgerURL: URL?
 
     init(onChange: @escaping @Sendable ([AwsLogin.State]) -> Void,
-         onDone: @escaping @Sendable (AwsLogin.State) -> Void) {
+         onDone: @escaping @Sendable (AwsLogin.State) -> Void,
+         ledgerURL: URL? = nil) {
         self.onChange = onChange
         self.onDone = onDone
+        self.ledgerURL = ledgerURL
+        if let ledgerURL, let data = try? Data(contentsOf: ledgerURL) {
+            for state in AwsLogin.Ledger.decode(data) { finished[state.profile] = state }
+        }
+        if !finished.isEmpty { onChange(Array(finished.values)) }
     }
 
     static let awsCandidates = [
@@ -262,5 +271,14 @@ actor AwsLoginRunner {
         publish()
     }
 
-    private func publish() { onChange(states()) }
+    private func publish() {
+        onChange(states())
+        if let ledgerURL {
+            let snapshot = AwsLogin.Ledger.snapshot(running: runs.values.map(\.state),
+                                                    finished: Array(finished.values))
+            try? FileManager.default.createDirectory(at: ledgerURL.deletingLastPathComponent(),
+                                                     withIntermediateDirectories: true)
+            try? AwsLogin.Ledger.encode(snapshot).write(to: ledgerURL, options: .atomic)
+        }
+    }
 }
