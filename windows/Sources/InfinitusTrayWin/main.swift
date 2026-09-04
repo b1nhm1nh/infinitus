@@ -265,6 +265,18 @@ extension String {
 }
 
 func run() -> Int32 {
+    // `--probe` reports what the tray can build and exits — the icon and
+    // the shell call are invisible from another session, so this is how
+    // a failure gets diagnosed without a human watching the taskbar.
+    if CommandLine.arguments.dropFirst().first == "--probe" {
+        let icon = TrayIcon.make(busy: true)
+        print("icon: \(icon == nil ? "FAILED" : "ok")")
+        if let icon { DestroyIcon(icon) }
+        let (rows, busy) = readSessions()
+        print("sessions: \(rows.count) (\(busy) busy)")
+        print("pair url: \(WinPairing.pairingURL() ?? "none — run `infinitus-win pair` first")")
+        return 0
+    }
     let instance = GetModuleHandleW(nil)
     let className = "InfinitusTrayWindow".wide
     var windowClass = WNDCLASSW()
