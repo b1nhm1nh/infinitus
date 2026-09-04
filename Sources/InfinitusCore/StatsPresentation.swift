@@ -91,6 +91,94 @@ extension Stats {
             return "\(Int(total / 3600)) h total · \(Int(total / Double(n) / 60)) min per session"
         }
 
+        // MARK: Stats v2 — where the effort went
+
+        /// One table row: an activity or a model. `share` is this row's
+        /// $ share of its table (0…1).
+        public struct Row: Identifiable, Equatable, Sendable {
+            public let id: String
+            public let count: Int
+            public let minutes: Int
+            public let tokens: Int
+            public let usd: Double
+            public let share: Double
+
+            public init(id: String, tally: Stats.ActivityTally, share: Double) {
+                self.id = id
+                count = tally.stretches
+                minutes = Int(tally.seconds / 60)
+                tokens = tally.inputTokens + tally.outputTokens
+                usd = tally.usd
+                self.share = share
+            }
+
+            public var minutesText: String {
+                minutes >= 120 ? "\(minutes / 60) h \(minutes % 60) m" : "\(minutes) min"
+            }
+            public var tokensText: String {
+                if tokens >= 1_000_000 { return String(format: "%.1fM", Double(tokens) / 1_000_000) }
+                if tokens >= 10_000 { return "\(Int((Double(tokens) / 1_000).rounded()))k" }
+                return tokens.formatted()
+            }
+            public var usdText: String { "$" + String(format: usd >= 100 ? "%.0f" : "%.2f", usd) }
+        }
+
+        public static let activityFootnote = "Heuristic: each stretch between two of your messages is labeled by its strongest signal — a review skill or reviewer sub-agent, a plan skill, a debugging skill, browser tools, simulator commands; then test-file edits; then prose-only replies. A stretch counts on the day it started; sub-agent spend shows under models only."
+
+        /// Catalogue order; activities with no stretches are left out.
+        public static func activityRows(_ s: Stats.Summary) -> [Row] {
+            let total = s.total.activities.values.reduce(0) { $0 + $1.usd }
+            let tokenTotal = s.total.activities.values.reduce(0) { $0 + $1.inputTokens + $1.outputTokens }
+            return Stats.Activity.allCases.compactMap { a in
+                guard let t = s.total.activities[a.rawValue], t.stretches > 0 || t.usd > 0 else { return nil }
+                return Row(id: a.title, tally: t, share: share(t, total: total, tokenTotal: tokenTotal))
+            }
+        }
+
+        /// By $ descending; the compacted "other" fold sits last. Aliases
+        /// of the same model (`claude-opus-5` vs `claude-opus-5[1m]`)
+        /// share a title, so they're merged by title before the Mac's
+        /// uncompacted table gets the same 6-named-rows-plus-"Other
+        /// models" cap the phone's compacted bundle already has.
+        public static func modelRows(_ s: Stats.Summary) -> [Row] {
+            var titled: [String: Stats.ActivityTally] = [:]
+            for (key, t) in s.total.byModel {
+                let mapKey = key == "other" ? "other" : modelTitle(key)
+                titled[mapKey, default: Stats.ActivityTally()] = titled[mapKey, default: Stats.ActivityTally()] + t
+            }
+            let capped = Stats.Day.topModels(titled, keep: 6)
+            let total = capped.values.reduce(0) { $0 + $1.usd }
+            let tokenTotal = capped.values.reduce(0) { $0 + $1.inputTokens + $1.outputTokens }
+            let sorted = capped.sorted { a, b in
+                if a.key == "other" { return false }
+                if b.key == "other" { return true }
+                return a.value.usd == b.value.usd ? a.key < b.key : a.value.usd > b.value.usd
+            }
+            return sorted.map { key, tally in
+                Row(id: key == "other" ? "Other models" : key, tally: tally, share: share(tally, total: total, tokenTotal: tokenTotal))
+            }
+        }
+
+        /// A table's $ share, falling back to a token share when nothing
+        /// in the table has a price (e.g. an unrecognized model id).
+        private static func share(_ t: Stats.ActivityTally, total: Double, tokenTotal: Int) -> Double {
+            if total > 0 { return t.usd / total }
+            if tokenTotal > 0 { return Double(t.inputTokens + t.outputTokens) / Double(tokenTotal) }
+            return 0
+        }
+
+        /// `claude-opus-4-5-20250805` → "Opus 4.5"; `claude-fable-5[1m]`
+        /// → "Fable 5". Anything that isn't a Claude id is shown as-is.
+        public static func modelTitle(_ id: String) -> String {
+            if id == "other" { return "Other models" }
+            guard id.hasPrefix("claude-") else { return id }
+            let bare = id.split(separator: "[").first.map(String.init) ?? id
+            let parts = bare.dropFirst("claude-".count).split(separator: "-").map(String.init)
+            guard let family = parts.first else { return id }
+            let version = parts.dropFirst().prefix { $0.count <= 2 && Int($0) != nil }.joined(separator: ".")
+            return family.prefix(1).uppercased() + family.dropFirst() + (version.isEmpty ? "" : " " + version)
+        }
+
         /// A year's series is 365 marks per tile — ~25k Charts marks
         /// across the catalogue, which is what a year sparkline row
         /// actually costs. Anything past ~two months collapses to

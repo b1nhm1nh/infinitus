@@ -264,6 +264,117 @@ final class StatsTests: XCTestCase {
         XCTAssertEqual(d.toolErrors, 1)
     }
 
+    func testIngestSplitsStretchesAndChargesModels() {
+        var e = StatsScanner.FileEntry()
+        let lines = [
+            // stretch 1: human → plan skill, one edit, prose end
+            #"{"type":"user","timestamp":"2026-09-04T01:00:00.000Z","origin":{"kind":"human"},"message":{"role":"user","content":"plan it"}}"#,
+            #"{"type":"assistant","timestamp":"2026-09-04T01:00:10.000Z","message":{"id":"a1","model":"claude-opus-5","usage":{"input_tokens":100,"output_tokens":10},"content":[{"type":"tool_use","id":"t1","name":"Skill","input":{"skill":"superpowers:writing-plans"}}]}}"#,
+            #"{"type":"assistant","timestamp":"2026-09-04T01:00:20.000Z","message":{"id":"a2","model":"claude-opus-5","usage":{"input_tokens":100,"output_tokens":10},"content":[{"type":"tool_use","id":"t2","name":"Edit","input":{"file_path":"/r/Sources/A.swift"}}]}}"#,
+            #"{"type":"assistant","timestamp":"2026-09-04T01:01:00.000Z","message":{"id":"a3","model":"claude-opus-5","usage":{"input_tokens":100,"output_tokens":10},"content":[{"type":"text","text":"planned"}]}}"#,
+            // stretch 2 (phone): only test edits, on Sonnet
+            #"{"type":"user","timestamp":"2026-09-04T01:05:00.000Z","origin":{"kind":"peer","from":"uds:/tmp/infinitus-1.sock"},"message":{"role":"user","content":"<cross-session-message from=\"uds:/tmp/infinitus-1.sock\" from-name=\"Infinitus\" from-mode=\"bypass\">\nadd tests\n</cross-session-message>"}}"#,
+            #"{"type":"assistant","timestamp":"2026-09-04T01:05:30.000Z","message":{"id":"b1","model":"claude-sonnet-5","usage":{"input_tokens":50,"output_tokens":5},"content":[{"type":"tool_use","id":"t3","name":"Write","input":{"file_path":"/r/Tests/ATests.swift"}}]}}"#,
+            // stretch 3 (still open): prose only
+            #"{"type":"user","timestamp":"2026-09-04T01:10:00.000Z","origin":{"kind":"human"},"message":{"role":"user","content":"why?"}}"#,
+            #"{"type":"assistant","timestamp":"2026-09-04T01:10:05.000Z","message":{"id":"c1","model":"claude-opus-5","usage":{"input_tokens":20,"output_tokens":2},"content":[{"type":"text","text":"because"}]}}"#,
+        ]
+        for line in lines { StatsScanner.ingest(entry(line), sessionID: "s1", into: &e, calendar: cal) }
+        let d = e.days["2026-09-04"]!
+        XCTAssertEqual(d.activities["plan"]?.stretches, 1)
+        XCTAssertEqual(d.activities["plan"]?.seconds ?? 0, 60, accuracy: 0.5)     // 01:00:00 → 01:01:00
+        XCTAssertEqual(d.activities["plan"]?.inputTokens, 300)
+        XCTAssertEqual(d.activities["tests"]?.stretches, 1)
+        XCTAssertEqual(d.activities["tests"]?.inputTokens, 50)
+        XCTAssertNil(d.activities["explanation"])                                    // still open → not in the cache form
+        XCTAssertEqual(d.byModel["claude-opus-5"]?.inputTokens, 320)                 // per entry, open stretch included
+        XCTAssertEqual(d.byModel["claude-opus-5"]?.stretches, 1)                     // closed stretches only
+        XCTAssertEqual(d.byModel["claude-sonnet-5"]?.stretches, 1)
+        XCTAssertGreaterThan(d.byModel["claude-sonnet-5"]?.usd ?? 0, 0)
+        // The provisional view charges the open tail too.
+        let open = e.daysWithOpenStretch()["2026-09-04"]!
+        XCTAssertEqual(open.activities["explanation"]?.stretches, 1)
+        XCTAssertEqual(open.activities["explanation"]?.inputTokens, 20)
+        XCTAssertEqual(open.byModel["claude-opus-5"]?.stretches, 2)
+        XCTAssertEqual(open.byModel["claude-opus-5"]?.inputTokens, 320)             // not double-charged
+        // Everything v1 counted still counts the same.
+        XCTAssertEqual(d.humanMessages, 2); XCTAssertEqual(d.phoneMessages, 1); XCTAssertEqual(d.turns, 2)
+        XCTAssertEqual(d.inputTokens, 370)
+    }
+
+    func testIngestStretchIsChargedToItsOpeningDayAndOpenedByAgentsAndNudges() {
+        // The test calendar is Asia/Ho_Chi_Minh (UTC+7): 16:59Z is 23:59 on the 4th, 17:01Z is 00:01 on the 5th.
+        var e = StatsScanner.FileEntry()
+        let lines = [
+            #"{"type":"user","timestamp":"2026-09-04T16:59:00.000Z","origin":{"kind":"human"},"message":{"role":"user","content":"go"}}"#,
+            #"{"type":"assistant","timestamp":"2026-09-04T17:01:00.000Z","message":{"id":"a1","model":"claude-opus-5","usage":{"input_tokens":10,"output_tokens":1},"content":[{"type":"tool_use","id":"t1","name":"Bash","input":{"command":"swift build"}}]}}"#,
+            // a nudge from the app closes it and opens the next
+            #"{"type":"user","timestamp":"2026-09-04T17:02:00.000Z","origin":{"kind":"peer","from":"uds:/tmp/infinitus-1.sock"},"message":{"role":"user","content":"<cross-session-message from=\"uds:/tmp/infinitus-1.sock\" from-name=\"Infinitus\" from-mode=\"bypass\">\n[Infinitus] Continue where you left off\n</cross-session-message>"}}"#,
+            #"{"type":"assistant","timestamp":"2026-09-04T17:02:30.000Z","message":{"id":"a2","model":"claude-opus-5","usage":{"input_tokens":10,"output_tokens":1},"content":[{"type":"tool_use","id":"t2","name":"mcp__claude-in-chrome__navigate","input":{"url":"x"}}]}}"#,
+            // another session's message closes it too
+            #"{"type":"user","timestamp":"2026-09-04T17:03:00.000Z","origin":{"kind":"peer","from":"uds:/tmp/cc-socks/1.sock"},"message":{"role":"user","content":"<cross-session-message from=\"uds:/tmp/cc-socks/1.sock\" from-name=\"Infinitus2\" from-mode=\"bypass\">\nmerge e2\n</cross-session-message>"}}"#,
+            // …and a second one right behind it: the agent stretch had no assistant entry — not effort
+            #"{"type":"user","timestamp":"2026-09-04T17:03:10.000Z","origin":{"kind":"peer","from":"uds:/tmp/cc-socks/1.sock"},"message":{"role":"user","content":"<cross-session-message from=\"uds:/tmp/cc-socks/1.sock\" from-name=\"Infinitus2\" from-mode=\"bypass\">\nand this\n</cross-session-message>"}}"#,
+        ]
+        for line in lines { StatsScanner.ingest(entry(line), sessionID: "s1", into: &e, calendar: cal) }
+        XCTAssertEqual(e.days["2026-09-04"]?.activities["code"]?.stretches, 1)       // opened 23:59 local on the 4th
+        XCTAssertEqual(e.days["2026-09-04"]?.activities["code"]?.seconds ?? 0, 120, accuracy: 0.5)
+        XCTAssertEqual(e.days["2026-09-05"]?.activities["browser"]?.stretches, 1)    // the nudge opened this one
+        XCTAssertNotNil(e.state.stretch)                                              // the last agent message opened one
+        XCTAssertNil(e.days["2026-09-05"]?.activities["other"])                       // the empty one between them folded nothing
+        XCTAssertEqual(e.daysWithOpenStretch(), e.days)                               // and the open empty one adds nothing either
+        XCTAssertEqual(e.days["2026-09-05"]?.nudges, 1)                                 // the nudge itself lands on the 5th
+        XCTAssertNil(e.days["2026-09-05"]?.activities["code"])
+    }
+
+    func testIngestSubagentFilesChargeModelsButNeverStretches() {
+        var e = StatsScanner.FileEntry()
+        e.subagent = true
+        StatsScanner.ingest(entry(#"{"type":"user","timestamp":"2026-09-04T01:00:00.000Z","origin":{"kind":"human"},"message":{"role":"user","content":"sub task"}}"#), sessionID: "p", into: &e, calendar: cal)
+        StatsScanner.ingest(entry(#"{"type":"assistant","timestamp":"2026-09-04T01:00:05.000Z","message":{"id":"m1","model":"claude-haiku-4-5-20251001","usage":{"input_tokens":10,"output_tokens":20},"content":[{"type":"tool_use","id":"t1","name":"Edit","input":{"file_path":"/r/Tests/X.swift"}}]}}"#), sessionID: "p", into: &e, calendar: cal)
+        let d = e.days["2026-09-04"]!
+        XCTAssertNil(e.state.stretch)
+        XCTAssertTrue(d.activities.isEmpty)
+        XCTAssertEqual(d.byModel["claude-haiku-4-5-20251001"]?.inputTokens, 10)
+        XCTAssertEqual(d.byModel["claude-haiku-4-5-20251001"]?.stretches, 0)
+        XCTAssertEqual(e.daysWithOpenStretch(), e.days)
+    }
+
+    func testIngestAnAPIErrorRetryIsNotEffort() {
+        var e = StatsScanner.FileEntry()
+        StatsScanner.ingest(entry(#"{"type":"user","timestamp":"2026-09-04T01:00:00.000Z","origin":{"kind":"human"},"message":{"role":"user","content":"go"}}"#), sessionID: "s1", into: &e, calendar: cal)
+        StatsScanner.ingest(entry(#"{"type":"assistant","timestamp":"2026-09-04T01:00:05.000Z","isApiErrorMessage":true,"message":{"id":"x","model":"<synthetic>","content":[{"type":"text","text":"retry"}]}}"#), sessionID: "s1", into: &e, calendar: cal)
+        // The retry alone must not make the open stretch look like effort.
+        XCTAssertEqual(e.daysWithOpenStretch()["2026-09-04"]?.activities, [:])
+        StatsScanner.ingest(entry(#"{"type":"user","timestamp":"2026-09-04T01:00:10.000Z","origin":{"kind":"human"},"message":{"role":"user","content":"again"}}"#), sessionID: "s1", into: &e, calendar: cal)
+        // Closed: the retry-only stretch had 0 entries, so it adds nothing.
+        XCTAssertEqual(e.days["2026-09-04"]?.activities, [:])
+    }
+
+    func testScanResultIncludesTheOpenStretch() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("stats-v2-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let project = root.appendingPathComponent("-r-a")
+        try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
+        let file = project.appendingPathComponent("s1.jsonl")
+        try [
+            #"{"type":"user","cwd":"/r/a","timestamp":"2026-09-04T01:00:00.000Z","origin":{"kind":"human"},"message":{"role":"user","content":"explain"}}"#,
+            #"{"type":"assistant","timestamp":"2026-09-04T01:00:05.000Z","message":{"id":"a1","model":"claude-opus-5","usage":{"input_tokens":10,"output_tokens":1},"content":[{"type":"text","text":"sure"}]}}"#,
+        ].joined(separator: "\n").appending("\n").write(to: file, atomically: true, encoding: .utf8)
+        let cacheURL = root.appendingPathComponent("cache.json")
+        let now = date("2026-09-04T02:00:00Z")
+        let first = StatsScanner.scan(projectsDir: root, cacheURL: cacheURL, calendar: cal, now: now)
+        XCTAssertEqual(first.days["2026-09-04"]?.activities["explanation"]?.stretches, 1)
+        // Served from the cache on the second call: same answer.
+        let second = StatsScanner.scan(projectsDir: root, cacheURL: cacheURL, calendar: cal, now: now)
+        XCTAssertEqual(second.days["2026-09-04"]?.activities["explanation"]?.stretches, 1)
+        XCTAssertEqual(second.days["2026-09-04"]?.inputTokens, 10)
+    }
+
+    func testCacheVersionIsFive() {
+        XCTAssertEqual(StatsScanner.Cache().version, 5)
+    }
+
     func testWaitingGapIsCappedAtEightHours() {
         var e = StatsScanner.FileEntry()
         StatsScanner.ingest(entry(#"{"type":"assistant","timestamp":"2026-09-01T01:00:00.000Z","message":{"id":"m1","model":"claude-opus-4-5-20250805","usage":{"input_tokens":1,"output_tokens":1},"content":[{"type":"text","text":"done"}]}}"#), sessionID: "s", into: &e, calendar: cal)
@@ -638,11 +749,33 @@ final class StatsTests: XCTestCase {
 
     func testSummaryCompactedStripsTheDailySeries() {
         var d = Stats.Day(); d.hours[3] = 1; d.sessions = ["s"]
-        let s = Stats.fold(days: ["2026-09-04": d], period: .day, now: date("2026-09-04T03:00:00Z"), calendar: cal)
+        d.activities["code"] = tally(usd: 1)
+        d.byModel["claude-sonnet-5"] = tally(usd: 1)
+        let s = Stats.fold(days: ["2026-09-04": d, "2026-09-03": d], period: .day, now: date("2026-09-04T03:00:00Z"), calendar: cal)
         XCTAssertEqual(s.daily.first?.day.hours.count, 168)
         let c = s.compacted()
         XCTAssertTrue(c.daily.allSatisfy { $0.day.hours.isEmpty && $0.day.sessions.isEmpty })
         XCTAssertEqual(c.daily.first?.day.sessionCount, 1)
+        XCTAssertTrue(c.previous.activities.isEmpty)
+        XCTAssertTrue(c.previous.byModel.isEmpty)
+        XCTAssertTrue(c.daily.allSatisfy { $0.day.activities.isEmpty && $0.day.byModel.isEmpty })
+        XCTAssertFalse(c.total.activities.isEmpty)
+    }
+
+    func testBundleWithEffortTalliesStaysUnderTwelveKilobytes() throws {
+        var d = Stats.Day()
+        for i in 0..<30 { d.toolCalls["ToolNumber\(i)"] = i + 1 }
+        d.sessions = Set((0..<20).map { "session-\($0)" })
+        d.repos = ["/a/b/c"]
+        d.hours[7] = 12
+        var t = Stats.ActivityTally()
+        t.stretches = 3; t.seconds = 900; t.inputTokens = 120_000; t.outputTokens = 9_000; t.usd = 12.34
+        for a in Stats.Activity.allCases { d.activities[a.rawValue] = t }
+        for i in 0..<9 { d.byModel["claude-m\(i)"] = t }
+        let b = Stats.Bundle(days: ["2026-09-04": d], now: date("2026-09-04T03:00:00Z"), calendar: cal)
+        let json = String(decoding: try JSONEncoder().encode(b), as: UTF8.self)
+        XCTAssertLessThan(json.utf8.count, 12_288)
+        XCTAssertTrue(b.periods.allSatisfy { $0.total.byModel.count <= 7 })
     }
 
     func testDayDecodesForwardCompatibly() throws {
@@ -723,5 +856,202 @@ final class StatsTests: XCTestCase {
         let throughput = Stats.Presentation.groups(s).first { $0.id == "Throughput" }!
         XCTAssertEqual(throughput.tiles.first { $0.id == "Repos" }?.value, "2")
         XCTAssertEqual(throughput.tiles.first { $0.id == "Files touched" }?.value, "12")
+    }
+
+    func testActivityTallyAddsAndDecodesForwardCompatibly() throws {
+        var a = Stats.ActivityTally(); a.stretches = 1; a.seconds = 30; a.inputTokens = 10; a.outputTokens = 5; a.usd = 0.5
+        var b = Stats.ActivityTally(); b.stretches = 2; b.seconds = 15; b.inputTokens = 1; b.outputTokens = 1; b.usd = 0.25
+        let c = a + b
+        XCTAssertEqual(c.stretches, 3); XCTAssertEqual(c.seconds, 45); XCTAssertEqual(c.inputTokens, 11)
+        XCTAssertEqual(c.outputTokens, 6); XCTAssertEqual(c.usd, 0.75, accuracy: 1e-9)
+        // Short keys on the wire; a newer field is ignored, a missing one defaults.
+        let json = String(decoding: try JSONEncoder().encode(a), as: UTF8.self)
+        XCTAssertTrue(json.contains("\"n\":1") && json.contains("\"in\":10") && json.contains("\"out\":5"))
+        let sparse = try JSONDecoder().decode(Stats.ActivityTally.self, from: Data(#"{"n":4,"future":9}"#.utf8))
+        XCTAssertEqual(sparse.stretches, 4); XCTAssertEqual(sparse.usd, 0)
+    }
+
+    func testDayAddsActivitiesAndModelsAndDecodesWithoutThem() throws {
+        var a = Stats.Day(); a.activities["review"] = tally(usd: 1); a.byModel["claude-opus-5"] = tally(usd: 2)
+        var b = Stats.Day(); b.activities["review"] = tally(usd: 3); b.activities["code"] = tally(usd: 4); b.byModel["claude-sonnet-5"] = tally(usd: 5)
+        let c = a + b
+        XCTAssertEqual(c.activities["review"]?.usd ?? 0, 4, accuracy: 1e-9)
+        XCTAssertEqual(c.activities["code"]?.stretches, 1)
+        XCTAssertEqual(Set(c.byModel.keys), ["claude-opus-5", "claude-sonnet-5"])
+        // A Day written before v2 (no keys) still decodes.
+        let old = try JSONDecoder().decode(Stats.Day.self, from: Data(#"{"commits":3}"#.utf8))
+        XCTAssertTrue(old.activities.isEmpty && old.byModel.isEmpty); XCTAssertEqual(old.commits, 3)
+    }
+
+    func testCompactedKeepsSixModelsAndFoldsTheRest() {
+        var d = Stats.Day()
+        for i in 0..<9 { d.byModel["m\(i)"] = tally(usd: Double(i)) }
+        d.activities["code"] = tally(usd: 1)
+        let c = d.compacted()
+        XCTAssertEqual(c.byModel.count, 7)                       // six kept + "other"
+        XCTAssertNil(c.byModel["m0"]); XCTAssertNotNil(c.byModel["m8"])
+        XCTAssertEqual(c.byModel["other"]?.usd ?? 0, 0 + 1 + 2, accuracy: 1e-9)
+        XCTAssertEqual(c.byModel["other"]?.stretches, 3)
+        XCTAssertEqual(c.activities["code"]?.usd ?? 0, 1, accuracy: 1e-9)   // activities untouched
+        XCTAssertEqual(c.compacted().byModel.count, 7)           // idempotent
+    }
+
+    func testActivityTitlesCoverEveryCase() {
+        for a in Stats.Activity.allCases { XCTAssertFalse(a.title.isEmpty) }
+        XCTAssertEqual(Stats.Activity.other.title, "Other")
+        XCTAssertEqual(Stats.Activity(rawValue: "review")?.title, "Code & PR review")
+    }
+
+    func testActivitySignalsRuleOneMap() {
+        typealias S = StatsScanner.ActivitySignals
+        XCTAssertEqual(S.label(tool: "Skill", input: ["skill": "code-review"]), .review)
+        XCTAssertEqual(S.label(tool: "Skill", input: ["skill": "pr-review-toolkit:review-pr"]), .review)
+        XCTAssertEqual(S.label(tool: "Skill", input: ["skill": "superpowers:brainstorming"]), .plan)
+        XCTAssertEqual(S.label(tool: "Skill", input: ["skill": "superpowers:writing-plans"]), .plan)
+        XCTAssertEqual(S.label(tool: "Skill", input: ["skill": "superpowers:systematic-debugging"]), .debug)
+        XCTAssertEqual(S.label(tool: "Skill", input: ["skill": "playwright-cli"]), .browser)
+        XCTAssertNil(S.label(tool: "Skill", input: ["skill": "sync-main"]))
+        XCTAssertEqual(S.label(tool: "Agent", input: ["subagent_type": "pr-review-toolkit:code-reviewer"]), .review)
+        XCTAssertEqual(S.label(tool: "Agent", input: ["subagent_type": "silent-failure-hunter"]), .review)
+        XCTAssertEqual(S.label(tool: "Agent", input: ["subagent_type": "pr-test-analyzer"]), .review)
+        XCTAssertNil(S.label(tool: "Agent", input: ["subagent_type": "coder"]))
+        XCTAssertEqual(S.label(tool: "EnterPlanMode", input: [:]), .plan)
+        XCTAssertEqual(S.label(tool: "ReportFindings", input: [:]), .review)
+        XCTAssertEqual(S.label(tool: "mcp__claude-in-chrome__navigate", input: [:]), .browser)
+        XCTAssertEqual(S.label(tool: "computer", input: [:]), .browser)
+        XCTAssertEqual(S.label(tool: "Bash", input: ["command": "xcrun simctl boot 'iPhone 16'"]), .simulator)
+        XCTAssertEqual(S.label(tool: "Bash", input: ["command": "xcodebuild -destination 'platform=iOS Simulator,name=X' build"]), .simulator)
+        XCTAssertEqual(S.label(tool: "Bash", input: ["command": "xcrun devicectl device install app --device 1 x.app"]), .simulator)
+        XCTAssertEqual(S.label(tool: "Bash", input: ["command": "gh pr diff 12"]), .review)
+        XCTAssertNil(S.label(tool: "Bash", input: ["command": "swift test"]))
+        XCTAssertNil(S.label(tool: "Edit", input: ["file_path": "/r/Tests/ATests.swift"]))
+    }
+
+    func testActivitySignalsTestPathConvention() {
+        typealias S = StatsScanner.ActivitySignals
+        for p in ["/r/Tests/InfinitusCoreTests/StatsTests.swift", "/r/src/FooTest.swift", "/r/web/__tests__/a.ts",
+                  "/r/web/a.test.ts", "/r/web/a.spec.js", "/r/py/tests/test_x.py", "/r/py/test_x.py", "/r/go/x_test.go",
+                  "/r/spec/models/user_spec.rb"] {
+            XCTAssertTrue(S.isTestPath(p), p)
+        }
+        for p in ["/r/Sources/InfinitusCore/Stats.swift", "/r/web/a.ts", "/r/testing-notes.md", "/r/contest/a.py",
+                  "/r/Sources/Latest.swift", "/r/Contest.swift"] {
+            XCTAssertFalse(S.isTestPath(p), p)
+        }
+    }
+
+    func testStretchLabelRulesInOrder() {
+        var s = StatsScanner.Stretch(dayKey: "2026-09-04", at: 0)
+        XCTAssertEqual(s.activity, .other)                        // nothing happened
+        s.endedInProse = true
+        XCTAssertEqual(s.activity, .explanation)                  // prose, no edits, no Bash
+        s.bash = 1
+        XCTAssertEqual(s.activity, .code)                         // a command ran
+        s.edits = 2; s.testEdits = 2
+        XCTAssertEqual(s.activity, .tests)                        // every edit is a test file
+        s.testEdits = 1
+        XCTAssertEqual(s.activity, .code)                         // a mix
+        s.label = "review"
+        XCTAssertEqual(s.activity, .review)                       // rule 1 beats everything
+        s.label = "not-a-label"
+        XCTAssertEqual(s.activity, .code)                         // unknown label → the path rules
+    }
+
+    func testDayAddStretchFeedsActivitiesAndModelStretchCounts() {
+        var s = StatsScanner.Stretch(dayKey: "2026-09-04", at: 100)
+        s.lastAt = 160; s.entries = 3; s.model = "claude-opus-5"; s.inputTokens = 10; s.outputTokens = 5; s.usd = 0.5; s.label = "plan"
+        var d = Stats.Day()
+        d.byModel["claude-opus-5"] = { var t = Stats.ActivityTally(); t.inputTokens = 10; t.outputTokens = 5; t.usd = 0.5; return t }()
+        d.add(stretch: s)
+        let plan = d.activities["plan"]!
+        XCTAssertEqual(plan.stretches, 1); XCTAssertEqual(plan.seconds, 60); XCTAssertEqual(plan.inputTokens, 10)
+        XCTAssertEqual(plan.outputTokens, 5); XCTAssertEqual(plan.usd, 0.5, accuracy: 1e-9)
+        let opus = d.byModel["claude-opus-5"]!
+        XCTAssertEqual(opus.stretches, 1); XCTAssertEqual(opus.seconds, 60)
+        XCTAssertEqual(opus.inputTokens, 10)                      // tokens were already there — not doubled
+        // A stretch that never saw a usage entry has no model: activities only.
+        var bare = StatsScanner.Stretch(dayKey: "2026-09-04", at: 0); bare.lastAt = 5; bare.entries = 1
+        var e = Stats.Day(); e.add(stretch: bare)
+        XCTAssertEqual(e.activities["other"]?.stretches, 1); XCTAssertTrue(e.byModel.isEmpty)
+        // A stretch with no assistant entry at all is not effort.
+        var empty = Stats.Day(); empty.add(stretch: StatsScanner.Stretch(dayKey: "2026-09-04", at: 0))
+        XCTAssertTrue(empty.activities.isEmpty)
+    }
+
+    private func tally(usd: Double) -> Stats.ActivityTally {
+        var t = Stats.ActivityTally(); t.stretches = 1; t.seconds = 60; t.inputTokens = 100; t.outputTokens = 10; t.usd = usd
+        return t
+    }
+
+    func testPresentationActivityAndModelRows() {
+        var d = Stats.Day()
+        d.activities["code"] = tally(usd: 3)
+        d.activities["review"] = tally(usd: 1)
+        d.byModel["claude-opus-4-5-20250805"] = tally(usd: 2)
+        d.byModel["claude-sonnet-5"] = tally(usd: 6)
+        d.byModel["other"] = tally(usd: 0.5)
+        let s = Stats.fold(days: ["2026-09-04": d], period: .day, now: date("2026-09-04T03:00:00Z"), calendar: cal)
+        let rows = Stats.Presentation.activityRows(s)
+        XCTAssertEqual(rows.map(\.id), ["Code & PR review", "Coding"])          // catalogue order, zero rows dropped
+        XCTAssertEqual(rows[0].count, 1); XCTAssertEqual(rows[0].minutes, 1); XCTAssertEqual(rows[0].tokens, 110)
+        XCTAssertEqual(rows[0].share, 0.25, accuracy: 1e-9); XCTAssertEqual(rows[0].usdText, "$1.00")
+        XCTAssertEqual(rows[1].share, 0.75, accuracy: 1e-9)
+        let models = Stats.Presentation.modelRows(s)
+        XCTAssertEqual(models.map(\.id), ["Sonnet 5", "Opus 4.5", "Other models"])   // by $ desc, "other" last
+        XCTAssertEqual(models[0].share, 6 / 8.5, accuracy: 1e-9)
+        XCTAssertTrue(Stats.Presentation.activityRows(Stats.fold(days: [:], period: .day, now: date("2026-09-04T03:00:00Z"), calendar: cal)).isEmpty)
+        XCTAssertTrue(Stats.Presentation.activityFootnote.lowercased().contains("heuristic"))
+    }
+
+    func testPresentationModelRowsMergeAliasesAndCapAtSix() {
+        var d = Stats.Day()
+        d.byModel["claude-opus-5"] = tally(usd: 2)
+        d.byModel["claude-opus-5[1m]"] = tally(usd: 3)
+        let s = Stats.fold(days: ["2026-09-04": d], period: .day, now: date("2026-09-04T03:00:00Z"), calendar: cal)
+        let rows = Stats.Presentation.modelRows(s)
+        XCTAssertEqual(rows.map(\.id), ["Opus 5"])
+        XCTAssertEqual(rows[0].usd, 5, accuracy: 1e-9)
+        XCTAssertEqual(rows[0].share, 1, accuracy: 1e-9)
+
+        var e = Stats.Day()
+        for i in 0..<8 { e.byModel["claude-m\(i)-1"] = tally(usd: Double(i + 1)) }
+        let s2 = Stats.fold(days: ["2026-09-04": e], period: .day, now: date("2026-09-04T03:00:00Z"), calendar: cal)
+        let rows2 = Stats.Presentation.modelRows(s2)
+        XCTAssertEqual(rows2.count, 7)   // 6 named + "Other models"
+        XCTAssertEqual(rows2.last?.id, "Other models")
+        XCTAssertEqual(rows2.last?.usd ?? -1, 1 + 2, accuracy: 1e-9)   // the two smallest folded
+    }
+
+    func testModelRowsShareFallsBackToTokensWhenUsdIsZero() {
+        var d = Stats.Day()
+        var t = Stats.ActivityTally(); t.inputTokens = 100; t.outputTokens = 10; t.usd = 0
+        d.byModel["unknown-model"] = t
+        let s = Stats.fold(days: ["2026-09-04": d], period: .day, now: date("2026-09-04T03:00:00Z"), calendar: cal)
+        let rows = Stats.Presentation.modelRows(s)
+        XCTAssertEqual(rows.count, 1)
+        XCTAssertEqual(rows[0].share, 1, accuracy: 1e-9)
+    }
+
+    func testPresentationModelTitles() {
+        XCTAssertEqual(Stats.Presentation.modelTitle("claude-opus-4-5-20250805"), "Opus 4.5")
+        XCTAssertEqual(Stats.Presentation.modelTitle("claude-fable-5-1"), "Fable 5.1")
+        XCTAssertEqual(Stats.Presentation.modelTitle("claude-haiku-4-5-20251001"), "Haiku 4.5")
+        XCTAssertEqual(Stats.Presentation.modelTitle("claude-fable-5[1m]"), "Fable 5")
+        XCTAssertEqual(Stats.Presentation.modelTitle("claude-sonnet-5"), "Sonnet 5")
+        XCTAssertEqual(Stats.Presentation.modelTitle("gpt-5.6-sol"), "gpt-5.6-sol")
+        XCTAssertEqual(Stats.Presentation.modelTitle("other"), "Other models")
+    }
+
+    func testPresentationRowTextFormats() {
+        var t = Stats.ActivityTally(); t.stretches = 2; t.seconds = 7_500; t.inputTokens = 1_234_000; t.outputTokens = 56_000; t.usd = 123.4
+        let row = Stats.Presentation.Row(id: "x", tally: t, share: 0.5)
+        XCTAssertEqual(row.minutesText, "2 h 5 m")
+        XCTAssertEqual(row.tokensText, "1.3M")
+        XCTAssertEqual(row.usdText, "$123")
+        var small = Stats.ActivityTally(); small.seconds = 90; small.inputTokens = 900; small.usd = 0.5
+        let srow = Stats.Presentation.Row(id: "y", tally: small, share: 0)
+        XCTAssertEqual(srow.minutesText, "1 min"); XCTAssertEqual(srow.tokensText, "900"); XCTAssertEqual(srow.usdText, "$0.50")
+        var mid = Stats.ActivityTally(); mid.inputTokens = 45_600
+        XCTAssertEqual(Stats.Presentation.Row(id: "z", tally: mid, share: 0).tokensText, "46k")
     }
 }

@@ -34,6 +34,7 @@ struct StatsPane: View {
             }
             if let s = summary {
                 ForEach(Stats.Presentation.groups(s)) { group($0) }
+                effort(s)
                 Section("Rhythm") {
                     heatmap(s.total.hours)
                     sessionLengths(s)
@@ -131,6 +132,50 @@ struct StatsPane: View {
                 Spacer()
                 Text(Stats.Presentation.sessionTimeLine(s))
                     .font(.caption).foregroundStyle(.secondary).monospacedDigit()
+            }
+        }
+        .padding(.vertical, 4)
+    }
+
+    // MARK: effort (Stats v2)
+
+    private func effort(_ s: Stats.Summary) -> some View {
+        Section("Where the effort went") {
+            rows("Activity", Stats.Presentation.activityRows(s))
+            rows("Model", Stats.Presentation.modelRows(s))
+            Text(Stats.Presentation.activityFootnote).font(.caption2).foregroundStyle(.tertiary)
+        }
+    }
+
+    private func rows(_ title: String, _ rows: [Stats.Presentation.Row]) -> some View {
+        Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 4) {
+            // A GridRow can't wear a modifier (it collapses to one cell — CLAUDE.md);
+            // the Group inside distributes it to every cell.
+            GridRow {
+                Group { Text(title); Text("Stretches"); Text("Time"); Text("Tokens"); Text("Spend"); Text("Share") }
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            if rows.isEmpty {
+                // Outside a GridRow, sized via CLAUDE.md's Grid fact rather
+                // than `.gridCellColumns` (which needs a row to span).
+                Text("Nothing yet this period").font(.caption).foregroundStyle(.tertiary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .gridCellUnsizedAxes(.horizontal)
+            }
+            ForEach(rows) { r in
+                GridRow {
+                    Text(r.id).lineLimit(1)
+                    Text(r.count.formatted()).monospacedDigit()
+                    Text(r.minutesText).monospacedDigit()
+                    Text(r.tokensText).monospacedDigit()
+                    Text(r.usdText).monospacedDigit()
+                    ZStack(alignment: .leading) {
+                        RoundedRectangle(cornerRadius: 2).fill(Color.accentColor.opacity(0.6))
+                            .frame(width: max(2, 80 * r.share), height: 8)
+                    }
+                    .frame(width: 80, height: 8)
+                    .accessibilityHidden(true)
+                }
             }
         }
         .padding(.vertical, 4)

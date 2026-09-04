@@ -31,6 +31,8 @@ struct StatsScreen: View {
                         }
                     }
                 }
+                effortSection("Where the effort went", Stats.Presentation.activityRows(s))
+                effortSection("By model", Stats.Presentation.modelRows(s), footer: Stats.Presentation.activityFootnote)
                 Section("Rhythm") {
                     ForEach(Stats.Presentation.sessionLengthRows(s), id: \.label) { row in
                         LabeledContent(row.label, value: n(row.count))
@@ -52,4 +54,22 @@ struct StatsScreen: View {
     }
 
     private func n(_ v: Int) -> String { v.formatted() }
+
+    private func effortSection(_ title: String, _ rows: [Stats.Presentation.Row], footer: String? = nil) -> some View {
+        Section {
+            if rows.isEmpty { Text("Nothing yet this period").font(.caption).foregroundStyle(.tertiary) }
+            ForEach(rows) { r in
+                LabeledContent {
+                    Text("\(r.usdText) · \(r.minutesText)").monospacedDigit()
+                } label: {
+                    Text(r.id)
+                    Text("\(r.count) stretches · \(r.tokensText) tokens").font(.caption2).foregroundStyle(.secondary)
+                }
+            }
+        } header: {
+            Text(title)
+        } footer: {
+            if let footer { Text(footer) }
+        }
+    }
 }
