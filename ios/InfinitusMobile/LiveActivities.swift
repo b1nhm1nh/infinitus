@@ -37,16 +37,6 @@ final class LiveActivities {
             log.notice("live activities disabled for this app")
             return
         }
-        // An old snapshot — the Documents fallback when the Mac is out of
-        // reach — names whichever account was active when the phone last
-        // heard from it; the cards wait for a fresh one (user 2026-09-05:
-        // the card still showed the old account after the Mac had switched).
-        guard Date().timeIntervalSince(capturedAt) < LiveActivityBuilder.workingStale else {
-            if !skippingOld { log.notice("snapshot from \(capturedAt) is too old to drive the live activities") }
-            skippingOld = true
-            return
-        }
-        skippingOld = false
         themeID = fleet.rowTheme.id
         // A push may have started/ended one behind our back, and a card
         // past its stale date is still ours: `.stale` is not `.active`,
@@ -57,7 +47,20 @@ final class LiveActivities {
         let engineFleet = EngineFleet(engineID: fleet.id, provider: fleet.provider, accounts: fleet.accounts,
                                       activeNumber: fleet.activeNumber, nextCandidate: fleet.nextCandidate,
                                       nextRecovery: fleet.nextRecovery, liveSessions: fleet.liveSessions, raw: nil)
+        // The revival card runs on the wall clock (its builder ends it once
+        // the reset instant passes), so an old snapshot still drives it.
         syncRevival(LiveActivityBuilder.revival(fleet: engineFleet, theme: fleet.rowTheme), machine: machine)
+        // The working card names the active account, and an old snapshot
+        // — the Documents fallback when the Mac is out of reach — names
+        // whichever one was active when the phone last heard from it; it
+        // waits for a fresh one (user 2026-09-05: the card still showed
+        // the old account after the Mac had switched).
+        guard Date().timeIntervalSince(capturedAt) < LiveActivityBuilder.workingStale else {
+            if !skippingOld { log.notice("snapshot from \(capturedAt) is too old to drive the working activity") }
+            skippingOld = true
+            return
+        }
+        skippingOld = false
         syncWorking(LiveActivityBuilder.working(fleet: engineFleet, theme: fleet.rowTheme,
                                                 report: fleet.report, tokenRate: tokenRate), machine: machine)
     }
