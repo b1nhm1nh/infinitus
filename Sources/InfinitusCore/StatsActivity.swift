@@ -100,7 +100,7 @@ extension StatsScanner {
             guard let file = parts.last else { return false }
             if parts.dropLast().contains(where: { testDirs.contains($0) }) { return true }
             let lower = file.lowercased()
-            return lower.hasSuffix("tests.swift") || lower.hasSuffix("test.swift")
+            return file.hasSuffix("Tests.swift") || file.hasSuffix("Test.swift")
                 || lower.contains(".test.") || lower.contains(".spec.")
                 || lower.hasPrefix("test_") || lower.hasSuffix("_test.go") || lower.hasSuffix("_test.py")
                 || lower.hasSuffix("_spec.rb")
@@ -125,5 +125,19 @@ extension Stats.Day {
         m.stretches += 1
         m.seconds += t.seconds
         byModel[s.model] = m
+    }
+}
+
+extension StatsScanner.FileEntry {
+    /// `days` with the still-open stretch charged in — the Result's
+    /// form. The cache keeps `days` pure so the next chunk can keep
+    /// feeding the stretch and close it exactly once.
+    public func daysWithOpenStretch() -> [String: Stats.Day] {
+        guard let s = state.stretch else { return days }
+        var out = days
+        var d = out[s.dayKey] ?? Stats.Day()
+        d.add(stretch: s)
+        out[s.dayKey] = d
+        return out
     }
 }

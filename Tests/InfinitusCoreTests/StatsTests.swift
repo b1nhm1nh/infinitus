@@ -264,6 +264,105 @@ final class StatsTests: XCTestCase {
         XCTAssertEqual(d.toolErrors, 1)
     }
 
+    func testIngestSplitsStretchesAndChargesModels() {
+        var e = StatsScanner.FileEntry()
+        let lines = [
+            // stretch 1: human → plan skill, one edit, prose end
+            #"{"type":"user","timestamp":"2026-09-04T01:00:00.000Z","origin":{"kind":"human"},"message":{"role":"user","content":"plan it"}}"#,
+            #"{"type":"assistant","timestamp":"2026-09-04T01:00:10.000Z","message":{"id":"a1","model":"claude-opus-5","usage":{"input_tokens":100,"output_tokens":10},"content":[{"type":"tool_use","id":"t1","name":"Skill","input":{"skill":"superpowers:writing-plans"}}]}}"#,
+            #"{"type":"assistant","timestamp":"2026-09-04T01:00:20.000Z","message":{"id":"a2","model":"claude-opus-5","usage":{"input_tokens":100,"output_tokens":10},"content":[{"type":"tool_use","id":"t2","name":"Edit","input":{"file_path":"/r/Sources/A.swift"}}]}}"#,
+            #"{"type":"assistant","timestamp":"2026-09-04T01:01:00.000Z","message":{"id":"a3","model":"claude-opus-5","usage":{"input_tokens":100,"output_tokens":10},"content":[{"type":"text","text":"planned"}]}}"#,
+            // stretch 2 (phone): only test edits, on Sonnet
+            #"{"type":"user","timestamp":"2026-09-04T01:05:00.000Z","origin":{"kind":"peer","from":"uds:/tmp/infinitus-1.sock"},"message":{"role":"user","content":"<cross-session-message from=\"uds:/tmp/infinitus-1.sock\" from-name=\"Infinitus\" from-mode=\"bypass\">\nadd tests\n</cross-session-message>"}}"#,
+            #"{"type":"assistant","timestamp":"2026-09-04T01:05:30.000Z","message":{"id":"b1","model":"claude-sonnet-5","usage":{"input_tokens":50,"output_tokens":5},"content":[{"type":"tool_use","id":"t3","name":"Write","input":{"file_path":"/r/Tests/ATests.swift"}}]}}"#,
+            // stretch 3 (still open): prose only
+            #"{"type":"user","timestamp":"2026-09-04T01:10:00.000Z","origin":{"kind":"human"},"message":{"role":"user","content":"why?"}}"#,
+            #"{"type":"assistant","timestamp":"2026-09-04T01:10:05.000Z","message":{"id":"c1","model":"claude-opus-5","usage":{"input_tokens":20,"output_tokens":2},"content":[{"type":"text","text":"because"}]}}"#,
+        ]
+        for line in lines { StatsScanner.ingest(entry(line), sessionID: "s1", into: &e, calendar: cal) }
+        let d = e.days["2026-09-04"]!
+        XCTAssertEqual(d.activities["plan"]?.stretches, 1)
+        XCTAssertEqual(d.activities["plan"]?.seconds ?? 0, 60, accuracy: 0.5)     // 01:00:00 → 01:01:00
+        XCTAssertEqual(d.activities["plan"]?.inputTokens, 300)
+        XCTAssertEqual(d.activities["tests"]?.stretches, 1)
+        XCTAssertEqual(d.activities["tests"]?.inputTokens, 50)
+        XCTAssertNil(d.activities["explanation"])                                    // still open → not in the cache form
+        XCTAssertEqual(d.byModel["claude-opus-5"]?.inputTokens, 320)                 // per entry, open stretch included
+        XCTAssertEqual(d.byModel["claude-opus-5"]?.stretches, 1)                     // closed stretches only
+        XCTAssertEqual(d.byModel["claude-sonnet-5"]?.stretches, 1)
+        XCTAssertGreaterThan(d.byModel["claude-sonnet-5"]?.usd ?? 0, 0)
+        // The provisional view charges the open tail too.
+        let open = e.daysWithOpenStretch()["2026-09-04"]!
+        XCTAssertEqual(open.activities["explanation"]?.stretches, 1)
+        XCTAssertEqual(open.activities["explanation"]?.inputTokens, 20)
+        XCTAssertEqual(open.byModel["claude-opus-5"]?.stretches, 2)
+        XCTAssertEqual(open.byModel["claude-opus-5"]?.inputTokens, 320)             // not double-charged
+        // Everything v1 counted still counts the same.
+        XCTAssertEqual(d.humanMessages, 2); XCTAssertEqual(d.phoneMessages, 1); XCTAssertEqual(d.turns, 2)
+        XCTAssertEqual(d.inputTokens, 370)
+    }
+
+    func testIngestStretchIsChargedToItsOpeningDayAndOpenedByAgentsAndNudges() {
+        // The test calendar is Asia/Ho_Chi_Minh (UTC+7): 16:59Z is 23:59 on the 4th, 17:01Z is 00:01 on the 5th.
+        var e = StatsScanner.FileEntry()
+        let lines = [
+            #"{"type":"user","timestamp":"2026-09-04T16:59:00.000Z","origin":{"kind":"human"},"message":{"role":"user","content":"go"}}"#,
+            #"{"type":"assistant","timestamp":"2026-09-04T17:01:00.000Z","message":{"id":"a1","model":"claude-opus-5","usage":{"input_tokens":10,"output_tokens":1},"content":[{"type":"tool_use","id":"t1","name":"Bash","input":{"command":"swift build"}}]}}"#,
+            // a nudge from the app closes it and opens the next
+            #"{"type":"user","timestamp":"2026-09-04T17:02:00.000Z","origin":{"kind":"peer","from":"uds:/tmp/infinitus-1.sock"},"message":{"role":"user","content":"<cross-session-message from=\"uds:/tmp/infinitus-1.sock\" from-name=\"Infinitus\" from-mode=\"bypass\">\n[Infinitus] Continue where you left off\n</cross-session-message>"}}"#,
+            #"{"type":"assistant","timestamp":"2026-09-04T17:02:30.000Z","message":{"id":"a2","model":"claude-opus-5","usage":{"input_tokens":10,"output_tokens":1},"content":[{"type":"tool_use","id":"t2","name":"mcp__claude-in-chrome__navigate","input":{"url":"x"}}]}}"#,
+            // another session's message closes it too
+            #"{"type":"user","timestamp":"2026-09-04T17:03:00.000Z","origin":{"kind":"peer","from":"uds:/tmp/cc-socks/1.sock"},"message":{"role":"user","content":"<cross-session-message from=\"uds:/tmp/cc-socks/1.sock\" from-name=\"Infinitus2\" from-mode=\"bypass\">\nmerge e2\n</cross-session-message>"}}"#,
+            // …and a second one right behind it: the agent stretch had no assistant entry — not effort
+            #"{"type":"user","timestamp":"2026-09-04T17:03:10.000Z","origin":{"kind":"peer","from":"uds:/tmp/cc-socks/1.sock"},"message":{"role":"user","content":"<cross-session-message from=\"uds:/tmp/cc-socks/1.sock\" from-name=\"Infinitus2\" from-mode=\"bypass\">\nand this\n</cross-session-message>"}}"#,
+        ]
+        for line in lines { StatsScanner.ingest(entry(line), sessionID: "s1", into: &e, calendar: cal) }
+        XCTAssertEqual(e.days["2026-09-04"]?.activities["code"]?.stretches, 1)       // opened 23:59 local on the 4th
+        XCTAssertEqual(e.days["2026-09-04"]?.activities["code"]?.seconds ?? 0, 120, accuracy: 0.5)
+        XCTAssertEqual(e.days["2026-09-05"]?.activities["browser"]?.stretches, 1)    // the nudge opened this one
+        XCTAssertNotNil(e.state.stretch)                                              // the last agent message opened one
+        XCTAssertNil(e.days["2026-09-05"]?.activities["other"])                       // the empty one between them folded nothing
+        XCTAssertEqual(e.daysWithOpenStretch(), e.days)                               // and the open empty one adds nothing either
+        XCTAssertEqual(e.days["2026-09-05"]?.nudges, 1)                                 // the nudge itself lands on the 5th
+        XCTAssertNil(e.days["2026-09-05"]?.activities["code"])
+    }
+
+    func testIngestSubagentFilesChargeModelsButNeverStretches() {
+        var e = StatsScanner.FileEntry()
+        e.subagent = true
+        StatsScanner.ingest(entry(#"{"type":"user","timestamp":"2026-09-04T01:00:00.000Z","origin":{"kind":"human"},"message":{"role":"user","content":"sub task"}}"#), sessionID: "p", into: &e, calendar: cal)
+        StatsScanner.ingest(entry(#"{"type":"assistant","timestamp":"2026-09-04T01:00:05.000Z","message":{"id":"m1","model":"claude-haiku-4-5-20251001","usage":{"input_tokens":10,"output_tokens":20},"content":[{"type":"tool_use","id":"t1","name":"Edit","input":{"file_path":"/r/Tests/X.swift"}}]}}"#), sessionID: "p", into: &e, calendar: cal)
+        let d = e.days["2026-09-04"]!
+        XCTAssertNil(e.state.stretch)
+        XCTAssertTrue(d.activities.isEmpty)
+        XCTAssertEqual(d.byModel["claude-haiku-4-5-20251001"]?.inputTokens, 10)
+        XCTAssertEqual(d.byModel["claude-haiku-4-5-20251001"]?.stretches, 0)
+        XCTAssertEqual(e.daysWithOpenStretch(), e.days)
+    }
+
+    func testScanResultIncludesTheOpenStretch() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("stats-v2-\(UUID().uuidString)")
+        let project = root.appendingPathComponent("-r-a")
+        try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
+        let file = project.appendingPathComponent("s1.jsonl")
+        try [
+            #"{"type":"user","cwd":"/r/a","timestamp":"2026-09-04T01:00:00.000Z","origin":{"kind":"human"},"message":{"role":"user","content":"explain"}}"#,
+            #"{"type":"assistant","timestamp":"2026-09-04T01:00:05.000Z","message":{"id":"a1","model":"claude-opus-5","usage":{"input_tokens":10,"output_tokens":1},"content":[{"type":"text","text":"sure"}]}}"#,
+        ].joined(separator: "\n").appending("\n").write(to: file, atomically: true, encoding: .utf8)
+        let cacheURL = root.appendingPathComponent("cache.json")
+        let now = date("2026-09-04T02:00:00Z")
+        let first = StatsScanner.scan(projectsDir: root, cacheURL: cacheURL, calendar: cal, now: now)
+        XCTAssertEqual(first.days["2026-09-04"]?.activities["explanation"]?.stretches, 1)
+        // Served from the cache on the second call: same answer.
+        let second = StatsScanner.scan(projectsDir: root, cacheURL: cacheURL, calendar: cal, now: now)
+        XCTAssertEqual(second.days["2026-09-04"]?.activities["explanation"]?.stretches, 1)
+        XCTAssertEqual(second.days["2026-09-04"]?.inputTokens, 10)
+    }
+
+    func testCacheVersionIsFive() {
+        XCTAssertEqual(StatsScanner.Cache().version, 5)
+    }
+
     func testWaitingGapIsCappedAtEightHours() {
         var e = StatsScanner.FileEntry()
         StatsScanner.ingest(entry(#"{"type":"assistant","timestamp":"2026-09-01T01:00:00.000Z","message":{"id":"m1","model":"claude-opus-4-5-20250805","usage":{"input_tokens":1,"output_tokens":1},"content":[{"type":"text","text":"done"}]}}"#), sessionID: "s", into: &e, calendar: cal)
@@ -801,7 +900,8 @@ final class StatsTests: XCTestCase {
                   "/r/spec/models/user_spec.rb"] {
             XCTAssertTrue(S.isTestPath(p), p)
         }
-        for p in ["/r/Sources/InfinitusCore/Stats.swift", "/r/web/a.ts", "/r/testing-notes.md", "/r/contest/a.py"] {
+        for p in ["/r/Sources/InfinitusCore/Stats.swift", "/r/web/a.ts", "/r/testing-notes.md", "/r/contest/a.py",
+                  "/r/Sources/Latest.swift", "/r/Contest.swift"] {
             XCTAssertFalse(S.isTestPath(p), p)
         }
     }

@@ -19,6 +19,9 @@ public enum StatsScanner {
         /// Per day: first and last entry instants, for session seconds.
         public var firstAt: [String: Double] = [:]
         public var lastAt: [String: Double] = [:]
+        /// The stretch the assistant is in right now (Stats v2) — nil
+        /// before the first person/agent message of the file.
+        public var stretch: Stretch?
         public init() {}
     }
 
@@ -40,6 +43,33 @@ public enum StatsScanner {
     }
 
     static let waitingCap = 8.0 * 3600
+
+    /// Fold the open stretch into the day it was opened on. `day` is the
+    /// caller's working copy of `currentKey` (written back at the end of
+    /// `ingest`), so a same-day close must go through it, not through
+    /// `entry.days`, or the write-back would overwrite the fold.
+    static func closeStretch(into entry: inout FileEntry, current day: inout Stats.Day, currentKey: String) {
+        guard let s = entry.state.stretch else { return }
+        entry.state.stretch = nil
+        if s.dayKey == currentKey {
+            day.add(stretch: s)
+        } else {
+            var other = entry.days[s.dayKey] ?? Stats.Day()
+            other.add(stretch: s)
+            entry.days[s.dayKey] = other
+        }
+    }
+
+    static func feedStretch(_ s: inout Stretch, tool name: String, input: [String: Any]) {
+        if s.label == nil, let vote = ActivitySignals.label(tool: name, input: input) { s.label = vote.rawValue }
+        switch name {
+        case "Edit", "Write", "MultiEdit", "NotebookEdit":
+            s.edits += 1
+            if ActivitySignals.isTestPath(input["file_path"] as? String ?? input["notebook_path"] as? String ?? "") { s.testEdits += 1 }
+        case "Bash": s.bash += 1
+        default: break
+        }
+    }
 
     public static func classifyUser(_ obj: [String: Any]) -> UserKind {
         if (obj["isCompactSummary"] as? Bool) == true { return .compaction }
@@ -162,6 +192,10 @@ public enum StatsScanner {
         if type == "user" {
             if !isSubagent, obj["toolDenialKind"] != nil { day.denials += 1 }
             let kind = classifyUser(obj)
+            if !isSubagent, [.human, .phone, .agent, .nudge].contains(kind) {
+                closeStretch(into: &entry, current: &day, currentKey: key)
+                entry.state.stretch = Stretch(dayKey: key, at: t)
+            }
             switch kind {
             case .human, .phone:
                 // The trap: a subagent's first "user" entry is its prompt
@@ -194,20 +228,41 @@ public enum StatsScanner {
                     let output = usage["output_tokens"] as? Int ?? 0
                     let cacheRead = usage["cache_read_input_tokens"] as? Int ?? 0
                     let cacheWrite = usage["cache_creation_input_tokens"] as? Int ?? 0
+                    var cost = 0.0
+                    if let p = StaticPriceTable.price(model: model) {
+                        cost = (Double(input) * p.input + Double(output) * p.output
+                            + Double(cacheRead) * p.cacheRead + Double(cacheWrite) * p.cacheWrite) / 1_000_000
+                    }
                     day.inputTokens += input
                     day.outputTokens += output
-                    if let p = StaticPriceTable.price(model: model) {
-                        day.usd += (Double(input) * p.input + Double(output) * p.output
-                            + Double(cacheRead) * p.cacheRead + Double(cacheWrite) * p.cacheWrite) / 1_000_000
+                    day.usd += cost
+                    // Per model, per entry — exact, and the only route a
+                    // sub-agent file's spend takes into v2.
+                    var m = day.byModel[model] ?? Stats.ActivityTally()
+                    m.inputTokens += input
+                    m.outputTokens += output
+                    m.usd += cost
+                    day.byModel[model] = m
+                    if entry.state.stretch != nil {
+                        entry.state.stretch!.model = model
+                        entry.state.stretch!.inputTokens += input
+                        entry.state.stretch!.outputTokens += output
+                        entry.state.stretch!.usd += cost
                     }
                 }
                 if let id { entry.state.lastMessageID = id }
+                if !isSubagent, entry.state.stretch != nil {
+                    entry.state.stretch!.entries += 1
+                    entry.state.stretch!.lastAt = max(entry.state.stretch!.lastAt, t)
+                }
                 if let blocks = message["content"] as? [[String: Any]] {
-                    var sawText = false
+                    var sawText = false, sawTool = false
                     for block in blocks {
                         switch block["type"] as? String {
                         case "tool_use":
+                            sawTool = true
                             let name = block["name"] as? String ?? "?"
+                            let input = block["input"] as? [String: Any] ?? [:]
                             day.toolCalls[name, default: 0] += 1
                             if !isSubagent { entry.state.toolsSinceHuman += 1 }
                             if name == "Agent" { day.subagents += 1 }
@@ -216,15 +271,20 @@ public enum StatsScanner {
                                 if entry.state.turnEndedAt == nil { day.turns += 1 }
                                 entry.state.turnEndedAt = t
                             }
+                            if !isSubagent, entry.state.stretch != nil {
+                                feedStretch(&entry.state.stretch!, tool: name, input: input)
+                            }
                         case "text": sawText = true
                         default: break
                         }
                     }
+                    if !isSubagent, entry.state.stretch != nil, !model.hasPrefix("<") {
+                        entry.state.stretch!.endedInProse = sawText && !sawTool
+                    }
                     // A text block with no tool call beside it ends the turn:
                     // the next thing the transcript needs is a person.
                     // (Never for a subagent file — it has no turns of its own.)
-                    if !isSubagent, sawText, !blocks.contains(where: { ($0["type"] as? String) == "tool_use" }),
-                       !model.hasPrefix("<") {
+                    if !isSubagent, sawText, !sawTool, !model.hasPrefix("<") {
                         if entry.state.turnEndedAt == nil { day.turns += 1 }
                         entry.state.turnEndedAt = t
                     }
@@ -252,10 +312,9 @@ public enum StatsScanner {
     }
 
     struct Cache: Codable {
-        /// 4 (2026-09-04): every cached `FileEntry.days` before this was
-        /// classified by the broken peer branch — nudges counted as
-        /// phone messages and machinery as human.
-        var version = 4
+        /// 5 (2026-09-04, Stats v2): `activities`/`byModel` need every
+        /// entry re-read; 4 was the peer-classification fix.
+        var version = 5
         var files: [String: FileEntry] = [:]
     }
 
@@ -371,7 +430,7 @@ public enum StatsScanner {
                 if let cached { live[c.url.path] = cached }
                 result.files += 1
                 if let cwd = cached?.cwd { result.cwds.insert(cwd) }
-                for (key, day) in cached?.days ?? [:] { result.days[key] = (result.days[key] ?? Stats.Day()) + day }
+                for (key, day) in cached?.daysWithOpenStretch() ?? [:] { result.days[key] = (result.days[key] ?? Stats.Day()) + day }
                 if dirty {
                     result.remaining += 1
                     result.bytesRemaining += owed(size: c.size, offset: cached?.offset ?? 0)
@@ -419,7 +478,7 @@ public enum StatsScanner {
             live[c.url.path] = entry
             result.files += 1
             if let cwd = entry.cwd { result.cwds.insert(cwd) }
-            for (key, day) in entry.days { result.days[key] = (result.days[key] ?? Stats.Day()) + day }
+            for (key, day) in entry.daysWithOpenStretch() { result.days[key] = (result.days[key] ?? Stats.Day()) + day }
             if entry.size != c.size {
                 result.remaining += 1
                 result.bytesRemaining += owed(size: c.size, offset: entry.offset)
