@@ -50,9 +50,13 @@ func runTeam(_ args: [String]) -> Int32 {
     while i < args.count {
         let a = args[i]
         if a.hasPrefix("--") {
+            // Every team option takes a value; a bare flag is a typo, not a
+            // boolean (`read --out` must never write to a file named "true").
             let key = String(a.dropFirst(2))
-            if i + 1 < args.count, !args[i + 1].hasPrefix("--") { options[key] = args[i + 1]; i += 1 }
-            else { options[key] = "true" }
+            guard i + 1 < args.count, !args[i + 1].hasPrefix("--") else {
+                return fail("--\(key) needs a value\n\n\(teamUsage())", code: 2)
+            }
+            options[key] = args[i + 1]; i += 1
         } else {
             positional.append(a)
         }
