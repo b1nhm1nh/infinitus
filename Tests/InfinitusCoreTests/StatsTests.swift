@@ -960,4 +960,47 @@ final class StatsTests: XCTestCase {
         var t = Stats.ActivityTally(); t.stretches = 1; t.seconds = 60; t.inputTokens = 100; t.outputTokens = 10; t.usd = usd
         return t
     }
+
+    func testPresentationActivityAndModelRows() {
+        var d = Stats.Day()
+        d.activities["code"] = tally(usd: 3)
+        d.activities["review"] = tally(usd: 1)
+        d.byModel["claude-opus-4-5-20250805"] = tally(usd: 2)
+        d.byModel["claude-sonnet-5"] = tally(usd: 6)
+        d.byModel["other"] = tally(usd: 0.5)
+        let s = Stats.fold(days: ["2026-09-04": d], period: .day, now: date("2026-09-04T03:00:00Z"), calendar: cal)
+        let rows = Stats.Presentation.activityRows(s)
+        XCTAssertEqual(rows.map(\.id), ["Code & PR review", "Coding"])          // catalogue order, zero rows dropped
+        XCTAssertEqual(rows[0].count, 1); XCTAssertEqual(rows[0].minutes, 1); XCTAssertEqual(rows[0].tokens, 110)
+        XCTAssertEqual(rows[0].share, 0.25, accuracy: 1e-9); XCTAssertEqual(rows[0].usdText, "$1.00")
+        XCTAssertEqual(rows[1].share, 0.75, accuracy: 1e-9)
+        let models = Stats.Presentation.modelRows(s)
+        XCTAssertEqual(models.map(\.id), ["Sonnet 5", "Opus 4.5", "Other models"])   // by $ desc, "other" last
+        XCTAssertEqual(models[0].share, 6 / 8.5, accuracy: 1e-9)
+        XCTAssertTrue(Stats.Presentation.activityRows(Stats.fold(days: [:], period: .day, now: date("2026-09-04T03:00:00Z"), calendar: cal)).isEmpty)
+        XCTAssertTrue(Stats.Presentation.activityFootnote.lowercased().contains("heuristic"))
+    }
+
+    func testPresentationModelTitles() {
+        XCTAssertEqual(Stats.Presentation.modelTitle("claude-opus-4-5-20250805"), "Opus 4.5")
+        XCTAssertEqual(Stats.Presentation.modelTitle("claude-fable-5-1"), "Fable 5.1")
+        XCTAssertEqual(Stats.Presentation.modelTitle("claude-haiku-4-5-20251001"), "Haiku 4.5")
+        XCTAssertEqual(Stats.Presentation.modelTitle("claude-fable-5[1m]"), "Fable 5")
+        XCTAssertEqual(Stats.Presentation.modelTitle("claude-sonnet-5"), "Sonnet 5")
+        XCTAssertEqual(Stats.Presentation.modelTitle("gpt-5.6-sol"), "gpt-5.6-sol")
+        XCTAssertEqual(Stats.Presentation.modelTitle("other"), "Other models")
+    }
+
+    func testPresentationRowTextFormats() {
+        var t = Stats.ActivityTally(); t.stretches = 2; t.seconds = 7_500; t.inputTokens = 1_234_000; t.outputTokens = 56_000; t.usd = 123.4
+        let row = Stats.Presentation.Row(id: "x", tally: t, share: 0.5)
+        XCTAssertEqual(row.minutesText, "2 h 5 m")
+        XCTAssertEqual(row.tokensText, "1.3M")
+        XCTAssertEqual(row.usdText, "$123")
+        var small = Stats.ActivityTally(); small.seconds = 90; small.inputTokens = 900; small.usd = 0.5
+        let srow = Stats.Presentation.Row(id: "y", tally: small, share: 0)
+        XCTAssertEqual(srow.minutesText, "1 min"); XCTAssertEqual(srow.tokensText, "900"); XCTAssertEqual(srow.usdText, "$0.50")
+        var mid = Stats.ActivityTally(); mid.inputTokens = 45_600
+        XCTAssertEqual(Stats.Presentation.Row(id: "z", tally: mid, share: 0).tokensText, "46k")
+    }
 }
