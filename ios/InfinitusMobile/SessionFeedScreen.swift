@@ -53,6 +53,14 @@ struct SessionFeedScreen: View {
     /// The draft as it stood when the mic went on; the transcript
     /// appends to it.
     @State private var draftBeforeDictation = ""
+    /// A non-English dictation as spoken, kept beside its English
+    /// draft so the chip can show it and the send can fall back to it.
+    @State private var dictatedOriginal: String?
+    @State private var dictatedLocale: Locale?
+    @State private var translateRequest: DictationTranslateRequest?
+    @State private var translating = false
+    @State private var dictationNote: String?
+    @State private var showOriginal = false
 
     /// A picked file, already processed into the exact bytes/mime that
     /// will ride in `SessionInput.Attachment`.
@@ -508,6 +516,37 @@ struct SessionFeedScreen: View {
                 Text(dictationError).font(.caption).foregroundStyle(.red)
                     .padding(.horizontal)
             }
+            if translating {
+                HStack(spacing: 6) {
+                    ProgressView().controlSize(.small)
+                    Text("Translating…").font(.caption).foregroundStyle(.secondary)
+                }
+                .padding(.horizontal)
+            } else if let original = dictatedOriginal, let locale = dictatedLocale {
+                // The dictation as spoken: peek, or put it back.
+                HStack(spacing: 8) {
+                    Button {
+                        showOriginal.toggle()
+                    } label: {
+                        Text((locale.language.languageCode?.identifier ?? "?").uppercased())
+                            .font(.caption2.weight(.bold))
+                            .padding(.horizontal, 6).padding(.vertical, 2)
+                            .background(Color.accentColor.opacity(0.18), in: Capsule())
+                    }
+                    .accessibilityLabel("Show the dictation as spoken")
+                    if showOriginal {
+                        Text(original).font(.caption).foregroundStyle(.secondary).lineLimit(3)
+                        Button("Use it") { draft = original; dictatedOriginal = nil; dictationNote = "Sending as spoken, with a note asking for an English reply." }
+                            .font(.caption)
+                    } else if let note = dictationNote {
+                        Text(note).font(.caption).foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                }
+                .padding(.horizontal)
+            } else if let note = dictationNote {
+                Text(note).font(.caption).foregroundStyle(.secondary).padding(.horizontal)
+            }
             if !attachments.isEmpty {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 8) { ForEach(attachments) { attachmentChip($0) } }
@@ -564,7 +603,12 @@ struct SessionFeedScreen: View {
                 // composer dismisses it.
                 if Dictation.isAvailable {
                     Button {
-                        if !dictation.listening { draftBeforeDictation = draft }
+                        if !dictation.listening {
+                            draftBeforeDictation = draft
+                            dictatedOriginal = nil
+                            dictationNote = nil
+                            dictation.hints = dictationHints()
+                        }
                         dictation.toggle()
                     } label: {
                         Image(systemName: dictation.listening ? "stop.circle.fill" : "mic.circle")
@@ -573,6 +617,9 @@ struct SessionFeedScreen: View {
                     }
                     .disabled(sendingMessage)
                     .accessibilityLabel(dictation.listening ? "Stop dictating" : "Dictate")
+                    // Long-press: the language, without a trip to Settings
+                    // (user 2026-09-04 "can it accept Vietnamese?").
+                    .contextMenu { languageMenu }
                 }
                 Button(action: sendMessage) {
                     if sendingMessage {
@@ -595,6 +642,23 @@ struct SessionFeedScreen: View {
             guard !text.isEmpty else { return }
             let base = draftBeforeDictation
             draft = base.isEmpty || base.hasSuffix(" ") || base.hasSuffix("\n") ? base + text : base + " " + text
+        }
+        .onChange(of: dictation.listening) { was, now in
+            guard was, !now else { return }
+            dictationEnded()
+        }
+        .dictationTranslate(translateRequest) { result in
+            translating = false
+            translateRequest = nil
+            switch result {
+            case .success(let english):
+                let base = draftBeforeDictation
+                draft = base.isEmpty || base.hasSuffix(" ") || base.hasSuffix("\n") ? base + english : base + " " + english
+                dictationNote = nil
+            case .failure:
+                // No language pack (or iOS 17): send as spoken, and say so.
+                dictationNote = "Couldn't translate on the phone — sending as spoken, with a note asking for an English reply."
+            }
         }
         .onDisappear { dictation.stop() }
         .onChange(of: photoPickerItems) { _, items in
@@ -803,8 +867,18 @@ struct SessionFeedScreen: View {
 
     private func sendMessage() {
         dictation.stop()
-        let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        var text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty || !attachments.isEmpty else { return }
+        // A non-English dictation that wasn't translated on the phone
+        // goes out as spoken; under the "note" policy the session is
+        // asked to read it as an English instruction so the chat stays
+        // English (user 2026-09-04: "force it to take it as English").
+        if let locale = dictatedLocale, !Dictation.isEnglish(locale),
+           let original = dictatedOriginal, text.contains(original.trimmingCharacters(in: .whitespacesAndNewlines)),
+           Dictation.policy != "none" {
+            let language = Locale(identifier: "en").localizedString(forLanguageCode: locale.language.languageCode?.identifier ?? "") ?? "another language"
+            text = "(Dictated in \(language) — read it as an English instruction and reply in English.)\n" + text
+        }
         sendingMessage = true
         messageResult = nil
         attachmentError = nil
@@ -821,6 +895,9 @@ struct SessionFeedScreen: View {
                     draft = ""
                     attachments = []
                     messageResult = nil
+                    dictatedOriginal = nil
+                    dictatedLocale = nil
+                    dictationNote = nil
                 } else {
                     // The Mac says why ("attachment too large", "unsupported
                     // attachment type"…) — show it, a bare "wasn't valid"
@@ -848,6 +925,64 @@ struct SessionFeedScreen: View {
             } finished: {
                 actionSending = false
             }
+        }
+    }
+
+    // MARK: dictation language (user 2026-09-04)
+
+    /// The mic stopped: a non-English take is either translated on the
+    /// phone or kept as spoken for the note at send time.
+    private func dictationEnded() {
+        let spoken = dictation.transcript.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !spoken.isEmpty else { return }
+        let locale = dictation.locale
+        dictatedLocale = locale
+        guard !Dictation.isEnglish(locale) else { dictatedOriginal = nil; return }
+        dictatedOriginal = spoken
+        showOriginal = false
+        switch Dictation.policy {
+        case "phone":
+            translating = true
+            translateRequest = DictationTranslateRequest(text: spoken, from: locale)
+        case "note":
+            dictationNote = "Sending as spoken, with a note asking for an English reply."
+        default:
+            dictationNote = nil
+        }
+    }
+
+    /// Words the recognizer should keep verbatim: the session's own
+    /// names and the tools it has been using.
+    private func dictationHints() -> [String] {
+        var words: [String] = []
+        if let name = feed?.name { words.append(name) }
+        words.append(repoName(session.cwd))
+        if let branch = model.sessionProgress.byPid[session.pid]?.gitBranch { words.append(branch) }
+        if let modelName = model.sessionProgress.byPid[session.pid]?.model { words.append(modelName) }
+        for item in (feed?.items ?? []).suffix(40) {
+            if let tool = item.toolName { words.append(tool) }
+        }
+        words += ["Claude", "commit", "PR", "merge", "rebase", "Swift", "SwiftUI", "Xcode", "iOS", "macOS"]
+        var seen = Set<String>()
+        return words.filter { !$0.isEmpty && seen.insert($0.lowercased()).inserted }
+    }
+
+    @AppStorage(Dictation.localeKey) private var dictationLocaleID = ""
+
+    private var languageMenu: some View {
+        let current = dictationLocaleID
+        let quick = [Locale.current, Locale(identifier: "en-US"), Locale(identifier: "vi-VN")]
+        return Group {
+            Button { dictationLocaleID = "" } label: {
+                Label("Phone language (\(Dictation.displayName(Locale.current)))",
+                      systemImage: current.isEmpty ? "checkmark" : "")
+            }
+            ForEach(quick.dropFirst(), id: \.identifier) { locale in
+                Button { dictationLocaleID = locale.identifier } label: {
+                    Label(Dictation.displayName(locale), systemImage: current == locale.identifier ? "checkmark" : "")
+                }
+            }
+            Text("More languages and what happens to non-English dictation: Settings → Dictation")
         }
     }
 
