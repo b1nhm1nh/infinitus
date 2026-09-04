@@ -308,19 +308,55 @@ struct SessionFeedScreen: View {
     }
 
     /// The account serving this session, one slim line under the title.
+    /// A theme dresses it like the Mac popup's row: the gauge glyphs in
+    /// their colors on the flash tint; the Off theme keeps the plain line.
     @ViewBuilder private var accountBar: some View {
-        if let line = AccountSummaryFormat.headerLine(model.accountSummary(forSessionPid: session.pid)) {
+        let summary = model.accountSummary(forSessionPid: session.pid)
+        if let line = AccountSummaryFormat.headerLine(summary) {
+            let theme = model.rowTheme
             HStack(spacing: 6) {
                 Circle().fill(ThemeColor.resolve(line.colorName)).frame(width: 7, height: 7)
-                Text(line.text).font(.caption).foregroundStyle(.secondary)
-                    .lineLimit(1).monospacedDigit()
+                Group {
+                    if !theme.plain, let summary, let account = summary.account {
+                        themedCaption(account, summary: summary, theme: theme)
+                    } else {
+                        Text(line.text).foregroundStyle(.secondary)
+                    }
+                }
+                .font(.caption).lineLimit(1).monospacedDigit()
                 Spacer(minLength: 0)
             }
             .padding(.horizontal, 16).padding(.vertical, 5)
             .frame(maxWidth: .infinity)
+            .background(theme.plain ? Color.clear : ThemeColor.flash(theme).opacity(0.16))
             .background(.bar)
             .overlay(alignment: .bottom) { Divider() }
         }
+    }
+
+    /// `AccountSummaryFormat.accountCaption` with the theme's glyphs where
+    /// the plain line says 5h / 7d ("MP 25% · HP 5%").
+    private func themedCaption(_ account: Account, summary: SessionAccountSummary,
+                               theme: RowTheme) -> Text {
+        func window(_ label: String, _ color: String, _ pct: Double) -> Text {
+            Text(" · ").foregroundStyle(.secondary)
+                + Text(PopupGlyph.text(label)).bold().foregroundStyle(ThemeColor.resolve(color))
+                + Text(" \(Int(pct))%").foregroundStyle(.primary)
+        }
+        var text = Text(AccountSummaryFormat.accountShortName(account)).foregroundStyle(.secondary)
+        if let five = account.usage?.fiveHour {
+            text = text + window(theme.sessionLabel, theme.sessionColor, five.pct)
+        }
+        if let seven = account.usage?.sevenDay {
+            text = text + window(theme.weeklyLabel, theme.weeklyColor, seven.pct)
+        }
+        if let reset = ResetLabel.compact(account.usage?.fiveHour) {
+            text = text + Text(" · resets \(reset)").foregroundStyle(.secondary)
+        }
+        if summary.kind == .unknownFleet {
+            text = text + Text(" (fleet's active account)").foregroundStyle(.secondary)
+        }
+        return text
     }
 
     /// Reachability, where it's seen: a banner up top, not a caption at
