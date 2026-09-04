@@ -41,7 +41,11 @@ public enum StatsScanner {
             text = s
         } else if let blocks = message["content"] as? [[String: Any]] {
             if blocks.contains(where: { ($0["type"] as? String) == "tool_result" }) { return .toolResult }
-            text = blocks.first { ($0["type"] as? String) == "text" }?["text"] as? String
+            if let t = blocks.first(where: { ($0["type"] as? String) == "text" })?["text"] as? String {
+                text = t
+            } else if blocks.contains(where: { ($0["type"] as? String) == "image" }) {
+                text = "[image]"
+            }
         }
         guard let raw = text?.trimmingCharacters(in: .whitespacesAndNewlines), !raw.isEmpty else { return .machinery }
         if let origin = obj["origin"] as? [String: Any], let kind = origin["kind"] as? String {
@@ -92,9 +96,10 @@ public enum StatsScanner {
 
         if type == "user" {
             if obj["toolDenialKind"] != nil { day.denials += 1 }
-            switch classifyUser(obj) {
+            let kind = classifyUser(obj)
+            switch kind {
             case .human, .phone:
-                if classifyUser(obj) == .human { day.humanMessages += 1 } else { day.phoneMessages += 1 }
+                if kind == .human { day.humanMessages += 1 } else { day.phoneMessages += 1 }
                 if let ended = entry.state.turnEndedAt {
                     day.waitingSeconds += min(waitingCap, max(0, t - ended))
                     entry.state.turnEndedAt = nil
