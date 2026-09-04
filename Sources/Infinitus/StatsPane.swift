@@ -152,12 +152,15 @@ struct StatsPane: View {
             // A GridRow can't wear a modifier (it collapses to one cell — CLAUDE.md);
             // the Group inside distributes it to every cell.
             GridRow {
-                Group { Text(title); Text("Stretches"); Text("Time"); Text("Tokens"); Text("Spend"); Text("") }
+                Group { Text(title); Text("Stretches"); Text("Time"); Text("Tokens"); Text("Spend"); Text("Share") }
                     .font(.caption).foregroundStyle(.secondary)
             }
             if rows.isEmpty {
+                // Outside a GridRow, sized via CLAUDE.md's Grid fact rather
+                // than `.gridCellColumns` (which needs a row to span).
                 Text("Nothing yet this period").font(.caption).foregroundStyle(.tertiary)
-                    .gridCellColumns(6)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .gridCellUnsizedAxes(.horizontal)
             }
             ForEach(rows) { r in
                 GridRow {
@@ -166,11 +169,12 @@ struct StatsPane: View {
                     Text(r.minutesText).monospacedDigit()
                     Text(r.tokensText).monospacedDigit()
                     Text(r.usdText).monospacedDigit()
-                    GeometryReader { g in
+                    ZStack(alignment: .leading) {
                         RoundedRectangle(cornerRadius: 2).fill(Color.accentColor.opacity(0.6))
-                            .frame(width: max(2, g.size.width * r.share))
+                            .frame(width: max(2, 80 * r.share), height: 8)
                     }
                     .frame(width: 80, height: 8)
+                    .accessibilityHidden(true)
                 }
             }
         }

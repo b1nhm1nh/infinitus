@@ -128,21 +128,43 @@ extension Stats {
         /// Catalogue order; activities with no stretches are left out.
         public static func activityRows(_ s: Stats.Summary) -> [Row] {
             let total = s.total.activities.values.reduce(0) { $0 + $1.usd }
+            let tokenTotal = s.total.activities.values.reduce(0) { $0 + $1.inputTokens + $1.outputTokens }
             return Stats.Activity.allCases.compactMap { a in
                 guard let t = s.total.activities[a.rawValue], t.stretches > 0 || t.usd > 0 else { return nil }
-                return Row(id: a.title, tally: t, share: total > 0 ? t.usd / total : 0)
+                return Row(id: a.title, tally: t, share: share(t, total: total, tokenTotal: tokenTotal))
             }
         }
 
-        /// By $ descending; the compacted "other" fold sits last.
+        /// By $ descending; the compacted "other" fold sits last. Aliases
+        /// of the same model (`claude-opus-5` vs `claude-opus-5[1m]`)
+        /// share a title, so they're merged by title before the Mac's
+        /// uncompacted table gets the same 6-named-rows-plus-"Other
+        /// models" cap the phone's compacted bundle already has.
         public static func modelRows(_ s: Stats.Summary) -> [Row] {
-            let total = s.total.byModel.values.reduce(0) { $0 + $1.usd }
-            let sorted = s.total.byModel.sorted { a, b in
+            var titled: [String: Stats.ActivityTally] = [:]
+            for (key, t) in s.total.byModel {
+                let mapKey = key == "other" ? "other" : modelTitle(key)
+                titled[mapKey, default: Stats.ActivityTally()] = titled[mapKey, default: Stats.ActivityTally()] + t
+            }
+            let capped = Stats.Day.topModels(titled, keep: 6)
+            let total = capped.values.reduce(0) { $0 + $1.usd }
+            let tokenTotal = capped.values.reduce(0) { $0 + $1.inputTokens + $1.outputTokens }
+            let sorted = capped.sorted { a, b in
                 if a.key == "other" { return false }
                 if b.key == "other" { return true }
                 return a.value.usd == b.value.usd ? a.key < b.key : a.value.usd > b.value.usd
             }
-            return sorted.map { Row(id: modelTitle($0.key), tally: $0.value, share: total > 0 ? $0.value.usd / total : 0) }
+            return sorted.map { key, tally in
+                Row(id: key == "other" ? "Other models" : key, tally: tally, share: share(tally, total: total, tokenTotal: tokenTotal))
+            }
+        }
+
+        /// A table's $ share, falling back to a token share when nothing
+        /// in the table has a price (e.g. an unrecognized model id).
+        private static func share(_ t: Stats.ActivityTally, total: Double, tokenTotal: Int) -> Double {
+            if total > 0 { return t.usd / total }
+            if tokenTotal > 0 { return Double(t.inputTokens + t.outputTokens) / Double(tokenTotal) }
+            return 0
         }
 
         /// `claude-opus-4-5-20250805` → "Opus 4.5"; `claude-fable-5[1m]`

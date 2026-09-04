@@ -196,7 +196,7 @@ public enum Stats {
         /// The `keep` costliest models by $ stay; everything else sums
         /// under "other" (which itself counts as one of the kept keys
         /// when present, so a compacted Day compacts to itself).
-        static func topModels(_ models: [String: ActivityTally], keep: Int) -> [String: ActivityTally] {
+        public static func topModels(_ models: [String: ActivityTally], keep: Int) -> [String: ActivityTally] {
             var named = models
             var other = named.removeValue(forKey: "other") ?? ActivityTally()
             guard named.count > keep else { return models }
@@ -323,7 +323,14 @@ public enum Stats {
             var s = self
             s.total = s.total.compacted()
             s.previous = s.previous.compacted()
-            s.daily = s.daily.map { DayPoint(key: $0.key, day: $0.day.compacted()) }
+            s.previous.activities = [:]
+            s.previous.byModel = [:]
+            s.daily = s.daily.map {
+                var day = $0.day.compacted()
+                day.activities = [:]
+                day.byModel = [:]
+                return DayPoint(key: $0.key, day: day)
+            }
             return s
         }
     }

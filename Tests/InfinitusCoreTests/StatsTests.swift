@@ -749,11 +749,33 @@ final class StatsTests: XCTestCase {
 
     func testSummaryCompactedStripsTheDailySeries() {
         var d = Stats.Day(); d.hours[3] = 1; d.sessions = ["s"]
-        let s = Stats.fold(days: ["2026-09-04": d], period: .day, now: date("2026-09-04T03:00:00Z"), calendar: cal)
+        d.activities["code"] = tally(usd: 1)
+        d.byModel["claude-sonnet-5"] = tally(usd: 1)
+        let s = Stats.fold(days: ["2026-09-04": d, "2026-09-03": d], period: .day, now: date("2026-09-04T03:00:00Z"), calendar: cal)
         XCTAssertEqual(s.daily.first?.day.hours.count, 168)
         let c = s.compacted()
         XCTAssertTrue(c.daily.allSatisfy { $0.day.hours.isEmpty && $0.day.sessions.isEmpty })
         XCTAssertEqual(c.daily.first?.day.sessionCount, 1)
+        XCTAssertTrue(c.previous.activities.isEmpty)
+        XCTAssertTrue(c.previous.byModel.isEmpty)
+        XCTAssertTrue(c.daily.allSatisfy { $0.day.activities.isEmpty && $0.day.byModel.isEmpty })
+        XCTAssertFalse(c.total.activities.isEmpty)
+    }
+
+    func testBundleWithEffortTalliesStaysUnderTwelveKilobytes() throws {
+        var d = Stats.Day()
+        for i in 0..<30 { d.toolCalls["ToolNumber\(i)"] = i + 1 }
+        d.sessions = Set((0..<20).map { "session-\($0)" })
+        d.repos = ["/a/b/c"]
+        d.hours[7] = 12
+        var t = Stats.ActivityTally()
+        t.stretches = 3; t.seconds = 900; t.inputTokens = 120_000; t.outputTokens = 9_000; t.usd = 12.34
+        for a in Stats.Activity.allCases { d.activities[a.rawValue] = t }
+        for i in 0..<9 { d.byModel["claude-m\(i)"] = t }
+        let b = Stats.Bundle(days: ["2026-09-04": d], now: date("2026-09-04T03:00:00Z"), calendar: cal)
+        let json = String(decoding: try JSONEncoder().encode(b), as: UTF8.self)
+        XCTAssertLessThan(json.utf8.count, 12_288)
+        XCTAssertTrue(b.periods.allSatisfy { $0.total.byModel.count <= 7 })
     }
 
     func testDayDecodesForwardCompatibly() throws {
@@ -979,6 +1001,35 @@ final class StatsTests: XCTestCase {
         XCTAssertEqual(models[0].share, 6 / 8.5, accuracy: 1e-9)
         XCTAssertTrue(Stats.Presentation.activityRows(Stats.fold(days: [:], period: .day, now: date("2026-09-04T03:00:00Z"), calendar: cal)).isEmpty)
         XCTAssertTrue(Stats.Presentation.activityFootnote.lowercased().contains("heuristic"))
+    }
+
+    func testPresentationModelRowsMergeAliasesAndCapAtSix() {
+        var d = Stats.Day()
+        d.byModel["claude-opus-5"] = tally(usd: 2)
+        d.byModel["claude-opus-5[1m]"] = tally(usd: 3)
+        let s = Stats.fold(days: ["2026-09-04": d], period: .day, now: date("2026-09-04T03:00:00Z"), calendar: cal)
+        let rows = Stats.Presentation.modelRows(s)
+        XCTAssertEqual(rows.map(\.id), ["Opus 5"])
+        XCTAssertEqual(rows[0].usd, 5, accuracy: 1e-9)
+        XCTAssertEqual(rows[0].share, 1, accuracy: 1e-9)
+
+        var e = Stats.Day()
+        for i in 0..<8 { e.byModel["claude-m\(i)-1"] = tally(usd: Double(i + 1)) }
+        let s2 = Stats.fold(days: ["2026-09-04": e], period: .day, now: date("2026-09-04T03:00:00Z"), calendar: cal)
+        let rows2 = Stats.Presentation.modelRows(s2)
+        XCTAssertEqual(rows2.count, 7)   // 6 named + "Other models"
+        XCTAssertEqual(rows2.last?.id, "Other models")
+        XCTAssertEqual(rows2.last?.usd ?? -1, 1 + 2, accuracy: 1e-9)   // the two smallest folded
+    }
+
+    func testModelRowsShareFallsBackToTokensWhenUsdIsZero() {
+        var d = Stats.Day()
+        var t = Stats.ActivityTally(); t.inputTokens = 100; t.outputTokens = 10; t.usd = 0
+        d.byModel["unknown-model"] = t
+        let s = Stats.fold(days: ["2026-09-04": d], period: .day, now: date("2026-09-04T03:00:00Z"), calendar: cal)
+        let rows = Stats.Presentation.modelRows(s)
+        XCTAssertEqual(rows.count, 1)
+        XCTAssertEqual(rows[0].share, 1, accuracy: 1e-9)
     }
 
     func testPresentationModelTitles() {
