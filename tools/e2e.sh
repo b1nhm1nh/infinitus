@@ -192,6 +192,7 @@ echo "round-trips: ok (switch, rotate, hold, unhold, rename, prefer, reorder)"
 "$CTL" ignite cswap/claude 2 | expect "'fleet' in d" || fail "ignite verb"
 "$CTL" aws-logins | expect "'logins' in d and isinstance(d['logins'], list)" || fail "aws-logins verb"
 "$CTL" forecast | expect "'forecast' in d and (d['forecast'] is None or ('basis' in d['forecast'] and 'accounts' in d['forecast']))" || fail "forecast verb"
+"$CTL" stats --period week | expect "d['period']=='week' and 'total' in d and 'commits' in d['total'] and 'humanMessages' in d['total']" || fail "stats verb"
 
 # --- windows: the wall takes over from the pop-out and gives it back ----
 "$CTL" show wall | expect "d['shown']" || fail "show wall"

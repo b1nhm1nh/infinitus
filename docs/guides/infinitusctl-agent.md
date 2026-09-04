@@ -56,6 +56,7 @@ infinitusctl wait-add [--timeout 300]        blocks until that sign-in ends
 infinitusctl show    popout|settings|wall
 infinitusctl windows                         every app window: visible? size, content class
 infinitusctl events [--limit 100]            the app's event log (switches, deaths, revivals, nudges), oldest first
+infinitusctl stats [--period week]          engineering metrics: commits, lines, PRs, messages by source, sessions, waiting, switches, cost
 infinitusctl perf                            cpuSeconds/rssBytes/heapBytes/threads — sample twice for an idle % and heap growth
 infinitusctl engine  cswap|cliproxy on|off   restarts the app
 infinitusctl proxy                           base URL, key stored?, routing strategy

@@ -41,9 +41,18 @@ workflow publishes the matching section as the GitHub release body.
   size. Images inside tool results stay text.
 - Tool runs stay grouped through errors, with an error count on the chip.
 
+### Stats
+- **Your engineering week, in numbers.** Settings → Stats: commits,
+  lines, PRs, messages (keyboard, phone, agents), sessions, tool calls,
+  time spent waiting on you, switches and limits, cost — today, this
+  week, month or year, each with its trend. On the phone and the wall
+  too; `infinitusctl stats` for scripts.
+
 ### Agents
 - `infinitusctl events` — the app's switch/death/revival log, so a
   "why did it switch?" question has a record to read.
+- `infinitusctl stats` — the same numbers as JSON for a period, for
+  scripts and agents.
 
 ### Linux tray
 - Sessions that need an AWS login say so; the footer names the

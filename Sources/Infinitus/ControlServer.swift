@@ -337,6 +337,15 @@ final class ControlServer {
             }
             return ControlReply(ok: true, result: .array(rows.map(JSONValue.object)))
 
+        case "stats":
+            let period = Stats.Period(rawValue: r.options["period"] ?? "week") ?? .week
+            model.statsModel.loadIfNeeded()
+            let summary = model.statsModel.summaries[period]
+                ?? Stats.fold(days: model.statsModel.days, period: period)
+            // Compacted: `DayPoint.day` carries the 168-slot histogram
+            // and the session set, which made `--period year` ~0.5 MB.
+            return ControlReply(ok: true, result: try .of(summary.compacted()))
+
         case "perf":
             var usage = rusage()
             getrusage(RUSAGE_SELF, &usage)

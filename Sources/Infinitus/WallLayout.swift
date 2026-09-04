@@ -10,6 +10,7 @@ import InfinitusUI
 
 struct WallLayout: View {
     @ObservedObject var model: AppModel
+    @ObservedObject var stats: StatsModel
     @ObservedObject var status = ServiceStatusModel.shared
     @State private var sparkSamples: [UsageSample] = []
 
@@ -171,6 +172,13 @@ struct WallLayout: View {
                         .foregroundStyle(.orange)
                     Text("\(s.busy) working · \(s.total) sessions")
                         .font(.system(size: 27, weight: .semibold))
+                }
+            }
+            if let day = stats.summaries[.day]?.total, let week = stats.summaries[.week]?.total {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("today · this week").font(.system(size: 17)).foregroundStyle(.tertiary)
+                    Text("\(day.commits)·\(week.commits) commits   \(day.prsMerged)·\(week.prsMerged) PRs   \(day.messages)·\(week.messages) messages   \(day.sessionCount)·\(week.sessionCount) sessions")
+                        .font(.system(size: 20, weight: .semibold)).monospacedDigit()
                 }
             }
             HStack(spacing: 22) {

@@ -109,6 +109,24 @@ final class AppModel: ObservableObject {
         let text: String
     }
     @Published var eventLog: [EventEntry] = []
+    let eventStore = EventStore()
+    lazy var statsModel = StatsModel(eventStore: eventStore)
+
+    /// Every event goes through here: the Activity pane's tail and the
+    /// durable log Stats reads. `kind` is StatsEvents' vocabulary
+    /// (switch/death/limit/revival/ignite/resume/nudge/pairing/other).
+    func logEvent(_ kind: String, icon: String, _ text: String) {
+        eventLog.append(EventEntry(icon: icon, text: text))
+        if eventLog.count > 100 { eventLog.removeFirst(eventLog.count - 100) }
+        // The durable log belongs to the real instance alone. A mock,
+        // playground or e2e instance shares the same App Support path
+        // (only the defaults domain and the control socket differ), and
+        // would otherwise write demo switches into the user's own
+        // months of history — the same gate `statsModel.enabled` uses.
+        guard !isPlayground, !mockMode else { return }
+        let event = StatsEvent(at: Date(), kind: kind, icon: icon, text: text)
+        Task.detached(priority: .utility) { [eventStore] in await eventStore.append(event) }
+    }
     /// App-side resume nudges + /rc re-arm (ResumeService.swift).
     let resume = ResumeService()
     /// Sessions popover's mini progress rows (SessionProgressModel.swift).
@@ -650,6 +668,10 @@ final class AppModel: ObservableObject {
                 registry.state(for: fleet).seed(fleet)
             }
         }
+        // A mock/playground instance must never start a real cold
+        // backfill or write real App Support caches under
+        // Infinitus/stats/ (matches the historyRecorder guard above).
+        statsModel.enabled = !isPlayground && !mockMode
     }
 
     /// App-side cache of our own subprocess output (never an engine
@@ -800,15 +822,14 @@ final class AppModel: ObservableObject {
         let engine = primary.engine, provider = primary.provider
         let name = accounts.first { $0.number == number }
             .map { $0.alias ?? String($0.email.prefix(while: { $0 != "@" })) } ?? "#\(number)"
-        eventLog.append(EventEntry(icon: "flag.checkered", text: "igniting \(name)'s 5h window"))
+        logEvent("ignite", icon: "flag.checkered", "igniting \(name)'s 5h window")
         Task { [weak self] in
             do {
                 try await engine.ignite(fleet: provider, number: number)
-                self?.eventLog.append(EventEntry(icon: "flag.checkered", text: "ignited \(name) — window started"))
+                self?.logEvent("ignite", icon: "flag.checkered", "ignited \(name) — window started")
             } catch {
-                self?.eventLog.append(EventEntry(icon: "exclamationmark.triangle", text: "ignite \(name) failed: \(error.localizedDescription)"))
+                self?.logEvent("other", icon: "exclamationmark.triangle", "ignite \(name) failed: \(error.localizedDescription)")
             }
-            if let self, self.eventLog.count > 100 { self.eventLog.removeFirst(self.eventLog.count - 100) }
             self?.igniting = nil
             await self?.refreshSnapshot()
         }
@@ -820,20 +841,19 @@ final class AppModel: ObservableObject {
     func startFeeds() {
         detectOnboarding()
         seedRecentSamples()
+        // Same gate as logEvent: a mock instance must not rewrite the
+        // real events log either.
+        if !isPlayground, !mockMode {
+            Task.detached(priority: .utility) { [eventStore] in await eventStore.prune() }
+        }
         resume.log = { [weak self] icon, text in
-            guard let self else { return }
-            self.eventLog.append(EventEntry(icon: icon, text: text))
-            if self.eventLog.count > 100 { self.eventLog.removeFirst(self.eventLog.count - 100) }
+            self?.logEvent("nudge", icon: icon, text)
         }
         mirrorServer.log = { [weak self] icon, text in
-            guard let self else { return }
-            self.eventLog.append(EventEntry(icon: icon, text: text))
-            if self.eventLog.count > 100 { self.eventLog.removeFirst(self.eventLog.count - 100) }
+            self?.logEvent("other", icon: icon, text)
         }
         quickTunnel.log = { [weak self] icon, text in
-            guard let self else { return }
-            self.eventLog.append(EventEntry(icon: icon, text: text))
-            if self.eventLog.count > 100 { self.eventLog.removeFirst(self.eventLog.count - 100) }
+            self?.logEvent("other", icon: icon, text)
         }
         namedTunnel.log = quickTunnel.log
         liveActivityPusher.log = quickTunnel.log
@@ -1046,8 +1066,7 @@ final class AppModel: ObservableObject {
     }
 
     private func logMirrorInput(_ icon: String, _ text: String) {
-        eventLog.append(EventEntry(icon: icon, text: text))
-        if eventLog.count > 100 { eventLog.removeFirst(eventLog.count - 100) }
+        logEvent("other", icon: icon, text)
     }
 
     /// Starts or stops the Cloudflare quick tunnel (#9). It only ever
@@ -1107,7 +1126,7 @@ final class AppModel: ObservableObject {
     /// running listener picks it up without a restart.
     func regeneratePairToken() {
         mirrorPairToken = MirrorPairing.generateToken()
-        eventLog.append(EventEntry(icon: "🔑", text: "phone pairing token regenerated"))
+        logEvent("pairing", icon: "🔑", "phone pairing token regenerated")
         // A new token is a new rendezvous key; the old entry just expires.
         if let url = quickTunnel.url { publishRendezvous(url) }
     }
@@ -1126,10 +1145,10 @@ final class AppModel: ObservableObject {
             let code = (response as? HTTPURLResponse)?.statusCode ?? 0
             Task { @MainActor in
                 if code == 204 {
-                    self?.eventLog.append(EventEntry(icon: "📍", text: "tunnel address published to infinitus.run"))
+                    self?.logEvent("other", icon: "📍", "tunnel address published to infinitus.run")
                 } else {
                     let why = error?.localizedDescription ?? "HTTP \(code)"
-                    self?.eventLog.append(EventEntry(icon: "⚠️", text: "rendezvous publish failed: \(why)"))
+                    self?.logEvent("other", icon: "⚠️", "rendezvous publish failed: \(why)")
                 }
             }
         }.resume()
@@ -1195,11 +1214,20 @@ final class AppModel: ObservableObject {
         Task { await supervisor.start() }
     }
 
+    /// Engine event kinds → the durable log's vocabulary.
+    static func eventKind(_ engineKind: String) -> String {
+        switch engineKind {
+        case "switch": "switch"
+        case "all-exhausted": "limit"
+        case "session-resumed": "resume"
+        default: "other"
+        }
+    }
+
     private func consume(_ line: EventLine) {
         switch line {
         case .event(let event):
-            eventLog.append(EventEntry(icon: event.icon, text: event.summary))
-            if eventLog.count > 100 { eventLog.removeFirst(eventLog.count - 100) }
+            logEvent(Self.eventKind(event.kind), icon: event.icon, event.summary)
             switch event.kind {
             case "switch":
                 Task { await refreshSnapshot() }  // the snapshot diff posts the notification
@@ -1454,7 +1482,17 @@ final class AppModel: ObservableObject {
                 let state = registry.state(for: fleet)
                 let change = state.apply(fleet)
                 anyChanged = anyChanged || change.changed
-                if state === primary { primaryResult = (fleet, change) }
+                if state === primary {
+                    primaryResult = (fleet, change)
+                    for n in change.newlyDead {
+                        let name = fleet.accounts.first { $0.number == n }.map { $0.alias ?? $0.email } ?? "#\(n)"
+                        logEvent("death", icon: "heart.slash", "\(name) hit a limit")
+                    }
+                    for n in change.newlyAlive {
+                        let name = fleet.accounts.first { $0.number == n }.map { $0.alias ?? $0.email } ?? "#\(n)"
+                        logEvent("revival", icon: "heart.fill", "\(name) is back")
+                    }
+                }
             }
         }
         // The same account in two fleets: hand each engine the usage the
@@ -1563,12 +1601,15 @@ final class AppModel: ObservableObject {
                                         report: usageModel?.report,
                                         tokenRate: sessionProgress.tokenRate)
             }
+            statsModel.refreshIfStale()
+            let stats = statsModel.bundle
             Task.detached(priority: .utility) { [mirrorExporter] in
                 await mirrorExporter.record(listJSON: raw, prefs: prefs,
                                             serviceStatus: serviceStatus,
                                             engine: engine, fleets: allFleets,
                                             forecast: forecast, plan: plan,
-                                            awsLogins: awsLogins, progress: progress)
+                                            awsLogins: awsLogins, progress: progress,
+                                            stats: stats)
             }
         }
         // All-limited: count the limit-stopped sessions waiting to be

@@ -110,6 +110,9 @@ title short — macOS silently evicts status items that stop fitting.
   human pastes it) or `infinitusctl proxy-key < file` — never argv.
 - **Driving the running app**: `docs/guides/infinitusctl-agent.md`
   (`infinitusctl manifest` first).
+- **Engineering stats**: `infinitusctl stats [--period week]` returns
+  the same commits/lines/PRs/messages/sessions/cost numbers as
+  Settings → Stats, as JSON.
 
 ## 7. Verify
 
