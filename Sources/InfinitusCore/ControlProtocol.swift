@@ -193,7 +193,7 @@ public struct ControlCommand: Codable, Sendable, Equatable {
                        replyShape: "[{at, icon, text}]"),
         ControlCommand(name: "stats", options: ["period"], effect: .read,
                        summary: "Engineering metrics for a period (day|week|month|year, default week): commits, lines, PRs, human/phone/agent messages, sessions, tool calls, waiting time, switches, cost — Stats tab data.",
-                       replyShape: "{period, from, to, total:{humanMessages, phoneMessages, agentMessages, commits, linesAdded, linesRemoved, prsOpened, prsMerged, sessions:[id], toolCalls:{name:n}, waitingSeconds, switches, limitStops, usd, …}, previous:{…}, daily:[{key, day}], streak}"),
+                       replyShape: "{period, from, to, total:{humanMessages, phoneMessages, agentMessages, commits, linesAdded, linesRemoved, prsOpened, prsMerged, sessionTally, toolCalls:{name:n}, waitingSeconds, switches, limitStops, usd, …}, previous:{…}, daily:[{key, day}], streak}"),
         ControlCommand(name: "perf", effect: .read,
                        summary: "Process cost: CPU seconds so far, RSS + live heap bytes, thread count — sample twice for an idle % and a heap growth rate (perf gate).",
                        replyShape: "{cpuSeconds, rssBytes, heapBytes, threads, uptimeSeconds}"),

@@ -84,6 +84,10 @@ public enum StatsScanner {
             }()
             return peerKind(fromApp: fromApp, body: wrappedBody(raw))
         }
+        // The same preamble also carries teammate envelopes
+        // (`<teammate-message teammate_id=…>`): never the app, never the
+        // phone — another agent (46 of 46 in a 60-file probe, 2026-09-04).
+        if raw.hasPrefix(peerPreamble) { return .agent }
         guard raw.first == "<" else { return .human }
         return .machinery
     }
@@ -103,6 +107,7 @@ public enum StatsScanner {
     ]
 
     private static let crossSessionTag = "<cross-session-message"
+    private static let peerPreamble = "Another Claude session sent a message"
 
     /// The socket preface's first 48 characters — enough to tell a phone
     /// message from the app's own "[Infinitus] …" nudge text without

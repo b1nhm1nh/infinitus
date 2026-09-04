@@ -516,6 +516,8 @@ final class StatsTests: XCTestCase {
         XCTAssertEqual(StatsScanner.classifyUser(peerEntry(
             from: "uds:/tmp/cc-socks/20520.sock", name: "other",
             body: "merge my branch please", origin: false)), .agent)
+        // (5) no origin, a teammate envelope under the same preamble.
+        XCTAssertEqual(StatsScanner.classifyUser(entry(#"{"type":"user","message":{"role":"user","content":"Another Claude session sent a message:\n<teammate-message teammate_id=\"worker-1\" color=\"cyan\">\n{\"type\":\"idle_notification\"}\n</teammate-message>\n\nThis came from another Claude session — not typed by your user."}}"#)), .agent)
     }
 
     func testClassifyMachineryDenylistAndPastedImage() {
