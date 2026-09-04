@@ -64,6 +64,12 @@ public struct RowTheme: Codable, Equatable, Sendable, Identifiable {
     /// plain tab.
     public var tabLabels: [String: String]
     public var tabIcons: [String: String]
+    /// The theme's pool of account names — single alias-safe tokens
+    /// (letters, digits, `.`, `-`, `_`) the Randomize-names action
+    /// draws from (user 2026-09-04: "the set of random names must be
+    /// from the supported themes"). Empty on Off and on custom themes
+    /// that don't define one; the picker then draws from every built-in.
+    public var accountNames: [String]
 
     public init(
         id: String, name: String, plain: Bool = false,
@@ -81,7 +87,8 @@ public struct RowTheme: Codable, Equatable, Sendable, Identifiable {
         resetWord: String = "",
         nextIcon: String = "", activeIcon: String = "",
         sessionWords: [String: String] = [:],
-        tabLabels: [String: String] = [:], tabIcons: [String: String] = [:]
+        tabLabels: [String: String] = [:], tabIcons: [String: String] = [:],
+        accountNames: [String] = []
     ) {
         self.id = id
         self.name = name
@@ -110,6 +117,7 @@ public struct RowTheme: Codable, Equatable, Sendable, Identifiable {
         self.sessionWords = sessionWords
         self.tabLabels = tabLabels
         self.tabIcons = tabIcons
+        self.accountNames = accountNames
     }
 
     public static let plainSessionWords = [
@@ -172,8 +180,36 @@ public struct RowTheme: Codable, Equatable, Sendable, Identifiable {
             activeIcon: try c.decodeIfPresent(String.self, forKey: .activeIcon) ?? base.activeIcon,
             sessionWords: try c.decodeIfPresent([String: String].self, forKey: .sessionWords) ?? [:],
             tabLabels: try c.decodeIfPresent([String: String].self, forKey: .tabLabels) ?? [:],
-            tabIcons: try c.decodeIfPresent([String: String].self, forKey: .tabIcons) ?? [:]
+            tabIcons: try c.decodeIfPresent([String: String].self, forKey: .tabIcons) ?? [:],
+            accountNames: try c.decodeIfPresent([String].self, forKey: .accountNames) ?? []
         )
+    }
+
+    // MARK: random account names
+
+    /// Alias-safe: what `cswap alias` accepts — letters, digits, `.`,
+    /// `-`, `_`, not purely numeric.
+    public static func isAliasSafe(_ name: String) -> Bool {
+        guard !name.isEmpty, !name.allSatisfy(\.isNumber) else { return false }
+        return name.unicodeScalars.allSatisfy { $0.isASCII && ($0.properties.isAlphabetic || CharacterSet.decimalDigits.contains($0) || "._-".unicodeScalars.contains($0)) }
+    }
+
+    /// `count` distinct names for a fleet, from this theme's pool (every
+    /// built-in's when it has none). Past the pool, names repeat with a
+    /// numeric suffix. Deterministic under `generator` for tests.
+    public func randomAccountNames<G: RandomNumberGenerator>(count: Int, using generator: inout G) -> [String] {
+        var pool = accountNames.isEmpty ? Self.builtins.flatMap(\.accountNames) : accountNames
+        pool = Array(Set(pool)).sorted().shuffled(using: &generator)
+        guard !pool.isEmpty, count > 0 else { return [] }
+        return (0..<count).map { i in
+            let name = pool[i % pool.count]
+            return i < pool.count ? name : "\(name)-\(i / pool.count + 1)"
+        }
+    }
+
+    public func randomAccountNames(count: Int) -> [String] {
+        var g = SystemRandomNumberGenerator()
+        return randomAccountNames(count: count, using: &g)
     }
 
     // MARK: built-ins
@@ -198,7 +234,8 @@ public struct RowTheme: Codable, Equatable, Sendable, Identifiable {
         planPrefix: "Lv ", slotPrefix: "P", resetWord: "respawning…", nextIcon: "🎲", activeIcon: "👑",
         sessionWords: ["busy": "Questing", "waiting": "Awaiting orders", "idle": "Resting at camp", "shell": "In the forge"],
         tabLabels: ["sessions": "Quests", "fleet": "Party", "settings": "Inventory"],
-        tabIcons: ["sessions": "sf:scroll", "fleet": "sf:person.3.fill", "settings": "sf:bag.fill"])
+        tabIcons: ["sessions": "sf:scroll", "fleet": "sf:person.3.fill", "settings": "sf:bag.fill"],
+        accountNames: ["Paladin", "Ranger", "Rogue", "Cleric", "Wizard", "Warlock", "Druid", "Monk", "Knight", "Archer", "Sorcerer", "Barbarian", "Alchemist", "Sentinel", "Necromancer", "Bard"])
 
     public static let movie = RowTheme(
         id: "movie", name: "Movie — reels & box office",
@@ -214,7 +251,8 @@ public struct RowTheme: Codable, Equatable, Sendable, Identifiable {
         planPrefix: "Studio ", slotPrefix: "🎬", resetWord: "premiering…", nextIcon: "🍿", activeIcon: "🌟",
         sessionWords: ["busy": "Rolling", "waiting": "Waiting for the cue", "idle": "Intermission", "shell": "Backstage"],
         tabLabels: ["sessions": "Scenes", "fleet": "Cast", "settings": "Studio"],
-        tabIcons: ["sessions": "sf:film", "fleet": "sf:person.3.fill", "settings": "sf:slider.horizontal.3"])
+        tabIcons: ["sessions": "sf:film", "fleet": "sf:person.3.fill", "settings": "sf:slider.horizontal.3"],
+        accountNames: ["Director", "Producer", "Stuntman", "Cameo", "Montage", "Premiere", "Sequel", "Matinee", "Blockbuster", "Cliffhanger", "Trailer", "Voiceover", "Screenplay", "Boxoffice", "Redcarpet", "Cutscene"])
 
     public static let hades = RowTheme(
         id: "hades", name: "Hades — blades & darkness",
@@ -230,7 +268,8 @@ public struct RowTheme: Codable, Equatable, Sendable, Identifiable {
         planPrefix: "Heat ", slotPrefix: "†", resetWord: "raising the dead…", nextIcon: "🕯", activeIcon: "🌿",
         sessionWords: ["busy": "Fighting", "waiting": "Awaiting the call", "idle": "In the lounge", "shell": "At the forge"],
         tabLabels: ["sessions": "Runs", "fleet": "Pantheon", "settings": "Mirror"],
-        tabIcons: ["sessions": "sf:flame", "fleet": "sf:person.3.fill", "settings": "sf:sparkles"])
+        tabIcons: ["sessions": "sf:flame", "fleet": "sf:person.3.fill", "settings": "sf:sparkles"],
+        accountNames: ["Zagreus", "Megaera", "Thanatos", "Cerberus", "Nyx", "Chaos", "Charon", "Hypnos", "Achilles", "Patroclus", "Orpheus", "Eurydice", "Sisyphus", "Dusa", "Skelly", "Hermes"])
 
     public static let mgs = RowTheme(
         id: "mgs", name: "Metal Gear — tactical espionage",
@@ -246,7 +285,8 @@ public struct RowTheme: Codable, Equatable, Sendable, Identifiable {
         planPrefix: "Rank ", slotPrefix: "S", resetWord: "extraction inbound…", nextIcon: "🎯", activeIcon: "🐍",
         sessionWords: ["busy": "On mission", "waiting": "Awaiting orders", "idle": "In the box", "shell": "At the armory"],
         tabLabels: ["sessions": "Missions", "fleet": "Squad", "settings": "Codec"],
-        tabIcons: ["sessions": "sf:target", "fleet": "sf:person.3.fill", "settings": "sf:antenna.radiowaves.left.and.right"])
+        tabIcons: ["sessions": "sf:target", "fleet": "sf:person.3.fill", "settings": "sf:antenna.radiowaves.left.and.right"],
+        accountNames: ["Snake", "Otacon", "Raiden", "Ocelot", "Meryl", "Gray-Fox", "Sniper-Wolf", "Psycho-Mantis", "Vulcan-Raven", "Liquid", "Solidus", "Big-Boss", "Campbell", "Naomi", "Mei-Ling", "Kaz"])
 
     public static let agent = RowTheme(
         id: "agent", name: "AI Agentic — tokens & context",
@@ -262,7 +302,8 @@ public struct RowTheme: Codable, Equatable, Sendable, Identifiable {
         planPrefix: "tier-", slotPrefix: "agent-", resetWord: "rate limit lifting…", nextIcon: "⏭", activeIcon: "🧠",
         sessionWords: ["busy": "Reasoning", "waiting": "Blocked on a human", "idle": "Idle", "shell": "In the shell"],
         tabLabels: ["sessions": "Agents", "fleet": "Providers", "settings": "Config"],
-        tabIcons: ["sessions": "sf:cpu", "fleet": "sf:server.rack", "settings": "sf:gearshape"])
+        tabIcons: ["sessions": "sf:cpu", "fleet": "sf:server.rack", "settings": "sf:gearshape"],
+        accountNames: ["Planner", "Executor", "Router", "Retriever", "Critic", "Verifier", "Summarizer", "Orchestrator", "Scout", "Worker", "Reviewer", "Indexer", "Sampler", "Toolsmith", "Tokenizer", "Grader"])
 
     public static let swe = RowTheme(
         id: "swe", name: "Classic SWE — hand-written, no AI",
@@ -278,7 +319,8 @@ public struct RowTheme: Codable, Equatable, Sendable, Identifiable {
         planPrefix: "v", slotPrefix: "#", resetWord: "recompiling…", nextIcon: "⏭", activeIcon: "⌨️",
         sessionWords: ["busy": "Coding", "waiting": "Needs review", "idle": "Idle", "shell": "At the terminal"],
         tabLabels: ["sessions": "Tickets", "fleet": "Team", "settings": "Preferences"],
-        tabIcons: ["sessions": "sf:ticket", "fleet": "sf:person.3.fill", "settings": "sf:gearshape"])
+        tabIcons: ["sessions": "sf:ticket", "fleet": "sf:person.3.fill", "settings": "sf:gearshape"],
+        accountNames: ["Compiler", "Linker", "Debugger", "Kernel", "Daemon", "Pointer", "Mutex", "Segfault", "Bytecode", "Makefile", "Heap", "Stack", "Register", "Opcode", "Syscall", "Refactor"])
 
     public static let scifi = RowTheme(
         id: "scifi", name: "Sci-Fi — warp cores & shields",
@@ -294,7 +336,8 @@ public struct RowTheme: Codable, Equatable, Sendable, Identifiable {
         planPrefix: "Class ", slotPrefix: "🚀", resetWord: "recharging…", nextIcon: "📡", activeIcon: "🧑\u{200D}🚀",
         sessionWords: ["busy": "Warping", "waiting": "Awaiting command", "idle": "Docked", "shell": "In engineering"],
         tabLabels: ["sessions": "Missions", "fleet": "Fleet", "settings": "Bridge"],
-        tabIcons: ["sessions": "sf:scope", "fleet": "sf:airplane", "settings": "sf:slider.horizontal.3"])
+        tabIcons: ["sessions": "sf:scope", "fleet": "sf:airplane", "settings": "sf:slider.horizontal.3"],
+        accountNames: ["Nebula", "Warpcore", "Photon", "Andromeda", "Quasar", "Deflector", "Hyperdrive", "Replicator", "Tachyon", "Starboard", "Airlock", "Cryopod", "Phaser", "Nacelle", "Wormhole", "Singularity"])
 
     public static let west = RowTheme(
         id: "west", name: "Wild West — six-guns & gold rush",
@@ -310,7 +353,8 @@ public struct RowTheme: Codable, Equatable, Sendable, Identifiable {
         planPrefix: "Bounty ", slotPrefix: "⭐", resetWord: "sun's rising…", nextIcon: "🌵", activeIcon: "🏇",
         sessionWords: ["busy": "Riding", "waiting": "At the saloon", "idle": "Camped", "shell": "At the smithy"],
         tabLabels: ["sessions": "Posses", "fleet": "Ranch", "settings": "Saddlebag"],
-        tabIcons: ["sessions": "sf:hare", "fleet": "sf:house", "settings": "sf:bag"])
+        tabIcons: ["sessions": "sf:hare", "fleet": "sf:house", "settings": "sf:bag"],
+        accountNames: ["Sheriff", "Outlaw", "Marshal", "Deputy", "Wrangler", "Gunslinger", "Prospector", "Bandit", "Drifter", "Rancher", "Saloon", "Stagecoach", "Tumbleweed", "Maverick", "Bronco", "Mustang"])
 
     public static let cyber = RowTheme(
         id: "cyber", name: "Cyberpunk — chrome & neon",
@@ -326,7 +370,8 @@ public struct RowTheme: Codable, Equatable, Sendable, Identifiable {
         planPrefix: "Cred ", slotPrefix: "◢", resetWord: "rebooting…", nextIcon: "🕶", activeIcon: "⚡",
         sessionWords: ["busy": "Jacked in", "waiting": "Awaiting handshake", "idle": "Idle", "shell": "In the terminal"],
         tabLabels: ["sessions": "Runs", "fleet": "Rig", "settings": "Deck"],
-        tabIcons: ["sessions": "sf:bolt", "fleet": "sf:cpu", "settings": "sf:slider.horizontal.3"])
+        tabIcons: ["sessions": "sf:bolt", "fleet": "sf:cpu", "settings": "sf:slider.horizontal.3"],
+        accountNames: ["Netrunner", "Chrome", "Neon", "Glitch", "Static", "Proxy", "Cipher", "Ghost", "Wetware", "Blackice", "Datajack", "Overclock", "Synth", "Mainframe", "Firewall", "Zero-Day"])
 
     public static let gothic = RowTheme(
         id: "gothic", name: "Gothic — candles & cathedrals",
@@ -342,7 +387,8 @@ public struct RowTheme: Codable, Equatable, Sendable, Identifiable {
         planPrefix: "Crypt ", slotPrefix: "✟", resetWord: "tolling midnight…", nextIcon: "🌹", activeIcon: "🕯",
         sessionWords: ["busy": "Chanting", "waiting": "Awaiting confession", "idle": "At rest", "shell": "In the crypt"],
         tabLabels: ["sessions": "Rites", "fleet": "Coven", "settings": "Sacristy"],
-        tabIcons: ["sessions": "sf:flame", "fleet": "sf:person.3.fill", "settings": "sf:gearshape"])
+        tabIcons: ["sessions": "sf:flame", "fleet": "sf:person.3.fill", "settings": "sf:gearshape"],
+        accountNames: ["Raven", "Belfry", "Gargoyle", "Candle", "Crypt", "Requiem", "Cathedral", "Vesper", "Nocturne", "Wraith", "Ember", "Sepulcher", "Lantern", "Moth", "Thorn", "Abbey"])
 
     public static let musical = RowTheme(
         id: "musical", name: "Musical — tempo & encores",
@@ -358,7 +404,8 @@ public struct RowTheme: Codable, Equatable, Sendable, Identifiable {
         planPrefix: "Act ", slotPrefix: "♪", resetWord: "tuning up…", nextIcon: "🎻", activeIcon: "🎷",
         sessionWords: ["busy": "Performing", "waiting": "Awaiting the conductor", "idle": "Between sets", "shell": "Tuning"],
         tabLabels: ["sessions": "Sets", "fleet": "Ensemble", "settings": "Mixer"],
-        tabIcons: ["sessions": "sf:music.note.list", "fleet": "sf:person.3.fill", "settings": "sf:slider.horizontal.3"])
+        tabIcons: ["sessions": "sf:music.note.list", "fleet": "sf:person.3.fill", "settings": "sf:slider.horizontal.3"],
+        accountNames: ["Overture", "Encore", "Tempo", "Crescendo", "Allegro", "Sonata", "Cadenza", "Aria", "Rondo", "Fugue", "Prelude", "Finale", "Vibrato", "Staccato", "Maestro", "Coda"])
 
     public static let earth = RowTheme(
         id: "earth", name: "Planet Earth — wild documentary",
@@ -374,7 +421,8 @@ public struct RowTheme: Codable, Equatable, Sendable, Identifiable {
         planPrefix: "Biome ", slotPrefix: "🐾", resetWord: "migrating…", nextIcon: "🦋", activeIcon: "🦁",
         sessionWords: ["busy": "Hunting", "waiting": "Waiting for the herd", "idle": "Grazing", "shell": "Burrowing"],
         tabLabels: ["sessions": "Herds", "fleet": "Habitat", "settings": "Field notes"],
-        tabIcons: ["sessions": "sf:leaf", "fleet": "sf:globe.americas", "settings": "sf:book"])
+        tabIcons: ["sessions": "sf:leaf", "fleet": "sf:globe.americas", "settings": "sf:book"],
+        accountNames: ["Falcon", "Orca", "Panther", "Condor", "Wolf", "Otter", "Lynx", "Heron", "Bison", "Jaguar", "Puffin", "Gecko", "Mantis", "Ibex", "Marlin", "Osprey"])
 
     public static let cosmo = RowTheme(
         id: "cosmo", name: "Cosmos — stars & black holes",
@@ -390,7 +438,8 @@ public struct RowTheme: Codable, Equatable, Sendable, Identifiable {
         planPrefix: "Orbit ", slotPrefix: "✦", resetWord: "orbiting back…", nextIcon: "🔭", activeIcon: "🪐",
         sessionWords: ["busy": "Orbiting", "waiting": "Awaiting ground control", "idle": "Drifting", "shell": "In the airlock"],
         tabLabels: ["sessions": "Missions", "fleet": "Constellation", "settings": "Mission control"],
-        tabIcons: ["sessions": "sf:moon.stars", "fleet": "sf:sparkles", "settings": "sf:gearshape"])
+        tabIcons: ["sessions": "sf:moon.stars", "fleet": "sf:sparkles", "settings": "sf:gearshape"],
+        accountNames: ["Andromeda", "Orion", "Vega", "Sirius", "Pulsar", "Quasar", "Cassiopeia", "Lyra", "Altair", "Rigel", "Antares", "Polaris", "Kepler", "Halley", "Titan", "Europa"])
 
     public static let ocean = RowTheme(
         id: "ocean", name: "Ocean — tides & deep water",
@@ -406,7 +455,8 @@ public struct RowTheme: Codable, Equatable, Sendable, Identifiable {
         planPrefix: "Depth ", slotPrefix: "🪸", resetWord: "tide turning…", nextIcon: "🐬", activeIcon: "⛵",
         sessionWords: ["busy": "Diving", "waiting": "Surfacing", "idle": "Adrift", "shell": "In the hold"],
         tabLabels: ["sessions": "Voyages", "fleet": "Fleet", "settings": "Galley"],
-        tabIcons: ["sessions": "sf:water.waves", "fleet": "sf:sailboat", "settings": "sf:gearshape"])
+        tabIcons: ["sessions": "sf:water.waves", "fleet": "sf:sailboat", "settings": "sf:gearshape"],
+        accountNames: ["Tide", "Kelp", "Coral", "Nautilus", "Abyss", "Trench", "Reef", "Kraken", "Manta", "Narwhal", "Lagoon", "Riptide", "Anchor", "Seafoam", "Marlin", "Barnacle"])
 
     public static let builtins: [RowTheme] = [
         off, rpg, movie, hades, mgs, agent, swe, scifi, west, cyber,

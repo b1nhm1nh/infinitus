@@ -12,7 +12,6 @@ import InfinitusUI
 struct RootView: View {
     @ObservedObject var model: MirrorModel
     @StateObject private var usage = MobileUsage()
-    @Environment(\.scenePhase) private var scenePhase
     /// A launch can name the tab to open on — the same dev seam
     /// `INFINITUS_MIRROR_PATH` is, so a headless simulator capture can
     /// show a screen no one can tap to.
@@ -38,11 +37,11 @@ struct RootView: View {
                 try? await Task.sleep(nanoseconds: 10 * 1_000_000_000)
             }
         }
-        // The popup replays its intro when it opens; the phone's
-        // equivalent is coming back to the foreground.
-        .onChange(of: scenePhase) { _, phase in
-            if phase == .active, model.snapshotLoaded { model.replayIntro() }
-        }
+        // Bars land on their value; no entrance on foreground or on a
+        // tab switch (user 2026-09-04: "opening ios app causes all
+        // animations to replay weirdly"). Settings › Replay intro still
+        // plays it on demand.
+        .environment(\.gaugeIntroOnAppear, false)
         .onChange(of: model.requestedTab) { _, requested in
             guard let requested else { return }
             tab = requested
