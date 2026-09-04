@@ -20,6 +20,9 @@ let commandToggleServe: UINT = 0x0F02
 let commandRefresh: UINT = 0x0F03
 let commandExit: UINT = 0x0F04
 let commandAutostart: UINT = 0x0F05
+/// Session row + this offset raises that session's terminal instead of
+/// opening its window (the submenu's second entry).
+let commandRaiseBase: UINT = 0x2000
 /// Re-read sessions this often. Every tick tails transcripts, so this is
 /// the one knob that decides idle cost (CLAUDE.md: keep it near zero).
 let refreshMilliseconds: UINT = 5000
@@ -198,7 +201,27 @@ func showMenu(_ window: HWND) {
     }
     for (index, row) in state.rows.enumerated() {
         let label = "\(row.name) — \(row.status) — \(row.folder)"
-        AppendMenuW(menu, UINT(MF_STRING), UINT_PTR(commandBase + UINT(index)), label.wide)
+        // Each session is a submenu: open its window, or jump to the
+        // terminal it is already running in.
+        if let submenu = CreatePopupMenu() {
+            AppendMenuW(submenu, UINT(MF_STRING),
+                        UINT_PTR(commandBase + UINT(index)), "Open session window".wide)
+            AppendMenuW(submenu, UINT(MF_STRING),
+                        UINT_PTR(commandRaiseBase + UINT(index)), "Show its terminal".wide)
+            AppendMenuW(menu, UINT(MF_STRING | MF_POPUP),
+                        UINT_PTR(UInt(bitPattern: Int(bitPattern: submenu))), label.wide)
+        } else {
+            AppendMenuW(menu, UINT(MF_STRING), UINT_PTR(commandBase + UINT(index)), label.wide)
+        }
+    }
+    // Accounts, when a swap engine is installed. Absent engine means no
+    // section at all rather than a row of zeros.
+    if TrayFleet.hasEngine() {
+        AppendMenuW(menu, UINT(MF_SEPARATOR), 0, nil)
+        for line in TrayFleet.menuLines() {
+            AppendMenuW(menu, UINT(MF_STRING | (line.enabled ? MF_ENABLED : MF_GRAYED)),
+                        0, line.text.wide)
+        }
     }
     AppendMenuW(menu, UINT(MF_SEPARATOR), 0, nil)
     AppendMenuW(menu, UINT(MF_STRING), UINT_PTR(commandCopyPair), "Copy pairing URL".wide)
@@ -231,11 +254,18 @@ func handleCommand(_ id: UINT) {
         state.serving ? stopDaemon() : startDaemon()
     case commandAutostart:
         TrayAutostart.setEnabled(!TrayAutostart.isEnabled())
-    default:
-        let index = Int(id - commandBase)
+    case commandRaiseBase..<(commandRaiseBase + 0x1000):
+        let index = Int(id - commandRaiseBase)
         if index >= 0, index < state.rows.count {
             _ = raiseWindow(pid: state.rows[index].pid)
         }
+    default:
+        let index = Int(id - commandBase)
+        guard index >= 0, index < state.rows.count else { return }
+        let row = state.rows[index]
+        // The session window is the point of the desktop app: the feed
+        // and a composer, without reaching for a phone.
+        SessionWindow.open(pid: row.pid, name: row.name)
     }
 }
 
@@ -243,7 +273,10 @@ func handleCommand(_ id: UINT) {
 
 let windowProc: @convention(c) (HWND?, UINT, WPARAM, LPARAM) -> LRESULT = {
     window, message, wParam, lParam in
-    switch Int32(message) {
+    // Bit-truncate rather than range-check: Windows sends messages above
+    // Int32.max (WM_APP+, registered messages) and Int32(_:) traps on
+    // them — the same crash that killed the session window's EDIT.
+    switch Int32(bitPattern: message) {
     case Int32(trayMessage):
         // A right-click (or the keyboard context key) opens the menu; a
         // left-click refreshes so the list is current before you look.
@@ -260,6 +293,9 @@ let windowProc: @convention(c) (HWND?, UINT, WPARAM, LPARAM) -> LRESULT = {
         return 0
     case WM_TIMER:
         refresh()
+        // Engine data refreshes off the same tick, in the background —
+        // the menu must never wait on a subprocess to open.
+        TrayFleet.refresh()
         return 0
     case WM_DESTROY:
         // Never leave a ghost icon behind.
@@ -287,6 +323,28 @@ func run() -> Int32 {
     // `--probe` reports what the tray can build and exits — the icon and
     // the shell call are invisible from another session, so this is how
     // a failure gets diagnosed without a human watching the taskbar.
+    // `--session <pid>` opens one session window and runs its own message
+    // loop — the tray's own path without the tray, so the window can be
+    // exercised (and seen) directly.
+    if CommandLine.arguments.dropFirst().first == "--session" {
+        guard let pidText = CommandLine.arguments.dropFirst(2).first,
+              let pid = Int32(pidText) else {
+            print("usage: infinitus-tray-win --session <pid>")
+            return 2
+        }
+        let (rows, _) = readSessions()
+        guard let row = rows.first(where: { $0.pid == pid }) else {
+            print("no live session with pid \(pid)")
+            return 1
+        }
+        SessionWindow.open(pid: row.pid, name: row.name)
+        var message = MSG()
+        while GetMessageW(&message, nil, 0, 0) {
+            TranslateMessage(&message)
+            DispatchMessageW(&message)
+        }
+        return 0
+    }
     if CommandLine.arguments.dropFirst().first == "--probe" {
         let icon = TrayIcon.make(busy: true)
         print("icon: \(icon == nil ? "FAILED" : "ok")")
