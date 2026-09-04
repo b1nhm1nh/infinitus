@@ -1,6 +1,9 @@
 import SwiftUI
 import WebKit
 import AuthenticationServices
+// NSSavePanel's allowedContentTypes takes [UTType]; `.json` lives here,
+// and SwiftUI/AppKit do not re-export it (SyncPane imports it too).
+import UniformTypeIdentifiers
 import InfinitusCore
 
 /// Native account management (user 2026-08-31: "add new account,
