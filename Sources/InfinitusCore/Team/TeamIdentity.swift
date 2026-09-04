@@ -1,5 +1,5 @@
 import Foundation
-import CryptoKit
+import Crypto
 
 /// A member's public keys as they appear in rosters, requests and codes.
 public struct TeamKeys: Codable, Equatable, Sendable {
@@ -28,7 +28,7 @@ public struct TeamKeys: Codable, Equatable, Sendable {
     /// `kid` = base32 of the first 16 bytes of SHA-256 over the raw X25519
     /// public key (spec §1).
     public static func kid(forEncryptionKey raw: Data) -> String {
-        Base32.encode(Data(Insecure.SHA1.hash(data: raw)).prefix(16))
+        Base32.encode(Data(Crypto.SHA256.hash(data: raw)).prefix(16))
     }
 }
 
@@ -49,9 +49,9 @@ public struct TeamIdentity: Sendable {
     public init(secret: Data) throws {
         guard secret.count == 32 else { throw IdentityError.badSecret }
         let ikm = SymmetricKey(data: secret)
-        let encKey = HKDF<Insecure.SHA1>.deriveKey(inputKeyMaterial: ikm, salt: Self.salt,
+        let encKey = HKDF<Crypto.SHA256>.deriveKey(inputKeyMaterial: ikm, salt: Self.salt,
                                                     info: Data("x25519".utf8), outputByteCount: 32)
-        let sigKey = HKDF<Insecure.SHA1>.deriveKey(inputKeyMaterial: ikm, salt: Self.salt,
+        let sigKey = HKDF<Crypto.SHA256>.deriveKey(inputKeyMaterial: ikm, salt: Self.salt,
                                                     info: Data("ed25519".utf8), outputByteCount: 32)
         let encryption = try Curve25519.KeyAgreement.PrivateKey(
             rawRepresentation: encKey.withUnsafeBytes { Data($0) })
