@@ -54,6 +54,23 @@ targets.append(.executableTarget(
 ))
 products.append(.executable(name: "infinitusctl", targets: ["InfinitusCLI"]))
 #endif
+#if os(Windows)
+// Headless mirror daemon (docs/plan-windows/01-stack.md): the same
+// InfinitusCore feed/pairing/HTTP contract over Winsock + named pipes.
+// Its sources live under windows/, so macOS and Linux never see them.
+targets.append(.executableTarget(
+    name: "InfinitusWin",
+    dependencies: ["InfinitusCore"],
+    path: "windows/Sources/InfinitusWin",
+    linkerSettings: [.linkedLibrary("ws2_32"), .linkedLibrary("dnsapi"), .linkedLibrary("iphlpapi")]
+))
+products.append(.executable(name: "infinitus-win", targets: ["InfinitusWin"]))
+targets.append(.testTarget(
+    name: "InfinitusWinTests",
+    dependencies: ["InfinitusWin"],
+    path: "windows/Tests/InfinitusWinTests"
+))
+#endif
 
 let package = Package(
     name: "Infinitus",

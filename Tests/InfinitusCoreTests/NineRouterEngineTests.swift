@@ -1,4 +1,4 @@
-#if !os(Linux)   // shares ProxyStubProtocol (URLProtocol stubbing unverified on corelibs)
+#if canImport(Darwin)   // shares ProxyStubProtocol (URLProtocol stubbing unverified off Darwin)
 import XCTest
 @testable import InfinitusCore
 

@@ -1,4 +1,4 @@
-#if !os(Linux)   // URLProtocol stubbing is unverified on corelibs-foundation
+#if canImport(Darwin)   // URLProtocol stubbing is unverified off Darwin (corelibs-foundation)
 import XCTest
 @testable import InfinitusCore
 
