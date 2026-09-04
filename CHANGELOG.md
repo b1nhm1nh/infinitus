@@ -6,6 +6,13 @@ workflow publishes the matching section as the GitHub release body.
 
 ## 0.4.3 (unreleased)
 
+### Fixes
+- Haiku session names now reach the sessions Claude Code named itself
+  (`limitless-bf`, `banyan-51`…) — those count as unnamed.
+- Phone dictation can't sit on "Translating…" any more: a missing
+  language pack asks to download, and after ten seconds the take goes
+  out as spoken with the English-reply note. Sending mid-translation
+  does the same.
 ### Phone
 - **Screenshots go out in one tap.** The camera button in a chat's header
   sends a picture of the screen you're looking at, straight to that

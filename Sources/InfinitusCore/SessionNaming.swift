@@ -3,6 +3,26 @@ import Foundation
 /// The pure half of the app's Haiku session namer (SessionNamer.swift):
 /// what a name is made of, the prompt, and the cleanup of the reply.
 public enum SessionNaming {
+    /// Claude Code names every session it starts "<cwd basename>-<xx>"
+    /// (limitless-bf, banyan-51, green-suites-4-14) unless the user
+    /// renames it — those are the sessions the user calls "without
+    /// names", and the ones Haiku titles.
+    public static func isPlaceholder(_ name: String?, cwd: String) -> Bool {
+        guard let name, !name.isEmpty else { return true }
+        let base = (cwd as NSString).lastPathComponent
+        guard name.hasPrefix(base + "-") else { return false }
+        let tail = name.dropFirst(base.count + 1)
+        return !tail.isEmpty && tail.count <= 3 && tail.allSatisfy { $0.isNumber || ("a"..."f").contains($0) }
+    }
+
+    /// What a row shows: the user's own name, else Haiku's title, else
+    /// the repo.
+    public static func displayName(name: String?, autoName: String?, cwd: String) -> String {
+        if !isPlaceholder(name, cwd: cwd), let name { return name }
+        if let autoName, !autoName.isEmpty { return autoName }
+        return name ?? (cwd as NSString).lastPathComponent
+    }
+
     /// A change here (a new goal after /clear, a todo list that grew, a
     /// new phase) is what earns a fresh ask.
     public static func fingerprint(_ p: SessionProgress) -> String {

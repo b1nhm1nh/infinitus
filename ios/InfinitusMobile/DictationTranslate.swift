@@ -45,7 +45,13 @@ struct DictationTranslate: ViewModifier {
                 }
                 .translationTask(configuration) { session in
                     guard let r = request else { return }
+                    // A pair that isn't installed yet: `prepareTranslation`
+                    // puts up the download sheet; without it `translate`
+                    // can sit forever (the "Translating…" that never
+                    // ended, user 2026-09-04 21:21). Either way the
+                    // caller's timeout is the last word.
                     do {
+                        try await session.prepareTranslation()
                         let out = try await session.translate(r.text)
                         onResult(.success(out.targetText))
                     } catch {
