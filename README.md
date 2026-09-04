@@ -84,7 +84,8 @@ and CLI that bridges local Claude Code sessions, transcripts, and named pipes to
 the [Infinitus mobile companion](ios/InfinitusMobile).
 
 See [`windows/README.md`](windows/README.md) for toolchain setup (`winget install --id Swift.Toolchain -e`),
-build instructions, firewall configuration, and CLI commands (`sessions`, `pair`, `snapshot`, `message`).
+build instructions, firewall configuration, and CLI commands (`serve`, `sessions`,
+`pair`, `snapshot`, `message`, `resume`).
 
 ### Requirements
 

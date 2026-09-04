@@ -422,16 +422,56 @@ netsh advfirewall firewall add rule name="Infinitus" dir=in action=allow protoco
 
 ---
 
+## `serve` — the phone's HTTP surface
+
+`infinitus-win serve [--port N] [--claude-dir P] [--token-file P]` runs the
+server the phone talks to. Without `--token-file` it uses the stored pairing
+token, so `pair` then `serve` is the whole setup.
+
+```
+> infinitus-win serve
+listening on 47824
+  http://192.168.6.12:47824
+  http://100.104.227.59:47824
+token 2FDP••••••••••••••••PTVG — `infinitus-win pair` prints the pairing URL
+if the phone can't reach it, allow inbound TCP 47824:
+  netsh advfirewall firewall add rule name="Infinitus 47824" dir=in action=allow protocol=TCP localport=47824
+```
+
+Routes (all require `Authorization: Bearer <token>`, or `?t=<token>`):
+
+| route | answers |
+|---|---|
+| `GET /snapshot` | the fleet + session snapshot, 5 s cache |
+| `GET /sessions/<pid>/tail?n=&since=&wait=` | the session's feed; holds up to 25 s when `since` matches the current stamp |
+| `GET /sessions/<pid>/images/<id>` | a feed image, original bytes, 5 MiB cap |
+| `POST /sessions/<pid>/input` | `message`, `resume` or `key`; delivery over the named pipe |
+| `POST /activities/token` | accepted and discarded (no APNs on Windows) |
+
+Verified on this box (2026-09-04): 401 without a token, 200 with; snapshot
+listing 7 live sessions; a tail carrying real items with `canMessage=true`,
+`keys=false`, `permissionMode=bypassPermissions`; long-poll returning in 8 ms
+on a stale stamp and holding 4.1 s on a current one; a `message` answering
+`{"channel":"socket","outcome":"delivered"}` and appearing in the target
+session's transcript; a `key` answering `{"outcome":"noSurface"}`.
+
+**Held for approval.** When the sending and receiving sessions' permission
+modes differ in class, Claude Code holds the message for its user to approve
+rather than delivering it straight to the model. The daemon reports the write
+that succeeded; the phone shows `permissionMode` so it can say so.
+
+---
+
 ## Not Yet Implemented
 
 The following features from the Windows architecture plan (`docs/plan-windows/`)
 are pending and **not yet present in `main.swift` today**:
 
-1. **HTTP `serve` Daemon**:
-   Continuous HTTP/1.1 server hosting `/snapshot`, `/sessions/<pid>/tail`, `/sessions/<pid>/images/<id>`, and `POST /sessions/<pid>/input` on port 47824.
-2. **Bonjour Advertising**:
-   Zero-configuration service advertisement (`_infinitus._tcp.local:47824`) via `DnsServiceRegister`.
-3. **WIC Thumbnails**:
-   Image downscaling to ≤ 640px JPEG using Windows Imaging Component (`IWICImagingFactory`).
+1. **Bonjour Advertising**:
+   Zero-configuration service advertisement (`_infinitus._tcp.local:47824`) via `DnsServiceRegister`. Until then the phone needs the host typed in manually (`pair` prints the addresses).
+2. **WIC Thumbnails**:
+   Image downscaling to ≤ 640px JPEG using Windows Imaging Component (`IWICImagingFactory`). The image route serves original bytes today.
+3. **Phone-side multi-host UI**:
+   The storage and transport layer ships (`MirrorHost`, per-host tokens); the merged sessions list, per-host sections and Settings UI are still to come.
 4. **Automatic Resume / Nudge Daemon**:
-   Automated background detection of limit-stopped sessions and quota release triggers (manual injection via `message` works; automatic quota monitor is macOS-only).
+   Automated background detection of limit-stopped sessions and quota release triggers. `infinitus-win resume` does it manually; the automatic quota monitor is macOS-only because this box runs no swap engine to ask.
