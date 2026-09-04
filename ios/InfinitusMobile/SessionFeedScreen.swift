@@ -1158,7 +1158,9 @@ struct SessionFeedScreen: View {
             HStack {
                 Spacer(minLength: 40)
                 VStack(alignment: .trailing, spacing: 6) {
-                    if !text.isEmpty { Text(text) }
+                    // Skill bodies and pasted notes arrive as user turns and are
+                    // markdown too (phone screenshot 2026-09-04: "Md not shown").
+                    if !text.isEmpty { MarkdownText(text: text) }
                     if !images.isEmpty {
                         HStack(spacing: 6) {
                             ForEach(images, id: \.self) { FeedThumbnail(pid: Int32(session.pid), id: $0) }
