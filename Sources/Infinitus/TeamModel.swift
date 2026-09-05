@@ -85,7 +85,10 @@ final class TeamModel: ObservableObject {
     /// than assuming the whole message is a bare URL.
     private nonisolated static func mask(_ error: Error) -> String {
         let message = "\(error)"
-        guard let regex = try? NSRegularExpression(pattern: "([a-zA-Z][a-zA-Z0-9+.-]*://)[^/@\\s]+@") else { return message }
+        // The userinfo itself may contain "/" (a base64-ish token), so
+        // only "@", whitespace and quotes end the match — erring toward
+        // masking too much rather than leaking a credential that has one.
+        guard let regex = try? NSRegularExpression(pattern: "([a-zA-Z][a-zA-Z0-9+.-]*://)[^@\\s'\"]+@") else { return message }
         let range = NSRange(message.startIndex..., in: message)
         return regex.stringByReplacingMatches(in: message, range: range, withTemplate: "$1")
     }
