@@ -14,6 +14,7 @@ publishes the matching section as the GitHub release body.
 - Allow… on a permission card offers "Allow for this session": the Mac remembers the tool (Bash by command verb) and the plugin's PreToolUse hook skips that prompt for the rest of the session.
 
 ### Mac
+- Settings › Machine watches what many sessions do to this Mac — load, swap, stuck hooks, runaway processes, residue — with confirmed kill, reclaim and hook-disable actions and notifications for new hook registrations and idle sessions.
 - When a revival countdown ends the Mac asks the engine again right away (three tries a minute apart) instead of waiting for the next poll.
 - "<account> is back" notifications, with "reset early" when Anthropic reset before the advertised time and "all accounts are back" when the whole fleet returns (Settings › Notifications).
 - `/infinitus:handoff <session>` passes the current task and its context to another live session through the plugin.
