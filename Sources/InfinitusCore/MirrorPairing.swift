@@ -183,14 +183,18 @@ public enum MirrorPairing {
     // tested without a `UserDefaults` or a running mirror.
 
     public enum Others {
-        /// A scanned QR replaces the primary (today's behaviour) when
-        /// there's no primary yet, or the scanned token IS the primary's
-        /// — anything else is another Mac, added rather than replacing.
+        /// A scanned QR replaces the primary (today's behaviour) when the
+        /// phone has no primary token yet (endpoints alone are not a
+        /// pairing), the scanned token IS the primary's, or the QR shares
+        /// an endpoint with the primary — the same Mac after
+        /// `regeneratePairToken`, which must keep just working. Anything
+        /// else is another Mac, added rather than replacing.
         public static func replacesPrimary(scannedToken: String, primaryToken: String,
-                                           primaryEndpoints: [String]) -> Bool {
+                                           primaryEndpoints: [String], scannedEndpoints: [String] = []) -> Bool {
             let primary = normalize(primaryToken)
-            if primary.isEmpty, primaryEndpoints.isEmpty { return true }
-            return normalize(scannedToken) == primary
+            if primary.isEmpty { return true }
+            if normalize(scannedToken) == primary { return true }
+            return !Set(scannedEndpoints).isDisjoint(with: primaryEndpoints)
         }
 
         /// Adds a pairing, or updates the existing one for the same

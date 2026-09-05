@@ -150,7 +150,8 @@ final class MirrorModel: ObservableObject, FleetModel {
     func applyPairing(_ text: String) -> Bool {
         guard let pairing = MirrorPairing.parsePairURL(text) else { return false }
         if MirrorPairing.Others.replacesPrimary(scannedToken: pairing.token,
-                                                primaryToken: pairToken, primaryEndpoints: manualEndpoints) {
+                                                primaryToken: pairToken, primaryEndpoints: manualEndpoints,
+                                                scannedEndpoints: pairing.endpoints) {
             manualEndpoints = pairing.endpoints
             pairToken = pairing.token
             Task { await refresh() }
@@ -251,12 +252,12 @@ final class MirrorModel: ObservableObject, FleetModel {
                 fleets = []
                 fleetSinks = [:]
                 if usesLAN { transportStatus = await NetworkFleetMirror.shared.statusText }
-                await refreshOthers()
+                refreshOthersDetached()
                 return
             }
             guard let engineFleets = Self.engineFleets(from: snapshot) else {
                 error = "couldn't read the mirrored fleet data"
-                await refreshOthers()
+                refreshOthersDetached()
                 return
             }
             self.snapshot = snapshot
@@ -283,10 +284,10 @@ final class MirrorModel: ObservableObject, FleetModel {
             if firstLoad {
                 DispatchQueue.main.async { self.replayIntro() }
             }
-            await refreshOthers()
+            refreshOthersDetached()
         } catch {
             self.error = error.localizedDescription
-            await refreshOthers()
+            refreshOthersDetached()
         }
     }
 
@@ -315,6 +316,19 @@ final class MirrorModel: ObservableObject, FleetModel {
     /// each through its own cached `NetworkFleetMirror(pairing:)` so one
     /// dead Mac's retries don't hold up the rest. Read-only: no Live
     /// Activities, widgets or share bridge for these.
+    /// Other Macs never delay the primary: their round runs as its own
+    /// task after the primary has published, one in flight at a time
+    /// (an asleep Mac costs its whole candidate list in timeouts).
+    private var refreshingOthers = false
+    private func refreshOthersDetached() {
+        guard !refreshingOthers else { return }
+        refreshingOthers = true
+        Task { [weak self] in
+            await self?.refreshOthers()
+            self?.refreshingOthers = false
+        }
+    }
+
     private func refreshOthers() async {
         let pairings = MacPairing.load(defaults)
         let ids = Set(pairings.map(\.id))

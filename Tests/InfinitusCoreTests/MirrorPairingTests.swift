@@ -113,6 +113,16 @@ final class MirrorPairingTests: XCTestCase {
             scannedToken: "abcd-2345", primaryToken: "ABCD2345", primaryEndpoints: ["http://a"]))
     }
 
+    func testReplacesPrimaryWithoutTokenOrOnSharedEndpoint() {
+        // Endpoints typed by hand but no token yet: the scan completes the pairing.
+        XCTAssertTrue(MirrorPairing.Others.replacesPrimary(
+            scannedToken: "ABCD2345", primaryToken: "", primaryEndpoints: ["http://a"]))
+        // The primary Mac regenerated its token: same endpoint, new token — still the primary.
+        XCTAssertTrue(MirrorPairing.Others.replacesPrimary(
+            scannedToken: "WXYZ7777", primaryToken: "ABCD2345", primaryEndpoints: ["http://a", "http://b"],
+            scannedEndpoints: ["http://b"]))
+    }
+
     func testDoesNotReplacePrimaryForAnotherMac() {
         XCTAssertFalse(MirrorPairing.Others.replacesPrimary(
             scannedToken: "WXYZ7777", primaryToken: "ABCD2345", primaryEndpoints: ["http://a"]))
