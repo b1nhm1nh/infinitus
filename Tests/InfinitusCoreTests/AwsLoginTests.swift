@@ -14,6 +14,10 @@ final class AwsLoginTests: XCTestCase {
         XCTAssertNil(AwsLogin.profile(in: "all good"))
         XCTAssertEqual(AwsLogin.profile(in: "aws: [ERROR]: The pending authorization to retrieve an SSO token has expired. The login flow to retrieve an SSO token must be restarted."), "default")
         XCTAssertEqual(AwsLogin.profile(in: "aws: [ERROR]: An error occurred (ExpiredToken) when calling the GetCallerIdentity operation: The security token included in the request is expired"), "default")
+        // The broker's refresh lock is held for >30 s only while the holder
+        // sits in the interactive login (2026-09-05, peon-wave-16: nothing
+        // shown while `aws login` waited for the browser).
+        XCTAssertEqual(AwsLogin.profile(in: "aws: [ERROR]: Error when retrieving credentials from custom-process: [aws-cred-broker] timed out after 30.0s waiting for the refresh lock held by pid 39243. Inspect that process; do not delete /Users/x/.config/banyan/aws-broker/global.lock while it is running.\ntunnel-DOWN"), "default")
         // Quoted, not suffered: a grep hit / Read line / source fixture.
         XCTAssertNil(AwsLogin.profile(in: "99:    let failed = \"aws: [ERROR]: Your session has expired. Please reauthenticate using 'aws login'.\""))
         XCTAssertNil(AwsLogin.profile(in: "    [aws-cred-broker] ...\n      Fix: aws login --profile papaya-login"))
