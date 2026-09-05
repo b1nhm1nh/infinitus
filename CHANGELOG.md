@@ -32,6 +32,7 @@ publishes the matching section as the GitHub release body.
 - Tokens/min records: every day's peak minute, the all-time best and the days it fell, a 30-day sparkline and a week-over-week trend, on the Mac and the phone — one full rescan on first refresh.
 
 ### Fixes
+- Stats scan parses transcripts 4.6× faster (byte-level line scanning, no regex on tool results) and decodes the cache once per backfill instead of every pass.
 - Tokens/min records: the day's minute buckets survive the stats cache, so the peak is the day's real busiest minute, not the last scan's.
 - Stats count workflow sub-agent transcripts (`subagents/workflows/…`), which were invisible to tokens, cost and peaks.
 - AWS logins survive a Mac relaunch, and a need that failed just before a launch still reaches the phone.

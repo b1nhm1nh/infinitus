@@ -220,7 +220,9 @@ public enum Stats {
         /// share of the day has been merged in (a merge of two files'
         /// same minute adds up to more than either's peak).
         public mutating func finalizePeak() {
-            guard let top = minuteTokens.max(by: { $0.value < $1.value }) else { return }
+            // Ties go to the earliest minute, so the answer doesn't depend
+            // on dictionary order (a cached and a fresh scan must agree).
+            guard let top = minuteTokens.max(by: { $0.value < $1.value || ($0.value == $1.value && $0.key > $1.key) }) else { return }
             peakTokensPerMinute = top.value
             peakMinute = top.key
         }
