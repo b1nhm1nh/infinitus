@@ -127,7 +127,7 @@ struct ChatHeaderView: View {
         .buttonStyle(.plain)
         .disabled(screenshotDisabled)
         .allowsHitTesting(onScreenshot != nil)
-        .accessibilityLabel("Send a screenshot of this screen")
+        .accessibilityLabel("Attach a screenshot of this screen")
     }
 
     private var statusWord: String { SessionWords.status(data.status, theme: theme) }

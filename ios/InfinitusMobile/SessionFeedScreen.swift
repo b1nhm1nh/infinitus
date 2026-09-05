@@ -208,7 +208,7 @@ struct SessionFeedScreen: View {
                     ChatHeaderView(style: headerStyle, theme: theme, data: headerData,
                                    route: SessionDetailRoute(session: session),
                                    onBack: { dismiss() },
-                                   onScreenshot: { sendAppScreenshot() },
+                                   onScreenshot: { stageAppScreenshot() },
                                    screenshotDisabled: sendingMessage)
                 }
                 .background(theme.plain ? Color.clear : ThemeColor.flash(theme).opacity(0.16))
@@ -225,7 +225,16 @@ struct SessionFeedScreen: View {
                 composer
             }
         }
-        .onAppear { screenshots.check() }
+        .onAppear {
+            screenshots.check()
+            takeStagedCapture()
+            // Dev seam like `INFINITUS_FEED_PID`: a headless simulator
+            // capture can't tap the camera button.
+            if ProcessInfo.processInfo.environment["INFINITUS_STAGE_CAPTURE"] != nil {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 2) { stageAppScreenshot() }
+            }
+        }
+        .onChange(of: model.stagedCapture?.id) { _, _ in takeStagedCapture() }
         // A screenshot taken while the app is in front: the first one
         // asks for Photos access (that's the discovery moment), later
         // ones show up in the library a beat after the shutter.
@@ -770,7 +779,8 @@ struct SessionFeedScreen: View {
         }
     }
 
-    // MARK: screenshots (user 2026-09-04: "send it right away")
+    // MARK: screenshots (user 2026-09-04: "send it right away" — the
+    // ones the phone took; the app's own captures stage instead)
 
     /// Screenshots taken since the phone last looked, offered above the
     /// composer: send them all in one tap, or wave them off.
@@ -806,13 +816,29 @@ struct SessionFeedScreen: View {
         .overlay(alignment: .top) { Divider() }
     }
 
-    private func sendAppScreenshot() {
+    /// The camera button: the capture lands in the composer as an
+    /// attachment, cursor ready, so the words about it can go with it
+    /// (user 2026-09-05: "put the captured in attachment instead of
+    /// send immediately as I need to describe the request").
+    private func stageAppScreenshot() {
         guard let image = ScreenshotWatch.captureApp() else {
-            messageResult = "couldn't capture the screen"
+            attachmentError = "couldn't capture the screen"
             return
         }
-        sendImages([image], prefix: "app-screenshot",
-                   caption: "Screenshot of the Infinitus app, taken on the phone just now.")
+        stage(image)
+    }
+
+    private func stage(_ image: UIImage) {
+        addImage(image, prefix: "app-screenshot")
+        composerFocused = true
+    }
+
+    /// A shake elsewhere in the app captured a screen and picked this
+    /// session: the capture is waiting on the model.
+    private func takeStagedCapture() {
+        guard let staged = model.stagedCapture, staged.pid == session.pid else { return }
+        model.stagedCapture = nil
+        stage(staged.image)
     }
 
     private func sendFoundScreenshots() {

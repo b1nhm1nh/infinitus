@@ -29,7 +29,7 @@ struct RootView: View {
                 tabs
             }
         }
-        // Shake on any screen: capture it, pick a session, sent.
+        // Shake on any screen: capture it, pick a session, describe it there.
         .background(ShakeToSend(model: model))
         .task {
             while !Task.isCancelled {
