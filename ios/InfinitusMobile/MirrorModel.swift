@@ -200,6 +200,8 @@ final class MirrorModel: ObservableObject, FleetModel {
             // The route that just answered is now the last-good one; the
             // share extension (#64) reads the pairing through the keychain.
             ShareBridge.publish(defaults)
+            ShareSuggestions.sync(sessions: liveSessions?.sessions ?? [],
+                                  name: { sessionProgress.byPid[$0]?.name }, theme: rowTheme)
             sessionProgress.apply(snapshot.progressByPid ?? [:], tokenRate: snapshot.tokenRate)
             let firstLoad = reconcile(engineFleets)
             error = nil

@@ -147,7 +147,8 @@ to drive the running app.
   camera) and files — delivered over Claude Code's peer socket or into
   the terminal. Tap the header for the account behind the session and
   its limits (CLIProxyAPI included). Any app's Share sheet → Infinitus
-  sends an image into a session with a note, no app switch.
+  sends images, files, a link or text into a session with a note, no
+  app switch — your sessions sit in the sheet's suggestions row.
 - **Widgets in your theme** — home-screen and lock-screen widgets show
   the active account's windows as the theme names and colors them
   (MP / HP / Dragon under the RPG theme), what's waiting on you, and the
