@@ -115,8 +115,9 @@ struct ChatHeaderView: View {
         .accessibilityLabel("Back")
     }
 
-    /// One tap sends what's on screen (user 2026-09-04: "a lot of
-    /// screenshots that come from this app … send it right away").
+    /// One tap puts what's on screen into the composer as an attachment
+    /// (user 2026-09-05: "put the captured in attachment instead of send
+    /// immediately as I need to describe the request").
     private var screenshotButton: some View {
         Button { onScreenshot?() } label: {
             Image(systemName: "camera.viewfinder")

@@ -10,6 +10,8 @@ struct SessionsScreen: View {
     @ObservedObject var model: MirrorModel
     @ObservedObject var progress: MobileSessionProgress
     @State private var path = NavigationPath()
+    /// The session whose feed is on screen, if one is.
+    @State private var openPid: Int?
 
     var body: some View {
         NavigationStack(path: $path) {
@@ -18,6 +20,8 @@ struct SessionsScreen: View {
                 .refreshable { await model.refresh() }
                 .navigationDestination(for: SessionDetail.self) { session in
                     SessionFeedScreen(model: model, session: session)
+                        .onAppear { openPid = session.pid }
+                        .onDisappear { if openPid == session.pid { openPid = nil } }
                 }
                 // The feed header's tap target (user 2026-09-03: account
                 // summary + "a more detail screen when tap on its header
@@ -28,14 +32,17 @@ struct SessionsScreen: View {
                 }
         }
         // A shake staged a capture for a session: open its feed (which
-        // takes the capture into its composer). Any feed already open is
-        // replaced — the capture names where it belongs.
+        // takes the capture into its composer). A feed already open for
+        // that pid takes it itself — re-pushing a fresh SessionDetail
+        // (its status may have moved) would rebuild the feed and lose
+        // the capture the old one just took. Any other feed is replaced.
         .onChange(of: model.stagedCapture?.id) { _, _ in
-            guard let staged = model.stagedCapture,
-                  let session = fleetsWithSessions
+            guard let staged = model.stagedCapture else { return }
+            guard openPid != staged.pid else { return }
+            guard let session = fleetsWithSessions
                       .flatMap({ $0.liveSessions?.sessions ?? [] })
                       .first(where: { $0.pid == staged.pid })
-            else { return }
+            else { model.stagedCapture = nil; return }
             path = NavigationPath()
             path.append(session)
         }
