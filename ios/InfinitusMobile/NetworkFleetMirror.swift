@@ -57,6 +57,71 @@ actor NetworkFleetMirror: FleetMirror {
     /// staleness banner instead of falling back to "Waiting for the fleet".
     private var cached: MirrorSnapshot?
 
+    /// Where this instance reads its endpoints/token and writes its
+    /// last-good route (#144 phase 1). `.shared` keeps reading the plain
+    /// UserDefaults keys; a per-Mac instance carries its own `MacPairing`
+    /// instead — `var` so a successful fetch's last-good write (via
+    /// `onLastGood`) is reflected the next time `candidateEndpoints()`
+    /// runs on this same cached actor.
+    private enum Storage {
+        case defaults
+        case pairing(MacPairing)
+
+        var isDefaults: Bool { if case .defaults = self { return true } else { return false } }
+    }
+    private var storage: Storage
+    /// Persists a per-Mac pairing's last-good endpoint (MirrorModel keeps
+    /// the `MacPairing` list in UserDefaults); unused for `.shared`.
+    private let onLastGood: (@Sendable (String) -> Void)?
+
+    init() {
+        storage = .defaults
+        onLastGood = nil
+    }
+
+    /// One OTHER paired Mac (#144 phase 1): its own endpoints and token,
+    /// Bonjour skipped (it can't yet tell which Mac answered), and a
+    /// successful route reported back so the caller can persist it.
+    init(pairing: MacPairing, onLastGood: (@Sendable (String) -> Void)? = nil) {
+        storage = .pairing(pairing)
+        self.onLastGood = onLastGood
+        // The default line above is about Bonjour, which this instance
+        // never uses — the Settings caption would otherwise say so
+        // before the first fetch even runs.
+        statusText = "not reached yet"
+    }
+
+    /// Drops the cached snapshot and resets the status line — used when
+    /// the PAIRING itself changes underneath this instance (#144 phase
+    /// 1's "make primary"), so a `latest()` that fails right after a
+    /// swap doesn't quietly keep showing the previous Mac's fleet.
+    func forgetCached() {
+        cached = nil
+        statusText = "looking for a Mac on this Wi-Fi…"
+    }
+
+    /// The token this instance authenticates with.
+    private func pairToken() -> String {
+        switch storage {
+        case .defaults: return MirrorPairing.normalize(UserDefaults.standard.string(forKey: Self.tokenKey) ?? "")
+        case .pairing(let pairing): return MirrorPairing.normalize(pairing.token)
+        }
+    }
+
+    /// Records the endpoint that just answered as the one to try first
+    /// next time.
+    private func recordLastGood(_ text: String) {
+        switch storage {
+        case .defaults:
+            UserDefaults.standard.set(text, forKey: Self.lastGoodKey)
+        case .pairing(let pairing):
+            var updated = pairing
+            updated.lastGood = text
+            storage = .pairing(updated)
+            onLastGood?(text)
+        }
+    }
+
     /// Migrates the old single-endpoint string into the list, once. Both
     /// this actor and `MirrorModel` read defaults independently, so they
     /// share this one entry point rather than each rolling its own.
@@ -79,9 +144,17 @@ actor NetworkFleetMirror: FleetMirror {
     /// the order candidates are tried in, so a Mac that answered last
     /// time answers first this time.
     private func candidateEndpoints() -> [String] {
-        var list = Self.storedEndpoints()
-        if let lastGood = UserDefaults.standard.string(forKey: Self.lastGoodKey),
-           let index = list.firstIndex(of: lastGood), index != 0 {
+        var list: [String]
+        var lastGood: String?
+        switch storage {
+        case .defaults:
+            list = Self.storedEndpoints()
+            lastGood = UserDefaults.standard.string(forKey: Self.lastGoodKey)
+        case .pairing(let pairing):
+            list = pairing.endpoints
+            lastGood = pairing.lastGood
+        }
+        if let lastGood, let index = list.firstIndex(of: lastGood), index != 0 {
             list.remove(at: index)
             list.insert(lastGood, at: 0)
         }
@@ -89,8 +162,7 @@ actor NetworkFleetMirror: FleetMirror {
     }
 
     func latest() async throws -> MirrorSnapshot? {
-        let token = MirrorPairing.normalize(
-            UserDefaults.standard.string(forKey: Self.tokenKey) ?? "")
+        let token = pairToken()
         let stored = candidateEndpoints()
         var lastError: Error?
         // One short clause per route that failed, so the Settings line
@@ -109,7 +181,7 @@ actor NetworkFleetMirror: FleetMirror {
                                                 timeout: Self.candidateTimeout)
                 let snapshot = try Self.decode(data)
                 cached = snapshot
-                UserDefaults.standard.set(text, forKey: Self.lastGoodKey)
+                recordLastGood(text)
                 statusText = "\(snapshot.machineName) at \(text)"
                 return snapshot
             } catch MirrorTransportError.http(401) {
@@ -127,8 +199,10 @@ actor NetworkFleetMirror: FleetMirror {
         // Every saved route is dead. If one of them was a quick-tunnel
         // URL, the Mac may simply have restarted onto a new one and
         // published it to the rendezvous (MirrorRendezvous) — swap it in
-        // and try once more before giving up.
-        if let stale = stored.first(where: MirrorRendezvous.isEphemeral),
+        // and try once more before giving up. Not for a per-Mac pairing:
+        // `Self.manualKey` is the PRIMARY's list, and writing into it here
+        // would overwrite it with another Mac's address.
+        if storage.isDefaults, let stale = stored.first(where: MirrorRendezvous.isEphemeral),
            let fresh = await rendezvousLookup(token: token), fresh != stale,
            let manual = MirrorTransport.parseEndpoint(fresh) {
             var list = Self.storedEndpoints()
@@ -142,14 +216,23 @@ actor NetworkFleetMirror: FleetMirror {
                                                 token: token, timeout: Self.candidateTimeout),
                let snapshot = try? Self.decode(data) {
                 cached = snapshot
-                UserDefaults.standard.set(fresh, forKey: Self.lastGoodKey)
+                recordLastGood(fresh)
                 statusText = "\(snapshot.machineName) at \(fresh) (new tunnel address)"
                 return snapshot
             }
             failures.append("new tunnel address didn't answer either")
         }
         // No stored endpoint answered (or none is stored) — Bonjour is
-        // the last resort, and only worth trying while on the LAN.
+        // the last resort, worth trying while on the LAN, for the
+        // primary only: it can't yet tell which of several Macs answered
+        // (#144 phase 1), so a per-Mac pairing stops here.
+        guard storage.isDefaults else {
+            statusText = stored.isEmpty
+                ? "no address saved for this Mac"
+                : "couldn't reach it — " + failures.joined(separator: " · ")
+            if cached == nil, let lastError, lastError is DecodingError { throw lastError }
+            return cached
+        }
         startBrowsing()
         guard let discovered = await firstEndpoint() else {
             statusText = stored.isEmpty
@@ -192,8 +275,7 @@ actor NetworkFleetMirror: FleetMirror {
     /// a minute of nothing; the caller retries the plain form on failure.
     func sessionTail(pid: Int32, limit: Int, since: String? = nil,
                      wait: TimeInterval = 0) async throws -> SessionFeed {
-        let token = MirrorPairing.normalize(
-            UserDefaults.standard.string(forKey: Self.tokenKey) ?? "")
+        let token = pairToken()
         var path = MirrorTransport.sessionTailPath(pid: pid) + "?n=\(limit)"
         if let since, wait > 0 {
             let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-_."))
@@ -226,8 +308,7 @@ actor NetworkFleetMirror: FleetMirror {
     /// the bytes, since AsyncImage can't carry the pairing token. Same
     /// stored-endpoint → discovery path as the plain feed fetch.
     func sessionImage(pid: Int32, id: String) async throws -> Data {
-        let token = MirrorPairing.normalize(
-            UserDefaults.standard.string(forKey: Self.tokenKey) ?? "")
+        let token = pairToken()
         let path = MirrorTransport.sessionImagePath(pid: pid, id: id)
         if let data = try await fetchFromStored(path: path, token: token, timeout: Self.candidateTimeout) {
             return data
@@ -254,7 +335,7 @@ actor NetworkFleetMirror: FleetMirror {
                 let (data, _) = try await fetch(endpoint, path: path, hostHeader: manual.host,
                                                 useTLS: manual.useTLS, token: token, timeout: timeout,
                                                 method: method, body: body)
-                UserDefaults.standard.set(text, forKey: Self.lastGoodKey)
+                recordLastGood(text)
                 return data
             } catch MirrorTransportError.http(401) {
                 throw MirrorTransportError.http(401)
@@ -282,8 +363,7 @@ actor NetworkFleetMirror: FleetMirror {
 
     func sessionInput(pid: Int32, request: SessionInput.Request) async throws -> SessionInput.Reply {
         let timeout = (request.attachments?.isEmpty == false) ? Self.attachmentInputTimeout : Self.inputTimeout
-        let token = MirrorPairing.normalize(
-            UserDefaults.standard.string(forKey: Self.tokenKey) ?? "")
+        let token = pairToken()
         let path = MirrorTransport.sessionInputPath(pid: pid)
         let body = try JSONEncoder().encode(request)
         let data: Data
@@ -332,8 +412,7 @@ actor NetworkFleetMirror: FleetMirror {
 
     private func postJSON<B: Encodable, R: Decodable>(_ path: String, body: B,
                                                       timeout: TimeInterval = NetworkFleetMirror.inputTimeout) async throws -> R {
-        let token = MirrorPairing.normalize(
-            UserDefaults.standard.string(forKey: Self.tokenKey) ?? "")
+        let token = pairToken()
         let payload = try JSONEncoder().encode(body)
         let data: Data
         if let text = candidateEndpoints().first, let manual = MirrorTransport.parseEndpoint(text) {
@@ -356,8 +435,7 @@ actor NetworkFleetMirror: FleetMirror {
     /// A crash/hang report to the Mac (`POST /crashes`). Best effort:
     /// false when no Mac answered — the spool retries at the next launch.
     func postCrash(_ report: CrashReport) async -> Bool {
-        let token = MirrorPairing.normalize(
-            UserDefaults.standard.string(forKey: Self.tokenKey) ?? "")
+        let token = pairToken()
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
         guard let body = try? encoder.encode(report),
@@ -381,8 +459,7 @@ actor NetworkFleetMirror: FleetMirror {
     /// Best effort: false when no Mac answered — the next token update
     /// or app launch tries again.
     func registerActivityToken(_ registration: ActivityPushRegistration) async -> Bool {
-        let token = MirrorPairing.normalize(
-            UserDefaults.standard.string(forKey: Self.tokenKey) ?? "")
+        let token = pairToken()
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
         guard let body = try? encoder.encode(registration),
@@ -433,7 +510,9 @@ actor NetworkFleetMirror: FleetMirror {
     // MARK: - Discovery
 
     private func startBrowsing() {
-        guard browser == nil else { return }
+        // A per-Mac pairing skips Bonjour entirely (#144 phase 1) — it
+        // can't yet tell which of several advertising Macs answered.
+        guard storage.isDefaults, browser == nil else { return }
         let params = NWParameters()
         params.includePeerToPeer = false
         let browser = NWBrowser(
@@ -465,6 +544,7 @@ actor NetworkFleetMirror: FleetMirror {
     /// refresh would come up empty and the screen would sit on its empty
     /// state for a whole 10s poll.
     private func firstEndpoint(timeout: TimeInterval = 2) async -> NWEndpoint? {
+        guard storage.isDefaults else { return nil }
         let deadline = Date().addingTimeInterval(timeout)
         while endpoints.isEmpty, Date() < deadline {
             try? await Task.sleep(nanoseconds: 100_000_000)

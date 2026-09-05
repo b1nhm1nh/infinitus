@@ -139,6 +139,7 @@ targets:
     sources:
       - InfinitusMobileShare
       - InfinitusMobile/NetworkFleetMirror.swift
+      - InfinitusMobile/MacPairing.swift
       - InfinitusMobile/ShareBridge.swift
       - InfinitusMobile/SharedKeychain.swift
       - InfinitusMobile/AttachmentImage.swift

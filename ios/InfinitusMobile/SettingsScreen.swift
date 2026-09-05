@@ -23,6 +23,8 @@ struct SettingsForm: View {
     /// route).
     @State private var newEndpoint = ""
     @State private var paired = false
+    /// The other Mac a "Make primary" tap is confirming (#144 phase 1).
+    @State private var promoting: MirrorModel.OtherMac?
 
     var body: some View {
         Form {
@@ -130,6 +132,30 @@ struct SettingsForm: View {
                 Text("Scanning the QR code sets everything up. On the same Wi-Fi the phone "
                      + "finds the Mac by itself; add an address for anywhere else.")
             }
+            // Every OTHER paired Mac (#144 phase 1): read-only fleets and
+            // sessions elsewhere in the app, forgettable or promotable
+            // here. Shown even with none yet — the footer is the "how".
+            Section {
+                ForEach(model.others) { other in
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(other.pairing.name).fontWeight(.semibold)
+                        Text(otherCaption(other)).font(.caption).foregroundStyle(.secondary)
+                    }
+                    .swipeActions {
+                        Button("Forget", role: .destructive) {
+                            model.forgetOther(id: other.id)
+                        }
+                    }
+                    .contextMenu {
+                        Button("Make primary") { promoting = other }
+                    }
+                }
+            } header: {
+                Text("Other Macs")
+            } footer: {
+                Text("Scan another Mac's QR to add it; only the primary Mac gets "
+                     + "chats, approvals, widgets and Live Activities in this version.")
+            }
             DictationSettings()
             ScreenshotSettings()
             // The 1:1 Mac rendering isn't lost, just off by default
@@ -167,6 +193,25 @@ struct SettingsForm: View {
             Text("Paired with \(model.snapshot?.machineName ?? "the Mac"). Its accounts are on the Fleet tab.")
         }
         .sensoryFeedback(.success, trigger: paired)
+        .confirmationDialog("Make primary",
+                            isPresented: Binding(get: { promoting != nil }, set: { if !$0 { promoting = nil } }),
+                            presenting: promoting) { other in
+            Button("Make primary") { model.makePrimary(id: other.id) }
+            Button("Cancel", role: .cancel) {}
+        } message: { other in
+            Text("Make \(other.pairing.name) the primary Mac? Chats, approvals and widgets follow it.")
+        }
+    }
+
+    /// Settings › Devices' caption for an other Mac: what it's showing,
+    /// or the mirror's own status line while it hasn't answered yet.
+    private func otherCaption(_ other: MirrorModel.OtherMac) -> String {
+        guard other.snapshot != nil else {
+            return other.status.isEmpty ? "looking for this Mac…" : other.status
+        }
+        let sessions = other.fleets.reduce(0) { $0 + ($1.liveSessions?.total ?? 0) }
+        return "\(other.fleets.count) fleet\(other.fleets.count == 1 ? "" : "s") · "
+            + "\(sessions) session\(sessions == 1 ? "" : "s")"
     }
 }
 
