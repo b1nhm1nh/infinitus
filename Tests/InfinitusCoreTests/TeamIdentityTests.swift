@@ -37,4 +37,40 @@ final class TeamIdentityTests: XCTestCase {
         XCTAssertFalse(try id.keys.signingKey().isValidSignature(sig, for: Data("hellp".utf8)))
         XCTAssertEqual(try id.keys.encryptionKey().rawRepresentation, id.encryption.publicKey.rawRepresentation)
     }
+
+    /// Spec §11: identity derivation vectors (fixed secret → fixed kids)
+    /// and the exact canonical-JSON bytes of a signed roster. Pinned on
+    /// macOS; Linux CI is what proves the two Foundation/crypto stacks
+    /// agree, which is what lets a signature travel between them.
+    func testPinnedDerivationAndSignedRosterBytes() throws {
+        let signer = try TeamIdentity(secret: Data((0..<32).map { UInt8($0) }))
+        XCTAssertEqual(signer.keys.kid, "bb72zz6jmhct6ki7qizbwlt74m")
+        XCTAssertEqual(signer.keys.enc, "VSh04Y1J5bmVnKpmZpFFCXeCgXKi7vLdhANqP91rD1Q=")
+        XCTAssertEqual(signer.keys.sig, "z99uY2cGfaoiVpCEuFuCMknko3pCpdqwVGKT1tIH4TY=")
+
+        let other = try TeamIdentity(secret: Data(repeating: 1, count: 32))
+        XCTAssertEqual(other.keys.kid, "k3kg6j352ludi4gkj5x7bykcwa")
+        let roster = TeamRoster(id: "team-fixture", name: "P\u{e2}paya \u{1F348}", createdAt: 1_700_000_000,
+                                leaders: [TeamRoster.Member(keys: signer.keys, name: "Loc",
+                                                            since: 1_700_000_000, founder: true)],
+                                members: [TeamRoster.Member(keys: other.keys, name: "Bo", since: 1_700_000_100,
+                                                            devices: ["Mac"],
+                                                            sharesTo: ["stats": .team,
+                                                                       "transcripts": .members(["k1"])])],
+                                rev: 7)
+        // The bytes every signature is computed over.
+        XCTAssertEqual(String(decoding: try CanonicalJSON.encode(roster), as: UTF8.self), #"{"createdAt":1700000000,"id":"team-fixture","leaders":[{"devices":[],"founder":true,"keys":{"enc":"VSh04Y1J5bmVnKpmZpFFCXeCgXKi7vLdhANqP91rD1Q=","kid":"bb72zz6jmhct6ki7qizbwlt74m","sig":"z99uY2cGfaoiVpCEuFuCMknko3pCpdqwVGKT1tIH4TY="},"name":"Loc","sharesTo":{},"since":1700000000}],"members":[{"devices":["Mac"],"founder":false,"keys":{"enc":"9CVWEHrQ5Bio0O1NmD8r+CUV/VoVpVu32YhmWcu7QVA=","kid":"k3kg6j352ludi4gkj5x7bykcwa","sig":"a/dzIb+R5fSo4Nqf4BYis9T6ntm5bpCt+VsOsqdB6iY="},"name":"Bo","sharesTo":{"stats":"team","transcripts":["k1"]},"since":1700000100}],"name":"Pâpaya 🍈","policy":{"membersSeeEachOther":false,"requests":"code"},"removed":[],"rev":7,"schema":1}"#)
+
+        // One whole Signed<TeamRoster>, recorded from this identity: it must
+        // decode, re-encode to the same bytes and verify. CryptoKit adds
+        // randomness to Ed25519, so a fresh signature over the same document
+        // differs every time and cannot itself be pinned.
+        let pinned = #"{"by":"bb72zz6jmhct6ki7qizbwlt74m","doc":{"createdAt":1700000000,"id":"team-fixture","leaders":[{"devices":[],"founder":true,"keys":{"enc":"VSh04Y1J5bmVnKpmZpFFCXeCgXKi7vLdhANqP91rD1Q=","kid":"bb72zz6jmhct6ki7qizbwlt74m","sig":"z99uY2cGfaoiVpCEuFuCMknko3pCpdqwVGKT1tIH4TY="},"name":"Loc","sharesTo":{},"since":1700000000}],"members":[{"devices":["Mac"],"founder":false,"keys":{"enc":"9CVWEHrQ5Bio0O1NmD8r+CUV/VoVpVu32YhmWcu7QVA=","kid":"k3kg6j352ludi4gkj5x7bykcwa","sig":"a/dzIb+R5fSo4Nqf4BYis9T6ntm5bpCt+VsOsqdB6iY="},"name":"Bo","sharesTo":{"stats":"team","transcripts":["k1"]},"since":1700000100}],"name":"Pâpaya 🍈","policy":{"membersSeeEachOther":false,"requests":"code"},"removed":[],"rev":7,"schema":1},"sig":"ekDvZ/pZoJOxP8HZRSNyQHnhF1p8vLjnSMfg1PFtrrbUZi5o7M5lnDz6vNVmIMVYuKbjROBnxvvyn00Jlkf+Dw=="}"#
+        let signed = try CanonicalJSON.decode(Signed<TeamRoster>.self, from: Data(pinned.utf8))
+        XCTAssertEqual(signed.doc, roster)
+        XCTAssertEqual(String(decoding: try CanonicalJSON.encode(signed), as: UTF8.self), pinned)
+        XCTAssertNoThrow(try signed.verify(with: signer.keys))
+        // And a signature made now over the same document verifies too.
+        XCTAssertNoThrow(try Signed.make(roster, by: signer).verify(with: signer.keys))
+    }
 }
