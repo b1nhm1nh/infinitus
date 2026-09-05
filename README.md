@@ -89,145 +89,48 @@ to drive the running app.
 
 ## Features
 
-- **Menu bar usage** — active account name plus 5h/weekly percentages
-  in the bar (used or remaining, your pick) and when the fuller window
-  resets (`↺2h14m`, a clock time, or off), glyph-only mode too.
-- **One account, one card** — a single account gets a card with big
-  gauges and full reset text instead of a fleet grid, plus a one-line
-  case for a second account with the sign-in a click away; two accounts
-  keep the grid.
-- **Every account at a glance** — live 5-hour / weekly / per-model
-  gauges for the whole fleet, pace markers when a window is burning
-  faster than time passes, reset countdowns, dead rows with the cause.
-- **Auto-switch aware** — the next-candidate pick, a themed marker on
-  the active account, switch history, a celebration sweep on every
-  switch (and a death beat when an account runs out).
-- **Themes** — RPG (HP/MP + gold), Movie, Hades, Metal Gear, AI
-  Agentic, Classic SWE, Sci-Fi, Wild West, Cyberpunk, Gothic, Musical,
-  Planet Earth, Cosmos, Ocean, or plain numbers; a Themes settings pane
-  with card grid, your own skins via `themes.json`, and a community
-  gallery. On the phone the theme names the tabs and every session's
-  status word too.
-- **Glass popup** — real backdrop blur in every focus state, with a
-  transparency dial; a launch intro (slides, bar fill-up, title
-  flourish — all tunable in the debug pane).
-- **Right-click menu** on the bar icon — themes, rotate, refresh,
-  pin, pop out, settings, restart, quit; pairs with a setting that
-  hides the popup's buttons but keeps the status chips.
-- **Sessions & status chips** — live Claude Code session counter
-  (busy/idle breakdown), engine status, auto-mode indicator.
-- **Resume nudges** (opt-in) — when the account you're on can work
-  again, sessions a usage limit stopped get a short "continue" message
-  typed into their terminal (cmux, tmux, herdr) or sent over Claude
-  Code's peer socket; optional `/rc` re-arm after every switch.
-- **Cost estimates** — 7-day per-account API-list-price estimates
-  (estimates, never billing truth).
-- **iCloud settings sync** + file export/import (never credentials).
-- **Push notifications** — switch/limit events to Slack, Discord,
-  Telegram or a webhook; secrets travel over stdin, shown masked.
-- **Pop-out window, compact mode, three layouts (wide rows, stacked
-  cards, horizontal cards), popup scaling** — the pop-out remembers
-  its spot across restarts.
-- **Sessions by name** — Claude Code's session names (`/rename`) label
-  the session rows on the Mac and the phone, with branch, model, kind
-  and output size alongside; "waiting on you" pushes once per session
-  that stops for an answer.
-- **Phone companion, four ways in** — the iOS app reaches this Mac over
-  Wi-Fi (Bonjour), Tailscale, your own Cloudflare tunnel hostname, or a
-  free quick tunnel; one QR carries every route and the pairing token.
-  A quick tunnel's throwaway URL is published to infinitus.run under a
-  hash of the token, so the phone finds the new address after a restart
-  instead of rescanning. The Sync pane lists connected devices with
-  their route and last-seen time.
-- **Session chat from the phone** — each session's transcript as a chat
-  (markdown replies, tool runs collapsed into one chip, sub-agent cards,
-  mid-turn prompts), long-polled so replies stream in; answer questions
-  and permission prompts, type a reply, attach photos (library or
-  camera) and files — delivered over Claude Code's peer socket or into
-  the terminal. Tap the header for the account behind the session and
-  its limits (CLIProxyAPI included). Any app's Share sheet → Infinitus
-  sends images, files, a link or text into a session with a note, no
-  app switch — your sessions sit in the sheet's suggestions row.
-- **Start a session from the phone** — + on the Quests tab: a
-  repository, the engine, a first prompt; the Mac opens a cmux
-  workspace or a Terminal window and the chat follows. Siri:
-  "Start a session in Infinitus".
-- **Widgets in your theme** — home-screen and lock-screen widgets show
-  the active account's windows as the theme names and colors them
-  (MP / HP / Dragon under the RPG theme), what's waiting on you, and the
-  revival countdown when every account is limited.
-- **AWS sign-in from the phone** — a session that hits an expired
-  `aws login` shows up on the Mac and the phone; the phone runs the
-  login on the Mac and opens the AWS page in Safari (passkeys work),
-  the code pastes back, and the session gets "completed, retry and
-  continue". Nothing is logged or stored; Infinitus never reads the
-  AWS credential caches.
-- **Three engines** — cswap, CLIProxyAPI and 9Router (every provider
-  it knows: Claude, Kiro credits, Codex, Gemini) as stacked fleets with
-  aligned columns; policy stays in each engine, the app sets its knobs.
-- **"At this pace"** — measured burn per window, when each runs out,
-  when the fleet is out, a full per-account forecast dashboard, and a
-  plain-words battle plan for the next reset.
-- **Stats** — commits, lines, PRs, messages (keyboard, phone, agents),
-  sessions, tool calls, time spent waiting on you, switches and limits,
-  cost — today, this week, month or year, each with its trend. On the
-  phone and the wall too. Since 0.4.3 it also shows where the effort
-  went — minutes, tokens and spend per activity (review, tests, plan,
-  debugging, browser, simulator, explanations, coding), per model, per
-  engine (Claude Code and Codex CLI transcripts are both read) and per
-  effort setting — plus a tokens/min record book: every day's peak
-  minute, the all-time best and the days it fell, a 30-day sparkline
-  and a week-over-week trend.
-- **Sessions, named and narrated** — sessions you haven't named get a
-  title from Claude Haiku and keep it fresh as the work moves; the
-  phone opens on what's waiting for you, with a Continue button for a
-  session a limit or a crash stopped.
-- **A Claude Code plugin** — `infinitusctl plugin install` adds hooks
-  that tell the Mac app the moment a session needs you or ends a turn,
-  so the phone gets the permission or question at once instead of at
-  the next poll; the hooks never block a session. Its MCP server gives
-  every session `fleet_status`, `list_sessions` and `session_message`
-  (text to another live session by name), and `/infinitus:status`
-  answers "how are the accounts doing" from them.
-  With the plugin installed, "Allow for this session" on the phone's
-  permission card skips that tool's prompt for the rest of the session.
-- **Capture the desktop into a session** — Capture Screen for a
-  Session… in the menu-bar menu: a region or window, a session, a note,
-  delivered like a phone message.
-- **Dictate in any language** — the phone's mic takes Vietnamese (or
-  anything Apple's recognizer knows), translates on the phone into an
-  editable English draft or sends it as spoken with an English-reply
-  note, and is handed the session's own terms so "commit" and file
-  names survive.
-- **All accounts limited, handled** — a floating countdown to the first
-  account back, the sessions waiting to resume counted, and nothing
-  shown while the account you're on is still fine.
-- **Share → Infinitus from any app** — images, files, a link or text go
-  into a session with a note, picked from the Mac's live list, without
-  opening the app; your sessions sit in the share sheet's suggestions
-  row. Your own turns render Markdown, and a message from another
-  session shows as "Message from @name".
-- **Chat headers in three styles** — compact, a stat strip with mini
-  gauges, or Game HUD: a ringed portrait with the level on its rim, a
-  name plate, HP/MP-style bars and a buff square per model, all in the
-  theme's colors (Settings › Appearance › Chat header previews each).
-- **Live Activities that keep moving** — with an APNs key on the Mac
-  (Settings › Devices) the lock-screen countdown and the working card
-  update with the phone app closed; the app icon follows the theme.
-- **Crash reports, on-device** — the phone app and the Mac app record
-  their own crashes into Settings; nothing leaves your machine, and any
-  report can go into a session's chat for triage.
-- **Randomize names** — every account gets a fresh name from the
-  theme's pool (Settings › Accounts, or `infinitusctl randomize-names`).
-- **Team (preview)** — `infinitusctl team` creates a team on any git
-  remote and exchanges end-to-end encrypted files between members.
-- **`infinitusctl`** — an agent-facing control CLI over a same-user
-  socket: status, fleets, switch/rotate/hold/rename/prefer/reorder,
-  proxy settings, AWS logins, stats, windows and perf probes; the same
-  calls the panes make. An onboarding "Copy for an AI agent" brief and
-  `docs/guides/agent-setup.md` walk a coding agent through the whole
-  setup (engine, accounts, proxy, phone).
-- **Machine guardian** — Settings › Machine: load, swap, stuck hooks by tool, runaway processes by session, temp/socket residue; kill, reclaim and disable a tool's hooks after a confirm; `infinitusctl machine --json`.
+One line per feature; the site and the CHANGELOG carry the detail.
+
+- **Menu bar usage** — the active account with its 5h and weekly percentages (used or remaining), the next reset, or glyph-only.
+- **One account, one card** — a single account gets big gauges and full reset text; two or more get the grid.
+- **Every account at a glance** — live 5-hour, weekly and per-model gauges, pace markers, reset countdowns, dead rows with the cause.
+- **Auto-switch aware** — the next-candidate pick, a themed marker on the active account, switch history, a sweep on every switch.
+- **Themes** — RPG, Movie, Hades, Metal Gear, Sci-Fi, Cyberpunk, Ocean and more, your own via `themes.json`, a community gallery; the phone follows.
+- **Themed menu bar** — the loop in the theme's color with its icon, a glow on switch, death and revival, an ember breath while burning ahead of pace.
+- **Glass popup** — real backdrop blur in every focus state with a transparency dial, and a launch intro.
+- **Right-click menu** on the bar icon — themes, rotate, refresh, capture, pin, pop out, settings, restart, quit.
+- **Sessions & status chips** — the live Claude Code session count with its busy/idle split, engine status, auto-mode.
+- **Resume nudges** (opt-in) — sessions a limit stopped get a "continue" typed into their terminal or sent over the peer socket once an account works again.
+- **Revival probes** — when a countdown ends the Mac asks the engine again at once, and "<account> is back" says so, flagged when Anthropic reset early.
+- **Cost estimates** — 7-day per-account API-list-price estimates, never billing truth.
+- **iCloud settings sync** and file export/import, never credentials.
+- **Push notifications** — switch and limit events to Slack, Discord, Telegram or a webhook; secrets over stdin, shown masked.
+- **Pop-out window, compact mode, three layouts, popup scaling** — the pop-out remembers its spot.
+- **Sessions by name** — `/rename` names label the rows on the Mac and the phone, with branch, model, kind and output size.
+- **Phone companion, four ways in** — Wi-Fi (Bonjour), Tailscale, your own Cloudflare tunnel or a free quick tunnel; one QR carries every route.
+- **Session chat from the phone** — each transcript as a chat with markdown, tool chips and sub-agent cards; reply, attach photos and files, answer prompts.
+- **Allow for this session** — the phone's permission card can allow a tool for the rest of the session; with the plugin, that prompt never comes back.
+- **Start a session from the phone** — a repository, the engine, a first prompt; the Mac opens cmux or Terminal and the chat follows. Siri too.
+- **Widgets in your theme** — home and lock-screen widgets show the active account's windows, what's waiting, and the revival countdown.
+- **AWS sign-in from the phone** — an expired `aws login` shows up on both, the phone runs it with passkeys, and the session is told to continue.
+- **Three engines** — cswap, CLIProxyAPI and 9Router as stacked fleets; policy stays in each engine, the app sets its knobs.
+- **"At this pace"** — measured burn per window, when each runs out, a per-account forecast and a plain-words plan for the next reset.
+- **Stats** — commits, lines, PRs, messages, sessions, tool calls, waiting time, switches, cost; effort per activity, model, engine and effort setting; tokens/min records.
+- **Sessions, named and narrated** — unnamed sessions get a Haiku title that follows the work; the phone opens on what's waiting, with Continue.
+- **A Claude Code plugin** — `infinitusctl plugin install`: hooks that reach the phone the moment a session needs you, an MCP server (`fleet_status`, `list_sessions`, `session_message`), `/infinitus:status` and `/infinitus:handoff`.
+- **This Mac's name** — Settings › Devices names the Mac for the phone, widgets and crash reports; the default drops macOS's "(7)" suffix.
+- **Machine guardian** — Settings › Machine: load, swap, stuck hooks by tool, runaway processes by session, temp/socket residue; kill, reclaim and park a tool's hooks after a confirm; `infinitusctl machine`.
+- **Capture the desktop into a session** — a region or window, a session, a note, delivered like a phone message.
+- **Dictate in any language** — Vietnamese in, an editable English draft out, with the session's own terms taught to the recognizer.
+- **All accounts limited, handled** — a floating countdown to the first account back and the sessions waiting to resume.
+- **Share → Infinitus from any app** — images, files, a link or text into a session with a note; your sessions sit in the share sheet's suggestions.
+- **Chat headers in three styles** — compact, a stat strip, or Game HUD with a ringed portrait and HP/MP-style bars in the theme's colors.
+- **Live Activities that keep moving** — with an APNs key the lock-screen countdown and working card update with the app closed; the icon follows the theme.
+- **Reset and swap alarms on the phone** — local notifications ten minutes before an exhausted account's reset and when a swap is near.
+- **Crash reports, on-device** — both apps record their own crashes; any report can go into a session's chat for triage.
+- **Randomize names** — every account gets a fresh name from the theme's pool.
+- **Team (preview)** — `infinitusctl team` creates a team on any git remote and exchanges end-to-end encrypted files between members.
+- **`infinitusctl`** — an agent-facing control CLI: status, fleets, sessions, send, switch, hold, rename, proxy, AWS logins, stats, perf; plus an agent-setup guide.
 
 ## Privacy
 
