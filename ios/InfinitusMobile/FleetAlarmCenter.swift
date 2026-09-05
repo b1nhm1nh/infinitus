@@ -5,7 +5,7 @@ import UserNotifications
 /// Schedules `FleetAlarms` as local notifications (#86): the reset alarms
 /// are re-planned on every snapshot — pending requests replaced only when
 /// the plan changes — and the swap banner posts at once. Off in Settings
-/// clears the pending ones on the next snapshot. When the Mac pushes its
+/// clears the pending ones right away. When the Mac pushes its
 /// alerts over APNs and this phone registered for them, the swap arrives
 /// from the Mac instead, so the local one is skipped.
 @MainActor
@@ -43,6 +43,13 @@ final class FleetAlarmCenter {
                                              content: content(alarm), trigger: trigger))
         }
         planned = plan
+    }
+
+    /// The toggle going off: nothing pending may fire before the next snapshot.
+    func clearPending() {
+        UNUserNotificationCenter.current()
+            .removePendingNotificationRequests(withIdentifiers: planned.keys.map { Self.prefix + $0 })
+        planned = [:]
     }
 
     private static let prefix = "fleet-alarm-"

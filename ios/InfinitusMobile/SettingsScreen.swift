@@ -152,6 +152,9 @@ struct SettingsForm: View {
                     .font(.caption).foregroundStyle(.secondary)
             }
         }
+        .onChange(of: fleetAlarms) { _, on in
+            if !on { FleetAlarmCenter.shared.clearPending() }
+        }
         .sheet(isPresented: $scanning) {
             PairScannerSheet { payload in
                 if model.applyPairing(payload) { paired = true }
