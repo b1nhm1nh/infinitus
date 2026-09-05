@@ -32,7 +32,9 @@ struct StatsScreen: View {
                     }
                 }
                 effortSection("Where the effort went", Stats.Presentation.activityRows(s))
-                effortSection("By model", Stats.Presentation.modelRows(s), footer: Stats.Presentation.activityFootnote)
+                effortSection("By model", Stats.Presentation.modelRows(s))
+                effortSection("By engine", Stats.Presentation.engineRows(s))
+                effortSection("By effort", Stats.Presentation.effortRows(s), footer: Stats.Presentation.activityFootnote)
                 Section("Rhythm") {
                     ForEach(Stats.Presentation.sessionLengthRows(s), id: \.label) { row in
                         LabeledContent(row.label, value: n(row.count))

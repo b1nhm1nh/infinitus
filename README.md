@@ -164,7 +164,9 @@ to drive the running app.
   cost — today, this week, month or year, each with its trend. On the
   phone and the wall too. Since 0.4.3 it also shows where the effort
   went — minutes, tokens and spend per activity (review, tests, plan,
-  debugging, browser, simulator, explanations, coding) and per model.
+  debugging, browser, simulator, explanations, coding), per model, per
+  engine (Claude Code and Codex CLI transcripts are both read) and per
+  effort setting.
 - **Sessions, named and narrated** — sessions you haven't named get a
   title from Claude Haiku and keep it fresh as the work moves; the
   phone opens on what's waiting for you, with a Continue button for a

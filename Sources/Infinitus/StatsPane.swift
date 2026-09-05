@@ -143,6 +143,8 @@ struct StatsPane: View {
         Section("Where the effort went") {
             rows("Activity", Stats.Presentation.activityRows(s))
             rows("Model", Stats.Presentation.modelRows(s))
+            rows("Engine", Stats.Presentation.engineRows(s))
+            rows("Effort", Stats.Presentation.effortRows(s))
             Text(Stats.Presentation.activityFootnote).font(.caption2).foregroundStyle(.tertiary)
         }
     }
