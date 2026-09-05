@@ -374,24 +374,20 @@ public enum SettingsShell {
                 { PlaceholderPane(descriptor: $0) }
             ),
             (
-                PaneDescriptor(id: "usage", title: "Usage", glyph: "\u{E9D2}", tintRGB: (46, 204, 113),
-                               keywords: ["spend", "cost", "tokens", "estimate"]),
-                { PlaceholderPane(descriptor: $0) }
+                UsagePane.descriptor,
+                { _ in UsagePane() }
             ),
             (
-                PaneDescriptor(id: "utilization", title: "Utilization", glyph: "\u{E9D9}", tintRGB: (26, 188, 156),
-                               keywords: ["history", "utilization", "waste", "window", "5h", "7d", "weekly", "chart", "over time"]),
-                { PlaceholderPane(descriptor: $0) }
+                UtilizationPane.descriptor,
+                { _ in UtilizationPane() }
             ),
             (
-                PaneDescriptor(id: "stats", title: "Stats", glyph: "\u{E9E9}", tintRGB: (108, 92, 231),
-                               keywords: ["stats", "metrics", "commits", "prs", "lines", "messages", "sessions", "week", "month", "year"]),
-                { PlaceholderPane(descriptor: $0) }
+                StatsPane.descriptor,
+                { _ in StatsPane() }
             ),
             (
-                PaneDescriptor(id: "activity", title: "Activity", glyph: "\u{E81C}", tintRGB: (0, 168, 150),
-                               keywords: ["history", "switches", "log", "events"]),
-                { PlaceholderPane(descriptor: $0) }
+                ActivityPane.descriptor,
+                { _ in ActivityPane() }
             ),
             (
                 PaneDescriptor(id: "devices", title: "Devices", glyph: "\u{E8EA}", tintRGB: (0, 184, 212),

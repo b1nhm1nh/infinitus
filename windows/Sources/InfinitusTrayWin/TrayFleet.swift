@@ -1,5 +1,6 @@
 import Foundation
 import InfinitusCore
+import InfinitusWinUI
 
 /// Account + usage lines for the Infinitus Windows tray.
 ///
@@ -199,12 +200,18 @@ enum TrayFleet {
         Thread.detachNewThread {
             let fresh = executeRead()
             lock.lock()
+            let prevAccounts = cachedList?.accounts ?? []
             if let fresh {
                 cachedList = fresh
             }
             cachedAt = Date()
             isRefreshing = false
             lock.unlock()
+
+            if let fresh {
+                WinUsageHistoryRecorder.record(accounts: fresh.accounts)
+                detectFleetEvents(previous: prevAccounts, current: fresh.accounts)
+            }
         }
     }
 
@@ -260,9 +267,47 @@ enum TrayFleet {
             } else {
                 outcome = switchTo(number)
             }
+            if case .switched(let n) = outcome {
+                let name = findAccountName(number: n) ?? "\(n)"
+                WinEventStore.append(StatsEvent(at: Date(), kind: "switch", icon: "arrow.left.arrow.right", text: "switched to \(name)"))
+            }
             invalidate()
             refresh(force: true)
             report(outcome.message)
+        }
+    }
+
+    private static func findAccountName(number: Int) -> String? {
+        lock.lock()
+        defer { lock.unlock() }
+        if let acc = cachedList?.accounts.first(where: { $0.number == number }) {
+            return acc.alias ?? acc.email.split(separator: "@").first.map(String.init)
+        }
+        return nil
+    }
+
+    private static func detectFleetEvents(previous: [Account], current: [Account]) {
+        guard !previous.isEmpty else { return }
+        let prevDead = Set(previous.filter { AccountVitals.isDead($0.usage) }.map(\.email))
+        let currDead = Set(current.filter { AccountVitals.isDead($0.usage) }.map(\.email))
+
+        let prevAllDead = !previous.isEmpty && prevDead.count == previous.count
+        let currAllDead = !current.isEmpty && currDead.count == current.count
+
+        for acc in current where currDead.contains(acc.email) && !prevDead.contains(acc.email) {
+            let name = acc.alias ?? (acc.email.split(separator: "@").first.map(String.init) ?? "account")
+            let resetText = acc.usage?.fiveHour?.resetsAt ?? acc.usage?.sevenDay?.resetsAt ?? ""
+            let timeStr = WeeklyRoll.parse(resetText).map { _ in ResetLabel.compact(resetsAt: resetText, countdown: nil, now: Date()) ?? "reset" } ?? "reset"
+            WinEventStore.append(StatsEvent(at: Date(), kind: "death", icon: "skull", text: "\(name) is out until \(timeStr)"))
+        }
+
+        for acc in current where !currDead.contains(acc.email) && prevDead.contains(acc.email) {
+            let name = acc.alias ?? (acc.email.split(separator: "@").first.map(String.init) ?? "account")
+            WinEventStore.append(StatsEvent(at: Date(), kind: "revival", icon: "sparkles", text: "\(name) is back"))
+        }
+
+        if currAllDead && !prevAllDead {
+            WinEventStore.append(StatsEvent(at: Date(), kind: "limit", icon: "exclamationmark.triangle", text: "all accounts are out of usage"))
         }
     }
 

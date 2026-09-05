@@ -301,6 +301,20 @@ public enum PaneHost {
             scrollByLines(hwnd, lines: lines)
             return 0
 
+        case WM_COMMAND, WM_NOTIFY, WM_DRAWITEM:
+            let parent = GetParent(hwnd)
+            if let parent {
+                return SendMessageW(parent, msg, wParam, lParam)
+            }
+            return 0
+
+        case WM_CTLCOLORSTATIC, WM_CTLCOLOREDIT, WM_CTLCOLORBTN, WM_CTLCOLORLISTBOX:
+            let parent = GetParent(hwnd)
+            if let parent {
+                return SendMessageW(parent, msg, wParam, lParam)
+            }
+            return DefWindowProcW(hwnd, msg, wParam, lParam)
+
         case WM_DESTROY:
             let ptr = GetWindowLongPtrW(hwnd, GWLP_USERDATA)
             if ptr != 0 {
@@ -432,6 +446,20 @@ public enum PaneControls {
             strWide.withUnsafeBufferPointer { buf in
                 SendMessageW(hwnd, UINT(CB_ADDSTRING), 0, LPARAM(UInt(bitPattern: buf.baseAddress)))
             }
+        }
+        return hwnd
+    }
+
+    public static func canvas(
+        in ctx: PaneContext, id: Int32,
+        x: Int32, y: Int32, w: Int32, h: Int32
+    ) -> HWND? {
+        let hwnd = staticClass.withUnsafeBufferPointer { sc in
+            CreateWindowExW(
+                0, sc.baseAddress, nil,
+                DWORD(WS_CHILD | WS_VISIBLE | SS_OWNERDRAW),
+                x, y, w, h, ctx.host, HMENU(bitPattern: Int(id)), ctx.instance, nil
+            )
         }
         return hwnd
     }
