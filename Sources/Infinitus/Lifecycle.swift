@@ -17,14 +17,15 @@ enum Lifecycle {
         NSSetUncaughtExceptionHandler { e in
             Lifecycle.log.fault("uncaught exception \(e.name.rawValue, privacy: .public): \(e.reason ?? "", privacy: .public)\n\(e.callStackSymbols.joined(separator: "\n"), privacy: .public)")
         }
-        // Off the main queue, so a hung main thread still dies on SIGTERM
-        // the way it did before — with one line left behind.
+        // Off the main queue, and `_exit` (no atexit handlers, no stdio
+        // flush, nothing that takes a lock), so a hung main thread still
+        // dies on SIGTERM the way it did before — with one line left behind.
         for sig in [SIGTERM, SIGINT, SIGHUP] {
             signal(sig, SIG_IGN)
             let source = DispatchSource.makeSignalSource(signal: sig, queue: .global())
             source.setEventHandler {
                 Lifecycle.log.notice("signal \(sig) — exiting")
-                exit(128 + sig)
+                _exit(128 + sig)
             }
             source.resume()
             sources.append(source)
