@@ -22,6 +22,10 @@ func teamUsage() -> String {
       member <kid> [--period day|week|month|year]  one member's Stats summary (default week)
       share <kind> leaders|team|<kid>[,<kid>…]     audience for stats|now|sessions|transcripts|crashes (new envelopes; see reshare)
       exclude <project-dir> [--off]                keep a Claude Code project private (local, never sent)
+      identity [show]                    this machine's identity kid
+      identity recovery --show           the recovery key (base32, 8 groups) — keep it offline
+      identity export [--out <file>]     passphrase on stdin (≥ 8 chars); the sealed file to --out (0600) or stdout
+      identity import <file> | --recovery [--replace]   passphrase or recovery key on stdin
       publish [--projects <dir>] [--days N]        publish stats, now, sessions, redacted transcripts, crashes (default 30 days)
       reshare [--days N]                           re-wrap the last N days (default 30) to the current audiences
       put --kind <k> --path <p> --file <f> [--audience leaders|team|<kid,kid>]   one opaque file (debugging)
@@ -61,7 +65,7 @@ func runTeam(_ args: [String]) -> Int32 {
     }
     var positional: [String] = []
     var options: [String: String] = [:]
-    let bareFlags: Set<String> = ["off"]
+    let bareFlags: Set<String> = ["off", "show", "replace", "recovery"]
     var flags: Set<String> = []
     var i = 1
     while i < args.count {
@@ -86,7 +90,8 @@ func runTeam(_ args: [String]) -> Int32 {
     // setting, read from its prefs domain. Linux is open until its
     // passphrase lock ships; INFINITUS_LOCK_GATE=open is the CI/dev hatch
     // (TeamGate.swift).
-    if ["create", "request", "approve"].contains(sub),
+    if (["create", "request", "approve"].contains(sub)
+        || (sub == "identity" && ["recovery", "export"].contains(positional.first ?? ""))),
        case .needsLock(let why) = TeamGate.check(lockEnabled: LockSetting.enabledOnThisMachine()) {
         return fail("\(why) (Infinitus › Settings › Lock)")
     }
@@ -241,6 +246,55 @@ func runTeam(_ args: [String]) -> Int32 {
                 return fail("nothing readable from \(kid)")
             }
             emit(summary.compacted())
+        case "identity":
+            // Spec §2.1: the local identity's kid, its recovery key, and a
+            // passphrase-sealed export/import. Passphrases and keys come on
+            // stdin (never argv); the secret is printed only as the
+            // recovery key, on an explicit --show.
+            let what = positional.first ?? "show"
+            func stdinLine() -> String {
+                String(decoding: FileHandle.standardInput.readDataToEndOfFile(), as: UTF8.self)
+                    .split(separator: "\n", maxSplits: 1, omittingEmptySubsequences: false).first.map(String.init)?
+                    .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            }
+            switch what {
+            case "show":
+                emit(["kid": try TeamClient.identity(paths: paths, secrets: secrets).kid])
+            case "recovery":
+                guard flags.contains("show") else { return fail("team identity recovery --show prints the key: keep it offline", code: 2) }
+                let me = try TeamClient.identity(paths: paths, secrets: secrets)
+                emit(["kid": me.kid, "recoveryKey": RecoveryKey.encode(me.secret)])
+            case "export":
+                let passphrase = stdinLine()
+                guard passphrase.count >= 8 else { return fail("passphrase on stdin, at least 8 characters", code: 2) }
+                let me = try TeamClient.identity(paths: paths, secrets: secrets)
+                let file = try TeamIdentityExport.export(secret: me.secret, passphrase: passphrase)
+                if let out = options["out"] {
+                    let url = URL(fileURLWithPath: out)
+                    try file.write(to: url)
+                    try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
+                    emit(["kid": me.kid, "out": url.path])
+                } else {
+                    print(String(decoding: file, as: UTF8.self))
+                }
+            case "import":
+                if secrets.read(TeamClient.identitySecretName) != nil, !flags.contains("replace") {
+                    return fail("an identity exists; pass --replace to overwrite it (teams that approved the old kid must re-approve)", code: 2)
+                }
+                let secret: Data
+                if flags.contains("recovery") {
+                    guard let s = RecoveryKey.decode(stdinLine()) else { return fail("that is not a recovery key", code: 2) }
+                    secret = s
+                } else {
+                    guard positional.count >= 2 else { return fail(teamUsage(), code: 2) }
+                    let file = try Data(contentsOf: URL(fileURLWithPath: positional[1]))
+                    secret = try TeamIdentityExport.import(file, passphrase: stdinLine())
+                }
+                try secrets.write(TeamClient.identitySecretName, secret)
+                emit(["kid": try TeamIdentity(secret: secret).kid])
+            default:
+                return fail(teamUsage(), code: 2)
+            }
         case "publish":
             let c = try client(); _ = try c.fetch()
             let claudeDir = ClaudeSessions.configHome()
