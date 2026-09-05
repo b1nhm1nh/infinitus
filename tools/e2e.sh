@@ -42,6 +42,9 @@ SOCKDIR="/tmp/infinitus-e2e-$$"; mkdir -p "$SOCKDIR"
 export INFINITUS_CONTROL_SOCKET="$SOCKDIR/control.sock"
 export INFINITUS_CSWAP="$PWD/tools/demo-cswap"
 export INFINITUS_DEMO_STATE="$SOCKDIR/demo-state.json"   # not $TMPDIR: the bundled app in mock mode shares that one
+# The team gate (spec §2.2) needs the biometric lock on; CI cannot answer
+# a Touch ID prompt, so the gate is opened for this run (TeamGate.swift).
+export INFINITUS_LOCK_GATE=open
 LOG="$(mktemp -t infinitus-e2e)"
 DOMAIN=Infinitus   # the unbundled debug binary's defaults domain
 
@@ -161,6 +164,7 @@ echo "app up after ${i}s"
 
 # --- functional ---------------------------------------------------------
 "$CTL" manifest | json "len(d['commands'])" | grep -qE '^[1-9][0-9]*$' || fail "manifest empty"
+"$CTL" lock-status | expect "d['enabled'] is False and d['locked'] is False and d['relock']=='1 h'" || fail "biometric lock must default to off, unlocked, re-lock 1 h"
 "$CTL" status | json "d['engines']['cswap']['registered']" | grep -q True || fail "cswap not registered"
 sleep 4   # first demo snapshot
 N="$("$CTL" fleets | json "sum(len(f['accounts']) for f in d)")"

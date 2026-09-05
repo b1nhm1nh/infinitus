@@ -96,6 +96,7 @@ publishes the matching section as the GitHub release body.
 
 ### Team (preview)
 - `infinitusctl team` creates a team on any git remote and exchanges end-to-end encrypted files between members (create, code, request, approve, publish, read).
+- Settings › Lock puts the pop-out and Settings behind Touch ID (password fallback), re-locking at once, after 5 min, after 1 h or on sleep; teams need it on.
 - Members publish their stats, live state, session index, redacted transcripts and crash summaries to the audiences they pick, with per-project exclusions (`infinitusctl team share|exclude|publish|members|member`).
 
 ## 0.4.2

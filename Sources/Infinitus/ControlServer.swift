@@ -463,6 +463,14 @@ final class ControlServer {
                 "uptimeSeconds": .number(Date().timeIntervalSince(launchedAt)),
             ]))
 
+        case "lock-status":
+            let policy = model.lock.policy
+            return ControlReply(ok: true, result: .object([
+                "enabled": .bool(policy.enabled),
+                "locked": .bool(policy.locked),
+                "relock": .string(policy.relock.label),
+            ]))
+
         case "show":
             guard let controller = AppDelegate.shared?.statusHolder?.controller else {
                 throw Fail("no status item yet")

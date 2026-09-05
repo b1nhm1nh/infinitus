@@ -535,6 +535,8 @@ final class AppModel: ObservableObject {
     let mirrorServer = MirrorServer()
     /// Agent CLI socket (ControlServer.swift); the real model only.
     private(set) lazy var controlServer = ControlServer(model: self)
+    /// The biometric lock (LockModel.swift); the surfaces and the Lock pane read it.
+    private(set) lazy var lock = LockModel(defaults: defaults)
     let quickTunnel = QuickTunnel()
     let namedTunnel = NamedTunnel()
     /// Live Activity pushes to the phone (APNs), LiveActivityPusher.swift.
