@@ -123,6 +123,14 @@ struct DisplayPane: View {
             }
             .help("The phone's + button opens a terminal here running the engine "
                   + "in the repository you picked; takes effect at the next launch.")
+            Toggle("Menu bar follows the theme", isOn: $model.menuBarThemed)
+                .help("The loop in the theme's color with the theme's icon "
+                      + "beside it; off, or the Off theme, keeps the plain loop.")
+            Toggle("Menu bar effects", isOn: $model.menuBarEffects)
+                .help("A glow on the item when an account switches, dies or "
+                      + "revives, and an ember breath while the active account "
+                      + "burns ahead of pace. Core Animation only — no idle cost.")
+                .disabled(!model.menuBarThemed)
             Toggle("Show menu bar icon", isOn: $model.menuBarIconShown)
                 .help("Hide lasts until quit — it always returns on the next "
                       + "launch, so the app can never strand itself with no UI.")
