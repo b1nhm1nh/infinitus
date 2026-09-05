@@ -56,8 +56,18 @@ final class MirrorModel: ObservableObject, FleetModel {
     // MARK: display prefs — Follow Mac, or local overrides
 
     /// Default ON: the phone is a mirror first (#9 phase C1).
-    @Published var followMac: Bool { didSet { defaults.set(followMac, forKey: "follow_mac") } }
-    @Published var localThemeID: String { didSet { defaults.set(localThemeID, forKey: "gamification_style") } }
+    @Published var followMac: Bool {
+        didSet {
+            defaults.set(followMac, forKey: "follow_mac")
+            AppIcons.follow(themeID: rowTheme.id)
+        }
+    }
+    @Published var localThemeID: String {
+        didSet {
+            defaults.set(localThemeID, forKey: "gamification_style")
+            AppIcons.follow(themeID: rowTheme.id)
+        }
+    }
     @Published var localCompactRows: Bool { didSet { defaults.set(localCompactRows, forKey: "compact_rows") } }
     @Published var localBurnStyle: String { didSet { defaults.set(localBurnStyle, forKey: "burn_style") } }
     @Published var localIntroStyle: String { didSet { defaults.set(localIntroStyle, forKey: "intro_style") } }
@@ -202,6 +212,7 @@ final class MirrorModel: ObservableObject, FleetModel {
             ShareBridge.publish(defaults)
             ShareSuggestions.sync(sessions: liveSessions?.sessions ?? [],
                                   name: { sessionProgress.byPid[$0]?.name }, theme: rowTheme)
+            AppIcons.follow(themeID: rowTheme.id)
             sessionProgress.apply(snapshot.progressByPid ?? [:], tokenRate: snapshot.tokenRate)
             let firstLoad = reconcile(engineFleets)
             error = nil
