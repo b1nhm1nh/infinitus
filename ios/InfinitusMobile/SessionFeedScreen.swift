@@ -211,9 +211,7 @@ struct SessionFeedScreen: View {
                 VStack(spacing: 0) {
                     ChatHeaderView(style: headerStyle, theme: theme, data: headerData,
                                    route: SessionDetailRoute(session: session),
-                                   onBack: { dismiss() },
-                                   onScreenshot: { stageAppScreenshot() },
-                                   screenshotDisabled: sendingMessage)
+                                   onBack: { dismiss() })
                 }
                 .background(theme.plain ? Color.clear : ThemeColor.flash(theme).opacity(0.16))
                 .background(.bar)
@@ -545,7 +543,7 @@ struct SessionFeedScreen: View {
                         .padding(.horizontal)
                 }
             }
-            HStack(spacing: 8) {
+            HStack(spacing: 2) {
                 Menu {
                     // A PhotosPicker inside a Menu never presents (the menu
                     // dismisses first — user 2026-09-03 "Choose library
@@ -555,9 +553,6 @@ struct SessionFeedScreen: View {
                         Button { showCamera = true } label: {
                             Label("Take Photo", systemImage: "camera")
                         }
-                    }
-                    Button { showPhotoPicker = true } label: {
-                        Label("Photo Library", systemImage: "photo.on.rectangle")
                     }
                     Button { showFileImporter = true } label: {
                         Label("Choose File", systemImage: "doc")
@@ -575,6 +570,22 @@ struct SessionFeedScreen: View {
                         .frame(width: 44, height: 44)
                 }
                 .accessibilityLabel("Attach")
+                .disabled(sendingMessage || attachments.count >= SessionInput.maxAttachments)
+                // The tool row left of the text (user 2026-09-05, with a
+                // Messenger composer as the reference: "Screencap icon:
+                // put on tool list left of chatbox"): a capture of this
+                // screen, then the photo library, each one tap.
+                Button { stageAppScreenshot() } label: {
+                    Image(systemName: "camera.viewfinder").font(.title2)
+                        .frame(width: 36, height: 44)
+                }
+                .accessibilityLabel("Attach a screenshot of this screen")
+                .disabled(sendingMessage || attachments.count >= SessionInput.maxAttachments)
+                Button { showPhotoPicker = true } label: {
+                    Image(systemName: "photo.on.rectangle").font(.title2)
+                        .frame(width: 36, height: 44)
+                }
+                .accessibilityLabel("Photo Library")
                 .disabled(sendingMessage || attachments.count >= SessionInput.maxAttachments)
                 ZStack(alignment: .topLeading) {
                     if draft.isEmpty {

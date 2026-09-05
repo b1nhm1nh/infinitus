@@ -78,8 +78,6 @@ struct ChatHeaderView: View {
     let data: ChatHeaderData
     var route: SessionDetailRoute? = nil
     var onBack: (() -> Void)? = nil
-    var onScreenshot: (() -> Void)? = nil
-    var screenshotDisabled = false
 
     var body: some View {
         switch style {
@@ -118,18 +116,6 @@ struct ChatHeaderView: View {
     /// One tap puts what's on screen into the composer as an attachment
     /// (user 2026-09-05: "put the captured in attachment instead of send
     /// immediately as I need to describe the request").
-    private var screenshotButton: some View {
-        Button { onScreenshot?() } label: {
-            Image(systemName: "camera.viewfinder")
-                .font(.title3)
-                .frame(width: 40, height: 40)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .disabled(screenshotDisabled)
-        .allowsHitTesting(onScreenshot != nil)
-        .accessibilityLabel("Attach a screenshot of this screen")
-    }
 
     private var statusWord: String { SessionWords.status(data.status, theme: theme) }
     private var statusColor: Color { SessionWords.color(data.status) }
@@ -141,7 +127,8 @@ struct ChatHeaderView: View {
 
     /// Back · avatar (the theme's glyph on its tint) · name, then the
     /// state and account on one caption line, then every window as
-    /// glyph + value on a third · camera.
+    /// glyph + value on a third.
+
     private var compact: some View {
         HStack(spacing: 8) {
             backButton
@@ -182,7 +169,6 @@ struct ChatHeaderView: View {
                 }
             }
             Spacer(minLength: 0)
-            screenshotButton
         }
         .padding(.leading, 4).padding(.trailing, 8).padding(.vertical, 6)
     }
@@ -213,7 +199,7 @@ struct ChatHeaderView: View {
 
     // MARK: option 2 — title row + stat strip
 
-    /// Back · name + state (the tap into the details) · camera.
+    /// Back · name + state (the tap into the details).
     private var titleRow: some View {
         HStack(spacing: 4) {
             backButton
@@ -242,7 +228,6 @@ struct ChatHeaderView: View {
                 }
             }
             Spacer(minLength: 0)
-            screenshotButton
         }
         .padding(.leading, 4).padding(.trailing, 8).padding(.top, 2)
     }
@@ -294,9 +279,7 @@ struct ChatHeaderView: View {
     private var portraitSize: CGFloat { 58 }
 
     private var hud: some View {
-        let bars = data.chips.filter { !$0.isModel }
-        let buffs = data.chips.filter(\.isModel)
-        return HStack(spacing: 2) {
+        HStack(spacing: 2) {
             backButton
             link {
                 ZStack(alignment: .leading) {
@@ -312,22 +295,15 @@ struct ChatHeaderView: View {
                                 .foregroundStyle(statusColor)
                                 .lineLimit(1)
                         }
-                        ForEach(bars) { chip in hudBar(chip) }
-                        if !buffs.isEmpty || data.accountName != nil {
-                            HStack(spacing: 4) {
-                                ScrollView(.horizontal, showsIndicators: false) {
-                                    HStack(spacing: 4) {
-                                        ForEach(buffs) { chip in hudBuff(chip) }
-                                    }
-                                }
-                                Spacer(minLength: 0)
-                                if let account = data.accountName {
-                                    Text(account)
-                                        .font(.system(size: 9, weight: .semibold))
-                                        .foregroundStyle(ink.opacity(0.7))
-                                        .lineLimit(1)
-                                }
-                            }
+                        // Every window is a bar, the models' too (user
+                        // 2026-09-05: "Dragon is a bar").
+                        ForEach(data.chips) { chip in hudBar(chip) }
+                        if let account = data.accountName {
+                            Text(account)
+                                .font(.system(size: 9, weight: .semibold))
+                                .foregroundStyle(ink.opacity(0.7))
+                                .lineLimit(1)
+                                .frame(maxWidth: .infinity, alignment: .trailing)
                         }
                     }
                     .padding(.leading, portraitSize / 2 + 8)
@@ -344,7 +320,6 @@ struct ChatHeaderView: View {
                 }
             }
             Spacer(minLength: 0)
-            screenshotButton
         }
         .padding(.leading, 4).padding(.trailing, 8).padding(.vertical, 6)
     }
@@ -430,19 +405,6 @@ struct ChatHeaderView: View {
         }
         .frame(height: 14)
         .animation(.easeOut(duration: 0.5), value: remaining)
-    }
-
-    /// A buff square: the model's name over what's left of its window.
-    private func hudBuff(_ chip: ChatHeaderData.WindowChip) -> some View {
-        VStack(spacing: 0) {
-            Text(chip.name).foregroundStyle(chip.color)
-            Text("\(Int(GaugeMath.remaining(usedPct: chip.window.pct)))%")
-                .monospacedDigit().foregroundStyle(ink)
-        }
-        .font(.system(size: 9, weight: .bold, design: .rounded)).lineLimit(1)
-        .padding(.horizontal, 5).padding(.vertical, 2)
-        .background(theme.plain ? Color.primary.opacity(0.1) : Color.black.opacity(0.7), in: RoundedRectangle(cornerRadius: 3))
-        .overlay(RoundedRectangle(cornerRadius: 3).stroke(ring.opacity(0.55), lineWidth: 1))
     }
 }
 
