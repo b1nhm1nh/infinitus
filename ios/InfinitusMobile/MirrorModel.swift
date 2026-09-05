@@ -75,8 +75,18 @@ final class MirrorModel: ObservableObject, FleetModel {
     // MARK: display prefs — Follow Mac, or local overrides
 
     /// Default ON: the phone is a mirror first (#9 phase C1).
-    @Published var followMac: Bool { didSet { defaults.set(followMac, forKey: "follow_mac") } }
-    @Published var localThemeID: String { didSet { defaults.set(localThemeID, forKey: "gamification_style") } }
+    @Published var followMac: Bool {
+        didSet {
+            defaults.set(followMac, forKey: "follow_mac")
+            AppIcons.follow(themeID: rowTheme.id)
+        }
+    }
+    @Published var localThemeID: String {
+        didSet {
+            defaults.set(localThemeID, forKey: "gamification_style")
+            AppIcons.follow(themeID: rowTheme.id)
+        }
+    }
     @Published var localCompactRows: Bool { didSet { defaults.set(localCompactRows, forKey: "compact_rows") } }
     @Published var localBurnStyle: String { didSet { defaults.set(localBurnStyle, forKey: "burn_style") } }
     @Published var localIntroStyle: String { didSet { defaults.set(localIntroStyle, forKey: "intro_style") } }
@@ -127,6 +137,9 @@ final class MirrorModel: ObservableObject, FleetModel {
         guard usesLAN, let first = hosts.first else { return }
         MirrorHostStore.update(first.id, defaults, change)
         hosts = MirrorHostStore.load(defaults)
+        // The share extension (#64) reads the pairing through the
+        // keychain — an edited route list or token must reach it.
+        ShareBridge.publish(host: hosts.first, defaults)
     }
 
     /// The host the facade reads — the one `primary` came from.
@@ -309,9 +322,22 @@ final class MirrorModel: ObservableObject, FleetModel {
         snapshot = primaryHostID.flatMap { snapshots[$0] }
         prefs = snapshot?.prefs
         error = decodeFailure
+        // The route that just answered is now the primary host's
+        // last-good one; the share extension (#64) reads the pairing
+        // through the keychain.
+        ShareBridge.publish(host: hosts.first { $0.id == primaryHostID } ?? hosts.first, defaults)
+        ShareSuggestions.sync(sessions: liveSessions?.sessions ?? [],
+                              name: { sessionProgress.byPid[$0]?.name }, theme: rowTheme)
+        AppIcons.follow(themeID: rowTheme.id)
+        AwsLoginAlerts.shared.sync(awsLogins)
+        if let fleet = primary {
+            FleetAlarmCenter.shared.sync(accounts: fleet.accounts, activeNumber: fleet.activeNumber,
+                                         macPushesAlerts: snapshot?.pushesAlerts ?? false)
+        }
         LiveActivities.shared.sync(
             fleet: primary, machine: snapshot?.machineName ?? "",
-            tokenRate: sessionProgress.tokenRate)
+            tokenRate: sessionProgress.tokenRate,
+            capturedAt: snapshot?.capturedAt ?? .distantPast)
         if firstLoad {
             DispatchQueue.main.async { self.replayIntro() }
         }
@@ -351,8 +377,17 @@ final class MirrorModel: ObservableObject, FleetModel {
         self.snapshot = snapshot
         prefs = snapshot.prefs
         error = nil
+        ShareSuggestions.sync(sessions: liveSessions?.sessions ?? [],
+                              name: { sessionProgress.byPid[$0]?.name }, theme: rowTheme)
+        AppIcons.follow(themeID: rowTheme.id)
+        AwsLoginAlerts.shared.sync(awsLogins)
+        if let fleet = primary {
+            FleetAlarmCenter.shared.sync(accounts: fleet.accounts, activeNumber: fleet.activeNumber,
+                                         macPushesAlerts: snapshot.pushesAlerts ?? false)
+        }
         LiveActivities.shared.sync(
-            fleet: primary, machine: snapshot.machineName, tokenRate: snapshot.tokenRate)
+            fleet: primary, machine: snapshot.machineName, tokenRate: snapshot.tokenRate,
+            capturedAt: snapshot.capturedAt)
         if firstLoad {
             DispatchQueue.main.async { self.replayIntro() }
         }
@@ -462,6 +497,17 @@ final class MirrorModel: ObservableObject, FleetModel {
     /// A screen asking the shell to switch tabs (the Fleet hero's
     /// sessions line, a Live Activity tap); RootView consumes it.
     @Published var requestedTab: String?
+    /// A shake's capture, with the session it's for; the Sessions tab
+    /// opens that feed and the feed moves it into its composer.
+    @Published var stagedCapture: StagedCapture?
+    /// The AWS login a tapped notification asks for; the Sessions tab
+    /// opens its sign-in sheet.
+    @Published var requestedAwsLogin: String?
+    /// A session just started from here (#91); the Sessions tab opens
+    /// its chat once the snapshot lists it.
+    @Published var requestedPid: Int?
+    /// Folders sessions have run in on the Mac, newest first.
+    var recentCwds: [String] { snapshot?.recentCwds ?? [] }
     func openForecast() { outlookShown = true }
     var switchFlashTick: Int { primary?.switchFlashTick ?? 0 }
     var deathTicks: [Int: Int] { primary?.deathTicks ?? [:] }
@@ -610,4 +656,12 @@ final class MobileUsage: ObservableObject, UsageSource {
         capturedAt = snapshot.capturedAt
         report = try? JSONDecoder().decode(UsageReport.self, from: data)
     }
+}
+
+/// What a shake produced and where it belongs (ShakeToSend →
+/// SessionsScreen → SessionFeedScreen's composer).
+struct StagedCapture: Identifiable {
+    let id = UUID()
+    let pid: Int
+    let image: UIImage
 }

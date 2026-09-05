@@ -69,7 +69,7 @@ final class LiveActivityPushTests: XCTestCase {
         XCTAssertEqual(LiveActivityPush.host(sandbox: true), "api.sandbox.push.apple.com")
         XCTAssertEqual(LiveActivityPush.url(token: "ab12", sandbox: false).absoluteString,
                        "https://api.push.apple.com/3/device/ab12")
-        XCTAssertEqual(LiveActivityPush.topic, "com.huuloc.infinitus.mobile.push-type.liveactivity")
+        XCTAssertEqual(LiveActivityPush.topic, "run.infinitus.mobile.push-type.liveactivity")
     }
 
     func testRegistrationSlotAndRoundTrip() throws {
@@ -149,5 +149,13 @@ final class LiveActivityBuilderTests: XCTestCase {
         XCTAssertTrue(LiveActivityBuilder.differs(a, b))
         b = a; b.busy = 2
         XCTAssertTrue(LiveActivityBuilder.differs(a, b))
+    }
+
+    func testDeadTokensIncludeTheOldBundleIdsRegistrations() {
+        XCTAssertTrue(LiveActivityPush.isDeadToken(status: 410, body: #"{"reason":"Unregistered"}"#))
+        XCTAssertTrue(LiveActivityPush.isDeadToken(status: 400, body: #"{"reason":"BadDeviceToken"}"#))
+        XCTAssertTrue(LiveActivityPush.isDeadToken(status: 400, body: #"{"reason":"DeviceTokenNotForTopic"}"#))
+        XCTAssertFalse(LiveActivityPush.isDeadToken(status: 403, body: #"{"reason":"InvalidProviderToken"}"#))
+        XCTAssertFalse(LiveActivityPush.isDeadToken(status: 200, body: ""))
     }
 }

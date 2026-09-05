@@ -109,6 +109,23 @@ final class PushTriggersTests: XCTestCase {
                       startedAt: 0)
     }
 
+    func testHookAnnouncedWaitingIsNotPushedAgainByThePoll() {
+        var t = PushTriggers()
+        let start = Date(timeIntervalSince1970: 1_000)
+        XCTAssertEqual(t.tick(busy: 1, total: 1, accounts: [], flags: all,
+                              sessions: [session(1, "busy")], now: start), [])
+        t.announceWaiting(pid: 1, now: start)
+        XCTAssertEqual(t.tick(busy: 0, total: 1, accounts: [], flags: all,
+                              sessions: [session(1, "waiting")], now: start.addingTimeInterval(5)), [])
+        // Answered, then a fresh prompt after the grace: the poll pushes again.
+        XCTAssertEqual(t.tick(busy: 1, total: 1, accounts: [], flags: all,
+                              sessions: [session(1, "busy")], now: start.addingTimeInterval(60)), [])
+        XCTAssertEqual(t.tick(busy: 0, total: 1, accounts: [], flags: all,
+                              sessions: [session(1, "waiting")],
+                              now: start.addingTimeInterval(PushTriggers.hookGrace + 61)),
+                       ["waiting on you — repo1 needs an answer"])
+    }
+
     func testWaitingFiresOncePerSessionAndRearmsWhenItLeavesWaiting() {
         var t = PushTriggers()
         XCTAssertEqual(t.tick(busy: 1, total: 2, accounts: [], flags: all,
@@ -163,6 +180,23 @@ final class PushTriggersTests: XCTestCase {
                               awsLogins: [need(3, "p", failedAt: now.addingTimeInterval(600))],
                               now: now.addingTimeInterval(660)),
                        ["needs AWS login — repo (p)"])
+    }
+
+    /// #98: the announced keys survive a relaunch — a fresh need already
+    /// pushed before the restart is not pushed again by the new instance,
+    /// and the set prunes to the current roster for the next persist.
+    func testAwsLoginKeysPersistAcrossARelaunch() {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        var first = PushTriggers()
+        let fresh = need(3, "p", failedAt: now.addingTimeInterval(-60))
+        XCTAssertEqual(first.tick(busy: 0, total: 1, accounts: [], flags: all,
+                                  awsLogins: [fresh], now: now).count, 1)
+        var relaunched = PushTriggers(announcedAwsLogins: first.announcedAwsLoginKeys)
+        XCTAssertEqual(relaunched.tick(busy: 0, total: 1, accounts: [], flags: all,
+                                       awsLogins: [fresh], now: now.addingTimeInterval(30)), [])
+        XCTAssertEqual(relaunched.tick(busy: 0, total: 1, accounts: [], flags: all,
+                                       awsLogins: [], now: now.addingTimeInterval(60)), [])
+        XCTAssertEqual(relaunched.announcedAwsLoginKeys, [])
     }
 
     func testAwsLoginNeedFiresOncePerSessionAndProfileAndRearms() {

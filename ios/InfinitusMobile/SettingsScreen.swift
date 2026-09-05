@@ -12,15 +12,12 @@ import InfinitusUI
 /// choices, same values and same labels.
 struct SettingsForm: View {
     @AppStorage("chat_header") private var chatHeader = "compact"
+    @AppStorage(FleetAlarmCenter.enabledKey) private var fleetAlarms = true
 
     @ObservedObject var model: MirrorModel
     /// The QR scanner (#9 remote access) is a sheet, not a screen: it
     /// exists for the ten seconds it takes to pair.
     @State private var scanning = false
-    /// Staged text for the "add an address" field — submitting it grows
-    /// the endpoint list rather than replacing it (#9 pair once, every
-    /// route).
-    @State private var newEndpoint = ""
     @State private var paired = false
 
     var body: some View {
@@ -87,10 +84,7 @@ struct SettingsForm: View {
             // The 1:1 Mac rendering isn't lost, just off by default
             // (#9 native shell): this flips the whole app back to it.
             Section("Appearance") {
-                Picker("Chat header", selection: $chatHeader) {
-                    Text("Compact").tag("compact")
-                    Text("Stat strip").tag("strip")
-                }
+                ChatHeaderPicker(selection: $chatHeader, theme: model.rowTheme)
                 Toggle("Show as Mac popup", isOn: $model.macPopupView)
                 Text("Renders the Mac popup itself — the same layout, "
                      + "chrome and scaling, on dark. Off is the native "
@@ -98,6 +92,17 @@ struct SettingsForm: View {
                      + "stacked cards and landscape the wide rows.")
                     .font(.caption).foregroundStyle(.secondary)
             }
+            Section("Notifications") {
+                Toggle("Reset and swap alerts", isOn: $fleetAlarms)
+                Text("From the phone itself, planned from the last snapshot: "
+                     + "an exhausted account's limit lifting in 10 minutes, "
+                     + "and the account the fleet just swapped to. Needs "
+                     + "nothing on the Mac.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+        }
+        .onChange(of: fleetAlarms) { _, on in
+            if !on { FleetAlarmCenter.shared.clearPending() }
         }
         .sheet(isPresented: $scanning) {
             PairScannerSheet { payload in

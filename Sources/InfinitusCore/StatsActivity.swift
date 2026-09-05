@@ -19,6 +19,10 @@ extension StatsScanner {
         /// The first rule-1 vote (`Stats.Activity.rawValue`); nil until
         /// a skill / sub-agent / tool says something.
         public var label: String?
+        /// Rule 0: what the person asked for, read off the message that
+        /// opened the stretch (`ActivitySignals.label(prompt:)`); nil
+        /// when the words carry no clear intent.
+        public var promptLabel: String?
         public var edits = 0
         public var testEdits = 0
         public var bash = 0
@@ -26,22 +30,29 @@ extension StatsScanner {
         public var endedInProse = false
         /// The model of the last usage-bearing entry; "" before one.
         public var model = ""
+        /// Its effort setting the same way ("unset" when the entry has none).
+        public var effort = ""
+        /// The transcript's engine — fixed for the file.
+        public var engine = Stats.Engine.claude.rawValue
         public var inputTokens = 0
         public var outputTokens = 0
         public var usd = 0.0
 
-        public init(dayKey: String, at t: Double) {
+        public init(dayKey: String, at t: Double, engine: Stats.Engine = .claude) {
             self.dayKey = dayKey
             startedAt = t
             lastAt = t
+            self.engine = engine.rawValue
         }
 
-        /// Spec rules, first match wins: a rule-1 label; every edit a
-        /// test file → tests, a mix → code; no edits and no commands
-        /// but a prose ending → explanation; something ran → code;
-        /// nothing at all (a read-only stretch cut short) → other.
+        /// Spec rules, first match wins: a rule-1 label; the person's
+        /// stated intent; every edit a test file → tests, a mix → code;
+        /// no edits and no commands but a prose ending → explanation;
+        /// something ran → code; nothing at all (a read-only stretch cut
+        /// short) → other.
         public var activity: Stats.Activity {
             if let label, let a = Stats.Activity(rawValue: label) { return a }
+            if let promptLabel, let a = Stats.Activity(rawValue: promptLabel) { return a }
             if edits > 0 { return testEdits == edits ? .tests : .code }
             if bash > 0 { return .code }
             return endedInProse ? .explanation : .other
@@ -90,6 +101,31 @@ extension StatsScanner {
             }
         }
 
+        /// Rule 0: the intent in the person's own words, checked in this
+        /// order so "review the plan" is a review and "plan the tests" a
+        /// plan. Only the opening 400 characters count — a pasted log
+        /// below the ask must not vote. Ground truth where the tools
+        /// are ambiguous ("debug the crash" is edits, not coding), and
+        /// the poll-free half of the plugin's UserPromptSubmit hook.
+        public static func label(prompt: String) -> Stats.Activity? {
+            let text = " " + prompt.prefix(400).lowercased()
+                .replacingOccurrences(of: "[^a-z0-9 ]+", with: " ", options: .regularExpression) + " "
+            for (activity, markers) in promptMarkers {
+                if markers.contains(where: { text.contains(" \($0) ") }) { return activity }
+            }
+            return nil
+        }
+
+        static let promptMarkers: [(Stats.Activity, [String])] = [
+            (.review, ["review", "code review", "critique", "audit", "look over", "second opinion"]),
+            (.plan, ["plan", "brainstorm", "design", "architecture", "spec", "propose", "options for"]),
+            (.tests, ["write tests", "add tests", "add a test", "unit tests", "unit test", "test coverage", "tests for", "spec for"]),
+            (.debug, ["debug", "fix the bug", "fix this bug", "crash", "crashes", "crashing", "failing", "broken", "doesn t work", "not working", "why does", "why is", "regression", "stack trace"]),
+            (.browser, ["browser", "chrome", "website", "web page", "webpage", "playwright", "the site"]),
+            (.simulator, ["simulator", "on the phone", "on my phone", "on device", "on the device"]),
+            (.explanation, ["explain", "what does", "what is", "how does", "how do", "walk me through", "describe", "summarize", "summarise"]),
+        ]
+
         static let simulatorMarkers = ["xcrun simctl", "simctl ", "platform=iOS Simulator", "devicectl", "adb "]
         static let reviewCommands = ["gh pr review", "gh pr diff"]
 
@@ -112,19 +148,42 @@ extension StatsScanner {
 
 extension Stats.Day {
     /// Fold a closed stretch in: its whole tally under its activity, and
-    /// its stretch count + wall time under its model. The model's
-    /// tokens/$ are NOT added here — `ingest` already charged them per
-    /// entry (that path also covers sub-agent files, which never form a
-    /// stretch).
+    /// its stretch count + wall time under its model, engine and effort.
+    /// Their tokens/$ are NOT added here — `ingest` already charged them
+    /// per entry (that path also covers sub-agent files, which never
+    /// form a stretch).
     public mutating func add(stretch s: StatsScanner.Stretch) {
         guard s.entries > 0 else { return }
         let t = s.tally
         activities[s.activity.rawValue] = (activities[s.activity.rawValue] ?? Stats.ActivityTally()) + t
-        guard !s.model.isEmpty else { return }
-        var m = byModel[s.model] ?? Stats.ActivityTally()
-        m.stretches += 1
-        m.seconds += t.seconds
-        byModel[s.model] = m
+        func count(_ table: inout [String: Stats.ActivityTally], _ key: String) {
+            guard !key.isEmpty else { return }
+            var m = table[key] ?? Stats.ActivityTally()
+            m.stretches += 1
+            m.seconds += t.seconds
+            table[key] = m
+        }
+        count(&byModel, s.model)
+        count(&byEngine, s.engine)
+        count(&byEffort, s.effort)
+    }
+
+    /// Tokens and $ of one usage-bearing entry, under every per-key
+    /// table at once (model, engine, effort) — the exact path, sub-agent
+    /// files included.
+    public mutating func charge(model: String, engine: String, effort: String,
+                                input: Int, output: Int, usd: Double) {
+        func add(_ table: inout [String: Stats.ActivityTally], _ key: String) {
+            guard !key.isEmpty else { return }
+            var m = table[key] ?? Stats.ActivityTally()
+            m.inputTokens += input
+            m.outputTokens += output
+            m.usd += usd
+            table[key] = m
+        }
+        add(&byModel, model)
+        add(&byEngine, engine)
+        add(&byEffort, effort)
     }
 }
 

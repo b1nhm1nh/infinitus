@@ -463,6 +463,24 @@ final class AppModel: ObservableObject {
     @Published var pushLastAlive: Bool { didSet { defaults.set(pushLastAlive, forKey: "push_last_alive") } }
     @Published var pushWaiting: Bool { didSet { defaults.set(pushWaiting, forKey: "push_waiting") } }
     @Published var pushAwsLogin: Bool { didSet { defaults.set(pushAwsLogin, forKey: "push_aws_login") } }
+    /// Settings › Sync "This Mac's name" (#99); empty follows the computer name.
+    @Published var machineNameOverride: String {
+        didSet {
+            defaults.set(machineNameOverride, forKey: MachineName.overrideKey)
+            guard machineNameOverride != oldValue else { return }
+            // The Bonjour service carries the name — re-advertise.
+            mirrorServer.stop()
+            applyMirrorLAN()
+        }
+    }
+    var machineName: String { MachineName.current(defaults: defaults) }
+    /// Where a session started from the phone opens (#91): "auto" (cmux
+    /// when installed, else Terminal), "cmux", "terminal".
+    @Published var sessionHost: String { didSet { defaults.set(sessionHost, forKey: "session_host") } }
+    /// The status item in the theme's color with the theme's icon (#90),
+    /// and its effects (switch/death/revival flash, the burn breath).
+    @Published var menuBarThemed: Bool { didSet { defaults.set(menuBarThemed, forKey: "menubar_themed") } }
+    @Published var menuBarEffects: Bool { didSet { defaults.set(menuBarEffects, forKey: "menubar_effects") } }
     // Phone companion (#9): serve the mirror snapshot over the LAN when
     // the Sync pane's toggle is on. Off by default — it's an open port.
     @Published var mirrorLANEnabled: Bool {
@@ -526,14 +544,90 @@ final class AppModel: ObservableObject {
 
     /// Every app notification: Notification Center here, and the same
     /// text to any phone that registered an alert token (issue #3).
+    /// Both push channels: the Mac notice (+ Live Activity alert) and the
+    /// engine's away-push. Text over stdin, matching the channel-setup
+    /// commands; no channels configured is a quiet no-op (try?). The
+    /// away-push channels are cswap's.
+    func push(_ msg: String) {
+        notify(msg)
+        if let cswap {
+            Task { _ = try? await cswap.run(["notify", "push", "-"], stdin: msg) }
+        }
+    }
+
+    struct SessionRow { let pid: Int; let name: String?; let cwd: String; let status: String?; let kind: String }
+
+    /// The live sessions as the control socket lists them (#79): the
+    /// record plus the name the popup shows.
+    func sessionRows() -> [SessionRow] {
+        ClaudeSessions.list(claudeDir: ClaudeSessions.configHome()).map { record in
+            let pid = Int(record.pid)
+            let progress = sessionProgress.byPid[pid]
+            let shown = SessionNaming.displayName(name: progress?.name ?? record.name,
+                                                  autoName: progress?.autoName, cwd: record.cwd)
+            return SessionRow(pid: pid, name: shown, cwd: record.cwd, status: record.status, kind: record.kind)
+        }
+    }
+
+    /// A pid, or a name / folder name, case-insensitively; the newest
+    /// session wins a tie.
+    func sessionPid(matching who: String) -> Int? {
+        let rows = sessionRows()
+        if let pid = Int(who), rows.contains(where: { $0.pid == pid }) { return pid }
+        let wanted = who.lowercased()
+        return rows.last { row in
+            row.name?.lowercased() == wanted
+                || URL(fileURLWithPath: row.cwd).lastPathComponent.lowercased() == wanted
+        }?.pid
+    }
+
+    /// A Claude Code hook event from the plugin (#79): a prompt is pushed
+    /// the moment it appears — the poll would take up to a minute — and
+    /// the fleet refreshes right after, so a turn's end shows up as fast
+    /// as its prompts. Returns the session's pid when the record is known.
+    func handleHookEvent(_ event: HookEvent) -> Int? {
+        let pid = event.sessionId.flatMap { id in
+            ClaudeSessions.list(claudeDir: ClaudeSessions.configHome())
+                .first { $0.sessionId == id }.map { Int($0.pid) }
+        }
+        if let line = event.pushLine, !isPlayground {
+            logEvent("hook", icon: "bolt.horizontal", event.logLine)
+            if let pid { pushTriggers.announceWaiting(pid: pid) }
+            if pushWaiting { push(line) }
+        }
+        // One refresh per burst, at most every 30 s: the record's status
+        // flips a beat after the hook fires, Stop + Notification often
+        // land together, and the "sessions done" trigger counts quiet
+        // polls — hook polls a second apart would fire it mid-typing.
+        if hookRefresh == nil {
+            let wait = max(1, Self.hookRefreshSpacing - Date().timeIntervalSince(lastHookRefresh))
+            hookRefresh = Task { [weak self] in
+                try? await Task.sleep(for: .seconds(wait))
+                guard let self else { return }
+                lastHookRefresh = Date()
+                await refreshSnapshot()
+                hookRefresh = nil
+            }
+        }
+        return pid
+    }
+    private var hookRefresh: Task<Void, Never>?
+    private var lastHookRefresh = Date.distantPast
+    static let hookRefreshSpacing: TimeInterval = 30
+
     func notify(_ body: String) {
-        Notifier.post(title: "claude-swap", body: body)
-        liveActivityPusher.pushAlert(title: "claude-swap", body: body)
+        Notifier.post(title: "Infinitus", body: body)
+        liveActivityPusher.pushAlert(title: "Infinitus", body: body)
     }
     private let awake = KeepAwake()
-    private var pushTriggers = PushTriggers()
+    /// Seeded with the AWS-login needs already pushed before the last
+    /// relaunch (#98) — `failedAt` comes from the transcript line, so the
+    /// key is stable across launches.
+    private lazy var pushTriggers = PushTriggers(announcedAwsLogins: persistedAwsLoginKeys)
+    private lazy var persistedAwsLoginKeys = Set(defaults.stringArray(forKey: Self.announcedAwsLoginsKey) ?? [])
+    static let announcedAwsLoginsKey = "push_announced_aws_logins"
     private let defaults: UserDefaults
-    static let playgroundSuite = "com.huuloc.infinitus.playground"
+    static let playgroundSuite = "run.infinitus.playground"
 
     /// Custom skins from themes.json, loaded at launch and on demand
     /// (the Display pane reloads when it appears).
@@ -577,7 +671,8 @@ final class AppModel: ObservableObject {
     /// keys are never overwritten.
     private static func migrateLegacyDefaults() {
         let std = UserDefaults.standard
-        for (domain, marker) in [("com.huuloc.limitless", "migrated_from_limitless_id"),
+        for (domain, marker) in [("com.huuloc.infinitus", "migrated_from_huuloc_id"),
+                                 ("com.huuloc.limitless", "migrated_from_limitless_id"),
                                  ("io.github.claude-swap.CswapBar.g2", "migrated_from_g2")] {
             guard !std.bool(forKey: marker), let legacy = std.persistentDomain(forName: domain) else { continue }
             for (key, value) in legacy where std.object(forKey: key) == nil {
@@ -672,6 +767,10 @@ final class AppModel: ObservableObject {
         pushLastAlive = defaults.object(forKey: "push_last_alive") as? Bool ?? true
         pushWaiting = defaults.object(forKey: "push_waiting") as? Bool ?? true
         pushAwsLogin = defaults.object(forKey: "push_aws_login") as? Bool ?? true
+        machineNameOverride = defaults.string(forKey: MachineName.overrideKey) ?? ""
+        sessionHost = defaults.string(forKey: "session_host") ?? "auto"
+        menuBarThemed = defaults.object(forKey: "menubar_themed") as? Bool ?? true
+        menuBarEffects = defaults.object(forKey: "menubar_effects") as? Bool ?? true
         if playground {
             // Isolation is the contract: no demo script, no data at all
             // (never fall back to the real engine here).
@@ -793,6 +892,10 @@ final class AppModel: ObservableObject {
         pushLastAlive = defaults.object(forKey: "push_last_alive") as? Bool ?? true
         pushWaiting = defaults.object(forKey: "push_waiting") as? Bool ?? true
         pushAwsLogin = defaults.object(forKey: "push_aws_login") as? Bool ?? true
+        machineNameOverride = defaults.string(forKey: MachineName.overrideKey) ?? ""
+        sessionHost = defaults.string(forKey: "session_host") ?? "auto"
+        menuBarThemed = defaults.object(forKey: "menubar_themed") as? Bool ?? true
+        menuBarEffects = defaults.object(forKey: "menubar_effects") as? Bool ?? true
     }
 
     /// Playground reset (user 2026-08-31): wipe the sandbox suite so
@@ -937,6 +1040,16 @@ final class AppModel: ObservableObject {
         mirrorServer.crashes.set { [weak self] report in
             Task { @MainActor in self?.ingestCrash(report, announce: true) }
         }
+        let host = sessionHost
+        mirrorServer.sessionStart.set { [weak self] request in
+            let reply = SessionLauncher.start(request, preferredHost: host)
+            let label = (request.cwd as NSString).lastPathComponent
+            Task { @MainActor in
+                self?.logMirrorInput(reply.outcome == "started" ? "🚀" : "⚠️",
+                                     "phone started a session in \(label): \(reply.outcome)\(reply.host.map { " via \($0)" } ?? "")")
+            }
+            return reply
+        }
         crashReports = crashStore.list()
         scanMacCrashReports()
         quickTunnel.onURL = { [weak self] url in self?.publishRendezvous(url) }
@@ -993,7 +1106,7 @@ final class AppModel: ObservableObject {
         }
         let payload = mirrorServer.payload
         Task { [mirrorExporter] in await mirrorExporter.attach(payload: payload) }
-        mirrorServer.start(machineName: Host.current().localizedName ?? "Mac",
+        mirrorServer.start(machineName: machineName,
                            token: mirrorPairToken)
         mirrorServer.sessionFeed.set { pid, limit, since, wait in
             let claudeDir = ClaudeSessions.configHome()
@@ -1091,7 +1204,8 @@ final class AppModel: ObservableObject {
                                        flow: AwsLogin.flow(profile: profile, configText: configText),
                                        pid: pid, sessionLabel: label,
                                        state: AwsLogin.current(byProfile[profile], needFailedAt: progress.awsLoginFailedAt),
-                                       failedAt: progress.awsLoginFailedAt))
+                                       failedAt: progress.awsLoginFailedAt,
+                                       account: AwsLogin.account(profile: profile, configText: configText)))
         }
         // Logins started by hand (no session asked) still show while they
         // run or after they fail; one a session asked for belongs with
@@ -1099,7 +1213,8 @@ final class AppModel: ObservableObject {
         for state in awsLoginStates where !needed.contains(state.profile) && state.phase != .done
             && state.pid == nil {
             items.append(AwsLogin.Item(profile: state.profile, flow: state.flow, pid: state.pid,
-                                       sessionLabel: nil, state: state))
+                                       sessionLabel: nil, state: state,
+                                       account: AwsLogin.account(profile: state.profile, configText: configText)))
         }
         if items != awsLogins { awsLogins = items }
         if sessionProgress.scanned { awsLoginsScanned = true }
@@ -1204,7 +1319,7 @@ final class AppModel: ObservableObject {
             guard let mtime = (try? FileManager.default.attributesOfItem(atPath: url.path))?[.modificationDate] as? Date,
                   mtime.timeIntervalSince1970 > since,
                   let text = try? String(contentsOf: url, encoding: .utf8),
-                  let report = CrashReport.fromIPS(text, device: Host.current().localizedName ?? "Mac") else { continue }
+                  let report = CrashReport.fromIPS(text, device: machineName) else { continue }
             ingestCrash(report, announce: false)
         }
     }
@@ -1218,16 +1333,24 @@ final class AppModel: ObservableObject {
         let attachment = SessionInput.Attachment(name: "crash-\(report.id.prefix(8)).txt", mime: "text/plain",
                                                  data: Data(report.transcript.utf8))
         let request = SessionInput.Request(kind: .message, text: text, attachments: [attachment])
-        Task.detached(priority: .utility) { [weak self] in
+        Task { await send(request, toPid: pid, icon: "💥", what: "crash report") }
+    }
+
+    /// A message from this Mac into a session — a crash report, a
+    /// desktop capture (#69) — over the route phone messages take,
+    /// logged in Settings › Sync like them.
+    @discardableResult
+    func send(_ request: SessionInput.Request, toPid pid: Int, icon: String, what: String) async -> SessionInput.Reply {
+        let reply = await Task.detached(priority: .utility) { () -> SessionInput.Reply in
             let claudeDir = ClaudeSessions.configHome()
-            guard let record = ClaudeSessions.list(claudeDir: claudeDir).first(where: { Int($0.pid) == pid }) else { return }
-            let reply = SessionInput.deliver(request: request, record: record,
-                                             hosts: PtyHosts.available(), claudeDir: claudeDir)
-            await MainActor.run { [weak self] in
-                self?.logMirrorInput(reply.outcome == "delivered" ? "💥" : "⚠️",
-                                     "crash report sent to session \(pid): \(reply.outcome)")
+            guard let record = ClaudeSessions.list(claudeDir: claudeDir).first(where: { Int($0.pid) == pid }) else {
+                return SessionInput.Reply(outcome: "noSurface", detail: "that session is gone")
             }
-        }
+            return SessionInput.deliver(request: request, record: record,
+                                        hosts: PtyHosts.available(), claudeDir: claudeDir)
+        }.value
+        logMirrorInput(reply.outcome == "delivered" ? icon : "⚠️", "\(what) → session \(pid): \(reply.outcome)")
+        return reply
     }
 
     private func nudgeAfterAwsLogin(pid: Int, profile: String, fromPhone: Bool) {
@@ -1807,7 +1930,7 @@ final class AppModel: ObservableObject {
             let progress = sessionProgress.byPid
             if let primaryFleet = primary.lastFleet {
                 liveActivityPusher.tick(fleet: primaryFleet,
-                                        machine: Host.current().localizedName ?? "Mac",
+                                        machine: machineName,
                                         themes: availableThemes, macTheme: rowTheme,
                                         report: usageModel?.report,
                                         tokenRate: sessionProgress.tokenRate)
@@ -1820,7 +1943,8 @@ final class AppModel: ObservableObject {
                                             engine: engine, fleets: allFleets,
                                             forecast: forecast, plan: plan,
                                             awsLogins: awsLogins, progress: progress,
-                                            stats: stats)
+                                            stats: stats,
+                                            pushesAlerts: self.liveActivityPusher.configured)
             }
         }
         // All-limited: count the limit-stopped sessions waiting to be
@@ -1911,15 +2035,11 @@ final class AppModel: ObservableObject {
             sessions: list.liveSessions?.sessions,
             awsLogins: awsLoginsScanned ? awsLogins : nil,
             now: Date())
-        for msg in pushes where !isPlayground {
-            notify(msg)
-            // Text over stdin, matching the channel-setup commands;
-            // no channels configured is a quiet no-op (try?). The
-            // away-push channels are cswap's.
-            if let cswap {
-                Task { _ = try? await cswap.run(["notify", "push", "-"], stdin: msg) }
-            }
+        if pushTriggers.announcedAwsLoginKeys != persistedAwsLoginKeys {
+            persistedAwsLoginKeys = pushTriggers.announcedAwsLoginKeys
+            defaults.set(persistedAwsLoginKeys.sorted(), forKey: Self.announcedAwsLoginsKey)
         }
+        for msg in pushes where !isPlayground { push(msg) }
         if !isPlayground { await sync.tick() }
     }
 

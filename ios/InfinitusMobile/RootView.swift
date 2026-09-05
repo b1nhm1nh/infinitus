@@ -29,7 +29,7 @@ struct RootView: View {
                 tabs
             }
         }
-        // Shake on any screen: capture it, pick a session, sent.
+        // Shake on any screen: capture it, pick a session, describe it there.
         .background(ShakeToSend(model: model))
         .task {
             while !Task.isCancelled {
@@ -65,7 +65,8 @@ struct RootView: View {
             SessionsScreen(model: model, progress: model.sessionProgress)
                 .tabItem { tabLabel("sessions") }
                 .tag("sessions")
-                .badge(model.liveSessions?.waiting ?? 0)
+                // Sessions waiting on the user, AWS sign-ins included.
+                .badge((model.liveSessions?.waiting ?? 0) + model.awsLogins.count)
             NativeFleetScreen(model: model, usage: usage)
                 .tabItem { tabLabel("fleet") }
                 .tag("fleet")

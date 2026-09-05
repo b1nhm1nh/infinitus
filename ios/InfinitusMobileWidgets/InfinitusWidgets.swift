@@ -7,6 +7,7 @@ import WidgetKit
 @main
 struct InfinitusWidgets: WidgetBundle {
     var body: some Widget {
+        FleetWidget()
         RevivalLiveActivity()
         WorkingLiveActivity()
     }
@@ -37,7 +38,7 @@ struct RevivalLiveActivity: Widget {
                                 .font(.caption2).foregroundStyle(.secondary)
                             if !context.state.later.isEmpty {
                                 Text("then " + context.state.later.joined(separator: " · "))
-                                    .font(.caption2).foregroundStyle(.tertiary).lineLimit(1)
+                                    .font(.caption2).foregroundStyle(.secondary).lineLimit(1)
                             }
                         }
                     }
@@ -79,7 +80,7 @@ private struct RevivalLockScreen: View {
                     Text(waitingLine(state)).font(.caption2).foregroundStyle(.secondary)
                     if !state.later.isEmpty {
                         Text("then " + state.later.joined(separator: " · "))
-                            .font(.caption2).foregroundStyle(.tertiary).lineLimit(1)
+                            .font(.caption2).foregroundStyle(.secondary).lineLimit(1)
                     }
                 }
             }
@@ -94,7 +95,7 @@ private struct RevivalLockScreen: View {
 struct WorkingLiveActivity: Widget {
     var body: some WidgetConfiguration {
         ActivityConfiguration(for: WorkingActivity.self) { context in
-            WorkingLockScreen(state: context.state)
+            WorkingLockScreen(state: context.state, stale: context.isStale)
                 .activityBackgroundTint(nil)
                 .widgetURL(URL(string: "infinitus://sessions"))
         } dynamicIsland: { context in
@@ -136,7 +137,7 @@ struct WorkingLiveActivity: Widget {
                             Text(sessionsLine(state)).font(.caption2).foregroundStyle(.secondary)
                             Spacer()
                             if let next = state.next {
-                                Text(next).font(.caption2).foregroundStyle(.tertiary)
+                                Text(next).font(.caption2).foregroundStyle(.secondary)
                             }
                         }
                     }
@@ -161,6 +162,9 @@ struct WorkingLiveActivity: Widget {
 
 private struct WorkingLockScreen: View {
     let state: WorkingActivityState
+    /// Past the stale date: nothing has reached the card for a while —
+    /// the account and the counts are what the Mac last said.
+    let stale: Bool
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 8) {
@@ -188,8 +192,10 @@ private struct WorkingLockScreen: View {
             HStack {
                 Text(sessionsLine(state)).font(.caption).foregroundStyle(.secondary)
                 Spacer()
-                if let next = state.next {
-                    Text(next).font(.caption2).foregroundStyle(.tertiary)
+                if stale {
+                    Text("out of date").font(.caption2).foregroundStyle(.secondary)
+                } else if let next = state.next {
+                    Text(next).font(.caption2).foregroundStyle(.secondary)
                 }
             }
         }
@@ -199,7 +205,7 @@ private struct WorkingLockScreen: View {
 
 /// One themed gauge row — "MP ▮▮▮▯ 73% 4h20m·17:49", the popup's cell,
 /// as three grid cells so every bar starts on the same column.
-private struct WindowRow: View {
+struct WindowRow: View {
     let window: ActivityWindow
     var body: some View {
         let color = ThemeColor.resolve(window.color)
@@ -215,7 +221,7 @@ private struct WindowRow: View {
 }
 
 /// "⚡ ▮▮▯ 1.2k/min" — the popup footer's tokens/minute gauge.
-private struct TokenRow: View {
+struct TokenRow: View {
     let perMinute: Int
     let fraction: Double
     var body: some View {
@@ -228,7 +234,7 @@ private struct TokenRow: View {
     }
 }
 
-private func sessionsLine(_ state: WorkingActivityState) -> String {
+func sessionsLine(_ state: WorkingActivityState) -> String {
     var line = "\(state.busy) working · \(state.total) session\(state.total == 1 ? "" : "s")"
     if state.waiting > 0 { line += " · \(state.waiting) waiting on you" }
     return line

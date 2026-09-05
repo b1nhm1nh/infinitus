@@ -3,35 +3,29 @@ import UIKit
 import InfinitusCore
 
 /// Shake the phone on any screen: the app captures what's showing and
-/// asks which session to send it to (user 2026-09-04: "the capture
+/// asks which session it's about (user 2026-09-04: "the capture
 /// button now actually only works in sessions, what if I want to
-/// capture other screens?"). A chat's own camera button stays the
-/// one-tap path when the target is obvious.
+/// capture other screens?"). The capture then opens that session's
+/// chat as a pending attachment, cursor in the composer, so the request
+/// can be described before it goes (user 2026-09-05: "same for whole
+/// app capture").
 struct ShakeToSend: View {
     @ObservedObject var model: MirrorModel
     @State private var capture: UIImage?
     @State private var asking = false
-    @State private var sending = false
-    @State private var failure: String?
 
     var body: some View {
         ShakeDetector {
-            guard !asking, !sending, let image = ScreenshotWatch.captureApp() else { return }
+            guard !asking, let image = ScreenshotWatch.captureApp() else { return }
             UIImpactFeedbackGenerator(style: .medium).impactOccurred()
             capture = image
             asking = true
         }
-        .confirmationDialog("Send this screen to…", isPresented: $asking, titleVisibility: .visible) {
+        .confirmationDialog("Attach this screen to…", isPresented: $asking, titleVisibility: .visible) {
             ForEach(sessions, id: \.pid) { session in
-                Button(title(session)) { send(to: session) }
+                Button(title(session)) { stage(in: session) }
             }
             Button("Cancel", role: .cancel) { capture = nil }
-        }
-        .alert("Couldn't send the screenshot", isPresented: Binding(
-            get: { failure != nil }, set: { if !$0 { failure = nil } })) {
-            Button("OK", role: .cancel) {}
-        } message: {
-            Text(failure ?? "")
         }
     }
 
@@ -45,30 +39,11 @@ struct ShakeToSend: View {
         return "\(name) · \(SessionWords.status(session.status, theme: model.rowTheme))"
     }
 
-    private func send(to session: SessionDetail) {
-        guard let image = capture, let jpeg = ScreenshotWatch.jpeg(image) else {
-            failure = "couldn't read the capture"
-            return
-        }
-        sending = true
+    private func stage(in session: SessionDetail) {
+        guard let image = capture else { return }
         capture = nil
-        Task {
-            defer { sending = false }
-            do {
-                let reply = try await NetworkFleetMirror.shared.sessionInput(
-                    pid: Int32(session.pid),
-                    request: .init(kind: .message,
-                                   text: "Screenshot of the Infinitus app, taken on the phone just now.",
-                                   attachments: [.init(name: "app-screenshot.jpg", mime: "image/jpeg", data: jpeg)]))
-                if reply.outcome == "delivered" {
-                    UINotificationFeedbackGenerator().notificationOccurred(.success)
-                } else {
-                    failure = reply.detail.map { "\(reply.outcome) — \($0)" } ?? reply.outcome
-                }
-            } catch {
-                failure = "couldn't reach the Mac"
-            }
-        }
+        model.stagedCapture = StagedCapture(pid: session.pid, image: image)
+        model.requestedTab = "sessions"
     }
 }
 

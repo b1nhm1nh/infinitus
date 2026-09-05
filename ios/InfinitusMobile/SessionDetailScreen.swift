@@ -163,10 +163,12 @@ struct SessionDetailScreen: View {
             accountSection
 
             Section {
+                // This host's own line (04-phone); the themed loading
+                // word speaks while nothing has answered yet.
                 let statusLine = model.transportStatuses[host.id]
                     ?? (model.hosts.count <= 1 ? model.transportStatus : nil)
                     ?? ""
-                Text(statusLine.isEmpty ? "Looking for \(host.label.isEmpty ? "host" : host.label)…" : statusLine)
+                Text(statusLine.isEmpty ? model.rowTheme.loadingWord("searching") : statusLine)
                     .font(.caption).foregroundStyle(.secondary)
             } header: {
                 Text("Connection")

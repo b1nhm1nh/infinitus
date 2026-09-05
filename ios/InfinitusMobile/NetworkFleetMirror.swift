@@ -38,6 +38,8 @@ actor NetworkFleetMirror: FleetMirror {
         return fresh
     }()
     static let deviceName: String = {
+        if let bridged = UserDefaults.standard.string(forKey: ShareBridge.deviceNameKey),
+           !bridged.isEmpty { return bridged }
         let name = UIDevice.current.name.filter { $0.isASCII && !$0.isNewline }
         return name.isEmpty ? UIDevice.current.model : name
     }()
@@ -336,6 +338,16 @@ actor NetworkFleetMirror: FleetMirror {
                        _ request: AwsLogin.StartRequest) async throws -> AwsLogin.Reply {
         try await postJSON(AwsLogin.startPath, host: host, body: request)
     }
+
+    /// A new session on a host (#91): opens a terminal there and waits
+    /// for the session to register, so this takes seconds. Multi-host
+    /// (04-phone): the sheet names the machine to start it on, same
+    /// `host:` seam every other POST takes.
+    func startSession(host: MirrorHost? = nil,
+                      _ request: SessionStart.Request) async throws -> SessionStart.Reply {
+        try await postJSON(SessionStart.path, host: host, body: request,
+                           timeout: Self.attachmentInputTimeout)
+    }
     func awsLoginCallback(host: MirrorHost? = nil,
                           _ request: AwsLogin.CallbackRequest) async throws -> AwsLogin.Reply {
         try await postJSON(AwsLogin.callbackPath, host: host, body: request)
@@ -345,8 +357,10 @@ actor NetworkFleetMirror: FleetMirror {
         try await postJSON(AwsLogin.codePath, host: host, body: request)
     }
 
-    private func postJSON<B: Encodable, R: Decodable>(_ path: String, host: MirrorHost?,
-                                                      body: B) async throws -> R {
+    private func postJSON<B: Encodable, R: Decodable>(
+        _ path: String, host: MirrorHost?, body: B,
+        timeout: TimeInterval = NetworkFleetMirror.inputTimeout
+    ) async throws -> R {
         let host = host ?? MirrorHostStore.load().first ?? MirrorHost()
         let payload = try JSONEncoder().encode(body)
         let data: Data
@@ -356,9 +370,9 @@ actor NetworkFleetMirror: FleetMirror {
                 port: NWEndpoint.Port(rawValue: manual.port) ?? .any)
             (data, _) = try await fetch(endpoint, path: path, hostHeader: manual.host,
                                         useTLS: manual.useTLS, token: host.normalizedToken,
-                                        timeout: Self.inputTimeout, method: "POST", body: payload)
+                                        timeout: timeout, method: "POST", body: payload)
         } else {
-            data = try await fetchDiscovered(host: host, path: path, timeout: Self.inputTimeout,
+            data = try await fetchDiscovered(host: host, path: path, timeout: timeout,
                                              method: "POST", body: payload, everyEndpoint: false)
         }
         return try JSONDecoder().decode(R.self, from: data)
@@ -514,7 +528,7 @@ actor NetworkFleetMirror: FleetMirror {
         let params = useTLS ? NWParameters(tls: NWProtocolTLS.Options(), tcp: tcp)
             : NWParameters(tls: nil, tcp: tcp)
         let connection = NWConnection(to: endpoint, using: params)
-        let queue = DispatchQueue(label: "com.huuloc.infinitus.mobile.mirror")
+        let queue = DispatchQueue(label: "run.infinitus.mobile.mirror")
         let once = ContinuationOnce()
         return try await withCheckedThrowingContinuation { continuation in
             once.attach(continuation) { connection.cancel() }

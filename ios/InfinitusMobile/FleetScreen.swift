@@ -89,11 +89,8 @@ struct FleetScreen: View {
                 .foregroundStyle(.orange)
         }
         if model.snapshot == nil, model.error == nil {
-            ContentUnavailableView(
-                "Waiting for the fleet",
-                systemImage: "antenna.radiowaves.left.and.right",
-                description: Text("Pair with the Mac in Settings — "
-                    + "its accounts show up as soon as it answers."))
+            ThemedPlaceholder(theme: model.rowTheme, key: "searching", plainSymbol: "antenna.radiowaves.left.and.right",
+                              description: "Pair with the Mac in Settings — its accounts show up as soon as it answers.")
         }
         if let snapshot = model.snapshot, isStale(snapshot.capturedAt) {
             StalenessBanner(capturedAt: snapshot.capturedAt)

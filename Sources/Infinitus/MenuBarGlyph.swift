@@ -14,9 +14,22 @@ enum MenuBarGlyph {
     static let leftCenter = NSPoint(x: 6.0, y: 8.0)
     static let rightCenter = NSPoint(x: 11.0, y: 8.0)
 
-    static let image: NSImage = {
+    static let image: NSImage = draw(tint: nil)
+
+    /// The same loop in the theme's flash color (#90, user 2026-09-05:
+    /// "themify the menubar"): not a template, so the bar leaves the
+    /// color alone. One image per color, drawn once.
+    nonisolated(unsafe) private static var themed: [String: NSImage] = [:]
+    static func image(tint: NSColor, key: String) -> NSImage {
+        if let cached = themed[key] { return cached }
+        let img = draw(tint: tint)
+        themed[key] = img
+        return img
+    }
+
+    private static func draw(tint: NSColor?) -> NSImage {
         let img = NSImage(size: NSSize(width: 17, height: 16), flipped: false) { _ in
-            NSColor.black.set()
+            (tint ?? NSColor.black).set()
             let ring = NSBezierPath()
             ring.lineWidth = 2.0
             ring.appendOval(in: NSRect(x: leftCenter.x - radius, y: leftCenter.y - radius,
@@ -41,7 +54,7 @@ enum MenuBarGlyph {
             head.fill()
             return true
         }
-        img.isTemplate = true
+        img.isTemplate = tint == nil
         return img
-    }()
+    }
 }
