@@ -414,6 +414,11 @@ struct SessionFeedScreen: View {
                 .disabled(actionSending)
                 .confirmationDialog("Run this on the Mac?", isPresented: $confirmingAllow, titleVisibility: .visible) {
                     Button("Allow") { sendKey("1") }
+                    // Remembered by the Mac for the plugin's PreToolUse
+                    // hook (#79); Bash rules are per command verb.
+                    Button("Allow \(ToolApproval.Rule.from(tool: item.toolName ?? "", input: item.text).label) for this session") {
+                        sendInput(.init(kind: .approve, text: ToolApproval.encode(tool: item.toolName ?? "", input: item.text)))
+                    }
                 } message: {
                     Text(item.text).lineLimit(6)
                 }
@@ -979,11 +984,13 @@ struct SessionFeedScreen: View {
         }
     }
 
-    private func sendKey(_ key: String) {
+    private func sendKey(_ key: String) { sendInput(.init(kind: .key, text: key)) }
+
+    private func sendInput(_ request: SessionInput.Request) {
         actionSending = true
         actionResult = nil
         Task {
-            await send(.init(kind: .key, text: key)) { reply in
+            await send(request) { reply in
                 if reply.outcome == "delivered" { deliveredTick += 1; selectedOption = nil }
                 actionResult = reply.outcome == "delivered" ? nil : Self.describe(reply.outcome)
             } onFailure: {

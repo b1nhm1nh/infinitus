@@ -131,6 +131,8 @@ final class AppModel: ObservableObject {
     let resume = ResumeService()
     /// Sessions popover's mini progress rows (SessionProgressModel.swift).
     let sessionProgress = SessionProgressModel()
+    /// "Allow for this session" rules from the phone (#79), per session id.
+    let toolApprovals = ToolApprovals()
     @Published var lastError: String?
     /// #7 layer 2: the reset battle plan for the current sprint, recomputed
     /// every snapshot; nil when there is nothing to plan. Manual mode: the
@@ -1140,6 +1142,16 @@ final class AppModel: ObservableObject {
             else {
                 Task { @MainActor in self?.logMirrorInput("⚠️", "phone input not delivered: unknown session") }
                 return nil
+            }
+            // "Allow for this session": remember the rule for the plugin's
+            // PreToolUse hook, then answer the prompt on screen with Yes.
+            var request = request
+            if request.kind == .approve {
+                if let rule = ToolApproval.decode(request.text) {
+                    self?.toolApprovals.add(rule, sessionId: record.sessionId)
+                    Task { @MainActor in self?.logMirrorInput("🛡️", "phone allows \(rule.label) for the rest of session \(pid)") }
+                }
+                request = SessionInput.Request(kind: .key, text: "1")
             }
             let reply = SessionInput.deliver(request: request, record: record,
                                              hosts: PtyHosts.available(), claudeDir: claudeDir)
