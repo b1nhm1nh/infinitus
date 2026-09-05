@@ -358,7 +358,7 @@ actor NetworkFleetMirror: FleetMirror {
     }
 
     private func postJSON<B: Encodable, R: Decodable>(
-        _ path: String, host: MirrorHost?, body: B,
+        _ path: String, host: MirrorHost? = nil, body: B,
         timeout: TimeInterval = NetworkFleetMirror.inputTimeout
     ) async throws -> R {
         let host = host ?? MirrorHostStore.load().first ?? MirrorHost()
