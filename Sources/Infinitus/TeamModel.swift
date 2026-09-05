@@ -160,7 +160,7 @@ final class TeamModel: ObservableObject {
                 guard let client = try Self.openClient(paths, secrets) else { return (nil as Int?, nil as Int?, nil as TeamPublisher.Report?) }
                 _ = try client.fetch()
                 let fetched = Int(Date().timeIntervalSince1970)
-                try Self.autoApprove(client, paths: paths)   // Task 6 fills this in; a no-op until then
+                try Self.autoApprove(client, paths: paths)
                 var published: Int?
                 var report: TeamPublisher.Report?
                 if publish, client.isMember {
@@ -184,8 +184,22 @@ final class TeamModel: ObservableObject {
         }
     }
 
-    /// Task 6 replaces this body with the invite-nonce auto-approval.
-    private nonisolated static func autoApprove(_ client: TeamClient, paths: TeamPaths) throws {}
+    /// Leaders: approve every pending request whose nonce is in the
+    /// invite book (one round trip, no tap); each nonce is spent once.
+    private nonisolated static func autoApprove(_ client: TeamClient, paths: TeamPaths) throws {
+        guard client.isLeader else { return }
+        let dir = paths.teamDir(client.config.id)
+        var book = TeamInvites.load(teamDir: dir)
+        let now = Int(Date().timeIntervalSince1970)
+        book.prune(now: now)
+        var changed = false
+        for request in try client.requests() where book.matches(request.doc, now: now) {
+            try client.approve(kid: request.doc.keys.kid, now: now)
+            book.consume(request.doc.nonce ?? "")
+            changed = true
+        }
+        if changed || book.nonces.isEmpty == false { try book.save(teamDir: dir) }
+    }
 
     // MARK: user actions
 
@@ -261,11 +275,23 @@ final class TeamModel: ObservableObject {
         if let minted { code = minted }
     }
 
-    /// Task 6: mints a one-time nonce the store auto-approves. Until then
-    /// it mints a plain team code (§6.3), same as `mintCode`.
+    /// An invite link (spec §6.2): a code with a one-time nonce this
+    /// leader remembers and auto-approves.
     func mintInvite(days: Int) async {
-        // Task 6: invite
-        await mintCode(days: days)
+        var minted: String?
+        await action("Making an invite…") { paths, secrets in
+            guard let client = try Self.openClient(paths, secrets) else { throw TeamClient.ClientError.notInTeam }
+            _ = try client.fetch()
+            let nonce = TeamInvites.newNonce()
+            let expires = Int(Date().timeIntervalSince1970) + days * 86_400
+            let dir = paths.teamDir(client.config.id)
+            var book = TeamInvites.load(teamDir: dir)
+            book.prune(now: Int(Date().timeIntervalSince1970))
+            book.add(nonce: nonce, expires: expires)
+            try book.save(teamDir: dir)
+            minted = try client.code(expiresIn: days * 86_400, nonce: nonce)
+        }
+        code = minted
     }
 
     func approve(kid: String) async {
@@ -345,6 +371,18 @@ final class TeamModel: ObservableObject {
 
     func clearCode() { code = nil }
     func clearError() { lastError = nil }
+
+    /// `infinitus://join/<payload>` (spec §6.2): verified at request time
+    /// by `TeamCode.decode`; here the pane just gets it prefilled. False
+    /// for any other URL.
+    @discardableResult
+    func open(url: URL) -> Bool {
+        let text = url.absoluteString
+        guard text.hasPrefix(TeamCode.prefix) else { return false }
+        pendingCode = text
+        revealSetting()
+        return true
+    }
 
     /// Opens Settings on the Team pane (the join link lands here).
     func revealSetting() {

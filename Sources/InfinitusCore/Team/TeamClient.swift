@@ -175,12 +175,12 @@ public final class TeamClient {
         try persist()
     }
 
-    public func code(expiresIn seconds: Int = 7 * 86_400,
+    public func code(expiresIn seconds: Int = 7 * 86_400, nonce: String? = nil,
                      now: Int = Int(Date().timeIntervalSince1970)) throws -> String {
         guard isLeader else { throw ClientError.notALeader }
         let token = secrets.read(Self.tokenName(config.id)).map { String(decoding: $0, as: UTF8.self) }
         return try TeamCode(team: config.id, name: config.name, remote: config.remote, token: token,
-                            leader: identity.keys, expires: now + seconds).encoded(by: identity)
+                            leader: identity.keys, expires: now + seconds, nonce: nonce).encoded(by: identity)
     }
 
     public func requests() throws -> [Signed<TeamRequest>] {

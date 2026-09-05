@@ -195,9 +195,7 @@ struct TeamPane: View {
                     Text("1 day").tag(1); Text("7 days").tag(7); Text("30 days").tag(30); Text("1 year").tag(365)
                 }
                 .frame(maxWidth: 200)
-                // Task 6: this becomes team.mintInvite(days:) — a nonce the
-                // store auto-approves. Until then it mints a plain code.
-                Button("Invite link") { Task { await team.mintCode(days: codeDays) } }
+                Button("Invite link") { Task { await team.mintInvite(days: codeDays) } }
                 Button("Team code") { Task { await team.mintCode(days: codeDays) } }
             }
             Text("An invite link approves the one request it was minted for by itself; a team code needs your Approve. Both carry the store credential, so anyone holding one can write to the store until you rotate it — share as widely as you'd share the repo.")
