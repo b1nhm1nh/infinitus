@@ -169,4 +169,44 @@ final class TeamNearbyTests: XCTestCase {
         XCTAssertEqual(status(response), 403)
         XCTAssertEqual(TeamNearby.Store.pending(team: leader.config.id, paths: lp), [])
     }
+
+    /// The same ruling, checked on a *member* machine: the local roster
+    /// is the same signed document with the same closed policy, and a
+    /// member's Mac holds the team's write credential too, so the check
+    /// must not be leader-only.
+    func testRequestRefusedWhenMemberHasClosedRequests() throws {
+        let remote = try makeRemote()
+        let (lp, ls) = machine("leader")
+        let (mp, ms) = machine("member")
+        let (jp, js) = machine("joiner")
+        let leader = try TeamClient.create(name: "Papaya", remote: remote, token: nil, paths: lp, secrets: ls, now: 1_000)
+        let code = try leader.code(expiresIn: 60, now: 1_000)
+        let member = try TeamClient.request(code: code, name: "Han", devices: ["Mac"], platform: "macos",
+                                            paths: mp, secrets: ms, now: 1_005)
+        _ = try leader.fetch()
+        try leader.approve(kid: member.identity.kid, now: 1_010)
+        _ = try member.fetch()
+
+        var closed = try XCTUnwrap(member.roster).doc
+        closed.policy.requests = "off"
+        closed.rev += 1
+        let signedRoster = try Signed.make(closed, by: leader.identity)
+        try CanonicalJSON.encode(signedRoster).write(to: mp.rosterFile(member.config.id))
+
+        let joiner = try TeamClient.identity(paths: jp, secrets: js)
+        let signed = try Signed.make(TeamRequest(keys: joiner.keys, name: "Bo", devices: [], platform: "linux", at: 1_020),
+                                     by: joiner)
+        let request = try CanonicalJSON.encode(TeamNearby.Request(team: member.config.id, request: signed))
+
+        let local = TeamNearby.Local.load(name: "Loc", discoverable: true, paths: mp, secrets: ms)
+        XCTAssertEqual(local.record.role, "member")
+        XCTAssertFalse(local.requestsOpen)
+        let endpoint = TeamNearby.Endpoint(local: local) { _ in
+            XCTFail("closed requests must never reach storage")
+            return "branch"
+        }
+        let response = TeamNearby.respond(http("POST", TeamNearby.requestPath, body: request), endpoint: endpoint)
+        XCTAssertEqual(status(response), 403)
+        XCTAssertEqual(TeamNearby.Store.pending(team: member.config.id, paths: mp), [])
+    }
 }

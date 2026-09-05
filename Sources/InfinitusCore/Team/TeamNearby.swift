@@ -13,8 +13,11 @@ public enum TeamNearby {
     /// The UserDefaults bool the Mac app, its Team pane (plan 5) and
     /// `infinitusctl team-discoverable` share. Off by default.
     public static let discoverableDefaultsKey = "team_discoverable"
-    /// Pending requests kept per team: the LAN route needs no token, so
-    /// its footprint on disk is bounded.
+    /// Pending requests kept per team, bounded so an unauthenticated LAN
+    /// peer can't grow the *offline* queue without limit — once the
+    /// store is reachable, `save` deletes the pending copy right after
+    /// the push succeeds, so the count rarely nears this. The
+    /// `requests` branch itself has no such ceiling.
     public static let pendingCap = 100
 
     /// `GET /team/key`.
@@ -56,11 +59,16 @@ public enum TeamNearby {
         /// nil while hidden: no identity is minted for a machine that
         /// isn't advertising.
         public var keys: TeamKeys?
-        /// False only when this machine leads the advertised team and
-        /// that team's roster has closed requests (`policy.requests ==
-        /// "off"`, spec §6.3/§6.4): `POST /team/request` must be refused
-        /// before anything is written. True whenever there's no team to
-        /// close, or this machine is a member rather than the leader.
+        /// False when this machine's local roster for the advertised
+        /// team has closed requests (`policy.requests == "off"`, spec
+        /// §6.3/§6.4): `POST /team/request` must be refused before
+        /// anything is written. Checked for leader *and* member standing
+        /// — a member's machine holds the same write credential and the
+        /// same signed roster, so the check is load-bearing there too.
+        /// True whenever there's no team to close. Reads the roster as
+        /// persisted on disk, not freshly fetched, so a policy flip made
+        /// on another device isn't seen here until this machine's next
+        /// `fetch()`.
         public var requestsOpen: Bool
 
         public init(record: NearbyRecord, keys: TeamKeys?, requestsOpen: Bool = true) {
@@ -85,7 +93,10 @@ public enum TeamNearby {
                     requestsOpen = client.roster?.doc.policy.requests != "off"
                     break
                 }
-                if client.isMember, role == "none" { team = id; role = "member" }
+                if client.isMember, role == "none" {
+                    team = id; role = "member"
+                    requestsOpen = client.roster?.doc.policy.requests != "off"
+                }
             }
             return Local(record: NearbyRecord(name: name, kid: me.kid, team: team, role: role, discoverable: true),
                          keys: me.keys, requestsOpen: requestsOpen)
@@ -194,6 +205,7 @@ public enum TeamNearby {
                 guard name.hasSuffix(".json"),
                       let data = try? Data(contentsOf: dir.appendingPathComponent(name)),
                       let signed = try? CanonicalJSON.decode(Signed<TeamRequest>.self, from: data),
+                      name == "\(signed.doc.keys.kid).json",
                       (try? signed.verify(with: signed.doc.keys)) != nil else { return nil }
                 return signed
             }
