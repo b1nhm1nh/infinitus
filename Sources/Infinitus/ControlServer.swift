@@ -481,7 +481,13 @@ final class ControlServer {
             return ControlReply(ok: true, result: try model.team.snapshot.map { try JSONValue.of($0) } ?? .null)
 
         case "team-create":
-            guard let name = r.args.first, !name.isEmpty, let remote = r.options["remote"], !remote.isEmpty else {
+            // infinitusctl's arg parser treats `--remote` as a bare flag (it
+            // has no way to know team-create wants a value), so the URL
+            // lands as the second positional instead of options["remote"].
+            // Fall back to that positional when the option came back as the
+            // flag sentinel (review round 1, C1).
+            let remote = r.options["remote"].flatMap { $0 == "true" ? nil : $0 } ?? r.args.dropFirst().first
+            guard let name = r.args.first, !name.isEmpty, let remote, !remote.isEmpty else {
                 throw Fail("usage: team-create <name> --remote <url> [--as <your name>]")
             }
             await model.team.create(name: name, remote: remote, token: nil, leaderName: r.options["as"] ?? "Leader")

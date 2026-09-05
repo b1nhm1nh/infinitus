@@ -320,7 +320,7 @@ git init -q --bare "$SOCKDIR/team.git"
 "$CTL" team-create Papaya --remote "file://$SOCKDIR/team.git" --as Ann \
     | expect "d['role']=='leader' and d['members'][0]['name']=='Ann' and d['members'][0]['founder']" || fail "team-create"
 CODE="$("$CTL" team-code --days 1 | json "d['code']")"
-case "$CODE" in infinitus://join/*) ;; *) fail "team-code shape: $CODE" ;; esac
+case "$CODE" in infinitus://join/*) ;; *) fail "team-code shape" ;; esac
 NOW="$(date -u +%Y-%m-%dT%H:%M:%S.000Z)"
 mkdir -p "$SOCKDIR/fixture/projects/-tmp-e2e"
 printf '%s\n%s\n' \
