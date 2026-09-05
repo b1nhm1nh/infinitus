@@ -209,13 +209,15 @@ final class TeamModel: ObservableObject {
     }
 
     func fetchNow() async {
-        guard enabled, inTeam else { return }
+        guard enabled else { lastError = "team is disabled in this instance"; return }
+        guard inTeam else { lastError = "not in a team"; return }
         busy = "Fetching…"; defer { busy = nil }
         await loop(sources: sources(), publish: false)
     }
 
     func publishNow() async {
-        guard enabled, inTeam else { return }
+        guard enabled else { lastError = "team is disabled in this instance"; return }
+        guard inTeam else { lastError = "not in a team"; return }
         busy = "Publishing…"; defer { busy = nil }
         await loop(sources: sources(), publish: true)
     }

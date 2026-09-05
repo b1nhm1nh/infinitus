@@ -2007,7 +2007,7 @@ final class AppModel: ObservableObject {
                                         tokenRate: sessionProgress.tokenRate)
             }
             statsModel.refreshIfStale()
-            team.refreshIfStale()
+            team.refreshIfStale() // inside the !mockMode guard above: the automatic loop is real-instance-only; a mock instance still answers team-* control commands directly
             let stats = statsModel.bundle
             let teamSnapshot = team.snapshot
             // This Mac's own version, mirrored for the phone's Settings

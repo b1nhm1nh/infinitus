@@ -488,7 +488,7 @@ final class ControlServer {
             return try teamReply()
 
         case "team-code":
-            let days = r.options["days"].flatMap(Int.init) ?? 7
+            let days = min(max(r.options["days"].flatMap(Int.init) ?? 7, 1), 3650)
             if r.options["invite"] != nil { await model.team.mintInvite(days: days) } else { await model.team.mintCode(days: days) }
             if let err = model.team.lastError { throw Fail(err) }
             guard let code = model.team.code else { throw Fail("no code") }
