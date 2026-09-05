@@ -31,7 +31,8 @@ publishes the matching section as the GitHub release body.
 - `infinitusctl team create --as <name>` names you as the team's founder instead of "Leader".
 - Settings › Team: create or join a team, approve requests, see every member's latest publish, today's effort and blockers, and open their Stats and transcripts — the Mac fetches and publishes every 5 minutes.
 - Settings › Team: pick which audiences see each kind of your own data, and which project folders publish at all.
-- Invite links (QR, copy, share sheet, `infinitus://join/…`) approve the one request they were minted for by themselves; team codes need a tap.
+- Invite links (QR, copy, share sheet, `infinitus://join/…`) approve the one request they were minted for by themselves once Settings › Team's auto-approve switch is on (off by default); team codes need a tap.
+- The Mac deletes its `now.json` from the team store on quit, so teammates stop seeing it "on".
 - `infinitusctl team-status|team-create|team-code|team-fetch|team-publish|team-approve|team-decline` drive the app's team over the control socket, and the phone's snapshot carries the same view.
 
 ## 0.4.3

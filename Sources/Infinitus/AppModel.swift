@@ -544,7 +544,7 @@ final class AppModel: ObservableObject {
     /// INFINITUS_TEAM_DIR redirects the team dir (e2e, a second instance).
     private(set) lazy var team: TeamModel = {
         let paths = TeamPaths.standard()
-        let model = TeamModel(paths: paths, makeSecrets: TeamSecretsFactory.make(paths: paths))
+        let model = TeamModel(paths: paths, makeSecrets: TeamSecretsFactory.make(paths: paths), defaults: defaults)
         model.enabled = !isPlayground && (!mockMode || ProcessInfo.processInfo.environment["INFINITUS_TEAM_DIR"] != nil)
         return model
     }()
@@ -2178,8 +2178,10 @@ final class AppModel: ObservableObject {
         quickTunnel.stop()
         namedTunnel.stop()
         let supervisor = supervisor
+        let team = team
         Task {
             await supervisor?.stop()
+            await team.quit()   // spec §7: now.json goes on quit (bounded)
             await MainActor.run { NSApplication.shared.terminate(nil) }
         }
     }

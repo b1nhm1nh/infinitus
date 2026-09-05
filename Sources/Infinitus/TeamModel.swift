@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import os
 import InfinitusCore
 
 /// The app's side of a team (spec §9 Mac Team pane, §7 the loop). Every
@@ -30,6 +31,13 @@ final class TeamModel: ObservableObject {
     @Published private(set) var kid: String?
     /// From an `infinitus://join/…` link (Task 6): the pane's Join field prefills.
     @Published var pendingCode: String?
+    /// Leaders: approve requests carrying an invite nonce without a tap
+    /// (spec §6.2). OFF by default until the request binds the nonce to
+    /// the requester (#161): a request echoes the nonce in cleartext, so
+    /// anyone holding the store credential can copy a pending invitee's
+    /// nonce into their own request and be approved by the next pass.
+    @Published private(set) var autoApprove: Bool
+    static let autoApproveKey = "team.autoApprove"
 
     /// False in mock / playground instances: every action is a no-op.
     var enabled = true
@@ -41,15 +49,23 @@ final class TeamModel: ObservableObject {
 
     let paths: TeamPaths
     let makeSecrets: @Sendable () -> TeamSecrets
+    private let defaults: UserDefaults
     private let queue = DispatchQueue(label: "run.infinitus.team", qos: .utility)
     private var lastLoop: Date?
     private var loopRunning = false
     private var lastFetchAt: Int?
     private var lastPublishAt: Int?
 
-    init(paths: TeamPaths, makeSecrets: @escaping @Sendable () -> TeamSecrets) {
+    init(paths: TeamPaths, makeSecrets: @escaping @Sendable () -> TeamSecrets, defaults: UserDefaults) {
         self.paths = paths
         self.makeSecrets = makeSecrets
+        self.defaults = defaults
+        autoApprove = defaults.bool(forKey: Self.autoApproveKey)
+    }
+
+    func setAutoApprove(_ on: Bool) {
+        autoApprove = on
+        defaults.set(on, forKey: Self.autoApproveKey)
     }
 
     var inTeam: Bool { snapshot != nil }
@@ -155,12 +171,13 @@ final class TeamModel: ObservableObject {
     /// to the caller. Returns whether the pass succeeded.
     @discardableResult
     private func loop(sources: TeamPublisher.Sources, publish: Bool) async -> Bool {
+        let auto = autoApprove
         do {
             let (fetched, published, report) = try await run { paths, secrets in
                 guard let client = try Self.openClient(paths, secrets) else { return (nil as Int?, nil as Int?, nil as TeamPublisher.Report?) }
                 _ = try client.fetch()
                 let fetched = Int(Date().timeIntervalSince1970)
-                try Self.autoApprove(client, paths: paths)
+                if auto { try Self.autoApprove(client, paths: paths) }
                 var published: Int?
                 var report: TeamPublisher.Report?
                 if publish, client.isMember {
@@ -208,6 +225,33 @@ final class TeamModel: ObservableObject {
         }
     }
 
+    /// Spec §7: `now.json` is deleted on quit, so teammates stop seeing
+    /// this Mac "on". Only when this run published (nothing else put a
+    /// `now.json` there — deleting an absent path would push an empty
+    /// commit). Bounded: the team queue is serial, so a loop pass mid-push
+    /// could hold this for as long as git does; termination waits at most
+    /// `quitBound` and the child dies with the app.
+    static let quitBound: TimeInterval = 5
+    func quit() async {
+        guard enabled, inTeam, lastPublishAt != nil else { return }
+        let paths = self.paths, makeSecrets = self.makeSecrets
+        let fired = OSAllocatedUnfairLock(initialState: false)
+        await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
+            // Whichever comes first resumes; the other finds `fired` set.
+            let finish: @Sendable () -> Void = {
+                let first = fired.withLock { f -> Bool in if f { return false }; f = true; return true }
+                if first { cont.resume() }
+            }
+            queue.async {
+                if let client = try? Self.openClient(paths, makeSecrets()), client.isMember {
+                    try? TeamPublisher(client: client, paths: paths).quit()
+                }
+                finish()
+            }
+            DispatchQueue.global().asyncAfter(deadline: .now() + Self.quitBound, execute: finish)
+        }
+    }
+
     // MARK: user actions
 
     private func gated() -> Bool {
@@ -232,10 +276,15 @@ final class TeamModel: ObservableObject {
     /// A teammate's session as chat items (decrypted now, off the main actor).
     func transcript(kid: String, session: String) async -> [SessionFeedItem] {
         guard enabled else { return [] }
-        return (try? await run { paths, secrets in
-            guard let client = try Self.openClient(paths, secrets) else { return [] }
-            return try TeamReader.load(client: client).transcript(kid: kid, session: session, client: client, limit: 400)
-        }) ?? []
+        do {
+            return try await run { paths, secrets in
+                guard let client = try Self.openClient(paths, secrets) else { return [] }
+                return try TeamReader.load(client: client).transcript(kid: kid, session: session, client: client, limit: 400)
+            }
+        } catch {
+            lastError = Self.mask(error)
+            return []
+        }
     }
 
     func fetchNow() async {
@@ -381,12 +430,14 @@ final class TeamModel: ObservableObject {
 
     /// `infinitus://join/<payload>` (spec §6.2): verified at request time
     /// by `TeamCode.decode`; here the pane just gets it prefilled. False
-    /// for any other URL.
+    /// for any other URL. Already in a team (the pane has no Join field
+    /// then): says so instead of prefilling nothing — best effort, since
+    /// a cold-launch replay lands before the first `load()`.
     @discardableResult
     func open(url: URL) -> Bool {
         let text = url.absoluteString
         guard text.hasPrefix(TeamCode.prefix) else { return false }
-        pendingCode = text
+        if inTeam { lastError = "already in a team; leave it first to join another" } else { pendingCode = text }
         revealSetting()
         return true
     }

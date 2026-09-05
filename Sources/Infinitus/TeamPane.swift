@@ -198,7 +198,10 @@ struct TeamPane: View {
                 Button("Invite link") { Task { await team.mintInvite(days: codeDays) } }
                 Button("Team code") { Task { await team.mintCode(days: codeDays) } }
             }
-            Text("An invite link approves the one request it was minted for by itself; a team code needs your Approve. Both carry the store credential, so anyone holding one can write to the store until you rotate it — share as widely as you'd share the repo.")
+            Text("An invite link approves the one request it was minted for by itself when the switch below is on; a team code always needs your Approve. Both carry the store credential, so anyone holding one can write to the store until you rotate it — share as widely as you'd share the repo.")
+                .font(.caption).foregroundStyle(.secondary)
+            Toggle("Approve invited requests automatically", isOn: Binding(get: { team.autoApprove }, set: { team.setAutoApprove($0) }))
+            Text("Off by default: a request echoes its invite's nonce in the clear, so while this is on, anyone holding the store credential can copy a pending invitee's nonce and be approved without your tap.")
                 .font(.caption).foregroundStyle(.secondary)
             if let code = team.code {
                 VStack(alignment: .leading, spacing: 8) {
