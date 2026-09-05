@@ -232,6 +232,9 @@ struct InfinitusApp: App {
                     keywords: ["biometric", "touch id", "face id", "password",
                                "unlock", "privacy", "team"],
                     view: AnyView(LockPane(lock: model.lock))),
+        SettingsTab(title: TeamModel.paneTitle, symbol: "person.3", tint: .teal,
+                    keywords: ["team", "invite", "code", "join", "members", "leader", "share", "publish", "exclude"],
+                    view: AnyView(TeamPane(team: model.team, lock: model.lock))),
     ]
     + (model.debugMenu
        ? [SettingsTab(title: "Animations", symbol: "sparkles", tint: .pink,
