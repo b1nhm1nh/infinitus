@@ -153,7 +153,9 @@ public final class TeamClient {
             self.roster = candidate
         }
         try persist()
-        return self.roster!.doc
+        // Non-nil on both branches; the previous roster stands if the
+        // candidate was identical.
+        return self.roster?.doc ?? candidate.doc
     }
 
     /// The roster is computed from the roster we read, so a lost push
