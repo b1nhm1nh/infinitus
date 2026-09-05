@@ -83,6 +83,9 @@ targets:
         # Simulator-only until the Apple Developer account lands (#9).
         CODE_SIGNING_ALLOWED: "NO"
         GENERATE_INFOPLIST_FILE: "YES"
+        # The home screen says Infinitus, not the target's name (user
+        # 2026-09-05: "mobile app renames to Infinitus").
+        INFOPLIST_KEY_CFBundleDisplayName: Infinitus
         INFOPLIST_KEY_UILaunchScreen_Generation: "YES"
         INFOPLIST_KEY_UISupportedInterfaceOrientations: UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight
         SWIFT_VERSION: "5.9"
