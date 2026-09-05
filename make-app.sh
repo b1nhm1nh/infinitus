@@ -66,13 +66,25 @@ IDENTITY="${SIGN_IDENTITY:-}"
 # its ad-hoc linker signature, which notarization rejects ("binary is not
 # signed with a valid Developer ID certificate"), so the helper is signed
 # first with the same flags, then the bundle.
+# Passkeys (spec §2.1) need the associated-domains entitlement, which only
+# a provisioning profile can carry: PROVISIONING_PROFILE=<path to a
+# .provisionprofile for run.infinitus> embeds it and signs the bundle with
+# Infinitus.entitlements. Without it (the dev loop, CI) nothing changes —
+# a dev-signed build has no passkey path, and the local identity is the
+# default anyway.
+ENTITLEMENTS=""
+if [ -n "${PROVISIONING_PROFILE:-}" ]; then
+    [ -f "$PROVISIONING_PROFILE" ] || { echo "PROVISIONING_PROFILE not found: $PROVISIONING_PROFILE"; exit 2; }
+    cp "$PROVISIONING_PROFILE" "$APP/Contents/embedded.provisionprofile"
+    ENTITLEMENTS="--entitlements Infinitus.entitlements"
+fi
 case "$IDENTITY" in
     "Developer ID Application"*)
         codesign --force --options runtime --timestamp --sign "$IDENTITY" \
             "$APP/Contents/MacOS/infinitusctl"
-        codesign --force --options runtime --timestamp --sign "$IDENTITY" "$APP" ;;
+        codesign --force --options runtime --timestamp --sign "$IDENTITY" $ENTITLEMENTS "$APP" ;;
     *)
         codesign --force --sign "${IDENTITY:--}" "$APP/Contents/MacOS/infinitusctl"
-        codesign --force --sign "${IDENTITY:--}" "$APP" ;;
+        codesign --force --sign "${IDENTITY:--}" $ENTITLEMENTS "$APP" ;;
 esac
 echo "Built $PWD/$APP — launch with: open $APP"
