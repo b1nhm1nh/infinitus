@@ -451,6 +451,8 @@ final class AppModel: ObservableObject {
     @Published var pushLastAlive: Bool { didSet { defaults.set(pushLastAlive, forKey: "push_last_alive") } }
     @Published var pushWaiting: Bool { didSet { defaults.set(pushWaiting, forKey: "push_waiting") } }
     @Published var pushAwsLogin: Bool { didSet { defaults.set(pushAwsLogin, forKey: "push_aws_login") } }
+    /// "<name> is back" (and "all accounts are back — reset early") pushes (2026-09-05).
+    @Published var pushRevived: Bool { didSet { defaults.set(pushRevived, forKey: "push_revived") } }
     /// Settings › Sync "This Mac's name" (#99); empty follows the computer name.
     @Published var machineNameOverride: String {
         didSet {
@@ -567,6 +569,31 @@ final class AppModel: ObservableObject {
             row.name?.lowercased() == wanted
                 || URL(fileURLWithPath: row.cwd).lastPathComponent.lowercased() == wanted
         }?.pid
+    }
+
+    /// Probes the engine as each dead account's countdown ends (see
+    /// RevivalProbe): the next reset's schedule replaces the last, and
+    /// a probe that finds nothing dead ends the run.
+    private var revivalProbe: Task<Void, Never>?
+    private var revivalProbeReset: Date?
+    private func scheduleRevivalProbe(accounts: [Account]) {
+        let reset = RevivalProbe.nextReset(accounts: accounts)
+        guard reset != revivalProbeReset else { return }
+        revivalProbe?.cancel()
+        revivalProbeReset = reset
+        guard let reset else { revivalProbe = nil; return }
+        let probes = RevivalProbe.schedule(reset: reset)
+        revivalProbe = Task { [weak self] in
+            for at in probes {
+                let wait = at.timeIntervalSinceNow
+                if wait > 0 { try? await Task.sleep(for: .seconds(wait)) }
+                guard !Task.isCancelled, let self else { return }
+                logEvent("other", icon: "arrow.clockwise", "countdown ended — asking the engine again")
+                await refreshSnapshot()
+                guard !Task.isCancelled else { return }
+                if RevivalProbe.nextReset(accounts: primary?.lastFleet?.accounts ?? []).map({ $0 > Date() }) ?? true { return }
+            }
+        }
     }
 
     /// A Claude Code hook event from the plugin (#79): a prompt is pushed
@@ -736,6 +763,7 @@ final class AppModel: ObservableObject {
         pushLastAlive = defaults.object(forKey: "push_last_alive") as? Bool ?? true
         pushWaiting = defaults.object(forKey: "push_waiting") as? Bool ?? true
         pushAwsLogin = defaults.object(forKey: "push_aws_login") as? Bool ?? true
+        pushRevived = defaults.object(forKey: "push_revived") as? Bool ?? true
         machineNameOverride = defaults.string(forKey: MachineName.overrideKey) ?? ""
         sessionHost = defaults.string(forKey: "session_host") ?? "auto"
         menuBarThemed = defaults.object(forKey: "menubar_themed") as? Bool ?? true
@@ -854,6 +882,7 @@ final class AppModel: ObservableObject {
         pushLastAlive = defaults.object(forKey: "push_last_alive") as? Bool ?? true
         pushWaiting = defaults.object(forKey: "push_waiting") as? Bool ?? true
         pushAwsLogin = defaults.object(forKey: "push_aws_login") as? Bool ?? true
+        pushRevived = defaults.object(forKey: "push_revived") as? Bool ?? true
         machineNameOverride = defaults.string(forKey: MachineName.overrideKey) ?? ""
         sessionHost = defaults.string(forKey: "session_host") ?? "auto"
         menuBarThemed = defaults.object(forKey: "menubar_themed") as? Bool ?? true
@@ -1747,6 +1776,7 @@ final class AppModel: ObservableObject {
             if engineErrors[r.id] != nil { engineErrors[r.id] = nil }
             for fleet in fleets {
                 let state = registry.state(for: fleet)
+                let before = state.lastFleet
                 let change = state.apply(fleet)
                 anyChanged = anyChanged || change.changed
                 if state === primary {
@@ -1755,10 +1785,32 @@ final class AppModel: ObservableObject {
                         let name = fleet.accounts.first { $0.number == n }.map { $0.alias ?? $0.email } ?? "#\(n)"
                         logEvent("death", icon: "heart.slash", "\(name) hit a limit")
                     }
+                    // A revival before the advertised reset is Anthropic
+                    // resetting early — worth saying; the whole fleet
+                    // coming back at once, doubly so (user 2026-09-05).
+                    let wasAllDead = before.map { f in
+                        let live = f.accounts.filter { $0.disabled != true && $0.usage != nil }
+                        return !live.isEmpty && live.allSatisfy { AccountVitals.isDead($0.usage) }
+                    } ?? false
+                    let noneDeadNow = !fleet.accounts.contains { $0.disabled != true && AccountVitals.isDead($0.usage) }
+                    var early = false
                     for n in change.newlyAlive {
                         let name = fleet.accounts.first { $0.number == n }.map { $0.alias ?? $0.email } ?? "#\(n)"
-                        logEvent("revival", icon: "heart.fill", "\(name) is back")
+                        let wasEarly = RevivalProbe.wasEarly(previous: before?.accounts.first { $0.number == n })
+                        early = early || wasEarly
+                        logEvent("revival", icon: "heart.fill", "\(name) is back" + (wasEarly ? " — reset early" : ""))
                     }
+                    if !change.firstLoad, !change.newlyAlive.isEmpty, pushRevived, !isPlayground {
+                        if wasAllDead && noneDeadNow {
+                            push("all accounts are back" + (early ? " — Anthropic reset early" : ""))
+                        } else {
+                            for n in change.newlyAlive {
+                                let name = fleet.accounts.first { $0.number == n }.map { $0.alias ?? $0.email } ?? "#\(n)"
+                                push("\(name) is back" + (early ? " — reset early" : ""))
+                            }
+                        }
+                    }
+                    scheduleRevivalProbe(accounts: fleet.accounts)
                 }
             }
         }

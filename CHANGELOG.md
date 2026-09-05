@@ -14,6 +14,8 @@ publishes the matching section as the GitHub release body.
 - Allow… on a permission card offers "Allow for this session": the Mac remembers the tool (Bash by command verb) and the plugin's PreToolUse hook skips that prompt for the rest of the session.
 
 ### Mac
+- When a revival countdown ends the Mac asks the engine again right away (three tries a minute apart) instead of waiting for the next poll.
+- "<account> is back" notifications, with "reset early" when Anthropic reset before the advertised time and "all accounts are back" when the whole fleet returns (Settings › Notifications).
 - `/infinitus:handoff <session>` passes the current task and its context to another live session through the plugin.
 - Live Activity pushes drop a phone token from before the bundle id move instead of failing on it every minute.
 - "Needs AWS login" banners no longer repeat after a relaunch, and every banner's headline is now its subtitle.
