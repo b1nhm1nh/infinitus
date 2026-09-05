@@ -93,4 +93,52 @@ public enum TeamDocs {
         public var crashes: [String]
         public init(crashes: [String]) { self.crashes = crashes }
     }
+
+    /// `roster/aggregates/<period>.json` (spec §8.3): the team picture a
+    /// leader publishes to the whole team. Per-member rows only under
+    /// `policy.membersSeeEachOther` (§8.4). Days are compacted.
+    public struct Aggregates: Codable, Equatable, Sendable {
+        public struct Repo: Codable, Equatable, Sendable {
+            public var project: String
+            public var usd: Double
+            public var minutes: Int
+            public var members: Int
+            public init(project: String, usd: Double, minutes: Int, members: Int) {
+                self.project = project; self.usd = usd; self.minutes = minutes; self.members = members
+            }
+        }
+        public struct MemberTotal: Codable, Equatable, Sendable {
+            public var kid: String
+            public var name: String
+            public var role: String
+            public var usd: Double
+            public var commits: Int
+            public var messages: Int
+            public var outputTokens: Int
+            public var sessions: Int
+            public var online: Bool
+            public init(kid: String, name: String, role: String, usd: Double, commits: Int, messages: Int, outputTokens: Int, sessions: Int, online: Bool) {
+                self.kid = kid; self.name = name; self.role = role; self.usd = usd; self.commits = commits
+                self.messages = messages; self.outputTokens = outputTokens; self.sessions = sessions; self.online = online
+            }
+        }
+        public var schema = 1
+        public var period: String
+        public var from: String
+        public var to: String
+        public var at: Int
+        public var members: Int
+        public var total: Stats.Day
+        public var previous: Stats.Day
+        public var hours: [Int]
+        public var repos: [Repo]
+        public var byModel: [String: Double]
+        public var onNow: [String]
+        public var perMember: [MemberTotal]?
+        public init(period: String, from: String, to: String, at: Int, members: Int, total: Stats.Day, previous: Stats.Day,
+                    hours: [Int], repos: [Repo], byModel: [String: Double], onNow: [String], perMember: [MemberTotal]?) {
+            self.period = period; self.from = from; self.to = to; self.at = at; self.members = members; self.total = total
+            self.previous = previous; self.hours = hours; self.repos = repos; self.byModel = byModel; self.onNow = onNow; self.perMember = perMember
+        }
+    }
 }

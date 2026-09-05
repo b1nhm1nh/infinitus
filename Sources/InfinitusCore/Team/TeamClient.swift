@@ -44,6 +44,8 @@ public final class TeamClient {
         case founder
         /// A team keeps at least one leader.
         case lastLeader
+        /// `policy.requests == "off"`: no new codes, no request list.
+        case requestsOff
     }
 
     public static let identitySecretName = "identity"
@@ -54,7 +56,7 @@ public final class TeamClient {
     public private(set) var roster: Signed<TeamRoster>?
     private let paths: TeamPaths
     private let secrets: TeamSecrets
-    private let store: TeamGit
+    let store: TeamGit
 
     public var isLeader: Bool { roster?.doc.isLeader(identity.kid) ?? false }
     public var isMember: Bool { roster?.doc.keys(for: identity.kid) != nil }
@@ -177,6 +179,7 @@ public final class TeamClient {
     public func code(expiresIn seconds: Int = 7 * 86_400,
                      now: Int = Int(Date().timeIntervalSince1970)) throws -> String {
         guard isLeader else { throw ClientError.notALeader }
+        guard roster?.doc.policy.requests != "off" else { throw ClientError.requestsOff }
         let token = secrets.read(Self.tokenName(config.id)).map { String(decoding: $0, as: UTF8.self) }
         return try TeamCode(team: config.id, name: config.name, remote: config.remote, token: token,
                             leader: identity.keys, expires: now + seconds).encoded(by: identity)
@@ -184,6 +187,7 @@ public final class TeamClient {
 
     public func requests() throws -> [Signed<TeamRequest>] {
         guard isLeader else { throw ClientError.notALeader }
+        if roster?.doc.policy.requests == "off" { return [] }
         return try store.list("requests/").compactMap { entry in
             guard let data = try store.get(entry.path),
                   let signed = try? CanonicalJSON.decode(Signed<TeamRequest>.self, from: data),
@@ -340,7 +344,7 @@ public final class TeamClient {
     public func readableHeaders() throws -> [(entry: StoreEntry, header: Envelope.Header)] {
         guard let roster = roster?.doc else { return [] }
         var out: [(entry: StoreEntry, header: Envelope.Header)] = []
-        for entry in try store.list("m/") {
+        for entry in try store.list("m/") + (try store.list("roster/aggregates/")) {
             guard let data = try store.get(entry.path), let header = try? Envelope.header(of: data),
                   (try? TeamKinds.check(header, at: entry.path)) != nil,
                   roster.keys(for: header.from, at: header.at) != nil,
@@ -358,6 +362,35 @@ public final class TeamClient {
         let header = try Envelope.header(of: data)
         try TeamKinds.check(header, at: path)
         return try Envelope.open(data, as: identity, senderKey: { roster.keys(for: $0, at: header.at) })
+    }
+
+    // MARK: aggregates (spec §8.3, plan 9)
+
+    /// Leaders publish `roster/aggregates/<period>.json` to the whole team,
+    /// one commit. Readers keep only what a leader sealed (TeamReader).
+    @discardableResult
+    public func publishAggregates(_ docs: [String: Data], now: Int = Int(Date().timeIntervalSince1970)) throws -> [String] {
+        guard let roster = roster?.doc, isLeader else { throw ClientError.notALeader }
+        var writes: [String: Data?] = [:]
+        var paths: [String] = []
+        for (period, plaintext) in docs.sorted(by: { $0.key < $1.key }) {
+            let path = "roster/aggregates/\(period).json"
+            try TeamKinds.check(kind: TeamKinds.aggregates, from: identity.kid, at: path)
+            writes[path] = try Envelope.seal(plaintext, kind: TeamKinds.aggregates, from: identity,
+                                             to: roster.recipients(for: .team), at: now)
+            paths.append(path)
+        }
+        if !writes.isEmpty { try store.putAll(writes) }
+        return paths
+    }
+
+    /// Spec §5: one roster edit, leaders only (race loop as `approve`).
+    public func setPolicy(_ policy: TeamRoster.Policy) throws {
+        try editRoster { current in
+            var next = current
+            next.policy = policy
+            return next
+        }
     }
 
     // MARK: status
