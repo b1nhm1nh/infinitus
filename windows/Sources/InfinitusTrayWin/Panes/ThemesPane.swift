@@ -274,8 +274,11 @@ public final class ThemesPane: SettingsPane {
         }
     }
 
-    private static func getLoWord(_ l: DWORD) -> WORD { WORD(l & 0xffff) }
-    private static func getHiWord(_ l: DWORD) -> WORD { WORD((l >> 16) & 0xffff) }
+    /// Mouse coordinates are SIGNED 16-bit words in lParam; `DWORD(lParam)`
+    /// traps once lParam goes negative (pointer dragged above/left of the
+    /// client area).
+    private static func mouseX(_ l: LPARAM) -> Int32 { Int32(Int16(truncatingIfNeeded: l)) }
+    private static func mouseY(_ l: LPARAM) -> Int32 { Int32(Int16(truncatingIfNeeded: l >> 16)) }
 
     private static let canvasWndProc: WNDPROC = { hwnd, msg, wParam, lParam in
         guard let hwnd else { return DefWindowProcW(hwnd, msg, wParam, lParam) }
@@ -302,8 +305,8 @@ public final class ThemesPane: SettingsPane {
             let raw = GetWindowLongPtrW(hwnd, GWLP_USERDATA)
             guard raw != 0 else { return 0 }
             let pane = Unmanaged<ThemesPane>.fromOpaque(UnsafeMutableRawPointer(bitPattern: Int(raw))!).takeUnretainedValue()
-            let x = Int32(getLoWord(DWORD(lParam)))
-            let y = Int32(getHiWord(DWORD(lParam)))
+            let x = mouseX(lParam)
+            let y = mouseY(lParam)
             pane.handleMouseMove(hwnd: hwnd, x: x, y: y)
             return 0
 
@@ -319,8 +322,8 @@ public final class ThemesPane: SettingsPane {
             let raw = GetWindowLongPtrW(hwnd, GWLP_USERDATA)
             guard raw != 0 else { return 0 }
             let pane = Unmanaged<ThemesPane>.fromOpaque(UnsafeMutableRawPointer(bitPattern: Int(raw))!).takeUnretainedValue()
-            let x = Int32(getLoWord(DWORD(lParam)))
-            let y = Int32(getHiWord(DWORD(lParam)))
+            let x = mouseX(lParam)
+            let y = mouseY(lParam)
             pane.handleClick(hwnd: hwnd, x: x, y: y)
             return 0
 

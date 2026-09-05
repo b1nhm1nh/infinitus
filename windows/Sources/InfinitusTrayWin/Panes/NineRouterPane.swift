@@ -59,6 +59,7 @@ public final class NineRouterPane: SettingsPane {
 
     public func layout(width: Int32, height: Int32) {
         guard let ctx else { return }
+        ctx.recycleTransients()
         let m = ctx.metrics
         let pad = m.pad
         let fieldH = m.fieldHeight
@@ -82,13 +83,13 @@ public final class NineRouterPane: SettingsPane {
         // Dashboard API
         y = PaneControls.sectionHeader("Dashboard API", in: ctx, y: y, width: width)
 
-        _ = PaneControls.label("Base URL:", in: ctx, x: pad, y: y + m.px(2), w: colW, h: fieldH)
+        _ = PaneControls.label("Base URL:", in: ctx, x: pad, y: y + m.px(2), w: colW, h: fieldH, transient: true)
         if let h = baseURLHwnd {
             MoveWindow(h, pad + colW, y, width - pad * 2 - colW, fieldH, true)
         }
         y += fieldH + m.px(8)
 
-        _ = PaneControls.label("Dashboard password:", in: ctx, x: pad, y: y + m.px(2), w: colW, h: fieldH)
+        _ = PaneControls.label("Dashboard password:", in: ctx, x: pad, y: y + m.px(2), w: colW, h: fieldH, transient: true)
         if let h = passwordHwnd {
             MoveWindow(h, pad + colW, y, width - pad * 2 - colW, fieldH, true)
         }

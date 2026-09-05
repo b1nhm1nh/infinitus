@@ -213,4 +213,44 @@ final class SettingsShellTests: XCTestCase {
         XCTAssertTrue(title.contains("80·50%"))
         XCTAssertTrue(title.contains("Opus 70%"))
     }
+
+    /// The shell hand-writes a `PaneDescriptor` per pane instead of reading
+    /// Core's `SettingsCatalog`, so the two can drift — the architecture doc
+    /// exists to prevent exactly that. The descriptors live in the executable
+    /// target (unimportable), so pin the Core side: every catalog id the
+    /// Windows shell claims to ship must exist, and the titles must be the
+    /// ones the panes hard-code.
+    func testWindowsPaneIDsMatchTheSharedCatalog() {
+        let shipped = ["display", "accounts", "themes", "push", "usage",
+                       "utilization", "stats", "activity", "devices", "about",
+                       "cswap", "cliproxy", "9router"]
+        XCTAssertEqual(SettingsCatalog.entries.map(\.id), shipped,
+                       "Windows ships 13 panes in this order; SettingsCatalog drifted")
+
+        let expectedTitles = ["Display", "Accounts", "Themes", "Push", "Usage",
+                              "Utilization", "Stats", "Activity", "Devices",
+                              "About", "cswap", "CLIProxyAPI", "9Router"]
+        XCTAssertEqual(SettingsCatalog.entries.map(\.title), expectedTitles)
+
+        let engines = SettingsCatalog.entries.filter(\.engine).map(\.id)
+        XCTAssertEqual(engines, ["cswap", "cliproxy", "9router"])
+    }
+
+    /// `save` unlinks the old file before renaming the temp over it, so a
+    /// crash in that window leaves NO settings file at all. The load path
+    /// must still come up on defaults rather than throwing.
+    func testSaveLeavesNoTempFileBehind() throws {
+        let file = tempDir.appendingPathComponent("settings.json")
+        var s = WinSettings()
+        s.lastPaneID = "stats"
+        try WinSettingsStore.save(s, to: file)
+        WinSettingsStore.resetCache()
+        try WinSettingsStore.save(s, to: file)
+
+        let tmp = tempDir.appendingPathComponent("settings.json.tmp")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: tmp.path),
+                       "the .tmp scratch file must not survive a save")
+        WinSettingsStore.resetCache()
+        XCTAssertEqual(WinSettingsStore.load(from: file).lastPaneID, "stats")
+    }
 }

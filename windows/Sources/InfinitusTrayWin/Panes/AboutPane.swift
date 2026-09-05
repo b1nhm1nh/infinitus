@@ -134,6 +134,7 @@ public final class AboutPane: SettingsPane {
 
     public func layout(width: Int32, height: Int32) {
         guard let ctx else { return }
+        ctx.recycleTransients()
         let m = ctx.metrics
         let pad = m.pad
         let fieldH = m.fieldHeight

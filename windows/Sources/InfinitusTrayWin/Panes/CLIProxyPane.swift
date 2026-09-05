@@ -62,6 +62,7 @@ public final class CLIProxyPane: SettingsPane {
 
     public func layout(width: Int32, height: Int32) {
         guard let ctx else { return }
+        ctx.recycleTransients()
         let m = ctx.metrics
         let pad = m.pad
         let fieldH = m.fieldHeight
@@ -82,13 +83,13 @@ public final class CLIProxyPane: SettingsPane {
         // Management API
         y = PaneControls.sectionHeader("Management API", in: ctx, y: y, width: width)
 
-        _ = PaneControls.label("Base URL:", in: ctx, x: pad, y: y + m.px(2), w: colW, h: fieldH)
+        _ = PaneControls.label("Base URL:", in: ctx, x: pad, y: y + m.px(2), w: colW, h: fieldH, transient: true)
         if let h = baseURLHwnd {
             MoveWindow(h, pad + colW, y, width - pad * 2 - colW, fieldH, true)
         }
         y += fieldH + m.px(8)
 
-        _ = PaneControls.label("Management key:", in: ctx, x: pad, y: y + m.px(2), w: colW, h: fieldH)
+        _ = PaneControls.label("Management key:", in: ctx, x: pad, y: y + m.px(2), w: colW, h: fieldH, transient: true)
         if let h = keyHwnd {
             MoveWindow(h, pad + colW, y, width - pad * 2 - colW, fieldH, true)
         }
@@ -116,7 +117,7 @@ public final class CLIProxyPane: SettingsPane {
         // Routing section
         y = PaneControls.sectionHeader("Routing", in: ctx, y: y, width: width)
 
-        _ = PaneControls.label("Strategy:", in: ctx, x: pad, y: y + m.px(2), w: colW, h: fieldH)
+        _ = PaneControls.label("Strategy:", in: ctx, x: pad, y: y + m.px(2), w: colW, h: fieldH, transient: true)
         if let h = strategyComboHwnd {
             MoveWindow(h, pad + colW, y, m.px(200), m.px(120), true)
         }

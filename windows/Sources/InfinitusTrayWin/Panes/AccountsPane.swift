@@ -74,6 +74,7 @@ public final class AccountsPane: SettingsPane {
 
     public func layout(width: Int32, height: Int32) {
         guard let ctx else { return }
+        ctx.recycleTransients()
         let m = ctx.metrics
         let pad = m.pad
         let btnH = m.buttonHeight
@@ -182,7 +183,7 @@ public final class AccountsPane: SettingsPane {
                 }
 
                 // Number
-                _ = PaneControls.label("#\(acc.number)", in: ctx, x: x, y: y + m.px(4), w: m.px(28), h: m.px(20), bold: true)
+                _ = PaneControls.label("#\(acc.number)", in: ctx, x: x, y: y + m.px(4), w: m.px(28), h: m.px(20), bold: true, transient: true)
                 x += m.px(32)
 
                 // Name (EDIT or static)
@@ -191,24 +192,24 @@ public final class AccountsPane: SettingsPane {
                     PaneControls.setText(nameEdit, rowModel.name)
                     renameEdits[globalRowIdx] = nameEdit
                 } else {
-                    _ = PaneControls.label(rowModel.name, in: ctx, x: x, y: y + m.px(4), w: m.px(120), h: m.px(20))
+                    _ = PaneControls.label(rowModel.name, in: ctx, x: x, y: y + m.px(4), w: m.px(120), h: m.px(20), transient: true)
                 }
                 x += m.px(126)
 
                 // Email
-                _ = PaneControls.label(rowModel.email, in: ctx, x: x, y: y + m.px(4), w: m.px(180), h: m.px(20), color: WinDark.dim)
+                _ = PaneControls.label(rowModel.email, in: ctx, x: x, y: y + m.px(4), w: m.px(180), h: m.px(20), color: WinDark.dim, transient: true)
                 x += m.px(186)
 
                 // Plan chip
                 if !rowModel.plan.isEmpty {
-                    _ = PaneControls.label(rowModel.plan, in: ctx, x: x, y: y + m.px(4), w: m.px(70), h: m.px(20), caption: true, color: WinDark.text)
+                    _ = PaneControls.label(rowModel.plan, in: ctx, x: x, y: y + m.px(4), w: m.px(70), h: m.px(20), caption: true, color: WinDark.text, transient: true)
                 }
                 x += m.px(74)
 
                 // Status chip
                 let chipText = rowModel.active ? "active" : (rowModel.held ? "held" : (rowModel.usageStatus != "ok" ? rowModel.usageStatus : ""))
                 if !chipText.isEmpty {
-                    _ = PaneControls.label(chipText, in: ctx, x: x, y: y + m.px(4), w: m.px(60), h: m.px(20), caption: true, color: rowModel.active ? WinDark.liveDot : WinDark.dim)
+                    _ = PaneControls.label(chipText, in: ctx, x: x, y: y + m.px(4), w: m.px(60), h: m.px(20), caption: true, color: rowModel.active ? WinDark.liveDot : WinDark.dim, transient: true)
                 }
                 x += m.px(66)
 

@@ -44,6 +44,15 @@ public enum SettingsShell {
         return asyncSlots.removeValue(forKey: id)
     }
 
+    /// A slot whose `PostMessageW` lands after the window is gone is
+    /// never drained, and its thunk retains the pane. Dropped wholesale
+    /// when the shell dies.
+    public static func clearAsyncSlots() {
+        slotLock.lock()
+        defer { slotLock.unlock() }
+        asyncSlots.removeAll()
+    }
+
     // MARK: - Pane Entry in Shell
     final class PaneEntry {
         let descriptor: PaneDescriptor
@@ -271,6 +280,9 @@ public enum SettingsShell {
         if let current = state.panes.first(where: { $0.descriptor.id == state.selectedPaneID }),
            current.descriptor.id != nextEntry.descriptor.id {
             current.pane.deactivate()
+            // Anything still on a worker for the pane we are leaving must
+            // not land on its now-hidden controls.
+            current.ctx.invalidateResults()
             ShowWindow(current.hostHwnd, SW_HIDE)
         }
 
@@ -777,9 +789,7 @@ public enum SettingsShell {
                 TrackMouseEvent(&tme)
                 state.trackingMouse = true
             }
-            let x = Int32(LOWORD(DWORD(lParam)))
-            let y = Int32(HIWORD(DWORD(lParam)))
-            let pt = POINT(x: x, y: y)
+            let pt = mousePoint(lParam)
             let hoveredDesc = hitTest(pt: pt, state: state)
             let newHoverIdx = hoveredDesc.flatMap { d in state.filteredDescriptors.firstIndex(where: { $0.id == d.id }) }
             if newHoverIdx != state.hoveredRow {
@@ -805,9 +815,7 @@ public enum SettingsShell {
 
         case WM_LBUTTONUP:
             guard let state = getState(hwnd) else { return 0 }
-            let x = Int32(LOWORD(DWORD(lParam)))
-            let y = Int32(HIWORD(DWORD(lParam)))
-            let pt = POINT(x: x, y: y)
+            let pt = mousePoint(lParam)
             if let desc = hitTest(pt: pt, state: state) {
                 selectPane(paneID: desc.id, state: state)
             }
@@ -822,8 +830,10 @@ public enum SettingsShell {
 
         case WM_COMMAND:
             guard let state = getState(hwnd) else { return 0 }
-            let cmdID = Int32(LOWORD(DWORD(wParam)))
-            let code = UINT(HIWORD(DWORD(wParam)))
+            // Truncate, never convert: wParam is 64-bit and DWORD(_:) traps
+            // on anything above UInt32.max.
+            let cmdID = Int32(UInt16(truncatingIfNeeded: wParam))
+            let code = UINT(UInt16(truncatingIfNeeded: wParam >> 16))
             let fromHwnd = HWND(bitPattern: Int(lParam))
 
             // Search box EN_CHANGE
@@ -901,6 +911,7 @@ public enum SettingsShell {
             }
             openHwnd = nil
             currentShell = nil
+            clearAsyncSlots()
             return 0
 
         default:
@@ -909,5 +920,12 @@ public enum SettingsShell {
     }
 }
 
-private func LOWORD(_ l: DWORD) -> WORD { WORD(l & 0xffff) }
-private func HIWORD(_ l: DWORD) -> WORD { WORD((l >> 16) & 0xffff) }
+
+/// Mouse-message coordinates are SIGNED 16-bit words packed in lParam.
+/// `DWORD(lParam)` traps on a negative lParam — which is exactly what
+/// arrives once the mouse is captured and dragged above/left of the
+/// client area (`FleetWindow` already uses the truncating form).
+private func mousePoint(_ lParam: LPARAM) -> POINT {
+    POINT(x: Int32(Int16(truncatingIfNeeded: lParam)),
+          y: Int32(Int16(truncatingIfNeeded: lParam >> 16)))
+}

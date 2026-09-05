@@ -20,6 +20,23 @@ public final class PaneContext {
     private static let genLock = NSLock()
     private var paneGeneration: UInt64 = 0
 
+    /// Controls a pane re-creates on every `layout` (section headers, help
+    /// text, per-row labels). `layout` runs on EVERY `WM_SIZE`, so without
+    /// a recycle these accumulate one HWND per header per resize tick and
+    /// exhaust the process's 10k USER-handle quota during a single window
+    /// drag. Panes call `recycleTransients()` first thing in `layout`.
+    private var transientControls: [HWND] = []
+
+    public func registerTransient(_ hwnd: HWND?) {
+        guard let hwnd else { return }
+        transientControls.append(hwnd)
+    }
+
+    public func recycleTransients() {
+        for h in transientControls { DestroyWindow(h) }
+        transientControls.removeAll(keepingCapacity: true)
+    }
+
     public init(
         host: HWND,
         shell: HWND,
@@ -43,15 +60,16 @@ public final class PaneContext {
     }
 
     /// Ask the shell to post `WM_APP_PANE_RESULT` back to this pane once
-    /// `work` finishes on a worker thread. `generation` lets the pane
-    /// drop a stale result.
+    /// `work` finishes on a worker thread. The generation is bumped only
+    /// by `invalidateResults()` (which `deactivate` drives), so a result
+    /// issued before the pane was hidden is dropped while two requests in
+    /// flight AT THE SAME TIME both survive — stamping a new generation
+    /// per request made the second call silently cancel the first.
     public func async<T: Sendable>(
         _ work: @escaping @Sendable () -> T,
         then apply: @escaping (T) -> Void
     ) {
         Self.genLock.lock()
-        Self.globalGeneration += 1
-        self.paneGeneration = Self.globalGeneration
         let gen = self.paneGeneration
         Self.genLock.unlock()
 
@@ -72,6 +90,15 @@ public final class PaneContext {
         Self.genLock.lock()
         defer { Self.genLock.unlock() }
         return paneGeneration
+    }
+
+    /// Every result already in flight is stale from here on. The shell
+    /// calls this when a pane is hidden.
+    public func invalidateResults() {
+        Self.genLock.lock()
+        Self.globalGeneration += 1
+        self.paneGeneration = Self.globalGeneration
+        Self.genLock.unlock()
     }
 }
 
@@ -253,7 +280,7 @@ public enum PaneHost {
 
         case WM_VSCROLL:
             guard let state = getState(hwnd) else { return 0 }
-            let request = LOWORD(DWORD(wParam))
+            let request = UInt16(truncatingIfNeeded: wParam)
             var rc = RECT()
             GetClientRect(hwnd, &rc)
             let viewportH = rc.bottom - rc.top
@@ -329,8 +356,10 @@ public enum PaneHost {
     }
 }
 
-private func LOWORD(_ l: DWORD) -> WORD { WORD(l & 0xffff) }
-private func GET_WHEEL_DELTA_WPARAM(_ wParam: WPARAM) -> Int16 { Int16(bitPattern: WORD((DWORD(wParam) >> 16) & 0xffff)) }
+/// `DWORD(wParam)` traps: wParam is 64-bit and WM_MOUSEWHEEL packs the
+/// key-state flags into the low word, so the value routinely exceeds
+/// UInt32.max. Truncate, never convert.
+private func GET_WHEEL_DELTA_WPARAM(_ wParam: WPARAM) -> Int16 { Int16(truncatingIfNeeded: wParam >> 16) }
 
 /// Shared control helpers, lifted from SettingsWindow and made reusable.
 public enum PaneControls {
@@ -339,11 +368,13 @@ public enum PaneControls {
     private static let editClass = Array("EDIT".utf16) + [0]
     private static let comboClass = Array("COMBOBOX".utf16) + [0]
 
+    /// `transient: true` for a control re-created on every `layout` —
+    /// the pane recycles it instead of leaking one HWND per resize tick.
     public static func label(
         _ text: String, in ctx: PaneContext,
         x: Int32, y: Int32, w: Int32, h: Int32,
         bold: Bool = false, caption: Bool = false,
-        color: COLORREF? = nil
+        color: COLORREF? = nil, transient: Bool = false
     ) -> HWND? {
         let textWide = Array(text.utf16) + [0]
         let hwnd = staticClass.withUnsafeBufferPointer { sc in
@@ -358,6 +389,7 @@ public enum PaneControls {
         guard let hwnd else { return nil }
         let hfont = bold ? ctx.boldFont : (caption ? ctx.captionFont : ctx.font)
         SendMessageW(hwnd, UINT(WM_SETFONT), WPARAM(UInt(bitPattern: hfont)), LPARAM(1))
+        if transient { ctx.registerTransient(hwnd) }
         return hwnd
     }
 
@@ -464,8 +496,9 @@ public enum PaneControls {
         return hwnd
     }
 
+    /// Always transient: every caller builds it inside `layout`.
     public static func sectionHeader(_ title: String, in ctx: PaneContext, y: Int32, width: Int32) -> Int32 {
-        _ = label(title, in: ctx, x: ctx.metrics.pad, y: y, w: width - ctx.metrics.pad * 2, h: ctx.metrics.px(20), bold: true)
+        _ = label(title, in: ctx, x: ctx.metrics.pad, y: y, w: width - ctx.metrics.pad * 2, h: ctx.metrics.px(20), bold: true, transient: true)
         return y + ctx.metrics.px(24)
     }
 
@@ -485,7 +518,7 @@ public enum PaneControls {
             ReleaseDC(ctx.host, dc)
         }
         let measuredH = max(ctx.metrics.px(16), rect.bottom - rect.top)
-        _ = label(text, in: ctx, x: x, y: y, w: width, h: measuredH, caption: true, color: WinDark.dim)
+        _ = label(text, in: ctx, x: x, y: y, w: width, h: measuredH, caption: true, color: WinDark.dim, transient: true)
         return measuredH
     }
 

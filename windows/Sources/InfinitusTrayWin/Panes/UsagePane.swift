@@ -70,6 +70,7 @@ public final class UsagePane: SettingsPane {
 
     public func layout(width: Int32, height: Int32) {
         guard let ctx else { return }
+        ctx.recycleTransients()
         let m = ctx.metrics
         let pad = m.pad
         let contentW = max(100, width - pad * 2)

@@ -81,6 +81,7 @@ public final class CswapPane: SettingsPane {
 
     public func layout(width: Int32, height: Int32) {
         guard let ctx else { return }
+        ctx.recycleTransients()
         let m = ctx.metrics
         let pad = m.pad
         let fieldH = m.fieldHeight
@@ -194,7 +195,7 @@ public final class CswapPane: SettingsPane {
                     y += fieldH
 
                 case "choice":
-                    _ = PaneControls.label(labelText, in: ctx, x: pad, y: y + m.px(2), w: m.px(200), h: fieldH)
+                    _ = PaneControls.label(labelText, in: ctx, x: pad, y: y + m.px(2), w: m.px(200), h: fieldH, transient: true)
                     var choices = ["(default)"]
                     choices.append(contentsOf: entry.choices ?? [])
                     let combo = PaneControls.combo(choices, in: ctx, id: id, x: pad + m.px(210), y: y, w: m.px(180), h: m.px(120))
@@ -204,7 +205,7 @@ public final class CswapPane: SettingsPane {
                     y += fieldH
 
                 default:
-                    _ = PaneControls.label(labelText, in: ctx, x: pad, y: y + m.px(2), w: m.px(200), h: fieldH)
+                    _ = PaneControls.label(labelText, in: ctx, x: pad, y: y + m.px(2), w: m.px(200), h: fieldH, transient: true)
                     let edit = PaneControls.edit(in: ctx, id: id, x: pad + m.px(210), y: y, w: m.px(180), h: fieldH)
                     PaneControls.setText(edit, entry.value.editableText)
                     entryControls[entry.key] = edit

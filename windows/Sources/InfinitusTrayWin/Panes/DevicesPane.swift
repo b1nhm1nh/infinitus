@@ -784,17 +784,25 @@ public final class DevicesPane: SettingsPane {
         let filter = "JSON Files (*.json)\0*.json\0All Files (*.*)\0*.*\0\0"
         let filterWide = Array(filter.utf16)
 
-        var ofn = OPENFILENAMEW()
-        ofn.lStructSize = DWORD(MemoryLayout<OPENFILENAMEW>.size)
-        ofn.hwndOwner = ctx.shell
-        filterWide.withUnsafeBufferPointer { ofn.lpstrFilter = $0.baseAddress }
-        fileBuf.withUnsafeMutableBufferPointer { ofn.lpstrFile = $0.baseAddress }
-        ofn.nMaxFile = DWORD(fileBuf.count)
-        ofn.Flags = DWORD(OFN_OVERWRITEPROMPT | OFN_PATHMUSTEXIST)
-
-        guard GetSaveFileNameW(&ofn) else { return }
-        let destPath = String(decodingCString: fileBuf, as: UTF16.self)
-        guard !destPath.isEmpty else { return }
+        // The buffer pointers must stay valid for the DIALOG's whole
+        // lifetime, so the call happens INSIDE the withUnsafe… scopes.
+        // Assigning `$0.baseAddress` out of the closure and calling
+        // afterwards hands comdlg32 a dangling pointer.
+        let picked: String? = filterWide.withUnsafeBufferPointer { fBuf in
+            fileBuf.withUnsafeMutableBufferPointer { pBuf -> String? in
+                var ofn = OPENFILENAMEW()
+                ofn.lStructSize = DWORD(MemoryLayout<OPENFILENAMEW>.size)
+                ofn.hwndOwner = ctx.shell
+                ofn.lpstrFilter = fBuf.baseAddress
+                ofn.lpstrFile = pBuf.baseAddress
+                ofn.nMaxFile = DWORD(pBuf.count)
+                ofn.Flags = DWORD(OFN_OVERWRITEPROMPT | OFN_PATHMUSTEXIST)
+                guard GetSaveFileNameW(&ofn) else { return nil }
+                guard let base = pBuf.baseAddress else { return nil }
+                return String(decodingCString: base, as: UTF16.self)
+            }
+        }
+        guard let destPath = picked, !destPath.isEmpty else { return }
 
         PaneControls.setText(settingsFileStatusHwnd, "Exporting…")
 
@@ -855,17 +863,21 @@ public final class DevicesPane: SettingsPane {
         let filter = "JSON Files (*.json)\0*.json\0All Files (*.*)\0*.*\0\0"
         let filterWide = Array(filter.utf16)
 
-        var ofn = OPENFILENAMEW()
-        ofn.lStructSize = DWORD(MemoryLayout<OPENFILENAMEW>.size)
-        ofn.hwndOwner = ctx.shell
-        filterWide.withUnsafeBufferPointer { ofn.lpstrFilter = $0.baseAddress }
-        fileBuf.withUnsafeMutableBufferPointer { ofn.lpstrFile = $0.baseAddress }
-        ofn.nMaxFile = DWORD(fileBuf.count)
-        ofn.Flags = DWORD(OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST)
-
-        guard GetOpenFileNameW(&ofn) else { return }
-        let srcPath = String(decodingCString: fileBuf, as: UTF16.self)
-        guard !srcPath.isEmpty else { return }
+        let picked: String? = filterWide.withUnsafeBufferPointer { fBuf in
+            fileBuf.withUnsafeMutableBufferPointer { pBuf -> String? in
+                var ofn = OPENFILENAMEW()
+                ofn.lStructSize = DWORD(MemoryLayout<OPENFILENAMEW>.size)
+                ofn.hwndOwner = ctx.shell
+                ofn.lpstrFilter = fBuf.baseAddress
+                ofn.lpstrFile = pBuf.baseAddress
+                ofn.nMaxFile = DWORD(pBuf.count)
+                ofn.Flags = DWORD(OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST)
+                guard GetOpenFileNameW(&ofn) else { return nil }
+                guard let base = pBuf.baseAddress else { return nil }
+                return String(decodingCString: base, as: UTF16.self)
+            }
+        }
+        guard let srcPath = picked, !srcPath.isEmpty else { return }
 
         PaneControls.setText(settingsFileStatusHwnd, "Importing…")
 
