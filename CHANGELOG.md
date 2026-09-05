@@ -12,6 +12,7 @@ publishes the matching section as the GitHub release body.
 
 ### Phone
 - The Game HUD bars' cool glow (usage behind pace) is a real glow now, scaled to the bar, instead of a tinted rim.
+- The chat composer's placeholder speaks the theme's language too ("Send word…" in the Wild West, "Codec open…" while dictating in Metal Gear).
 - Allow… on a permission card offers "Allow for this session": the Mac remembers the tool (Bash by command verb) and the plugin's PreToolUse hook skips that prompt for the rest of the session.
 
 ### Mac
@@ -22,8 +23,6 @@ publishes the matching section as the GitHub release body.
 - `/infinitus:handoff <session>` passes the current task and its context to another live session through the plugin.
 - Live Activity pushes drop a phone token from before the bundle id move instead of failing on it every minute.
 - "Needs AWS login" banners no longer repeat after a relaunch, and every banner's headline is now its subtitle.
-
-### Phone
 - The Game HUD chat header's bars play the Fleet card's effects: pace fire, the cool halo, HP drops, Lucky 7s, the switch, death and revival flashes.
 - The phone raises its own alarms, no push service needed: an exhausted account's limit lifting in 10 minutes, and the account the fleet just swapped to; off in Settings › Notifications.
 - Settings shows the Mac's and the phone's versions, can trigger the Mac's update, and says when a newer phone build is out.
