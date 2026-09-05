@@ -35,6 +35,7 @@ struct StatsPane: View {
             if let s = summary {
                 ForEach(Stats.Presentation.groups(s)) { group($0) }
                 effort(s)
+                if let records = model.bundle?.tokenRecords { recordBook(records) }
                 Section("Rhythm") {
                     heatmap(s.total.hours)
                     sessionLengths(s)
@@ -47,6 +48,27 @@ struct StatsPane: View {
         }
         .formStyle(.grouped)
         .onAppear { model.loadIfNeeded() }
+    }
+
+    // MARK: tokens/min records (#89)
+
+    private func recordBook(_ r: Stats.TokenRecords) -> some View {
+        Section("Tokens/min records") {
+            ForEach(Stats.Presentation.recordLines(r), id: \.self) { line in
+                Text(line).font(.caption).foregroundStyle(.secondary).monospacedDigit()
+            }
+            if r.dailyPeaks.contains(where: { $0 != 0 }) {
+                Chart(Array(r.dailyPeaks.enumerated()), id: \.offset) { i, v in
+                    BarMark(x: .value("day", i), y: .value("peak", v)).foregroundStyle(Color.accentColor.opacity(0.7))
+                }
+                .chartXAxis(.hidden).chartYAxis(.hidden)
+                .frame(height: 40)
+            }
+            ForEach(Stats.Presentation.recordRows(r), id: \.label) { row in
+                LabeledContent(row.label, value: Stats.Presentation.perMinute(row.count))
+                    .font(.caption).monospacedDigit()
+            }
+        }
     }
 
     // MARK: tiles
@@ -143,6 +165,8 @@ struct StatsPane: View {
         Section("Where the effort went") {
             rows("Activity", Stats.Presentation.activityRows(s))
             rows("Model", Stats.Presentation.modelRows(s))
+            rows("Engine", Stats.Presentation.engineRows(s))
+            rows("Effort", Stats.Presentation.effortRows(s))
             Text(Stats.Presentation.activityFootnote).font(.caption2).foregroundStyle(.tertiary)
         }
     }

@@ -22,6 +22,10 @@ public enum StatsScanner {
         /// The stretch the assistant is in right now (Stats v2) — nil
         /// before the first person/agent message of the file.
         public var stretch: Stretch?
+        /// Codex: the model and effort the last `turn_context` named —
+        /// its token counts don't carry them.
+        public var codexModel = ""
+        public var codexEffort = ""
         public init() {}
     }
 
@@ -39,10 +43,25 @@ public enum StatsScanner {
         /// first "user" entry is its prompt FROM the parent, which would
         /// otherwise double as a human message).
         public var subagent = false
+        /// Which tool's transcript this is — `parse` picks the reader.
+        public var engine = Stats.Engine.claude.rawValue
         public init() {}
     }
 
     static let waitingCap = 8.0 * 3600
+
+    /// One entry's presence on a day: the session, the hour slot, and
+    /// the session's span so far (its length bucket moves with it).
+    static func noteSession(_ day: inout Stats.Day, key: String, at t: Double, sessionID: String,
+                            into entry: inout FileEntry, calendar: Calendar) {
+        day.sessions.insert(sessionID)
+        day.hours[Stats.hourSlot(Date(timeIntervalSince1970: t), calendar: calendar)] += 1
+        if entry.state.firstAt[key] == nil { entry.state.firstAt[key] = t }
+        entry.state.lastAt[key] = t
+        day.sessionSeconds = entry.state.lastAt[key]! - entry.state.firstAt[key]!
+        day.sessionBuckets = [0, 0, 0, 0]
+        day.sessionBuckets[Stats.Day.sessionBucket(seconds: day.sessionSeconds)] = 1
+    }
 
     /// Fold the open stretch into the day it was opened on. `day` is the
     /// caller's working copy of `currentKey` (written back at the end of
@@ -69,6 +88,17 @@ public enum StatsScanner {
         case "Bash": s.bash += 1
         default: break
         }
+    }
+
+    /// The person's words in a user entry (a peer message unwrapped),
+    /// nil for tool results and machinery.
+    public static func userText(_ obj: [String: Any]) -> String? {
+        guard let message = obj["message"] as? [String: Any] else { return nil }
+        if let s = message["content"] as? String { return wrappedBody(s) }
+        guard let blocks = message["content"] as? [[String: Any]],
+              !blocks.contains(where: { ($0["type"] as? String) == "tool_result" }),
+              let t = blocks.first(where: { ($0["type"] as? String) == "text" })?["text"] as? String else { return nil }
+        return wrappedBody(t)
     }
 
     public static func classifyUser(_ obj: [String: Any]) -> UserKind {
@@ -180,21 +210,20 @@ public enum StatsScanner {
         // or its own session-length bucket; only the token/cost/tool
         // facts below are its contribution.
         if !isSubagent {
-            day.sessions.insert(sessionID)
-            day.hours[Stats.hourSlot(date, calendar: calendar)] += 1
-            if entry.state.firstAt[key] == nil { entry.state.firstAt[key] = t }
-            entry.state.lastAt[key] = t
-            day.sessionSeconds = entry.state.lastAt[key]! - entry.state.firstAt[key]!
-            day.sessionBuckets = [0, 0, 0, 0]
-            day.sessionBuckets[Stats.Day.sessionBucket(seconds: day.sessionSeconds)] = 1
+            noteSession(&day, key: key, at: t, sessionID: sessionID, into: &entry, calendar: calendar)
         }
+        let effort = obj["effort"] as? String ?? "unset"
 
         if type == "user" {
             if !isSubagent, obj["toolDenialKind"] != nil { day.denials += 1 }
             let kind = classifyUser(obj)
             if !isSubagent, [.human, .phone, .agent, .nudge].contains(kind) {
                 closeStretch(into: &entry, current: &day, currentKey: key)
-                entry.state.stretch = Stretch(dayKey: key, at: t)
+                var stretch = Stretch(dayKey: key, at: t)
+                if kind == .human || kind == .phone, let text = userText(obj) {
+                    stretch.promptLabel = ActivitySignals.label(prompt: text)?.rawValue
+                }
+                entry.state.stretch = stretch
             }
             switch kind {
             case .human, .phone:
@@ -236,19 +265,16 @@ public enum StatsScanner {
                     day.inputTokens += input
                     day.outputTokens += output
                     day.usd += cost
-                    // Per model, per entry — exact, and the only route a
-                    // sub-agent file's spend takes into v2. Skipped for an
-                    // empty model name (nothing to key the tally under);
+                    if output > 0 { day.minuteTokens[Stats.minuteOfDay(t, calendar: calendar), default: 0] += output }
+                    // Per model / engine / effort, per entry — exact, and
+                    // the only route a sub-agent file's spend takes into
+                    // v2. An empty model name has nothing to key under;
                     // the day totals above still count it.
-                    if !model.isEmpty {
-                        var m = day.byModel[model] ?? Stats.ActivityTally()
-                        m.inputTokens += input
-                        m.outputTokens += output
-                        m.usd += cost
-                        day.byModel[model] = m
-                    }
+                    day.charge(model: model, engine: entry.engine, effort: effort,
+                               input: input, output: output, usd: cost)
                     if entry.state.stretch != nil {
                         entry.state.stretch!.model = model
+                        entry.state.stretch!.effort = effort
                         entry.state.stretch!.inputTokens += input
                         entry.state.stretch!.outputTokens += output
                         entry.state.stretch!.usd += cost
@@ -316,10 +342,20 @@ public enum StatsScanner {
     }
 
     struct Cache: Codable {
-        /// 5 (2026-09-04, Stats v2): `activities`/`byModel` need every
-        /// entry re-read; 4 was the peer-classification fix.
-        var version = 5
+        /// 7 (2026-09-05): per-minute output tokens for the tokens/min
+        /// record book (#89); 6 was `byEngine`/`byEffort` and the Codex
+        /// source; 5 was Stats v2's activities/models.
+        var version = 7
         var files: [String: FileEntry] = [:]
+    }
+
+    /// Codex CLI's transcripts: `$CODEX_HOME/sessions/YYYY/MM/DD/*.jsonl`
+    /// (`~/.codex` by default) — see `StatsCodex`.
+    public static func defaultCodexDir(home: String = NSHomeDirectory(),
+                                       environment: [String: String] = ProcessInfo.processInfo.environment) -> URL {
+        let root = environment["CODEX_HOME"].flatMap { $0.isEmpty ? nil : URL(fileURLWithPath: $0) }
+            ?? URL(fileURLWithPath: home).appendingPathComponent(".codex")
+        return root.appendingPathComponent("sessions")
     }
 
     public static func defaultCacheURL() -> URL {
@@ -366,7 +402,7 @@ public enum StatsScanner {
     /// parameter only so tests can shrink it to exercise multi-window
     /// files deterministically without a multi-MB fixture; every real
     /// caller uses the default.
-    public static func scan(projectsDir: URL, cacheURL: URL?, calendar: Calendar = .current,
+    public static func scan(projectsDir: URL, codexDir: URL? = nil, cacheURL: URL?, calendar: Calendar = .current,
                             maxAge: TimeInterval = 400 * 86_400, now: Date = Date(),
                             byteBudget: Int? = nil, windowBytes: Int = StatsScanner.windowBytes) -> Result {
         var cache = cacheURL.flatMap { try? Data(contentsOf: $0) }
@@ -378,14 +414,18 @@ public enum StatsScanner {
         // (one fixed depth below a session dir, not a recursive walk).
         // `sessionID`: the file's own transcript id normally, or the
         // PARENT session dir's name for a subagent file.
-        struct Candidate { let url: URL; let size: Int; let mtime: Date; let subagent: Bool; let sessionID: String }
+        struct Candidate {
+            let url: URL; let size: Int; let mtime: Date; let subagent: Bool; let sessionID: String
+            var engine = Stats.Engine.claude
+        }
         var candidates: [Candidate] = []
-        func addCandidate(_ url: URL, subagent: Bool, sessionID: String) {
+        func addCandidate(_ url: URL, subagent: Bool, sessionID: String, engine: Stats.Engine = .claude) {
             guard let values = try? url.resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey]),
                   let size = values.fileSize else { return }
             let mtime = values.contentModificationDate ?? .distantPast
             if now.timeIntervalSince(mtime) > maxAge { return }
-            candidates.append(Candidate(url: url, size: size, mtime: mtime, subagent: subagent, sessionID: sessionID))
+            candidates.append(Candidate(url: url, size: size, mtime: mtime, subagent: subagent, sessionID: sessionID,
+                                        engine: engine))
         }
         for project in (try? fm.contentsOfDirectory(at: projectsDir, includingPropertiesForKeys: nil)) ?? [] {
             // The app's own Haiku session-namer runs `claude -p` in
@@ -402,6 +442,13 @@ public enum StatsScanner {
                         addCandidate(sub, subagent: true, sessionID: sessionID)
                     }
                 }
+            }
+        }
+        // Codex CLI: `sessions/YYYY/MM/DD/rollout-<stamp>-<uuid>.jsonl`,
+        // the file name doubling as the session id.
+        if let codexDir, let walk = fm.enumerator(at: codexDir, includingPropertiesForKeys: [.fileSizeKey, .contentModificationDateKey]) {
+            for case let url as URL in walk where url.pathExtension == "jsonl" {
+                addCandidate(url, subagent: false, sessionID: url.deletingPathExtension().lastPathComponent, engine: .codex)
             }
         }
         candidates.sort { $0.mtime > $1.mtime }
@@ -444,8 +491,9 @@ public enum StatsScanner {
 
             var entry = cached ?? FileEntry()
             entry.subagent = c.subagent
+            entry.engine = c.engine.rawValue
             if dirty {
-                if c.size < entry.offset { entry = FileEntry(); entry.subagent = c.subagent }   // shrink: start over
+                if c.size < entry.offset { entry = FileEntry(); entry.subagent = c.subagent; entry.engine = c.engine.rawValue }   // shrink: start over
                 while entry.offset < c.size {
                     if let left = budgetLeft, left <= 0 { budgetSpent = true; break }
                     let consumed = parse(url: c.url, sessionID: c.sessionID,
@@ -492,6 +540,9 @@ public enum StatsScanner {
         // says exactly this, and rewriting the whole corpus's JSON on
         // every 5-minute refresh is pure IO. The checkpoint writes
         // inside a backfill above are untouched.
+        // Every file's share of a day is in: the day's peak minute is
+        // the sum across sessions, not any one file's.
+        for key in result.days.keys { result.days[key]!.finalizePeak() }
         let unchanged = filesTouched == 0 && live.count == cache.files.count
         cache.files = live
         if let cacheURL, !unchanged { writeCache(cache, to: cacheURL, fm: fm) }
@@ -563,11 +614,18 @@ public enum StatsScanner {
         }
         guard let lastNewline = data.lastIndex(of: newline) else { return 0 }
         let complete = data[data.startIndex...lastNewline]
+        let codex = entry.engine == Stats.Engine.codex.rawValue
         var lineStart = complete.startIndex
         while lineStart < complete.endIndex {
             let lineEnd = complete[lineStart...].firstIndex(of: newline) ?? complete.endIndex
             let line = complete[lineStart..<lineEnd]
             lineStart = lineEnd + 1
+            if codex {
+                if StatsCodex.worthParsing(line), let obj = try? JSONSerialization.jsonObject(with: line) as? [String: Any] {
+                    StatsCodex.ingest(obj, sessionID: sessionID, into: &entry, calendar: calendar)
+                }
+                continue
+            }
             // Cheap pre-filter: only user/assistant entries matter.
             let isUser = line.range(of: userMarker) != nil
             guard isUser || line.range(of: assistantMarker) != nil else { continue }

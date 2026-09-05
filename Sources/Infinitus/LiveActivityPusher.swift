@@ -245,9 +245,8 @@ final class LiveActivityPusher: ObservableObject {
                     let why = error?.localizedDescription ?? "HTTP \(code) \(body)"
                     self.lastResult = "\(what) → \(device) failed: \(why)"
                     self.log?("⚠️", "Live Activity push failed: \(why)")
-                    // A dead token (410 Unregistered / 400 BadDeviceToken)
-                    // will never work again — drop it.
-                    if code == 410 || body.contains("BadDeviceToken") {
+                    // A dead token will never work again — drop it.
+                    if LiveActivityPush.isDeadToken(status: code, body: body) {
                         self.registrations[slot] = nil
                         self.persist()
                     } else if body.contains("InvalidProviderToken") || body.contains("ExpiredProviderToken") {

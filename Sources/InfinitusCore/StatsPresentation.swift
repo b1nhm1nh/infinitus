@@ -32,6 +32,7 @@ extension Stats {
                     tile("Turns", s, \.turns),
                     tile("Tool calls", s, \.totalToolCalls),
                     tile("Output tokens", s, \.outputTokens),
+                    tile("Peak tokens/min", s, \.peakTokensPerMinute),
                     tile("Files touched", s, \.filesTouched),
                     tile("Co-authored by Claude", s, \.coAuthoredByClaude),
                     tile("Reverts", s, \.reverts),
@@ -76,6 +77,34 @@ extension Stats {
                     ratio("Mean hours to merge", s, \.meanMergeHours),
                 ]),
             ]
+        }
+
+        /// The tokens/min record book as lines (#89): best ever, today,
+        /// the trend, records this month — then the record days.
+        public static func recordLines(_ r: Stats.TokenRecords) -> [String] {
+            var out: [String] = []
+            if let best = r.best {
+                out.append("Best ever: \(perMinute(best.tokensPerMinute)) on \(best.day)")
+            } else {
+                return ["No busy minute on record yet."]
+            }
+            out.append("Today's peak: \(perMinute(r.today))")
+            if let trend = r.trend {
+                let arrow = trend >= 1.15 ? "↑" : trend <= 0.87 ? "↓" : "→"
+                out.append("Trend: \(arrow) \(String(format: "%.2f", trend))× this week's median peak vs the week before")
+            } else {
+                out.append("Trend: needs busy days in each of the last two weeks")
+            }
+            out.append("Records this month: \(r.recordsThisMonth) · all time: \(r.records.count)\(r.records.count >= Stats.TokenRecords.keep ? "+" : "")")
+            return out
+        }
+
+        public static func recordRows(_ r: Stats.TokenRecords) -> [(label: String, count: Int)] {
+            r.records.map { (label: $0.day, count: $0.tokensPerMinute) }
+        }
+
+        public static func perMinute(_ v: Int) -> String {
+            v >= 10_000 ? String(format: "%.1fk tok/min", Double(v) / 1000) : "\(v.formatted()) tok/min"
         }
 
         /// The four session-length buckets, in `Stats.Day.sessionBucket`
@@ -123,7 +152,7 @@ extension Stats {
             public var usdText: String { "$" + String(format: usd >= 100 ? "%.0f" : "%.2f", usd) }
         }
 
-        public static let activityFootnote = "Heuristic: each stretch between two of your messages is labeled by its strongest signal — a review skill or reviewer sub-agent, a plan skill, a debugging skill, browser tools, simulator commands; then test-file edits; then prose-only replies. A stretch counts on the day it started; sub-agent spend shows under models only."
+        public static let activityFootnote = "Heuristic: each stretch between two of your messages is labeled by its strongest signal — a review skill or reviewer sub-agent, a plan skill, a debugging skill, browser tools, simulator commands; then test-file edits; then prose-only replies. A stretch counts on the day it started; sub-agent spend shows under models, engines and effort only. Claude Code and Codex CLI transcripts are read; models without a price count tokens at $0."
 
         /// Catalogue order; activities with no stretches are left out.
         public static func activityRows(_ s: Stats.Summary) -> [Row] {
@@ -156,6 +185,33 @@ extension Stats {
             }
             return sorted.map { key, tally in
                 Row(id: key == "other" ? "Other models" : key, tally: tally, share: share(tally, total: total, tokenTotal: tokenTotal))
+            }
+        }
+
+        /// By $ descending. An engine whose models carry no price (Codex
+        /// CLI's OpenAI models today) is marked unpriced: its tokens are
+        /// real, its $0 is not a saving.
+        public static func engineRows(_ s: Stats.Summary) -> [Row] {
+            keyedRows(s.total.byEngine) { key, tally in
+                let title = Stats.Engine(rawValue: key)?.title ?? key
+                return tally.usd == 0 && tally.inputTokens + tally.outputTokens > 0 ? title + " · unpriced" : title
+            }
+        }
+
+        /// By $ descending; "Unset" is an entry with no effort recorded.
+        public static func effortRows(_ s: Stats.Summary) -> [Row] {
+            keyedRows(s.total.byEffort) { key, _ in key == "unset" ? "Unset" : key.prefix(1).uppercased() + key.dropFirst() }
+        }
+
+        private static func keyedRows(_ table: [String: Stats.ActivityTally],
+                                      title: (String, Stats.ActivityTally) -> String) -> [Row] {
+            let total = table.values.reduce(0) { $0 + $1.usd }
+            let tokenTotal = table.values.reduce(0) { $0 + $1.inputTokens + $1.outputTokens }
+            let sorted = table.sorted { a, b in
+                a.value.usd == b.value.usd ? a.key < b.key : a.value.usd > b.value.usd
+            }
+            return sorted.map { key, tally in
+                Row(id: title(key, tally), tally: tally, share: share(tally, total: total, tokenTotal: tokenTotal))
             }
         }
 

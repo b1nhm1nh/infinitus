@@ -23,6 +23,7 @@ cp tools/demo-cswap "$(dirname "$OUT")/demo-cswap"
 codesign --force --sign - "$OUT" 2>/dev/null
 if ! defaults read Infinitus-unbundled >/dev/null 2>&1; then
     { defaults export Limitless-unbundled - 2>/dev/null \
+      || defaults export run.infinitus - 2>/dev/null \
       || defaults export com.huuloc.infinitus - 2>/dev/null \
       || defaults export com.huuloc.limitless - 2>/dev/null \
       || defaults export io.github.claude-swap.CswapBar.g2 - 2>/dev/null; } \

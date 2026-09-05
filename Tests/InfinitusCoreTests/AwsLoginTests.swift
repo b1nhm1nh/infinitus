@@ -14,9 +14,18 @@ final class AwsLoginTests: XCTestCase {
         XCTAssertNil(AwsLogin.profile(in: "all good"))
         XCTAssertEqual(AwsLogin.profile(in: "aws: [ERROR]: The pending authorization to retrieve an SSO token has expired. The login flow to retrieve an SSO token must be restarted."), "default")
         XCTAssertEqual(AwsLogin.profile(in: "aws: [ERROR]: An error occurred (ExpiredToken) when calling the GetCallerIdentity operation: The security token included in the request is expired"), "default")
+        // The broker's refresh lock is held for >30 s only while the holder
+        // sits in the interactive login (2026-09-05, peon-wave-16: nothing
+        // shown while `aws login` waited for the browser).
+        XCTAssertEqual(AwsLogin.profile(in: "aws: [ERROR]: Error when retrieving credentials from custom-process: [aws-cred-broker] timed out after 30.0s waiting for the refresh lock held by pid 39243. Inspect that process; do not delete /Users/x/.config/banyan/aws-broker/global.lock while it is running.\ntunnel-DOWN"), "default")
         // Quoted, not suffered: a grep hit / Read line / source fixture.
         XCTAssertNil(AwsLogin.profile(in: "99:    let failed = \"aws: [ERROR]: Your session has expired. Please reauthenticate using 'aws login'.\""))
         XCTAssertNil(AwsLogin.profile(in: "    [aws-cred-broker] ...\n      Fix: aws login --profile papaya-login"))
+        // `… 2>&1 | tail -1` keeps only the broker's own two-space "Fix:"
+        // line — that indentation is the broker's, not a quote's
+        // (2026-09-05 11:02, banyan: nothing shown on the phone).
+        XCTAssertEqual(AwsLogin.profile(in: "=== A sts\n  Fix: aws login --profile papaya-login\n=== B refs\ndocs/x.md:33:- rows"), "papaya-login")
+        XCTAssertNil(AwsLogin.profile(in: "357:            f\"  Fix: aws login --profile {anchor}\""), "the broker's source, read")
     }
 
     func testFlowFollowsTheProfileKindInTheConfig() {
@@ -36,6 +45,48 @@ final class AwsLoginTests: XCTestCase {
         XCTAssertEqual(AwsLogin.flow(profile: "papaya-login", configText: config), .relay)
         XCTAssertEqual(AwsLogin.flow(profile: "default", configText: config), .relay)
         XCTAssertEqual(AwsLogin.flow(profile: "missing", configText: config), .relay)
+    }
+
+    func testAccountComesFromTheProfileConfig() {
+        let config = """
+            [default]
+            region = ap-southeast-1
+            [profile papaya-login]
+            login_session = arn:aws:iam::089192911254:user/loc+089@papaya.asia
+            region = ap-southeast-1
+            [profile papaya-dev]
+            sso_session = papaya
+            sso_account_id = 123456789012
+            sso_role_name = Dev
+            [profile plain]
+            region = us-east-1
+            [profile root-login]
+            login_session = arn:aws:iam::812652266901:root
+            """
+        XCTAssertEqual(AwsLogin.account(profile: "papaya-login", configText: config),
+                       AwsLogin.Account(accountId: "089192911254", userName: "loc+089@papaya.asia"))
+        XCTAssertEqual(AwsLogin.account(profile: "papaya-dev", configText: config),
+                       AwsLogin.Account(accountId: "123456789012", userName: nil))
+        XCTAssertEqual(AwsLogin.account(profile: "root-login", configText: config),
+                       AwsLogin.Account(accountId: "812652266901", userName: nil))
+        XCTAssertNil(AwsLogin.account(profile: "plain", configText: config))
+        XCTAssertNil(AwsLogin.account(profile: "default", configText: config))
+        XCTAssertNil(AwsLogin.account(profile: "missing", configText: config))
+        // The refactor kept the flow choice.
+        XCTAssertEqual(AwsLogin.flow(profile: "papaya-dev", configText: config), .deviceCode)
+        XCTAssertEqual(AwsLogin.flow(profile: "papaya-login", configText: config), .relay)
+    }
+
+    func testFillScriptQuotesValuesAndNeverTouchesPasswords() throws {
+        XCTAssertNil(AwsLogin.fillScript(account: nil))
+        let script = try XCTUnwrap(AwsLogin.fillScript(account: AwsLogin.Account(
+            accountId: "089192911254", userName: "o'neil\"</script>+x@y.z")))
+        XCTAssertTrue(script.contains(#"var A = "089192911254", U = "o'neil\"<\/script>+x@y.z";"#), script)
+        XCTAssertTrue(script.contains("el.type === 'password'"))
+        XCTAssertFalse(script.contains(".click()"))
+        XCTAssertFalse(script.contains(".submit("))
+        let noUser = try XCTUnwrap(AwsLogin.fillScript(account: AwsLogin.Account(accountId: "1", userName: nil)))
+        XCTAssertTrue(noUser.contains(#"U = null;"#))
     }
 
     func testParsesBothCliPrompts() {

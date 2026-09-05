@@ -32,7 +32,19 @@ struct StatsScreen: View {
                     }
                 }
                 effortSection("Where the effort went", Stats.Presentation.activityRows(s))
-                effortSection("By model", Stats.Presentation.modelRows(s), footer: Stats.Presentation.activityFootnote)
+                effortSection("By model", Stats.Presentation.modelRows(s))
+                effortSection("By engine", Stats.Presentation.engineRows(s))
+                effortSection("By effort", Stats.Presentation.effortRows(s), footer: Stats.Presentation.activityFootnote)
+                if let records = model.stats?.tokenRecords {
+                    Section("Tokens/min records") {
+                        ForEach(Stats.Presentation.recordLines(records), id: \.self) { line in
+                            Text(line).font(.caption).foregroundStyle(.secondary).monospacedDigit()
+                        }
+                        ForEach(Stats.Presentation.recordRows(records), id: \.label) { row in
+                            LabeledContent(row.label, value: Stats.Presentation.perMinute(row.count))
+                        }
+                    }
+                }
                 Section("Rhythm") {
                     ForEach(Stats.Presentation.sessionLengthRows(s), id: \.label) { row in
                         LabeledContent(row.label, value: n(row.count))
@@ -45,8 +57,8 @@ struct StatsScreen: View {
                         .font(.caption).foregroundStyle(.secondary).monospacedDigit()
                 }
             } else {
-                ContentUnavailableView("No stats yet", systemImage: "chart.bar",
-                                       description: Text("The Mac sends them once its first scan finishes."))
+                ThemedPlaceholder(theme: model.rowTheme, key: "empty", plainSymbol: "chart.bar",
+                                  description: "The Mac sends them once its first scan finishes.")
             }
         }
         .navigationTitle("Stats")

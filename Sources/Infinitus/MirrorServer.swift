@@ -95,6 +95,20 @@ final class MirrorActivityTokenBox: @unchecked Sendable {
 
 /// The `POST /crashes` handler: a phone's crash report, handed to
 /// AppModel's store on the main actor.
+final class MirrorSessionStartBox: @unchecked Sendable {
+    private let lock = NSLock()
+    private var handler: (@Sendable (SessionStart.Request) -> SessionStart.Reply)?
+
+    func set(_ new: @escaping @Sendable (SessionStart.Request) -> SessionStart.Reply) {
+        lock.lock(); handler = new; lock.unlock()
+    }
+
+    func call(_ request: SessionStart.Request) -> SessionStart.Reply? {
+        lock.lock(); let current = handler; lock.unlock()
+        return current?(request)
+    }
+}
+
 final class MirrorCrashBox: @unchecked Sendable {
     private let lock = NSLock()
     private var sink: (@Sendable (CrashReport) -> Void)?
@@ -151,7 +165,7 @@ final class MirrorAwsLoginBox: @unchecked Sendable {
 }
 
 /// Where `POST /sessions/<pid>/input` deliveries run, one at a time.
-private let mirrorInputQueue = DispatchQueue(label: "com.huuloc.infinitus.mirror-input", qos: .userInitiated)
+private let mirrorInputQueue = DispatchQueue(label: "run.infinitus.mirror-input", qos: .userInitiated)
 
 final class MirrorSessionInputBox: @unchecked Sendable {
     private let lock = NSLock()
@@ -206,6 +220,8 @@ final class MirrorServer: ObservableObject {
     let awsLogin = MirrorAwsLoginBox()
     /// Answers `POST /crashes`; set by AppModel once at start.
     let crashes = MirrorCrashBox()
+    /// Answers `POST /sessions/start` (#91); set by AppModel once at start.
+    let sessionStart = MirrorSessionStartBox()
     /// Event-log sink (icon, text), set by AppModel.
     var log: ((String, String) -> Void)?
     /// Fires with the bound port once the listener is up — the quick
@@ -213,7 +229,7 @@ final class MirrorServer: ObservableObject {
     var onReady: ((UInt16) -> Void)?
 
     private var listener: NWListener?
-    private let queue = DispatchQueue(label: "com.huuloc.infinitus.mirror-server")
+    private let queue = DispatchQueue(label: "run.infinitus.mirror-server")
 
     func start(machineName: String, token: String) {
         self.token.set(token)
@@ -256,6 +272,7 @@ final class MirrorServer: ObservableObject {
         let payload = self.payload
         let token = self.token
         let sessionFeed = self.sessionFeed
+        let sessionStart = self.sessionStart
         let sessionInput = self.sessionInput
         let sessionImage = self.sessionImage
         let activityTokens = self.activityTokens
@@ -271,7 +288,7 @@ final class MirrorServer: ObservableObject {
         }
         listener.newConnectionHandler = { [queue] connection in
             Self.serve(connection, payload: payload, token: token, sessionFeed: sessionFeed,
-                       sessionInput: sessionInput, sessionImage: sessionImage, activityTokens: activityTokens, crashes: crashes,
+                       sessionInput: sessionInput, sessionImage: sessionImage, activityTokens: activityTokens, crashes: crashes, sessionStart: sessionStart,
                        awsLogin: awsLogin, queue: queue, onServed: served)
         }
         listener.stateUpdateHandler = { [weak self] state in
@@ -317,14 +334,14 @@ final class MirrorServer: ObservableObject {
                                           sessionFeed: MirrorSessionFeedBox,
                                           sessionInput: MirrorSessionInputBox,
                                             sessionImage: MirrorSessionImageBox,
-                                          activityTokens: MirrorActivityTokenBox, crashes: MirrorCrashBox,
+                                          activityTokens: MirrorActivityTokenBox, crashes: MirrorCrashBox, sessionStart: MirrorSessionStartBox,
                                           awsLogin: MirrorAwsLoginBox,
                                           queue: DispatchQueue,
                                           onServed: @escaping @Sendable (MirrorTransport.Request) -> Void) {
         connection.start(queue: queue)
         receive(connection, buffer: Data(), payload: payload, token: token,
                sessionFeed: sessionFeed, sessionInput: sessionInput, sessionImage: sessionImage,
-               activityTokens: activityTokens, crashes: crashes, awsLogin: awsLogin, onServed: onServed)
+               activityTokens: activityTokens, crashes: crashes, sessionStart: sessionStart, awsLogin: awsLogin, onServed: onServed)
     }
 
     private nonisolated static func receive(_ connection: NWConnection,
@@ -334,7 +351,7 @@ final class MirrorServer: ObservableObject {
                                             sessionFeed: MirrorSessionFeedBox,
                                             sessionInput: MirrorSessionInputBox,
                                             sessionImage: MirrorSessionImageBox,
-                                            activityTokens: MirrorActivityTokenBox, crashes: MirrorCrashBox,
+                                            activityTokens: MirrorActivityTokenBox, crashes: MirrorCrashBox, sessionStart: MirrorSessionStartBox,
                                             awsLogin: MirrorAwsLoginBox,
                                             onServed: @escaping @Sendable (MirrorTransport.Request) -> Void) {
         connection.receive(minimumIncompleteLength: 1, maximumLength: 4096) {
@@ -454,6 +471,27 @@ final class MirrorServer: ObservableObject {
                                         completion: .contentProcessed { _ in connection.cancel() })
                     }
                     return
+                } else if request.method == "POST", request.path == SessionStart.path {
+                    guard let decoded = try? JSONDecoder().decode(SessionStart.Request.self, from: request.body)
+                    else {
+                        connection.send(content: MirrorTransport.badRequestResponse(),
+                                        completion: .contentProcessed { _ in connection.cancel() })
+                        return
+                    }
+                    // Opening a terminal and waiting for the session to
+                    // register takes seconds — off the connection queue,
+                    // and not on the input queue either (a send while a
+                    // start waits must not queue behind it).
+                    DispatchQueue.global(qos: .userInitiated).async {
+                        let response = sessionStart.call(decoded)
+                            .flatMap { try? JSONEncoder().encode($0) }
+                            .map(MirrorTransport.jsonResponse)
+                            ?? MirrorTransport.notFoundResponse()
+                        onServed(request)
+                        connection.send(content: response,
+                                        completion: .contentProcessed { _ in connection.cancel() })
+                    }
+                    return
                 } else if request.method == "POST", request.path == MirrorTransport.crashesPath {
                     let decoder = JSONDecoder()
                     decoder.dateDecodingStrategy = .iso8601
@@ -492,7 +530,7 @@ final class MirrorServer: ObservableObject {
             }
             receive(connection, buffer: buffer, payload: payload, token: token,
                    sessionFeed: sessionFeed, sessionInput: sessionInput, sessionImage: sessionImage,
-                   activityTokens: activityTokens, crashes: crashes, awsLogin: awsLogin, onServed: onServed)
+                   activityTokens: activityTokens, crashes: crashes, sessionStart: sessionStart, awsLogin: awsLogin, onServed: onServed)
         }
     }
 }

@@ -9,7 +9,7 @@ import os
 /// notifications, and hands the device token to the Mac through the
 /// same route the Live Activity tokens use (kind "alert").
 final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDelegate {
-    private let log = Logger(subsystem: "com.huuloc.infinitus.mobile", category: "alerts")
+    private let log = Logger(subsystem: "run.infinitus.mobile", category: "alerts")
 
     func application(_ application: UIApplication,
                      didFinishLaunchingWithOptions options: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
@@ -40,6 +40,17 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
     func userNotificationCenter(_ center: UNUserNotificationCenter,
                                 willPresent notification: UNNotification) async -> UNNotificationPresentationOptions {
         [.banner, .sound]
+    }
+
+    /// An AWS sign-in notification's tap lands on its sheet.
+    func userNotificationCenter(_ center: UNUserNotificationCenter,
+                                didReceive response: UNNotificationResponse) async {
+        guard let id = response.notification.request.content.userInfo[AwsLoginAlerts.userInfoKey] as? String
+        else { return }
+        await MainActor.run {
+            MirrorModel.shared.requestedAwsLogin = id
+            MirrorModel.shared.requestedTab = "sessions"
+        }
     }
 }
 

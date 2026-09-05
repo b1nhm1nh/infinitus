@@ -224,6 +224,15 @@ public struct ControlCommand: Codable, Sendable, Equatable {
                        effect: .write,
                        summary: "PUT the proxy's routing strategy.",
                        replyShape: "{routingStrategy}"),
+        ControlCommand(name: "event", effect: .write,
+                       summary: "A Claude Code hook payload on stdin (the plugin's Notification/Stop hooks): a prompt is pushed the moment it appears, then the fleet refreshes.",
+                       replyShape: "{pid?}"),
+        ControlCommand(name: "sessions", effect: .read,
+                       summary: "The live Claude Code sessions: pid, name, folder, status.",
+                       replyShape: "[{pid, name?, cwd, status?, kind}]"),
+        ControlCommand(name: "send", args: ["<pid|name>"], effect: .write,
+                       summary: "Text on stdin goes to that session as if typed into its prompt (peer socket first, then its terminal).",
+                       replyShape: "{outcome, channel?, detail?}"),
     ]
 
     public static func named(_ name: String) -> ControlCommand? {

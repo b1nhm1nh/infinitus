@@ -10,17 +10,34 @@ struct SessionsScreen: View {
     @ObservedObject var model: MirrorModel
     @ObservedObject var progress: MobileSessionProgress
     @State private var path = NavigationPath()
+    /// The session whose feed is on screen, if one is.
+    @State private var openPid: Int?
+    @State private var startSheet = false
 
     var body: some View {
         NavigationStack(path: $path) {
             content
                 .navigationTitle(model.rowTheme.tabLabel("sessions"))
                 .refreshable { await model.refresh() }
+                .toolbar {
+                    ToolbarItem(placement: .primaryAction) {
+                        Button { startSheet = true } label: { Image(systemName: "plus") }
+                            .accessibilityLabel("Start a session")
+                            .disabled(model.snapshot == nil && model.snapshots.isEmpty)
+                    }
+                }
+                .sheet(isPresented: $startSheet) { StartSessionSheet(model: model) }
+                .onChange(of: model.requestedPid) { _, _ in openRequestedPid() }
+                .onChange(of: model.snapshot?.capturedAt) { _, _ in openRequestedPid() }
                 .navigationDestination(for: HostSession.self) { hostSession in
                     SessionFeedScreen(model: model, hostSession: hostSession)
+                        .onAppear { openPid = hostSession.session.pid }
+                        .onDisappear { if openPid == hostSession.session.pid { openPid = nil } }
                 }
                 .navigationDestination(for: SessionDetail.self) { session in
                     SessionFeedScreen(model: model, session: session)
+                        .onAppear { openPid = session.pid }
+                        .onDisappear { if openPid == session.pid { openPid = nil } }
                 }
                 // The feed header's tap target (user 2026-09-03: account
                 // summary + "a more detail screen when tap on its header
@@ -29,6 +46,28 @@ struct SessionsScreen: View {
                 .navigationDestination(for: SessionDetailRoute.self) { route in
                     SessionDetailScreen(model: model, progress: progress, hostSession: route.hostSession)
                 }
+        }
+        // A shake staged a capture for a session: open its feed (which
+        // takes the capture into its composer). A feed already open for
+        // that pid takes it itself — re-pushing a fresh SessionDetail
+        // (its status may have moved) would rebuild the feed and lose
+        // the capture the old one just took. Any other feed is replaced.
+        .onChange(of: model.stagedCapture?.id) { _, _ in
+            guard let staged = model.stagedCapture else { return }
+            guard openPid != staged.pid else { return }
+            if let target = hostSessionSections
+                .flatMap({ $0.sessions })
+                .first(where: { $0.pid == staged.pid }) {
+                path = NavigationPath()
+                path.append(target)
+            } else if let session = fleetsWithSessions
+                .flatMap({ $0.liveSessions?.sessions ?? [] })
+                .first(where: { $0.pid == staged.pid }) {
+                path = NavigationPath()
+                path.append(session)
+            } else {
+                model.stagedCapture = nil
+            }
         }
         // Same dev seam as `INFINITUS_TAB` — a headless simulator capture
         // can't tap a row, so a pid named here pushes straight to its feed.
@@ -42,6 +81,19 @@ struct SessionsScreen: View {
             else { return }
             path.append(target)
         }
+        .onChange(of: fleetsWithSessions.isEmpty) { _, _ in openSeamFeed() }
+        .onAppear { DispatchQueue.main.asyncAfter(deadline: .now() + 1) { openSeamFeed() } }
+    }
+
+    private func openSeamFeed() {
+        guard path.isEmpty,
+              let pidText = ProcessInfo.processInfo.environment["INFINITUS_FEED_PID"],
+              let pid = Int(pidText),
+              let session = fleetsWithSessions
+                  .flatMap({ $0.liveSessions?.sessions ?? [] })
+                  .first(where: { $0.pid == pid })
+        else { return }
+        path.append(session)
     }
 
     private struct HostSessionGroup: Identifiable {
@@ -114,16 +166,18 @@ struct SessionsScreen: View {
             }
             .listStyle(.insetGrouped)
             .sheet(item: $awsLoginItem) { AwsLoginScreen(item: $0) }
-        } else if !model.hosts.isEmpty {
-            ContentUnavailableView("No live sessions",
-                                   systemImage: "brain",
-                                   description: Text(model.hosts.count > 1
-                                                     ? "Nothing is running on your hosts right now."
-                                                     : "Nothing is running on the \(model.hosts.first?.label.isEmpty == false ? model.hosts.first!.label : "Mac") right now."))
+            // A cold launch from the notification asks before the first
+            // snapshot is in; the request waits for the login to appear.
+            .onChange(of: model.requestedAwsLogin) { _, _ in openRequestedAwsLogin() }
+            .onChange(of: model.snapshot?.capturedAt) { _, _ in openRequestedAwsLogin() }
+        } else if !model.hosts.isEmpty || !model.fleets.isEmpty {
+            ThemedPlaceholder(theme: model.rowTheme, key: "noSessions", plainSymbol: "brain",
+                              description: model.hosts.count > 1
+                                  ? "Nothing is running on your hosts right now."
+                                  : "Nothing is running on the \(model.hosts.first?.label.isEmpty == false ? model.hosts.first!.label : "Mac") right now.")
         } else {
-            ContentUnavailableView("Waiting for the fleet",
-                                   systemImage: "antenna.radiowaves.left.and.right",
-                                   description: Text("Pair with a host in Settings to see its sessions."))
+            ThemedPlaceholder(theme: model.rowTheme, key: "searching", plainSymbol: "antenna.radiowaves.left.and.right",
+                              description: "Pair with a host in Settings to see its sessions.")
         }
     }
 
@@ -139,6 +193,24 @@ struct SessionsScreen: View {
     }
 
     @State private var awsLoginItem: AwsLogin.Item?
+
+    /// A session started from the + sheet: its chat opens the moment the
+    /// snapshot lists the pid.
+    private func openRequestedPid() {
+        guard let pid = model.requestedPid,
+              let session = fleetsWithSessions.flatMap({ $0.liveSessions?.sessions ?? [] })
+                  .first(where: { $0.pid == pid }) else { return }
+        model.requestedPid = nil
+        path = NavigationPath()
+        path.append(session)
+    }
+
+    private func openRequestedAwsLogin() {
+        guard let id = model.requestedAwsLogin,
+              let item = model.awsLogins.first(where: { $0.id == id }) else { return }
+        model.requestedAwsLogin = nil
+        awsLoginItem = item
+    }
 
     private func awsPhase(_ item: AwsLogin.Item) -> String {
         switch item.state?.phase {

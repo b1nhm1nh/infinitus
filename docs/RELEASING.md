@@ -7,24 +7,30 @@ from `main` daily.
 ## Signing today
 
 Ad-hoc in CI, Apple Development locally (Gatekeeper on another Mac
-needs `--no-quarantine` or right-click → Open). The full Developer ID
-pipeline was proven end-to-end on 2026-09-01 under the company team —
-cert → local notarization Accepted → staple → spctl pass → all five CI
-secrets — then unsigned the same day (a different signing account is
-coming). Redoing it with the new account is the checklist below plus
-~10 minutes; nothing in the workflow needs to change.
+needs `--no-quarantine` or right-click → Open). The Developer ID
+pipeline was proven end-to-end on 2026-09-01 under the company team,
+then unsigned the same day. The personal paid team (`Q783W6B4FA`,
+2026-09-05) redoes it: `tools/signing-wizard.sh` walks every step
+below — cert, API key, local notarization proof, the five CI secrets,
+the phone's first team build, the APNs key for #70 — and re-runs safely.
 
 ## Getting a Developer ID
 
-- Only a team's **Account Holder** can create Developer ID certificates
-  (developer.apple.com → Certificates → "+" → Developer ID Application).
-  Under an organization's team, every Gatekeeper prompt names the
-  organization as the signer and notarization runs under its account.
-- Otherwise: a personal Apple Developer Program membership ($99/yr).
+- Only a team's **Account Holder** can create Developer ID certificates:
+  Xcode → Settings → Accounts → the team → Manage Certificates → "+" →
+  Developer ID Application (the private key stays in the login
+  keychain). Under an organization's team, every Gatekeeper prompt names
+  the organization as the signer and notarization runs under its account.
 
 Export the cert + private key from Keychain Access as a `.p12`, and create
-an App Store Connect API key (Users and Access → Integrations → Team keys,
-role Developer) for notarization.
+an App Store Connect API key (Users and Access → Integrations → **Team**
+keys, role Developer; individual keys are refused) for notarization.
+`xcrun notarytool store-credentials infinitus --key … --key-id … --issuer …`
+makes the local loop `notarytool submit --keychain-profile infinitus`.
+
+`make-app.sh` signs inside-out: the bundled `infinitusctl` first, then
+the bundle — a bundle-only codesign leaves the helper on its ad-hoc
+linker signature, which notarization rejects.
 
 ## Wiring it into CI
 
@@ -45,9 +51,10 @@ signs with `--options runtime --timestamp` → `notarytool submit --wait` →
 released zip is built after it. Once a notarized release exists, drop the
 `--no-quarantine` wording from the README and the cask.
 
-Local check of a Developer ID build: `SIGN_IDENTITY="Developer ID
-Application: …" ./make-app.sh && spctl --assess --type execute -vv
-Infinitus.app`.
+Local check of a Developer ID build: the wizard's stage 3 re-signs a
+copy of `Infinitus.app` in a temp dir, notarizes, staples and runs
+`spctl --assess` on it — no rebuild, the repo bundle untouched. Or via
+`SIGN_IDENTITY="Developer ID Application: …" ./make-app.sh && spctl --assess --type execute -vv Infinitus.app`.
 
 ## Versioning & Bumping
 
@@ -56,3 +63,13 @@ When bumping the release version:
 2. Update `InfinitusVersion.current` in `Sources/InfinitusCore/InfinitusVersion.swift` to match. Both Windows binaries (`infinitus-win` and `infinitus-tray-win`) read this constant.
 3. Verify agreement using `swift test --filter VersionTests`.
 
+## Phone
+
+`ios/project.yml` carries `DEVELOPMENT_TEAM` and automatic signing, so a
+plain `xcodebuild -destination 'generic/platform=iOS'` is a team-signed
+device build; add `-allowProvisioningUpdates` once so Xcode registers
+the three bundle ids and mints their profiles (the wizard's stage 5
+does, and installs with `devicectl`). CI's simulator job still passes
+`CODE_SIGNING_ALLOWED=NO` on the command line. TestFlight is not wired:
+it needs an App Store Connect app record and an archive/export, which
+flips `aps-environment` to production.

@@ -48,6 +48,13 @@ public struct MirrorSnapshot: Codable, Sendable {
     /// dropped and its sets compacted so the whole thing stays small.
     /// Additive optional.
     public let stats: Stats.Bundle?
+    /// Folders sessions have run in lately, newest first — the phone's
+    /// repository picker for a new session (#91). Additive optional.
+    public let recentCwds: [String]?
+    /// True when the Mac pushes its alerts to phones over APNs (#86): a
+    /// phone that registered an alert token then skips its own local
+    /// "swapped to" banner, so the swap arrives once.
+    public let pushesAlerts: Bool?
 
     public init(capturedAt: Date, machineName: String, listJSON: Data,
                 sessions: [SessionPanelRow], prefs: FleetPrefs? = nil,
@@ -60,7 +67,8 @@ public struct MirrorSnapshot: Codable, Sendable {
                 forecast: UsageForecast? = nil,
                 plan: WindowPlanner.Plan? = nil,
                 awsLogins: [AwsLogin.Item]? = nil,
-                stats: Stats.Bundle? = nil) {
+                stats: Stats.Bundle? = nil,
+                recentCwds: [String]? = nil, pushesAlerts: Bool? = nil) {
         self.capturedAt = capturedAt
         self.machineName = machineName
         self.listJSON = listJSON
@@ -76,6 +84,8 @@ public struct MirrorSnapshot: Codable, Sendable {
         self.plan = plan
         self.awsLogins = awsLogins
         self.stats = stats
+        self.recentCwds = recentCwds
+        self.pushesAlerts = pushesAlerts
     }
 }
 

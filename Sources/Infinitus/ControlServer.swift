@@ -187,6 +187,30 @@ final class ControlServer {
             await model.refreshSnapshot()
             return ControlReply(ok: true, result: try .of(fleetsPayload()))
 
+        case "sessions":
+            return ControlReply(ok: true, result: .array(model.sessionRows().map { row in
+                .object(["pid": .number(Double(row.pid)), "name": row.name.map { .string($0) } ?? .null,
+                         "cwd": .string(row.cwd), "status": row.status.map { .string($0) } ?? .null,
+                         "kind": .string(row.kind)])
+            }))
+
+        case "send":
+            guard let text = r.secret, !text.isEmpty else { throw Fail("send: the message is expected on stdin") }
+            guard let who = r.args.first, let pid = model.sessionPid(matching: who) else {
+                throw Fail("no live session matches \(r.args.first ?? "?"); see `infinitusctl sessions`")
+            }
+            let reply = await model.send(SessionInput.Request(kind: .message, text: text),
+                                         toPid: pid, icon: "💬", what: "control send")
+            return ControlReply(ok: reply.outcome == "delivered", result: try .of(reply),
+                                error: reply.outcome == "delivered" ? nil : "\(reply.outcome)\(reply.detail.map { ": " + $0 } ?? "")")
+
+        case "event":
+            guard let payload = r.secret, let event = HookEvent.parse(payload) else {
+                throw Fail("event: a Claude Code hook payload (JSON with hook_event_name) is expected on stdin")
+            }
+            let pid = model.handleHookEvent(event)
+            return ControlReply(ok: true, result: .object(["pid": pid.map { .number(Double($0)) } ?? .null]))
+
         case "switch", "hold", "unhold", "rename", "remove":
             let (fleet, n) = try target(r)
             let need: EngineCapabilities = ["switch": .switch, "hold": .hold, "unhold": .hold,

@@ -371,8 +371,133 @@ final class StatsTests: XCTestCase {
         XCTAssertEqual(second.days["2026-09-04"]?.inputTokens, 10)
     }
 
-    func testCacheVersionIsFive() {
-        XCTAssertEqual(StatsScanner.Cache().version, 5)
+    func testCacheVersionIsSeven() {
+        XCTAssertEqual(StatsScanner.Cache().version, 7)
+    }
+
+    // MARK: engines and effort (issue #24, round 2)
+
+    func testIngestChargesEngineAndEffortForClaudeEntries() {
+        var e = StatsScanner.FileEntry()
+        let lines = [
+            #"{"type":"user","timestamp":"2026-09-04T01:00:00.000Z","origin":{"kind":"human"},"message":{"role":"user","content":"go"}}"#,
+            #"{"type":"assistant","effort":"high","timestamp":"2026-09-04T01:00:10.000Z","message":{"id":"a1","model":"claude-opus-5","usage":{"input_tokens":100,"output_tokens":10},"content":[{"type":"text","text":"done"}]}}"#,
+            #"{"type":"user","timestamp":"2026-09-04T01:01:00.000Z","origin":{"kind":"human"},"message":{"role":"user","content":"more"}}"#,
+            #"{"type":"assistant","timestamp":"2026-09-04T01:01:10.000Z","message":{"id":"a2","model":"claude-opus-5","usage":{"input_tokens":50,"output_tokens":5},"content":[{"type":"text","text":"ok"}]}}"#,
+            #"{"type":"user","timestamp":"2026-09-04T01:02:00.000Z","origin":{"kind":"human"},"message":{"role":"user","content":"bye"}}"#,
+        ]
+        for line in lines { StatsScanner.ingest(entry(line), sessionID: "s1", into: &e, calendar: cal) }
+        let d = e.days["2026-09-04"]!
+        XCTAssertEqual(d.byEngine["claude"]?.inputTokens, 150)
+        XCTAssertEqual(d.byEngine["claude"]?.stretches, 2)
+        XCTAssertEqual(d.byEngine["claude"]?.seconds ?? 0, 20, accuracy: 0.5)
+        XCTAssertEqual(d.byEffort["high"]?.inputTokens, 100)
+        XCTAssertEqual(d.byEffort["high"]?.stretches, 1)
+        XCTAssertEqual(d.byEffort["unset"]?.inputTokens, 50)        // no `effort` on the entry
+        XCTAssertEqual(d.byEffort["unset"]?.stretches, 1)
+        XCTAssertNil(d.byEngine["codex"])
+    }
+
+    func testDayMergesEngineAndEffortAndDecodesWithoutThem() throws {
+        var a = Stats.Day(), b = Stats.Day()
+        a.byEngine["claude"] = Stats.ActivityTally(); a.byEngine["claude"]!.stretches = 1
+        b.byEngine["claude"] = Stats.ActivityTally(); b.byEngine["claude"]!.stretches = 2
+        b.byEffort["max"] = Stats.ActivityTally(); b.byEffort["max"]!.usd = 1
+        let c = a + b
+        XCTAssertEqual(c.byEngine["claude"]?.stretches, 3)
+        XCTAssertEqual(c.byEffort["max"]?.usd, 1)
+        let old = try JSONDecoder().decode(Stats.Day.self, from: Data(#"{"humanMessages":3}"#.utf8))
+        XCTAssertEqual(old.byEngine, [:])
+        XCTAssertEqual(old.byEffort, [:])
+    }
+
+    func testCodexIngestCountsARollout() {
+        var e = StatsScanner.FileEntry()
+        e.engine = Stats.Engine.codex.rawValue
+        let lines = [
+            #"{"timestamp":"2026-07-14T06:40:33.027Z","type":"session_meta","payload":{"id":"x","cwd":"/w/app","cli_version":"0.144.1","model_provider":"openai"}}"#,
+            #"{"timestamp":"2026-07-14T06:40:35.724Z","type":"turn_context","payload":{"turn_id":"t1","cwd":"/w/app","model":"gpt-5.6-sol","effort":"high"}}"#,
+            #"{"timestamp":"2026-07-14T06:40:35.732Z","type":"event_msg","payload":{"type":"user_message","message":"<system_instruction>\nYou are working inside Conductor\n</system_instruction>"}}"#,
+            #"{"timestamp":"2026-07-14T06:40:36.000Z","type":"event_msg","payload":{"type":"user_message","message":"<system_instruction>\nThe user has attached these files.\n</system_instruction>\n<system_instruction>\nRead them first.\n</system_instruction>\n\nfix the thumbnail crash"}}"#,
+            #"{"timestamp":"2026-07-14T06:40:40.457Z","type":"response_item","payload":{"type":"reasoning","id":"rs_1","summary":[],"encrypted_content":"gAAAA"}}"#,
+            #"{"timestamp":"2026-07-14T06:40:42.871Z","type":"response_item","payload":{"type":"custom_tool_call","id":"ctc_1","status":"completed","call_id":"c1","name":"exec","input":"const r = await tools.exec_command({cmd: \"xcrun simctl boot X && ls\"})"}}"#,
+            #"{"timestamp":"2026-07-14T06:40:50.000Z","type":"response_item","payload":{"type":"function_call","id":"fc_1","status":"completed","call_id":"c2","name":"wait","arguments":"{\"session_id\":1}"}}"#,
+            #"{"timestamp":"2026-07-14T06:40:54.113Z","type":"response_item","payload":{"type":"custom_tool_call_output","call_id":"c1","output":"ok"}}"#,
+            #"{"timestamp":"2026-07-14T06:40:55.000Z","type":"world_state","payload":{"files":{"/w/app/utils/thumb.ts":"..."}}}"#,
+            #"{"timestamp":"2026-07-14T06:40:54.127Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":22462,"cached_input_tokens":0,"output_tokens":439,"reasoning_output_tokens":151,"total_tokens":22901},"last_token_usage":{"input_tokens":22462,"cached_input_tokens":12000,"output_tokens":439,"reasoning_output_tokens":151,"total_tokens":22901}},"rate_limits":null}}"#,
+            #"{"timestamp":"2026-07-14T06:45:13.953Z","type":"event_msg","payload":{"type":"patch_apply_end","call_id":"e1","turn_id":"t1","success":true,"changes":{"/w/app/utils/thumb.test.ts":{"type":"add"},"/w/app/utils/thumb.ts":{"type":"update"}}}}"#,
+            #"{"timestamp":"2026-07-14T06:45:20.000Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":30000,"cached_input_tokens":0,"output_tokens":600,"total_tokens":30600},"last_token_usage":{"input_tokens":8000,"cached_input_tokens":1000,"output_tokens":200,"reasoning_output_tokens":50,"total_tokens":8200}},"rate_limits":null}}"#,
+            #"{"timestamp":"2026-07-14T06:50:54.387Z","type":"event_msg","payload":{"type":"task_complete","turn_id":"t1","last_agent_message":"Fixed."}}"#,
+            #"{"timestamp":"2026-07-14T08:21:37.800Z","type":"compacted","payload":{"message":"summary","replacement_history":[]}}"#,
+            #"{"timestamp":"2026-07-14T08:21:37.835Z","type":"event_msg","payload":{"type":"context_compacted"}}"#,
+            #"{"timestamp":"2026-07-14T08:30:00.000Z","type":"event_msg","payload":{"type":"user_message","message":"thanks"}}"#,
+        ]
+        for line in lines {
+            let skipped = ["encrypted_content", "call_output", "\"world_state\"", "\"compacted\""].contains { line.contains($0) }
+            XCTAssertEqual(StatsCodex.worthParsing(Data(line.utf8)), !skipped, line)
+            if !skipped { StatsCodex.ingest(entry(line), sessionID: "rollout-1", into: &e, calendar: cal) }
+        }
+        let d = e.days["2026-07-14"]!
+        XCTAssertEqual(e.cwd, "/w/app")
+        XCTAssertEqual(d.humanMessages, 2)                                   // the Conductor preamble is not a person; the words after it are
+        XCTAssertEqual(d.toolCalls, ["exec": 1, "apply_patch": 1])          // `wait` is polling, not a call
+        XCTAssertEqual(d.inputTokens, 10462 + 7000)                          // uncached input
+        XCTAssertEqual(d.outputTokens, 639)
+        XCTAssertEqual(d.usd, 0)                                             // OpenAI models: unpriced
+        XCTAssertEqual(d.byModel["gpt-5.6-sol"]?.inputTokens, 17462)
+        XCTAssertEqual(d.byModel["gpt-5.6-sol"]?.stretches, 1)
+        XCTAssertEqual(d.byEngine["codex"]?.inputTokens, 17462)
+        XCTAssertEqual(d.byEngine["codex"]?.stretches, 1)
+        XCTAssertEqual(d.byEffort["high"]?.stretches, 1)
+        XCTAssertEqual(d.activities["simulator"]?.stretches, 1)             // the exec's `xcrun simctl` wins over the edits
+        XCTAssertEqual(d.activities["simulator"]?.seconds ?? 0, 618.4, accuracy: 0.5)  // 06:40:36 → 06:50:54 task_complete
+        XCTAssertEqual(d.turns, 1)
+        XCTAssertEqual(d.compactions, 1)
+        XCTAssertEqual(d.waitingSeconds, 5946, accuracy: 1)                  // 06:50:54 → 08:30:00
+        XCTAssertEqual(d.longestUnattended, 2)
+        XCTAssertEqual(d.sessions, ["rollout-1"])
+        XCTAssertNotNil(e.state.stretch)                                     // "thanks" opened one, still unanswered
+    }
+
+    func testScanWalksTheCodexSessionsTree() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("stats-codex-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let projects = root.appendingPathComponent("projects")
+        let day = root.appendingPathComponent("codex/2026/07/14")
+        try FileManager.default.createDirectory(at: projects, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: day, withIntermediateDirectories: true)
+        try [
+            #"{"timestamp":"2026-07-14T06:40:35.724Z","type":"turn_context","payload":{"cwd":"/w/app","model":"gpt-5.5","effort":"max"}}"#,
+            #"{"timestamp":"2026-07-14T06:40:36.000Z","type":"event_msg","payload":{"type":"user_message","message":"hi"}}"#,
+            #"{"timestamp":"2026-07-14T06:40:54.127Z","type":"event_msg","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":100,"cached_input_tokens":0,"output_tokens":10}}}}"#,
+        ].joined(separator: "\n").appending("\n")
+            .write(to: day.appendingPathComponent("rollout-2026-07-14T13-40-32-abc.jsonl"), atomically: true, encoding: .utf8)
+        let now = date("2026-07-15T00:00:00Z")
+        let r = StatsScanner.scan(projectsDir: projects, codexDir: root.appendingPathComponent("codex"),
+                                  cacheURL: root.appendingPathComponent("cache.json"), calendar: cal, now: now)
+        XCTAssertEqual(r.files, 1)
+        XCTAssertEqual(r.cwds, ["/w/app"])
+        XCTAssertEqual(r.days["2026-07-14"]?.byEngine["codex"]?.inputTokens, 100)
+        XCTAssertEqual(r.days["2026-07-14"]?.byEffort["max"]?.inputTokens, 100)
+        XCTAssertEqual(r.days["2026-07-14"]?.byModel["gpt-5.5"]?.outputTokens, 10)
+        XCTAssertEqual(r.days["2026-07-14"]?.sessions, ["rollout-2026-07-14T13-40-32-abc"])
+        // The open stretch rides the provisional view, keyed to the engine.
+        XCTAssertEqual(r.days["2026-07-14"]?.byEngine["codex"]?.stretches, 1)
+    }
+
+    func testPresentationEngineAndEffortRows() {
+        var d = Stats.Day()
+        d.byEngine["claude"] = Stats.ActivityTally(); d.byEngine["claude"]!.usd = 4; d.byEngine["claude"]!.inputTokens = 10
+        d.byEngine["codex"] = Stats.ActivityTally(); d.byEngine["codex"]!.inputTokens = 30
+        d.byEffort["high"] = Stats.ActivityTally(); d.byEffort["high"]!.usd = 3
+        d.byEffort["unset"] = Stats.ActivityTally(); d.byEffort["unset"]!.usd = 1
+        let s = Stats.fold(days: ["2026-09-04": d], period: .day, now: date("2026-09-04T05:00:00Z"), calendar: cal)
+        let engines = Stats.Presentation.engineRows(s)
+        XCTAssertEqual(engines.map(\.id), ["Claude Code", "Codex CLI · unpriced"])
+        XCTAssertEqual(engines[0].share, 1, accuracy: 0.001)                // $ share while anything is priced
+        let efforts = Stats.Presentation.effortRows(s)
+        XCTAssertEqual(efforts.map(\.id), ["High", "Unset"])
+        XCTAssertEqual(efforts[0].share, 0.75, accuracy: 0.001)
     }
 
     func testWaitingGapIsCappedAtEightHours() {
@@ -743,8 +868,10 @@ final class StatsTests: XCTestCase {
         // initializer that throws on a missing key, so a sparse Mac
         // would break the whole MirrorSnapshot on it (the very failure
         // B2 exists to prevent), and the e2e gate asserts `commits` and
-        // `humanMessages` are present on a zero summary. 14.8 KB → this.
-        XCTAssertLessThan(json.utf8.count, 8_192)
+        // `humanMessages` are present on a zero summary. 14.8 KB → this;
+        // the tokens/min record book (#89: three Day fields, a 30-day
+        // peak series, up to 24 marks) added ~200 bytes on an empty one.
+        XCTAssertLessThan(json.utf8.count, 9_216)
     }
 
     func testSummaryCompactedStripsTheDailySeries() {
@@ -762,7 +889,10 @@ final class StatsTests: XCTestCase {
         XCTAssertFalse(c.total.activities.isEmpty)
     }
 
-    func testBundleWithEffortTalliesStaysUnderTwelveKilobytes() throws {
+    /// Every tally populated in all four periods — worse than any real
+    /// week. `GET /snapshot` has no response cap; the bound keeps the
+    /// bundle a small part of the snapshot the phone fetches.
+    func testBundleWithEffortTalliesStaysUnderSixteenKilobytes() throws {
         var d = Stats.Day()
         for i in 0..<30 { d.toolCalls["ToolNumber\(i)"] = i + 1 }
         d.sessions = Set((0..<20).map { "session-\($0)" })
@@ -772,9 +902,11 @@ final class StatsTests: XCTestCase {
         t.stretches = 3; t.seconds = 900; t.inputTokens = 120_000; t.outputTokens = 9_000; t.usd = 12.34
         for a in Stats.Activity.allCases { d.activities[a.rawValue] = t }
         for i in 0..<9 { d.byModel["claude-m\(i)"] = t }
+        for e in Stats.Engine.allCases { d.byEngine[e.rawValue] = t }
+        for e in ["minimal", "low", "medium", "high", "max", "unset"] { d.byEffort[e] = t }
         let b = Stats.Bundle(days: ["2026-09-04": d], now: date("2026-09-04T03:00:00Z"), calendar: cal)
         let json = String(decoding: try JSONEncoder().encode(b), as: UTF8.self)
-        XCTAssertLessThan(json.utf8.count, 12_288)
+        XCTAssertLessThan(json.utf8.count, 16_384)
         XCTAssertTrue(b.periods.allSatisfy { $0.total.byModel.count <= 7 })
     }
 
@@ -951,10 +1083,43 @@ final class StatsTests: XCTestCase {
         XCTAssertEqual(s.activity, .tests)                        // every edit is a test file
         s.testEdits = 1
         XCTAssertEqual(s.activity, .code)                         // a mix
+        s.promptLabel = "debug"
+        XCTAssertEqual(s.activity, .debug)                        // the person's words beat the path rules
         s.label = "review"
         XCTAssertEqual(s.activity, .review)                       // rule 1 beats everything
         s.label = "not-a-label"
-        XCTAssertEqual(s.activity, .code)                         // unknown label → the path rules
+        XCTAssertEqual(s.activity, .debug)                        // unknown label → rule 0, then the path rules
+        s.promptLabel = nil
+        XCTAssertEqual(s.activity, .code)
+    }
+
+    func testActivitySignalsPromptIntent() {
+        typealias S = StatsScanner.ActivitySignals
+        XCTAssertEqual(S.label(prompt: "Review PR #42 for me"), .review)
+        XCTAssertEqual(S.label(prompt: "review the plan before we start"), .review)
+        XCTAssertEqual(S.label(prompt: "Plan the tests for the new parser"), .plan)
+        XCTAssertEqual(S.label(prompt: "add tests for SessionStart"), .tests)
+        XCTAssertEqual(S.label(prompt: "the app crashes on launch, why?"), .debug)
+        XCTAssertEqual(S.label(prompt: "Why is the build failing"), .debug)
+        XCTAssertEqual(S.label(prompt: "open the website and check the login form"), .browser)
+        XCTAssertEqual(S.label(prompt: "run it on the simulator"), .simulator)
+        XCTAssertEqual(S.label(prompt: "Explain how the mirror server routes requests"), .explanation)
+        XCTAssertNil(S.label(prompt: "rename the button"))
+        XCTAssertNil(S.label(prompt: "previewer"))                                     // whole words only
+        XCTAssertNil(S.label(prompt: String(repeating: "x ", count: 300) + "explain"))  // past the opening
+    }
+
+    func testIngestReadsThePromptIntentOffTheOpeningMessage() {
+        var e = StatsScanner.FileEntry()
+        let lines = [
+            #"{"type":"user","timestamp":"2026-09-05T01:00:00.000Z","origin":{"kind":"human"},"message":{"role":"user","content":"debug the crash on launch"}}"#,
+            #"{"type":"assistant","timestamp":"2026-09-05T01:00:10.000Z","message":{"id":"a1","model":"claude-opus-5","usage":{"input_tokens":10,"output_tokens":1},"content":[{"type":"tool_use","id":"t1","name":"Edit","input":{"file_path":"/r/Sources/A.swift"}}]}}"#,
+            #"{"type":"user","timestamp":"2026-09-05T01:05:00.000Z","origin":{"kind":"peer","from":"uds:/tmp/infinitus-1.sock"},"message":{"role":"user","content":"<cross-session-message from=\"uds:/tmp/infinitus-1.sock\" from-name=\"Infinitus\" from-mode=\"bypass\">\nexplain the feed\n</cross-session-message>"}}"#,
+        ]
+        for line in lines { StatsScanner.ingest(entry(line), sessionID: "s1", into: &e, calendar: cal) }
+        let day = try! XCTUnwrap(e.days["2026-09-05"])
+        XCTAssertEqual(day.activities["debug"]?.stretches, 1)     // edits alone would have said "code"
+        XCTAssertEqual(e.state.stretch?.promptLabel, "explanation")
     }
 
     func testDayAddStretchFeedsActivitiesAndModelStretchCounts() {
@@ -1053,5 +1218,36 @@ final class StatsTests: XCTestCase {
         XCTAssertEqual(srow.minutesText, "1 min"); XCTAssertEqual(srow.tokensText, "900"); XCTAssertEqual(srow.usdText, "$0.50")
         var mid = Stats.ActivityTally(); mid.inputTokens = 45_600
         XCTAssertEqual(Stats.Presentation.Row(id: "z", tally: mid, share: 0).tokensText, "46k")
+    }
+
+    func testTokenRecordsWalkTheDaysInOrder() {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "UTC")!
+        let now = Stats.date(fromDayKey: "2026-09-05", calendar: calendar)!.addingTimeInterval(12 * 3600)
+        func day(_ peak: Int) -> Stats.Day { var d = Stats.Day(); d.peakTokensPerMinute = peak; return d }
+        let days: [String: Stats.Day] = [
+            "2026-08-01": day(500), "2026-08-10": day(400), "2026-08-20": day(900),
+            "2026-09-01": day(950), "2026-09-05": day(300),
+        ]
+        let r = Stats.TokenRecords(days: days, now: now, calendar: calendar)
+        XCTAssertEqual(r.best?.day, "2026-09-01")
+        XCTAssertEqual(r.best?.tokensPerMinute, 950)
+        XCTAssertEqual(r.records.map(\.day), ["2026-09-01", "2026-08-20", "2026-08-01"])
+        XCTAssertEqual(r.recordsThisMonth, 1)
+        XCTAssertEqual(r.today, 300)
+        XCTAssertEqual(r.dailyPeaks.count, 30)
+        XCTAssertNil(r.trend)   // the week before last had no busy day in the 30-day window's last 14
+    }
+
+    func testDayPeakIsTheSumAcrossFilesForTheSameMinute() {
+        var a = Stats.Day(); a.minuteTokens = [600: 100, 601: 40]
+        var b = Stats.Day(); b.minuteTokens = [600: 80]
+        var merged = a + b
+        merged.finalizePeak()
+        XCTAssertEqual(merged.peakTokensPerMinute, 180)
+        XCTAssertEqual(merged.peakMinute, 600)
+        XCTAssertTrue(merged.compacted().minuteTokens.isEmpty)
+        XCTAssertEqual(merged.compacted().peakTokensPerMinute, 180)
+        XCTAssertEqual(Stats.minuteOfDay(0, calendar: { var c = Calendar(identifier: .gregorian); c.timeZone = TimeZone(identifier: "UTC")!; return c }()), 0)
     }
 }

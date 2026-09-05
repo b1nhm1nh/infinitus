@@ -21,6 +21,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         AppDelegate.shared = self
         makeStatusItem?()
+        Lifecycle.log.notice("finished launching")
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        Lifecycle.log.notice("terminating")
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ app: NSApplication) -> Bool {
@@ -35,6 +40,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     static var terminating = false
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         AppDelegate.terminating = true
+        Lifecycle.log.notice("quit requested by pid \(Lifecycle.quitSenderPID.map(String.init) ?? "self", privacy: .public)")
         return .terminateNow
     }
 
@@ -63,6 +69,7 @@ struct InfinitusApp: App {
     init() {
         // Menu bar app: no Dock icon, no main window.
         NSApplication.shared.setActivationPolicy(.accessory)
+        Lifecycle.armed()
         #if DEBUG
         // Hot reload (docs/guides/hot-reload.md): opt in per launch so the
         // playground/shots instances never dial the injection server.
