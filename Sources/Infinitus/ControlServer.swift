@@ -584,7 +584,7 @@ final class ControlServer {
         let info = Bundle.main.infoDictionary ?? [:]
         return Status(
             version: info["CFBundleShortVersionString"] as? String ?? "dev",
-            sha: info["InfinitusGitSHA"] as? String ?? "dev",
+            sha: info["InfinitusGitSHA"] as? String ?? info["CFBundleVersion"] as? String ?? "dev",
             engines: [
                 "cswap": EngineStatus(enabled: model.cswapEnabled, registered: model.cswapRegistered,
                                       keyPresent: nil),
