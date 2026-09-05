@@ -97,6 +97,15 @@ public enum Stats {
         public var inputTokens = 0
         public var outputTokens = 0
         public var usd = 0.0
+        /// Output tokens per minute of the day (minute index → tokens),
+        /// summed across every session — the scan's working set for the
+        /// peak below; emptied by `compacted()` and meaningless once days
+        /// are folded together (the peak is what survives a fold).
+        public var minuteTokens: [Int: Int] = [:]
+        /// The busiest minute's output tokens (tokens/min records, #89);
+        /// across days, the highest single day's.
+        public var peakTokensPerMinute = 0
+        public var peakMinute: Int?
         /// Effort per `Activity.rawValue` (main transcripts only) and per
         /// model id (sub-agent transcripts included). Additive like
         /// everything else here, so folding needs nothing new.
@@ -156,6 +165,11 @@ public enum Stats {
             c.inputTokens += b.inputTokens
             c.outputTokens += b.outputTokens
             c.usd += b.usd
+            c.minuteTokens.merge(b.minuteTokens, uniquingKeysWith: +)
+            if b.peakTokensPerMinute > a.peakTokensPerMinute {
+                c.peakTokensPerMinute = b.peakTokensPerMinute
+                c.peakMinute = b.peakMinute
+            }
             c.activities.merge(b.activities, uniquingKeysWith: +)
             c.byModel.merge(b.byModel, uniquingKeysWith: +)
             c.byEngine.merge(b.byEngine, uniquingKeysWith: +)
@@ -202,8 +216,18 @@ public enum Stats {
         /// ≤ 4 KB) and `infinitusctl stats --period year` ~0.5 MB.
         /// Idempotent — `sessionCount`/`repoCount` already read the
         /// tally once the set is empty.
+        /// The day's peak from its minute buckets — after every file's
+        /// share of the day has been merged in (a merge of two files'
+        /// same minute adds up to more than either's peak).
+        public mutating func finalizePeak() {
+            guard let top = minuteTokens.max(by: { $0.value < $1.value }) else { return }
+            peakTokensPerMinute = top.value
+            peakMinute = top.key
+        }
+
         public func compacted() -> Day {
             var d = self
+            d.minuteTokens = [:]
             d.sessionTally = sessionCount
             d.sessions = []
             d.repoTally = repoCount
@@ -366,6 +390,8 @@ public enum Stats {
     public struct Bundle: Codable, Equatable, Sendable {
         public let computedAt: Date
         public let periods: [Summary]
+        /// Absent in bundles from a Mac older than #89.
+        public var tokenRecords: TokenRecords?
         public init(days: [String: Day], now: Date = Date(), calendar: Calendar = .current) {
             computedAt = now
             periods = Period.allCases.map { p in
@@ -373,8 +399,69 @@ public enum Stats {
                 s.daily = []
                 return s.compacted()
             }
+            tokenRecords = TokenRecords(days: days, now: now, calendar: calendar)
         }
         public func summary(_ p: Period) -> Summary? { periods.first { $0.period == p } }
+    }
+
+    /// The tokens/min record book (#89, user 2026-09-05: "is the trend
+    /// upward or downward and how often I break new records"): every
+    /// day's peak minute against the best before it.
+    public struct TokenRecords: Codable, Equatable, Sendable {
+        public struct Mark: Codable, Equatable, Sendable {
+            public let day: String
+            public let tokensPerMinute: Int
+            public init(day: String, tokensPerMinute: Int) { self.day = day; self.tokensPerMinute = tokensPerMinute }
+        }
+        /// The all-time best.
+        public var best: Mark?
+        /// Today's busiest minute so far.
+        public var today = 0
+        /// Days a new all-time record was set, newest first, at most `keep`.
+        public var records: [Mark] = []
+        /// How many of those fell in the current calendar month.
+        public var recordsThisMonth = 0
+        /// The last 30 days' peaks, oldest first (a sparkline).
+        public var dailyPeaks: [Int] = []
+        /// Median of the last 7 days' peaks over the 7 before — > 1 is
+        /// up; nil until both weeks have a busy day.
+        public var trend: Double?
+        public static let keep = 24
+
+        public init() {}
+
+        public init(days: [String: Day], now: Date, calendar: Calendar = .current) {
+            var best = 0
+            var marks: [Mark] = []
+            for key in days.keys.sorted() {
+                let peak = days[key]?.peakTokensPerMinute ?? 0
+                guard peak > best else { continue }
+                best = peak
+                marks.append(Mark(day: key, tokensPerMinute: peak))
+            }
+            self.best = marks.last
+            records = Array(marks.reversed().prefix(Self.keep))
+            let monthKey = String(dayKey(now, calendar: calendar).prefix(7))
+            recordsThisMonth = marks.filter { $0.day.hasPrefix(monthKey) }.count
+            let todayKey = dayKey(now, calendar: calendar)
+            today = days[todayKey]?.peakTokensPerMinute ?? 0
+            var peaks: [Int] = []
+            var cursor = calendar.date(byAdding: .day, value: -29, to: calendar.startOfDay(for: now))!
+            for _ in 0..<30 {
+                peaks.append(days[dayKey(cursor, calendar: calendar)]?.peakTokensPerMinute ?? 0)
+                cursor = calendar.date(byAdding: .day, value: 1, to: cursor)!
+            }
+            dailyPeaks = peaks
+            let last = Self.median(peaks.suffix(7).filter { $0 > 0 })
+            let before = Self.median(peaks.dropLast(7).suffix(7).filter { $0 > 0 })
+            if let last, let before, before > 0 { trend = Double(last) / Double(before) }
+        }
+
+        static func median(_ values: [Int]) -> Int? {
+            guard !values.isEmpty else { return nil }
+            let sorted = values.sorted()
+            return sorted[sorted.count / 2]
+        }
     }
 
     // MARK: keys
@@ -400,6 +487,12 @@ public enum Stats {
 
     public static func date(fromDayKey key: String, calendar: Calendar = .current) -> Date? {
         keyFormatter(calendar).date(from: key)
+    }
+
+    /// Minute of the local day, 0…1439, for an epoch-seconds stamp.
+    public static func minuteOfDay(_ t: Double, calendar: Calendar = .current) -> Int {
+        let parts = calendar.dateComponents([.hour, .minute], from: Date(timeIntervalSince1970: t))
+        return (parts.hour ?? 0) * 60 + (parts.minute ?? 0)
     }
 
     /// Monday = 0 … Sunday = 6, times 24, plus the hour.
