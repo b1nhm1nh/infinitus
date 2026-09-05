@@ -66,8 +66,8 @@ final class MachineModel: ObservableObject {
         // (SessionProgressModel); read them here, pass the dictionary in.
         let byPid = host?.sessionProgress.byPid ?? [:]
 
-        let (report, fingerprint, tempCount, sizes, parked) = await Task.detached(priority: .utility) {
-            () -> (MachineReport, Set<String>, Int?, (Int, Int, Int), [String]) in
+        let (report, fingerprint, tempCount, sizes, parked, rows) = await Task.detached(priority: .utility) {
+            () -> (MachineReport, Set<String>, Int?, (Int, Int, Int), [String], [ProcessRow]) in
             let records = ClaudeSessions.list(claudeDir: claudeDir)
             let sessionPids = Set(records.map { Int($0.pid) })
             let cwds = Array(Set(records.map(\.cwd)))
@@ -116,8 +116,9 @@ final class MachineModel: ObservableObject {
             let report = MachineReport(sample: sample, hooks: hooks, runaways: runaways,
                                        residue: residue, sessions: sessions, warnings: [])
             let parked = Self.readParkedOwners()
-            return (report, Set(hookRegs.map(\.id)), tempCount, sizes, parked)
+            return (report, Set(hookRegs.map(\.id)), tempCount, sizes, parked, rows)
         }.value
+        lastRows = rows
 
         lastSampledAt = Date()
         // Gate on the ATTEMPT (`countTemp`), not the value: a timed-out
@@ -163,8 +164,8 @@ final class MachineModel: ObservableObject {
         for session in idleNow {
             host?.push("session \(session.name) idle for \(Int(session.idleHours())) h (\(session.rssMB) MB)")
         }
-        let stillIdle = Set(finalReport.sessions.filter { $0.idleHours() >= idleHoursNow }.map(\.pid))
-        announcedIdle = announcedIdle.union(idleNow.map(\.pid)).intersection(stillIdle)
+        let stillIdle = Set(finalReport.sessions.filter { $0.idleHours() >= idleHoursNow }.map { $0.pid })
+        announcedIdle = announcedIdle.union(idleNow.map { $0.pid }).intersection(stillIdle)
     }
 
     // MARK: actions
@@ -179,7 +180,7 @@ final class MachineModel: ObservableObject {
         guard pid > 1, let runaway = report?.runaways.first(where: { $0.pid == pid }) else {
             return "pid \(pid) is not a flagged runaway — run `machine` first"
         }
-        let sessionPids = report?.sessions.map(\.pid) ?? []
+        let sessionPids = report?.sessions.map { $0.pid } ?? []
         let ok = await Task.detached(priority: .utility) { () -> Bool? in
             let now = (try? Subprocess.run("/bin/ps", ["-o", "command=", "-p", String(pid)]))?
                 .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
@@ -216,6 +217,31 @@ final class MachineModel: ObservableObject {
                        "reclaimed \(removed) item\(removed == 1 ? "" : "s")" + (failed > 0 ? ", \(failed) failed" : ""))
         await sample()
         return "removed \(removed)" + (failed > 0 ? ", \(failed) failed" : "")
+    }
+
+    /// The process rows of the last sample: what a hook-instance kill
+    /// targets, so the action hits exactly what the pane showed.
+    private var lastRows: [ProcessRow] = []
+
+    /// SIGTERM every live instance of the owner's hooks and their
+    /// helpers (never a session's own pid), SIGKILL the survivors.
+    func killHookInstances(owner: String) async -> String {
+        let regs = (report?.hooks ?? []).map(\.registration).filter { $0.owner == owner }
+        let rows = lastRows
+        var pids = Set<Int>()
+        for reg in regs {
+            let (instances, helpers) = HookInventory.instanceRows(of: reg, rows: rows)
+            pids.formUnion((instances + helpers).map { $0.pid })
+        }
+        guard !pids.isEmpty else { return "no live instances of \(owner) in the last sample" }
+        let sessions = Set(report?.sessions.map { $0.pid } ?? [])
+        let gone = await Task.detached(priority: .utility) {
+            Runaways.killAll(pids: Array(pids), never: sessions)
+        }.value
+        host?.logEvent("other", icon: "wrench.and.screwdriver",
+                       "killed \(gone) of \(pids.count) \(owner) hook instances")
+        await sample()
+        return "\(gone) of \(pids.count) \(owner) instances gone" + (gone < pids.count ? " — the rest are stuck in the kernel (uninterruptible wait) and go when their I/O returns" : "")
     }
 
     func disableHook(owner: String) async -> String {
