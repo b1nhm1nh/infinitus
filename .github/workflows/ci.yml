@@ -58,9 +58,10 @@ jobs:
       - uses: actions/checkout@v4
       - run: swift build
       - run: swift test
-  # Best-effort until swift-crypto, zlib and sockets are confirmed on
-  # Windows (docs/superpowers/specs/2026-09-05-team-design.md §9):
-  # failures here don't block a merge yet.
+  # Known red today: CZlib's module map includes <zlib.h>, which no
+  # Windows toolchain provides, so InfinitusCore does not build there
+  # (docs/superpowers/specs/2026-09-05-team-design.md §9). The job runs
+  # to show when that changes; failures don't block a merge.
   windows:
     runs-on: windows-latest
     continue-on-error: true
