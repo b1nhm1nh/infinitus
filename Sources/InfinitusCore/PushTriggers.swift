@@ -62,6 +62,12 @@ public struct PushTriggers: Sendable {
     private var warnedLastAlive: Int?
     private var announcedWaiting: Set<Int> = []
     private var seededWaiting = false
+    /// Sessions the plugin's hook already announced (#79): the hook pushes
+    /// a prompt the moment it appears, and the next poll must not push it
+    /// again. Timed — a prompt answered before the record flips to
+    /// `waiting` must not pin its pid forever.
+    private var hookAnnounced: [Int: Date] = [:]
+    public static let hookGrace: TimeInterval = 5 * 60
     private var announcedAwsLogins: Set<String> = []
     private var seededAwsLogins = false
     /// A need that failed this recently is pushed even on the seeding
@@ -70,6 +76,10 @@ public struct PushTriggers: Sendable {
     public static let awsLoginFreshWindow: TimeInterval = 10 * 60
 
     public init() {}
+
+    public mutating func announceWaiting(pid: Int, now: Date = Date()) {
+        hookAnnounced[pid] = now
+    }
 
     public static func worstPlanPct(_ usage: Usage?) -> Double? {
         guard let usage else { return nil }
@@ -116,9 +126,10 @@ public struct PushTriggers: Sendable {
             // must not re-push every stale prompt.
             let seeded = seededWaiting
             seededWaiting = true
+            hookAnnounced = hookAnnounced.filter { now.timeIntervalSince($0.value) < Self.hookGrace }
             for session in waiting where !announcedWaiting.contains(session.pid) {
                 announcedWaiting.insert(session.pid)
-                if flags.waiting, seeded {
+                if flags.waiting, seeded, hookAnnounced[session.pid] == nil {
                     let repo = URL(fileURLWithPath: session.cwd).lastPathComponent
                     out.append("waiting on you — \(repo) needs an answer")
                 }

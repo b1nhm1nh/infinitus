@@ -187,6 +187,13 @@ final class ControlServer {
             await model.refreshSnapshot()
             return ControlReply(ok: true, result: try .of(fleetsPayload()))
 
+        case "event":
+            guard let payload = r.secret, let event = HookEvent.parse(payload) else {
+                throw Fail("event: a Claude Code hook payload (JSON with hook_event_name) is expected on stdin")
+            }
+            let pid = model.handleHookEvent(event)
+            return ControlReply(ok: true, result: .object(["pid": pid.map { .number(Double($0)) } ?? .null]))
+
         case "switch", "hold", "unhold", "rename", "remove":
             let (fleet, n) = try target(r)
             let need: EngineCapabilities = ["switch": .switch, "hold": .hold, "unhold": .hold,

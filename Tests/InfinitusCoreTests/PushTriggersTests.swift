@@ -109,6 +109,23 @@ final class PushTriggersTests: XCTestCase {
                       startedAt: 0)
     }
 
+    func testHookAnnouncedWaitingIsNotPushedAgainByThePoll() {
+        var t = PushTriggers()
+        let start = Date(timeIntervalSince1970: 1_000)
+        XCTAssertEqual(t.tick(busy: 1, total: 1, accounts: [], flags: all,
+                              sessions: [session(1, "busy")], now: start), [])
+        t.announceWaiting(pid: 1, now: start)
+        XCTAssertEqual(t.tick(busy: 0, total: 1, accounts: [], flags: all,
+                              sessions: [session(1, "waiting")], now: start.addingTimeInterval(5)), [])
+        // Answered, then a fresh prompt after the grace: the poll pushes again.
+        XCTAssertEqual(t.tick(busy: 1, total: 1, accounts: [], flags: all,
+                              sessions: [session(1, "busy")], now: start.addingTimeInterval(60)), [])
+        XCTAssertEqual(t.tick(busy: 0, total: 1, accounts: [], flags: all,
+                              sessions: [session(1, "waiting")],
+                              now: start.addingTimeInterval(PushTriggers.hookGrace + 61)),
+                       ["waiting on you — repo1 needs an answer"])
+    }
+
     func testWaitingFiresOncePerSessionAndRearmsWhenItLeavesWaiting() {
         var t = PushTriggers()
         XCTAssertEqual(t.tick(busy: 1, total: 2, accounts: [], flags: all,

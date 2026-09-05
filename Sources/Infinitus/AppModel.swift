@@ -519,6 +519,44 @@ final class AppModel: ObservableObject {
 
     /// Every app notification: Notification Center here, and the same
     /// text to any phone that registered an alert token (issue #3).
+    /// Both push channels: the Mac notice (+ Live Activity alert) and the
+    /// engine's away-push. Text over stdin, matching the channel-setup
+    /// commands; no channels configured is a quiet no-op (try?). The
+    /// away-push channels are cswap's.
+    func push(_ msg: String) {
+        notify(msg)
+        if let cswap {
+            Task { _ = try? await cswap.run(["notify", "push", "-"], stdin: msg) }
+        }
+    }
+
+    /// A Claude Code hook event from the plugin (#79): a prompt is pushed
+    /// the moment it appears — the poll would take up to a minute — and
+    /// the fleet refreshes right after, so a turn's end shows up as fast
+    /// as its prompts. Returns the session's pid when the record is known.
+    func handleHookEvent(_ event: HookEvent) -> Int? {
+        let pid = event.sessionId.flatMap { id in
+            ClaudeSessions.list(claudeDir: ClaudeSessions.configHome())
+                .first { $0.sessionId == id }.map { Int($0.pid) }
+        }
+        logEvent("hook", icon: "bolt.horizontal", event.logLine)
+        if let line = event.pushLine, !isPlayground {
+            if let pid { pushTriggers.announceWaiting(pid: pid) }
+            if pushWaiting { push(line) }
+        }
+        // One refresh per burst: the record's status flips a beat after
+        // the hook fires, and Stop + Notification often land together.
+        if hookRefresh == nil {
+            hookRefresh = Task { [weak self] in
+                try? await Task.sleep(for: .seconds(1))
+                await self?.refreshSnapshot()
+                self?.hookRefresh = nil
+            }
+        }
+        return pid
+    }
+    private var hookRefresh: Task<Void, Never>?
+
     func notify(_ body: String) {
         Notifier.post(title: "Infinitus", body: body)
         liveActivityPusher.pushAlert(title: "Infinitus", body: body)
@@ -1866,15 +1904,7 @@ final class AppModel: ObservableObject {
             sessions: list.liveSessions?.sessions,
             awsLogins: awsLoginsScanned ? awsLogins : nil,
             now: Date())
-        for msg in pushes where !isPlayground {
-            notify(msg)
-            // Text over stdin, matching the channel-setup commands;
-            // no channels configured is a quiet no-op (try?). The
-            // away-push channels are cswap's.
-            if let cswap {
-                Task { _ = try? await cswap.run(["notify", "push", "-"], stdin: msg) }
-            }
-        }
+        for msg in pushes where !isPlayground { push(msg) }
         if !isPlayground { await sync.tick() }
     }
 
