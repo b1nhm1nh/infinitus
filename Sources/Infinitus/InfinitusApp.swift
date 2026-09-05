@@ -216,6 +216,10 @@ struct InfinitusApp: App {
                                "phone", "iphone", "lan", "bonjour", "companion",
                                "tailscale", "cloudflare", "tunnel", "pair", "qr"],
                     view: AnyView(SyncPane(sync: model.sync, app: model))),
+        SettingsTab(title: LockModel.paneTitle, symbol: "lock.fill", tint: .gray,
+                    keywords: ["biometric", "touch id", "face id", "password",
+                               "unlock", "privacy", "team"],
+                    view: AnyView(LockPane(lock: model.lock))),
     ]
     + (model.debugMenu
        ? [SettingsTab(title: "Animations", symbol: "sparkles", tint: .pink,
