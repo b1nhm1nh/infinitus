@@ -1384,6 +1384,14 @@ final class StatsTests: XCTestCase {
         XCTAssertEqual(srow.minutesText, "1 min"); XCTAssertEqual(srow.tokensText, "900"); XCTAssertEqual(srow.usdText, "$0.50")
         var mid = Stats.ActivityTally(); mid.inputTokens = 45_600
         XCTAssertEqual(Stats.Presentation.Row(id: "z", tally: mid, share: 0).tokensText, "46k")
+        // Untracked cache (e.g. per-activity tallies, #139): "—", not "0%" —
+        // the data was never counted, it isn't zero.
+        XCTAssertNil(row.cachedShare)
+        XCTAssertEqual(row.cachedPercentText, "—"); XCTAssertEqual(row.cachedSuffixText, "")
+        var cached = Stats.ActivityTally(); cached.inputTokens = 100; cached.cacheReadTokens = 900; cached.cacheWriteTokens = 50
+        let crow = Stats.Presentation.Row(id: "w", tally: cached, share: 0)
+        XCTAssertEqual(crow.cachedShare ?? 0, 900.0 / 1050.0, accuracy: 1e-9)
+        XCTAssertEqual(crow.cachedPercentText, "86%"); XCTAssertEqual(crow.cachedSuffixText, " · cached 86%")
     }
 
     func testTokenRecordsWalkTheDaysInOrder() {

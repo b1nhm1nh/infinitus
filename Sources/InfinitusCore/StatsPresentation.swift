@@ -137,7 +137,9 @@ extension Stats {
             public let usd: Double
             public let share: Double
             /// Cache reads' share of this row's input (read + write +
-            /// fresh), nil when the row has no input at all (#139).
+            /// fresh), nil when this table doesn't track cache reads/
+            /// writes at all (per-activity tallies, #139) rather than
+            /// tracking zero of them.
             public let cachedShare: Double?
 
             public init(id: String, tally: Stats.ActivityTally, share: Double) {
@@ -147,16 +149,18 @@ extension Stats {
                 tokens = tally.inputTokens + tally.outputTokens
                 usd = tally.usd
                 self.share = share
-                let inputTotal = tally.inputTokens + tally.cacheReadTokens + tally.cacheWriteTokens
-                cachedShare = inputTotal > 0 ? Double(tally.cacheReadTokens) / Double(inputTotal) : nil
+                let cache = tally.cacheReadTokens + tally.cacheWriteTokens
+                let inputTotal = tally.inputTokens + cache
+                cachedShare = cache > 0 ? Double(tally.cacheReadTokens) / Double(inputTotal) : nil
             }
 
             public var minutesText: String {
                 minutes >= 120 ? "\(minutes / 60) h \(minutes % 60) m" : "\(minutes) min"
             }
-            /// For the phone's inline "N stretches · M tokens · …" line.
-            public var cachedText: String {
-                cachedShare.map { "cached \(Int(($0 * 100).rounded()))%" } ?? "—"
+            /// For the phone's inline "N stretches · M tokens…" line —
+            /// appends " · cached NN%", or nothing when untracked.
+            public var cachedSuffixText: String {
+                cachedShare.map { " · cached \(Int(($0 * 100).rounded()))%" } ?? ""
             }
             /// For the Mac table, which already has a "Cached" column header.
             public var cachedPercentText: String {
