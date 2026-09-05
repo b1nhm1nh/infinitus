@@ -5,6 +5,14 @@ links, no internals or workflow detail; one feature note is one line,
 a single short sentence (user 2026-09-04). The release workflow
 publishes the matching section as the GitHub release body.
 
+## 0.4.4 (unreleased)
+
+### Mac
+- "Needs AWS login" banners no longer repeat after a relaunch, and every banner's headline is now its subtitle.
+
+### Phone
+- The phone raises its own alarms, no push service needed: an exhausted account's limit lifting in 10 minutes, and the account the fleet just swapped to; off in Settings › Notifications.
+
 ## 0.4.3
 
 ### Stats

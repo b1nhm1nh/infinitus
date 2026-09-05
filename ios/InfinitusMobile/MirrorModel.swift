@@ -217,6 +217,10 @@ final class MirrorModel: ObservableObject, FleetModel {
             let firstLoad = reconcile(engineFleets)
             error = nil
             AwsLoginAlerts.shared.sync(snapshot.awsLogins ?? [])
+            if let fleet = fleets.first(where: { $0.provider == .claude }) ?? fleets.first {
+                FleetAlarmCenter.shared.sync(accounts: fleet.accounts, activeNumber: fleet.activeNumber,
+                                             macPushesAlerts: snapshot.pushesAlerts ?? false)
+            }
             LiveActivities.shared.sync(
                 fleet: fleets.first { $0.provider == .claude } ?? fleets.first,
                 machine: snapshot.machineName, tokenRate: snapshot.tokenRate,

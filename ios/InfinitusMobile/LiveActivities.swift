@@ -18,6 +18,9 @@ final class LiveActivities {
     private var working: Activity<WorkingActivity>?
     private var tokenWatchers: [String: Task<Void, Never>] = [:]
     private var themeID: String?
+    /// The Mac accepted this phone's alert token — its APNs alerts reach
+    /// here, so the local swap banner (#86) stands down.
+    private(set) var alertTokenRegistered = false
     /// Logged once per stretch of old snapshots, not every 10 s.
     private var skippingOld = false
 
@@ -200,6 +203,7 @@ final class LiveActivities {
             deviceId: NetworkFleetMirror.deviceId, deviceName: NetworkFleetMirror.deviceName,
             environment: environment, themeID: themeID)
         let ok = await NetworkFleetMirror.shared.registerActivityToken(registration)
+        if kind == .alert { alertTokenRegistered = ok }
         log.notice("\(kind.rawValue) token \(ok ? "registered with the Mac" : "NOT registered — Mac unreachable")")
     }
 }

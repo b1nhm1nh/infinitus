@@ -42,16 +42,22 @@ enum Notifier {
     }
 
     static func post(title: String, body: String) {
+        // "needs AWS login — repo (profile)": the headline is the banner's
+        // subtitle, the detail its body — on both paths (#98).
+        let parts = body.components(separatedBy: " — ")
+        let subtitle = parts.count > 1 ? parts[0] : nil
+        let detail = parts.count > 1 ? parts.dropFirst().joined(separator: " — ") : body
         if unUsable {
-            postBundled(title: title, body: body)
+            postBundled(title: title, subtitle: subtitle, body: detail)
         } else {
-            postOsascript(title: title, body: body)
+            postOsascript(title: title, subtitle: subtitle, body: detail)
         }
     }
 
-    private static func postBundled(title: String, body: String) {
+    private static func postBundled(title: String, subtitle: String?, body: String) {
         let content = UNMutableNotificationContent()
         content.title = title
+        if let subtitle { content.subtitle = subtitle }
         content.body = body
         UNUserNotificationCenter.current().add(
             UNNotificationRequest(identifier: UUID().uuidString,
@@ -62,14 +68,17 @@ enum Notifier {
                 // never drop the notification: resend via osascript.
                 unUsable = false
                 NSLog("Infinitus: UN post failed, resending via osascript: \(error)")
-                postOsascript(title: title, body: body)
+                postOsascript(title: title, subtitle: subtitle, body: body)
             }
         }
     }
 
-    private static func postOsascript(title: String, body: String) {
-        let script = "display notification \"\(AppleScriptEscaping.literal(body))\""
+    private static func postOsascript(title: String, subtitle: String?, body: String) {
+        var script = "display notification \"\(AppleScriptEscaping.literal(body))\""
             + " with title \"\(AppleScriptEscaping.literal(title))\""
+        if let subtitle {
+            script += " subtitle \"\(AppleScriptEscaping.literal(subtitle))\""
+        }
         let p = Process()
         p.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
         p.arguments = ["-e", script]
