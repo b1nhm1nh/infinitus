@@ -20,6 +20,9 @@ public final class TeamGit: TeamStore {
         case badPath(String)
         /// The push was rejected and the caller asked not to retry.
         case raceLost
+        /// No subprocesses on this platform (iOS): the phone talks to its
+        /// Mac, which holds the mirror.
+        case unavailable
     }
 
     public let dir: URL
@@ -181,6 +184,12 @@ public final class TeamGit: TeamStore {
     @discardableResult
     private func run(_ args: [String], stdin: Data? = nil, env extra: [String: String] = [:],
                      useGitDir: Bool = true) throws -> Data {
+        #if os(iOS) || os(tvOS) || os(watchOS) || os(visionOS)
+        // Foundation has no Process here; InfinitusCore is linked into the
+        // phone app, which never drives git itself (spec §6.2: the phone
+        // hands team work to its Mac over the mirror).
+        throw GitError.unavailable
+        #else
         let p = Process()
         p.executableURL = URL(fileURLWithPath: "/usr/bin/env")
         var argv = ["git"]
@@ -217,5 +226,6 @@ public final class TeamGit: TeamStore {
                                   stderr: String(decoding: errData, as: UTF8.self))
         }
         return data
+        #endif
     }
 }
