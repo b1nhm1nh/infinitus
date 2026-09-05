@@ -195,8 +195,12 @@ final class StatusItemController {
         model.introOpened()
     }
 
-    private func closeAnchored() {
-        model.lock.surfaceHidden()
+    /// `feedLock: false` at the popOut()/toggleWall() call sites — those
+    /// move the same content to another surface, nothing hides from the
+    /// user (brief step 3); only a genuine dismiss (click-outside, the
+    /// footer close, Cmd+the popup button) should arm the re-lock timer.
+    private func closeAnchored(feedLock: Bool = true) {
+        if feedLock { model.lock.surfaceHidden() }
         anchored?.orderOut(nil)
         updateDismissMonitors()
     }
@@ -295,7 +299,7 @@ final class StatusItemController {
             showAnchored()
             return
         }
-        if anchored?.isVisible == true { closeAnchored() }
+        if anchored?.isVisible == true { closeAnchored(feedLock: false) }
         showPinnedWindow()
     }
 
@@ -442,7 +446,7 @@ final class StatusItemController {
             // the stay-visible-while-working-elsewhere HUD behavior.
             w.level = .floating
             NotificationCenter.default.addObserver(
-                self, selector: #selector(pinnedKeyChanged),
+                self, selector: #selector(pinnedBecameKey),
                 name: NSWindow.didBecomeKeyNotification, object: w)
             NotificationCenter.default.addObserver(
                 self, selector: #selector(pinnedKeyChanged),
@@ -482,14 +486,19 @@ final class StatusItemController {
     }
 
     /// The pop-out's level follows key status and the pin, so a pin
-    /// toggle retargets it live (apply() calls this on model changes).
+    /// toggle retargets it live (apply() calls this on every model
+    /// snapshot too — window-level upkeep only, no lock feed, since it
+    /// isn't an interaction by itself).
     @objc private func pinnedKeyChanged() {
         guard let w = pinned else { return }
-        // Becoming key is an interaction; apply() also lands here on every
-        // snapshot, so the check keeps it to the key window (a no-op
-        // mutate when nothing changed).
-        if w.isKeyWindow { model.lock.surfaceShown() }
         w.level = model.popoverPinned || w.isKeyWindow ? .floating : .normal
+    }
+
+    /// Real didBecomeKey edge only (not apply()'s repeated snapshots) —
+    /// the actual user interaction that should feed the re-lock clock.
+    @objc private func pinnedBecameKey() {
+        model.lock.surfaceShown()
+        pinnedKeyChanged()
     }
 
     @objc private func pinnedMoved() {
@@ -644,7 +653,7 @@ final class StatusItemController {
     func toggleWall() {
         if wall.isVisible { wall.close(); return }
         let hadPinned = pinned?.isVisible == true
-        if anchored?.isVisible == true { closeAnchored() }
+        if anchored?.isVisible == true { closeAnchored(feedLock: false) }
         if hadPinned { pinned?.orderOut(nil) }
         wall.restore = { [weak self] in
             if hadPinned { self?.showPinnedWindow() }
