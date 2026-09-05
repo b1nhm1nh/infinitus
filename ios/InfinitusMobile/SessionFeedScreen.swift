@@ -791,6 +791,7 @@ struct SessionFeedScreen: View {
     /// composer: attach them all in one tap, or wave them off.
     private var screenshotOffer: some View {
         let shots = screenshots.found
+        let room = SessionInput.maxAttachments - attachments.count
         return HStack(spacing: 10) {
             if let thumb = shots.last?.thumbnail {
                 Image(uiImage: thumb)
@@ -801,8 +802,7 @@ struct SessionFeedScreen: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(shots.count == 1 ? "New screenshot" : "\(shots.count) new screenshots")
                     .font(.subheadline.weight(.semibold))
-                Text(shots.count > SessionInput.maxAttachments
-                     ? "The newest \(SessionInput.maxAttachments) go" : "Attach to your reply?")
+                Text(shots.count > room ? "The newest \(room) go" : "Attach to your reply?")
                     .font(.caption).foregroundStyle(.secondary)
             }
             Spacer(minLength: 0)

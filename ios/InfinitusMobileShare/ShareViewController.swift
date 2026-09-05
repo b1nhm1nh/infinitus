@@ -1,3 +1,4 @@
+import ImageIO
 import InfinitusCore
 import Social
 import UIKit
@@ -115,21 +116,37 @@ final class ShareViewController: SLComposeServiceViewController {
             attachments: [.init(name: "share-\(stamp).jpg", mime: "image/jpeg", data: jpeg)])
         do {
             let reply = try await NetworkFleetMirror.shared.sessionInput(pid: Int32(session.pid), request: request)
-            switch reply.outcome {
-            case "delivered", "running", "captured":
-                UserDefaults.standard.set(session.pid, forKey: Self.lastPidKey)
-                extensionContext?.completeRequest(returningItems: [], completionHandler: nil)
-            default:
-                fail(reply.detail ?? "the session didn't take it (\(reply.outcome))")
+            // Only "delivered" means the session has it; "running" and
+            // "captured" are the Mac saying nothing was typed (a turn in
+            // progress, a menu on screen) — the same words the app uses.
+            guard reply.outcome == "delivered" else {
+                fail(Self.describe(reply.outcome, detail: reply.detail))
+                return
             }
+            UserDefaults.standard.set(session.pid, forKey: Self.lastPidKey)
+            extensionContext?.completeRequest(returningItems: [], completionHandler: nil)
         } catch {
             fail(error.localizedDescription)
         }
     }
 
+    private static func describe(_ outcome: String, detail: String?) -> String {
+        switch outcome {
+        case "running": return "session is mid-turn — try again when it's waiting"
+        case "noSurface": return "this session has nowhere to receive input right now"
+        case "noChannel": return "this session can't receive messages right now"
+        case "captured": return "a menu is on screen — try again"
+        case "rejected": return "that wasn't a valid reply"
+        default: return detail ?? outcome
+        }
+    }
+
     /// The shared image, whichever shape the host app hands over: a file
     /// URL (Photos), a UIImage (the screenshot preview) or raw bytes.
-    /// Returned at scale 1 so the JPEG step reads its size as pixels.
+    /// Files and bytes are downsampled while decoding: an extension has
+    /// a fraction of an app's memory, and a full-resolution photo decoded
+    /// whole (100 MB and up) ends the sheet with no alert. Returned at
+    /// scale 1 so the JPEG step reads its size as pixels.
     private func loadImage() async -> UIImage? {
         let providers = (extensionContext?.inputItems as? [NSExtensionItem])?
             .flatMap { $0.attachments ?? [] } ?? []
@@ -141,11 +158,11 @@ final class ShareViewController: SLComposeServiceViewController {
             provider.loadItem(forTypeIdentifier: type, options: nil) { item, _ in
                 switch item {
                 case let url as URL:
-                    continuation.resume(returning: (try? Data(contentsOf: url)).flatMap(UIImage.init(data:)))
+                    continuation.resume(returning: CGImageSourceCreateWithURL(url as CFURL, nil).flatMap(Self.downsampled))
                 case let image as UIImage:
                     continuation.resume(returning: image)
                 case let data as Data:
-                    continuation.resume(returning: UIImage(data: data))
+                    continuation.resume(returning: CGImageSourceCreateWithData(data as CFData, nil).flatMap(Self.downsampled))
                 default:
                     continuation.resume(returning: nil)
                 }
@@ -154,6 +171,19 @@ final class ShareViewController: SLComposeServiceViewController {
         guard let image else { return nil }
         guard image.scale != 1, let cg = image.cgImage else { return image }
         return UIImage(cgImage: cg, scale: 1, orientation: image.imageOrientation)
+    }
+
+    /// At most 2048 px on the long side, orientation applied, decoded
+    /// straight to that size (ImageIO never holds the full bitmap).
+    private static func downsampled(_ source: CGImageSource) -> UIImage? {
+        let options: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceThumbnailMaxPixelSize: 2048,
+            kCGImageSourceShouldCacheImmediately: true,
+        ]
+        return CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary)
+            .map { UIImage(cgImage: $0, scale: 1, orientation: .up) }
     }
 
     /// One alert, then the sheet closes — a POST is not retried in place.
