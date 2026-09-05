@@ -12,12 +12,23 @@ struct SessionsScreen: View {
     @State private var path = NavigationPath()
     /// The session whose feed is on screen, if one is.
     @State private var openPid: Int?
+    @State private var startSheet = false
 
     var body: some View {
         NavigationStack(path: $path) {
             content
                 .navigationTitle(model.rowTheme.tabLabel("sessions"))
                 .refreshable { await model.refresh() }
+                .toolbar {
+                    ToolbarItem(placement: .primaryAction) {
+                        Button { startSheet = true } label: { Image(systemName: "plus") }
+                            .accessibilityLabel("Start a session")
+                            .disabled(model.snapshot == nil)
+                    }
+                }
+                .sheet(isPresented: $startSheet) { StartSessionSheet(model: model) }
+                .onChange(of: model.requestedPid) { _, _ in openRequestedPid() }
+                .onChange(of: model.snapshot?.capturedAt) { _, _ in openRequestedPid() }
                 .navigationDestination(for: SessionDetail.self) { session in
                     SessionFeedScreen(model: model, session: session)
                         .onAppear { openPid = session.pid }
@@ -129,6 +140,17 @@ struct SessionsScreen: View {
     }
 
     @State private var awsLoginItem: AwsLogin.Item?
+
+    /// A session started from the + sheet: its chat opens the moment the
+    /// snapshot lists the pid.
+    private func openRequestedPid() {
+        guard let pid = model.requestedPid,
+              let session = fleetsWithSessions.flatMap({ $0.liveSessions?.sessions ?? [] })
+                  .first(where: { $0.pid == pid }) else { return }
+        model.requestedPid = nil
+        path = NavigationPath()
+        path.append(session)
+    }
 
     private func openRequestedAwsLogin() {
         guard let id = model.requestedAwsLogin,

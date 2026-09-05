@@ -148,6 +148,10 @@ to drive the running app.
   its limits (CLIProxyAPI included). Any app's Share sheet → Infinitus
   sends images, files, a link or text into a session with a note, no
   app switch — your sessions sit in the sheet's suggestions row.
+- **Start a session from the phone** — + on the Quests tab: a
+  repository, the engine, a first prompt; the Mac opens a cmux
+  workspace or a Terminal window and the chat follows. Siri:
+  "Start a session in Infinitus".
 - **Widgets in your theme** — home-screen and lock-screen widgets show
   the active account's windows as the theme names and colors them
   (MP / HP / Dragon under the RPG theme), what's waiting on you, and the

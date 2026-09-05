@@ -449,6 +449,9 @@ final class AppModel: ObservableObject {
     @Published var pushLastAlive: Bool { didSet { defaults.set(pushLastAlive, forKey: "push_last_alive") } }
     @Published var pushWaiting: Bool { didSet { defaults.set(pushWaiting, forKey: "push_waiting") } }
     @Published var pushAwsLogin: Bool { didSet { defaults.set(pushAwsLogin, forKey: "push_aws_login") } }
+    /// Where a session started from the phone opens (#91): "auto" (cmux
+    /// when installed, else Terminal), "cmux", "terminal".
+    @Published var sessionHost: String { didSet { defaults.set(sessionHost, forKey: "session_host") } }
     /// The status item in the theme's color with the theme's icon (#90),
     /// and its effects (switch/death/revival flash, the burn breath).
     @Published var menuBarThemed: Bool { didSet { defaults.set(menuBarThemed, forKey: "menubar_themed") } }
@@ -644,6 +647,7 @@ final class AppModel: ObservableObject {
         pushLastAlive = defaults.object(forKey: "push_last_alive") as? Bool ?? true
         pushWaiting = defaults.object(forKey: "push_waiting") as? Bool ?? true
         pushAwsLogin = defaults.object(forKey: "push_aws_login") as? Bool ?? true
+        sessionHost = defaults.string(forKey: "session_host") ?? "auto"
         menuBarThemed = defaults.object(forKey: "menubar_themed") as? Bool ?? true
         menuBarEffects = defaults.object(forKey: "menubar_effects") as? Bool ?? true
         if playground {
@@ -760,6 +764,7 @@ final class AppModel: ObservableObject {
         pushLastAlive = defaults.object(forKey: "push_last_alive") as? Bool ?? true
         pushWaiting = defaults.object(forKey: "push_waiting") as? Bool ?? true
         pushAwsLogin = defaults.object(forKey: "push_aws_login") as? Bool ?? true
+        sessionHost = defaults.string(forKey: "session_host") ?? "auto"
         menuBarThemed = defaults.object(forKey: "menubar_themed") as? Bool ?? true
         menuBarEffects = defaults.object(forKey: "menubar_effects") as? Bool ?? true
     }
@@ -905,6 +910,16 @@ final class AppModel: ObservableObject {
         }
         mirrorServer.crashes.set { [weak self] report in
             Task { @MainActor in self?.ingestCrash(report, announce: true) }
+        }
+        let host = sessionHost
+        mirrorServer.sessionStart.set { [weak self] request in
+            let reply = SessionLauncher.start(request, preferredHost: host)
+            let label = (request.cwd as NSString).lastPathComponent
+            Task { @MainActor in
+                self?.logMirrorInput(reply.outcome == "started" ? "🚀" : "⚠️",
+                                     "phone started a session in \(label): \(reply.outcome)\(reply.host.map { " via \($0)" } ?? "")")
+            }
+            return reply
         }
         crashReports = crashStore.list()
         scanMacCrashReports()
