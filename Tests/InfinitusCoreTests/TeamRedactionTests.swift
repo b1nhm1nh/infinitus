@@ -22,6 +22,10 @@ final class TeamRedactionTests: XCTestCase {
             ("DATABASE_PASSWORD=hunter2 PORT=3000", "DATABASE_PASSWORD=[redacted] PORT=3000"),
             ("cd /Users/loc/death/limitless && ls /home/bob/x /root/y", "cd ~/death/limitless && ls ~/x ~/y"),
             ("swift build", "swift build"),
+            (#"{"stdout":"ok\nBearer eyJhbGciOiJIUzI1NiJ9.aaaaaaaaaaaaaaaa\n"}"#,
+             #"{"stdout":"ok\nBearer [redacted]\n"}"#),
+            (#"{"c":"1\tDATABASE_PASSWORD=hunter2\n2\t/home/bob/x\n3\tsk-ant-api03-abcdefghijklmnop\n4\tAKIAIOSFODNN7EXAMPLE"}"#,
+             #"{"c":"1\tDATABASE_PASSWORD=[redacted]\n2\t~/x\n3\t[redacted-key]\n4\t[redacted-aws-key]"}"#),
         ]
         for (input, expected) in cases {
             XCTAssertEqual(TeamRedaction.redact(input, options: options), expected, input)
