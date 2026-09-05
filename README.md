@@ -120,6 +120,7 @@ One line per feature; the site and the CHANGELOG carry the detail.
 - **Sessions, named and narrated** — unnamed sessions get a Haiku title that follows the work; the phone opens on what's waiting, with Continue.
 - **A Claude Code plugin** — `infinitusctl plugin install`: hooks that reach the phone the moment a session needs you, an MCP server (`fleet_status`, `list_sessions`, `session_message`), `/infinitus:status` and `/infinitus:handoff`.
 - **This Mac's name** — Settings › Devices names the Mac for the phone, widgets and crash reports; the default drops macOS's "(7)" suffix.
+- **Machine guardian** — Settings › Machine: load, swap, stuck hooks by tool, runaway processes by session, temp/socket residue; kill, reclaim and park a tool's hooks after a confirm; `infinitusctl machine`.
 - **Capture the desktop into a session** — a region or window, a session, a note, delivered like a phone message.
 - **Dictate in any language** — Vietnamese in, an editable English draft out, with the session's own terms taught to the recognizer.
 - **All accounts limited, handled** — a floating countdown to the first account back and the sessions waiting to resume.
