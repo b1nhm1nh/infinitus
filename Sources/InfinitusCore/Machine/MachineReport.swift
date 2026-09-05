@@ -20,6 +20,7 @@ public struct MachineReport: Equatable, Sendable, Codable {
         public var staleSockets = 0
         public var staleSessionEnvs = 0
         public var tempEntries: Int?
+        public var tempByOwner: [String: Int]?
         public var transcriptsBytes = 0
         public var pluginCacheBytes = 0
         public var memBytes = 0
@@ -56,7 +57,32 @@ public struct MachineReport: Equatable, Sendable, Codable {
         if sample.swapPct >= 90 { out.append("swap \(Int(sample.swapPct))% full") }
         if sample.uninterruptible >= 50 { out.append("\(sample.uninterruptible) processes in uninterruptible wait") }
         if sample.tempEntries == nil, sample.tempListSeconds > 0 { out.append("temp directory listing timed out") }
-        else if let n = sample.tempEntries, n >= 10_000 { out.append("temp directory holds \(n) entries") }
+        else if let n = sample.tempEntries, n >= 10_000 { out.append("temp directory holds \(n) entries" + tempBreakdown(sample.tempByOwner)) }
+        out += fanOut(hooks)
         return out
+    }
+
+    /// " (pip 9600, python 12814, other 1500)" — owners with a share worth naming.
+    public static func tempBreakdown(_ by: [String: Int]?) -> String {
+        guard let by else { return "" }
+        let parts = by.filter { $0.value >= 100 }.sorted { $0.value > $1.value }.map { "\($0.key) \($0.value)" }
+        return parts.isEmpty ? "" : " (" + parts.joined(separator: ", ") + ")"
+    }
+
+    /// One owner registering several commands under the same event and
+    /// matcher spawns all of them on every matching call — Claude Code
+    /// evaluates each command's own guard only after spawning it (#115
+    /// item 8: five `if: Bash(git …)` entries = five bash+python per
+    /// Bash call). Reported as effective spawns per event.
+    static func fanOut(_ hooks: [Hook]) -> [String] {
+        var counts: [String: (owner: String, event: String, matcher: String, n: Int)] = [:]
+        for hook in hooks {
+            let r = hook.registration
+            let key = "\(r.owner)|\(r.event)|\(r.matcher ?? "")"
+            counts[key, default: (r.owner, r.event, r.matcher ?? "", 0)].n += 1
+        }
+        return counts.values.filter { $0.n >= 3 }.sorted { $0.n > $1.n }.prefix(3).map {
+            "\($0.owner) runs \($0.n) commands on every \($0.event)\($0.matcher.isEmpty ? "" : " \($0.matcher)") call"
+        }
     }
 }

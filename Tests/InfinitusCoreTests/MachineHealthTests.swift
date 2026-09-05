@@ -169,6 +169,12 @@ final class MachineHealthTests: XCTestCase {
         XCTAssertTrue(warnings.contains("temp directory listing timed out"))
         sample.tempEntries = 47_224; sample.tempListSeconds = 3
         XCTAssertTrue(MachineReport.warnings(sample: sample, hooks: [], newcomers: []).contains("temp directory holds 47224 entries"))
+        sample.tempByOwner = ["pip": 19_600, "python": 12_814, "mktemp": 245, "other": 14_565]
+        XCTAssertTrue(MachineReport.warnings(sample: sample, hooks: [], newcomers: []).contains("temp directory holds 47224 entries (pip 19600, other 14565, python 12814, mktemp 245)"))
+        let fan = (1...5).map { i in
+            MachineReport.Hook(registration: HookRegistration(event: "PostToolUse", matcher: "Bash", command: "python3 /Users/me/.claude/plugins/cache/m/security-guidance/1/hooks/h\(i).py", timeout: nil, source: .plugin("security-guidance")), spawnsPerHour: 450, live: .init())
+        }
+        XCTAssertTrue(MachineReport.warnings(sample: MachineSample(), hooks: fan, newcomers: []).contains("security-guidance runs 5 commands on every PostToolUse Bash call"))
 
         let now = Date()
         let s = SessionHealth(pid: 1, name: "a", cwd: "/r", rssMB: 900, ageSeconds: 4 * 86400, lastActivityAt: now.addingTimeInterval(-13 * 3600))
