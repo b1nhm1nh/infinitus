@@ -217,6 +217,10 @@ final class MirrorModel: ObservableObject, FleetModel {
             let firstLoad = reconcile(engineFleets)
             error = nil
             AwsLoginAlerts.shared.sync(snapshot.awsLogins ?? [])
+            if let fleet = fleets.first(where: { $0.provider == .claude }) ?? fleets.first {
+                FleetAlarmCenter.shared.sync(accounts: fleet.accounts, activeNumber: fleet.activeNumber,
+                                             macPushesAlerts: snapshot.pushesAlerts ?? false)
+            }
             LiveActivities.shared.sync(
                 fleet: fleets.first { $0.provider == .claude } ?? fleets.first,
                 machine: snapshot.machineName, tokenRate: snapshot.tokenRate,
@@ -307,6 +311,11 @@ final class MirrorModel: ObservableObject, FleetModel {
     /// The AWS login a tapped notification asks for; the Sessions tab
     /// opens its sign-in sheet.
     @Published var requestedAwsLogin: String?
+    /// A session just started from here (#91); the Sessions tab opens
+    /// its chat once the snapshot lists it.
+    @Published var requestedPid: Int?
+    /// Folders sessions have run in on the Mac, newest first.
+    var recentCwds: [String] { snapshot?.recentCwds ?? [] }
     func openForecast() { outlookShown = true }
     var switchFlashTick: Int { primary?.switchFlashTick ?? 0 }
     var deathTicks: [Int: Int] { primary?.deathTicks ?? [:] }

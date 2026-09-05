@@ -142,7 +142,7 @@ func hsb(_ h: Double, _ s: Double, _ b: Double, _ a: Double = 1) -> CGColor {
     #endif
 }
 
-extension CAKeyframeAnimation {
+public extension CAKeyframeAnimation {
     /// A forever keyframe loop; `discrete` = hard steps (PSX palette flips).
     static func cycle(_ keyPath: String, values: [Any], duration: Double,
                       discrete: Bool = false) -> CAKeyframeAnimation {

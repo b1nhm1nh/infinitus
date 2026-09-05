@@ -75,6 +75,11 @@ struct SyncPane: View {
                         .help("Every paired phone must scan again.")
                     }
                 }
+                TextField("This Mac's name", text: $app.machineNameOverride,
+                          prompt: Text(MachineName.system()))
+                    .help("How the phone, the widgets and crash reports name "
+                          + "this Mac. Empty keeps the computer name from "
+                          + "System Settings › General › About.")
                 Text("Requests without `Authorization: Bearer <token>` (or "
                      + "`?t=<token>`) get a 401. The snapshot carries account "
                      + "aliases, emails and usage estimates; never tokens or "

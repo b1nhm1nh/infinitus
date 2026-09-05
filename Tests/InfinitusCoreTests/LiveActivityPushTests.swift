@@ -150,4 +150,12 @@ final class LiveActivityBuilderTests: XCTestCase {
         b = a; b.busy = 2
         XCTAssertTrue(LiveActivityBuilder.differs(a, b))
     }
+
+    func testDeadTokensIncludeTheOldBundleIdsRegistrations() {
+        XCTAssertTrue(LiveActivityPush.isDeadToken(status: 410, body: #"{"reason":"Unregistered"}"#))
+        XCTAssertTrue(LiveActivityPush.isDeadToken(status: 400, body: #"{"reason":"BadDeviceToken"}"#))
+        XCTAssertTrue(LiveActivityPush.isDeadToken(status: 400, body: #"{"reason":"DeviceTokenNotForTopic"}"#))
+        XCTAssertFalse(LiveActivityPush.isDeadToken(status: 403, body: #"{"reason":"InvalidProviderToken"}"#))
+        XCTAssertFalse(LiveActivityPush.isDeadToken(status: 200, body: ""))
+    }
 }
