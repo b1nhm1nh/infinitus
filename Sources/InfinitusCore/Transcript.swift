@@ -155,6 +155,79 @@ public enum Transcript {
         return out
     }
 
+    /// A session whose OWN transcript is not a limit stop, but a sub-agent
+    /// it spawned hit one — the parent reads the limit off the sub-agent's
+    /// result and waits, so its own transcript never ends in a stop and
+    /// `findStopped` never sees it (#117).
+    public struct SubagentLimit: Sendable, Equatable {
+        /// The PARENT session (sessionId/pid/cwd/socket/peerProtocol/name);
+        /// `message` is the sub-agent's limit text, `stopUuid` the
+        /// sub-agent entry's uuid, `stoppedAt` its timestamp.
+        public let session: StoppedSession
+        /// File name of the agent transcript, for logs.
+        public let agentFile: String
+    }
+
+    /// Every `agent-*.jsonl` under a session's `subagents/` dir, plus one
+    /// level deeper for workflow runs (`subagents/workflows/<run>/`) —
+    /// fixed depths, not a recursive walk (matches StatsScanner).
+    private static func agentFiles(under subagentsDir: URL) -> [URL] {
+        let fm = FileManager.default
+        func agents(in dir: URL) -> [URL] {
+            (try? fm.contentsOfDirectory(atPath: dir.path))?
+                .filter { $0.hasPrefix("agent-") && $0.hasSuffix(".jsonl") }
+                .map { dir.appendingPathComponent($0) } ?? []
+        }
+        var files = agents(in: subagentsDir)
+        let workflowsDir = subagentsDir.appendingPathComponent("workflows")
+        for run in (try? fm.contentsOfDirectory(atPath: workflowsDir.path)) ?? [] {
+            files += agents(in: workflowsDir.appendingPathComponent(run))
+        }
+        return files
+    }
+
+    /// Live sessions whose own transcript is NOT a limit stop but at least
+    /// one sub-agent transcript ends in one within `window`. Per session,
+    /// only the newest sub-agent stop is returned; stops older than
+    /// `window` are ignored (a limit from yesterday must not fire).
+    public static func findSubagentLimits(sessions: [ClaudeSessionRecord], claudeDir: URL,
+                                          now: Date = Date(), window: TimeInterval = 30 * 60) -> [SubagentLimit] {
+        var out: [SubagentLimit] = []
+        for session in sessions where !session.sessionId.isEmpty {
+            let transcript = locate(cwd: session.cwd, sessionId: session.sessionId, claudeDir: claudeDir)
+            if isLimitStop(lastTurnEntry(at: transcript)) { continue }   // the existing nudge owns it
+            let subagentsDir = transcript.deletingPathExtension().appendingPathComponent("subagents")
+            var newestEntry: [String: Any]?
+            var newestFile = ""
+            var newestStoppedAt: Date?
+            for file in agentFiles(under: subagentsDir) {
+                // A limit stop is the file's last write, so a file untouched
+                // longer than `window` cannot hold a fresh one — skip the
+                // tail-read (some sessions accumulate hundreds of these,
+                // and reading every one blew the phone's 3s budget once
+                // already; see SessionFeed.attachAgents).
+                if let mtime = (try? file.resourceValues(forKeys: [.contentModificationDateKey]))
+                    .flatMap(\.contentModificationDate),
+                   now.timeIntervalSince(mtime) > window { continue }
+                guard let entry = lastTurnEntry(at: file), isLimitStop(entry) else { continue }
+                let stoppedAt = (entry["timestamp"] as? String).flatMap(UsageHistory.parseISO)
+                guard let stoppedAt, now.timeIntervalSince(stoppedAt) <= window else { continue }
+                if newestStoppedAt == nil || stoppedAt > newestStoppedAt! {
+                    newestEntry = entry
+                    newestFile = file.lastPathComponent
+                    newestStoppedAt = stoppedAt
+                }
+            }
+            guard let newestEntry else { continue }
+            out.append(SubagentLimit(session: StoppedSession(
+                sessionId: session.sessionId, pid: session.pid, cwd: session.cwd,
+                socketPath: session.messagingSocketPath, peerProtocol: session.peerProtocol,
+                message: limitText(newestEntry), stopUuid: newestEntry["uuid"] as? String ?? "",
+                stoppedAt: newestStoppedAt, name: session.name), agentFile: newestFile))
+        }
+        return out
+    }
+
     /// What the transcript says about a nudge already delivered.
     public enum Verdict: Equatable, Sendable {
         /// Original stop unchanged (not picked up yet, or HELD for review —

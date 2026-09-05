@@ -100,7 +100,7 @@ One line per feature; the site and the CHANGELOG carry the detail.
 - **Glass popup** — real backdrop blur in every focus state with a transparency dial, and a launch intro.
 - **Right-click menu** on the bar icon — themes, rotate, refresh, capture, pin, pop out, settings, restart, quit.
 - **Sessions & status chips** — the live Claude Code session count with its busy/idle split, engine status, auto-mode.
-- **Resume nudges** (opt-in) — sessions a limit stopped get a "continue" typed into their terminal or sent over the peer socket once an account works again.
+- **Resume nudges** (opt-in) — sessions a limit stopped get a "continue" typed into their terminal or sent over the peer socket once an account works again; sub-agent limits get the same nudge once an account with headroom is active.
 - **Revival probes** — when a countdown ends the Mac asks the engine again at once, and "<account> is back" says so, flagged when Anthropic reset early.
 - **Cost estimates** — 7-day per-account API-list-price estimates, never billing truth.
 - **iCloud settings sync** and file export/import, never credentials.

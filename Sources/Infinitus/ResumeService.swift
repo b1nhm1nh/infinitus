@@ -27,6 +27,10 @@ final class ResumeService: ObservableObject {
 
     /// Event-log sink, wired by AppModel: (SF Symbol, text).
     var log: ((String, String) -> Void)?
+    /// AppModel.push (Notification Center + engine away-push), wired by
+    /// AppModel — for the sub-agent nudge, which is notice-worthy on its
+    /// own (#117), unlike the plain resume which only logs.
+    var push: ((String) -> Void)?
 
     private let defaults = UserDefaults.standard
     private let claudeDir = ClaudeSessions.configHome()
@@ -42,6 +46,10 @@ final class ResumeService: ObservableObject {
     /// Active account number when each stop was first observed, so a
     /// later SWITCH is distinguishable from the same stale account.
     private var stopFirstActive: [String: Int] = [:]
+    /// Sub-agent limit stop uuids already nudged (#117) — same
+    /// once-only rule as `nudged`, kept separate since these are the
+    /// SUB-AGENT's uuid, not the parent's.
+    private var nudgedSubagents: Set<String> = []
 
     init() {
         resumeEnabled = defaults.object(forKey: "resume_stopped_sessions") as? Bool ?? false
@@ -56,9 +64,12 @@ final class ResumeService: ObservableObject {
     /// `activeFetchedAt` feed ResumeGate — "alive" is only as fresh as the
     /// engine's last usage poll, and a verdict that predates the stop is
     /// the stale read that burned three nudges in a minute (2026-09-01).
+    /// `activeName` / `activePct` name the account in the sub-agent nudge
+    /// (#117); nil when unavailable, and the nudge text degrades gracefully.
     /// Blocking work runs detached; single-flight.
     func tick(switched: Bool, activeAlive: Bool,
-              activeNumber: Int? = nil, activeFetchedAt: Date? = nil) {
+              activeNumber: Int? = nil, activeFetchedAt: Date? = nil,
+              activeName: String? = nil, activePct: Int? = nil) {
         let doRearm = switched && rearmEnabled
         let doResume = resumeEnabled && activeAlive
         guard doRearm || doResume, !busy else { return }
@@ -68,6 +79,7 @@ final class ResumeService: ObservableObject {
         let already = nudged
         let lastNudgeCopy = lastNudge
         let firstActiveCopy = stopFirstActive
+        let alreadySubagent = nudgedSubagents
         Task.detached(priority: .utility) { [weak self] in
             let hosts = PtyHosts.available()
             let sessions = ClaudeSessions.list(claudeDir: claudeDir)
@@ -115,18 +127,62 @@ final class ResumeService: ObservableObject {
                         .map(\.stopUuid).filter { !$0.isEmpty }
                 }
             }
+            // Sub-agent limits (#117): the PARENT never stopped, so it's
+            // never in `stops` above — a separate scan, same gate.
+            var subagentDelivered: [Transcript.SubagentLimit] = []
+            var subagentAttempted: [String] = []
+            if doResume {
+                // A parent that was limit-stopped at tick start belongs
+                // to the resume path this tick even if its nudge just
+                // landed (its transcript no longer ends in the stop).
+                let stoppedIds = Set(stops.map(\.sessionId))
+                let hits = Transcript.findSubagentLimits(sessions: sessions, claudeDir: claudeDir)
+                    .filter { !stoppedIds.contains($0.session.sessionId) }
+                let text = ResumeCoordinator.subagentMessage(account: activeName, pct: activePct)
+                let coordinator = ResumeCoordinator(hosts: hosts, claudeDir: claudeDir)
+                for hit in hits where !alreadySubagent.contains(hit.session.stopUuid) {
+                    if newFirstSeen[hit.session.stopUuid] == nil,
+                       firstActiveCopy[hit.session.stopUuid] == nil, let n = activeNumber {
+                        newFirstSeen[hit.session.stopUuid] = n
+                    }
+                    let first = firstActiveCopy[hit.session.stopUuid] ?? newFirstSeen[hit.session.stopUuid]
+                    guard ResumeGate.allows(stoppedAt: hit.session.stoppedAt,
+                                            firstSeenActive: first,
+                                            currentActive: activeNumber,
+                                            activeFetchedAt: activeFetchedAt,
+                                            lastNudge: lastNudgeCopy[hit.session.sessionId]) else { continue }
+                    // One attempt per stop, delivered or not: an
+                    // unreachable parent must not cost a PTY sweep per tick.
+                    subagentAttempted.append(hit.session.stopUuid)
+                    if coordinator.nudgeSubagent(hit, text: text) {
+                        subagentDelivered.append(hit)
+                    }
+                }
+            }
             await self?.finish(sweep: sweep, outcome: outcome, standing: standing,
-                               firstSeen: newFirstSeen, held: held)
+                               firstSeen: newFirstSeen, held: held,
+                               subagentNudged: subagentDelivered, subagentAttempted: subagentAttempted,
+                               accountName: activeName)
         }
     }
 
     private func finish(sweep: PtyNudge.SweepResult?, outcome: ResumeCoordinator.Outcome?,
-                        standing: [String], firstSeen: [String: Int], held: Int) {
+                        standing: [String], firstSeen: [String: Int], held: Int,
+                        subagentNudged: [Transcript.SubagentLimit] = [], subagentAttempted: [String] = [],
+                        accountName: String? = nil) {
         busy = false
+        nudgedSubagents.formUnion(subagentAttempted)
         nudged.formUnion(standing)
         stopFirstActive.merge(firstSeen) { a, _ in a }
         if let outcome {
             for session in outcome.accepted { lastNudge[session.sessionId] = Date() }
+        }
+        for hit in subagentNudged {
+            nudgedSubagents.insert(hit.session.stopUuid)
+            lastNudge[hit.session.sessionId] = Date()
+            let repo = URL(fileURLWithPath: hit.session.cwd).lastPathComponent
+            log?("play.circle", "sub-agent limit \(hit.session.sessionId.prefix(8)) (\(hit.agentFile)) told to continue")
+            push?("sub-agents hit a limit — \(repo) was told to continue on \(accountName ?? "the active account")")
         }
         if held > 0 {
             log?("hourglass", "\(held) stopped session(s) held — waiting for "

@@ -15,6 +15,7 @@ publishes the matching section as the GitHub release body.
 
 ### Mac
 - Settings › Machine watches what many sessions do to this Mac — load, swap, stuck hooks, runaway processes, residue — with confirmed kill, reclaim and hook-disable actions and notifications for new hook registrations and idle sessions.
+- Sessions whose sub-agents hit a limit get a nudge that the swapped-in account has headroom, so they stop waiting for the reset.
 - When a revival countdown ends the Mac asks the engine again right away (three tries a minute apart) instead of waiting for the next poll.
 - "<account> is back" notifications, with "reset early" when Anthropic reset before the advertised time and "all accounts are back" when the whole fleet returns (Settings › Notifications).
 - `/infinitus:handoff <session>` passes the current task and its context to another live session through the plugin.
