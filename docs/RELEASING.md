@@ -53,7 +53,8 @@ released zip is built after it. Once a notarized release exists, drop the
 
 Local check of a Developer ID build: the wizard's stage 3 re-signs a
 copy of `Infinitus.app` in a temp dir, notarizes, staples and runs
-`spctl --assess` on it — no rebuild, the repo bundle untouched.
+`spctl --assess` on it — no rebuild, the repo bundle untouched. Or via
+`SIGN_IDENTITY="Developer ID Application: …" ./make-app.sh && spctl --assess --type execute -vv Infinitus.app`.
 
 ## Versioning & Bumping
 
