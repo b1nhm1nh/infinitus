@@ -10,6 +10,9 @@ publishes the matching section as the GitHub release body.
 ### Stats
 - The activity tables read the ask off your own message — "debug the crash" counts as debugging even when the tools only edited — and the plugin's UserPromptSubmit hook refreshes a session the moment a prompt goes in.
 
+### Phone
+- Allow… on a permission card offers "Allow for this session": the Mac remembers the tool (Bash by command verb) and the plugin's PreToolUse hook skips that prompt for the rest of the session.
+
 ### Mac
 - `/infinitus:handoff <session>` passes the current task and its context to another live session through the plugin.
 - Live Activity pushes drop a phone token from before the bundle id move instead of failing on it every minute.
