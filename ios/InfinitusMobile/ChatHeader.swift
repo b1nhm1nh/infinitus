@@ -116,6 +116,19 @@ struct ChatHeaderView: View {
     /// One tap puts what's on screen into the composer as an attachment
     /// (user 2026-09-05: "put the captured in attachment instead of send
     /// immediately as I need to describe the request").
+
+    private var statusWord: String { SessionWords.status(data.status, theme: theme) }
+    private var statusColor: Color { SessionWords.color(data.status) }
+    private var planText: String? {
+        data.plan.map { theme.plain ? $0 : theme.planLabel($0, compact: true) }
+    }
+
+    // MARK: option 1 — Messenger-style, one tier
+
+    /// Back · avatar (the theme's glyph on its tint) · name, then the
+    /// state and account on one caption line, then every window as
+    /// glyph + value on a third.
+
     private var compact: some View {
         HStack(spacing: 8) {
             backButton
@@ -186,7 +199,7 @@ struct ChatHeaderView: View {
 
     // MARK: option 2 — title row + stat strip
 
-    /// Back · name + state (the tap into the details) · camera.
+    /// Back · name + state (the tap into the details).
     private var titleRow: some View {
         HStack(spacing: 4) {
             backButton
