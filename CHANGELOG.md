@@ -17,6 +17,8 @@ publishes the matching section as the GitHub release body.
 - Haiku session names now cover the sessions Claude Code named itself (`limitless-bf`, `banyan-51`…).
 - Phone dictation never sits on "Translating…": a missing language pack asks to download, and after ten seconds the take goes out as spoken.
 - A chat opens in well under a second on sessions with hundreds of sub-agents; the Mac read every sub-agent's log per request and the phone gave up after three ("the Mac didn't answer").
+- The phone's composer no longer floats mid-screen after the keyboard is dragged away.
+- The terminal's own "[Image: original …]" note after a screenshot is read no longer shows as a message you sent.
 
 ### Crash reports
 - The phone app and the Mac app report their own crashes into Settings › Sync, nothing leaves your machine, and any report can go into a session's chat for triage.
@@ -28,7 +30,8 @@ publishes the matching section as the GitHub release body.
 ### Phone
 - The working Live Activity follows an account switch when the app opens, and a card nothing has reached says "out of date".
 - A lighter chat header: compact by default, or a stat strip with mini gauges (Settings › Appearance › Chat header).
-- A capture of the app — the camera button in a chat, or a shake anywhere — lands in the composer as an attachment so you can say what it's about; screenshots you take are still offered in one tap.
+- A capture of the app — the camera button in a chat, a shake anywhere, or a screenshot the phone just took — lands in the composer as an attachment so you can say what it's about.
+- Share → Infinitus from any app sends the image into a session with a note, picked from the Mac's live list, without opening the app.
 - A message from another session shows as "Message from @name" with a preview, the full text a tap away.
 - Your own turns render Markdown too.
 - Live Activities are back on the lock screen and Dynamic Island.

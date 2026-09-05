@@ -146,7 +146,8 @@ to drive the running app.
   and permission prompts, type a reply, attach photos (library or
   camera) and files — delivered over Claude Code's peer socket or into
   the terminal. Tap the header for the account behind the session and
-  its limits (CLIProxyAPI included).
+  its limits (CLIProxyAPI included). Any app's Share sheet → Infinitus
+  sends an image into a session with a note, no app switch.
 - **AWS sign-in from the phone** — a session that hits an expired
   `aws login` shows up on the Mac and the phone; the phone runs the
   login on the Mac and opens the AWS page in Safari (passkeys work),

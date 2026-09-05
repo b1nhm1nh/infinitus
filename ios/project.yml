@@ -57,12 +57,23 @@ targets:
         CFBundleURLTypes:
           - CFBundleURLName: com.huuloc.infinitus.mobile.pair
             CFBundleURLSchemes: [infinitus]
+    # The share extension (#64) reads the pairing (routes, token, device
+    # id) from a keychain item both bundles can open. Keychain sharing
+    # only needs the team prefix, which every automatic profile grants;
+    # an App Group would need `group.…` registered in the developer
+    # portal, which xcodebuild cannot do (probed 2026-09-05).
+    entitlements:
+      path: InfinitusMobile/InfinitusMobile.entitlements
+      properties:
+        keychain-access-groups: ["$(AppIdentifierPrefix)com.huuloc.infinitus.shared"]
     dependencies:
       - package: Infinitus
         product: InfinitusCore
       - package: Infinitus
         product: InfinitusUI
       - target: InfinitusMobileWidgets
+        embed: true
+      - target: InfinitusMobileShare
         embed: true
     settings:
       base:
@@ -100,6 +111,43 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.huuloc.infinitus.mobile.widgets
+        CODE_SIGNING_ALLOWED: "NO"
+        GENERATE_INFOPLIST_FILE: "YES"
+        INFOPLIST_KEY_CFBundleDisplayName: Infinitus
+        SWIFT_VERSION: "5.9"
+        TARGETED_DEVICE_FAMILY: "1"
+  # Share-sheet extension (#64): any app's Share → Infinitus posts the
+  # image with a message into a session, over the same mirror client the
+  # app uses (the pairing arrives through the shared keychain item).
+  InfinitusMobileShare:
+    type: app-extension
+    platform: iOS
+    sources:
+      - InfinitusMobileShare
+      - InfinitusMobile/NetworkFleetMirror.swift
+      - InfinitusMobile/ShareBridge.swift
+      - InfinitusMobile/AttachmentImage.swift
+    dependencies:
+      - package: Infinitus
+        product: InfinitusCore
+    entitlements:
+      path: InfinitusMobileShare/InfinitusMobileShare.entitlements
+      properties:
+        keychain-access-groups: ["$(AppIdentifierPrefix)com.huuloc.infinitus.shared"]
+    info:
+      path: InfinitusMobileShare/Info.plist
+      properties:
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.share-services
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).ShareViewController
+          NSExtensionAttributes:
+            NSExtensionActivationRule:
+              NSExtensionActivationSupportsImageWithMaxCount: 1
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.huuloc.infinitus.mobile.share
         CODE_SIGNING_ALLOWED: "NO"
         GENERATE_INFOPLIST_FILE: "YES"
         INFOPLIST_KEY_CFBundleDisplayName: Infinitus

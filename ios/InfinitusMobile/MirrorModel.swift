@@ -73,7 +73,10 @@ final class MirrorModel: ObservableObject, FleetModel {
     /// — empty means "use Bonjour only". The mirror reads the same list
     /// straight from UserDefaults (#9 pair once, every route).
     @Published var manualEndpoints: [String] {
-        didSet { defaults.set(manualEndpoints, forKey: NetworkFleetMirror.manualKey) }
+        didSet {
+            defaults.set(manualEndpoints, forKey: NetworkFleetMirror.manualKey)
+            ShareBridge.publish(defaults)
+        }
     }
     /// The Mac's pairing token (#9 remote access): without it every
     /// request comes back 401, whether the Mac was found by Bonjour, by
@@ -87,6 +90,7 @@ final class MirrorModel: ObservableObject, FleetModel {
             let normalized = MirrorPairing.normalize(pairToken)
             defaults.set(normalized, forKey: NetworkFleetMirror.tokenKey)
             if normalized != pairToken { pairToken = normalized }
+            ShareBridge.publish(defaults)
         }
     }
     /// What the Settings screen shows about the connection.
@@ -193,6 +197,9 @@ final class MirrorModel: ObservableObject, FleetModel {
             self.snapshot = snapshot
             prefs = snapshot.prefs
             if usesLAN { transportStatus = await NetworkFleetMirror.shared.statusText }
+            // The route that just answered is now the last-good one; the
+            // share extension (#64) reads the pairing through the keychain.
+            ShareBridge.publish(defaults)
             sessionProgress.apply(snapshot.progressByPid ?? [:], tokenRate: snapshot.tokenRate)
             let firstLoad = reconcile(engineFleets)
             error = nil

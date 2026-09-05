@@ -164,7 +164,11 @@ struct SessionFeedScreen: View {
             }
             // Dragging the feed tucks the keyboard away; so does a tap on
             // it (user 2026-09-03 from the phone: "I can't hide keyboard").
-            .scrollDismissesKeyboard(.interactively)
+            // `.immediately`, not `.interactively`: a drag that ends midway
+            // through an interactive dismissal leaves the bottom inset at
+            // the keyboard's height, and the composer floats mid-screen
+            // (user 2026-09-05 screenshot: "Still the floating textinput").
+            .scrollDismissesKeyboard(.immediately)
             .simultaneousGesture(TapGesture().onEnded { composerFocused = false })
             .onChange(of: feed?.items.count) { _, _ in
                 reconcilePending()
@@ -750,7 +754,7 @@ struct SessionFeedScreen: View {
                                              data: jpeg, thumbnail: UIImage(data: jpeg)))
     }
 
-    private static func downscaledJPEG(_ image: UIImage) -> Data? { ScreenshotWatch.jpeg(image) }
+    private static func downscaledJPEG(_ image: UIImage) -> Data? { AttachmentImage.jpeg(image) }
 
     /// PDFs/text ride as-is (≤ 5 MiB, same cap the Mac enforces) — no
     /// re-encoding, unlike photos.
@@ -779,13 +783,15 @@ struct SessionFeedScreen: View {
         }
     }
 
-    // MARK: screenshots (user 2026-09-04: "send it right away" — the
-    // ones the phone took; the app's own captures stage instead)
+    // MARK: screenshots (user 2026-09-05: "It should be like when I
+    // paste the image intentionally" — every capture stages, so the
+    // words about it go with it)
 
     /// Screenshots taken since the phone last looked, offered above the
-    /// composer: send them all in one tap, or wave them off.
+    /// composer: attach them all in one tap, or wave them off.
     private var screenshotOffer: some View {
         let shots = screenshots.found
+        let room = SessionInput.maxAttachments - attachments.count
         return HStack(spacing: 10) {
             if let thumb = shots.last?.thumbnail {
                 Image(uiImage: thumb)
@@ -796,14 +802,12 @@ struct SessionFeedScreen: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(shots.count == 1 ? "New screenshot" : "\(shots.count) new screenshots")
                     .font(.subheadline.weight(.semibold))
-                Text(shots.count > SessionInput.maxAttachments
-                     ? "The newest \(SessionInput.maxAttachments) go" : "Send to this session?")
+                Text(shots.count > room ? "The newest \(room) go" : "Attach to your reply?")
                     .font(.caption).foregroundStyle(.secondary)
             }
             Spacer(minLength: 0)
-            Button("Send") { sendFoundScreenshots() }
+            Button("Attach") { stageFoundScreenshots() }
                 .buttonStyle(.borderedProminent)
-                .disabled(sendingMessage)
             Button { screenshots.dismiss() } label: {
                 Image(systemName: "xmark").font(.caption.weight(.semibold))
                     .frame(width: 30, height: 30).contentShape(Rectangle())
@@ -841,51 +845,24 @@ struct SessionFeedScreen: View {
         stage(staged.image)
     }
 
-    private func sendFoundScreenshots() {
-        let images = screenshots.images(limit: SessionInput.maxAttachments)
+    /// The offer's tap: the screenshots land in the composer as
+    /// attachments, cursor ready — the same as a pasted image, so a
+    /// request can be typed about them before anything goes out.
+    private func stageFoundScreenshots() {
+        let room = SessionInput.maxAttachments - attachments.count
+        guard room > 0 else {
+            attachmentError = "the reply already has \(SessionInput.maxAttachments) attachments"
+            return
+        }
+        let images = screenshots.images(limit: room)
         guard !images.isEmpty else {
             messageResult = "couldn't read those screenshots"
             screenshots.dismiss()
             return
         }
-        // The offer stays up until the Mac has them — a failed send
-        // shouldn't lose the batch.
-        sendImages(images, prefix: "screenshot",
-                   caption: images.count == 1 ? "Screenshot taken on the phone just now."
-                                              : "\(images.count) screenshots taken on the phone just now.",
-                   onDelivered: { screenshots.dismiss() })
-    }
-
-    /// Straight out, bypassing the draft and its attachments — the
-    /// composer's own text stays where it is.
-    private func sendImages(_ images: [UIImage], prefix: String, caption: String,
-                            onDelivered: @escaping () -> Void = {}) {
-        var picked: [SessionInput.Attachment] = []
-        var thumbs: [UIImage] = []
-        for (i, image) in images.enumerated() {
-            guard let jpeg = Self.downscaledJPEG(image), jpeg.count <= SessionInput.maxAttachmentBytes else { continue }
-            picked.append(.init(name: "\(prefix)-\(i + 1).jpg", mime: "image/jpeg", data: jpeg))
-            thumbs.append(UIImage(data: jpeg) ?? image)
-        }
-        guard !picked.isEmpty else { messageResult = "couldn't read that screenshot"; return }
-        sendingMessage = true
-        messageResult = nil
-        Task {
-            await send(.init(kind: .message, text: caption, attachments: picked)) { reply in
-                if reply.outcome == "delivered" {
-                    pendingSent.append(PendingSent(text: caption, images: thumbs, files: []))
-                    deliveredTick += 1
-                    onDelivered()
-                } else {
-                    messageResult = reply.detail.map { "\(Self.describe(reply.outcome)) — \($0)" }
-                        ?? Self.describe(reply.outcome)
-                }
-            } onFailure: {
-                messageResult = "couldn't reach the Mac"
-            } finished: {
-                sendingMessage = false
-            }
-        }
+        for image in images { addImage(image, prefix: "screenshot") }
+        screenshots.dismiss()
+        composerFocused = true
     }
 
     // MARK: continue (user 2026-09-04: "a button on ios when clicked it

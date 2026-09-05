@@ -38,6 +38,8 @@ actor NetworkFleetMirror: FleetMirror {
         return fresh
     }()
     static let deviceName: String = {
+        if let bridged = UserDefaults.standard.string(forKey: ShareBridge.deviceNameKey),
+           !bridged.isEmpty { return bridged }
         let name = UIDevice.current.name.filter { $0.isASCII && !$0.isNewline }
         return name.isEmpty ? UIDevice.current.model : name
     }()
