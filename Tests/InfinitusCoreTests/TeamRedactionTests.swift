@@ -1,0 +1,54 @@
+import XCTest
+@testable import InfinitusCore
+
+final class TeamRedactionTests: XCTestCase {
+    let options = TeamRedaction.Options(home: "/Users/loc")
+
+    func testFixtures() {
+        let cases: [(String, String)] = [
+            (#"{"text":"Authorization: Bearer abcdefghijklmnopqrstuvwxyz012345"}"#,
+             #"{"text":"Authorization: [redacted]"}"#),
+            ("curl -H 'Authorization: token ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZ1234' x",
+             "curl -H 'Authorization: [redacted]' x"),
+            ("Bearer eyJhbGciOiJIUzI1NiJ9.abc.def please", "Bearer [redacted] please"),
+            ("key sk-ant-api03-abcdefghijklmnopqrstuvwxyz", "key [redacted-key]"),
+            ("token ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZ1234", "token [redacted-key]"),
+            ("pat github_pat_11ABCDEFG0123456789abcdefghijklmnop", "pat [redacted-key]"),
+            ("AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE", "AWS_ACCESS_KEY_ID=[redacted-aws-key]"),
+            ("AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY", "AWS_SECRET_ACCESS_KEY=[redacted]"),
+            (#"{"SessionToken":"FQoGZXIvYXdzEBYaDDDDDDDDDDDDDDDDDD"}"#, #"{"SessionToken":"[redacted]"}"#),
+            ("https://hooks.slack.com/services/T000/B000/XXXXXXXX done", "[redacted-webhook] done"),
+            ("https://discord.com/api/webhooks/1/abc", "[redacted-webhook]"),
+            ("DATABASE_PASSWORD=hunter2 PORT=3000", "DATABASE_PASSWORD=[redacted] PORT=3000"),
+            ("cd /Users/loc/death/limitless && ls /home/bob/x /root/y", "cd ~/death/limitless && ls ~/x ~/y"),
+            ("swift build", "swift build"),
+        ]
+        for (input, expected) in cases {
+            XCTAssertEqual(TeamRedaction.redact(input, options: options), expected, input)
+        }
+    }
+
+    func testImagesAreDroppedUnlessIncluded() {
+        let data = String(repeating: "A", count: 300)
+        let line = #"{"type":"image","source":{"type":"base64","media_type":"image/png","data":"\#(data)"}}"#
+        XCTAssertEqual(TeamRedaction.redact(line, options: options),
+                       #"{"type":"image","source":{"type":"base64","media_type":"image/png","data":""}}"#)
+        XCTAssertEqual(TeamRedaction.redact(line, options: TeamRedaction.Options(home: "/Users/loc", includeImages: true)), line)
+        // Short base64-ish strings are not images.
+        XCTAssertEqual(TeamRedaction.redact(#"{"data":"abcd"}"#, options: options), #"{"data":"abcd"}"#)
+    }
+
+    func testRedactedJSONStaysJSON() throws {
+        let line = #"{"type":"user","message":{"content":"Authorization: Bearer abcdefghijklmnopqrstuvwxyz012345 at /Users/loc/x with sk-abcdefghijklmnopqrstuvwxyz"}}"#
+        let out = TeamRedaction.redact(line, options: options)
+        let obj = try XCTUnwrap(try JSONSerialization.jsonObject(with: Data(out.utf8)) as? [String: Any])
+        let message = try XCTUnwrap(obj["message"] as? [String: Any])
+        XCTAssertEqual(message["content"] as? String, "Authorization: [redacted] at ~/x with [redacted-key]")
+    }
+
+    func testJSONLRedactsEveryLineAndKeepsLineCount() {
+        let input = Data("a sk-abcdefghijklmnopqrstuvwxyz\nb\n\nc /home/x/y\n".utf8)
+        let out = String(decoding: TeamRedaction.redact(jsonl: input, options: options), as: UTF8.self)
+        XCTAssertEqual(out, "a [redacted-key]\nb\n\nc ~/y\n")
+    }
+}
