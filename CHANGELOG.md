@@ -35,6 +35,7 @@ publishes the matching section as the GitHub release body.
 - Tokens/min records: every day's peak minute, the all-time best and the days it fell, a 30-day sparkline and a week-over-week trend, on the Mac and the phone — one full rescan on first refresh.
 
 ### Fixes
+- A resume nudge after an account switch waits until the new account has held for 30 s and been polled alive since, and its retries stop when the engine switches again, so a flapping engine no longer burns three nudges in a minute.
 - The idle-session note is sent once per session, app relaunches included.
 - `infinitusctl status` and the phone show the Mac build's real git sha instead of "dev".
 - Machine › Reclaim also clears abandoned pip and Python tempfile directories older than an hour, and finds open files without walking the temp directory (which is what hangs on a loaded Mac).

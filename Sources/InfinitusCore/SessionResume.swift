@@ -42,6 +42,10 @@ public struct ResumeCoordinator {
     }
     public var verdict: (StoppedSession) -> Transcript.Verdict
     public var sleep: (TimeInterval) -> Void = { Thread.sleep(forTimeInterval: $0) }
+    /// Whether the active account changed since attempt 0: a retry would
+    /// re-fire into whatever the engine flipped to (#136), so the round
+    /// ends and the next tick starts over through the gate.
+    public var activeChanged: () -> Bool = { false }
 
     public init(hosts: [any PtyHost], claudeDir: URL) {
         self.hosts = hosts
@@ -90,7 +94,10 @@ public struct ResumeCoordinator {
         var outcome = Outcome()
         var pending = stopped
         for attempt in 0...Self.retryDelays.count {
-            if attempt > 0 { sleep(Self.retryDelays[attempt - 1]) }
+            if attempt > 0 {
+                sleep(Self.retryDelays[attempt - 1])
+                if activeChanged() { break }
+            }
             var sent: [StoppedSession] = []
             for session in pending {
                 if let channel = deliver(session, text: Self.nudgeText(attempt: attempt)) {
