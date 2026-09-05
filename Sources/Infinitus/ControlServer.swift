@@ -204,6 +204,15 @@ final class ControlServer {
             return ControlReply(ok: reply.outcome == "delivered", result: try .of(reply),
                                 error: reply.outcome == "delivered" ? nil : "\(reply.outcome)\(reply.detail.map { ": " + $0 } ?? "")")
 
+        case "approve":
+            guard let payload = r.secret, let event = HookEvent.parse(payload), event.name == "PreToolUse",
+                  let sessionId = event.sessionId, let tool = event.toolName else {
+                throw Fail("approve: a PreToolUse hook payload is expected on stdin")
+            }
+            let allowed = model.toolApprovals.allows(sessionId: sessionId, tool: tool, command: event.toolCommand)
+            if allowed { model.logEvent("hook", icon: "checkmark.shield", "allowed \(tool) from the phone's session rule") }
+            return ControlReply(ok: true, result: .object(["decision": .string(allowed ? "allow" : "ask")]))
+
         case "event":
             guard let payload = r.secret, let event = HookEvent.parse(payload) else {
                 throw Fail("event: a Claude Code hook payload (JSON with hook_event_name) is expected on stdin")

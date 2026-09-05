@@ -69,7 +69,7 @@ while i < args.count {
 }
 
 var secret: String?
-if ["proxy-key", "9router-password", "aws-login-code", "aws-login-callback", "event", "send"].contains(command) {
+if ["proxy-key", "9router-password", "aws-login-code", "aws-login-callback", "event", "send", "approve"].contains(command) {
     let data = FileHandle.standardInput.readDataToEndOfFile()
     secret = String(decoding: data, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
 }

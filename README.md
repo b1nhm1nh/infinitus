@@ -201,6 +201,8 @@ to drive the running app.
   every session `fleet_status`, `list_sessions` and `session_message`
   (text to another live session by name), and `/infinitus:status`
   answers "how are the accounts doing" from them.
+  With the plugin installed, "Allow for this session" on the phone's
+  permission card skips that tool's prompt for the rest of the session.
 - **Capture the desktop into a session** — Capture Screen for a
   Session… in the menu-bar menu: a region or window, a session, a note,
   delivered like a phone message.
