@@ -18,6 +18,7 @@ publishes the matching section as the GitHub release body.
 
 ### Crash reports
 - The phone app and the Mac app report their own crashes into Settings › Sync, nothing leaves your machine, and any report can go into a session's chat for triage.
+- The Mac app leaves a lifecycle trail in the unified log — launch, who asked it to quit, signals, uncaught exceptions — so a silent exit has a trace.
 
 ### Accounts
 - Randomize names: every account gets a fresh name from the current theme's pool (Settings › Accounts, or `infinitusctl randomize-names`).
