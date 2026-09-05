@@ -172,7 +172,9 @@ to drive the running app.
   went — minutes, tokens and spend per activity (review, tests, plan,
   debugging, browser, simulator, explanations, coding), per model, per
   engine (Claude Code and Codex CLI transcripts are both read) and per
-  effort setting.
+  effort setting — plus a tokens/min record book: every day's peak
+  minute, the all-time best and the days it fell, a 30-day sparkline
+  and a week-over-week trend.
 - **Sessions, named and narrated** — sessions you haven't named get a
   title from Claude Haiku and keep it fresh as the work moves; the
   phone opens on what's waiting for you, with a Continue button for a

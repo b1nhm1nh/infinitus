@@ -121,6 +121,8 @@ struct AwsLoginScreen: View {
     @Environment(\.dismiss) private var dismiss
     @State private var code = ""
     @State private var showSafari = false
+    /// The last value copied — its row shows a check until another is.
+    @State private var copied: String?
 
     init(item: AwsLogin.Item) {
         _flow = StateObject(wrappedValue: AwsLoginFlow(item: item))
@@ -162,6 +164,7 @@ struct AwsLoginScreen: View {
                 } else {
                     Text("Profile **\(flow.profile)** needs a fresh AWS login.")
                 }
+                accountRows
                 if state != nil || flow.busy {
                     ProgressView("Starting `aws login` on the Mac…")
                 } else {
@@ -198,6 +201,41 @@ struct AwsLoginScreen: View {
         case .relay, .local, .remote:
             return "The AWS page opens in Safari (passkeys work there); it ends with a code to paste back here."
         }
+    }
+
+    /// What the AWS page asks for and nobody remembers across accounts
+    /// (user 2026-09-05): the account id and IAM user name from the
+    /// profile's config, one tap to copy each. The relay web view also
+    /// fills them in; Safari flows have only these.
+    @ViewBuilder private var accountRows: some View {
+        if let account = flow.item.account {
+            VStack(spacing: 6) {
+                copyRow(label: "Account", value: account.accountId)
+                if let user = account.userName { copyRow(label: "User", value: user) }
+            }
+            .padding(10)
+            .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 10))
+        }
+    }
+
+    private func copyRow(label: String, value: String) -> some View {
+        Button {
+            UIPasteboard.general.string = value
+            copied = value
+        } label: {
+            HStack(spacing: 8) {
+                Text(label).font(.footnote).foregroundStyle(.secondary)
+                    .frame(width: 58, alignment: .leading)
+                Text(value).font(.system(.footnote, design: .monospaced))
+                    .lineLimit(1).truncationMode(.middle)
+                Spacer(minLength: 6)
+                Image(systemName: copied == value ? "checkmark" : "doc.on.doc")
+                    .foregroundStyle(copied == value ? .green : .secondary)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Copy \(label.lowercased()) \(value)")
     }
 
     @ViewBuilder private var errorLine: some View {
@@ -256,8 +294,10 @@ struct AwsLoginScreen: View {
                 .padding(10)
                 .background(.thinMaterial)
             }
+            accountRows.padding(.horizontal, 10).padding(.vertical, 6)
             errorLine.padding(.horizontal)
             RelayWebView(url: url, callbackPort: state.callbackPort,
+                         fillScript: AwsLogin.fillScript(account: flow.item.account),
                          onCallback: { flow.relay($0) },
                          onPasskeyWall: { flow.passkeyWall = true })
             .opacity(flow.relayed ? 0.35 : 1)
@@ -268,6 +308,7 @@ struct AwsLoginScreen: View {
 
     private func deviceCodeView(state: AwsLogin.State, url: URL) -> some View {
         VStack(spacing: 18) {
+            accountRows
             Text("Enter this code on the AWS page:")
             Text(state.userCode ?? "…")
                 .font(.system(.largeTitle, design: .monospaced).bold())
@@ -296,6 +337,7 @@ struct AwsLoginScreen: View {
         VStack(spacing: 18) {
             Text("Sign in on the AWS page (it opens in Safari, so passkeys work); it ends with an authorization code. Paste it here.")
                 .multilineTextAlignment(.center)
+            accountRows
             Button { showSafari = true } label: {
                 Label("Open sign-in page", systemImage: "safari")
             }
@@ -335,6 +377,9 @@ struct AwsLoginScreen: View {
 private struct RelayWebView: UIViewRepresentable {
     let url: URL
     let callbackPort: Int?
+    /// `AwsLogin.fillScript`: account id + user name into the page's
+    /// inputs, at document end and again as the single-page flow moves.
+    let fillScript: String?
     let onCallback: (URL) -> Void
     /// The page reports a passkey step the web view cannot serve.
     let onPasskeyWall: () -> Void
@@ -344,6 +389,10 @@ private struct RelayWebView: UIViewRepresentable {
     func makeUIView(context: Context) -> WKWebView {
         let config = WKWebViewConfiguration()
         config.websiteDataStore = .nonPersistent()   // a fresh jar per login
+        if let fillScript {
+            config.userContentController.addUserScript(
+                WKUserScript(source: fillScript, injectionTime: .atDocumentEnd, forMainFrameOnly: true))
+        }
         let view = WKWebView(frame: .zero, configuration: config)
         view.customUserAgent = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) "
             + "AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1"

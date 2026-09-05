@@ -151,7 +151,7 @@ final class MirrorAwsLoginBox: @unchecked Sendable {
 }
 
 /// Where `POST /sessions/<pid>/input` deliveries run, one at a time.
-private let mirrorInputQueue = DispatchQueue(label: "com.huuloc.infinitus.mirror-input", qos: .userInitiated)
+private let mirrorInputQueue = DispatchQueue(label: "run.infinitus.mirror-input", qos: .userInitiated)
 
 final class MirrorSessionInputBox: @unchecked Sendable {
     private let lock = NSLock()
@@ -213,7 +213,7 @@ final class MirrorServer: ObservableObject {
     var onReady: ((UInt16) -> Void)?
 
     private var listener: NWListener?
-    private let queue = DispatchQueue(label: "com.huuloc.infinitus.mirror-server")
+    private let queue = DispatchQueue(label: "run.infinitus.mirror-server")
 
     func start(machineName: String, token: String) {
         self.token.set(token)
