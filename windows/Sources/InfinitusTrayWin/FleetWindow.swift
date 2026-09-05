@@ -42,6 +42,9 @@ enum FleetWindow {
         var pad: Int32 { px(12) }
         var rowHeight: Int32 { px(46) }
         var headerHeight: Int32 { px(30) }
+        /// One fleet header band ("Claude · 9Router"), drawn only when
+        /// several fleets stack — the Mac's `FleetHeader`.
+        var fleetHeaderHeight: Int32 { px(22) }
         var footerHeight: Int32 { px(26) }
         var barWidth: Int32 { px(84) }
         var barHeight: Int32 { px(7) }
@@ -57,38 +60,67 @@ enum FleetWindow {
     }
 
     /// The window's own size for a given panel — computed, not guessed,
-    /// so the frame always fits its rows.
-    static func idealSize(rows: Int, gauges: Int, metrics: Metrics) -> (width: Int32, height: Int32) {
+    /// so the frame always fits its rows AND its fleet headers.
+    static func idealSize(rows: Int, gauges: Int, metrics: Metrics,
+                          fleetHeaders: Int = 0) -> (width: Int32, height: Int32) {
         let width = metrics.pad * 2 + metrics.numberWidth + metrics.nameWidth
             + Int32(max(1, gauges)) * (metrics.barWidth + metrics.gaugeGap + metrics.px(52))
         let body = Int32(max(1, rows)) * metrics.rowHeight
+            + Int32(fleetHeaders) * metrics.fleetHeaderHeight
         let height = metrics.headerHeight + body + metrics.footerHeight + metrics.pad
         return (min(width, metrics.px(980)), min(height, metrics.px(680)))
     }
 
+    /// The panel's paint plan: every header and row with the y it sits
+    /// at, so painting and hit-testing can never fall out of step (the
+    /// old code recomputed `index * rowHeight` in two places, which a
+    /// variable-height header would have broken).
+    struct Placed {
+        let line: FleetLayout.Line
+        let top: Int32
+        let height: Int32
+    }
+
+    static func place(_ panel: FleetLayout.Panel, metrics: Metrics) -> [Placed] {
+        var y = metrics.headerHeight
+        var out: [Placed] = []
+        for line in panel.lines {
+            let height: Int32
+            switch line {
+            case .header: height = metrics.fleetHeaderHeight
+            case .account: height = metrics.rowHeight
+            }
+            out.append(Placed(line: line, top: y, height: height))
+            y += height
+        }
+        return out
+    }
+
     // MARK: - colours
     //
-    // Dark, like the screenshot. Fixed rather than following the system
-    // theme: the Mac popup is dark in both appearances, and a light
-    // variant would need its own contrast pass to stay readable.
+    // The shared dark palette (WinDark.swift) — the settings window uses
+    // the same one, so the two can't drift into slightly different greys
+    // sitting side by side. Fixed rather than following the system theme:
+    // the Mac popup is dark in both appearances, and a light variant
+    // would need its own contrast pass to stay readable.
 
-    private static let bg = RGB(24, 24, 27)
-    private static let rowBg = RGB(32, 32, 36)
-    private static let activeBg = RGB(30, 58, 95)
-    private static let text = RGB(240, 240, 245)
-    private static let dim = RGB(150, 150, 160)
-    private static let faint = RGB(105, 105, 115)
-    private static let track = RGB(58, 58, 64)
-    private static let sessionColor = RGB(90, 190, 255)
-    private static let weeklyColor = RGB(170, 130, 255)
-    private static let scopedColor = RGB(255, 175, 90)
-    private static let dangerColor = RGB(255, 95, 95)
-    private static let warmTint = RGB(255, 140, 70)
-    private static let coolTint = RGB(90, 230, 190)
-
-    private static func RGB(_ r: Int, _ g: Int, _ b: Int) -> COLORREF {
-        COLORREF(UInt32(r) | (UInt32(g) << 8) | (UInt32(b) << 16))
-    }
+    private static let bg = WinDark.bg
+    private static let rowBg = WinDark.rowBg
+    private static let activeBg = WinDark.activeBg
+    private static let text = WinDark.text
+    private static let dim = WinDark.dim
+    private static let faint = WinDark.faint
+    /// The fleet header's provider name — brighter than its engine name,
+    /// the same emphasis split the Mac's `FleetHeader` uses (semibold
+    /// provider, secondary engine).
+    private static let headerText = WinDark.headerText
+    private static let track = WinDark.track
+    private static let sessionColor = WinDark.sessionColor
+    private static let weeklyColor = WinDark.weeklyColor
+    private static let scopedColor = WinDark.scopedColor
+    private static let dangerColor = WinDark.dangerColor
+    private static let warmTint = WinDark.warmTint
+    private static let coolTint = WinDark.coolTint
 
     /// A gauge's colour by its label, matching the Mac's row theme
     /// (session blue, weekly purple, per-model amber) and going red once
@@ -105,7 +137,7 @@ enum FleetWindow {
     // MARK: - state
 
     final class State {
-        var panel = FleetLayout.Panel(rows: [], activeNumber: nil, footer: "", empty: "Loading\u{2026}")
+        var panel = FleetLayout.Panel(empty: "Loading\u{2026}")
         var titleFont: HFONT?
         var bodyFont: HFONT?
         var captionFont: HFONT?
@@ -150,6 +182,9 @@ enum FleetWindow {
             return
         }
         open = hwnd
+        // Before ShowWindow: DWM re-renders the frame when the attribute
+        // changes, so a visible window flashes a light caption first.
+        WinDark.applyTitleBar(to: hwnd)
         // Size AFTER creating it, for two reasons found by looking at the
         // result (2026-09-04): GetDpiForWindow needs a real window, so
         // measuring before gave 96 dpi and a panel too small for its own
@@ -168,8 +203,10 @@ enum FleetWindow {
     private static func resizeToFit(_ hwnd: HWND, panel: FleetLayout.Panel, style: DWORD) {
         let metrics = Metrics(hwnd: hwnd)
         let gauges = panel.rows.map(\.gauges.count).max() ?? 2
+        let headers = panel.lines.filter { if case .header = $0 { return true } else { return false } }.count
         let content = idealSize(rows: max(1, panel.rows.count),
-                                gauges: gauges, metrics: metrics)
+                                gauges: gauges, metrics: metrics,
+                                fleetHeaders: headers)
         var rect = RECT(left: 0, top: 0, right: content.width, bottom: content.height)
         AdjustWindowRectExForDpi(&rect, style, false, 0, GetDpiForWindow(hwnd))
         SetWindowPos(hwnd, nil, 0, 0, rect.right - rect.left, rect.bottom - rect.top,
@@ -193,7 +230,10 @@ enum FleetWindow {
         let rowsChanged = previous.rows.count != state.panel.rows.count
         let gaugesChanged = (previous.rows.map(\.gauges.count).max() ?? 0)
             != (state.panel.rows.map(\.gauges.count).max() ?? 0)
-        if rowsChanged || gaugesChanged {
+        // A fleet appearing or disappearing changes the header count and
+        // so the height, even when the row total happens to match.
+        let sectionsChanged = previous.sections.count != state.panel.sections.count
+        if rowsChanged || gaugesChanged || sectionsChanged {
             let style = DWORD(bitPattern: Int32(truncatingIfNeeded:
                 GetWindowLongPtrW(target, GWL_STYLE)))
             resizeToFit(target, panel: state.panel, style: style)
@@ -212,18 +252,27 @@ enum FleetWindow {
         // the engine — the only way to exercise the GAUGE painting here,
         // since a token account reports `usage: null` (usageStatus
         // "unavailable") and draws no bars at all. Same seam the resume
-        // supervisor's tests use.
+        // supervisor's tests use. `[EngineFleet]` is tried first so a
+        // multi-fleet fixture exercises the headers too.
         if let path = ProcessInfo.processInfo.environment["INFINITUS_ACCOUNTS_JSON"],
            !path.isEmpty,
-           let data = try? Data(contentsOf: URL(fileURLWithPath: path)),
-           let fixture = try? JSONDecoder().decode(AccountList.self, from: data) {
+           let data = try? Data(contentsOf: URL(fileURLWithPath: path)) {
             let (_, _, live) = liveCounts()
-            return FleetLayout.panel(list: fixture, live: live, engineInstalled: true)
+            if let fleets = try? JSONDecoder().decode([EngineFleet].self, from: data) {
+                return FleetLayout.panel(fleets: fleets, live: live, engineInstalled: true)
+            }
+            if let fixture = try? JSONDecoder().decode(AccountList.self, from: data) {
+                return FleetLayout.panel(list: fixture, live: live, engineInstalled: true)
+            }
         }
-        let list = TrayFleet.cached()
         let (_, _, live) = liveCounts()
-        return FleetLayout.panel(list: list, live: live,
-                                 engineInstalled: TrayFleet.hasEngine())
+        // Every fleet the engine holds, not just the flattened Claude
+        // one: with 9Router that is Claude, Codex, Gemini, Kiro… each
+        // under its own "<provider> · 9Router" header, the same stack the
+        // Mac's FleetStack renders.
+        return FleetLayout.panel(fleets: TrayFleet.cachedFleets(), live: live,
+                                 engineInstalled: TrayFleet.hasEngine(),
+                                 engine: TrayFleet.engineIndicator())
     }
 
     /// Session totals for the footer, from the same records the tray
@@ -362,21 +411,33 @@ enum FleetWindow {
         }
     }
 
-    /// Which row a client-area y lands on, or -1.
+    /// Which ROW a client-area y lands on, or -1 — a fleet header is not
+    /// a row. Walks the same placement the paint uses, so a header's
+    /// height can never desync the two.
     private static func rowIndex(at y: Int32, hwnd: HWND, state: State) -> Int {
         let metrics = Metrics(hwnd: hwnd)
-        let top = metrics.headerHeight
-        guard y >= top else { return -1 }
-        let index = Int((y - top) / metrics.rowHeight)
-        return index < state.panel.rows.count ? index : -1
+        var index = 0
+        for placed in place(state.panel, metrics: metrics) {
+            let hit = y >= placed.top && y < placed.top + placed.height
+            switch placed.line {
+            case .header:
+                if hit { return -1 }
+            case .account:
+                if hit { return index }
+                index += 1
+            }
+        }
+        return -1
     }
 
     /// Clicking a row switches to that account — the engine decides, we
     /// forward and report (CLAUDE.md: account policy is the engine's).
+    /// The row carries its own provider, so a Gemini row switches inside
+    /// the Gemini fleet rather than being read as a Claude ordinal.
     private static func clickRow(_ row: FleetLayout.Row, state: State, hwnd: HWND) {
         guard !row.active, !state.switching else { return }
         state.switching = true
-        TrayFleet.requestSwitch(to: row.number) { message in
+        TrayFleet.requestSwitch(to: row.number, provider: row.provider) { message in
             state.switching = false
             // The reply lands on a worker thread; the tray's own window
             // owns the balloon, and this window just needs repainting.
@@ -447,10 +508,16 @@ enum FleetWindow {
                              bottom: client.bottom - metrics.footerHeight),
                         color: dim)
         } else {
-            for (index, row) in state.panel.rows.enumerated() {
-                let top = metrics.headerHeight + Int32(index) * metrics.rowHeight
-                paintRow(memDC, row, index: index, top: top, width: client.right,
-                         metrics: metrics, state: state)
+            var index = 0
+            for placed in place(state.panel, metrics: metrics) {
+                switch placed.line {
+                case .header(let label):
+                    paintFleetHeader(memDC, label, top: placed.top, metrics: metrics, state: state)
+                case .account(let row):
+                    paintRow(memDC, row, index: index, top: placed.top, width: client.right,
+                             metrics: metrics, state: state)
+                    index += 1
+                }
             }
         }
 
@@ -463,6 +530,26 @@ enum FleetWindow {
             let size = textExtent(memDC, hint)
             draw(memDC, hint, x: client.right - metrics.pad - size.cx,
                  y: client.bottom - metrics.footerHeight + metrics.px(6), color: faint)
+        }
+    }
+
+    /// "Claude · 9Router" over a fleet's rows — the Mac's `FleetHeader`,
+    /// same emphasis split (provider bright, engine dim, caveat amber).
+    private static func paintFleetHeader(_ dc: HDC, _ label: FleetLabel,
+                                         top: Int32, metrics: Metrics, state: State) {
+        if let font = state.captionFont { SelectObject(dc, font) }
+        var x = metrics.pad
+        let y = top + metrics.px(5)
+        draw(dc, label.provider.displayName, x: x, y: y, color: headerText)
+        x += textExtent(dc, label.provider.displayName).cx + metrics.px(5)
+        let separator = "\u{00B7}"
+        draw(dc, separator, x: x, y: y, color: faint)
+        x += textExtent(dc, separator).cx + metrics.px(5)
+        draw(dc, label.engineName, x: x, y: y, color: dim)
+        if let caveat = label.caveat, !caveat.isEmpty {
+            x += textExtent(dc, label.engineName).cx + metrics.px(6)
+            drawClipped(dc, "\u{2014} " + caveat, x: x, y: y,
+                        maxWidth: metrics.px(360), color: warmTint)
         }
     }
 

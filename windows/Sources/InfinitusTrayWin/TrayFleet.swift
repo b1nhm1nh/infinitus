@@ -4,7 +4,9 @@ import InfinitusCore
 /// Account + usage lines for the Infinitus Windows tray.
 ///
 /// Shells `cswap list --json` when claude-swap is installed, with a 30s cache
-/// and non-blocking refresh on the tray's 5s timer tick.
+/// and non-blocking refresh on the tray's 5s timer tick. When Claude Code is
+/// routed through 9Router (or cswap isn't installed), the fleets come from
+/// `NineRouterFleet` instead — every provider it holds, not just Claude.
 /// Every failure yields nil or fallback lines, never throws, and never blocks
 /// the UI thread.
 enum TrayFleet {
@@ -14,7 +16,8 @@ enum TrayFleet {
         /// The account this line switches to when clicked, or nil for a
         /// caption ("refreshing accounts…", "no accounts"). The active
         /// account carries nil too: switching to where you already are is
-        /// a no-op the engine would refuse.
+        /// a no-op the engine would refuse. A fleet HEADER carries nil as
+        /// well and is drawn greyed, like the Mac's section header.
         let account: Int?
 
         init(text: String, enabled: Bool, account: Int? = nil) {
@@ -39,13 +42,53 @@ enum TrayFleet {
         CswapLocator.locate() != nil || NineRouterFleet.isAvailable()
     }
 
+    /// Which engine this host's Claude Code traffic rides, for the panel
+    /// footer and the menu's engine line. nil when nothing is installed.
+    /// `routed` is Claude Code's OWN settings naming the engine — read
+    /// through Core's `ClaudeCodeRouting`, the same check AppModel makes
+    /// on the Mac before it picks 9Router as the primary engine.
+    static func engineIndicator() -> FleetPanel.EngineIndicator? {
+        let routed = ClaudeCodeRouting.isRouted(ClaudeCodeRouting.anthropicBaseURL(), to: nil)
+        if NineRouterFleet.shouldUseNineRouter() {
+            return FleetPanel.EngineIndicator(
+                name: EngineCatalog.displayName(for: NineRouterEngine.engineID), routed: routed)
+        }
+        guard CswapLocator.locate() != nil else { return nil }
+        // cswap is what swaps the credential, but Claude Code may still
+        // be pointed elsewhere — say so rather than claim the traffic.
+        return FleetPanel.EngineIndicator(
+            name: EngineCatalog.displayName(for: CswapEngine.engineID), routed: false)
+    }
+
+    /// Every fleet the active engine reports — several providers when
+    /// 9Router is the engine (Claude, Codex, Gemini, Kiro…), one Claude
+    /// fleet for cswap. The Mac stacks exactly these (#8 multi-engine).
+    static func cachedFleets() -> [EngineFleet] {
+        if NineRouterFleet.shouldUseNineRouter(), let fleets = NineRouterFleet.fleets(),
+           !fleets.isEmpty {
+            return fleets
+        }
+        guard let list = cached() else { return [] }
+        return [EngineFleet(engineID: CswapEngine.engineID, provider: .claude,
+                            accounts: list.accounts,
+                            activeNumber: list.activeAccountNumber,
+                            nextCandidate: list.nextCandidate,
+                            nextRecovery: list.nextRecovery,
+                            liveSessions: list.liveSessions)]
+    }
+
     /// Account + usage lines for the tray menu, newest data within a cache window.
     /// Format per account: `<icon/alias or email> — <5h%> / <7d%>` with active marked.
+    /// With several fleets each gets a greyed `Claude · 9Router` header,
+    /// matching the Mac popup's `FleetHeader`.
     /// Summary line when no accounts: "no accounts — `cswap add` registers one".
     static func menuLines() -> [MenuLine] {
         guard hasEngine() else { return [] }
-        if NineRouterFleet.shouldUseNineRouter(), let nrList = NineRouterFleet.list() {
-            return formatLines(from: nrList)
+        if NineRouterFleet.shouldUseNineRouter() {
+            if let fleets = NineRouterFleet.fleets(), !fleets.isEmpty {
+                return formatLines(from: fleets)
+            }
+            return [MenuLine(text: "refreshing accounts…", enabled: false)]
         }
         lock.lock()
         let list = cachedList
@@ -64,66 +107,72 @@ enum TrayFleet {
         guard let list else {
             return [MenuLine(text: "refreshing accounts…", enabled: false)]
         }
-        guard !list.accounts.isEmpty else {
-            return [MenuLine(text: "no accounts — `cswap add` registers one", enabled: false)]
-        }
-
-        return list.accounts.map { account in
-            let active = account.active || (list.activeAccountNumber != nil && account.number == list.activeAccountNumber)
-            let prefix = active ? "● " : "  "
-
-            let name: String
-            if let icon = account.icon, !icon.isEmpty {
-                let identifier = account.alias ?? String(account.email.prefix(while: { $0 != "@" }))
-                name = "\(icon) \(identifier)"
-            } else if let alias = account.alias, !alias.isEmpty {
-                name = alias
-            } else {
-                name = account.email
-            }
-
-            let usageText = formatUsage(account.usage, now: now)
-            let fullText = "\(prefix)\(name) — \(usageText)"
-            let clamped = fullText.count > 60 ? String(fullText.prefix(59)) + "…" : fullText
-            // Clickable unless it is where we already are, or the engine
-            // has it held out of rotation — in both cases a click would
-            // only earn a refusal.
-            let selectable = !active && !(account.disabled ?? false)
-            return MenuLine(text: clamped, enabled: selectable,
-                            account: selectable ? account.number : nil)
-        }
+        return formatLines(from: [EngineFleet(
+            engineID: CswapEngine.engineID, provider: .claude, accounts: list.accounts,
+            activeNumber: list.activeAccountNumber, nextCandidate: list.nextCandidate,
+            nextRecovery: list.nextRecovery, liveSessions: list.liveSessions)], now: now)
     }
 
-    /// Formats 5h and 7d usage percentages: `<5h%> / <7d%>`.
-    /// When session and weekly quotas are absent but scoped model quotas exist
-    /// (e.g. Gemini/Antigravity via 9Router), formats the primary scoped window: `<model>: <pct>%`.
-    static func formatUsage(_ usage: Usage?, now: Date = Date()) -> String {
-        guard let usage else { return "— / —" }
-
-        if usage.fiveHour == nil && usage.sevenDay == nil,
-           let scoped = usage.scoped, !scoped.isEmpty {
-            let first = scoped[0]
-            let name = (first.name?.isEmpty == false) ? first.name! : "model"
-            let pct = WeeklyRoll.displayPct(first, now: now) ?? first.pct
-            return "\(name): \(Int(pct.rounded()))%"
+    /// Formats every fleet into menu lines. Headers appear only when more
+    /// than one fleet has accounts — a single-fleet menu is byte-identical
+    /// to the pre-multi-fleet one, exactly as `FleetStack` is on the Mac.
+    static func formatLines(from fleets: [EngineFleet], now: Date = Date()) -> [MenuLine] {
+        let panel = FleetPanel.panel(fleets: fleets, live: nil, engineInstalled: true, now: now)
+        if let empty = panel.empty {
+            let text = empty.hasPrefix("No accounts")
+                ? "no accounts — `cswap add` registers one" : empty
+            return [MenuLine(text: text, enabled: false)]
         }
-
-        let fiveText: String
-        if let five = usage.fiveHour {
-            fiveText = "\(Int(five.pct.rounded()))%"
-        } else {
-            fiveText = "—"
+        // Rows carry no icon (Core's Row is toolkit-free and the Mac draws
+        // the icon separately), so the emoji is looked back up per number.
+        var iconByKey: [String: String] = [:]
+        for fleet in fleets {
+            for account in fleet.accounts where !(account.icon ?? "").isEmpty {
+                iconByKey["\(fleet.key)#\(account.number)"] = account.icon!
+            }
         }
-
-        let sevenText: String
-        if let seven = usage.sevenDay, let pct = WeeklyRoll.displayPct(seven, now: now) {
-            sevenText = "\(Int(pct.rounded()))%"
-        } else {
-            sevenText = "—"
+        var out: [MenuLine] = []
+        for line in panel.lines {
+            switch line {
+            case .header(let label):
+                out.append(MenuLine(text: label.text, enabled: false))
+            case .account(let row):
+                let prefix = row.active ? "● " : "  "
+                let key = "\(row.engineID)/\(row.provider.rawValue)#\(row.number)"
+                let name = iconByKey[key].map { "\($0) \(row.name)" } ?? row.name
+                let fullText = "\(prefix)\(name) — \(usageText(row))"
+                let clamped = fullText.count > 60 ? String(fullText.prefix(59)) + "…" : fullText
+                // Clickable unless it is where we already are, or the
+                // engine has it held out of rotation — in both cases a
+                // click would only earn a refusal.
+                let selectable = !row.active && !row.disabled
+                out.append(MenuLine(text: clamped, enabled: selectable,
+                                    account: selectable ? row.number : nil))
+            }
         }
+        return out
+    }
 
+    /// `<5h%> / <7d%>` off the shared row's gauges, or `<model>: <pct>%`
+    /// for a provider that reports only scoped windows (Gemini/Antigravity
+    /// via 9Router). Reads the gauges Core already rolled over, so it can
+    /// never disagree with the panel about the same account.
+    static func usageText(_ row: FleetPanel.Row) -> String {
+        let five = row.gauges.first { $0.label == "5h" }
+        let seven = row.gauges.first { $0.label == "7d" }
+        if five == nil, seven == nil {
+            guard let scoped = row.gauges.first else { return "— / —" }
+            return "\(scoped.label): \(Int(scoped.usedPct.rounded()))%"
+        }
+        let fiveText = five.map { "\(Int($0.usedPct.rounded()))%" } ?? "—"
+        let sevenText = seven.map { "\(Int($0.usedPct.rounded()))%" } ?? "—"
         return "\(fiveText) / \(sevenText)"
     }
+
+    // (`formatUsage(_ usage:)` was a second implementation of the weekly
+    // roll-over and the scoped-only fallback; `usageText(_ row:)` above
+    // reads the gauges Core already computed, so the menu and the panel
+    // can no longer disagree.)
 
     /// Asynchronously refreshes account data if cache expired and no fetch is in flight.
     /// Safe to call on every 5s tray timer tick.
@@ -190,7 +239,11 @@ enum TrayFleet {
     /// CLAUDE.md: the engine owns account policy. This forwards a click
     /// and reports the engine's answer — including a refusal, verbatim,
     /// rather than a cheerful "switched" the engine never agreed to.
-    static func requestSwitch(to number: Int?, report: @escaping @Sendable (String) -> Void) {
+    /// `provider` names WHICH fleet the number belongs to — 9Router's
+    /// ordinals are per-provider, so a Gemini row's #2 is not the Claude
+    /// fleet's #2. cswap holds Claude only and ignores it.
+    static func requestSwitch(to number: Int?, provider: Provider = .claude,
+                              report: @escaping @Sendable (String) -> Void) {
         guard hasEngine() else {
             report("no swap engine installed")
             return
@@ -198,7 +251,7 @@ enum TrayFleet {
         Thread.detachNewThread {
             let outcome: SwitchOutcome
             if NineRouterFleet.shouldUseNineRouter() {
-                let nrOutcome = NineRouterFleet.switchTo(number)
+                let nrOutcome = NineRouterFleet.switchTo(number, provider: provider)
                 switch nrOutcome {
                 case .switched(let n): outcome = .switched(to: n)
                 case .noEngine: outcome = .noEngine

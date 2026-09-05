@@ -542,15 +542,27 @@ func run() -> Int32 {
             Thread.sleep(forTimeInterval: 0.5)
             if let list = TrayFleet.cached(), !list.accounts.isEmpty { break }
         }
+        print("engine: \(TrayFleet.engineIndicator()?.text ?? "none")")
         let lines = TrayFleet.menuLines()
         print("tray menu lines: \(lines.count)")
         for l in lines { print("  \(l.text) (enabled=\(l.enabled), account=\(String(describing: l.account)))") }
-        let cachedPanel = FleetLayout.panel(list: TrayFleet.cached(), live: nil, engineInstalled: TrayFleet.hasEngine())
-        print("panel rows: \(cachedPanel.rows.count)")
-        for r in cachedPanel.rows {
-            print("  #\(r.number) \(r.name) (\(r.email)) active=\(r.active) gauges=\(r.gauges.count)")
-            for g in r.gauges {
-                print("    [\(g.label)] \(g.usedPct)% remaining=\(g.remaining)% reset=\(g.reset ?? "nil")")
+        // The panel over every fleet the engine holds — with 9Router that
+        // is one section per provider, each with its own header, which is
+        // what the flattened single-list probe used to hide.
+        let fleets = TrayFleet.cachedFleets()
+        print("fleets: \(fleets.count)")
+        let cachedPanel = FleetLayout.panel(fleets: fleets, live: nil,
+                                            engineInstalled: TrayFleet.hasEngine(),
+                                            engine: TrayFleet.engineIndicator())
+        print("panel sections: \(cachedPanel.sections.count) rows: \(cachedPanel.rows.count)")
+        print("panel footer: \(cachedPanel.footer)")
+        for section in cachedPanel.sections {
+            print("  [\(section.key)] \(section.label.text) active=\(String(describing: section.activeNumber))")
+            for r in section.rows {
+                print("    #\(r.number) \(r.name) (\(r.email)) active=\(r.active) gauges=\(r.gauges.count)")
+                for g in r.gauges {
+                    print("      [\(g.label)] \(g.usedPct)% remaining=\(g.remaining)% reset=\(g.reset ?? "nil")")
+                }
             }
         }
         return failures == 0 ? 0 : 1

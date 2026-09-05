@@ -1,5 +1,8 @@
-#if canImport(Darwin)   // shares ProxyStubProtocol (URLProtocol stubbing unverified off Darwin)
+#if canImport(Darwin) || os(Windows)   // shares ProxyStubProtocol
 import XCTest
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 @testable import InfinitusCore
 
 final class NineRouterEngineTests: XCTestCase {

@@ -97,11 +97,11 @@ enum Snapshot {
                 }
                 return f
             }
-            activeAccountList = nineRouterList ?? nrFleets.first(where: { $0.provider == Provider.claude }).map {
-                AccountList(schemaVersion: 1, activeAccountNumber: $0.activeNumber,
-                            accounts: $0.accounts, nextCandidate: $0.nextCandidate,
-                            nextRecovery: $0.nextRecovery, liveSessions: live)
-            }
+            // `listJSON` keeps a phone older than `fleets` working; it is
+            // the PRIMARY fleet, picked by Core's shared rule so the Mac,
+            // the tray and this daemon can't disagree about which one it is.
+            activeAccountList = nineRouterList
+                ?? EngineFleet.primaryList(nrFleets, liveSessions: live)
         } else if let cswap = cswapList, !cswap.accounts.isEmpty {
             let fleet = EngineFleet(engineID: CswapFleet.engineID, provider: Provider.claude,
                                     accounts: cswap.accounts, activeNumber: cswap.activeAccountNumber,

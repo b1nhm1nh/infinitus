@@ -11,7 +11,49 @@ import InfinitusCore
 /// import (linking the executable's module kills it — see DaemonHarness),
 /// so these exercise the core functions it composes. A change in either
 /// that broke the panel's numbers would fail here.
+///
+/// Since 2026-09-05 `FleetLayout` is a thin alias over Core's shared
+/// `FleetPanel`, so what the panel SHOWS is pinned by
+/// Tests/InfinitusCoreTests/FleetPanelTests.swift (which runs here too).
+/// What stays below is the arithmetic those decisions rest on, plus the
+/// Windows-specific composition the tray asks for.
 final class FleetLayoutTests: XCTestCase {
+    /// The panel the Windows tray builds: every fleet the engine holds,
+    /// each under its own "<provider> · 9Router" header, with the engine
+    /// indicator in the footer. Before the shared layer this window saw
+    /// one flattened cswap list and showed none of it.
+    func testWindowsPanelStacksEveryFleetAndNamesTheEngine() {
+        let fleets = [
+            EngineFleet(engineID: "9router", provider: .claude, accounts: [
+                Account(number: 1, email: "one@example.com", active: true,
+                        usage: Usage(fiveHour: UsageWindow(pct: 54),
+                                     sevenDay: UsageWindow(pct: 20))),
+            ], activeNumber: 1),
+            EngineFleet(engineID: "9router", provider: .gemini, accounts: [
+                Account(number: 1, email: "g@example.com",
+                        usage: Usage(scoped: [UsageWindow(pct: 100, name: "Fable")])),
+            ], activeNumber: 1),
+        ]
+        let live = LiveSessions(busy: 1, total: 2, idle: 1, waiting: 0,
+                                shell: 0, unknown: 0, sessions: nil)
+        let panel = FleetPanel.panel(
+            fleets: fleets, live: live, engineInstalled: true,
+            engine: FleetPanel.EngineIndicator(name: "9Router", routed: true))
+        XCTAssertEqual(panel.sections.map(\.label.text),
+                       ["Claude \u{00B7} 9Router", "Gemini \u{00B7} 9Router"])
+        // Headers and rows interleave in paint order — the Win32 panel
+        // walks exactly this to place its rectangles.
+        XCTAssertEqual(panel.lines.count, 4, "two headers, two rows")
+        XCTAssertTrue(panel.footer.hasSuffix("9Router \u{00B7} routed"),
+                      "the engine indicator the panel was missing: \(panel.footer)")
+        // A scoped-only account still dies and still names its window.
+        XCTAssertTrue(panel.sections[1].rows[0].dead)
+        XCTAssertEqual(panel.sections[1].rows[0].deadNote, "Fable spent")
+        // Each row knows its own fleet, so a Gemini click can't be
+        // forwarded as a Claude ordinal.
+        XCTAssertEqual(panel.sections[1].rows[0].provider, .gemini)
+    }
+
     /// Bars fill by REMAINING, not used — HP semantics, so a fresh
     /// account shows a full bar and a spent one an empty bar. Getting
     /// this backwards would invert every gauge in the panel.

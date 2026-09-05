@@ -73,9 +73,13 @@ targets.append(.executableTarget(
     name: "InfinitusTrayWin",
     dependencies: ["InfinitusCore"],
     path: "windows/Sources/InfinitusTrayWin",
+    // dwmapi: immersive dark mode for the panel/settings title bars
+    // (WinDarkTitleBar.swift) — DWM draws the non-client area, so a dark
+    // client area alone leaves a white caption on top of it.
     linkerSettings: [.linkedLibrary("user32"), .linkedLibrary("shell32"),
                      .linkedLibrary("gdi32"), .linkedLibrary("comctl32"),
-                     .linkedLibrary("ws2_32"), .linkedLibrary("iphlpapi")]
+                     .linkedLibrary("ws2_32"), .linkedLibrary("iphlpapi"),
+                     .linkedLibrary("dwmapi")]
 ))
 products.append(.executable(name: "infinitus-tray-win", targets: ["InfinitusTrayWin"]))
 targets.append(.testTarget(

@@ -128,6 +128,11 @@ public enum SettingsWindow {
 
         state.hwnd = hwnd
         openHwnd = hwnd
+        // Dark caption, like the account panel's — DWM owns the
+        // non-client area, so it has to be asked (WinDark). The window is
+        // created WS_VISIBLE, so this runs before ShowWindow but the
+        // frame may still repaint once.
+        WinDark.applyTitleBar(to: hwnd)
         ShowWindow(hwnd, SW_SHOW)
         UpdateWindow(hwnd)
         SetForegroundWindow(hwnd)
@@ -143,7 +148,10 @@ public enum SettingsWindow {
         var wc = WNDCLASSW()
         wc.lpfnWndProc = settingsWndProc
         wc.hInstance = instance
-        wc.hbrBackground = HBRUSH(bitPattern: Int(COLOR_BTNFACE + 1))
+        // Own dark brush, matching the account panel (WinDark). Letting
+        // the class paint COLOR_BTNFACE flashes light grey behind a dark
+        // dialog on every resize — the same reason FleetWindow has one.
+        wc.hbrBackground = WinDark.backgroundBrush
         wc.hCursor = LoadCursorW(nil, UnsafePointer<WCHAR>(bitPattern: 32512))
         classWide.withUnsafeBufferPointer { buf in
             wc.lpszClassName = buf.baseAddress
@@ -170,10 +178,26 @@ public enum SettingsWindow {
         }
         let state = Unmanaged<State>.fromOpaque(ptr).takeUnretainedValue()
 
+        // Labels, checkboxes and edit fields ask their PARENT for their
+        // colours; without this they paint black-on-white inside a dark
+        // dialog. Handled before the switch because there are five of
+        // these messages and they all get the same answer.
+        if let colour = WinDark.controlColor(msg: msg, wParam: wParam) { return colour }
+
         switch Int32(bitPattern: msg) {
         case WM_CREATE:
             onCreate(hwnd: hwnd, state: state)
             return 0
+
+        case WM_DRAWITEM:
+            // The push buttons are BS_OWNERDRAW (a themed button ignores
+            // the CTLCOLOR brush and paints its own light chrome), so
+            // this is where they get their dark plate.
+            if let item = UnsafePointer<DRAWITEMSTRUCT>(bitPattern: Int(lParam)),
+               WinDark.drawButton(item) {
+                return 1   // TRUE: the message is answered
+            }
+            return DefWindowProcW(hwnd, msg, wParam, lParam)
 
         case WM_COMMAND:
             let cmdId = Int32(wParam & 0xFFFF)
@@ -392,7 +416,7 @@ public enum SettingsWindow {
 
         state.nineRouterTestHwnd = CreateWindowExW(
             0, buttonClass, Array("Test connection".utf16) + [0],
-            DWORD(WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON | WS_TABSTOP),
+            DWORD(WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON | BS_OWNERDRAW | WS_TABSTOP),
             200, y, 120, 24, hwnd, HMENU(bitPattern: Int(nineRouterTestButtonId)), instance, nil
         )
         SendMessageW(state.nineRouterTestHwnd, UINT(WM_SETFONT),
@@ -400,7 +424,7 @@ public enum SettingsWindow {
 
         state.nineRouterDashboardHwnd = CreateWindowExW(
             0, buttonClass, Array("Open Dashboard".utf16) + [0],
-            DWORD(WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON | WS_TABSTOP),
+            DWORD(WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON | BS_OWNERDRAW | WS_TABSTOP),
             330, y, 130, 24, hwnd, HMENU(bitPattern: Int(nineRouterDashboardButtonId)), instance, nil
         )
         SendMessageW(state.nineRouterDashboardHwnd, UINT(WM_SETFONT),
@@ -429,7 +453,7 @@ public enum SettingsWindow {
         // Buttons: Save, Cancel, Reload
         let saveHwnd = CreateWindowExW(
             0, buttonClass, Array("Save".utf16) + [0],
-            DWORD(WS_CHILD | WS_VISIBLE | BS_DEFPUSHBUTTON | WS_TABSTOP),
+            DWORD(WS_CHILD | WS_VISIBLE | BS_DEFPUSHBUTTON | BS_OWNERDRAW | WS_TABSTOP),
             200, y, 80, 26, hwnd, HMENU(bitPattern: Int(saveButtonId)), instance, nil
         )
         SendMessageW(saveHwnd, UINT(WM_SETFONT),
@@ -437,7 +461,7 @@ public enum SettingsWindow {
 
         let cancelHwnd = CreateWindowExW(
             0, buttonClass, Array("Cancel".utf16) + [0],
-            DWORD(WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON | WS_TABSTOP),
+            DWORD(WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON | BS_OWNERDRAW | WS_TABSTOP),
             290, y, 80, 26, hwnd, HMENU(bitPattern: Int(cancelButtonId)), instance, nil
         )
         SendMessageW(cancelHwnd, UINT(WM_SETFONT),
@@ -445,7 +469,7 @@ public enum SettingsWindow {
 
         let reloadHwnd = CreateWindowExW(
             0, buttonClass, Array("Reload".utf16) + [0],
-            DWORD(WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON | WS_TABSTOP),
+            DWORD(WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON | BS_OWNERDRAW | WS_TABSTOP),
             380, y, 80, 26, hwnd, HMENU(bitPattern: Int(reloadButtonId)), instance, nil
         )
         SendMessageW(reloadHwnd, UINT(WM_SETFONT),

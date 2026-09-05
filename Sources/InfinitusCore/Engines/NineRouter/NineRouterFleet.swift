@@ -56,36 +56,50 @@ public enum NineRouterFleet {
         #endif
     }
 
+    /// Engine selection, as a pure function of what the host observed —
+    /// the same policy the Mac's `AppModel`/`EngineRegistry` runs
+    /// (routed engine wins; else cswap when it is installed), factored
+    /// out so it can be tested on every platform instead of depending on
+    /// this box's `~/.claude/settings.json`.
+    public enum Selection {
+        /// Configured, routed or locally authenticated — any one is enough.
+        public static func isAvailable(routed: Bool, configured: Bool,
+                                       locallyAuthenticated: Bool,
+                                       pinnedOff: Bool = false) -> Bool {
+            if pinnedOff { return false }
+            return routed || configured || locallyAuthenticated
+        }
+
+        /// Whether 9Router is the PRIMARY fleet provider. Claude Code's
+        /// own `env.ANTHROPIC_BASE_URL` decides it: when that names the
+        /// router, 9Router holds the traffic and cswap would be swapping
+        /// a credential nobody uses. Without routing, an installed cswap
+        /// keeps the fleet.
+        public static func shouldUseNineRouter(available: Bool, routed: Bool,
+                                               cswapInstalled: Bool) -> Bool {
+            guard available else { return false }
+            return routed || !cswapInstalled
+        }
+    }
+
     /// True when 9Router is configured, routed, or locally authenticated.
     /// Pinned off in tests when `INFINITUS_9ROUTER == ""` or `INFINITUS_CSWAP == ""`.
     public static func isAvailable() -> Bool {
         let env = ProcessInfo.processInfo.environment
-        if env["INFINITUS_9ROUTER"] == "" || env["INFINITUS_CSWAP"] == "" {
-            return false
-        }
-        if ClaudeCodeRouting.isRouted(ClaudeCodeRouting.anthropicBaseURL(), to: nil) {
-            return true
-        }
-        if FileManager.default.fileExists(atPath: configURL.path) {
-            return true
-        }
-        if NineRouterLocalAuth.cliToken() != nil {
-            return true
-        }
-        return false
+        return Selection.isAvailable(
+            routed: ClaudeCodeRouting.isRouted(ClaudeCodeRouting.anthropicBaseURL(), to: nil),
+            configured: FileManager.default.fileExists(atPath: configURL.path),
+            locallyAuthenticated: NineRouterLocalAuth.cliToken() != nil,
+            pinnedOff: env["INFINITUS_9ROUTER"] == "" || env["INFINITUS_CSWAP"] == "")
     }
 
     /// Decides whether 9Router should be the primary fleet provider.
     /// Matches macOS policy: routed engine wins; otherwise cswap wins if installed and populated.
     public static func shouldUseNineRouter() -> Bool {
-        guard isAvailable() else { return false }
-        if ClaudeCodeRouting.isRouted(ClaudeCodeRouting.anthropicBaseURL(), to: nil) {
-            return true
-        }
-        if CswapLocator.locate() == nil {
-            return true
-        }
-        return false
+        Selection.shouldUseNineRouter(
+            available: isAvailable(),
+            routed: ClaudeCodeRouting.isRouted(ClaudeCodeRouting.anthropicBaseURL(), to: nil),
+            cswapInstalled: CswapLocator.locate() != nil)
     }
 
     /// Resolves target base URL and password.
@@ -215,21 +229,31 @@ public enum NineRouterFleet {
         cachedAt = nil
     }
 
-    /// Switches the active connection in 9Router.
-    public static func switchTo(_ number: Int?) -> SwitchOutcome {
+    /// Switches the active connection in 9Router. `provider` addresses
+    /// one of the several fleets 9Router holds — its ordinals are
+    /// per-provider (NineRouterEngine), so a Gemini row's number means
+    /// nothing in the Claude fleet. Defaults to Claude, which is what
+    /// every pre-multi-fleet caller meant.
+    public static func switchTo(_ number: Int?, provider: Provider = .claude) -> SwitchOutcome {
         guard isAvailable() else { return .noEngine }
         let (baseURL, password) = loadConfig()
         lock.lock()
         let engine = activeEngine ?? NineRouterEngine(baseURL: baseURL, password: password)
         let currentList = cachedList
+        let fleet = cachedFleets?.first { $0.provider == provider }
         lock.unlock()
+
+        // The Claude fleet's advisory next-candidate lives on the cached
+        // list; another provider's comes off its own fleet.
+        let candidate = provider == .claude ? currentList?.nextCandidate : fleet?.nextCandidate
+        let accounts = provider == .claude ? (currentList?.accounts ?? []) : (fleet?.accounts ?? [])
 
         let targetNumber: Int
         if let number {
             targetNumber = number
-        } else if let candidate = currentList?.nextCandidate {
+        } else if let candidate {
             targetNumber = candidate
-        } else if let firstNonActive = currentList?.accounts.first(where: { !$0.active && !($0.disabled ?? false) })?.number {
+        } else if let firstNonActive = accounts.first(where: { !$0.active && !($0.disabled ?? false) })?.number {
             targetNumber = firstNonActive
         } else {
             return .failed(detail: "no candidate account to switch to")
@@ -240,7 +264,7 @@ public enum NineRouterFleet {
 
         Task {
             do {
-                try await engine.switchTo(fleet: .claude, number: targetNumber)
+                try await engine.switchTo(fleet: provider, number: targetNumber)
                 outcome = .switched(to: targetNumber)
             } catch {
                 let msg = (error as? EngineError)?.errorDescription ?? error.localizedDescription

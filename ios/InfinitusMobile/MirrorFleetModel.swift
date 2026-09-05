@@ -113,14 +113,10 @@ final class MirrorFleetModel: ObservableObject, Identifiable {
 
     /// Same mapping the Mac's `FleetState.fleetLabel` reads off its
     /// `engine.displayName` — the phone has no `AccountEngine` instance
-    /// to ask, so it names the two engines it actually mirrors and
-    /// falls back to the raw id for anything else.
+    /// to ask, so it goes through Core's shared table (`EngineCatalog`),
+    /// which the Windows panel reads too.
     static func engineName(for engineID: String) -> String {
-        switch engineID {
-        case cswapEngineID: return "cswap"
-        case CLIProxyEngine.engineID: return "CLIProxyAPI"
-        default: return engineID
-        }
+        EngineCatalog.displayName(for: engineID)
     }
 }
 
