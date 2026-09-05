@@ -9,21 +9,35 @@ final class TeamInvitesTests: XCTestCase {
         XCTAssertTrue(a.allSatisfy { "abcdefghijklmnopqrstuvwxyz234567".contains($0) })
     }
 
-    func testMatchesOnlyUnexpiredIssuedNonces() {
+    func testMatchesOnlyUnexpiredIssuedNoncesBoundToTheRequester() {
         var book = TeamInvites()
         book.add(nonce: "n1", expires: 1_000)
         book.add(nonce: "n2", expires: 2_000)
-        let keys = TeamIdentity.random().keys
-        func req(_ nonce: String?) -> TeamRequest { TeamRequest(keys: keys, name: "x", devices: [], platform: "macos", at: 1, nonce: nonce) }
-        XCTAssertTrue(book.matches(req("n1"), now: 999))
-        XCTAssertFalse(book.matches(req("n1"), now: 1_001), "expired")
-        XCTAssertFalse(book.matches(req("n3"), now: 1), "never issued")
-        XCTAssertFalse(book.matches(req(nil), now: 1), "a team code has no nonce")
+        let ann = TeamIdentity.random().keys, eve = TeamIdentity.random().keys
+        func req(_ keys: TeamKeys, _ nonce: String?) -> TeamRequest {
+            TeamRequest(keys: keys, name: "x", devices: [], platform: "macos", at: 1,
+                        proof: nonce.map { TeamRequest.proof(nonce: $0, kid: keys.kid) })
+        }
+        XCTAssertEqual(book.matches(req(ann, "n1"), now: 999), "n1")
+        XCTAssertNil(book.matches(req(ann, "n1"), now: 1_001), "expired")
+        XCTAssertNil(book.matches(req(ann, "n3"), now: 1), "never issued")
+        XCTAssertNil(book.matches(req(ann, nil), now: 1), "a team code has no proof")
+        // #161: Eve copies Ann's pending request's proof into her own request.
+        var stolen = req(eve, nil); stolen.proof = req(ann, "n1").proof
+        XCTAssertNil(book.matches(stolen, now: 1), "a proof is bound to the kid that made it")
         book.consume("n2")
-        XCTAssertFalse(book.matches(req("n2"), now: 1), "one-time")
+        XCTAssertNil(book.matches(req(ann, "n2"), now: 1), "one-time")
         book.add(nonce: "n4", expires: 5)
         book.prune(now: 10)
         XCTAssertEqual(book.nonces, ["n1": 1_000])
+    }
+
+    func testProofIsDeterministicAndKidBound() {
+        let a = TeamRequest.proof(nonce: "n", kid: "k1")
+        XCTAssertEqual(a, TeamRequest.proof(nonce: "n", kid: "k1"))
+        XCTAssertNotEqual(a, TeamRequest.proof(nonce: "n", kid: "k2"))
+        XCTAssertNotEqual(a, TeamRequest.proof(nonce: "m", kid: "k1"))
+        XCTAssertEqual(Data(base64Encoded: a)?.count, 32)
     }
 
     func testRoundTripsThroughTheTeamDir() throws {
@@ -51,5 +65,15 @@ final class TeamInvitesTests: XCTestCase {
         let text = try client.code(expiresIn: 600, nonce: nonce, now: 100)
         XCTAssertEqual(try TeamCode.decode(text, now: 101).nonce, nonce)
         XCTAssertNil(try TeamCode.decode(try client.code(expiresIn: 600, now: 100), now: 101).nonce)
+        // The joiner's request carries the proof, never the nonce (#161).
+        let joinerPaths = TeamPaths(base: paths.base.appendingPathComponent("joiner"))
+        let joinerSecrets = FileSecrets(dir: joinerPaths.secretsDir)
+        let joiner = try TeamClient.request(code: text, name: "Bo", devices: [], platform: "linux", paths: joinerPaths, secrets: joinerSecrets, now: 102)
+        _ = try client.fetch()
+        let pending = try XCTUnwrap(try client.requests().first)
+        XCTAssertEqual(pending.doc.proof, TeamRequest.proof(nonce: nonce, kid: joiner.identity.kid))
+        var book = TeamInvites(); book.add(nonce: nonce, expires: 700)
+        XCTAssertEqual(book.matches(pending.doc, now: 103), nonce)
+        XCTAssertFalse(try CanonicalJSON.encode(pending.doc).contains(Data(nonce.utf8)), "nonce not in the stored request")
     }
 }

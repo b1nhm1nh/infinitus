@@ -115,7 +115,7 @@ public final class TeamClient {
         // points at someone else's store: any roster-acceptance failure on
         // this first fetch is the code's fault, not the store's.
         do { _ = try client.fetch() } catch is TeamRoster.RosterError { throw ClientError.badCode }
-        let request = TeamRequest(keys: me.keys, name: name, devices: devices, platform: platform, at: now, nonce: code.nonce)
+        let request = TeamRequest(keys: me.keys, name: name, devices: devices, platform: platform, at: now, proof: code.nonce.map { TeamRequest.proof(nonce: $0, kid: me.kid) })
         try store.put("requests/\(me.kid).json", try CanonicalJSON.encode(try Signed.make(request, by: me)))
         try client.persist()
         return client
