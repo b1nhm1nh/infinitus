@@ -29,6 +29,7 @@ publishes the matching section as the GitHub release body.
 - The working Live Activity follows an account switch when the app opens, and a card nothing has reached says "out of date".
 - A lighter chat header: compact by default, or a stat strip with mini gauges (Settings › Appearance › Chat header).
 - A capture of the app — the camera button in a chat, or a shake anywhere — lands in the composer as an attachment so you can say what it's about; screenshots you take are still offered in one tap.
+- Share → Infinitus from any app sends the image into a session with a note, picked from the Mac's live list, without opening the app.
 - A message from another session shows as "Message from @name" with a preview, the full text a tap away.
 - Your own turns render Markdown too.
 - Live Activities are back on the lock screen and Dynamic Island.

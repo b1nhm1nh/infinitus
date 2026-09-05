@@ -1,0 +1,86 @@
+import Foundation
+import InfinitusCore
+import Security
+import os
+
+/// The pairing the share extension (#64) needs to reach the Mac — routes,
+/// token, device identity — as one keychain item both bundles open
+/// through the shared access group (`…com.huuloc.infinitus.shared`, the
+/// only group either target lists, so it is the default one and no team
+/// prefix appears in code). The app writes it; the extension reads it.
+/// Sessions are not bridged: the app is backgrounded most of the time,
+/// so the extension asks the Mac for the live list instead.
+enum ShareBridge {
+    struct Pairing: Codable, Equatable {
+        var endpoints: [String]
+        var lastGood: String?
+        var token: String
+        var deviceId: String
+        var deviceName: String
+    }
+
+    static let service = "com.huuloc.infinitus.share"
+    static let account = "pairing"
+    /// Set only in the extension's defaults: `UIDevice.current.name` is
+    /// the bare model name inside an extension, and the Mac's connected
+    /// devices list takes the name from every request.
+    static let deviceNameKey = "mirror_device_name"
+    private static let log = Logger(subsystem: "com.huuloc.infinitus.mobile", category: "share")
+    private static var lastWritten: Pairing?
+
+    /// The app's side: called after every refresh and pairing change,
+    /// writes only when something changed.
+    @MainActor
+    static func publish(_ defaults: UserDefaults = .standard) {
+        let pairing = Pairing(
+            endpoints: NetworkFleetMirror.storedEndpoints(defaults),
+            lastGood: defaults.string(forKey: NetworkFleetMirror.lastGoodKey),
+            token: MirrorPairing.normalize(defaults.string(forKey: NetworkFleetMirror.tokenKey) ?? ""),
+            deviceId: NetworkFleetMirror.deviceId,
+            deviceName: NetworkFleetMirror.deviceName)
+        guard pairing != lastWritten, let data = try? JSONEncoder().encode(pairing) else { return }
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account,
+        ]
+        var status = SecItemUpdate(query as CFDictionary, [kSecValueData as String: data] as CFDictionary)
+        if status == errSecItemNotFound {
+            var add = query
+            add[kSecValueData as String] = data
+            add[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+            status = SecItemAdd(add as CFDictionary, nil)
+        }
+        guard status == errSecSuccess else {
+            log.error("share bridge write failed: \(status)")
+            return
+        }
+        lastWritten = pairing
+        log.notice("share bridge: \(pairing.endpoints.count) routes, token \(pairing.token.isEmpty ? "none" : "****", privacy: .public)")
+    }
+
+    /// The extension's side: copies the bridged pairing into the
+    /// extension's own defaults under the keys NetworkFleetMirror reads,
+    /// so the mirror client runs unchanged and the Mac sees the same
+    /// device. False when the app never paired (or has no saved route —
+    /// the extension does not browse Bonjour).
+    static func adopt(into defaults: UserDefaults = .standard) -> Bool {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account,
+            kSecReturnData as String: true,
+        ]
+        var item: CFTypeRef?
+        guard SecItemCopyMatching(query as CFDictionary, &item) == errSecSuccess,
+              let data = item as? Data,
+              let pairing = try? JSONDecoder().decode(Pairing.self, from: data),
+              !pairing.endpoints.isEmpty else { return false }
+        defaults.set(pairing.endpoints, forKey: NetworkFleetMirror.manualKey)
+        defaults.set(pairing.lastGood, forKey: NetworkFleetMirror.lastGoodKey)
+        defaults.set(pairing.token, forKey: NetworkFleetMirror.tokenKey)
+        defaults.set(pairing.deviceId, forKey: NetworkFleetMirror.deviceIdKey)
+        defaults.set(pairing.deviceName, forKey: deviceNameKey)
+        return true
+    }
+}

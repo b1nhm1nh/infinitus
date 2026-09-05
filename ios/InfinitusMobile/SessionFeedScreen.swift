@@ -750,7 +750,7 @@ struct SessionFeedScreen: View {
                                              data: jpeg, thumbnail: UIImage(data: jpeg)))
     }
 
-    private static func downscaledJPEG(_ image: UIImage) -> Data? { ScreenshotWatch.jpeg(image) }
+    private static func downscaledJPEG(_ image: UIImage) -> Data? { AttachmentImage.jpeg(image) }
 
     /// PDFs/text ride as-is (≤ 5 MiB, same cap the Mac enforces) — no
     /// re-encoding, unlike photos.
