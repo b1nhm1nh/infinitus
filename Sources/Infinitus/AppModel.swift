@@ -1044,7 +1044,8 @@ final class AppModel: ObservableObject {
                                        flow: AwsLogin.flow(profile: profile, configText: configText),
                                        pid: pid, sessionLabel: label,
                                        state: AwsLogin.current(byProfile[profile], needFailedAt: progress.awsLoginFailedAt),
-                                       failedAt: progress.awsLoginFailedAt))
+                                       failedAt: progress.awsLoginFailedAt,
+                                       account: AwsLogin.account(profile: profile, configText: configText)))
         }
         // Logins started by hand (no session asked) still show while they
         // run or after they fail; one a session asked for belongs with
@@ -1052,7 +1053,8 @@ final class AppModel: ObservableObject {
         for state in awsLoginStates where !needed.contains(state.profile) && state.phase != .done
             && state.pid == nil {
             items.append(AwsLogin.Item(profile: state.profile, flow: state.flow, pid: state.pid,
-                                       sessionLabel: nil, state: state))
+                                       sessionLabel: nil, state: state,
+                                       account: AwsLogin.account(profile: state.profile, configText: configText)))
         }
         if items != awsLogins { awsLogins = items }
         if sessionProgress.scanned { awsLoginsScanned = true }

@@ -47,6 +47,48 @@ final class AwsLoginTests: XCTestCase {
         XCTAssertEqual(AwsLogin.flow(profile: "missing", configText: config), .relay)
     }
 
+    func testAccountComesFromTheProfileConfig() {
+        let config = """
+            [default]
+            region = ap-southeast-1
+            [profile papaya-login]
+            login_session = arn:aws:iam::089192911254:user/loc+089@papaya.asia
+            region = ap-southeast-1
+            [profile papaya-dev]
+            sso_session = papaya
+            sso_account_id = 123456789012
+            sso_role_name = Dev
+            [profile plain]
+            region = us-east-1
+            [profile root-login]
+            login_session = arn:aws:iam::812652266901:root
+            """
+        XCTAssertEqual(AwsLogin.account(profile: "papaya-login", configText: config),
+                       AwsLogin.Account(accountId: "089192911254", userName: "loc+089@papaya.asia"))
+        XCTAssertEqual(AwsLogin.account(profile: "papaya-dev", configText: config),
+                       AwsLogin.Account(accountId: "123456789012", userName: nil))
+        XCTAssertEqual(AwsLogin.account(profile: "root-login", configText: config),
+                       AwsLogin.Account(accountId: "812652266901", userName: nil))
+        XCTAssertNil(AwsLogin.account(profile: "plain", configText: config))
+        XCTAssertNil(AwsLogin.account(profile: "default", configText: config))
+        XCTAssertNil(AwsLogin.account(profile: "missing", configText: config))
+        // The refactor kept the flow choice.
+        XCTAssertEqual(AwsLogin.flow(profile: "papaya-dev", configText: config), .deviceCode)
+        XCTAssertEqual(AwsLogin.flow(profile: "papaya-login", configText: config), .relay)
+    }
+
+    func testFillScriptQuotesValuesAndNeverTouchesPasswords() throws {
+        XCTAssertNil(AwsLogin.fillScript(account: nil))
+        let script = try XCTUnwrap(AwsLogin.fillScript(account: AwsLogin.Account(
+            accountId: "089192911254", userName: "o'neil\"</script>+x@y.z")))
+        XCTAssertTrue(script.contains(#"var A = "089192911254", U = "o'neil\"<\/script>+x@y.z";"#), script)
+        XCTAssertTrue(script.contains("el.type === 'password'"))
+        XCTAssertFalse(script.contains(".click()"))
+        XCTAssertFalse(script.contains(".submit("))
+        let noUser = try XCTUnwrap(AwsLogin.fillScript(account: AwsLogin.Account(accountId: "1", userName: nil)))
+        XCTAssertTrue(noUser.contains(#"U = null;"#))
+    }
+
     func testParsesBothCliPrompts() {
         let remote = AwsLogin.parseOutput("""
         Browser will not be automatically opened.
