@@ -100,5 +100,18 @@ public enum Runaways {
         }
         return Darwin.kill(pid_t(pid), 0) != 0
     }
+
+    /// SIGTERM to each pid (never a group), SIGKILL to the survivors
+    /// after `grace`. Returns how many are gone. A pid in `never`
+    /// (the sessions themselves) is not signalled.
+    public static func killAll(pids: [Int], never: Set<Int>, grace: TimeInterval = 3,
+                               sleep: (TimeInterval) -> Void = { Thread.sleep(forTimeInterval: $0) }) -> Int {
+        let targets = pids.filter { $0 > 1 && !never.contains($0) }
+        for pid in targets { _ = Darwin.kill(pid_t(pid), SIGTERM) }
+        sleep(grace)
+        for pid in targets where Darwin.kill(pid_t(pid), 0) == 0 { _ = Darwin.kill(pid_t(pid), SIGKILL) }
+        sleep(0.2)
+        return targets.filter { Darwin.kill(pid_t($0), 0) != 0 }.count
+    }
     #endif
 }

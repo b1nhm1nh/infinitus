@@ -80,9 +80,9 @@ public enum HookKillSwitch {
         try data.write(to: backup)
         let (updated, moved) = transform(object)
         let out = try JSONSerialization.data(withJSONObject: updated, options: [.prettyPrinted, .sortedKeys])
-        let tmp = url.appendingPathExtension("tmp")
-        try out.write(to: tmp)
-        _ = try fm.replaceItemAt(url, withItemAt: tmp)
+        // Foundation's atomic write is a temp file + rename on both
+        // Darwin and Linux; replaceItemAt is Darwin-only in practice.
+        try out.write(to: url, options: .atomic)
         return (backup, moved)
     }
 }
