@@ -53,6 +53,7 @@ final class StatusItemHolder: ObservableObject {
         model.reopenPopover = { [weak controller] in controller?.reopenPopover() }
         model.popOut = { [weak controller] in controller?.popOut() }
         model.showWall = { [weak controller] in controller?.toggleWall() }
+        model.lock.showSettings = { [weak controller] in controller?.showSettingsWindow() }
     }
 }
 
@@ -168,6 +169,7 @@ final class StatusItemController {
     }
 
     private func showAnchored() {
+        model.lock.surfaceShown()
         if wall.isVisible { wall.dismissForPopup() }
         if anchored == nil {
             let host = NSHostingController(rootView: AnchoredRoot(
@@ -206,7 +208,14 @@ final class StatusItemController {
         model.introOpened()
     }
 
-    private func closeAnchored() {
+    /// `feedLock: false` only at the popOut() call site — it moves the
+    /// same content to the pop-out, nothing hides from the user (brief
+    /// step 3). Every other caller is a genuine dismiss and keeps the
+    /// default: the global click-outside monitor, the local one, and
+    /// togglePopover()'s close branch. toggleWall() counts as a dismiss
+    /// too — nothing restores the anchored panel after the wall.
+    private func closeAnchored(feedLock: Bool = true) {
+        if feedLock { model.lock.surfaceHidden() }
         anchored?.orderOut(nil)
         updateDismissMonitors()
     }
@@ -305,7 +314,7 @@ final class StatusItemController {
             showAnchored()
             return
         }
-        if anchored?.isVisible == true { closeAnchored() }
+        if anchored?.isVisible == true { closeAnchored(feedLock: false) }
         showPinnedWindow()
     }
 
@@ -452,7 +461,7 @@ final class StatusItemController {
             // the stay-visible-while-working-elsewhere HUD behavior.
             w.level = .floating
             NotificationCenter.default.addObserver(
-                self, selector: #selector(pinnedKeyChanged),
+                self, selector: #selector(pinnedBecameKey),
                 name: NSWindow.didBecomeKeyNotification, object: w)
             NotificationCenter.default.addObserver(
                 self, selector: #selector(pinnedKeyChanged),
@@ -480,6 +489,7 @@ final class StatusItemController {
                 clampOnScreen(w)
             }
         }
+        model.lock.surfaceShown()
         UserDefaults.standard.set(true, forKey: "popout_shown")
         if activate {
             NSApp.activate(ignoringOtherApps: true)
@@ -491,10 +501,19 @@ final class StatusItemController {
     }
 
     /// The pop-out's level follows key status and the pin, so a pin
-    /// toggle retargets it live (apply() calls this on model changes).
+    /// toggle retargets it live (apply() calls this on every model
+    /// snapshot too — window-level upkeep only, no lock feed, since it
+    /// isn't an interaction by itself).
     @objc private func pinnedKeyChanged() {
         guard let w = pinned else { return }
         w.level = model.popoverPinned || w.isKeyWindow ? .floating : .normal
+    }
+
+    /// Real didBecomeKey edge only (not apply()'s repeated snapshots) —
+    /// the actual user interaction that should feed the re-lock clock.
+    @objc private func pinnedBecameKey() {
+        model.lock.surfaceShown()
+        pinnedKeyChanged()
     }
 
     @objc private func pinnedMoved() {
@@ -507,6 +526,7 @@ final class StatusItemController {
     @objc private func pinnedClosed() {
         // App-quit closes the window too; only a USER close drops the flag.
         guard !AppDelegate.terminating else { return }
+        model.lock.surfaceHidden()
         UserDefaults.standard.set(false, forKey: "popout_shown")
     }
 
@@ -591,7 +611,10 @@ final class StatusItemController {
         // wrong one (2026-09-02) — the scene's stays hidden.
         hideSceneSettingsWindow()
         if settings == nil {
-            let host = NSHostingView(rootView: SettingsRoot(tabs: settingsTabs()))
+            // Tabs built once per window, as before; the gate re-evaluates
+            // only which of the two it shows.
+            let tabs = settingsTabs()
+            let host = NSHostingView(rootView: LockGate(lock: model.lock) { SettingsRoot(tabs: tabs) })
             // No sizing input from the content: hosting-view constraints
             // pin the window to SwiftUI's ideal size and beat the
             // .resizable style bit — the window refused to grow even via
@@ -634,6 +657,7 @@ final class StatusItemController {
         // window was unreachable once buried (user bug 2026-08-30).
         // Become a regular app while it's open — Dock icon and Cmd+Tab
         // appear — and drop back to accessory when it closes.
+        model.lock.surfaceShown()
         NSApp.setActivationPolicy(.regular)
         NSApp.activate(ignoringOtherApps: true)
         settings?.makeKeyAndOrderFront(nil)
@@ -665,11 +689,13 @@ final class StatusItemController {
     }
 
     @objc private func settingsClosed() {
+        model.lock.surfaceHidden()
         NSApp.setActivationPolicy(.accessory)
     }
 
     @objc private func settingsKeyChanged() {
         guard let w = settings else { return }
+        if w.isKeyWindow { model.lock.surfaceShown() }
         w.level = w.isKeyWindow ? .floating : .normal
     }
 }
@@ -682,7 +708,7 @@ private struct AnchoredRoot: View {
     let onSize: (CGSize) -> Void
 
     var body: some View {
-        MenuContent(model: model, usage: usage)
+        LockGate(lock: model.lock) { MenuContent(model: model, usage: usage) }
             .fixedSize()
             .onGeometryChange(for: CGSize.self) { $0.size } action: { onSize($0) }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -701,7 +727,9 @@ private struct PinnedRoot: View {
         VStack(spacing: 0) {
             InfinitusHeader(model: model)
                 .frame(height: 30)
-            MenuContent(model: model, usage: usage, showHeader: false)
+            LockGate(lock: model.lock) {
+                MenuContent(model: model, usage: usage, showHeader: false)
+            }
         }
         // fixedSize = the content's ideal, independent of the window; the
         // window then follows THAT (fitPinned) instead of the other way

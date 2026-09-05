@@ -266,6 +266,11 @@ public enum ResumeGate {
     public static let cooldown: TimeInterval = 600
     /// How long before a stop a usage poll still counts as fresh.
     public static let freshBeforeStop: TimeInterval = 60
+    /// How long the active account must have been active before a
+    /// post-switch nudge: the engine can ping-pong between a dead account
+    /// and a live one for a minute while the usage API lags (#136: five
+    /// switches in 52 s, every nudge landed on the dead one).
+    public static let stableSeconds: TimeInterval = 30
 
     /// - stoppedAt: when the limit stop landed (nil = unknown).
     /// - firstSeenActive: the active account number when THIS stop was
@@ -274,19 +279,28 @@ public enum ResumeGate {
     /// - activeFetchedAt: when the engine last fetched the active
     ///   account's usage (the "alive" verdict is only as fresh as this).
     /// - lastNudge: when this SESSION was last nudged, any stop entry.
+    /// - activeSince: when the current active account became active
+    ///   (nil = unknown; the switched path then trusts the switch).
     public static func allows(stoppedAt: Date?,
                               firstSeenActive: Int?,
                               currentActive: Int?,
                               activeFetchedAt: Date?,
                               lastNudge: Date?,
+                              activeSince: Date? = nil,
                               now: Date = Date()) -> Bool {
         if let lastNudge, now.timeIntervalSince(lastNudge) < cooldown {
             return false
         }
         // A switch since the stop was first seen: the session rides new
-        // credentials — nudge regardless of usage-poll freshness.
+        // credentials — nudge regardless of how old the poll BEFORE the
+        // switch was, but only once the account has held for
+        // `stableSeconds` and a poll taken since the switch says alive
+        // (the caller only ticks when the active account is alive).
         if let firstSeenActive, let currentActive,
            firstSeenActive != currentActive {
+            guard let activeSince else { return true }
+            guard now.timeIntervalSince(activeSince) >= stableSeconds,
+                  let activeFetchedAt, activeFetchedAt >= activeSince else { return false }
             return true
         }
         // Same account: the alive verdict must postdate the stop, or it

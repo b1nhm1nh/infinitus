@@ -40,6 +40,25 @@ final class ResumeGateTests: XCTestCase {
             lastNudge: nil, now: now))
     }
 
+    func testSwitchHoldsUntilTheAccountIsStableAndPolledSince() {
+        // #136: the engine flipped #2 → #1 → #2 → #1 in under a minute;
+        // a nudge 10 s after a switch landed on the dead account.
+        XCTAssertFalse(ResumeGate.allows(
+            stoppedAt: stop, firstSeenActive: 1, currentActive: 2,
+            activeFetchedAt: Date(timeIntervalSince1970: 1995),
+            lastNudge: nil, activeSince: now.addingTimeInterval(-10), now: now))
+        // Stable for 40 s but the only poll predates the switch: hold.
+        XCTAssertFalse(ResumeGate.allows(
+            stoppedAt: stop, firstSeenActive: 1, currentActive: 2,
+            activeFetchedAt: Date(timeIntervalSince1970: 1950),
+            lastNudge: nil, activeSince: now.addingTimeInterval(-40), now: now))
+        // Stable and polled alive since the switch: nudge.
+        XCTAssertTrue(ResumeGate.allows(
+            stoppedAt: stop, firstSeenActive: 1, currentActive: 2,
+            activeFetchedAt: Date(timeIntervalSince1970: 1980),
+            lastNudge: nil, activeSince: now.addingTimeInterval(-40), now: now))
+    }
+
     func testCooldownBlocksWhateverElseIsTrue() {
         XCTAssertFalse(ResumeGate.allows(
             stoppedAt: stop, firstSeenActive: 1, currentActive: 2,

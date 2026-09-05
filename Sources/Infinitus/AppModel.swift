@@ -38,6 +38,9 @@ final class AppModel: ObservableObject {
 
     var accounts: [Account] { primary?.accounts ?? [] }
     var activeNumber: Int? { primary?.activeNumber }
+    /// When the current active account became active — ResumeGate holds
+    /// post-switch nudges until it has held for a while (#136).
+    private var activeSince: Date?
     var nextCandidate: Int? { primary?.nextCandidate }
     /// Limit-stopped sessions waiting to resume; non-nil only while
     /// every account is at a limit (rides the all-limited banner).
@@ -535,6 +538,8 @@ final class AppModel: ObservableObject {
     let mirrorServer = MirrorServer()
     /// Agent CLI socket (ControlServer.swift); the real model only.
     private(set) lazy var controlServer = ControlServer(model: self)
+    /// The biometric lock (LockModel.swift); the surfaces and the Lock pane read it.
+    private(set) lazy var lock = LockModel(defaults: defaults)
     let quickTunnel = QuickTunnel()
     let namedTunnel = NamedTunnel()
     /// Live Activity pushes to the phone (APNs), LiveActivityPusher.swift.
@@ -1967,7 +1972,7 @@ final class AppModel: ObservableObject {
             let info = Bundle.main.infoDictionary ?? [:]
             let appInfo = AppInfo(
                 version: info["CFBundleShortVersionString"] as? String ?? "dev",
-                sha: info["InfinitusGitSHA"] as? String ?? "dev",
+                sha: info["InfinitusGitSHA"] as? String ?? info["CFBundleVersion"] as? String ?? "dev",
                 updateVersion: appUpdateVersion,
                 updateChannel: BrewUpdater.channel.rawValue,
                 phoneLatest: appReleaseLatest)
@@ -2046,13 +2051,15 @@ final class AppModel: ObservableObject {
         // sessions. Detached, single-flight — never awaited here.
         if !isPlayground {
             let active = list.accounts.first { $0.number == list.activeAccountNumber }
+            if previous != list.activeAccountNumber { activeSince = Date() }
             resume.tick(switched: previous != nil && previous != list.activeAccountNumber,
                         activeAlive: active.map { !AccountVitals.isDead($0.usage) } ?? false,
                         activeNumber: list.activeAccountNumber,
                         activeFetchedAt: active?.usageFetchedAt
                             .flatMap(UsageHistory.parseISO),
                         activeName: active.map { $0.alias ?? String($0.email.prefix(while: { $0 != "@" })) },
-                        activePct: active.flatMap { PushTriggers.worstPlanPct($0.usage) }.map { Int($0) })
+                        activePct: active.flatMap { PushTriggers.worstPlanPct($0.usage) }.map { Int($0) },
+                        activeSince: activeSince)
         }
         // Same display-feed vantage as the switch diff above: these
         // triggers fire even while the supervised engine is parked.
