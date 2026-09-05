@@ -16,6 +16,7 @@ publishes the matching section as the GitHub release body.
 - A session stuck behind the credential broker's refresh lock (another process sitting in `aws login`) now shows the AWS login card too.
 - Haiku session names now cover the sessions Claude Code named itself (`limitless-bf`, `banyan-51`…).
 - Phone dictation never sits on "Translating…": a missing language pack asks to download, and after ten seconds the take goes out as spoken.
+- A chat opens in well under a second on sessions with hundreds of sub-agents; the Mac read every sub-agent's log per request and the phone gave up after three ("the Mac didn't answer").
 
 ### Crash reports
 - The phone app and the Mac app report their own crashes into Settings › Sync, nothing leaves your machine, and any report can go into a session's chat for triage.
