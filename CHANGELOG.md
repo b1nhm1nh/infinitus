@@ -32,6 +32,7 @@ publishes the matching section as the GitHub release body.
 - Randomize names: every account gets a fresh name from the current theme's pool (Settings › Accounts, or `infinitusctl randomize-names`).
 
 ### Mac
+- The plugin's MCP server: `fleet_status`, `list_sessions` and `session_message` tools in every session, plus `/infinitus:status`; `infinitusctl sessions` and `infinitusctl send <pid|name>` for scripts.
 - A Claude Code plugin (`infinitusctl plugin install`): its hooks push a permission or question to the phone the moment it appears and refresh the fleet when a turn ends.
 - Settings › Sync names this Mac for the phone, widgets and crash reports; the default drops the " (7)" macOS appends after name collisions.
 - Compact account rows no longer run under the cash column.

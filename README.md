@@ -185,7 +185,10 @@ to drive the running app.
 - **A Claude Code plugin** — `infinitusctl plugin install` adds hooks
   that tell the Mac app the moment a session needs you or ends a turn,
   so the phone gets the permission or question at once instead of at
-  the next poll; the hooks never block a session.
+  the next poll; the hooks never block a session. Its MCP server gives
+  every session `fleet_status`, `list_sessions` and `session_message`
+  (text to another live session by name), and `/infinitus:status`
+  answers "how are the accounts doing" from them.
 - **Capture the desktop into a session** — Capture Screen for a
   Session… in the menu-bar menu: a region or window, a session, a note,
   delivered like a phone message.
