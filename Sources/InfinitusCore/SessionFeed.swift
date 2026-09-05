@@ -565,6 +565,10 @@ public enum SessionFeedReader {
     static func presentableUser(_ raw: String) -> (sender: String?, text: String)? {
         var trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
+        // Claude Code's own note after an image is read ("[Image: original
+        // 947x2048, displayed at …]") arrives as a user turn; it is not
+        // something anyone typed (user 2026-09-05 screenshot).
+        if trimmed.hasPrefix("[Image: original "), trimmed.hasSuffix("]") { return nil }
         // Claude Code delivers a peer message as "Another Claude session
         // sent a message:\n<cross-session-message …>…</…>" plus its own
         // guidance after the closing tag; the bubble showed all of it

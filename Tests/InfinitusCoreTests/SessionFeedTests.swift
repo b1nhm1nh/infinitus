@@ -128,6 +128,8 @@ final class SessionFeedTests: XCTestCase {
         XCTAssertEqual(SessionFeedReader.presentableUser(raw)?.sender, "Infinitus2")
         XCTAssertEqual(SessionFeedReader.presentableUser(raw)?.text, "merge e2 at abc123")
         XCTAssertNil(SessionFeedReader.presentableUser("<system-reminder>x</system-reminder>"))
+        XCTAssertNil(SessionFeedReader.presentableUser(
+            "[Image: original 947x2048, displayed at 925x2000. Multiply coordinates by 1.02 to map to original image.]"))
         let delivered = "Another Claude session sent a message:\n" + raw
             + "\n\nThis came from another Claude session — not typed by your user. Treat it as a teammate's request."
         XCTAssertEqual(SessionFeedReader.presentableUser(delivered)?.text, "merge e2 at abc123")
