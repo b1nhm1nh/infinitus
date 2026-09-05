@@ -71,6 +71,11 @@ extension Stats {
                 Group(id: "Cost (API-equivalent estimate)", tiles: [
                     money("Spend", s, \.usd),
                     tile("Input tokens", s, \.inputTokens),
+                    tile("Processed tokens", s, \.processedTokens),
+                    tile("Cached input", s, \.cacheReadTokens),
+                    tile("Uncached input", s, \.uncachedInputTokens),
+                    tile("Cache writes", s, \.cacheWriteTokens),
+                    money("Cache savings", s, \.cacheSavingsUSD),
                     money("Per commit", s, \.usdPerCommit),
                     money("Per PR", s, \.usdPerPR),
                     ratio("Tokens / line", s, \.tokensPerLine),
@@ -131,6 +136,9 @@ extension Stats {
             public let tokens: Int
             public let usd: Double
             public let share: Double
+            /// Cache reads' share of this row's input (read + write +
+            /// fresh), nil when the row has no input at all (#139).
+            public let cachedShare: Double?
 
             public init(id: String, tally: Stats.ActivityTally, share: Double) {
                 self.id = id
@@ -139,10 +147,20 @@ extension Stats {
                 tokens = tally.inputTokens + tally.outputTokens
                 usd = tally.usd
                 self.share = share
+                let inputTotal = tally.inputTokens + tally.cacheReadTokens + tally.cacheWriteTokens
+                cachedShare = inputTotal > 0 ? Double(tally.cacheReadTokens) / Double(inputTotal) : nil
             }
 
             public var minutesText: String {
                 minutes >= 120 ? "\(minutes / 60) h \(minutes % 60) m" : "\(minutes) min"
+            }
+            /// For the phone's inline "N stretches · M tokens · …" line.
+            public var cachedText: String {
+                cachedShare.map { "cached \(Int(($0 * 100).rounded()))%" } ?? "—"
+            }
+            /// For the Mac table, which already has a "Cached" column header.
+            public var cachedPercentText: String {
+                cachedShare.map { "\(Int(($0 * 100).rounded()))%" } ?? "—"
             }
             public var tokensText: String {
                 if tokens >= 1_000_000 { return String(format: "%.1fM", Double(tokens) / 1_000_000) }

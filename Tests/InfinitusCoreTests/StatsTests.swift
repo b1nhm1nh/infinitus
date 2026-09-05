@@ -220,6 +220,25 @@ final class StatsTests: XCTestCase {
         XCTAssertEqual(e.cwd, "/r/a")
     }
 
+    func testIngestChargesCacheReadsWritesAndSavings() {
+        var e = StatsScanner.FileEntry()
+        let line = #"{"type":"assistant","timestamp":"2026-09-04T01:00:05.000Z","message":{"id":"m1","model":"claude-sonnet-5","usage":{"input_tokens":100,"cache_read_input_tokens":900,"cache_creation_input_tokens":50,"output_tokens":10}}}"#
+        StatsScanner.ingest(entry(line), sessionID: "s1", into: &e, calendar: cal)
+        let d = e.days["2026-09-04"]!
+        // claude-sonnet-5: input $2, output $10, cacheRead $0.2, cacheWrite $2.5 per million.
+        XCTAssertEqual(d.cacheReadTokens, 900)
+        XCTAssertEqual(d.cacheWriteTokens, 50)
+        XCTAssertEqual(d.processedTokens, 1060)                          // 100 + 900 + 50 + 10
+        XCTAssertEqual(d.uncachedInputTokens, 150)                       // 100 + 50
+        // cost = (100*2 + 10*10 + 900*0.2 + 50*2.5) / 1e6 = 0.000605
+        XCTAssertEqual(d.usd, 0.000605, accuracy: 1e-9)
+        // savings = 900 * (2.0 - 0.2) / 1e6 = 0.00162
+        XCTAssertEqual(d.cacheSavingsUSD, 0.00162, accuracy: 1e-9)
+        XCTAssertEqual(d.byModel["claude-sonnet-5"]?.cacheReadTokens, 900)
+        XCTAssertEqual(d.byModel["claude-sonnet-5"]?.cacheWriteTokens, 50)
+        XCTAssertEqual(d.byModel["claude-sonnet-5"]?.cacheSavingsUSD ?? 0, 0.00162, accuracy: 1e-9)
+    }
+
     func testIngestSessionBucketMovesAsTheSpanCrossesFifteenMinutes() {
         var e = StatsScanner.FileEntry()
         StatsScanner.ingest(entry(#"{"type":"user","timestamp":"2026-09-04T01:00:00.000Z","origin":{"kind":"human"},"message":{"role":"user","content":"start"}}"#), sessionID: "s1", into: &e, calendar: cal)
@@ -371,8 +390,8 @@ final class StatsTests: XCTestCase {
         XCTAssertEqual(second.days["2026-09-04"]?.inputTokens, 10)
     }
 
-    func testCacheVersionIsEight() {
-        XCTAssertEqual(StatsScanner.Cache().version, 8)
+    func testCacheVersionIsNine() {
+        XCTAssertEqual(StatsScanner.Cache().version, 9)
     }
 
     /// The minute buckets and the peak survive a cache round trip: the
@@ -1026,7 +1045,7 @@ final class StatsTests: XCTestCase {
     /// Every tally populated in all four periods — worse than any real
     /// week. `GET /snapshot` has no response cap; the bound keeps the
     /// bundle a small part of the snapshot the phone fetches.
-    func testBundleWithEffortTalliesStaysUnderSixteenKilobytes() throws {
+    func testBundleWithEffortTalliesStaysUnderTwentyKilobytes() throws {
         var d = Stats.Day()
         for i in 0..<30 { d.toolCalls["ToolNumber\(i)"] = i + 1 }
         d.sessions = Set((0..<20).map { "session-\($0)" })
@@ -1034,13 +1053,19 @@ final class StatsTests: XCTestCase {
         d.hours[7] = 12
         var t = Stats.ActivityTally()
         t.stretches = 3; t.seconds = 900; t.inputTokens = 120_000; t.outputTokens = 9_000; t.usd = 12.34
+        // Realistic cache traffic (#139) — a real tally never leaves
+        // these at zero, so the worst case must carry them too.
+        t.cacheReadTokens = 900_000; t.cacheWriteTokens = 60_000; t.cacheSavingsUSD = 1.62
         for a in Stats.Activity.allCases { d.activities[a.rawValue] = t }
         for i in 0..<9 { d.byModel["claude-m\(i)"] = t }
         for e in Stats.Engine.allCases { d.byEngine[e.rawValue] = t }
         for e in ["minimal", "low", "medium", "high", "max", "unset"] { d.byEffort[e] = t }
         let b = Stats.Bundle(days: ["2026-09-04": d], now: date("2026-09-04T03:00:00Z"), calendar: cal)
         let json = String(decoding: try JSONEncoder().encode(b), as: UTF8.self)
-        XCTAssertLessThan(json.utf8.count, 16_384)
+        // 16 KB → 20 KB (#139): three new ActivityTally fields (cr, cw,
+        // sv) × ~96 tallies (4 periods × (total + previous) × 24 keyed
+        // tallies) adds a few KB on top of the pre-#139 worst case.
+        XCTAssertLessThan(json.utf8.count, 20_480)
         XCTAssertTrue(b.periods.allSatisfy { $0.total.byModel.count <= 7 })
     }
 
@@ -1126,15 +1151,22 @@ final class StatsTests: XCTestCase {
 
     func testActivityTallyAddsAndDecodesForwardCompatibly() throws {
         var a = Stats.ActivityTally(); a.stretches = 1; a.seconds = 30; a.inputTokens = 10; a.outputTokens = 5; a.usd = 0.5
+        a.cacheReadTokens = 900; a.cacheWriteTokens = 50; a.cacheSavingsUSD = 0.00162
         var b = Stats.ActivityTally(); b.stretches = 2; b.seconds = 15; b.inputTokens = 1; b.outputTokens = 1; b.usd = 0.25
+        b.cacheReadTokens = 10; b.cacheWriteTokens = 1; b.cacheSavingsUSD = 0.0001
         let c = a + b
         XCTAssertEqual(c.stretches, 3); XCTAssertEqual(c.seconds, 45); XCTAssertEqual(c.inputTokens, 11)
         XCTAssertEqual(c.outputTokens, 6); XCTAssertEqual(c.usd, 0.75, accuracy: 1e-9)
+        XCTAssertEqual(c.cacheReadTokens, 910); XCTAssertEqual(c.cacheWriteTokens, 51)
+        XCTAssertEqual(c.cacheSavingsUSD, 0.00172, accuracy: 1e-9)
         // Short keys on the wire; a newer field is ignored, a missing one defaults.
         let json = String(decoding: try JSONEncoder().encode(a), as: UTF8.self)
         XCTAssertTrue(json.contains("\"n\":1") && json.contains("\"in\":10") && json.contains("\"out\":5"))
+        XCTAssertTrue(json.contains("\"cr\":900") && json.contains("\"cw\":50") && json.contains("\"sv\":"))
+        // A v8-era tally on the wire, before cr/cw/sv existed, still decodes.
         let sparse = try JSONDecoder().decode(Stats.ActivityTally.self, from: Data(#"{"n":4,"future":9}"#.utf8))
         XCTAssertEqual(sparse.stretches, 4); XCTAssertEqual(sparse.usd, 0)
+        XCTAssertEqual(sparse.cacheReadTokens, 0); XCTAssertEqual(sparse.cacheWriteTokens, 0); XCTAssertEqual(sparse.cacheSavingsUSD, 0)
     }
 
     func testDayAddsActivitiesAndModelsAndDecodesWithoutThem() throws {

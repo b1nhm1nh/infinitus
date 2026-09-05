@@ -50,10 +50,18 @@ public enum Stats {
         public var inputTokens = 0
         public var outputTokens = 0
         public var usd = 0.0
+        /// Cache reads/writes (#139) — reads are cheap re-hits of a
+        /// prior write, writes count as uncached input; savings is
+        /// what the reads would have cost at the uncached price minus
+        /// what they actually cost (estimate, computed in the scanner).
+        public var cacheReadTokens = 0
+        public var cacheWriteTokens = 0
+        public var cacheSavingsUSD = 0.0
         public init() {}
 
         enum CodingKeys: String, CodingKey {
             case stretches = "n", seconds = "s", inputTokens = "in", outputTokens = "out", usd
+            case cacheReadTokens = "cr", cacheWriteTokens = "cw", cacheSavingsUSD = "sv"
         }
 
         public init(from decoder: Decoder) throws {
@@ -63,6 +71,9 @@ public enum Stats {
             inputTokens = try c.decodeIfPresent(Int.self, forKey: .inputTokens) ?? 0
             outputTokens = try c.decodeIfPresent(Int.self, forKey: .outputTokens) ?? 0
             usd = try c.decodeIfPresent(Double.self, forKey: .usd) ?? 0
+            cacheReadTokens = try c.decodeIfPresent(Int.self, forKey: .cacheReadTokens) ?? 0
+            cacheWriteTokens = try c.decodeIfPresent(Int.self, forKey: .cacheWriteTokens) ?? 0
+            cacheSavingsUSD = try c.decodeIfPresent(Double.self, forKey: .cacheSavingsUSD) ?? 0
         }
 
         public static func + (a: ActivityTally, b: ActivityTally) -> ActivityTally {
@@ -72,6 +83,9 @@ public enum Stats {
             c.inputTokens += b.inputTokens
             c.outputTokens += b.outputTokens
             c.usd += b.usd
+            c.cacheReadTokens += b.cacheReadTokens
+            c.cacheWriteTokens += b.cacheWriteTokens
+            c.cacheSavingsUSD += b.cacheSavingsUSD
             return c
         }
     }
@@ -97,6 +111,13 @@ public enum Stats {
         public var inputTokens = 0
         public var outputTokens = 0
         public var usd = 0.0
+        /// Cache reads/writes (#139); `usd` above already includes both
+        /// at their own prices. `cacheSavingsUSD` is what the cached
+        /// reads would have cost at the uncached input price — an
+        /// estimate, never billing truth.
+        public var cacheReadTokens = 0
+        public var cacheWriteTokens = 0
+        public var cacheSavingsUSD = 0.0
         /// Output tokens per minute of the day (minute index → tokens),
         /// summed across every session — the scan's working set for the
         /// peak below; emptied by `compacted()` and meaningless once days
@@ -165,6 +186,9 @@ public enum Stats {
             c.inputTokens += b.inputTokens
             c.outputTokens += b.outputTokens
             c.usd += b.usd
+            c.cacheReadTokens += b.cacheReadTokens
+            c.cacheWriteTokens += b.cacheWriteTokens
+            c.cacheSavingsUSD += b.cacheSavingsUSD
             c.minuteTokens.merge(b.minuteTokens, uniquingKeysWith: +)
             if b.peakTokensPerMinute > a.peakTokensPerMinute {
                 c.peakTokensPerMinute = b.peakTokensPerMinute
@@ -315,6 +339,11 @@ public enum Stats {
             minuteTokens = try c.decodeIfPresent([Int: Int].self, forKey: .minuteTokens) ?? d.minuteTokens
             peakTokensPerMinute = try c.decodeIfPresent(Int.self, forKey: .peakTokensPerMinute) ?? d.peakTokensPerMinute
             peakMinute = try c.decodeIfPresent(Int.self, forKey: .peakMinute) ?? d.peakMinute
+            // Added with cache accounting (#139); a v8-era cache/bundle
+            // has none of the three.
+            cacheReadTokens = try c.decodeIfPresent(Int.self, forKey: .cacheReadTokens) ?? d.cacheReadTokens
+            cacheWriteTokens = try c.decodeIfPresent(Int.self, forKey: .cacheWriteTokens) ?? d.cacheWriteTokens
+            cacheSavingsUSD = try c.decodeIfPresent(Double.self, forKey: .cacheSavingsUSD) ?? d.cacheSavingsUSD
         }
 
         // Derived — nil when the denominator is zero (tiles show "—").
@@ -327,6 +356,12 @@ public enum Stats {
         public var usdPerCommit: Double? { ratio(usd, Double(commits)) }
         public var usdPerPR: Double? { ratio(usd, Double(prsMerged)) }
         public var tokensPerLine: Double? { ratio(Double(outputTokens), Double(linesAdded + linesRemoved)) }
+        /// What the engine actually handled: input + cache reads + cache
+        /// writes + output.
+        public var processedTokens: Int { inputTokens + cacheReadTokens + cacheWriteTokens + outputTokens }
+        /// `inputTokens` plus cache writes — a cache write is a fresh,
+        /// uncached read priced at the write rate.
+        public var uncachedInputTokens: Int { inputTokens + cacheWriteTokens }
         public var humanShare: Double? { ratio(Double(messages), Double(messages + agentMessages + nudges)) }
         public var meanMergeHours: Double? { ratio(mergeHoursTotal, Double(mergeCount)) }
         private func ratio(_ n: Double, _ d: Double) -> Double? { d > 0 ? n / d : nil }

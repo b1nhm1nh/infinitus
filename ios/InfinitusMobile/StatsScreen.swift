@@ -75,7 +75,7 @@ struct StatsScreen: View {
                     Text("\(r.usdText) · \(r.minutesText)").monospacedDigit()
                 } label: {
                     Text(r.id)
-                    Text("\(r.count) stretches · \(r.tokensText) tokens").font(.caption2).foregroundStyle(.secondary)
+                    Text("\(r.count) stretches · \(r.tokensText) tokens · \(r.cachedText)").font(.caption2).foregroundStyle(.secondary)
                 }
             }
         } header: {
