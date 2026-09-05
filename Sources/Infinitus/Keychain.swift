@@ -7,12 +7,12 @@ import Security
 /// token (#9), same shape under its own service. Never mirrored into
 /// defaults.
 enum Keychain {
-    static let service = "com.huuloc.infinitus.cliproxy"
-    static let tunnelService = "com.huuloc.infinitus.cloudflare-tunnel"
+    static let service = "run.infinitus.cliproxy"
+    static let tunnelService = "run.infinitus.cloudflare-tunnel"
     /// 9Router's dashboard password (third engine), account = base URL.
-    static let nineRouterService = "com.huuloc.infinitus.9router"
+    static let nineRouterService = "run.infinitus.9router"
     /// The APNs auth key (.p8) for Live Activity pushes, account = key id.
-    static let apnsService = "com.huuloc.infinitus.apns"
+    static let apnsService = "run.infinitus.apns"
 
     static func read(account: String, service: String = Self.service) -> String? {
         let query: [String: Any] = [

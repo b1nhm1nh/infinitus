@@ -513,7 +513,7 @@ struct AboutPane: View {
         let home = FileManager.default.homeDirectoryForCurrentUser
         var candidates = ["death/infinitus/Infinitus.app", "death/limitless/Infinitus.app"]
             .map { home.appendingPathComponent($0).path }
-        for id in ["com.huuloc.infinitus", "com.huuloc.limitless"] {
+        for id in ["run.infinitus", "com.huuloc.infinitus", "com.huuloc.limitless"] {
             if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: id) {
                 candidates.insert(url.path, at: 0)
                 break
