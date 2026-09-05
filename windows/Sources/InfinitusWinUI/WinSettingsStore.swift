@@ -8,14 +8,14 @@ import Foundation
 /// key, dropping the whole file. See `Stats.Day` for the same rule.
 public struct WinSettings: Codable, Sendable, Equatable {
     // Mac-parity Display / Title prefs
-    public var showAccountName: Bool = false
-    public var titlePct: String = "active"
+    public var showAccountName: Bool = true
+    public var titlePct: String = "both"
     public var titleScoped: Bool = false
     public var titleRemaining: Bool = false
-    public var titleReset: String = "off"
+    public var titleReset: String = "countdown"
     public var titleIconOnly: Bool = false
-    public var refreshIntervalSeconds: Int = 30
-    public var gamificationStyle: String = "plain"
+    public var refreshIntervalSeconds: Int = 60
+    public var gamificationStyle: String = "off"
 
     // Mac-parity Push triggers
     public var pushSessionsDone: Bool = true
@@ -165,6 +165,10 @@ public enum WinSettingsStore {
 
     public static var url: URL {
         infinitusHome.appendingPathComponent("settings.json")
+    }
+
+    public static var windowsThemesURL: URL {
+        infinitusHome.appendingPathComponent("themes.json")
     }
 
     private static let lock = NSLock()
