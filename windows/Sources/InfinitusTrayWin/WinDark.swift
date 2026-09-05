@@ -31,6 +31,18 @@ enum WinDark {
     /// the same emphasis split the Mac's `FleetHeader` uses.
     static let headerText = rgb(200, 200, 210)
 
+    // Settings additions
+    /// Sidebar selection fill (the Mac's Color.accentColor row).
+    static let selection = rgb(52, 92, 158)
+    /// Hover plate for an unselected sidebar row.
+    static let hover = rowBg
+    /// Hairline between sidebar and content.
+    static let separator = rgb(48, 48, 54)
+    /// A destructive action's label ("Remove", "Forget key").
+    static let destructive = dangerColor
+    /// Live dot / success color (green)
+    static let liveDot = rgb(46, 204, 113)
+
     static func rgb(_ r: Int, _ g: Int, _ b: Int) -> COLORREF {
         COLORREF(UInt32(r) | (UInt32(g) << 8) | (UInt32(b) << 16))
     }
@@ -172,5 +184,32 @@ enum WinDark {
         _ = DrawTextW(dc, buffer, length, &rect,
                       UINT(DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX))
         return true
+    }
+
+    /// Renders a tinted rounded tile with a glyph or fallback initial for sidebar rows.
+    static func drawTile(dc: HDC, rect: RECT, tint: COLORREF, glyph: String, font: HFONT?) {
+        guard let brush = CreateSolidBrush(tint) else { return }
+        guard let nullPen = GetStockObject(NULL_PEN) else {
+            DeleteObject(brush)
+            return
+        }
+        let oldBrush = SelectObject(dc, brush)
+        let oldPen = SelectObject(dc, nullPen)
+
+        let radius: Int32 = 6
+        RoundRect(dc, rect.left, rect.top, rect.right, rect.bottom, radius * 2, radius * 2)
+
+        SelectObject(dc, oldPen)
+        SelectObject(dc, oldBrush)
+        DeleteObject(brush)
+
+        let oldFont = font.map { SelectObject(dc, $0) }
+        SetBkMode(dc, TRANSPARENT)
+        SetTextColor(dc, rgb(255, 255, 255))
+        var r = rect
+        var glyphWide = Array(glyph.utf16) + [0]
+        _ = DrawTextW(dc, &glyphWide, Int32(glyph.utf16.count), &r,
+                      UINT(DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX))
+        if let oldFont { SelectObject(dc, oldFont) }
     }
 }

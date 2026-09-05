@@ -55,6 +55,12 @@ targets.append(.executableTarget(
 products.append(.executable(name: "infinitusctl", targets: ["InfinitusCLI"]))
 #endif
 #if os(Windows)
+// Pure Win32 settings models and catalog (testable without HWND).
+targets.append(.target(
+    name: "InfinitusWinUI",
+    dependencies: ["InfinitusCore"],
+    path: "windows/Sources/InfinitusWinUI"
+))
 // Headless mirror daemon (docs/plan-windows/01-stack.md): the same
 // InfinitusCore feed/pairing/HTTP contract over Winsock + named pipes.
 // Its sources live under windows/, so macOS and Linux never see them.
@@ -71,7 +77,7 @@ products.append(.executable(name: "infinitus-win", targets: ["InfinitusWin"]))
 // is its own target rather than a port of Sources/Infinitus.
 targets.append(.executableTarget(
     name: "InfinitusTrayWin",
-    dependencies: ["InfinitusCore"],
+    dependencies: ["InfinitusCore", "InfinitusWinUI"],
     path: "windows/Sources/InfinitusTrayWin",
     // dwmapi: immersive dark mode for the panel/settings title bars
     // (WinDarkTitleBar.swift) — DWM draws the non-client area, so a dark
@@ -79,12 +85,13 @@ targets.append(.executableTarget(
     linkerSettings: [.linkedLibrary("user32"), .linkedLibrary("shell32"),
                      .linkedLibrary("gdi32"), .linkedLibrary("comctl32"),
                      .linkedLibrary("ws2_32"), .linkedLibrary("iphlpapi"),
-                     .linkedLibrary("dwmapi")]
+                     .linkedLibrary("dwmapi"), .linkedLibrary("crypt32"),
+                     .linkedLibrary("comdlg32")]
 ))
 products.append(.executable(name: "infinitus-tray-win", targets: ["InfinitusTrayWin"]))
 targets.append(.testTarget(
     name: "InfinitusWinTests",
-    dependencies: ["InfinitusWin"],
+    dependencies: ["InfinitusWin", "InfinitusWinUI"],
     path: "windows/Tests/InfinitusWinTests"
 ))
 #endif

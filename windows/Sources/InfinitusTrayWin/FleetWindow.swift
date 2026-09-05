@@ -33,31 +33,7 @@ enum FleetWindow {
     private static let refreshTimerId: UINT_PTR = 1
     private static let refreshMilliseconds: UINT = 3000
 
-    // MARK: - metrics (96-dpi reference; scaled per monitor)
-
-    /// Row geometry at 100%. `Metrics` scales these once per paint so the
-    /// panel is sharp on a 150% display instead of blurry-stretched.
-    struct Metrics {
-        let scale: Double
-        var pad: Int32 { px(12) }
-        var rowHeight: Int32 { px(46) }
-        var headerHeight: Int32 { px(30) }
-        /// One fleet header band ("Claude · 9Router"), drawn only when
-        /// several fleets stack — the Mac's `FleetHeader`.
-        var fleetHeaderHeight: Int32 { px(22) }
-        var footerHeight: Int32 { px(26) }
-        var barWidth: Int32 { px(84) }
-        var barHeight: Int32 { px(7) }
-        var gaugeGap: Int32 { px(14) }
-        var numberWidth: Int32 { px(18) }
-        var nameWidth: Int32 { px(150) }
-        func px(_ value: Int32) -> Int32 { Int32((Double(value) * scale).rounded()) }
-
-        init(hwnd: HWND?) {
-            let dpi = hwnd.map { Double(GetDpiForWindow($0)) } ?? 96.0
-            scale = max(1.0, dpi / 96.0)
-        }
-    }
+    // MARK: - metrics (moved to shared Metrics.swift)
 
     /// The window's own size for a given panel — computed, not guessed,
     /// so the frame always fits its rows AND its fleet headers.

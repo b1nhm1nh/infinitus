@@ -9,6 +9,7 @@
 // installed the phone and `infinitus-win snapshot` already show them.
 import Foundation
 import InfinitusCore
+import InfinitusWinUI
 import WinSDK
 
 /// Tray callback message (WM_APP+1) and the menu command id base.
@@ -461,6 +462,15 @@ extension String {
 }
 
 func run() -> Int32 {
+    // 1. DPI awareness as first statement before any CreateWindowExW
+    _ = SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2)
+
+    // 2. InitCommonControlsEx for modern controls
+    var icc = INITCOMMONCONTROLSEX()
+    icc.dwSize = DWORD(MemoryLayout<INITCOMMONCONTROLSEX>.size)
+    icc.dwICC = DWORD(ICC_STANDARD_CLASSES | ICC_UPDOWN_CLASS | ICC_PROGRESS_CLASS | ICC_LISTVIEW_CLASSES)
+    _ = InitCommonControlsEx(&icc)
+
     // `--probe` reports what the tray can build and exits — the icon and
     // the shell call are invisible from another session, so this is how
     // a failure gets diagnosed without a human watching the taskbar.
@@ -486,11 +496,13 @@ func run() -> Int32 {
         }
         return 0
     }
-    // `--settings` opens the settings window alone, with its own message loop.
+    // `--settings [paneID]` opens the settings window alone, with its own message loop.
     if CommandLine.arguments.dropFirst().first == "--settings" {
-        SettingsWindow.show()
+        let targetPane = CommandLine.arguments.dropFirst(2).first
+        SettingsWindow.show(paneID: targetPane)
         var message = MSG()
         while GetMessageW(&message, nil, 0, 0) {
+            if SettingsShell.handles(&message) { continue }
             TranslateMessage(&message)
             DispatchMessageW(&message)
         }
@@ -565,6 +577,17 @@ func run() -> Int32 {
                 }
             }
         }
+        // Probe settings catalogue and config store
+        print("settings catalog entries: \(SettingsCatalog.entries.count)")
+        for e in SettingsCatalog.entries {
+            print("  [\(e.id)] \(e.title) (engine=\(e.engine), keywords=\(e.keywords.count))")
+        }
+        let settingsURL = WinSettingsStore.url
+        print("settings path: \(settingsURL.path)")
+        let exists = FileManager.default.fileExists(atPath: settingsURL.path)
+        print("settings file exists: \(exists)")
+        let s = WinSettingsStore.load()
+        print("settings parsed ok: lastPane=\(s.lastPaneID), titlePct=\(s.titlePct)")
         return failures == 0 ? 0 : 1
     }
     let instance = GetModuleHandleW(nil)
@@ -598,6 +621,7 @@ func run() -> Int32 {
     // Swift maps GetMessageW's BOOL to Bool: false is WM_QUIT (and the
     // -1 error case, which only a bad HWND produces — ours is ours).
     while GetMessageW(&message, nil, 0, 0) {
+        if SettingsShell.handles(&message) { continue }
         TranslateMessage(&message)
         DispatchMessageW(&message)
     }
