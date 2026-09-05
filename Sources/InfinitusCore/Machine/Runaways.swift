@@ -79,7 +79,7 @@ public enum Runaways {
         return out.sorted { $0.rssMB > $1.rssMB }
     }
 
-    #if canImport(Darwin)
+    #if canImport(Darwin) && !os(iOS)
     /// SIGTERM to the process group, SIGKILL to whatever is left after
     /// `grace`. Returns whether the pid is gone at the end. The group is
     /// only signalled when it is the runaway's own: a tool child usually

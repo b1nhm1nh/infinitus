@@ -163,7 +163,7 @@ public enum MachineSampler {
         return (count.flatMap { $0 >= 0 ? $0 : nil }, seconds)
     }
 
-    #if canImport(Darwin)
+    #if canImport(Darwin) && !os(iOS)
     /// One sample from the live machine.
     public static func collect(sessionPids: Set<Int>, tempDir: String, tempTimeout: TimeInterval = 10,
                                countTemp: Bool = true) -> (MachineSample, [ProcessRow]) {

@@ -55,7 +55,7 @@ public enum Residue {
         (path as NSString).resolvingSymlinksInPath
     }
 
-    #if canImport(Darwin)
+    #if canImport(Darwin) && !os(iOS)
     /// Paths open under `dir`, from `lsof +D` (one call; can take a while
     /// on a wedged directory, so callers give it a deadline). `nil` when
     /// lsof did not finish — lsof exits 1 for "nothing open" too, so the
