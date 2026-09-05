@@ -165,6 +165,23 @@ final class PushTriggersTests: XCTestCase {
                        ["needs AWS login — repo (p)"])
     }
 
+    /// #98: the announced keys survive a relaunch — a fresh need already
+    /// pushed before the restart is not pushed again by the new instance,
+    /// and the set prunes to the current roster for the next persist.
+    func testAwsLoginKeysPersistAcrossARelaunch() {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        var first = PushTriggers()
+        let fresh = need(3, "p", failedAt: now.addingTimeInterval(-60))
+        XCTAssertEqual(first.tick(busy: 0, total: 1, accounts: [], flags: all,
+                                  awsLogins: [fresh], now: now).count, 1)
+        var relaunched = PushTriggers(announcedAwsLogins: first.announcedAwsLoginKeys)
+        XCTAssertEqual(relaunched.tick(busy: 0, total: 1, accounts: [], flags: all,
+                                       awsLogins: [fresh], now: now.addingTimeInterval(30)), [])
+        XCTAssertEqual(relaunched.tick(busy: 0, total: 1, accounts: [], flags: all,
+                                       awsLogins: [], now: now.addingTimeInterval(60)), [])
+        XCTAssertEqual(relaunched.announcedAwsLoginKeys, [])
+    }
+
     func testAwsLoginNeedFiresOncePerSessionAndProfileAndRearms() {
         var t = PushTriggers()
         // The first scanned look seeds silently, even when empty.

@@ -524,7 +524,12 @@ final class AppModel: ObservableObject {
         liveActivityPusher.pushAlert(title: "Infinitus", body: body)
     }
     private let awake = KeepAwake()
-    private var pushTriggers = PushTriggers()
+    /// Seeded with the AWS-login needs already pushed before the last
+    /// relaunch (#98) — `failedAt` comes from the transcript line, so the
+    /// key is stable across launches.
+    private lazy var pushTriggers = PushTriggers(announcedAwsLogins: persistedAwsLoginKeys)
+    private lazy var persistedAwsLoginKeys = Set(defaults.stringArray(forKey: Self.announcedAwsLoginsKey) ?? [])
+    static let announcedAwsLoginsKey = "push_announced_aws_logins"
     private let defaults: UserDefaults
     static let playgroundSuite = "run.infinitus.playground"
 
@@ -1775,7 +1780,8 @@ final class AppModel: ObservableObject {
                                             engine: engine, fleets: allFleets,
                                             forecast: forecast, plan: plan,
                                             awsLogins: awsLogins, progress: progress,
-                                            stats: stats)
+                                            stats: stats,
+                                            pushesAlerts: self.liveActivityPusher.configured)
             }
         }
         // All-limited: count the limit-stopped sessions waiting to be
@@ -1866,6 +1872,10 @@ final class AppModel: ObservableObject {
             sessions: list.liveSessions?.sessions,
             awsLogins: awsLoginsScanned ? awsLogins : nil,
             now: Date())
+        if pushTriggers.announcedAwsLoginKeys != persistedAwsLoginKeys {
+            persistedAwsLoginKeys = pushTriggers.announcedAwsLoginKeys
+            defaults.set(persistedAwsLoginKeys.sorted(), forKey: Self.announcedAwsLoginsKey)
+        }
         for msg in pushes where !isPlayground {
             notify(msg)
             // Text over stdin, matching the channel-setup commands;
