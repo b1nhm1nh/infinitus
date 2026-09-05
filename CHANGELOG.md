@@ -10,6 +10,7 @@ publishes the matching section as the GitHub release body.
 ### Stats
 - Stats reads Codex CLI transcripts too, with two more effort tables, per engine and per effort setting — one full rescan on first refresh.
 - Where the effort went: minutes, tokens and spend per activity (review, tests, plan, debugging, browser, simulator, explanations, coding) and per model, on the Mac and the phone — heuristic labels, one full rescan on first refresh.
+- Tokens/min records: every day's peak minute, the all-time best and the days it fell, a 30-day sparkline and a week-over-week trend, on the Mac and the phone — one full rescan on first refresh.
 
 ### Fixes
 - AWS logins survive a Mac relaunch, and a need that failed just before a launch still reaches the phone.
