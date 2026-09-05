@@ -307,6 +307,11 @@ final class MirrorModel: ObservableObject, FleetModel {
     /// The AWS login a tapped notification asks for; the Sessions tab
     /// opens its sign-in sheet.
     @Published var requestedAwsLogin: String?
+    /// A session just started from here (#91); the Sessions tab opens
+    /// its chat once the snapshot lists it.
+    @Published var requestedPid: Int?
+    /// Folders sessions have run in on the Mac, newest first.
+    var recentCwds: [String] { snapshot?.recentCwds ?? [] }
     func openForecast() { outlookShown = true }
     var switchFlashTick: Int { primary?.switchFlashTick ?? 0 }
     var deathTicks: [Int: Int] { primary?.deathTicks ?? [:] }

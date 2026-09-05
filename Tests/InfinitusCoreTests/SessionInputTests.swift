@@ -235,4 +235,13 @@ final class SessionInputTests: XCTestCase {
         let reply = deliver(.init(kind: .message, text: ""), hosts: [host(["> "])])
         XCTAssertEqual(reply.outcome, "rejected")
     }
+
+    func testSessionStartShellCommandQuotesEverything() {
+        XCTAssertEqual(SessionStart.shellCommand(cwd: "/Users/x/my repo", engine: nil, prompt: nil),
+                       "cd '/Users/x/my repo' && exec claude")
+        XCTAssertEqual(SessionStart.shellCommand(cwd: "/r", engine: "codex", prompt: "fix it's bug"),
+                       "cd '/r' && exec codex 'fix it'\\''s bug'")
+        XCTAssertEqual(SessionStart.shellCommand(cwd: "/r", engine: "claude", prompt: "   "),
+                       "cd '/r' && exec claude")
+    }
 }

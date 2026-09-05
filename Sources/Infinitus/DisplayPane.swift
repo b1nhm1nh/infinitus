@@ -116,6 +116,13 @@ struct DisplayPane: View {
                 .help("One short Haiku turn per session on the active account, "
                       + "re-asked when the work moves on; the title shows in "
                       + "the sessions list and on the phone.")
+            Picker("New sessions from the phone open in", selection: $model.sessionHost) {
+                Text("cmux when installed, else Terminal").tag("auto")
+                Text("cmux").tag("cmux")
+                Text("Terminal").tag("terminal")
+            }
+            .help("The phone's + button opens a terminal here running the engine "
+                  + "in the repository you picked; takes effect at the next launch.")
             Toggle("Show menu bar icon", isOn: $model.menuBarIconShown)
                 .help("Hide lasts until quit — it always returns on the next "
                       + "launch, so the app can never strand itself with no UI.")

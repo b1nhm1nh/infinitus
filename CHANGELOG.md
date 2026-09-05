@@ -36,6 +36,7 @@ publishes the matching section as the GitHub release body.
 - Capture Screen for a Session… in the menu-bar menu: pick a region or window, choose a session, add a note, and it lands in that session's chat like a phone message.
 
 ### Phone
+- Start a session from the phone: + on the Quests tab picks a repository, the engine and a first prompt, and the Mac opens it in a cmux workspace or Terminal; Siri and Shortcuts have "Start a session in Infinitus".
 - The working Live Activity follows an account switch when the app opens, and a card nothing has reached says "out of date".
 - A lighter chat header: compact by default, or a stat strip with mini gauges (Settings › Appearance › Chat header).
 - A capture of the app — the capture button in a chat, a shake anywhere, or a screenshot the phone just took — lands in the composer as an attachment so you can say what it's about.
