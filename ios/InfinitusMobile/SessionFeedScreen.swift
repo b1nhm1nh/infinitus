@@ -202,6 +202,7 @@ struct SessionFeedScreen: View {
             .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: lastRowVisible)
         }
         .sheet(item: $awsLoginItem) { AwsLoginScreen(item: $0) }
+        .background(SwipeBackAnywhere().frame(width: 0, height: 0))
         // Pinned above the transcript, not in it: the feed opens scrolled
         // to the newest message, so a card at the top was out of reach
         // (user 2026-09-03 "have to scroll to top").
