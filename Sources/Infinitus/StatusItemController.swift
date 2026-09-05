@@ -195,10 +195,12 @@ final class StatusItemController {
         model.introOpened()
     }
 
-    /// `feedLock: false` at the popOut()/toggleWall() call sites — those
-    /// move the same content to another surface, nothing hides from the
-    /// user (brief step 3); only a genuine dismiss (click-outside, the
-    /// footer close, Cmd+the popup button) should arm the re-lock timer.
+    /// `feedLock: false` only at the popOut() call site — it moves the
+    /// same content to the pop-out, nothing hides from the user (brief
+    /// step 3). Every other caller is a genuine dismiss and keeps the
+    /// default: the global click-outside monitor, the local one, and
+    /// togglePopover()'s close branch. toggleWall() counts as a dismiss
+    /// too — nothing restores the anchored panel after the wall.
     private func closeAnchored(feedLock: Bool = true) {
         if feedLock { model.lock.surfaceHidden() }
         anchored?.orderOut(nil)
@@ -653,7 +655,7 @@ final class StatusItemController {
     func toggleWall() {
         if wall.isVisible { wall.close(); return }
         let hadPinned = pinned?.isVisible == true
-        if anchored?.isVisible == true { closeAnchored(feedLock: false) }
+        if anchored?.isVisible == true { closeAnchored() }
         if hadPinned { pinned?.orderOut(nil) }
         wall.restore = { [weak self] in
             if hadPinned { self?.showPinnedWindow() }
