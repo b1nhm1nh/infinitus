@@ -44,6 +44,8 @@ public final class TeamClient {
         case founder
         /// A team keeps at least one leader.
         case lastLeader
+        /// `policy.requests == "off"`: no new codes, no request list.
+        case requestsOff
     }
 
     public static let identitySecretName = "identity"
@@ -54,7 +56,7 @@ public final class TeamClient {
     public private(set) var roster: Signed<TeamRoster>?
     private let paths: TeamPaths
     private let secrets: TeamSecrets
-    private let store: TeamGit
+    let store: TeamGit
 
     public var isLeader: Bool { roster?.doc.isLeader(identity.kid) ?? false }
     public var isMember: Bool { roster?.doc.keys(for: identity.kid) != nil }
@@ -78,8 +80,9 @@ public final class TeamClient {
         self.paths = paths; self.secrets = secrets; self.store = store
     }
 
-    public static func create(name: String, remote: String, token: String?, paths: TeamPaths,
-                              secrets: TeamSecrets, now: Int = Int(Date().timeIntervalSince1970)) throws -> TeamClient {
+    public static func create(name: String, remote: String, token: String?, leaderName: String = "Leader",
+                              paths: TeamPaths, secrets: TeamSecrets,
+                              now: Int = Int(Date().timeIntervalSince1970)) throws -> TeamClient {
         let me = try identity(paths: paths, secrets: secrets)
         let id = UUID().uuidString.lowercased()
         let config = TeamConfig(id: id, name: name, remote: remote, kid: me.kid, joinedAt: now, leaderKid: me.kid)
@@ -87,7 +90,7 @@ public final class TeamClient {
         let store = TeamGit(dir: paths.storeDir(id), remote: remote, token: token, author: me.kid)
         try store.open()
         let roster = TeamRoster(id: id, name: name, createdAt: now,
-                                leaders: [TeamRoster.Member(keys: me.keys, name: "Leader", since: now, founder: true)],
+                                leaders: [TeamRoster.Member(keys: me.keys, name: leaderName, since: now, founder: true)],
                                 rev: 1)
         let signed = try Signed.make(roster, by: me)
         try store.put("roster/team.json", try CanonicalJSON.encode(signed))
@@ -174,16 +177,18 @@ public final class TeamClient {
         try persist()
     }
 
-    public func code(expiresIn seconds: Int = 7 * 86_400,
+    public func code(expiresIn seconds: Int = 7 * 86_400, nonce: String? = nil,
                      now: Int = Int(Date().timeIntervalSince1970)) throws -> String {
         guard isLeader else { throw ClientError.notALeader }
+        guard roster?.doc.policy.requests != "off" else { throw ClientError.requestsOff }
         let token = secrets.read(Self.tokenName(config.id)).map { String(decoding: $0, as: UTF8.self) }
         return try TeamCode(team: config.id, name: config.name, remote: config.remote, token: token,
-                            leader: identity.keys, expires: now + seconds).encoded(by: identity)
+                            leader: identity.keys, expires: now + seconds, nonce: nonce).encoded(by: identity)
     }
 
     public func requests() throws -> [Signed<TeamRequest>] {
         guard isLeader else { throw ClientError.notALeader }
+        if roster?.doc.policy.requests == "off" { return [] }
         return try store.list("requests/").compactMap { entry in
             guard let data = try store.get(entry.path),
                   let signed = try? CanonicalJSON.decode(Signed<TeamRequest>.self, from: data),
@@ -334,13 +339,32 @@ public final class TeamClient {
         try store.delete("m/\(identity.kid)/\(path)")
     }
 
+    /// Spec §6.5 leave: every file under `m/<my kid>/` is deleted (the
+    /// history stays, ciphertext) and `requests/<kid>.leave` tells the
+    /// leaders — one push. The caller then forgets the team locally
+    /// (team dir + token secret); the identity stays.
+    public func leave(now: Int = Int(Date().timeIntervalSince1970)) throws {
+        try store.sync()  // list() reads local refs only; a stale tree leaves another device's files behind
+        var writes: [String: Data?] = [:]
+        for entry in try store.list("m/") where entry.path.hasPrefix("m/\(identity.kid)/") {
+            // A plain `writes[entry.path] = nil` subscript-assign on a
+            // `[String: Data?]` collapses the double optional and REMOVES
+            // the key instead of staging a delete — `updateValue` is the
+            // one that keeps the key with a nil payload.
+            writes.updateValue(nil, forKey: entry.path)
+        }
+        let note = TeamRequest(keys: identity.keys, name: "", devices: [], platform: "leave", at: now)
+        writes["requests/\(identity.kid).leave"] = try CanonicalJSON.encode(try Signed.make(note, by: identity))
+        try store.putAll(writes)
+    }
+
     /// Envelopes under `m/` that name me as a reader, sit at a path whose
     /// shape matches their kind and sender, and come from someone who
     /// was in the roster when they were sealed. Reads headers only.
     public func readableHeaders() throws -> [(entry: StoreEntry, header: Envelope.Header)] {
         guard let roster = roster?.doc else { return [] }
         var out: [(entry: StoreEntry, header: Envelope.Header)] = []
-        for entry in try store.list("m/") {
+        for entry in try store.list("m/") + (try store.list("roster/aggregates/")) {
             guard let data = try store.get(entry.path), let header = try? Envelope.header(of: data),
                   (try? TeamKinds.check(header, at: entry.path)) != nil,
                   roster.keys(for: header.from, at: header.at) != nil,
@@ -358,6 +382,35 @@ public final class TeamClient {
         let header = try Envelope.header(of: data)
         try TeamKinds.check(header, at: path)
         return try Envelope.open(data, as: identity, senderKey: { roster.keys(for: $0, at: header.at) })
+    }
+
+    // MARK: aggregates (spec §8.3, plan 9)
+
+    /// Leaders publish `roster/aggregates/<period>.json` to the whole team,
+    /// one commit. Readers keep only what a leader sealed (TeamReader).
+    @discardableResult
+    public func publishAggregates(_ docs: [String: Data], now: Int = Int(Date().timeIntervalSince1970)) throws -> [String] {
+        guard let roster = roster?.doc, isLeader else { throw ClientError.notALeader }
+        var writes: [String: Data?] = [:]
+        var paths: [String] = []
+        for (period, plaintext) in docs.sorted(by: { $0.key < $1.key }) {
+            let path = "roster/aggregates/\(period).json"
+            try TeamKinds.check(kind: TeamKinds.aggregates, from: identity.kid, at: path)
+            writes[path] = try Envelope.seal(plaintext, kind: TeamKinds.aggregates, from: identity,
+                                             to: roster.recipients(for: .team), at: now)
+            paths.append(path)
+        }
+        if !writes.isEmpty { try store.putAll(writes) }
+        return paths
+    }
+
+    /// Spec §5: one roster edit, leaders only (race loop as `approve`).
+    public func setPolicy(_ policy: TeamRoster.Policy) throws {
+        try editRoster { current in
+            var next = current
+            next.policy = policy
+            return next
+        }
     }
 
     // MARK: status

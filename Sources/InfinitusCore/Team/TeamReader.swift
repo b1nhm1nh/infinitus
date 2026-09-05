@@ -23,6 +23,8 @@ public struct TeamReader {
     }
 
     public private(set) var members: [String: Member] = [:]
+    /// Leaders' `roster/aggregates/<period>.json`, keyed by period.
+    public private(set) var aggregates: [String: TeamDocs.Aggregates] = [:]
 
     public init() {}
 
@@ -40,6 +42,14 @@ public struct TeamReader {
             return try? CanonicalJSON.decode(type, from: data)
         }
         for (entry, header) in headers {
+            if header.kind == TeamKinds.aggregates {
+                // Leaders' documents only: a member can write under
+                // roster/ with the store credential, so the sender is checked.
+                guard roster.isLeader(header.from),
+                      let doc = decode(TeamDocs.Aggregates.self, entry.path), doc.schema == 1 else { continue }
+                reader.aggregates[doc.period] = doc
+                continue
+            }
             var member = reader.members[header.from] ?? Member(kid: header.from, name: header.from, role: "removed")
             member.kinds.insert(header.kind)
             member.lastPublished = max(member.lastPublished ?? 0, header.at)

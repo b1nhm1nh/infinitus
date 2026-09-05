@@ -32,6 +32,18 @@ publishes the matching section as the GitHub release body.
 - The phone raises its own alarms, no push service needed: an exhausted account's limit lifting in 10 minutes, and the account the fleet just swapped to; off in Settings › Notifications.
 - Settings shows the Mac's and the phone's versions, can trigger the Mac's update, and says when a newer phone build is out.
 
+### Team (preview)
+- `infinitusctl team create --as <name>` names you as the team's founder instead of "Leader".
+- Settings › Team: create or join a team, approve requests, see every member's latest publish, today's effort and blockers, and open their Stats and transcripts — the Mac fetches and publishes every 5 minutes.
+- Settings › Team: pick which audiences see each kind of your own data, and which project folders publish at all.
+- Invite links (QR, copy, share sheet, `infinitus://join/…`) approve the one request they were minted for by themselves once Settings › Team's auto-approve switch is on (off by default); team codes need a tap.
+- The Mac deletes its `now.json` from the team store on quit, so teammates stop seeing it "on".
+- `infinitusctl team-status|team-create|team-code|team-fetch|team-publish|team-approve|team-decline` drive the app's team over the control socket, and the phone's snapshot carries the same view.
+- Leaders see the team: per-member comparison for a period, leaderboards by spend, tokens, commits, PRs, lines, messages, tool calls, waiting time and sessions, who works in which repo, a blockers board, cost by member / model / repo, the hours heatmap and who's on now (`infinitusctl team members --period|insights`).
+- Leaders publish the team picture to everyone (`team aggregates publish`), with per-member rows only when the roster's members-see-each-other policy is on, and `team policy` sets that and whether new requests are accepted.
+- `infinitusctl team identity export|import` seals your identity with a passphrase (PBKDF2 600k + ChaChaPoly, the same file on every platform), `identity recovery --show` prints the 8-group recovery key, and either restores the same kid on a new machine.
+- The site serves the passkey relying-party file for infinitus.run, and a release built with a provisioning profile carries the associated-domains entitlement the passkey identity needs.
+
 ## 0.4.3
 
 ### Stats

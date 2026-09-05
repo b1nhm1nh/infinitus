@@ -45,6 +45,11 @@ export INFINITUS_DEMO_STATE="$SOCKDIR/demo-state.json"   # not $TMPDIR: the bund
 # The team gate (spec §2.2) needs the biometric lock on; CI cannot answer
 # a Touch ID prompt, so the gate is opened for this run (TeamGate.swift).
 export INFINITUS_LOCK_GATE=open
+# Spec §11 e2e: the app is a team leader on a bare repo in $SOCKDIR with
+# its own team dir (file secrets, no keychain), and publishes a fixture
+# projects dir instead of this Mac's real transcripts.
+export INFINITUS_TEAM_DIR="$SOCKDIR/team-app"
+export INFINITUS_TEAM_PROJECTS="$SOCKDIR/fixture/projects"
 LOG="$(mktemp -t infinitus-e2e)"
 DOMAIN=Infinitus   # the unbundled debug binary's defaults domain
 
@@ -307,6 +312,35 @@ done
 "$CTL" aws-logins | expect "'bound to account 1 but you signed in to 2' in next(l['state']['message'] for l in d['logins'] if l['profile']=='e2e-rebind')" || fail "rebind message"
 pgrep -f "$SOCKDIR/aws" >/dev/null && fail "stub aws CLI still running"
 echo "aws: rebind refused"
+
+# --- team (spec §11) -------------------------------------------------------
+# The app creates a team on a bare repo; a second identity — the CLI
+# in-process, its own INFINITUS_TEAM_DIR — joins with a team code and
+# publishes a fixture transcript; the app approves and reads it back.
+"$CTL" team-status | expect "d is None" || fail "team-status must be null before a team exists"
+git init -q --bare "$SOCKDIR/team.git"
+"$CTL" team-create Papaya --remote "file://$SOCKDIR/team.git" --as Ann \
+    | expect "d['role']=='leader' and d['members'][0]['name']=='Ann' and d['members'][0]['founder']" || fail "team-create"
+CODE="$("$CTL" team-code --days 1 | json "d['code']")"
+case "$CODE" in infinitus://join/*) ;; *) fail "team-code shape" ;; esac
+NOW="$(date -u +%Y-%m-%dT%H:%M:%S.000Z)"
+mkdir -p "$SOCKDIR/fixture/projects/-tmp-e2e"
+printf '%s\n%s\n' \
+    "{\"type\":\"user\",\"cwd\":\"/tmp/e2e\",\"timestamp\":\"$NOW\",\"origin\":{\"kind\":\"human\"},\"message\":{\"role\":\"user\",\"content\":\"hello team\"}}" \
+    "{\"type\":\"assistant\",\"timestamp\":\"$NOW\",\"message\":{\"id\":\"e2e-1\",\"model\":\"claude-opus-5\",\"usage\":{\"input_tokens\":10,\"output_tokens\":1},\"content\":[{\"type\":\"text\",\"text\":\"hi\"}]}}" \
+    > "$SOCKDIR/fixture/projects/-tmp-e2e/e2e1.jsonl"
+CLI_TEAM="$SOCKDIR/team-cli"
+printf '%s' "$CODE" | INFINITUS_TEAM_DIR="$CLI_TEAM" "$CTL" team request - --name Bo >/dev/null || fail "cli team request"
+KID="$(INFINITUS_TEAM_DIR="$CLI_TEAM" "$CTL" team status | json "d['kid']")"
+"$CTL" team-fetch | expect "len(d['requests'])==1 and d['requests'][0]['name']=='Bo'" || fail "the request did not reach the leader"
+"$CTL" team-approve "$KID" | expect "any(m['name']=='Bo' and m['role']=='member' for m in d['members']) and not d['requests']" || fail "team-approve"
+INFINITUS_TEAM_DIR="$CLI_TEAM" "$CTL" team fetch >/dev/null || fail "cli team fetch"
+INFINITUS_TEAM_DIR="$CLI_TEAM" "$CTL" team publish --projects "$SOCKDIR/fixture/projects" \
+    | expect "d['transcriptChunks']>=1" || fail "cli team publish"
+"$CTL" team-fetch | expect "any(m['name']=='Bo' and 'stats' in m['kinds'] and 'transcripts' in m['kinds'] for m in d['members'])" || fail "the member's files are not readable"
+"$CTL" team-publish | expect "'published' in d" || fail "team-publish"
+"$CTL" team-status | expect "d.get('lastPublish') is not None and d.get('lastError') is None" || fail "loop state after publish"
+echo "team: ok (leader Ann, member Bo $KID)"
 
 # --- performance --------------------------------------------------------
 # Sampled AFTER the churn above so a timer left behind by a closed wall

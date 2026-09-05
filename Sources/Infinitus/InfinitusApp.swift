@@ -17,6 +17,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// outside the scene graph (the playground command channel) reaches
     /// the controller through here.
     static weak var shared: AppDelegate?
+    /// Set in InfinitusApp.init, alongside makeStatusItem: StatusItemController
+    /// keeps its AppModel private, so the URL-open handler needs its own way in.
+    weak var model: AppModel?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         AppDelegate.shared = self
@@ -51,6 +54,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                                        hasVisibleWindows: Bool) -> Bool {
         statusHolder?.controller.showPinnedWindow()
         return false
+    }
+
+    /// `infinitus://join/…` from a QR, a message or the phone (spec §6.2).
+    func application(_ application: NSApplication, open urls: [URL]) {
+        guard let model else { return }
+        for url in urls {
+            if model.team.open(url: url) { break }
+        }
     }
 }
 
@@ -110,6 +121,7 @@ struct InfinitusApp: App {
         // Warm the multi-second transcript scan at launch so the Usage tab
         // and the gamified gold column open onto data, not a spinner.
         usage.loadIfNeeded()
+        appDelegate.model = model
         appDelegate.makeStatusItem = { [weak appDelegate] in
             appDelegate?.statusHolder = StatusItemHolder(
                 model: model, usage: usage,
@@ -232,6 +244,9 @@ struct InfinitusApp: App {
                     keywords: ["biometric", "touch id", "face id", "password",
                                "unlock", "privacy", "team"],
                     view: AnyView(LockPane(lock: model.lock))),
+        SettingsTab(title: TeamModel.paneTitle, symbol: "person.3", tint: .teal,
+                    keywords: ["team", "invite", "code", "join", "members", "leader", "share", "publish", "exclude"],
+                    view: AnyView(TeamPane(team: model.team, lock: model.lock))),
     ]
     + (model.debugMenu
        ? [SettingsTab(title: "Animations", symbol: "sparkles", tint: .pink,

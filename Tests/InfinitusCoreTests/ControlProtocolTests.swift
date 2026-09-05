@@ -21,6 +21,16 @@ final class ControlProtocolTests: XCTestCase {
         XCTAssertNil(back.error)
     }
 
+    func testNullResultIsAValueNotAnAbsence() throws {
+        let v = ControlProtocol.schemaVersion
+        let null = try ControlCodec.decode(ControlReply.self, from: Data("{\"schemaVersion\":\(v),\"ok\":true,\"result\":null}\n".utf8))
+        XCTAssertEqual(null.result, .null, "team-status with no team answers null; the CLI prints it")
+        let absent = try ControlCodec.decode(ControlReply.self, from: Data("{\"schemaVersion\":\(v),\"ok\":true}\n".utf8))
+        XCTAssertNil(absent.result)
+        let back = try ControlCodec.decode(ControlReply.self, from: try ControlCodec.encode(ControlReply(ok: true, result: .null)))
+        XCTAssertEqual(back.result, .null)
+    }
+
     func testJSONValueOfReencodesCodableWithDates() throws {
         struct S: Encodable { let n: Int; let at: Date; let list: [String]; let none: String? }
         let v = try JSONValue.of(S(n: 3, at: Date(timeIntervalSince1970: 0), list: ["a"], none: nil))
@@ -42,6 +52,13 @@ final class ControlProtocolTests: XCTestCase {
         XCTAssertEqual(ControlCommand.named("prefer")?.requires, "prefer")
         XCTAssertEqual(ControlCommand.named("lock-status")?.effect, .read)
         XCTAssertEqual(ControlCommand.named("lock-status")?.args, [])
+        XCTAssertEqual(ControlCommand.named("team-status")?.effect, .read)
+        XCTAssertEqual(ControlCommand.named("team-create")?.args, ["<name>"])
+        XCTAssertEqual(ControlCommand.named("team-create")?.effect, .write)
+        XCTAssertEqual(ControlCommand.named("team-approve")?.args, ["<kid>"])
+        XCTAssertEqual(ControlCommand.named("team-publish")?.effect, .write)
+        XCTAssertEqual(ControlCommand.named("team-code")?.effect, .write, "fetches the store and (--invite) writes the nonce book")
+        XCTAssertNotNil(ControlCommand.named("team-code")); XCTAssertNotNil(ControlCommand.named("team-fetch")); XCTAssertNotNil(ControlCommand.named("team-decline"))
         XCTAssertNil(ControlCommand.named("nope"))
     }
 

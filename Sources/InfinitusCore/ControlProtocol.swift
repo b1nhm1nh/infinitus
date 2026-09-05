@@ -72,7 +72,14 @@ public struct ControlReply: Codable, Sendable {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         schemaVersion = try c.decode(Int.self, forKey: .schemaVersion)
         ok = try c.decode(Bool.self, forKey: .ok)
-        result = try c.decodeIfPresent(JSONValue.self, forKey: .result)
+        // A `null` result is a value (team-status with no team answers
+        // `null`), distinct from no result at all: decodeIfPresent folds
+        // both into nil and the CLI would print nothing.
+        if c.contains(.result) {
+            result = try c.decodeNil(forKey: .result) ? .null : try c.decode(JSONValue.self, forKey: .result)
+        } else {
+            result = nil
+        }
         error = try c.decodeIfPresent(String.self, forKey: .error)
         restarting = try c.decodeIfPresent(Bool.self, forKey: .restarting) ?? false
     }
@@ -206,6 +213,25 @@ public struct ControlCommand: Codable, Sendable, Equatable {
         ControlCommand(name: "lock-status", effect: .read,
                        summary: "Biometric lock (Settings › Lock): whether the setting is on, whether the pop-out and Settings are locked right now, and the re-lock choice. Off by default.",
                        replyShape: "{enabled, locked, relock: immediately|5 min|1 h|on sleep}"),
+        ControlCommand(name: "team-status", effect: .read,
+                       summary: "Settings › Team: the team this Mac is in — members with what they last published, today's effort and blockers, pending requests, the loop's last fetch/publish — or null when there is none.",
+                       replyShape: "{id, name, remote (masked), kid, role: leader|member|pending, rev, members: [{kid, name, role, isMe, founder, lastPublished, kinds, sessionsNow, blockers, crashes, todayUSD, todayMessages, todayCommits}], requests: [{kid, name, platform, devices, at}], lastFetch, lastPublish, lastError} | null"),
+        ControlCommand(name: "team-create", args: ["<name>"], options: ["--remote <url>", "--as <your name>"], effect: .write,
+                       summary: "Create a team on an empty git remote (no credential over the socket: use a file:// or ssh remote, or the pane). Needs the biometric lock on (INFINITUS_LOCK_GATE=open in CI).",
+                       replyShape: "team-status"),
+        ControlCommand(name: "team-code", options: ["--days <n>", "--invite"], effect: .write,
+                       summary: "Mint a team code (leaders): `infinitus://join/…`, valid --days (default 7); --invite adds a one-time nonce the app auto-approves when Settings › Team's switch is on (off by default). Carries the store credential when one is set.",
+                       replyShape: "{code}"),
+        ControlCommand(name: "team-fetch", effect: .write,
+                       summary: "Pull the store now (roster, members' files, requests) and rebuild the snapshot.",
+                       replyShape: "team-status"),
+        ControlCommand(name: "team-publish", effect: .write,
+                       summary: "Publish this Mac's data now (what the 5-minute loop does), then rebuild the snapshot.",
+                       replyShape: "{published: [path], transcriptChunks, skipped}"),
+        ControlCommand(name: "team-approve", args: ["<kid>"], effect: .write,
+                       summary: "Approve a join request (leaders).", replyShape: "team-status"),
+        ControlCommand(name: "team-decline", args: ["<kid>"], effect: .write,
+                       summary: "Decline a join request (leaders).", replyShape: "team-status"),
         ControlCommand(name: "show", args: ["popout|settings|wall"], effect: .write,
                        summary: "Open a window: the pinned pop-out, Settings, or the wall (toggle).",
                        replyShape: "{shown}"),
