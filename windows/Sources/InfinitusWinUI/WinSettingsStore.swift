@@ -33,6 +33,12 @@ public struct WinSettings: Codable, Equatable, Sendable {
     public var mirrorPort: UInt16 = 47824
     public var autoResume: Bool = false
 
+    // Machine & data panes
+    public var machineID: String = ""
+    public var statsPeriod: String = "today"
+    public var usageDays: Int = 7
+    public var utilizationDays: Int = 7
+
     // Shell
     public var lastPaneID: String = "display"
     public var windowWidth: Int32 = 0     // 0 = use the default
@@ -58,6 +64,10 @@ public struct WinSettings: Codable, Equatable, Sendable {
         case sortByHeadroom = "sort_headroom"
         case mirrorPort = "mirror_port"
         case autoResume = "auto_resume"
+        case machineID = "machine_id"
+        case statsPeriod = "stats_period"
+        case usageDays = "usage_days"
+        case utilizationDays = "utilization_days"
         case lastPaneID = "last_pane"
         case windowWidth = "window_width"
         case windowHeight = "window_height"
@@ -83,6 +93,10 @@ public struct WinSettings: Codable, Equatable, Sendable {
         sortByHeadroom = try c.decodeIfPresent(Bool.self, forKey: .sortByHeadroom) ?? d.sortByHeadroom
         mirrorPort = try c.decodeIfPresent(UInt16.self, forKey: .mirrorPort) ?? d.mirrorPort
         autoResume = try c.decodeIfPresent(Bool.self, forKey: .autoResume) ?? d.autoResume
+        machineID = try c.decodeIfPresent(String.self, forKey: .machineID) ?? d.machineID
+        statsPeriod = try c.decodeIfPresent(String.self, forKey: .statsPeriod) ?? d.statsPeriod
+        usageDays = try c.decodeIfPresent(Int.self, forKey: .usageDays) ?? d.usageDays
+        utilizationDays = try c.decodeIfPresent(Int.self, forKey: .utilizationDays) ?? d.utilizationDays
         lastPaneID = try c.decodeIfPresent(String.self, forKey: .lastPaneID) ?? d.lastPaneID
         windowWidth = try c.decodeIfPresent(Int32.self, forKey: .windowWidth) ?? d.windowWidth
         windowHeight = try c.decodeIfPresent(Int32.self, forKey: .windowHeight) ?? d.windowHeight
@@ -90,12 +104,14 @@ public struct WinSettings: Codable, Equatable, Sendable {
 }
 
 public enum WinSettingsStore {
-    public static var url: URL {
+    public static var infinitusHome: URL {
         let roaming = ProcessInfo.processInfo.environment["APPDATA"]
             ?? "\(NSHomeDirectory())\\AppData\\Roaming"
-        return URL(fileURLWithPath: roaming)
-            .appendingPathComponent("Infinitus")
-            .appendingPathComponent("settings.json")
+        return URL(fileURLWithPath: roaming).appendingPathComponent("Infinitus")
+    }
+
+    public static var url: URL {
+        infinitusHome.appendingPathComponent("settings.json")
     }
 
     private static let lock = NSLock()
