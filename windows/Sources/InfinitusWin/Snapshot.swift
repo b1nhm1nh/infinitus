@@ -77,11 +77,12 @@ enum Snapshot {
             ClaudeCodeRouting.anthropicBaseURL(configHome: claudeDir), to: nil)
         let fallbackEngineID = isRouted ? routedEngineID : engineID
 
-        // Multi-engine check: if routed through 9Router,
-        // use live 9Router fleets and account list (wait=true on cold access so snapshot contains real accounts).
-        let useNineRouter = isRouted
-        let nineRouterFleets = useNineRouter ? NineRouterFleet.fleets(now: now, wait: true) : nil
-        let nineRouterList = useNineRouter ? NineRouterFleet.list(now: now, wait: true) : nil
+        // Multi-engine check: if routed through 9Router, use live 9Router
+        // fleets (wait=true on cold access so the snapshot carries real
+        // accounts). The primary list is derived from the same fleets by
+        // Core's shared rule — `list` was the same data behind a second
+        // lock round-trip, minus the live-session counts.
+        let nineRouterFleets = isRouted ? NineRouterFleet.fleets(now: now, wait: true) : nil
 
         let activeFleets: [EngineFleet]
         let activeAccountList: AccountList?
@@ -100,8 +101,7 @@ enum Snapshot {
             // `listJSON` keeps a phone older than `fleets` working; it is
             // the PRIMARY fleet, picked by Core's shared rule so the Mac,
             // the tray and this daemon can't disagree about which one it is.
-            activeAccountList = nineRouterList
-                ?? EngineFleet.primaryList(nrFleets, liveSessions: live)
+            activeAccountList = EngineFleet.primaryList(nrFleets, liveSessions: live)
         } else if let cswap = cswapList, !cswap.accounts.isEmpty {
             let fleet = EngineFleet(engineID: CswapFleet.engineID, provider: Provider.claude,
                                     accounts: cswap.accounts, activeNumber: cswap.activeAccountNumber,

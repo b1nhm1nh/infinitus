@@ -9,6 +9,11 @@ import Foundation
 public enum NineRouterFleet {
     public static let cacheSeconds: TimeInterval = 30
     public static let timeout: TimeInterval = 20
+    /// How long the availability signals (settings.json routing, config
+    /// file, CLI token files, cswap binary) are trusted before re-reading.
+    /// The tray asks several times per tick; a 5 s answer is plenty fresh
+    /// for a fleet cached 30 s, and `invalidate()` drops it anyway.
+    static let availabilityTTL: TimeInterval = 5
 
     public enum SwitchOutcome: Sendable, Equatable {
         case switched(to: Int)
@@ -36,11 +41,25 @@ public enum NineRouterFleet {
     }
 
     private static let lock = NSLock()
+    /// Scoped locking for the Task bodies below — a bare `lock()` in an
+    /// async context is a Swift 6 error.
+    private static func locked<T>(_ body: () -> T) -> T {
+        lock.lock()
+        defer { lock.unlock() }
+        return body()
+    }
     private nonisolated(unsafe) static var cachedFleets: [EngineFleet]?
     private nonisolated(unsafe) static var cachedList: AccountList?
     private nonisolated(unsafe) static var cachedAt: Date?
     private nonisolated(unsafe) static var isRefreshing = false
+    /// ONE engine per (base URL, password), kept across refreshes: the
+    /// engine's usage cache (`usageTTL`, 5 min) and its ordinals live on
+    /// the instance, so a fresh engine per 30 s refresh re-fetched every
+    /// `/api/usage/{id}` each time and knew no connection ids for actions.
     private nonisolated(unsafe) static var activeEngine: NineRouterEngine?
+    private nonisolated(unsafe) static var activeConfig: (baseURL: URL, password: String)?
+    private nonisolated(unsafe) static var availability: (available: Bool, routed: Bool,
+                                                          cswapInstalled: Bool, at: Date)?
 
     /// Location of persisted 9Router configuration ($APPDATA\Infinitus\9router.json).
     public static var configURL: URL {
@@ -82,24 +101,42 @@ public enum NineRouterFleet {
         }
     }
 
-    /// True when 9Router is configured, routed, or locally authenticated.
-    /// Pinned off in tests when `INFINITUS_9ROUTER == ""` or `INFINITUS_CSWAP == ""`.
-    public static func isAvailable() -> Bool {
+    /// The three signals, re-read at most every `availabilityTTL`: each
+    /// read is a settings.json parse, a stat, two token files and a
+    /// SHA-256, and up to a dozen callers ask per tray tick.
+    private static func signals(now: Date = Date()) -> (available: Bool, routed: Bool, cswapInstalled: Bool) {
+        lock.lock()
+        if let memo = availability, now.timeIntervalSince(memo.at) < availabilityTTL {
+            lock.unlock()
+            return (memo.available, memo.routed, memo.cswapInstalled)
+        }
+        lock.unlock()
         let env = ProcessInfo.processInfo.environment
-        return Selection.isAvailable(
-            routed: ClaudeCodeRouting.isRouted(ClaudeCodeRouting.anthropicBaseURL(), to: nil),
+        let routed = ClaudeCodeRouting.isRouted(ClaudeCodeRouting.anthropicBaseURL(), to: nil)
+        let available = Selection.isAvailable(
+            routed: routed,
             configured: FileManager.default.fileExists(atPath: configURL.path),
             locallyAuthenticated: NineRouterLocalAuth.cliToken() != nil,
             pinnedOff: env["INFINITUS_9ROUTER"] == "" || env["INFINITUS_CSWAP"] == "")
+        let cswapInstalled = CswapLocator.locate() != nil
+        lock.lock()
+        availability = (available, routed, cswapInstalled, now)
+        lock.unlock()
+        return (available, routed, cswapInstalled)
+    }
+
+    /// True when 9Router is configured, routed, or locally authenticated.
+    /// Pinned off in tests when `INFINITUS_9ROUTER == ""` or `INFINITUS_CSWAP == ""`.
+    public static func isAvailable() -> Bool {
+        signals().available
     }
 
     /// Decides whether 9Router should be the primary fleet provider.
     /// Matches macOS policy: routed engine wins; otherwise cswap wins if installed and populated.
     public static func shouldUseNineRouter() -> Bool {
-        Selection.shouldUseNineRouter(
-            available: isAvailable(),
-            routed: ClaudeCodeRouting.isRouted(ClaudeCodeRouting.anthropicBaseURL(), to: nil),
-            cswapInstalled: CswapLocator.locate() != nil)
+        let s = signals()
+        return Selection.shouldUseNineRouter(available: s.available, routed: s.routed,
+                                             cswapInstalled: s.cswapInstalled)
     }
 
     /// Resolves target base URL and password.
@@ -115,6 +152,21 @@ public enum NineRouterFleet {
             return (origin, "")
         }
         return (NineRouterEngine.defaultBaseURL, "")
+    }
+
+    /// The shared engine for `config`, replaced only when the config
+    /// changed (a saved base URL or password).
+    private static func sharedEngine(for config: (baseURL: URL, password: String)) -> NineRouterEngine {
+        lock.lock()
+        defer { lock.unlock() }
+        if let engine = activeEngine, let current = activeConfig,
+           current.baseURL == config.baseURL, current.password == config.password {
+            return engine
+        }
+        let engine = NineRouterEngine(baseURL: config.baseURL, password: config.password)
+        activeEngine = engine
+        activeConfig = config
+        return engine
     }
 
     /// Returns the cached primary AccountList, triggering an asynchronous
@@ -175,44 +227,24 @@ public enum NineRouterFleet {
         lock.unlock()
 
         let work = {
-            let (baseURL, password) = loadConfig()
-            let engine = NineRouterEngine(baseURL: baseURL, password: password)
+            let engine = sharedEngine(for: loadConfig())
             let sem = DispatchSemaphore(value: 0)
+            // Written by the Task, read here after the wait: under the
+            // lock, because a fetch that outlives the timeout still
+            // finishes and writes.
             var fetchedFleets: [EngineFleet]?
 
             Task {
-                do {
-                    fetchedFleets = try await engine.snapshot()
-                } catch {
-                    // Failures keep prior cached fleets
-                }
+                let fleets = try? await engine.snapshot()   // failures keep prior cached fleets
+                locked { fetchedFleets = fleets }
                 sem.signal()
             }
             _ = sem.wait(timeout: .now() + timeout)
 
             lock.lock()
-            activeEngine = engine
             if let fetchedFleets {
                 cachedFleets = fetchedFleets
-                if let claudeFleet = fetchedFleets.first(where: { $0.provider == .claude }) {
-                    cachedList = AccountList(
-                        schemaVersion: 1,
-                        activeAccountNumber: claudeFleet.activeNumber,
-                        accounts: claudeFleet.accounts,
-                        nextCandidate: claudeFleet.nextCandidate,
-                        nextRecovery: claudeFleet.nextRecovery,
-                        liveSessions: claudeFleet.liveSessions
-                    )
-                } else if let first = fetchedFleets.first {
-                    cachedList = AccountList(
-                        schemaVersion: 1,
-                        activeAccountNumber: first.activeNumber,
-                        accounts: first.accounts,
-                        nextCandidate: first.nextCandidate,
-                        nextRecovery: first.nextRecovery,
-                        liveSessions: first.liveSessions
-                    )
-                }
+                cachedList = EngineFleet.primaryList(fetchedFleets)
             }
             cachedAt = Date()
             isRefreshing = false
@@ -232,11 +264,13 @@ public enum NineRouterFleet {
     /// callers invalidate to force a re-read, not to erase what the user
     /// is looking at. The next `list`/`fleets` see the nil stamp, refetch,
     /// and swap the data in when it lands; the previous rows stay on
-    /// screen meanwhile instead of collapsing to "no data".
+    /// screen meanwhile instead of collapsing to "no data". The
+    /// availability memo goes too, so a just-saved config counts now.
     public static func invalidate() {
         lock.lock()
         defer { lock.unlock() }
         cachedAt = nil
+        availability = nil
     }
 
     /// Switches the active connection in 9Router. `provider` addresses
@@ -246,9 +280,7 @@ public enum NineRouterFleet {
     /// every pre-multi-fleet caller meant.
     public static func switchTo(_ number: Int?, provider: Provider = .claude) -> SwitchOutcome {
         guard isAvailable() else { return .noEngine }
-        let (baseURL, password) = loadConfig()
         lock.lock()
-        let engine = activeEngine ?? NineRouterEngine(baseURL: baseURL, password: password)
         let currentList = cachedList
         let fleet = cachedFleets?.first { $0.provider == provider }
         lock.unlock()
@@ -269,20 +301,56 @@ public enum NineRouterFleet {
             return .failed(detail: "no candidate account to switch to")
         }
 
-        let sem = DispatchSemaphore(value: 0)
-        var outcome: SwitchOutcome = .failed(detail: "switch timed out")
+        if let failure = perform({ try await $0.switchTo(fleet: provider, number: targetNumber) }) {
+            return .failed(detail: failure)
+        }
+        return .switched(to: targetNumber)
+    }
 
+    /// Holds a connection out of 9Router's rotation (`isActive:false`)
+    /// or releases it. nil on success, else the engine's refusal.
+    public static func setHold(_ number: Int, provider: Provider, held: Bool) -> String? {
+        guard isAvailable() else { return SwitchOutcome.noEngine.message }
+        return perform { try await $0.setHold(fleet: provider, number: number, held: held) }
+    }
+
+    /// Deletes a connection from 9Router. nil on success, else the
+    /// engine's refusal.
+    public static func remove(_ number: Int, provider: Provider) -> String? {
+        guard isAvailable() else { return SwitchOutcome.noEngine.message }
+        return perform { try await $0.remove(fleet: provider, number: number) }
+    }
+
+    /// One engine action on the SHARED engine — the one whose last
+    /// snapshot minted the ordinals the number refers to. A fresh engine
+    /// knows no connection ids and refuses every number, which is what
+    /// the Accounts pane's hold/remove used to do. With no snapshot yet
+    /// (first action after launch) one is taken first, synchronously.
+    /// nil on success, else the failure in the engine's words; the cache
+    /// is invalidated and refreshed either way.
+    private static func perform(_ action: @escaping @Sendable (NineRouterEngine) async throws -> Void) -> String? {
+        lock.lock()
+        let primed = activeEngine != nil
+        lock.unlock()
+        if !primed { refresh(force: true, wait: true) }
+        let engine = sharedEngine(for: loadConfig())
+
+        let sem = DispatchSemaphore(value: 0)
+        var failure: String? = "9Router did not answer in time"
         Task {
+            var result: String?
             do {
-                try await engine.switchTo(fleet: provider, number: targetNumber)
-                outcome = .switched(to: targetNumber)
+                try await action(engine)
             } catch {
-                let msg = (error as? EngineError)?.errorDescription ?? error.localizedDescription
-                outcome = .failed(detail: msg)
+                result = (error as? EngineError)?.errorDescription ?? error.localizedDescription
             }
+            locked { failure = result }
             sem.signal()
         }
         _ = sem.wait(timeout: .now() + timeout)
+        lock.lock()
+        let outcome = failure
+        lock.unlock()
         invalidate()
         refresh(force: true)
         return outcome

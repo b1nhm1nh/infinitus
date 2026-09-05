@@ -37,7 +37,12 @@ public actor NineRouterEngine: AccountEngine {
     private var usageBackoff: [String: Date] = [:]
     private var sharedUsage: [String: SharedUsage] = [:]
     private var expiredIDs: Set<String> = []
-    private var loggedIn = false
+    /// 9Router's loopback CLI token, read once per engine (two small
+    /// files under its data dir) instead of on every request — a
+    /// snapshot is 2 + N requests. Re-read after a 401 in case the
+    /// secret rotated underneath us.
+    private var cliToken: String?
+    private var cliTokenLoaded = false
     /// Per-provider quota rows the user hid in 9Router's own dashboard
     /// (`GET /api/settings` → `quotaVisibility.<provider>.hidden`,
     /// raw model slugs). Refetched on the usage TTL — hiding a row
@@ -67,7 +72,11 @@ public actor NineRouterEngine: AccountEngine {
         var req = URLRequest(url: baseURL.appendingPathComponent("api/" + path))
         req.httpMethod = method
         req.timeoutInterval = 20   // usage relays an upstream round-trip
-        if let cliToken = NineRouterLocalAuth.cliToken() {
+        if !cliTokenLoaded {
+            cliToken = NineRouterLocalAuth.cliToken()
+            cliTokenLoaded = true
+        }
+        if let cliToken {
             req.setValue(cliToken, forHTTPHeaderField: "x-9r-cli-token")
         }
         if let json {
@@ -83,6 +92,7 @@ public actor NineRouterEngine: AccountEngine {
         let status = (resp as? HTTPURLResponse)?.statusCode ?? 0
         if status == 401 {
             guard retryAuth else { throw EngineError.unauthorized }
+            cliTokenLoaded = false
             try await login()
             return try await request(method, path, json: json, retryAuth: false)
         }
@@ -93,10 +103,10 @@ public actor NineRouterEngine: AccountEngine {
     }
 
     /// `POST /api/auth/login` — the cookie lands in this session's jar.
+    /// A refused password surfaces as the request's own error.
     private func login() async throws {
         guard !password.isEmpty else { throw EngineError.unauthorized }
-        let (status, _) = try await request("POST", "auth/login", json: ["password": password], retryAuth: false)
-        loggedIn = (200..<300).contains(status)
+        _ = try await request("POST", "auth/login", json: ["password": password], retryAuth: false)
     }
 
     /// Test hook: one dashboard GET, raw bytes.

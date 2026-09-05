@@ -186,9 +186,12 @@ enum TrayFleet {
     static func refresh(force: Bool = false, now: Date = Date()) {
         guard hasEngine() else { return }
 
-        // If 9Router should be used, refresh 9Router
+        // 9Router primary: its cache is the fleet. Shelling `cswap list`
+        // as well every 30 s fed nothing the menu or the panel read
+        // (`cachedFleets`/`cached` answer from 9Router first).
         if NineRouterFleet.shouldUseNineRouter() {
             NineRouterFleet.refresh(force: force, now: now)
+            return
         }
 
         lock.lock()

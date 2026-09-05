@@ -95,27 +95,29 @@ enum ControlServer {
     private static func runServerLoop(pipePath: String, claudeDir: URL, snapshot: SnapshotCache) {
         let wide = Array(pipePath.utf16) + [0]
 
+        // The same-user DACL is the same for every instance: build it once
+        // for the loop's lifetime rather than a token query + SDDL parse
+        // per connection.
+        var sa = SECURITY_ATTRIBUTES()
+        sa.nLength = DWORD(MemoryLayout<SECURITY_ATTRIBUTES>.size)
+        sa.bInheritHandle = false
+        var descriptor: PSECURITY_DESCRIPTOR? = nil
+        if let sid = WinPairingStore.currentUserSid() {
+            let sddl = Array("D:P(A;;FA;;;SY)(A;;FA;;;BA)(A;;FA;;;\(sid))".utf16) + [0]
+            if ConvertStringSecurityDescriptorToSecurityDescriptorW(
+                sddl, DWORD(SDDL_REVISION_1), &descriptor, nil), let desc = descriptor {
+                sa.lpSecurityDescriptor = desc
+            }
+        }
+        defer {
+            if let descriptor { LocalFree(HLOCAL(descriptor)) }
+        }
+
         while true {
             lock.lock()
             let keepGoing = isRunning
             lock.unlock()
             guard keepGoing else { break }
-
-            var sa = SECURITY_ATTRIBUTES()
-            sa.nLength = DWORD(MemoryLayout<SECURITY_ATTRIBUTES>.size)
-            sa.bInheritHandle = false
-            var descriptor: PSECURITY_DESCRIPTOR? = nil
-
-            if let sid = WinPairingStore.currentUserSid() {
-                let sddl = Array("D:P(A;;FA;;;SY)(A;;FA;;;BA)(A;;FA;;;\(sid))".utf16) + [0]
-                if ConvertStringSecurityDescriptorToSecurityDescriptorW(
-                    sddl, DWORD(SDDL_REVISION_1), &descriptor, nil), let desc = descriptor {
-                    sa.lpSecurityDescriptor = desc
-                }
-            }
-            defer {
-                if let descriptor { LocalFree(HLOCAL(descriptor)) }
-            }
 
             let handle = withUnsafeMutablePointer(to: &sa) { pSa -> HANDLE in
                 CreateNamedPipeW(

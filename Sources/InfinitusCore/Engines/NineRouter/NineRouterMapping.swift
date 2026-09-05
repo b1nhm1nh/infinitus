@@ -281,25 +281,28 @@ public enum NineRouterUsage {
         }
     }
 
+    /// The version token of a model slug ("3.8" in "gemini-3.8-flash").
+    /// Compiled once: the promotion sort runs `geminiRank` O(n log n)
+    /// times per usage parse, per connection, per poll.
+    private static let geminiVersion = try! NSRegularExpression(
+        pattern: #"(?:^|[-_/])v?(\d{1,2})(?:\.(\d+))?(?:[-_/]|$)"#)
+
     static func geminiRank(_ slug: String) -> GeminiRank {
         let lower = slug.lowercased()
         var major = 0
         var minor = 0
-        let pattern = #"(?:^|[-_/])v?(\d{1,2})(?:\.(\d+))?(?:[-_/]|$)"#
-        if let regex = try? NSRegularExpression(pattern: pattern) {
-            let ns = lower as NSString
-            let matches = regex.matches(in: lower, range: NSRange(location: 0, length: ns.length))
-            for m in matches {
-                let matchedStr = ns.substring(with: m.range)
-                if matchedStr.contains("b") || matchedStr.contains("k") || matchedStr.contains("m") { continue }
-                let majStr = ns.substring(with: m.range(at: 1))
-                let minStr = m.range(at: 2).location != NSNotFound ? ns.substring(with: m.range(at: 2)) : "0"
-                if let maj = Int(majStr), let min = Int(minStr) {
-                    if maj < 50 {
-                        major = maj
-                        minor = min
-                        break
-                    }
+        let ns = lower as NSString
+        let matches = geminiVersion.matches(in: lower, range: NSRange(location: 0, length: ns.length))
+        for m in matches {
+            let matchedStr = ns.substring(with: m.range)
+            if matchedStr.contains("b") || matchedStr.contains("k") || matchedStr.contains("m") { continue }
+            let majStr = ns.substring(with: m.range(at: 1))
+            let minStr = m.range(at: 2).location != NSNotFound ? ns.substring(with: m.range(at: 2)) : "0"
+            if let maj = Int(majStr), let min = Int(minStr) {
+                if maj < 50 {
+                    major = maj
+                    minor = min
+                    break
                 }
             }
         }

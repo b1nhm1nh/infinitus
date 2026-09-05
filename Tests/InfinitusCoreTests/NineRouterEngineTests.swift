@@ -171,6 +171,26 @@ final class NineRouterEngineTests: XCTestCase {
         XCTAssertTrue(ProxyStubProtocol.seen.allSatisfy { !$0.path.hasPrefix("/api/usage/") })
     }
 
+    /// 9Router 0.6.x sends `lastError` as a plain string on some rows
+    /// and as `{status, message}` on others (2026-09-04). Both decode;
+    /// only the object carries a status, so only it can mean relogin.
+    func testLastErrorDecodesAsStringOrObject() throws {
+        let data = Data("""
+        {"connections":[
+          {"id":"a","provider":"claude","lastError":"[403]: model requires a subscription"},
+          {"id":"b","provider":"claude","lastError":{"status":401,"message":"expired"}},
+          {"id":"c","provider":"claude","lastError":null}
+        ]}
+        """.utf8)
+        let list = try JSONDecoder().decode(NineRouterConnectionList.self, from: data).connections
+        XCTAssertEqual(list[0].lastError?.message, "[403]: model requires a subscription")
+        XCTAssertNil(list[0].lastError?.status)
+        XCTAssertEqual(NineRouterMapping.usageStatus(for: list[0], now: Date()), "ok")
+        XCTAssertEqual(list[1].lastError?.status, 401)
+        XCTAssertEqual(NineRouterMapping.usageStatus(for: list[1], now: Date()), "relogin_required")
+        XCTAssertNil(list[2].lastError)
+    }
+
     func testUsageParseShapes() {
         if case .ok(let u, let plan) = NineRouterUsage.parse(Data(#"{"plan":"Claude Code","quotas":{}}"#.utf8)) {
             XCTAssertNil(u)
