@@ -307,6 +307,12 @@ public enum Stats {
             ignites = try c.decodeIfPresent(Int.self, forKey: .ignites) ?? d.ignites
             resumes = try c.decodeIfPresent(Int.self, forKey: .resumes) ?? d.resumes
             minutesLostToLimits = try c.decodeIfPresent(Double.self, forKey: .minutesLostToLimits) ?? d.minutesLostToLimits
+            // Added with the tokens/min records (#89) and missed here at
+            // first: every cache load then dropped the minute buckets, so
+            // the "peak" was only the last pass's fresh bytes (2026-09-05).
+            minuteTokens = try c.decodeIfPresent([Int: Int].self, forKey: .minuteTokens) ?? d.minuteTokens
+            peakTokensPerMinute = try c.decodeIfPresent(Int.self, forKey: .peakTokensPerMinute) ?? d.peakTokensPerMinute
+            peakMinute = try c.decodeIfPresent(Int.self, forKey: .peakMinute) ?? d.peakMinute
         }
 
         // Derived — nil when the denominator is zero (tiles show "—").

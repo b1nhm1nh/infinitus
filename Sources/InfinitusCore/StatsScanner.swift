@@ -342,10 +342,13 @@ public enum StatsScanner {
     }
 
     struct Cache: Codable {
-        /// 7 (2026-09-05): per-minute output tokens for the tokens/min
-        /// record book (#89); 6 was `byEngine`/`byEffort` and the Codex
-        /// source; 5 was Stats v2's activities/models.
-        var version = 7
+        /// 8 (2026-09-05): the Day decoder finally keeps the minute
+        /// buckets and workflow sub-agent transcripts are walked, so
+        /// every file is re-read once; 7 added per-minute output tokens
+        /// for the tokens/min record book (#89); 6 was `byEngine`/
+        /// `byEffort` and the Codex source; 5 was Stats v2's
+        /// activities/models.
+        var version = 8
         var files: [String: FileEntry] = [:]
     }
 
@@ -411,7 +414,8 @@ public enum StatsScanner {
         let fm = FileManager.default
 
         // `subagent`: true for `<project>/<session-id>/subagents/*.jsonl`
-        // (one fixed depth below a session dir, not a recursive walk).
+        // and `…/subagents/workflows/<run>/*.jsonl` (fixed depths below a
+        // session dir, not a recursive walk).
         // `sessionID`: the file's own transcript id normally, or the
         // PARENT session dir's name for a subagent file.
         struct Candidate {
@@ -440,6 +444,18 @@ public enum StatsScanner {
                     for sub in (try? fm.contentsOfDirectory(at: subagentsDir, includingPropertiesForKeys: [.fileSizeKey, .contentModificationDateKey])) ?? []
                     where sub.pathExtension == "jsonl" {
                         addCandidate(sub, subagent: true, sessionID: sessionID)
+                    }
+                    // Workflow runs keep their agents one level deeper:
+                    // `subagents/workflows/<run>/agent-*.jsonl` — a day of
+                    // three parallel streams was invisible to every stat
+                    // and the tokens/min peak read a tenth of the truth
+                    // (2026-09-05).
+                    let workflowsDir = subagentsDir.appendingPathComponent("workflows")
+                    for run in (try? fm.contentsOfDirectory(at: workflowsDir, includingPropertiesForKeys: [.isDirectoryKey])) ?? [] {
+                        for sub in (try? fm.contentsOfDirectory(at: run, includingPropertiesForKeys: [.fileSizeKey, .contentModificationDateKey])) ?? []
+                        where sub.pathExtension == "jsonl" {
+                            addCandidate(sub, subagent: true, sessionID: sessionID)
+                        }
                     }
                 }
             }

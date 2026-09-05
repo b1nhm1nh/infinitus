@@ -371,8 +371,39 @@ final class StatsTests: XCTestCase {
         XCTAssertEqual(second.days["2026-09-04"]?.inputTokens, 10)
     }
 
-    func testCacheVersionIsSeven() {
-        XCTAssertEqual(StatsScanner.Cache().version, 7)
+    func testCacheVersionIsEight() {
+        XCTAssertEqual(StatsScanner.Cache().version, 8)
+    }
+
+    /// The minute buckets and the peak survive a cache round trip: the
+    /// hand-written Day decoder must read them (it didn't at first, so
+    /// every scan showed only the last pass's fresh minutes, 2026-09-05).
+    func testMinuteBucketsSurviveTheCache() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("stats-min-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let project = root.appendingPathComponent("-r-a")
+        try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
+        let file = project.appendingPathComponent("s1.jsonl")
+        try [
+            #"{"type":"assistant","timestamp":"2026-09-04T01:00:05.000Z","message":{"id":"a1","model":"claude-opus-5","usage":{"input_tokens":10,"output_tokens":700},"content":[{"type":"text","text":"a"}]}}"#,
+            #"{"type":"assistant","timestamp":"2026-09-04T01:03:05.000Z","message":{"id":"a2","model":"claude-opus-5","usage":{"input_tokens":10,"output_tokens":300},"content":[{"type":"text","text":"b"}]}}"#,
+        ].joined(separator: "\n").appending("\n").write(to: file, atomically: true, encoding: .utf8)
+        let cacheURL = root.appendingPathComponent("cache.json")
+        let now = date("2026-09-04T02:00:00Z")
+        let first = StatsScanner.scan(projectsDir: root, cacheURL: cacheURL, calendar: cal, now: now)
+        XCTAssertEqual(first.days["2026-09-04"]?.peakTokensPerMinute, 700)
+        // Nothing new to read: the answer must come out of the cache whole.
+        let second = StatsScanner.scan(projectsDir: root, cacheURL: cacheURL, calendar: cal, now: now)
+        XCTAssertEqual(second.days["2026-09-04"]?.peakTokensPerMinute, 700)
+        XCTAssertEqual(second.days["2026-09-04"]?.minuteTokens.count, 2)
+        // A later append adds to the day's buckets rather than replacing them.
+        let more = #"{"type":"assistant","timestamp":"2026-09-04T01:00:40.000Z","message":{"id":"a3","model":"claude-opus-5","usage":{"input_tokens":10,"output_tokens":100},"content":[{"type":"text","text":"c"}]}}"#
+        let handle = try FileHandle(forWritingTo: file)
+        try handle.seekToEnd()
+        try handle.write(contentsOf: Data((more + "\n").utf8))
+        try handle.close()
+        let third = StatsScanner.scan(projectsDir: root, cacheURL: cacheURL, calendar: cal, now: now)
+        XCTAssertEqual(third.days["2026-09-04"]?.peakTokensPerMinute, 800)
     }
 
     // MARK: engines and effort (issue #24, round 2)
@@ -555,13 +586,19 @@ final class StatsTests: XCTestCase {
         let subLine = #"{"type":"assistant","timestamp":"2026-09-04T01:00:05.000Z","message":{"id":"m1","model":"claude-opus-4-5-20250805","usage":{"input_tokens":10,"output_tokens":20},"content":[{"type":"text","text":"subtask done"}]}}"#
         try (subLine + "\n").write(to: subFile, atomically: true, encoding: .utf8)
 
+        // A workflow run's agents sit one level deeper and count the same way.
+        let runDir = subagentsDir.appendingPathComponent("workflows/wf_abc")
+        try FileManager.default.createDirectory(at: runDir, withIntermediateDirectories: true)
+        let wfLine = #"{"type":"assistant","timestamp":"2026-09-04T01:00:06.000Z","message":{"id":"m2","model":"claude-opus-4-5-20250805","usage":{"input_tokens":5,"output_tokens":7},"content":[{"type":"text","text":"stream done"}]}}"#
+        try (wfLine + "\n").write(to: runDir.appendingPathComponent("agent-y.jsonl"), atomically: true, encoding: .utf8)
+
         let r = StatsScanner.scan(projectsDir: dir, cacheURL: cache, calendar: cal)
-        XCTAssertEqual(r.files, 2)
+        XCTAssertEqual(r.files, 3)
         let d = r.days["2026-09-04"]!
         XCTAssertEqual(d.humanMessages, 1)          // from the top-level file only
-        XCTAssertEqual(d.sessions, ["sess-1"])      // the subagent file added no session
-        XCTAssertEqual(d.inputTokens, 10)           // from the subagent file
-        XCTAssertEqual(d.outputTokens, 20)
+        XCTAssertEqual(d.sessions, ["sess-1"])      // the subagent files added no session
+        XCTAssertEqual(d.inputTokens, 15)           // from the subagent files
+        XCTAssertEqual(d.outputTokens, 27)
     }
 
     /// A file whose last line never gets a trailing newline (a still-open
