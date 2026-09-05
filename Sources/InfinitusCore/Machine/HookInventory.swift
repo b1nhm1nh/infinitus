@@ -108,7 +108,15 @@ public enum HookInventory {
                 return (.handInstalled, dir)
             }
         }
-        return (.unknown, binaryName(command))
+        // `[ -f ~/.claude/hooks/x.sh ] && bash ~/.claude/hooks/x.sh`: the
+        // first token is a shell conditional, the script names the owner.
+        let name = binaryName(command)
+        if ["[", "test", "if"].contains(name) || interpreters.contains(name),
+           let script = scriptPath(in: command) {
+            let stem = (script as NSString).lastPathComponent.split(separator: ".").first.map(String.init)
+            return (.unknown, stem ?? name)
+        }
+        return (.unknown, name)
     }
 
     static func pathComponent(after marker: String, in command: String, index: Int) -> String? {
@@ -155,21 +163,32 @@ public enum HookInventory {
 
     public static func live(of registration: HookRegistration, rows: [ProcessRow]) -> Live {
         var live = Live()
-        guard let path = registration.scriptPath else { return live }
-        let byParent = Dictionary(grouping: rows, by: \.ppid)
-        var seen = Set<Int>()
-        var queue: [ProcessRow] = rows.filter { $0.command.contains(path) }
-        live.instances = queue.count
-        while let row = queue.popLast() {
-            guard seen.insert(row.pid).inserted else { continue }
+        let (instances, helpers) = instanceRows(of: registration, rows: rows)
+        live.instances = instances.count
+        live.helpers = helpers.count
+        for row in instances + helpers {
             live.oldestSeconds = max(live.oldestSeconds, row.elapsedSeconds)
             if row.state == "U" { live.uninterruptible += 1 }
-            for child in byParent[row.pid] ?? [] where !seen.contains(child.pid) {
-                live.helpers += 1
+        }
+        return live
+    }
+
+    /// The rows whose command carries the registration's script path,
+    /// and their descendants (a shell hook's python helpers).
+    public static func instanceRows(of registration: HookRegistration, rows: [ProcessRow]) -> (instances: [ProcessRow], helpers: [ProcessRow]) {
+        guard let path = registration.scriptPath else { return ([], []) }
+        let byParent = Dictionary(grouping: rows, by: \.ppid)
+        let instances = rows.filter { $0.command.contains(path) }
+        var seen = Set(instances.map(\.pid))
+        var helpers: [ProcessRow] = []
+        var queue = instances
+        while let row = queue.popLast() {
+            for child in byParent[row.pid] ?? [] where seen.insert(child.pid).inserted {
+                helpers.append(child)
                 queue.append(child)
             }
         }
-        return live
+        return (instances, helpers)
     }
 
     /// A stable fingerprint of the registrations: a change means an
