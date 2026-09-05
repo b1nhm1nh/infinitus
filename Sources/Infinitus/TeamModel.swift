@@ -208,6 +208,15 @@ final class TeamModel: ObservableObject {
         await load().value
     }
 
+    /// A teammate's session as chat items (decrypted now, off the main actor).
+    func transcript(kid: String, session: String) async -> [SessionFeedItem] {
+        guard enabled else { return [] }
+        return (try? await run { paths, secrets in
+            guard let client = try Self.openClient(paths, secrets) else { return [] }
+            return try TeamReader.load(client: client).transcript(kid: kid, session: session, client: client, limit: 400)
+        }) ?? []
+    }
+
     func fetchNow() async {
         guard enabled else { lastError = "team is disabled in this instance"; return }
         guard inTeam else { lastError = "not in a team"; return }
