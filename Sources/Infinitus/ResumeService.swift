@@ -130,8 +130,14 @@ final class ResumeService: ObservableObject {
             // Sub-agent limits (#117): the PARENT never stopped, so it's
             // never in `stops` above — a separate scan, same gate.
             var subagentDelivered: [Transcript.SubagentLimit] = []
+            var subagentAttempted: [String] = []
             if doResume {
+                // A parent that was limit-stopped at tick start belongs
+                // to the resume path this tick even if its nudge just
+                // landed (its transcript no longer ends in the stop).
+                let stoppedIds = Set(stops.map(\.sessionId))
                 let hits = Transcript.findSubagentLimits(sessions: sessions, claudeDir: claudeDir)
+                    .filter { !stoppedIds.contains($0.session.sessionId) }
                 let text = ResumeCoordinator.subagentMessage(account: activeName, pct: activePct)
                 let coordinator = ResumeCoordinator(hosts: hosts, claudeDir: claudeDir)
                 for hit in hits where !alreadySubagent.contains(hit.session.stopUuid) {
@@ -145,6 +151,9 @@ final class ResumeService: ObservableObject {
                                             currentActive: activeNumber,
                                             activeFetchedAt: activeFetchedAt,
                                             lastNudge: lastNudgeCopy[hit.session.sessionId]) else { continue }
+                    // One attempt per stop, delivered or not: an
+                    // unreachable parent must not cost a PTY sweep per tick.
+                    subagentAttempted.append(hit.session.stopUuid)
                     if coordinator.nudgeSubagent(hit, text: text) {
                         subagentDelivered.append(hit)
                     }
@@ -152,14 +161,17 @@ final class ResumeService: ObservableObject {
             }
             await self?.finish(sweep: sweep, outcome: outcome, standing: standing,
                                firstSeen: newFirstSeen, held: held,
-                               subagentNudged: subagentDelivered, accountName: activeName)
+                               subagentNudged: subagentDelivered, subagentAttempted: subagentAttempted,
+                               accountName: activeName)
         }
     }
 
     private func finish(sweep: PtyNudge.SweepResult?, outcome: ResumeCoordinator.Outcome?,
                         standing: [String], firstSeen: [String: Int], held: Int,
-                        subagentNudged: [Transcript.SubagentLimit] = [], accountName: String? = nil) {
+                        subagentNudged: [Transcript.SubagentLimit] = [], subagentAttempted: [String] = [],
+                        accountName: String? = nil) {
         busy = false
+        nudgedSubagents.formUnion(subagentAttempted)
         nudged.formUnion(standing)
         stopFirstActive.merge(firstSeen) { a, _ in a }
         if let outcome {
