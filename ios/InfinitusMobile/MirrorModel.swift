@@ -280,6 +280,9 @@ final class MirrorModel: ObservableObject, FleetModel {
     /// A screen asking the shell to switch tabs (the Fleet hero's
     /// sessions line, a Live Activity tap); RootView consumes it.
     @Published var requestedTab: String?
+    /// A shake's capture, with the session it's for; the Sessions tab
+    /// opens that feed and the feed moves it into its composer.
+    @Published var stagedCapture: StagedCapture?
     func openForecast() { outlookShown = true }
     var switchFlashTick: Int { primary?.switchFlashTick ?? 0 }
     var deathTicks: [Int: Int] { primary?.deathTicks ?? [:] }
@@ -394,4 +397,12 @@ final class MobileUsage: ObservableObject, UsageSource {
         capturedAt = snapshot.capturedAt
         report = try? JSONDecoder().decode(UsageReport.self, from: data)
     }
+}
+
+/// What a shake produced and where it belongs (ShakeToSend →
+/// SessionsScreen → SessionFeedScreen's composer).
+struct StagedCapture: Identifiable {
+    let id = UUID()
+    let pid: Int
+    let image: UIImage
 }

@@ -28,7 +28,7 @@ publishes the matching section as the GitHub release body.
 ### Phone
 - The working Live Activity follows an account switch when the app opens, and a card nothing has reached says "out of date".
 - A lighter chat header: compact by default, or a stat strip with mini gauges (Settings › Appearance › Chat header).
-- Screenshots go out in one tap: the camera button in a chat, any screenshot you take offered in the next chat, or a shake anywhere.
+- A capture of the app — the camera button in a chat, or a shake anywhere — lands in the composer as an attachment so you can say what it's about; screenshots you take are still offered in one tap.
 - A message from another session shows as "Message from @name" with a preview, the full text a tap away.
 - Your own turns render Markdown too.
 - Live Activities are back on the lock screen and Dynamic Island.

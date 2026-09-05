@@ -10,6 +10,8 @@ struct SessionsScreen: View {
     @ObservedObject var model: MirrorModel
     @ObservedObject var progress: MobileSessionProgress
     @State private var path = NavigationPath()
+    /// The session whose feed is on screen, if one is.
+    @State private var openPid: Int?
 
     var body: some View {
         NavigationStack(path: $path) {
@@ -18,6 +20,8 @@ struct SessionsScreen: View {
                 .refreshable { await model.refresh() }
                 .navigationDestination(for: SessionDetail.self) { session in
                     SessionFeedScreen(model: model, session: session)
+                        .onAppear { openPid = session.pid }
+                        .onDisappear { if openPid == session.pid { openPid = nil } }
                 }
                 // The feed header's tap target (user 2026-09-03: account
                 // summary + "a more detail screen when tap on its header
@@ -27,18 +31,39 @@ struct SessionsScreen: View {
                     SessionDetailScreen(model: model, progress: progress, session: route.session)
                 }
         }
-        // Same dev seam as `INFINITUS_TAB` — a headless simulator capture
-        // can't tap a row, so a pid named here pushes straight to its feed.
-        .onChange(of: fleetsWithSessions.isEmpty) { _, empty in
-            guard !empty, path.isEmpty,
-                  let pidText = ProcessInfo.processInfo.environment["INFINITUS_FEED_PID"],
-                  let pid = Int(pidText),
-                  let session = fleetsWithSessions
+        // A shake staged a capture for a session: open its feed (which
+        // takes the capture into its composer). A feed already open for
+        // that pid takes it itself — re-pushing a fresh SessionDetail
+        // (its status may have moved) would rebuild the feed and lose
+        // the capture the old one just took. Any other feed is replaced.
+        .onChange(of: model.stagedCapture?.id) { _, _ in
+            guard let staged = model.stagedCapture else { return }
+            guard openPid != staged.pid else { return }
+            guard let session = fleetsWithSessions
                       .flatMap({ $0.liveSessions?.sessions ?? [] })
-                      .first(where: { $0.pid == pid })
-            else { return }
+                      .first(where: { $0.pid == staged.pid })
+            else { model.stagedCapture = nil; return }
+            path = NavigationPath()
             path.append(session)
         }
+        // Same dev seam as `INFINITUS_TAB` — a headless simulator capture
+        // can't tap a row, so a pid named here pushes straight to its feed
+        // (on appear too: a cached snapshot has the sessions before the
+        // change fires).
+        .onChange(of: fleetsWithSessions.isEmpty) { _, _ in openSeamFeed() }
+        // A push during the stack's own appearance is dropped; a beat later lands.
+        .onAppear { DispatchQueue.main.asyncAfter(deadline: .now() + 1) { openSeamFeed() } }
+    }
+
+    private func openSeamFeed() {
+        guard path.isEmpty,
+              let pidText = ProcessInfo.processInfo.environment["INFINITUS_FEED_PID"],
+              let pid = Int(pidText),
+              let session = fleetsWithSessions
+                  .flatMap({ $0.liveSessions?.sessions ?? [] })
+                  .first(where: { $0.pid == pid })
+        else { return }
+        path.append(session)
     }
 
     /// One section per fleet that has sessions to show — in practice
