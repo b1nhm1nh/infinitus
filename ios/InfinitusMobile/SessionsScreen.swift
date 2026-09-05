@@ -115,6 +115,10 @@ struct SessionsScreen: View {
             }
             .listStyle(.insetGrouped)
             .sheet(item: $awsLoginItem) { AwsLoginScreen(item: $0) }
+            // A cold launch from the notification asks before the first
+            // snapshot is in; the request waits for the login to appear.
+            .onChange(of: model.requestedAwsLogin) { _, _ in openRequestedAwsLogin() }
+            .onChange(of: model.snapshot?.capturedAt) { _, _ in openRequestedAwsLogin() }
         } else if !model.fleets.isEmpty {
             ThemedPlaceholder(theme: model.rowTheme, key: "noSessions", plainSymbol: "brain",
                               description: "Nothing is running on the Mac right now.")
@@ -125,6 +129,13 @@ struct SessionsScreen: View {
     }
 
     @State private var awsLoginItem: AwsLogin.Item?
+
+    private func openRequestedAwsLogin() {
+        guard let id = model.requestedAwsLogin,
+              let item = model.awsLogins.first(where: { $0.id == id }) else { return }
+        model.requestedAwsLogin = nil
+        awsLoginItem = item
+    }
 
     private func awsPhase(_ item: AwsLogin.Item) -> String {
         switch item.state?.phase {
