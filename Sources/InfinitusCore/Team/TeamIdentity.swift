@@ -24,7 +24,8 @@ public struct TeamKeys: Codable, Equatable, Sendable {
         let kid = try c.decode(String.self, forKey: .kid)
         let enc = try c.decode(String.self, forKey: .enc)
         let sig = try c.decode(String.self, forKey: .sig)
-        guard let raw = Data(base64Encoded: enc), Self.kid(forEncryptionKey: raw) == kid else {
+        guard let encRaw = Data(base64Encoded: enc), let sigRaw = Data(base64Encoded: sig),
+              Self.kid(forEncryptionKey: encRaw, signingKey: sigRaw) == kid else {
             throw KeyError.badKey
         }
         self.init(kid: kid, enc: enc, sig: sig)
@@ -43,9 +44,11 @@ public struct TeamKeys: Codable, Equatable, Sendable {
     }
 
     /// `kid` = base32 of the first 16 bytes of SHA-256 over the raw X25519
-    /// public key (spec §1).
-    public static func kid(forEncryptionKey raw: Data) -> String {
-        Base32.encode(Data(Crypto.SHA256.hash(data: raw)).prefix(16))
+    /// public key followed by the raw Ed25519 public key (spec §1): both
+    /// keys are bound, so a request cannot pair a victim's encryption key
+    /// with an attacker's signing key (#57, user 2026-09-05: "both").
+    public static func kid(forEncryptionKey enc: Data, signingKey sig: Data) -> String {
+        Base32.encode(Data(Crypto.SHA256.hash(data: enc + sig)).prefix(16))
     }
 }
 
@@ -78,7 +81,8 @@ public struct TeamIdentity: Sendable {
         self.encryption = encryption
         self.signing = signing
         let encRaw = encryption.publicKey.rawRepresentation
-        self.keys = TeamKeys(kid: TeamKeys.kid(forEncryptionKey: encRaw),
+        let sigRaw = signing.publicKey.rawRepresentation
+        self.keys = TeamKeys(kid: TeamKeys.kid(forEncryptionKey: encRaw, signingKey: sigRaw),
                              enc: encRaw.base64EncodedString(),
                              sig: signing.publicKey.rawRepresentation.base64EncodedString())
     }
