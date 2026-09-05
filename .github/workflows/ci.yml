@@ -66,6 +66,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: brew install xcodegen
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: 1
       - run: xcodegen generate
         working-directory: ios
       - run: >
