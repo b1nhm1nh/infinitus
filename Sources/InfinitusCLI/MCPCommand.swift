@@ -1,6 +1,7 @@
 import Foundation
 import InfinitusCore
 
+#if canImport(Darwin)
 /// `infinitusctl mcp`: the plugin's MCP server (#79). Every tool is one
 /// control-socket command, so a session can read the fleet and talk to
 /// another session without the app exposing anything new.
@@ -15,7 +16,7 @@ enum MCPCommand {
             guard reply.ok else { return .failure(.init(reply.error ?? "\(command) failed")) }
             let encoder = JSONEncoder()
             encoder.outputFormatting = [.sortedKeys, .prettyPrinted, .withoutEscapingSlashes]
-            let data = (try? encoder.encode(reply.result ?? .null)) ?? Data()
+            let data = (try? encoder.encode(reply.result ?? JSONValue.null)) ?? Data()
             return .success(String(decoding: data, as: UTF8.self))
         }
         func string(_ v: JSONValue?) -> String? {
@@ -56,3 +57,11 @@ enum MCPCommand {
         return 0
     }
 }
+#else
+enum MCPCommand {
+    static func run() -> Int32 {
+        FileHandle.standardError.write(Data("mcp needs the Infinitus Mac app (control socket)\n".utf8))
+        return 3
+    }
+}
+#endif
