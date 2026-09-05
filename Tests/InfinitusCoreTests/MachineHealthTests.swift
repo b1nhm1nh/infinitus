@@ -39,6 +39,16 @@ final class MachineHealthTests: XCTestCase {
         XCTAssertEqual(MachineSampler.timed(1) { 7 }.0, 7)
     }
 
+    func testOwnerOfConditionalCommandAndWarningsOncePerOwner() {
+        XCTAssertEqual(HookInventory.owner(of: "[ -f /Users/me/.claude/hooks/x.sh ] && bash /Users/me/.claude/hooks/x.sh", source: .user).name, "x")
+        let a = HookRegistration(event: "Notification", matcher: nil, command: "/Users/me/.claude/hooks/peon-ping/peon.sh", timeout: nil, source: .user)
+        let b = HookRegistration(event: "Stop", matcher: nil, command: "/Users/me/.claude/hooks/peon-ping/peon.sh", timeout: nil, source: .user)
+        var live = HookInventory.Live(); live.instances = 556; live.oldestSeconds = 165 * 60
+        let hooks = [a, b].map { MachineReport.Hook(registration: $0, spawnsPerHour: 300, live: live) }
+        let warnings = MachineReport.warnings(sample: MachineSample(), hooks: hooks, newcomers: [])
+        XCTAssertEqual(warnings.filter { $0.hasPrefix("peon-ping has") }.count, 1)
+    }
+
     func testScriptPathSkipsInterpretersAndExpandsHome() {
         XCTAssertEqual(HookInventory.scriptPath(in: "/bin/bash /Users/me/.claude/hooks/x.sh", home: "/Users/me"), "/Users/me/.claude/hooks/x.sh")
         XCTAssertEqual(HookInventory.scriptPath(in: "python3 ~/.claude/hooks/y.py --fast", home: "/Users/me"), "/Users/me/.claude/hooks/y.py")
