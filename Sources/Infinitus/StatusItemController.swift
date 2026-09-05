@@ -76,6 +76,7 @@ final class StatusItemController {
     /// NSWindow(contentViewController:) itself, before `pinned` is set.
     private var pinnedIdeal: CGSize = .zero
     private var settings: NSWindow?
+    private lazy var desktopCapture = DesktopCaptureController(model: model)
     private let model: AppModel
     private let usage: UsageModel
     private let wall = WallWindowController()
@@ -352,6 +353,7 @@ final class StatusItemController {
         menu.addItem(.separator())
         menu.addItem(menuItem("Rotate to Next Account", #selector(menuRotate)))
         menu.addItem(menuItem("Refresh Usage", #selector(menuRefresh)))
+        menu.addItem(menuItem("Capture Screen for a Session…", #selector(menuCapture)))
         menu.addItem(.separator())
         let pin = menuItem("Pin Popup Open", #selector(menuPin))
         pin.state = model.popoverPinned ? .on : .off
@@ -383,6 +385,7 @@ final class StatusItemController {
     @objc private func menuRefresh() {
         Task { await model.refreshSnapshot() }
     }
+    @objc private func menuCapture() { desktopCapture.capture() }
     @objc private func menuPin() { model.popoverPinned.toggle() }
     @objc private func menuPopOut() { popOut() }
     @objc private func menuSettings() { showSettingsWindow() }
