@@ -84,7 +84,7 @@ jobs:
     continue-on-error: true
     steps:
       - uses: actions/checkout@v4
-      - uses: compnerd/gha-setup-swift@v3
+      - uses: compnerd/gha-setup-swift@v0.4.1
         with:
           branch: swift-6.1-release
           tag: 6.1-RELEASE
