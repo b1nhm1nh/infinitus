@@ -535,6 +535,12 @@ final class ControlServer {
             await model.refreshSnapshot()
             return ControlReply(ok: true, result: .object(["routingStrategy": .string(strategy)]))
 
+        case "team-discoverable":
+            guard let arg = r.args.first, ["on", "off"].contains(arg) else { throw Fail("usage: team-discoverable on|off") }
+            // MirrorServer watches this default and re-advertises (Nearby, spec §6.4).
+            UserDefaults.standard.set(arg == "on", forKey: TeamNearby.discoverableDefaultsKey)
+            return ControlReply(ok: true, result: .object(["discoverable": .bool(arg == "on")]))
+
         default:
             return .failure("\(r.command) is in the manifest but not implemented")
         }
