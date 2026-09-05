@@ -17,13 +17,13 @@ enum ShareBridge {
         var deviceName: String
     }
 
-    static let service = "com.huuloc.infinitus.share"
+    static let service = "run.infinitus.share"
     static let account = "pairing"
     /// Set only in the extension's defaults: `UIDevice.current.name` is
     /// the bare model name inside an extension, and the Mac's connected
     /// devices list takes the name from every request.
     static let deviceNameKey = "mirror_device_name"
-    private static let log = Logger(subsystem: "com.huuloc.infinitus.mobile", category: "share")
+    private static let log = Logger(subsystem: "run.infinitus.mobile", category: "share")
     private static var lastWritten: Pairing?
 
     /// The app's side: called after every refresh and pairing change,

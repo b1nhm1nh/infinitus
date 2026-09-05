@@ -79,8 +79,8 @@ final class UpdateModel: ObservableObject {
                 status = "\(fetched) is available (you run \(cur))"
                 if notify, defaults.string(forKey: "update_notified_version") != fetched {
                     defaults.set(fetched, forKey: "update_notified_version")
-                    Notifier.post(title: "claude-swap",
-                                  body: "update available: \(fetched) (you run \(cur))")
+                    Notifier.post(title: "Infinitus",
+                                  body: "cswap update available: \(fetched) (you run \(cur))")
                 }
                 if autoInstall,
                    defaults.string(forKey: "update_attempted_version") != fetched {
@@ -123,14 +123,14 @@ final class UpdateModel: ObservableObject {
                 status = "updated to \(now) — engine restarted"
                 updateAvailable = false
                 restartEngine?()
-                Notifier.post(title: "claude-swap", body: "updated to \(now)")
+                Notifier.post(title: "Infinitus", body: "cswap updated to \(now)")
             } else {
                 // Real case for a --from <path> install: the command runs,
                 // the version stays. Surfaced, never retried silently.
                 status = "upgrade ran (exit \(result.status)), still at \(before ?? "?")"
                 if autoInstall {
-                    Notifier.post(title: "claude-swap",
-                                  body: "auto-update ran but the version is unchanged — see Settings → About")
+                    Notifier.post(title: "Infinitus",
+                                  body: "cswap auto-update ran but the version is unchanged — see Settings → About")
                 }
             }
         } catch {
@@ -513,7 +513,7 @@ struct AboutPane: View {
         let home = FileManager.default.homeDirectoryForCurrentUser
         var candidates = ["death/infinitus/Infinitus.app", "death/limitless/Infinitus.app"]
             .map { home.appendingPathComponent($0).path }
-        for id in ["com.huuloc.infinitus", "com.huuloc.limitless"] {
+        for id in ["run.infinitus", "com.huuloc.infinitus", "com.huuloc.limitless"] {
             if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: id) {
                 candidates.insert(url.path, at: 0)
                 break

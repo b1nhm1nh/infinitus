@@ -69,7 +69,7 @@ final class LiveActivityPushTests: XCTestCase {
         XCTAssertEqual(LiveActivityPush.host(sandbox: true), "api.sandbox.push.apple.com")
         XCTAssertEqual(LiveActivityPush.url(token: "ab12", sandbox: false).absoluteString,
                        "https://api.push.apple.com/3/device/ab12")
-        XCTAssertEqual(LiveActivityPush.topic, "com.huuloc.infinitus.mobile.push-type.liveactivity")
+        XCTAssertEqual(LiveActivityPush.topic, "run.infinitus.mobile.push-type.liveactivity")
     }
 
     func testRegistrationSlotAndRoundTrip() throws {

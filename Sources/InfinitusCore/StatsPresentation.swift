@@ -32,6 +32,7 @@ extension Stats {
                     tile("Turns", s, \.turns),
                     tile("Tool calls", s, \.totalToolCalls),
                     tile("Output tokens", s, \.outputTokens),
+                    tile("Peak tokens/min", s, \.peakTokensPerMinute),
                     tile("Files touched", s, \.filesTouched),
                     tile("Co-authored by Claude", s, \.coAuthoredByClaude),
                     tile("Reverts", s, \.reverts),
@@ -76,6 +77,34 @@ extension Stats {
                     ratio("Mean hours to merge", s, \.meanMergeHours),
                 ]),
             ]
+        }
+
+        /// The tokens/min record book as lines (#89): best ever, today,
+        /// the trend, records this month — then the record days.
+        public static func recordLines(_ r: Stats.TokenRecords) -> [String] {
+            var out: [String] = []
+            if let best = r.best {
+                out.append("Best ever: \(perMinute(best.tokensPerMinute)) on \(best.day)")
+            } else {
+                return ["No busy minute on record yet."]
+            }
+            out.append("Today's peak: \(perMinute(r.today))")
+            if let trend = r.trend {
+                let arrow = trend >= 1.15 ? "↑" : trend <= 0.87 ? "↓" : "→"
+                out.append("Trend: \(arrow) \(String(format: "%.2f", trend))× this week's median peak vs the week before")
+            } else {
+                out.append("Trend: needs busy days in each of the last two weeks")
+            }
+            out.append("Records this month: \(r.recordsThisMonth) · all time: \(r.records.count)\(r.records.count >= Stats.TokenRecords.keep ? "+" : "")")
+            return out
+        }
+
+        public static func recordRows(_ r: Stats.TokenRecords) -> [(label: String, count: Int)] {
+            r.records.map { (label: $0.day, count: $0.tokensPerMinute) }
+        }
+
+        public static func perMinute(_ v: Int) -> String {
+            v >= 10_000 ? String(format: "%.1fk tok/min", Double(v) / 1000) : "\(v.formatted()) tok/min"
         }
 
         /// The four session-length buckets, in `Stats.Day.sessionBucket`

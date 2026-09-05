@@ -371,8 +371,8 @@ final class StatsTests: XCTestCase {
         XCTAssertEqual(second.days["2026-09-04"]?.inputTokens, 10)
     }
 
-    func testCacheVersionIsSix() {
-        XCTAssertEqual(StatsScanner.Cache().version, 6)
+    func testCacheVersionIsSeven() {
+        XCTAssertEqual(StatsScanner.Cache().version, 7)
     }
 
     // MARK: engines and effort (issue #24, round 2)
@@ -868,8 +868,10 @@ final class StatsTests: XCTestCase {
         // initializer that throws on a missing key, so a sparse Mac
         // would break the whole MirrorSnapshot on it (the very failure
         // B2 exists to prevent), and the e2e gate asserts `commits` and
-        // `humanMessages` are present on a zero summary. 14.8 KB → this.
-        XCTAssertLessThan(json.utf8.count, 8_192)
+        // `humanMessages` are present on a zero summary. 14.8 KB → this;
+        // the tokens/min record book (#89: three Day fields, a 30-day
+        // peak series, up to 24 marks) added ~200 bytes on an empty one.
+        XCTAssertLessThan(json.utf8.count, 9_216)
     }
 
     func testSummaryCompactedStripsTheDailySeries() {
@@ -1183,5 +1185,36 @@ final class StatsTests: XCTestCase {
         XCTAssertEqual(srow.minutesText, "1 min"); XCTAssertEqual(srow.tokensText, "900"); XCTAssertEqual(srow.usdText, "$0.50")
         var mid = Stats.ActivityTally(); mid.inputTokens = 45_600
         XCTAssertEqual(Stats.Presentation.Row(id: "z", tally: mid, share: 0).tokensText, "46k")
+    }
+
+    func testTokenRecordsWalkTheDaysInOrder() {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "UTC")!
+        let now = Stats.date(fromDayKey: "2026-09-05", calendar: calendar)!.addingTimeInterval(12 * 3600)
+        func day(_ peak: Int) -> Stats.Day { var d = Stats.Day(); d.peakTokensPerMinute = peak; return d }
+        let days: [String: Stats.Day] = [
+            "2026-08-01": day(500), "2026-08-10": day(400), "2026-08-20": day(900),
+            "2026-09-01": day(950), "2026-09-05": day(300),
+        ]
+        let r = Stats.TokenRecords(days: days, now: now, calendar: calendar)
+        XCTAssertEqual(r.best?.day, "2026-09-01")
+        XCTAssertEqual(r.best?.tokensPerMinute, 950)
+        XCTAssertEqual(r.records.map(\.day), ["2026-09-01", "2026-08-20", "2026-08-01"])
+        XCTAssertEqual(r.recordsThisMonth, 1)
+        XCTAssertEqual(r.today, 300)
+        XCTAssertEqual(r.dailyPeaks.count, 30)
+        XCTAssertNil(r.trend)   // the week before last had no busy day in the 30-day window's last 14
+    }
+
+    func testDayPeakIsTheSumAcrossFilesForTheSameMinute() {
+        var a = Stats.Day(); a.minuteTokens = [600: 100, 601: 40]
+        var b = Stats.Day(); b.minuteTokens = [600: 80]
+        var merged = a + b
+        merged.finalizePeak()
+        XCTAssertEqual(merged.peakTokensPerMinute, 180)
+        XCTAssertEqual(merged.peakMinute, 600)
+        XCTAssertTrue(merged.compacted().minuteTokens.isEmpty)
+        XCTAssertEqual(merged.compacted().peakTokensPerMinute, 180)
+        XCTAssertEqual(Stats.minuteOfDay(0, calendar: { var c = Calendar(identifier: .gregorian); c.timeZone = TimeZone(identifier: "UTC")!; return c }()), 0)
     }
 }

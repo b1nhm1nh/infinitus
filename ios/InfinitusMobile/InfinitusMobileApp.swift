@@ -9,7 +9,7 @@ import os
 /// notifications, and hands the device token to the Mac through the
 /// same route the Live Activity tokens use (kind "alert").
 final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDelegate {
-    private let log = Logger(subsystem: "com.huuloc.infinitus.mobile", category: "alerts")
+    private let log = Logger(subsystem: "run.infinitus.mobile", category: "alerts")
 
     func application(_ application: UIApplication,
                      didFinishLaunchingWithOptions options: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
