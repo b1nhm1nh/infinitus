@@ -224,4 +224,28 @@ final class TeamMembershipTests: XCTestCase {
         XCTAssertEqual(try leader.readable().map(\.path), [paths[1]])
         XCTAssertEqual(try member.publish([], now: 1_031), [])
     }
+
+    // MARK: plan 5 — founder name, leave
+
+    func testCreateNamesTheFounder() throws {
+        let remote = try makeRemote()
+        let (lp, ls) = machine("leader")
+        let leader = try TeamClient.create(name: "Papaya", remote: remote, token: nil, leaderName: "Ann", paths: lp, secrets: ls, now: 1_000)
+        XCTAssertEqual(leader.roster?.doc.leaders.first?.name, "Ann")
+        XCTAssertEqual(leader.roster?.doc.leaders.first?.founder, true)
+    }
+
+    func testLeaveDeletesOwnFilesAndLeavesANote() throws {
+        let (leader, member, _) = try team()
+        try member.publish(kind: TeamKinds.now, path: "now.json",
+                           plaintext: try CanonicalJSON.encode(TeamDocs.Now(at: 1, sessions: [], fleets: [], blockers: [], crashesToday: 0, sharesTo: [:])),
+                           audience: .leaders, now: 1_030)
+        _ = try leader.fetch()
+        XCTAssertEqual(try leader.readableHeaders().count, 1)
+        try member.leave(now: 1_040)
+        _ = try leader.fetch()
+        XCTAssertEqual(try leader.readableHeaders().count, 0, "own files are gone")
+        XCTAssertNotNil(try leader.store.get("requests/\(member.identity.kid).leave"), "the leaders get a note")
+        XCTAssertEqual(try leader.requests().count, 0, ".leave is not a join request")
+    }
 }
