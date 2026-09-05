@@ -330,3 +330,268 @@ private struct Reader {
         return MDNS.Record(name: owner, type: type, cacheFlush: cls & MDNS.classFlag != 0, ttl: ttl, rdata: rdata)
     }
 }
+
+// MARK: - Responder and browser logic (pure)
+
+extension MDNS {
+    public enum Responder {
+        /// What to send back for `query`, nil when it asks for nothing of
+        /// ours. Replies go multicast whatever the QU bit says (RFC 6762
+        /// §5.4 allows it); a PTR hit returns the whole announcement so a
+        /// browser resolves the peer from one packet.
+        public static func answer(_ query: Message, service: Service) -> Message? {
+            guard !query.isResponse else { return nil }
+            var records: [Record] = []
+            for q in query.questions {
+                let wants: (UInt16) -> Bool = { q.type == $0 || q.type == MDNS.typeANY }
+                if q.name.matches(MDNS.serviceName), wants(MDNS.typePTR) {
+                    return service.announcement()
+                }
+                for r in service.records() where r.name.matches(q.name) && wants(r.type) && !records.contains(r) {
+                    records.append(r)
+                }
+            }
+            return records.isEmpty ? nil : .response(records)
+        }
+    }
+
+    public struct Peer: Equatable, Sendable {
+        public var instance: String
+        /// The SRV target, dotted (`bo.local.`).
+        public var host: String
+        public var port: UInt16
+        public var txt: [String]
+        public var ipv4: String?
+
+        public init(instance: String, host: String, port: UInt16, txt: [String], ipv4: String?) {
+            self.instance = instance; self.host = host; self.port = port; self.txt = txt; self.ipv4 = ipv4
+        }
+    }
+
+    /// Folds datagrams into peers: an instance is a peer once its SRV and
+    /// TXT have both arrived; its address is the A record for the SRV
+    /// target, else the datagram's sender. A TTL-0 PTR or SRV forgets it.
+    public struct Collector: Equatable, Sendable {
+        private struct SRV: Equatable, Sendable { var port: UInt16; var target: DNSName }
+        private var names: [String: DNSName] = [:]
+        private var srv: [String: SRV] = [:]
+        private var txt: [String: [String]] = [:]
+        /// host key → address
+        private var addresses: [String: String] = [:]
+        /// instance key → datagram sender
+        private var senders: [String: String] = [:]
+
+        public init() {}
+
+        public mutating func ingest(_ message: Message, from sender: String?) {
+            guard message.isResponse else { return }
+            for r in message.records {
+                switch r.rdata {
+                case .ptr(let instance) where r.name.matches(MDNS.serviceName):
+                    if r.ttl == 0 { forget(instance.key) }
+                case .srv(_, _, let port, let target) where isOurs(r.name):
+                    if r.ttl == 0 { forget(r.name.key); continue }
+                    names[r.name.key] = r.name
+                    srv[r.name.key] = SRV(port: port, target: target)
+                    if let sender { senders[r.name.key] = sender }
+                case .txt(let strings) where isOurs(r.name):
+                    names[r.name.key] = r.name
+                    txt[r.name.key] = strings
+                    if let sender { senders[r.name.key] = sender }
+                case .a(let ip):
+                    addresses[r.name.key] = ip
+                default:
+                    break
+                }
+            }
+        }
+
+        /// `<instance>._infinitus._tcp.local.`
+        private func isOurs(_ name: DNSName) -> Bool {
+            name.labels.count == 4 && DNSName(labels: Array(name.labels.dropFirst())).matches(MDNS.serviceName)
+        }
+
+        private mutating func forget(_ key: String) {
+            names[key] = nil; srv[key] = nil; txt[key] = nil; senders[key] = nil
+        }
+
+        public var peers: [Peer] {
+            names.keys.sorted().compactMap { key in
+                guard let name = names[key], let s = srv[key], let t = txt[key] else { return nil }
+                return Peer(instance: name.labels[0], host: s.target.dotted, port: s.port, txt: t,
+                            ipv4: addresses[s.target.key] ?? senders[key])
+            }
+        }
+    }
+}
+
+// MARK: - Sockets (macOS + Linux)
+
+#if os(macOS) || os(Linux)
+#if canImport(Darwin)
+import Darwin
+private let datagramSocketType = SOCK_DGRAM
+#else
+import Glibc
+private let datagramSocketType = Int32(SOCK_DGRAM.rawValue)
+#endif
+
+extension MDNS {
+    public enum SocketError: Error, Equatable {
+        case socket(Int32), bind(Int32), membership(Int32), send(Int32)
+    }
+
+    /// One UDP socket on 0.0.0.0:5353 in the 224.0.0.251 group. Bound with
+    /// SO_REUSEADDR + SO_REUSEPORT so it sits beside mDNSResponder (macOS)
+    /// or avahi (Linux), with multicast loopback on so two sockets in one
+    /// process hear each other (the tests; `--discoverable` browsing itself).
+    public final class Socket: @unchecked Sendable {
+        private let fd: Int32
+        private let lock = NSLock()
+        private var closed = false
+
+        public init() throws {
+            let fd = socket(AF_INET, datagramSocketType, 0)
+            guard fd >= 0 else { throw SocketError.socket(errno) }
+            var one: Int32 = 1
+            setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &one, socklen_t(MemoryLayout<Int32>.size))
+            setsockopt(fd, SOL_SOCKET, SO_REUSEPORT, &one, socklen_t(MemoryLayout<Int32>.size))
+            var addr = sockaddr_in()
+            addr.sin_family = sa_family_t(AF_INET)
+            addr.sin_port = MDNS.port.bigEndian
+            addr.sin_addr = in_addr(s_addr: in_addr_t(0))   // INADDR_ANY
+            let bound = withUnsafePointer(to: &addr) { ptr in
+                ptr.withMemoryRebound(to: sockaddr.self, capacity: 1) { sa in
+                    bind(fd, sa, socklen_t(MemoryLayout<sockaddr_in>.size))
+                }
+            }
+            guard bound == 0 else { let e = errno; close(fd); throw SocketError.bind(e) }
+            var mreq = ip_mreq()
+            inet_pton(AF_INET, MDNS.groupIPv4, &mreq.imr_multiaddr)
+            mreq.imr_interface = in_addr(s_addr: in_addr_t(0))
+            guard setsockopt(fd, Int32(IPPROTO_IP), Int32(IP_ADD_MEMBERSHIP), &mreq,
+                             socklen_t(MemoryLayout<ip_mreq>.size)) == 0 else {
+                let e = errno; close(fd); throw SocketError.membership(e)
+            }
+            var ttl: UInt8 = 255
+            setsockopt(fd, Int32(IPPROTO_IP), Int32(IP_MULTICAST_TTL), &ttl, 1)
+            var loop: UInt8 = 1
+            setsockopt(fd, Int32(IPPROTO_IP), Int32(IP_MULTICAST_LOOP), &loop, 1)
+            self.fd = fd
+        }
+
+        public func send(_ message: Message) throws {
+            var to = sockaddr_in()
+            to.sin_family = sa_family_t(AF_INET)
+            to.sin_port = MDNS.port.bigEndian
+            inet_pton(AF_INET, MDNS.groupIPv4, &to.sin_addr)
+            let bytes = [UInt8](message.encode())
+            let sent = withUnsafePointer(to: &to) { ptr in
+                ptr.withMemoryRebound(to: sockaddr.self, capacity: 1) { sa in
+                    sendto(fd, bytes, bytes.count, 0, sa, socklen_t(MemoryLayout<sockaddr_in>.size))
+                }
+            }
+            guard sent == bytes.count else { throw SocketError.send(errno) }
+        }
+
+        /// One datagram, or nil after `timeout` (or on an undecodable one).
+        public func receive(timeout: TimeInterval) -> (message: Message, sender: String)? {
+            var fds = pollfd(fd: fd, events: Int16(POLLIN), revents: 0)
+            guard poll(&fds, nfds_t(1), Int32(timeout * 1000)) > 0 else { return nil }
+            var buffer = [UInt8](repeating: 0, count: 9000)
+            var from = sockaddr_in()
+            var fromLen = socklen_t(MemoryLayout<sockaddr_in>.size)
+            let n = withUnsafeMutablePointer(to: &from) { ptr in
+                ptr.withMemoryRebound(to: sockaddr.self, capacity: 1) { sa in
+                    recvfrom(fd, &buffer, buffer.count, 0, sa, &fromLen)
+                }
+            }
+            guard n > 0, let message = try? Message.decode(Data(buffer[0..<n])) else { return nil }
+            var text = [CChar](repeating: 0, count: Int(INET_ADDRSTRLEN))
+            var address = from.sin_addr
+            inet_ntop(AF_INET, &address, &text, socklen_t(text.count))
+            return (message, String(cString: text))
+        }
+
+        /// Named so the libc `close(fd)` calls in `init` stay unambiguous
+        /// (a method called `close` would shadow them).
+        public func tearDown() {
+            lock.lock(); defer { lock.unlock() }
+            guard !closed else { return }
+            closed = true
+            close(fd)
+        }
+
+        deinit { tearDown() }
+    }
+
+    /// Advertises one service: announces on start and again a second
+    /// later (RFC 6762 §8.3), answers queries until `stop()`, which sends
+    /// the goodbye. One thread blocked in poll(); nothing runs while the
+    /// network is quiet.
+    public final class Advertiser: @unchecked Sendable {
+        public let service: Service
+        private let socket: Socket
+        private let lock = NSLock()
+        private var stopping = false
+        private var thread: Thread?
+
+        public init(service: Service) throws {
+            self.service = service
+            self.socket = try Socket()
+        }
+
+        public func start() throws {
+            try socket.send(service.announcement())
+            let thread = Thread { [self] in
+                var secondAnnouncement: Date? = Date().addingTimeInterval(1)
+                while !isStopping {
+                    if let received = socket.receive(timeout: 1),
+                       let reply = Responder.answer(received.message, service: service) {
+                        try? socket.send(reply)
+                    }
+                    if let due = secondAnnouncement, Date() >= due {
+                        try? socket.send(service.announcement())
+                        secondAnnouncement = nil
+                    }
+                }
+            }
+            self.thread = thread
+            thread.start()
+        }
+
+        private var isStopping: Bool {
+            lock.lock(); defer { lock.unlock() }
+            return stopping
+        }
+
+        public func stop() {
+            lock.lock(); stopping = true; lock.unlock()
+            while let t = thread, !t.isFinished { Thread.sleep(forTimeInterval: 0.05) }
+            try? socket.send(service.goodbye())
+            socket.tearDown()
+        }
+    }
+
+    /// Sends the PTR query (again after a second) and collects answers
+    /// for `seconds`. Blocking — the CLI calls it; the app never does.
+    public static func browse(seconds: TimeInterval) throws -> [Peer] {
+        let socket = try Socket()
+        defer { socket.tearDown() }
+        var collector = Collector()
+        let deadline = Date().addingTimeInterval(seconds)
+        var resend: Date? = Date().addingTimeInterval(1)
+        try socket.send(.query(serviceName))
+        while Date() < deadline {
+            if let received = socket.receive(timeout: 0.25) {
+                collector.ingest(received.message, from: received.sender)
+            }
+            if let due = resend, Date() >= due {
+                try socket.send(.query(serviceName))
+                resend = nil
+            }
+        }
+        return collector.peers
+    }
+}
+#endif
