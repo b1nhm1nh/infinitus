@@ -12,6 +12,7 @@ import InfinitusUI
 /// choices, same values and same labels.
 struct SettingsForm: View {
     @AppStorage("chat_header") private var chatHeader = "compact"
+    @AppStorage(FleetAlarmCenter.enabledKey) private var fleetAlarms = true
 
     @ObservedObject var model: MirrorModel
     /// The QR scanner (#9 remote access) is a sheet, not a screen: it
@@ -142,6 +143,17 @@ struct SettingsForm: View {
                      + "stacked cards and landscape the wide rows.")
                     .font(.caption).foregroundStyle(.secondary)
             }
+            Section("Notifications") {
+                Toggle("Reset and swap alerts", isOn: $fleetAlarms)
+                Text("From the phone itself, planned from the last snapshot: "
+                     + "an exhausted account's limit lifting in 10 minutes, "
+                     + "and the account the fleet just swapped to. Needs "
+                     + "nothing on the Mac.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+        }
+        .onChange(of: fleetAlarms) { _, on in
+            if !on { FleetAlarmCenter.shared.clearPending() }
         }
         .sheet(isPresented: $scanning) {
             PairScannerSheet { payload in

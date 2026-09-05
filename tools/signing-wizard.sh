@@ -189,7 +189,9 @@ cd "$(dirname "$0")/.."
 
 # Nothing here lands in the repo: ids and paths persist under ~/.config,
 # secrets go straight to the keychain / GitHub and are never written.
-ENV_FILE="${ENV_FILE:-$HOME/.config/infinitus/signing.env}"
+# The library defaults ENV_FILE to ./.env before this runs, so the
+# assignment is unconditional (INFINITUS_SIGNING_ENV overrides).
+ENV_FILE="${INFINITUS_SIGNING_ENV:-$HOME/.config/infinitus/signing.env}"
 mkdir -p "$(dirname "$ENV_FILE")"
 touch "$ENV_FILE" && chmod 600 "$ENV_FILE"
 
@@ -245,25 +247,32 @@ else
 fi
 
 # ── 3 ─────────────────────────────────────────────────────────────────────
-stage "Mac — local proof: build → notarize → staple → Gatekeeper"
-say "Same steps release.yml runs; a few minutes, mostly Apple's queue."
-if confirm "Run ./make-app.sh + notarytool now?"; then
-  ./make-app.sh
-  codesign -dvv Infinitus.app 2>&1 | grep -E "^Authority=Developer ID" \
-    || warn "the bundle is not Developer ID signed — did stage 1 land?"
-  rm -f notarize.zip
-  ditto -c -k --keepParent Infinitus.app notarize.zip
-  if xcrun notarytool submit notarize.zip --wait --keychain-profile "$NOTARY_PROFILE"; then
-    xcrun stapler staple Infinitus.app
-    spctl --assess --type execute -vv Infinitus.app \
-      && printf '  %s✓ Gatekeeper accepts%s Infinitus.app\n' "$GREEN" "$RESET"
-    note "The bundle on disk changed under the running app: quit Infinitus and"
-    note "\`open Infinitus.app\` once to exercise the hardened-runtime build."
+stage "Mac — local proof: re-sign a copy → notarize → staple → Gatekeeper"
+say "Same steps release.yml runs, on a COPY of the built Infinitus.app: the"
+say "bundle in the repo and the running app are left alone (another session"
+say "owns rebuilds), and nothing here needs a rebuild."
+if [[ ! -d Infinitus.app ]]; then
+  warn "no Infinitus.app in the repo — have it built first (./make-app.sh)"
+  SKIPPED+=("local notarization proof (needs a built Infinitus.app)")
+elif confirm "Notarize a copy of Infinitus.app now?"; then
+  DEVID=$(security find-identity -v -p codesigning 2>/dev/null \
+    | awk -F'"' '/Developer ID Application/ {print $2; exit}')
+  PROOF=$(mktemp -d)
+  cp -R Infinitus.app "$PROOF/Infinitus.app"
+  # Inside-out, as make-app.sh does: the helper, then the bundle.
+  codesign --force --options runtime --timestamp --sign "$DEVID" \
+    "$PROOF/Infinitus.app/Contents/MacOS/infinitusctl"
+  codesign --force --options runtime --timestamp --sign "$DEVID" "$PROOF/Infinitus.app"
+  ditto -c -k --keepParent "$PROOF/Infinitus.app" "$PROOF/notarize.zip"
+  if xcrun notarytool submit "$PROOF/notarize.zip" --wait --keychain-profile "$NOTARY_PROFILE"; then
+    xcrun stapler staple "$PROOF/Infinitus.app"
+    spctl --assess --type execute -vv "$PROOF/Infinitus.app" \
+      && printf '  %s✓ Gatekeeper accepts%s the notarized copy (%s)\n' "$GREEN" "$RESET" "$PROOF/Infinitus.app"
+    note "The proof copy stays in $PROOF; the next release build gets the same treatment in CI."
   else
     warn "notarization did not pass — run: xcrun notarytool log <submission id> --keychain-profile $NOTARY_PROFILE"
     SKIPPED+=("notarization proof (see notarytool log)")
   fi
-  rm -f notarize.zip
 else
   SKIPPED+=("local notarization proof (RELEASING.md 'Local check')")
 fi
@@ -279,6 +288,22 @@ ask P12_PATH "Path to the .p12 [~/Downloads/DeveloperID.p12]:"
 P12_PATH="${P12_PATH:-$HOME/Downloads/DeveloperID.p12}"
 P12_PATH="${P12_PATH/#\~/$HOME}"
 ask_secret P12_PASSWORD "The .p12 export password:"
+# A wrong password only surfaces in CI ("MAC verification failed during
+# PKCS12 import", release v0.4.3's first run) — check it here first, with
+# the same `security import` the release job runs (openssl 3 rejects the
+# legacy ciphers Keychain Access exports with, even on the right password).
+p12_opens() {
+  local k; k="$(mktemp -d)/probe.keychain-db"
+  security create-keychain -p "" "$k" >/dev/null 2>&1 || return 1
+  security import "$1" -k "$k" -P "$2" -T /usr/bin/codesign >/dev/null 2>&1
+  local rc=$?
+  security delete-keychain "$k" >/dev/null 2>&1
+  return $rc
+}
+until [[ ! -f "$P12_PATH" ]] || p12_opens "$P12_PATH" "$P12_PASSWORD"; do
+  warn "that password does not open $P12_PATH"
+  ask_secret P12_PASSWORD "The .p12 export password (again):"
+done
 if [[ -f "$P12_PATH" && -f "${NOTARY_KEY_PATH:-/nonexistent}" ]]; then
   set_secret DEVELOPER_ID_P12_BASE64 "$(base64 -i "$P12_PATH")"
   set_secret DEVELOPER_ID_P12_PASSWORD "$P12_PASSWORD"
@@ -330,14 +355,14 @@ ask APNS_KEY_ID "APNs Key ID (10 characters, blank to skip):"
 if [[ -n "$APNS_KEY_ID" ]]; then
   write_env APNS_KEY_ID "$APNS_KEY_ID"
   step "Open the .p8 in a text editor and copy its whole contents to the clipboard."
-  step "Infinitus (menu bar) → Settings → Sync → Key ID '$APNS_KEY_ID', Team ID '$TEAM_ID' → 'Paste .p8 from clipboard'."
+  step "Infinitus (menu bar) → Settings → Devices → 'Phone lock screen' → Team ID '$TEAM_ID', Key ID '$APNS_KEY_ID' → 'Paste .p8 from clipboard'."
   note "The key lives in the Mac keychain only (run.infinitus.apns); shown masked."
-  pause "Press Enter once Sync shows 'key stored in the keychain'"
+  pause "Press Enter once the row says 'key in the keychain'"
   security find-generic-password -s run.infinitus.apns -a "$APNS_KEY_ID" >/dev/null 2>&1 \
     && printf '  %s✓ found%s the APNs key in the keychain\n' "$GREEN" "$RESET" \
-    || warn "no keychain item for key $APNS_KEY_ID yet — paste it in Settings › Sync"
+    || warn "no keychain item for key $APNS_KEY_ID yet — paste it in Settings › Devices"
 else
-  SKIPPED+=("APNs key → Settings › Sync (issue #70)")
+  SKIPPED+=("APNs key → Settings › Devices (issue #70)")
 fi
 
 finish

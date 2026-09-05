@@ -371,8 +371,39 @@ final class StatsTests: XCTestCase {
         XCTAssertEqual(second.days["2026-09-04"]?.inputTokens, 10)
     }
 
-    func testCacheVersionIsSeven() {
-        XCTAssertEqual(StatsScanner.Cache().version, 7)
+    func testCacheVersionIsEight() {
+        XCTAssertEqual(StatsScanner.Cache().version, 8)
+    }
+
+    /// The minute buckets and the peak survive a cache round trip: the
+    /// hand-written Day decoder must read them (it didn't at first, so
+    /// every scan showed only the last pass's fresh minutes, 2026-09-05).
+    func testMinuteBucketsSurviveTheCache() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("stats-min-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let project = root.appendingPathComponent("-r-a")
+        try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
+        let file = project.appendingPathComponent("s1.jsonl")
+        try [
+            #"{"type":"assistant","timestamp":"2026-09-04T01:00:05.000Z","message":{"id":"a1","model":"claude-opus-5","usage":{"input_tokens":10,"output_tokens":700},"content":[{"type":"text","text":"a"}]}}"#,
+            #"{"type":"assistant","timestamp":"2026-09-04T01:03:05.000Z","message":{"id":"a2","model":"claude-opus-5","usage":{"input_tokens":10,"output_tokens":300},"content":[{"type":"text","text":"b"}]}}"#,
+        ].joined(separator: "\n").appending("\n").write(to: file, atomically: true, encoding: .utf8)
+        let cacheURL = root.appendingPathComponent("cache.json")
+        let now = date("2026-09-04T02:00:00Z")
+        let first = StatsScanner.scan(projectsDir: root, cacheURL: cacheURL, calendar: cal, now: now)
+        XCTAssertEqual(first.days["2026-09-04"]?.peakTokensPerMinute, 700)
+        // Nothing new to read: the answer must come out of the cache whole.
+        let second = StatsScanner.scan(projectsDir: root, cacheURL: cacheURL, calendar: cal, now: now)
+        XCTAssertEqual(second.days["2026-09-04"]?.peakTokensPerMinute, 700)
+        XCTAssertEqual(second.days["2026-09-04"]?.minuteTokens.count, 2)
+        // A later append adds to the day's buckets rather than replacing them.
+        let more = #"{"type":"assistant","timestamp":"2026-09-04T01:00:40.000Z","message":{"id":"a3","model":"claude-opus-5","usage":{"input_tokens":10,"output_tokens":100},"content":[{"type":"text","text":"c"}]}}"#
+        let handle = try FileHandle(forWritingTo: file)
+        try handle.seekToEnd()
+        try handle.write(contentsOf: Data((more + "\n").utf8))
+        try handle.close()
+        let third = StatsScanner.scan(projectsDir: root, cacheURL: cacheURL, calendar: cal, now: now)
+        XCTAssertEqual(third.days["2026-09-04"]?.peakTokensPerMinute, 800)
     }
 
     // MARK: engines and effort (issue #24, round 2)
@@ -555,13 +586,19 @@ final class StatsTests: XCTestCase {
         let subLine = #"{"type":"assistant","timestamp":"2026-09-04T01:00:05.000Z","message":{"id":"m1","model":"claude-opus-4-5-20250805","usage":{"input_tokens":10,"output_tokens":20},"content":[{"type":"text","text":"subtask done"}]}}"#
         try (subLine + "\n").write(to: subFile, atomically: true, encoding: .utf8)
 
+        // A workflow run's agents sit one level deeper and count the same way.
+        let runDir = subagentsDir.appendingPathComponent("workflows/wf_abc")
+        try FileManager.default.createDirectory(at: runDir, withIntermediateDirectories: true)
+        let wfLine = #"{"type":"assistant","timestamp":"2026-09-04T01:00:06.000Z","message":{"id":"m2","model":"claude-opus-4-5-20250805","usage":{"input_tokens":5,"output_tokens":7},"content":[{"type":"text","text":"stream done"}]}}"#
+        try (wfLine + "\n").write(to: runDir.appendingPathComponent("agent-y.jsonl"), atomically: true, encoding: .utf8)
+
         let r = StatsScanner.scan(projectsDir: dir, cacheURL: cache, calendar: cal)
-        XCTAssertEqual(r.files, 2)
+        XCTAssertEqual(r.files, 3)
         let d = r.days["2026-09-04"]!
         XCTAssertEqual(d.humanMessages, 1)          // from the top-level file only
-        XCTAssertEqual(d.sessions, ["sess-1"])      // the subagent file added no session
-        XCTAssertEqual(d.inputTokens, 10)           // from the subagent file
-        XCTAssertEqual(d.outputTokens, 20)
+        XCTAssertEqual(d.sessions, ["sess-1"])      // the subagent files added no session
+        XCTAssertEqual(d.inputTokens, 15)           // from the subagent files
+        XCTAssertEqual(d.outputTokens, 27)
     }
 
     /// A file whose last line never gets a trailing newline (a still-open
@@ -629,6 +666,103 @@ final class StatsTests: XCTestCase {
         XCTAssertEqual(r.remaining, 0)
         XCTAssertEqual(r.bytesRemaining, 0)
         XCTAssertEqual(r.days, full.days)
+    }
+
+    /// The byte-search tool-result path answers exactly what the full
+    /// JSON path would: the entry's own (last) timestamp even when a
+    /// tool's output echoes one, every errored block, the denial flag.
+    func testFastToolResultPathMatchesTheDictionaryPath() throws {
+        let line = #"{"type":"user","toolDenialKind":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"t1","is_error":true,"content":"echo {\"timestamp\":\"1999-01-01T00:00:00.000Z\"} \"is_error\":true"},{"type":"tool_result","tool_use_id":"t2","is_error":true,"content":"x"},{"type":"tool_result","tool_use_id":"t3","content":"fine"}]},"timestamp":"2026-09-04T03:00:00.000Z","uuid":"u1"}"#
+        let fast = try XCTUnwrap(StatsScanner.fastParseToolResult(Data(line.utf8)))
+        XCTAssertEqual(fast["type"] as? String, "user")
+        XCTAssertEqual(fast["timestamp"] as? String, "2026-09-04T03:00:00.000Z")
+        XCTAssertEqual(fast["toolDenialKind"] as? Bool, true)
+        let blocks = try XCTUnwrap((fast["message"] as? [String: Any])?["content"] as? [[String: Any]])
+        // The echoed `\"is_error\":true` inside a string is escaped, so it is not a match.
+        XCTAssertEqual(blocks.count, 2)
+        var viaFast = StatsScanner.FileEntry()
+        StatsScanner.ingest(fast, sessionID: "s", into: &viaFast, calendar: cal)
+        let full = try XCTUnwrap(try JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any])
+        var viaFull = StatsScanner.FileEntry()
+        StatsScanner.ingest(full, sessionID: "s", into: &viaFull, calendar: cal)
+        XCTAssertEqual(viaFast.days["2026-09-04"]?.toolErrors, viaFull.days["2026-09-04"]?.toolErrors)
+        XCTAssertEqual(viaFast.days["2026-09-04"]?.denials, viaFull.days["2026-09-04"]?.denials)
+        XCTAssertNil(StatsScanner.fastParseToolResult(Data(#"{"type":"user","message":{}}"#.utf8)), "no timestamp, no entry")
+    }
+
+    /// A handle carries the decoded cache across a chunked backfill and
+    /// still lands the finished state on disk, identical to the
+    /// handle-less scan.
+    func testCacheHandleCarriesThePassesAndWritesTheFinishedCache() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("stats-h-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let project = dir.appendingPathComponent("p")
+        try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
+        var lines: [String] = []
+        for i in 0..<6 {
+            lines.append(#"{"type":"user","cwd":"/r/a","timestamp":"2026-09-04T01:0\#(i):00.000Z","origin":{"kind":"human"},"message":{"role":"user","content":"m\#(i)"}}"#)
+            lines.append(#"{"type":"assistant","timestamp":"2026-09-04T01:0\#(i):05.000Z","message":{"id":"a\#(i)","model":"claude-opus-5","usage":{"input_tokens":10,"output_tokens":20},"content":[{"type":"text","text":"ok"}]}}"#)
+        }
+        try lines.joined(separator: "\n").appending("\n").write(to: project.appendingPathComponent("s1.jsonl"), atomically: true, encoding: .utf8)
+        let plainCache = dir.appendingPathComponent("plain.json")
+        let full = StatsScanner.scan(projectsDir: dir, cacheURL: plainCache, calendar: cal)
+
+        let heldCache = dir.appendingPathComponent("held.json")
+        let handle = StatsScanner.CacheHandle()
+        var passes = 0
+        var r = StatsScanner.scan(projectsDir: dir, cacheURL: heldCache, calendar: cal, byteBudget: 400, windowBytes: 400, handle: handle)
+        passes += 1
+        XCTAssertGreaterThan(r.remaining, 0)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: heldCache.path), "mid-backfill state stays in the handle until a checkpoint is due")
+        while r.remaining > 0, passes < 20 {
+            r = StatsScanner.scan(projectsDir: dir, cacheURL: heldCache, calendar: cal, byteBudget: 400, windowBytes: 400, handle: handle)
+            passes += 1
+        }
+        XCTAssertEqual(r.remaining, 0)
+        XCTAssertGreaterThan(passes, 2)
+        if r.days != full.days, let a = r.days["2026-09-04"], let b = full.days["2026-09-04"] {
+            for (x, y) in zip(Mirror(reflecting: a).children, Mirror(reflecting: b).children) where "\(x.value)" != "\(y.value)" {
+                print("DIFF \(x.label ?? "?"): held=\(x.value) full=\(y.value)")
+            }
+        }
+        XCTAssertEqual(r.days, full.days)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: heldCache.path), "the finished corpus is written")
+        // The written cache is the same corpus a fresh scan would trust.
+        let again = StatsScanner.scan(projectsDir: dir, cacheURL: heldCache, calendar: cal)
+        XCTAssertEqual(again.days, full.days)
+        XCTAssertEqual(again.files, 1)
+    }
+
+    /// Throughput on the real corpus — opt in with INFINITUS_BENCH=1;
+    /// prints MB/s for the largest transcript and the cache round trip.
+    func testBenchmarkRealCorpus() throws {
+        try XCTSkipUnless(ProcessInfo.processInfo.environment["INFINITUS_BENCH"] == "1", "set INFINITUS_BENCH=1 to run")
+        let projects = URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent(".claude/projects")
+        let fm = FileManager.default
+        var biggest: (URL, Int)?
+        for case let url as URL in fm.enumerator(at: projects, includingPropertiesForKeys: [.fileSizeKey])! where url.pathExtension == "jsonl" {
+            let size = (try? url.resourceValues(forKeys: [.fileSizeKey]))?.fileSize ?? 0
+            if size > (biggest?.1 ?? 0) { biggest = (url, size) }
+        }
+        let (big, size) = try XCTUnwrap(biggest)
+        var entry = StatsScanner.FileEntry()
+        var read = 0
+        let t0 = Date()
+        while read < min(size, 256 * 1024 * 1024) {
+            let c = StatsScanner.parse(url: big, sessionID: "s", into: &entry, calendar: .current)
+            if c <= 0 { break }
+            read += c
+        }
+        let dt = Date().timeIntervalSince(t0)
+        print("BENCH parse \(big.lastPathComponent): \(read / 1_048_576) MB in \(String(format: "%.1f", dt)) s = \(String(format: "%.1f", Double(read) / 1_048_576 / dt)) MB/s")
+        let cacheURL = StatsScanner.defaultCacheURL()
+        if let data = try? Data(contentsOf: cacheURL) {
+            let t1 = Date()
+            let cache = try JSONDecoder().decode(StatsScanner.Cache.self, from: data)
+            let t2 = Date()
+            _ = try JSONEncoder().encode(cache)
+            print("BENCH cache \(data.count / 1_048_576) MB, \(cache.files.count) files: decode \(String(format: "%.2f", t2.timeIntervalSince(t1))) s, encode \(String(format: "%.2f", Date().timeIntervalSince(t2))) s")
+        }
     }
 
     func testFastPathParsesBigToolResultLineWithoutFullJSON() throws {
@@ -1083,10 +1217,43 @@ final class StatsTests: XCTestCase {
         XCTAssertEqual(s.activity, .tests)                        // every edit is a test file
         s.testEdits = 1
         XCTAssertEqual(s.activity, .code)                         // a mix
+        s.promptLabel = "debug"
+        XCTAssertEqual(s.activity, .debug)                        // the person's words beat the path rules
         s.label = "review"
         XCTAssertEqual(s.activity, .review)                       // rule 1 beats everything
         s.label = "not-a-label"
-        XCTAssertEqual(s.activity, .code)                         // unknown label → the path rules
+        XCTAssertEqual(s.activity, .debug)                        // unknown label → rule 0, then the path rules
+        s.promptLabel = nil
+        XCTAssertEqual(s.activity, .code)
+    }
+
+    func testActivitySignalsPromptIntent() {
+        typealias S = StatsScanner.ActivitySignals
+        XCTAssertEqual(S.label(prompt: "Review PR #42 for me"), .review)
+        XCTAssertEqual(S.label(prompt: "review the plan before we start"), .review)
+        XCTAssertEqual(S.label(prompt: "Plan the tests for the new parser"), .plan)
+        XCTAssertEqual(S.label(prompt: "add tests for SessionStart"), .tests)
+        XCTAssertEqual(S.label(prompt: "the app crashes on launch, why?"), .debug)
+        XCTAssertEqual(S.label(prompt: "Why is the build failing"), .debug)
+        XCTAssertEqual(S.label(prompt: "open the website and check the login form"), .browser)
+        XCTAssertEqual(S.label(prompt: "run it on the simulator"), .simulator)
+        XCTAssertEqual(S.label(prompt: "Explain how the mirror server routes requests"), .explanation)
+        XCTAssertNil(S.label(prompt: "rename the button"))
+        XCTAssertNil(S.label(prompt: "previewer"))                                     // whole words only
+        XCTAssertNil(S.label(prompt: String(repeating: "x ", count: 300) + "explain"))  // past the opening
+    }
+
+    func testIngestReadsThePromptIntentOffTheOpeningMessage() {
+        var e = StatsScanner.FileEntry()
+        let lines = [
+            #"{"type":"user","timestamp":"2026-09-05T01:00:00.000Z","origin":{"kind":"human"},"message":{"role":"user","content":"debug the crash on launch"}}"#,
+            #"{"type":"assistant","timestamp":"2026-09-05T01:00:10.000Z","message":{"id":"a1","model":"claude-opus-5","usage":{"input_tokens":10,"output_tokens":1},"content":[{"type":"tool_use","id":"t1","name":"Edit","input":{"file_path":"/r/Sources/A.swift"}}]}}"#,
+            #"{"type":"user","timestamp":"2026-09-05T01:05:00.000Z","origin":{"kind":"peer","from":"uds:/tmp/infinitus-1.sock"},"message":{"role":"user","content":"<cross-session-message from=\"uds:/tmp/infinitus-1.sock\" from-name=\"Infinitus\" from-mode=\"bypass\">\nexplain the feed\n</cross-session-message>"}}"#,
+        ]
+        for line in lines { StatsScanner.ingest(entry(line), sessionID: "s1", into: &e, calendar: cal) }
+        let day = try! XCTUnwrap(e.days["2026-09-05"])
+        XCTAssertEqual(day.activities["debug"]?.stretches, 1)     // edits alone would have said "code"
+        XCTAssertEqual(e.state.stretch?.promptLabel, "explanation")
     }
 
     func testDayAddStretchFeedsActivitiesAndModelStretchCounts() {
@@ -1216,5 +1383,41 @@ final class StatsTests: XCTestCase {
         XCTAssertTrue(merged.compacted().minuteTokens.isEmpty)
         XCTAssertEqual(merged.compacted().peakTokensPerMinute, 180)
         XCTAssertEqual(Stats.minuteOfDay(0, calendar: { var c = Calendar(identifier: .gregorian); c.timeZone = TimeZone(identifier: "UTC")!; return c }()), 0)
+    }
+}
+
+extension StatsTests {
+    /// The formatter-free timestamp path agrees with ISO8601DateFormatter
+    /// to the millisecond, and leaves every other shape to it.
+    func testFastStampMatchesTheFormatter() {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let plain = ISO8601DateFormatter()
+        for s in ["2026-09-05T04:02:47.463Z", "2026-09-05T04:02:47Z", "2000-02-29T23:59:59.999Z", "1999-12-31T00:00:00.000Z",
+                  "2024-03-01T12:00:00.5Z", "2026-12-31T23:59:59Z"] {
+            let expect = (f.date(from: s) ?? plain.date(from: s))?.timeIntervalSince1970
+                ?? ISO8601DateFormatter().date(from: s.replacingOccurrences(of: ".5Z", with: "Z"))!.timeIntervalSince1970 + 0.5
+            XCTAssertEqual(TokenRateScanner.fastStamp(s)!, expect, accuracy: 0.0005, s)
+            XCTAssertEqual(TokenRateScanner.parseStamp(s)!, expect, accuracy: 0.0005, s)
+        }
+        XCTAssertNil(TokenRateScanner.fastStamp("2026-09-05T04:02:47+07:00"))
+        XCTAssertNil(TokenRateScanner.fastStamp("2026-13-05T04:02:47Z"))
+        XCTAssertNil(TokenRateScanner.fastStamp("nope"))
+        XCTAssertNotNil(TokenRateScanner.parseStamp("2026-09-05T04:02:47+07:00"), "the formatter still takes offsets")
+    }
+
+    func testByteScanAnchorsOnARareByteAndFindsEveryOccurrence() {
+        let hay = Array(#"{"a":"yes","type":"user","x":"type\":\"user"}"#.utf8)
+        let needle = ByteScan.Needle(#""type":"user""#)
+        XCTAssertEqual(needle.bytes[needle.anchor], UInt8(ascii: "y"))
+        hay.withUnsafeBytes { buf in
+            XCTAssertEqual(ByteScan.firstIndex(of: needle, in: buf), 11)
+            XCTAssertEqual(ByteScan.lastIndex(of: needle, in: buf), 11)
+            XCTAssertEqual(ByteScan.count(needle, in: buf), 1)
+            XCTAssertNil(ByteScan.firstIndex(of: needle, in: buf, from: 12))
+            XCTAssertTrue(ByteScan.contains(ByteScan.Needle("yes"), in: buf))
+            XCTAssertFalse(ByteScan.contains(ByteScan.Needle("yesx"), in: buf))
+            XCTAssertEqual(ByteScan.count(ByteScan.Needle("\""), in: buf), 14)
+        }
     }
 }

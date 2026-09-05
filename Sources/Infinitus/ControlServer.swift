@@ -187,6 +187,70 @@ final class ControlServer {
             await model.refreshSnapshot()
             return ControlReply(ok: true, result: try .of(fleetsPayload()))
 
+        case "sessions":
+            return ControlReply(ok: true, result: .array(model.sessionRows().map { row in
+                .object(["pid": .number(Double(row.pid)), "name": row.name.map { .string($0) } ?? .null,
+                         "cwd": .string(row.cwd), "status": row.status.map { .string($0) } ?? .null,
+                         "kind": .string(row.kind)])
+            }))
+
+        case "send":
+            guard let text = r.secret, !text.isEmpty else { throw Fail("send: the message is expected on stdin") }
+            guard let who = r.args.first, let pid = model.sessionPid(matching: who) else {
+                throw Fail("no live session matches \(r.args.first ?? "?"); see `infinitusctl sessions`")
+            }
+            let reply = await model.send(SessionInput.Request(kind: .message, text: text),
+                                         toPid: pid, icon: "💬", what: "control send")
+            return ControlReply(ok: reply.outcome == "delivered", result: try .of(reply),
+                                error: reply.outcome == "delivered" ? nil : "\(reply.outcome)\(reply.detail.map { ": " + $0 } ?? "")")
+
+        case "machine":
+            if let report = model.machineModel.report {
+                return ControlReply(ok: true, result: try .of(report))
+            }
+            Task { await model.machineModel.sample() }
+            return ControlReply(ok: true, result: .object(["sampling": .bool(true)]))
+
+        case "machine-kill":
+            guard let pidText = r.args.first, let pid = Int(pidText), pid > 1 else {
+                throw Fail("usage: machine-kill <pid> --yes")
+            }
+            guard r.options["yes"] != nil else { throw Fail("machine-kill signals a process; pass --yes") }
+            let result = await model.machineModel.killRunaway(pid: pid)
+            return ControlReply(ok: true, result: .object(["result": .string(result)]))
+
+        case "machine-reclaim":
+            guard r.options["yes"] != nil else { throw Fail("machine-reclaim removes files; pass --yes") }
+            let result = await model.machineModel.reclaim()
+            return ControlReply(ok: true, result: .object(["result": .string(result)]))
+
+        case "machine-hook":
+            guard r.args.count >= 2, ["disable", "restore"].contains(r.args[0]) else {
+                throw Fail("usage: machine-hook disable|restore <owner>")
+            }
+            guard r.options["yes"] != nil else { throw Fail("machine-hook edits settings.json; pass --yes") }
+            let owner = r.args[1]
+            let result = r.args[0] == "disable"
+                ? await model.machineModel.disableHook(owner: owner)
+                : await model.machineModel.restoreHook(owner: owner)
+            return ControlReply(ok: true, result: .object(["result": .string(result)]))
+
+        case "approve":
+            guard let payload = r.secret, let event = HookEvent.parse(payload), event.name == "PreToolUse",
+                  let sessionId = event.sessionId, let tool = event.toolName else {
+                throw Fail("approve: a PreToolUse hook payload is expected on stdin")
+            }
+            let allowed = model.toolApprovals.allows(sessionId: sessionId, tool: tool, command: event.toolCommand)
+            if allowed { model.logEvent("hook", icon: "checkmark.shield", "allowed \(tool) from the phone's session rule") }
+            return ControlReply(ok: true, result: .object(["decision": .string(allowed ? "allow" : "ask")]))
+
+        case "event":
+            guard let payload = r.secret, let event = HookEvent.parse(payload) else {
+                throw Fail("event: a Claude Code hook payload (JSON with hook_event_name) is expected on stdin")
+            }
+            let pid = model.handleHookEvent(event)
+            return ControlReply(ok: true, result: .object(["pid": pid.map { .number(Double($0)) } ?? .null]))
+
         case "switch", "hold", "unhold", "rename", "remove":
             let (fleet, n) = try target(r)
             let need: EngineCapabilities = ["switch": .switch, "hold": .hold, "unhold": .hold,

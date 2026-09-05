@@ -25,12 +25,17 @@ actor MirrorExporter {
 
     /// The ⚡ gauge's scale: the highest tokens/minute seen lately.
     private var tokenPeak = 0
+    /// Folders sessions have run in, newest first (#91's repository
+    /// picker); kept across launches.
+    private var recentCwds: [String] = UserDefaults.standard.stringArray(forKey: "recent_cwds") ?? []
+    private static let recentCap = 20
 
     func record(listJSON: Data, prefs: FleetPrefs,
                 serviceStatus: ServiceStatusSummary, engine: EngineBadge,
                 fleets: [EngineFleet] = [], forecast: UsageForecast? = nil,
                 plan: WindowPlanner.Plan? = nil, awsLogins: [AwsLogin.Item] = [],
-                progress: [Int: SessionProgress] = [:], stats: Stats.Bundle? = nil) {
+                progress: [Int: SessionProgress] = [:], stats: Stats.Bundle? = nil,
+                pushesAlerts: Bool = false) {
         guard Date().timeIntervalSince(lastWrite) > minInterval else { return }
         lastWrite = Date()
         let claudeDir = ClaudeSessions.configHome()
@@ -49,6 +54,16 @@ actor MirrorExporter {
         // phone nameless (user 2026-09-03 "idle sessions doesn't have
         // names shown on ios"); the six below overwrite it with a fresh read.
         var progressByPid = progress
+        var recent = recentCwds
+        for record in sessionRecords.reversed() where !record.cwd.isEmpty {
+            recent.removeAll { $0 == record.cwd }
+            recent.insert(record.cwd, at: 0)
+        }
+        if recent.count > Self.recentCap { recent = Array(recent.prefix(Self.recentCap)) }
+        if recent != recentCwds {
+            recentCwds = recent
+            UserDefaults.standard.set(recent, forKey: "recent_cwds")
+        }
         let sessions = sessionRecords.prefix(6).map { record -> SessionPanelRow in
             let progress = SessionProgress.read(sessionId: record.sessionId,
                                                 cwd: record.cwd, claudeDir: claudeDir,
@@ -63,7 +78,7 @@ actor MirrorExporter {
         tokenPeak = TokenRate.nextPeak(tokenPeak, seeing: perMinute)
         let snapshot = MirrorSnapshot(
             capturedAt: now,
-            machineName: Host.current().localizedName ?? "Mac",
+            machineName: MachineName.current(),
             listJSON: listJSON,
             sessions: sessions,
             prefs: prefs,
@@ -74,7 +89,9 @@ actor MirrorExporter {
             fleets: fleets.isEmpty ? nil : fleets,
             tokenRate: TokenRate(perMinute: perMinute, peakPerMinute: tokenPeak),
             forecast: forecast, plan: plan,
-            awsLogins: awsLogins.isEmpty ? nil : awsLogins, stats: stats)
+            awsLogins: awsLogins.isEmpty ? nil : awsLogins, stats: stats,
+            recentCwds: recentCwds.isEmpty ? nil : recentCwds,
+            pushesAlerts: pushesAlerts)
         // Encoded once here rather than inside MirrorWriter so the LAN
         // server hands out the same bytes the file holds.
         let encoder = JSONEncoder()
