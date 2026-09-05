@@ -359,9 +359,8 @@ public enum SettingsShell {
                 { PlaceholderPane(descriptor: $0) }
             ),
             (
-                PaneDescriptor(id: "accounts", title: "Accounts", glyph: "\u{E716}", tintRGB: (52, 152, 219),
-                               keywords: ["account", "login", "relogin", "token", "add", "remove", "delete", "oauth", "order", "reorder", "alias", "rename"]),
-                { PlaceholderPane(descriptor: $0) }
+                AccountsPane.descriptor,
+                { _ in AccountsPane() }
             ),
             (
                 PaneDescriptor(id: "themes", title: "Themes", glyph: "\u{E790}", tintRGB: (230, 126, 34),
@@ -399,29 +398,16 @@ public enum SettingsShell {
                 { _ in AboutPane() }
             ),
             (
-                PaneDescriptor(id: "cswap", title: "cswap", glyph: "\u{E713}", tintRGB: (149, 165, 166),
-                               keywords: ["engine", "auto switch", "interval", "config", "threshold", "rotate", "claude", "provider", "update", "upgrade", "pypi", "nudge", "resume", "wake", "session"],
-                               section: .engines, badge: { PaneDescriptor.ProviderBadge(live: true) }),
-                { PlaceholderPane(descriptor: $0) }
+                CswapPane.descriptor,
+                { _ in CswapPane() }
             ),
             (
-                PaneDescriptor(id: "cliproxy", title: "CLIProxyAPI", glyph: "\u{E839}", tintRGB: (149, 165, 166),
-                               keywords: ["proxy", "cliproxy", "router", "management", "key", "engine", "provider", "claude"],
-                               section: .engines, badge: { PaneDescriptor.ProviderBadge(live: false) }),
-                { PlaceholderPane(descriptor: $0) }
+                CLIProxyPane.descriptor,
+                { _ in CLIProxyPane() }
             ),
             (
-                PaneDescriptor(id: "9router", title: "9Router", glyph: "\u{E72D}", tintRGB: (149, 165, 166),
-                               keywords: ["9router", "router", "engine", "provider", "claude", "password"],
-                               section: .engines, badge: {
-                                   let pass = (try? String(contentsOf: NineRouterFleet.configURL)) ?? ""
-                                   return PaneDescriptor.ProviderBadge(live: !pass.isEmpty)
-                               }),
-                { PlaceholderPane(descriptor: $0) }
-            ),
-            (
-                LegacyPane.descriptor,
-                { _ in LegacyPane() }
+                NineRouterPane.descriptor,
+                { _ in NineRouterPane() }
             )
         ]
 

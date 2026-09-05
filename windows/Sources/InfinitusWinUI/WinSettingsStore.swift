@@ -1,24 +1,23 @@
 import Foundation
-import InfinitusCore
 
-/// App preferences for the Windows tray — the subset of the Mac's
-/// UserDefaults keys that mean anything here. Keys are the Mac's
-/// verbatim (`title_pct`, `gamification_style`, …) so a settings file
-/// exported on one platform imports on the other (SyncSnapshot.app).
-public struct WinSettings: Codable, Equatable, Sendable {
-    // Display / title
-    public var showAccountName: Bool = true
-    public var titlePct: String = "both"          // off | 5h | 7d | both
+/// Windows settings model matching the Mac's `UserDefaults` keys where
+/// concepts overlap, plus snake_case keys for Windows-only settings.
+///
+/// Hand-written `init(from:)` with memberwise fallback: synthesized
+/// Decodable fails the entire decode on a single unknown or newly-added
+/// key, dropping the whole file. See `Stats.Day` for the same rule.
+public struct WinSettings: Codable, Sendable, Equatable {
+    // Mac-parity Display / Title prefs
+    public var showAccountName: Bool = false
+    public var titlePct: String = "active"
     public var titleScoped: Bool = false
     public var titleRemaining: Bool = false
-    public var titleReset: String = "countdown"   // off | countdown | clock
+    public var titleReset: String = "off"
     public var titleIconOnly: Bool = false
-    public var refreshIntervalSeconds: Int = 60    // 30 | 60 | 300
+    public var refreshIntervalSeconds: Int = 30
+    public var gamificationStyle: String = "plain"
 
-    // Theme
-    public var gamificationStyle: String = "off"
-
-    // Push triggers (PushTriggers.Flags)
+    // Mac-parity Push triggers
     public var pushSessionsDone: Bool = true
     public var pushAllDead: Bool = true
     public var pushLastAlive: Bool = true
@@ -29,10 +28,17 @@ public struct WinSettings: Codable, Equatable, Sendable {
     public var trayBalloonsEnabled: Bool = true
     public var sortByHeadroom: Bool = true
 
+    // Engine toggles
+    public var engineCswapEnabled: Bool = true
+    public var engineCLIProxyEnabled: Bool = false
+    public var engineNineRouterEnabled: Bool = false
+
     // Updates
     public var updateAutoCheck: Bool = true
+    public var updateAutoInstall: Bool = false
     public var appUpdateLastCheck: Double = 0
     public var appUpdateNotifiedVersion: String = ""
+    public var updateAttemptedVersion: String = ""
 
     // Devices
     public var mirrorPort: UInt16 = 47824
@@ -67,9 +73,16 @@ public struct WinSettings: Codable, Equatable, Sendable {
         case pushAwsLogin = "push_aws_login"
         case trayBalloonsEnabled = "tray_balloons"
         case sortByHeadroom = "sort_headroom"
+        case engineCswapEnabled = "engine_cswap_enabled"
+        case engineCLIProxyEnabled = "engine_cliproxy_enabled"
+        case engineNineRouterEnabled = "engine_9router_enabled"
         case updateAutoCheck = "update_auto_check"
+        case updateAutoInstall = "update_auto_install"
         case appUpdateLastCheck = "app_update_last_check"
+        case updateLastCheckLegacy = "update_last_check"
         case appUpdateNotifiedVersion = "app_update_notified_version"
+        case updateNotifiedVersionLegacy = "update_notified_version"
+        case updateAttemptedVersion = "update_attempted_version"
         case mirrorPort = "mirror_port"
         case autoResume = "auto_resume"
         case machineID = "machine_id"
@@ -99,9 +112,18 @@ public struct WinSettings: Codable, Equatable, Sendable {
         pushAwsLogin = try c.decodeIfPresent(Bool.self, forKey: .pushAwsLogin) ?? d.pushAwsLogin
         trayBalloonsEnabled = try c.decodeIfPresent(Bool.self, forKey: .trayBalloonsEnabled) ?? d.trayBalloonsEnabled
         sortByHeadroom = try c.decodeIfPresent(Bool.self, forKey: .sortByHeadroom) ?? d.sortByHeadroom
+        engineCswapEnabled = try c.decodeIfPresent(Bool.self, forKey: .engineCswapEnabled) ?? d.engineCswapEnabled
+        engineCLIProxyEnabled = try c.decodeIfPresent(Bool.self, forKey: .engineCLIProxyEnabled) ?? d.engineCLIProxyEnabled
+        engineNineRouterEnabled = try c.decodeIfPresent(Bool.self, forKey: .engineNineRouterEnabled) ?? d.engineNineRouterEnabled
         updateAutoCheck = try c.decodeIfPresent(Bool.self, forKey: .updateAutoCheck) ?? d.updateAutoCheck
-        appUpdateLastCheck = try c.decodeIfPresent(Double.self, forKey: .appUpdateLastCheck) ?? d.appUpdateLastCheck
-        appUpdateNotifiedVersion = try c.decodeIfPresent(String.self, forKey: .appUpdateNotifiedVersion) ?? d.appUpdateNotifiedVersion
+        updateAutoInstall = try c.decodeIfPresent(Bool.self, forKey: .updateAutoInstall) ?? d.updateAutoInstall
+        appUpdateLastCheck = try c.decodeIfPresent(Double.self, forKey: .appUpdateLastCheck)
+            ?? (try c.decodeIfPresent(Double.self, forKey: .updateLastCheckLegacy))
+            ?? d.appUpdateLastCheck
+        appUpdateNotifiedVersion = try c.decodeIfPresent(String.self, forKey: .appUpdateNotifiedVersion)
+            ?? (try c.decodeIfPresent(String.self, forKey: .updateNotifiedVersionLegacy))
+            ?? d.appUpdateNotifiedVersion
+        updateAttemptedVersion = try c.decodeIfPresent(String.self, forKey: .updateAttemptedVersion) ?? d.updateAttemptedVersion
         mirrorPort = try c.decodeIfPresent(UInt16.self, forKey: .mirrorPort) ?? d.mirrorPort
         autoResume = try c.decodeIfPresent(Bool.self, forKey: .autoResume) ?? d.autoResume
         machineID = try c.decodeIfPresent(String.self, forKey: .machineID) ?? d.machineID
@@ -133,105 +155,70 @@ public enum WinSettingsStore {
         let df = DateFormatter()
         df.locale = Locale(identifier: "en_US_POSIX")
         df.dateFormat = "yyyyMMdd-HHmmss"
-        df.timeZone = TimeZone(secondsFromGMT: 0)
         return df
     }()
 
-    public static func load(from fileURL: URL = url) -> WinSettings {
+    public static func load(from url: URL = url) -> WinSettings {
         lock.lock()
         defer { lock.unlock() }
-        let fm = FileManager.default
-        guard fm.fileExists(atPath: fileURL.path) else {
+        if let cache { return cache }
+
+        guard FileManager.default.fileExists(atPath: url.path) else {
             let def = WinSettings()
             cache = def
             return def
         }
 
-        guard let data = try? Data(contentsOf: fileURL) else {
+        guard let data = try? Data(contentsOf: url) else {
             let def = WinSettings()
             cache = def
             return def
         }
 
         do {
-            let s = try JSONDecoder().decode(WinSettings.self, from: data)
-            cache = s
-            return s
+            let decoded = try JSONDecoder().decode(WinSettings.self, from: data)
+            cache = decoded
+            return decoded
         } catch {
-            // Corrupt file: quarantine to settings.json.bad-<timestamp>
             let stamp = badStampFormatter.string(from: Date())
-            let badURL = fileURL.deletingLastPathComponent()
-                .appendingPathComponent("\(fileURL.lastPathComponent).bad-\(stamp)")
-            try? fm.removeItem(at: badURL)
-            try? fm.moveItem(at: fileURL, to: badURL)
-            NSLog("Quarantined corrupt settings file to %@", badURL.path)
-
+            let badURL = url.deletingLastPathComponent().appendingPathComponent("settings.json.bad-\(stamp)")
+            try? FileManager.default.moveItem(at: url, to: badURL)
             let def = WinSettings()
             cache = def
             return def
         }
     }
 
-    public static func save(_ s: WinSettings, to fileURL: URL = url) throws {
+    public static func save(_ settings: WinSettings, to url: URL = url) throws {
         lock.lock()
         defer { lock.unlock() }
-        let fm = FileManager.default
-        let dir = fileURL.deletingLastPathComponent()
-        try fm.createDirectory(at: dir, withIntermediateDirectories: true)
+
+        let dir = url.deletingLastPathComponent()
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
 
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        let data = try encoder.encode(s)
+        let data = try encoder.encode(settings)
 
-        let tmpURL = dir.appendingPathComponent("\(fileURL.lastPathComponent).tmp")
+        let tmpURL = url.deletingLastPathComponent().appendingPathComponent("settings.json.tmp")
         try data.write(to: tmpURL, options: .atomic)
 
-        // Windows atomic replace via remove + move
-        if fm.fileExists(atPath: fileURL.path) {
-            try fm.removeItem(at: fileURL)
+        if FileManager.default.fileExists(atPath: url.path) {
+            try FileManager.default.removeItem(at: url)
         }
-        try fm.moveItem(at: tmpURL, to: fileURL)
-        cache = s
+        try FileManager.default.moveItem(at: tmpURL, to: url)
+        cache = settings
     }
 
-    public static func update(fileURL: URL = url, _ mutate: (inout WinSettings) -> Void) throws {
-        lock.lock()
-        defer { lock.unlock() }
-        var current: WinSettings
-        if let cached = cache {
-            current = cached
-        } else {
-            let fm = FileManager.default
-            if fm.fileExists(atPath: fileURL.path),
-               let data = try? Data(contentsOf: fileURL),
-               let decoded = try? JSONDecoder().decode(WinSettings.self, from: data) {
-                current = decoded
-            } else {
-                current = WinSettings()
-            }
-        }
+    @discardableResult
+    public static func update(at url: URL = url, _ mutate: (inout WinSettings) -> Void) throws -> WinSettings {
+        var current = load(from: url)
         mutate(&current)
-
-        let fm = FileManager.default
-        let dir = fileURL.deletingLastPathComponent()
-        try fm.createDirectory(at: dir, withIntermediateDirectories: true)
-
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        let data = try encoder.encode(current)
-
-        let tmpURL = dir.appendingPathComponent("\(fileURL.lastPathComponent).tmp")
-        try data.write(to: tmpURL, options: .atomic)
-
-        if fm.fileExists(atPath: fileURL.path) {
-            try fm.removeItem(at: fileURL)
-        }
-        try fm.moveItem(at: tmpURL, to: fileURL)
-        cache = current
+        try save(current, to: url)
+        return current
     }
 
-    /// Testing helper to reset in-memory cache
-    public static func resetCache() {
+    public static func resetCacheForTests() {
         lock.lock()
         defer { lock.unlock() }
         cache = nil

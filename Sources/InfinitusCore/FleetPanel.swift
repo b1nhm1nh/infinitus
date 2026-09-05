@@ -63,6 +63,18 @@ public enum EngineCatalog {
         default: return engineID
         }
     }
+
+    /// What an engine id can do, without instantiating the engine. The
+    /// live objects' `capabilities` stay authoritative; this is for the
+    /// hosts that only hold an id (the Windows tray, a mirrored snapshot).
+    public static func capabilities(for engineID: String) -> EngineCapabilities {
+        switch engineID {
+        case "cswap": return .all
+        case "cliproxy": return [.switch, .hold, .rename, .remove, .addOAuth, .costReport, .prefer]
+        case "9router": return [.switch, .hold, .remove]
+        default: return []
+        }
+    }
 }
 
 public extension EngineFleet {

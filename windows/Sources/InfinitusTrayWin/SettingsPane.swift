@@ -542,4 +542,9 @@ public enum PaneControls {
             SendMessageW(hwnd, UINT(CB_SETCURSEL), WPARAM(idx), 0)
         }
     }
+
+    public static func enable(_ hwnd: HWND?, _ enabled: Bool) {
+        guard let hwnd else { return }
+        EnableWindow(hwnd, enabled)
+    }
 }
