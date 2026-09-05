@@ -1,0 +1,209 @@
+import Foundation
+
+/// Every Claude Code hook registration on the machine, attributed to
+/// the tool that owns it (#115): installers write into
+/// `~/.claude/settings.json` silently, and an unaudited hook on a
+/// per-tool-call event is a spawn storm waiting for ten sessions.
+public struct HookRegistration: Equatable, Sendable, Codable, Identifiable {
+    public enum Source: Equatable, Sendable, Codable {
+        case user
+        case project(String)
+        case plugin(String)
+        public var label: String {
+            switch self {
+            case .user: return "user settings"
+            case .project(let path): return "project " + (path as NSString).lastPathComponent
+            case .plugin(let name): return "plugin " + name
+            }
+        }
+    }
+    public enum OwnerKind: String, Sendable, Codable { case brew, vendored, handInstalled, plugin, unknown }
+
+    public let event: String
+    public let matcher: String?
+    public let command: String
+    public let timeout: Int?
+    public let source: Source
+    public let ownerKind: OwnerKind
+    /// The tool's name as a person would say it: "peon-ping", "cst", a plugin's name.
+    public let owner: String
+
+    public var id: String { "\(source.label)|\(event)|\(command)" }
+
+    public init(event: String, matcher: String?, command: String, timeout: Int?, source: Source) {
+        self.event = event; self.matcher = matcher; self.command = command; self.timeout = timeout; self.source = source
+        let owned = HookInventory.owner(of: command, source: source)
+        ownerKind = owned.kind; owner = owned.name
+    }
+
+    /// Interpreter start-ups, AppleScript into System Events, the
+    /// network: the commands that hurt at PostToolUse rates.
+    public var heavy: Bool { HookInventory.isHeavy(command) }
+
+    /// The path the running instances carry in their command line.
+    public var scriptPath: String? { HookInventory.scriptPath(in: command) }
+}
+
+public enum HookInventory {
+    /// Spawns per session-hour, by event, at a typical ~30 turns/hour.
+    public static let spawnsPerSessionHour: [String: Double] = [
+        "PreToolUse": 450, "PostToolUse": 450, "PostToolUseFailure": 20,
+        "UserPromptSubmit": 30, "Stop": 30, "Notification": 30, "PermissionRequest": 15,
+        "SubagentStart": 60, "SubagentStop": 60, "PreCompact": 2,
+        "SessionStart": 1, "SessionEnd": 1,
+    ]
+
+    public static func spawnsPerHour(event: String, liveSessions: Int) -> Double {
+        (spawnsPerSessionHour[event] ?? 10) * Double(max(1, liveSessions))
+    }
+
+    /// Parse one settings file's `hooks` object.
+    public static func parse(settings: [String: Any], source: HookRegistration.Source) -> [HookRegistration] {
+        guard let hooks = settings["hooks"] as? [String: Any] else { return [] }
+        var out: [HookRegistration] = []
+        for (event, value) in hooks.sorted(by: { $0.key < $1.key }) {
+            guard let groups = value as? [[String: Any]] else { continue }
+            for group in groups {
+                let matcher = group["matcher"] as? String
+                for hook in group["hooks"] as? [[String: Any]] ?? [] {
+                    guard let command = hook["command"] as? String else { continue }
+                    out.append(HookRegistration(event: event, matcher: matcher, command: command,
+                                                timeout: hook["timeout"] as? Int, source: source))
+                }
+            }
+        }
+        return out
+    }
+
+    public static func parse(json data: Data, source: HookRegistration.Source) -> [HookRegistration] {
+        guard let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { return [] }
+        return parse(settings: object, source: source)
+    }
+
+    static let heavyMarkers = ["python3", "python ", "node ", "node\"", "bun ", "bunx ", "osascript", "curl ", "ruby ", "deno ", "npx ", "System Events"]
+    public static func isHeavy(_ command: String) -> Bool {
+        heavyMarkers.contains { command.contains($0) }
+    }
+
+    public static func owner(of command: String, source: HookRegistration.Source) -> (kind: HookRegistration.OwnerKind, name: String) {
+        if case .plugin(let name) = source { return (.plugin, name) }
+        if command.contains("${CLAUDE_PLUGIN_ROOT}") || command.contains("/.claude/plugins/cache/") {
+            return (.plugin, pathComponent(after: "/plugins/cache/", in: command, index: 1) ?? "plugin")
+        }
+        if command.contains("/opt/homebrew/") || command.contains("/usr/local/Cellar/") {
+            return (.brew, pathComponent(after: "/Cellar/", in: command, index: 0)
+                        ?? pathComponent(after: "/opt/homebrew/opt/", in: command, index: 0)
+                        ?? binaryName(command))
+        }
+        if command.contains("/.claude/vendor/") {
+            return (.vendored, pathComponent(after: "/.claude/vendor/", in: command, index: 0) ?? "vendored")
+        }
+        if command.contains("/.claude/hooks/") {
+            if let dir = pathComponent(after: "/.claude/hooks/", in: command, index: 0) {
+                // `hooks/peon-ping/peon.sh` → peon-ping; `hooks/cst_x.py` → cst.
+                if dir.contains(".") {
+                    let stem = dir.split(separator: ".").first.map(String.init) ?? dir
+                    return (.handInstalled, stem.split(separator: "_").first.map(String.init) ?? stem)
+                }
+                return (.handInstalled, dir)
+            }
+        }
+        return (.unknown, binaryName(command))
+    }
+
+    static func pathComponent(after marker: String, in command: String, index: Int) -> String? {
+        guard let range = command.range(of: marker) else { return nil }
+        let tail = command[range.upperBound...]
+        let end = tail.firstIndex(where: { $0 == " " || $0 == "\"" || $0 == "'" }) ?? tail.endIndex
+        let parts = tail[..<end].split(separator: "/").map(String.init)
+        return parts.count > index ? parts[index] : nil
+    }
+
+    static func binaryName(_ command: String) -> String {
+        let first = command.split(separator: " ").first.map(String.init) ?? command
+        return (first.trimmingCharacters(in: CharacterSet(charactersIn: "\"'")) as NSString).lastPathComponent
+    }
+
+    /// The first path-like token: what `ps` shows for a running instance.
+    public static func scriptPath(in command: String) -> String? {
+        for token in command.split(separator: " ") {
+            let clean = token.trimmingCharacters(in: CharacterSet(charactersIn: "\"'"))
+            if clean.hasPrefix("/") || clean.hasPrefix("~") { return clean }
+        }
+        return nil
+    }
+
+    /// Live instances of a registration among the process rows: the
+    /// rows whose command carries its script path, plus their
+    /// descendants (a shell hook's python helpers), the oldest, and how
+    /// many sit in uninterruptible wait.
+    public struct Live: Equatable, Sendable, Codable {
+        public var instances = 0
+        public var helpers = 0
+        public var oldestSeconds = 0
+        public var uninterruptible = 0
+        public init() {}
+    }
+
+    public static func live(of registration: HookRegistration, rows: [ProcessRow]) -> Live {
+        var live = Live()
+        guard let path = registration.scriptPath else { return live }
+        let byParent = Dictionary(grouping: rows, by: \.ppid)
+        var seen = Set<Int>()
+        var queue: [ProcessRow] = rows.filter { $0.command.contains(path) }
+        live.instances = queue.count
+        while let row = queue.popLast() {
+            guard seen.insert(row.pid).inserted else { continue }
+            live.oldestSeconds = max(live.oldestSeconds, row.elapsedSeconds)
+            if row.state == "U" { live.uninterruptible += 1 }
+            for child in byParent[row.pid] ?? [] where !seen.contains(child.pid) {
+                live.helpers += 1
+                queue.append(child)
+            }
+        }
+        return live
+    }
+
+    /// A stable fingerprint of the registrations: a change means an
+    /// installer wrote into settings.json (#115 item 5).
+    public static func fingerprint(_ registrations: [HookRegistration]) -> String {
+        registrations.map(\.id).sorted().joined(separator: "\n")
+    }
+
+    /// The tools that appeared since `previous` (by owner + event).
+    public static func newcomers(_ current: [HookRegistration], since previous: Set<String>) -> [HookRegistration] {
+        current.filter { !previous.contains($0.id) }
+    }
+
+    // MARK: files
+
+    /// Reads the user file, each project's two files, and installed
+    /// plugins' hooks.json (`~/.claude/plugins/installed_plugins.json`).
+    public static func scan(home: String = NSHomeDirectory(), projectDirs: [String]) -> [HookRegistration] {
+        let fm = FileManager.default
+        var out: [HookRegistration] = []
+        func read(_ path: String, _ source: HookRegistration.Source) {
+            guard let data = fm.contents(atPath: path) else { return }
+            out += parse(json: data, source: source)
+        }
+        read("\(home)/.claude/settings.json", .user)
+        for dir in Set(projectDirs).sorted() {
+            read("\(dir)/.claude/settings.json", .project(dir))
+            read("\(dir)/.claude/settings.local.json", .project(dir))
+        }
+        if let data = fm.contents(atPath: "\(home)/.claude/plugins/installed_plugins.json"),
+           let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+           let plugins = object["plugins"] as? [String: Any] {
+            for (name, value) in plugins.sorted(by: { $0.key < $1.key }) {
+                let installs = (value as? [[String: Any]]) ?? []
+                var seen = Set<String>()
+                for install in installs {
+                    guard let path = install["installPath"] as? String, seen.insert(path).inserted else { continue }
+                    let short = name.split(separator: "@").first.map(String.init) ?? name
+                    read("\(path)/hooks/hooks.json", .plugin(short))
+                }
+            }
+        }
+        return out
+    }
+}
