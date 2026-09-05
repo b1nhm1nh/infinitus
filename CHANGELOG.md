@@ -8,6 +8,7 @@ publishes the matching section as the GitHub release body.
 ## 0.4.4 (unreleased)
 
 ### Mac
+- Live Activity pushes drop a phone token from before the bundle id move instead of failing on it every minute.
 - "Needs AWS login" banners no longer repeat after a relaunch, and every banner's headline is now its subtitle.
 
 ### Phone

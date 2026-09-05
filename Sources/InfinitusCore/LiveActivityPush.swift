@@ -54,6 +54,15 @@ public struct ActivityPushRegistration: Codable, Sendable, Equatable {
 public enum LiveActivityPush {
     public static let bundleID = "run.infinitus.mobile"
     public static let topic = bundleID + ".push-type.liveactivity"
+
+    /// APNs answers that mean the token will never work again, so the
+    /// registration is dropped instead of retried every tick: 410
+    /// Unregistered, 400 BadDeviceToken, and 400 DeviceTokenNotForTopic —
+    /// a token a phone registered under the previous bundle id (the
+    /// 2026-09-05 move to `run.infinitus.mobile`).
+    public static func isDeadToken(status: Int, body: String) -> Bool {
+        status == 410 || body.contains("BadDeviceToken") || body.contains("DeviceTokenNotForTopic")
+    }
     public static let workingAttributesType = "WorkingActivity"
     public static let revivalAttributesType = "RevivalActivity"
 
