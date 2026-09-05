@@ -340,6 +340,7 @@ public final class TeamClient {
     /// leaders — one push. The caller then forgets the team locally
     /// (team dir + token secret); the identity stays.
     public func leave(now: Int = Int(Date().timeIntervalSince1970)) throws {
+        try store.sync()  // list() reads local refs only; a stale tree leaves another device's files behind
         var writes: [String: Data?] = [:]
         for entry in try store.list("m/") where entry.path.hasPrefix("m/\(identity.kid)/") {
             // A plain `writes[entry.path] = nil` subscript-assign on a

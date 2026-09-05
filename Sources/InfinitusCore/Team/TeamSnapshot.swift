@@ -96,12 +96,15 @@ public struct TeamSnapshot: Codable, Equatable, Sendable {
     }
 
     /// The remote without its userinfo (`https://user:token@host/…` →
-    /// `https://host/…`); anything URLComponents cannot parse (scp-style
-    /// `git@host:path`) is returned as is — it carries no token.
+    /// `https://host/…`). Scp-style remotes (`git@host:path`) fail to parse
+    /// as a URL and are returned unchanged — the leading `git@` there is a
+    /// fixed protocol user, not a secret. Any other remote that parses with
+    /// credentials but can't be re-serialized once they're cleared is
+    /// masked outright rather than risk returning the credentialed string.
     public static func maskRemote(_ remote: String) -> String {
         guard var parts = URLComponents(string: remote), parts.user != nil || parts.password != nil else { return remote }
         parts.user = nil
         parts.password = nil
-        return parts.string ?? remote
+        return parts.string ?? "<remote hidden>"
     }
 }
