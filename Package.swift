@@ -6,12 +6,6 @@ import PackageDescription
 // plain `swift build` / `swift test` work on Linux too (core + tray + CLI)
 // without #if litter through the app sources.
 var targets: [Target] = [
-    // System zlib: the team envelope deflates plaintext before sealing
-    // (docs/superpowers/specs/2026-09-05-team-design.md §3). Same bytes
-    // on macOS, Linux and iOS; the Apple SDK and the swift docker image
-    // both ship zlib.
-    .systemLibrary(name: "CZlib", path: "Sources/CZlib", pkgConfig: "zlib",
-                   providers: [.apt(["zlib1g-dev"])]),
     // Pure layer: models, feed decoding, supervisor state machine.
     // No AppKit import — everything here runs under `swift test`.
     .target(name: "InfinitusCore",
@@ -40,6 +34,19 @@ var targets: [Target] = [
         resources: [.copy("Fixtures")]
     ),
 ]
+// zlib for the team envelope, which deflates plaintext before sealing
+// (docs/superpowers/specs/2026-09-05-team-design.md §3). Same bytes
+// everywhere: upstream zlib 1.3.1 whichever way it is provided.
+// macOS/Linux/iOS use the system zlib (the Apple SDK and the swift
+// docker image ship it); Windows has no system zlib and no pkg-config,
+// so there the module is a vendored copy of the same 1.3.1 sources —
+// deflate output is deterministic, so envelopes stay cross-platform.
+#if os(Windows)
+targets.append(.target(name: "CZlib", path: "windows/Sources/CZlib"))
+#else
+targets.append(.systemLibrary(name: "CZlib", path: "Sources/CZlib", pkgConfig: "zlib",
+                              providers: [.apt(["zlib1g-dev"])]))
+#endif
 var products: [Product] = [
     .executable(name: "infinitus-tray", targets: ["InfinitusTray"]),
     .executable(name: "infinitusctl", targets: ["InfinitusCLI"]),

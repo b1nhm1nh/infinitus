@@ -6,3 +6,7 @@
 $env:Path = "C:\Users\BM\AppData\Local\Programs\Swift\Toolchains\6.3.3+Asserts\usr\bin;" +
             "C:\Users\BM\AppData\Local\Programs\Swift\Runtimes\6.3.3\usr\bin;" + $env:Path
 $env:SDKROOT = "C:\Users\BM\AppData\Local\Programs\Swift\Platforms\6.3.3\Windows.platform\Developer\SDKs\Windows.sdk\"
+# Never set INCLUDE or LIB here: with either present the Swift toolchain
+# skips MSVC auto-detection and even its own manifest compiles fail
+# ('errno.h' file not found). Windows' zlib need is met by the vendored
+# windows/Sources/CZlib target in Package.swift instead.
