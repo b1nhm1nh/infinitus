@@ -61,9 +61,13 @@ final class TeamCollectTests: XCTestCase {
         XCTAssertEqual(all.days["2026-09-04"]?.inputTokens, 25)
         XCTAssertEqual(all.sessions.map(\.id).sorted(), ["s1", "s2"])
         XCTAssertEqual(all.transcripts.count, 3)
+        // Three assistant lines land in the same minute (12:00:05Z), one output
+        // token each: finalizePeak must run on the merged minuteTokens, not per-file.
+        XCTAssertEqual(all.days["2026-09-04"]?.peakTokensPerMinute, 3)
 
         let some = TeamPublisher.collect(entries: scan.entries, exclusions: TeamExclusions(projects: ["/r/secret"]))
         XCTAssertEqual(some.days["2026-09-04"]?.inputTokens, 15)
+        XCTAssertEqual(some.days["2026-09-04"]?.peakTokensPerMinute, 2)   // s1 + its sub-agent, secret excluded
         XCTAssertEqual(some.sessions.map(\.id), ["s1"])
         let s1 = try XCTUnwrap(some.sessions.first)
         XCTAssertEqual(s1.project, "app")
@@ -80,5 +84,11 @@ final class TeamCollectTests: XCTestCase {
         var blind = scan.entries
         for (path, var entry) in blind where path.contains("-r-secret") { entry.cwd = nil; blind[path] = entry }
         XCTAssertEqual(TeamPublisher.collect(entries: blind, exclusions: TeamExclusions(projects: ["/r/secret"])).sessions.map(\.id), ["s1"])
+
+        // An included session whose own file has no cwd still gets a real basename, never the project slug.
+        var blindMain = scan.entries
+        for (path, var entry) in blindMain where path.hasSuffix("-r-app/s1.jsonl") { entry.cwd = nil; blindMain[path] = entry }
+        let blindResult = TeamPublisher.collect(entries: blindMain, exclusions: TeamExclusions())
+        XCTAssertEqual(blindResult.sessions.first(where: { $0.id == "s1" })?.project, "app")
     }
 }

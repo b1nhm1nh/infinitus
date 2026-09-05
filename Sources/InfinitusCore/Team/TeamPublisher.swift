@@ -44,8 +44,8 @@ public struct TeamPublisher {
 
     /// Folds the scan's per-file entries minus excluded projects: days
     /// (Stats v2 `+`), one row per session (sub-agents summed in), and
-    /// the Claude Code transcript files to chunk. Codex transcripts
-    /// count toward days only — they are not Claude Code's files.
+    /// the Claude Code transcript files to chunk. Codex files are
+    /// chunked by nobody — only their days and session row travel.
     public static func collect(entries: [String: StatsScanner.FileEntry], exclusions: TeamExclusions) -> Collected {
         var out = Collected()
         var rows: [String: TeamDocs.SessionRow] = [:]
@@ -58,7 +58,7 @@ public struct TeamPublisher {
 
             let project = entry.cwd.map { URL(fileURLWithPath: $0).lastPathComponent }
             var row = rows[identity.session]
-                ?? TeamDocs.SessionRow(id: identity.session, project: project ?? identity.projectDir, engine: entry.engine)
+                ?? TeamDocs.SessionRow(id: identity.session, project: project ?? String(identity.projectDir.split(separator: "-").last ?? ""), engine: entry.engine)
             // A sub-agent file seen first carries no cwd; the session's own file names the project.
             if let project, identity.agent == nil { row.project = project }
             for t in entry.state.firstAt.values {
@@ -78,6 +78,7 @@ public struct TeamPublisher {
             rows[identity.session] = row
             if claude { out.transcripts.append(TranscriptSource(session: identity.session, agent: identity.agent, url: URL(fileURLWithPath: path))) }
         }
+        for key in out.days.keys { out.days[key]!.finalizePeak() }
         out.sessions = rows.values.sorted { $0.startedAt == $1.startedAt ? $0.id < $1.id : $0.startedAt > $1.startedAt }
         return out
     }
