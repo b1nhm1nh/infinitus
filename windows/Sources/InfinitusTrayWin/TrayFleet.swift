@@ -1,5 +1,6 @@
 import Foundation
 import InfinitusCore
+import InfinitusWinUI
 
 /// Account + usage lines for the Infinitus Windows tray.
 ///
@@ -37,9 +38,9 @@ enum TrayFleet {
     private nonisolated(unsafe) static var cachedAt: Date?
     private nonisolated(unsafe) static var isRefreshing = false
 
-    /// True when either cswap or 9Router is available.
+    /// True when either cswap, 9Router, or CLIProxy is available.
     static func hasEngine() -> Bool {
-        CswapLocator.locate() != nil || NineRouterFleet.isAvailable()
+        CswapLocator.locate() != nil || NineRouterFleet.isAvailable() || CLIProxyFleet.isAvailable()
     }
 
     /// Which engine this host's Claude Code traffic rides, for the panel
@@ -64,17 +65,21 @@ enum TrayFleet {
     /// 9Router is the engine (Claude, Codex, Gemini, Kiro…), one Claude
     /// fleet for cswap. The Mac stacks exactly these (#8 multi-engine).
     static func cachedFleets() -> [EngineFleet] {
-        if NineRouterFleet.shouldUseNineRouter(), let fleets = NineRouterFleet.fleets(),
-           !fleets.isEmpty {
-            return fleets
+        var result: [EngineFleet] = []
+        if NineRouterFleet.shouldUseNineRouter(), let fleets = NineRouterFleet.fleets(), !fleets.isEmpty {
+            result.append(contentsOf: fleets)
+        } else if let list = cached() {
+            result.append(EngineFleet(engineID: CswapEngine.engineID, provider: .claude,
+                                      accounts: list.accounts,
+                                      activeNumber: list.activeAccountNumber,
+                                      nextCandidate: list.nextCandidate,
+                                      nextRecovery: list.nextRecovery,
+                                      liveSessions: list.liveSessions))
         }
-        guard let list = cached() else { return [] }
-        return [EngineFleet(engineID: CswapEngine.engineID, provider: .claude,
-                            accounts: list.accounts,
-                            activeNumber: list.activeAccountNumber,
-                            nextCandidate: list.nextCandidate,
-                            nextRecovery: list.nextRecovery,
-                            liveSessions: list.liveSessions)]
+        if CLIProxyFleet.isAvailable(), let proxyFleets = CLIProxyFleet.fleets(), !proxyFleets.isEmpty {
+            result.append(contentsOf: proxyFleets)
+        }
+        return result
     }
 
     /// Account + usage lines for the tray menu, newest data within a cache window.
@@ -226,6 +231,7 @@ enum TrayFleet {
     /// Invalidate cache for manual refresh.
     static func invalidate() {
         NineRouterFleet.invalidate()
+        CLIProxyFleet.invalidate()
         lock.lock()
         defer { lock.unlock() }
         cachedList = nil
@@ -243,6 +249,7 @@ enum TrayFleet {
     /// ordinals are per-provider, so a Gemini row's #2 is not the Claude
     /// fleet's #2. cswap holds Claude only and ignores it.
     static func requestSwitch(to number: Int?, provider: Provider = .claude,
+                              engineID: String = "cswap",
                               report: @escaping @Sendable (String) -> Void) {
         guard hasEngine() else {
             report("no swap engine installed")
@@ -250,7 +257,14 @@ enum TrayFleet {
         }
         Thread.detachNewThread {
             let outcome: SwitchOutcome
-            if NineRouterFleet.shouldUseNineRouter() {
+            if engineID == "cliproxy", let n = number {
+                let proxyOutcome = CLIProxyFleet.switchTo(n, provider: provider)
+                switch proxyOutcome {
+                case .switched(let num): outcome = .switched(to: num)
+                case .noEngine: outcome = .noEngine
+                case .failed(let d): outcome = .failed(detail: d)
+                }
+            } else if engineID == "9router" || NineRouterFleet.shouldUseNineRouter() {
                 let nrOutcome = NineRouterFleet.switchTo(number, provider: provider)
                 switch nrOutcome {
                 case .switched(let n): outcome = .switched(to: n)

@@ -29,6 +29,16 @@ public struct WinSettings: Codable, Equatable, Sendable {
     public var trayBalloonsEnabled: Bool = true
     public var sortByHeadroom: Bool = true
 
+    // Engine toggles and updates
+    public var engineCswapEnabled: Bool = true
+    public var engineCLIProxyEnabled: Bool = false
+    public var engineNineRouterEnabled: Bool = false
+    public var updateAutoCheck: Bool = true
+    public var updateAutoInstall: Bool = false
+    public var updateLastCheck: Double = 0
+    public var updateNotifiedVersion: String = ""
+    public var updateAttemptedVersion: String = ""
+
     // Devices
     public var mirrorPort: UInt16 = 47824
     public var autoResume: Bool = false
@@ -56,6 +66,14 @@ public struct WinSettings: Codable, Equatable, Sendable {
         case pushAwsLogin = "push_aws_login"
         case trayBalloonsEnabled = "tray_balloons"
         case sortByHeadroom = "sort_headroom"
+        case engineCswapEnabled = "engine_cswap_enabled"
+        case engineCLIProxyEnabled = "engine_cliproxy_enabled"
+        case engineNineRouterEnabled = "engine_9router_enabled"
+        case updateAutoCheck = "update_auto_check"
+        case updateAutoInstall = "update_auto_install"
+        case updateLastCheck = "update_last_check"
+        case updateNotifiedVersion = "update_notified_version"
+        case updateAttemptedVersion = "update_attempted_version"
         case mirrorPort = "mirror_port"
         case autoResume = "auto_resume"
         case lastPaneID = "last_pane"
@@ -81,6 +99,14 @@ public struct WinSettings: Codable, Equatable, Sendable {
         pushAwsLogin = try c.decodeIfPresent(Bool.self, forKey: .pushAwsLogin) ?? d.pushAwsLogin
         trayBalloonsEnabled = try c.decodeIfPresent(Bool.self, forKey: .trayBalloonsEnabled) ?? d.trayBalloonsEnabled
         sortByHeadroom = try c.decodeIfPresent(Bool.self, forKey: .sortByHeadroom) ?? d.sortByHeadroom
+        engineCswapEnabled = try c.decodeIfPresent(Bool.self, forKey: .engineCswapEnabled) ?? d.engineCswapEnabled
+        engineCLIProxyEnabled = try c.decodeIfPresent(Bool.self, forKey: .engineCLIProxyEnabled) ?? d.engineCLIProxyEnabled
+        engineNineRouterEnabled = try c.decodeIfPresent(Bool.self, forKey: .engineNineRouterEnabled) ?? d.engineNineRouterEnabled
+        updateAutoCheck = try c.decodeIfPresent(Bool.self, forKey: .updateAutoCheck) ?? d.updateAutoCheck
+        updateAutoInstall = try c.decodeIfPresent(Bool.self, forKey: .updateAutoInstall) ?? d.updateAutoInstall
+        updateLastCheck = try c.decodeIfPresent(Double.self, forKey: .updateLastCheck) ?? d.updateLastCheck
+        updateNotifiedVersion = try c.decodeIfPresent(String.self, forKey: .updateNotifiedVersion) ?? d.updateNotifiedVersion
+        updateAttemptedVersion = try c.decodeIfPresent(String.self, forKey: .updateAttemptedVersion) ?? d.updateAttemptedVersion
         mirrorPort = try c.decodeIfPresent(UInt16.self, forKey: .mirrorPort) ?? d.mirrorPort
         autoResume = try c.decodeIfPresent(Bool.self, forKey: .autoResume) ?? d.autoResume
         lastPaneID = try c.decodeIfPresent(String.self, forKey: .lastPaneID) ?? d.lastPaneID

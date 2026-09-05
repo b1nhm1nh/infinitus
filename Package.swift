@@ -59,7 +59,8 @@ products.append(.executable(name: "infinitusctl", targets: ["InfinitusCLI"]))
 targets.append(.target(
     name: "InfinitusWinUI",
     dependencies: ["InfinitusCore"],
-    path: "windows/Sources/InfinitusWinUI"
+    path: "windows/Sources/InfinitusWinUI",
+    linkerSettings: [.linkedLibrary("crypt32"), .linkedLibrary("advapi32")]
 ))
 // Headless mirror daemon (docs/plan-windows/01-stack.md): the same
 // InfinitusCore feed/pairing/HTTP contract over Winsock + named pipes.
