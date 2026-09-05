@@ -37,7 +37,7 @@ struct RevivalLiveActivity: Widget {
                                 .font(.caption2).foregroundStyle(.secondary)
                             if !context.state.later.isEmpty {
                                 Text("then " + context.state.later.joined(separator: " · "))
-                                    .font(.caption2).foregroundStyle(.tertiary).lineLimit(1)
+                                    .font(.caption2).foregroundStyle(.secondary).lineLimit(1)
                             }
                         }
                     }
@@ -79,7 +79,7 @@ private struct RevivalLockScreen: View {
                     Text(waitingLine(state)).font(.caption2).foregroundStyle(.secondary)
                     if !state.later.isEmpty {
                         Text("then " + state.later.joined(separator: " · "))
-                            .font(.caption2).foregroundStyle(.tertiary).lineLimit(1)
+                            .font(.caption2).foregroundStyle(.secondary).lineLimit(1)
                     }
                 }
             }
@@ -136,7 +136,7 @@ struct WorkingLiveActivity: Widget {
                             Text(sessionsLine(state)).font(.caption2).foregroundStyle(.secondary)
                             Spacer()
                             if let next = state.next {
-                                Text(next).font(.caption2).foregroundStyle(.tertiary)
+                                Text(next).font(.caption2).foregroundStyle(.secondary)
                             }
                         }
                     }
@@ -192,9 +192,9 @@ private struct WorkingLockScreen: View {
                 Text(sessionsLine(state)).font(.caption).foregroundStyle(.secondary)
                 Spacer()
                 if stale {
-                    Text("out of date").font(.caption2).foregroundStyle(.tertiary)
+                    Text("out of date").font(.caption2).foregroundStyle(.secondary)
                 } else if let next = state.next {
-                    Text(next).font(.caption2).foregroundStyle(.tertiary)
+                    Text(next).font(.caption2).foregroundStyle(.secondary)
                 }
             }
         }
