@@ -12,7 +12,7 @@ func teamUsage() -> String {
 
       create <name> --remote <url> [--token -]     create a team on an empty git remote (token from stdin)
       code [--days N]                              team code for joiners (default 7 days)
-      request <code> --name <n> [--devices a,b]    ask to join with a team code
+      request - --name <n> [--devices a,b]         ask to join; the code on stdin (argv only if it carries no credential)
       status [--team <id>]                         this machine's team(s)
       requests                                     pending join requests (leaders)
       approve <kid> | decline <kid>                answer a request (leaders)
@@ -80,6 +80,9 @@ func runTeam(_ args: [String]) -> Int32 {
         switch sub {
         case "create":
             guard let name = positional.first, let remote = options["remote"] else { return fail(teamUsage(), code: 2) }
+            guard options["token"] == nil || options["token"] == "-" else {
+                return fail("--token takes only '-' (read from stdin)", code: 2)
+            }
             var token: String?
             if options["token"] == "-" {
                 token = String(decoding: FileHandle.standardInput.readDataToEndOfFile(), as: UTF8.self)
@@ -90,9 +93,23 @@ func runTeam(_ args: [String]) -> Int32 {
             emit(try c.status())
         case "code":
             let days = Int(options["days"] ?? "7") ?? 7
-            emit(["code": try client().code(expiresIn: days * 86_400)])
+            let c = try client(); _ = try c.fetch()
+            emit(["code": try c.code(expiresIn: days * 86_400)])
         case "request":
-            guard let code = positional.first, let name = options["name"] else { return fail(teamUsage(), code: 2) }
+            guard let arg = positional.first, let name = options["name"] else { return fail(teamUsage(), code: 2) }
+            let code: String
+            if arg == "-" {
+                code = String(decoding: FileHandle.standardInput.readDataToEndOfFile(), as: UTF8.self)
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+            } else {
+                // The code embeds the store write credential; argv is world
+                // readable. An expired code still carries a live one, so the
+                // probe ignores expiry.
+                if (try? TeamCode.decode(arg, now: Int.min))?.token != nil {
+                    return fail("this code carries a credential: pass it on stdin (`team request -`)", code: 2)
+                }
+                code = arg
+            }
             let devices = options["devices"]?.split(separator: ",").map(String.init) ?? []
             #if os(macOS)
             let platform = "macos"
@@ -111,13 +128,14 @@ func runTeam(_ args: [String]) -> Int32 {
                 emit(try client().status())
             }
         case "requests":
-            emit(try client().requests().map(\.doc))
+            let c = try client(); _ = try c.fetch()
+            emit(try c.requests().map(\.doc))
         case "approve":
             guard let kid = positional.first else { return fail(teamUsage(), code: 2) }
             let c = try client(); _ = try c.fetch(); try c.approve(kid: kid); emit(try c.status())
         case "decline":
             guard let kid = positional.first else { return fail(teamUsage(), code: 2) }
-            let c = try client(); try c.decline(kid: kid); emit(try c.status())
+            let c = try client(); _ = try c.fetch(); try c.decline(kid: kid); emit(try c.status())
         case "fetch":
             let c = try client(); _ = try c.fetch(); emit(try c.status())
         case "publish":

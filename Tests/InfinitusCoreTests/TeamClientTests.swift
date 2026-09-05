@@ -114,7 +114,7 @@ final class TeamClientTests: XCTestCase {
 
         // A tampered roster on the remote is refused and the last good one kept.
         let raw = TeamGit(dir: sp.storeDir(leader.config.id), remote: remote, token: nil, author: "eve")
-        try raw.open()
+        try raw.open(); try raw.sync()   // the stranger's mirror already exists, so open() no longer fetches
         var bogus = leader.roster!.doc; bogus.rev = 3; bogus.leaders.append(TeamRoster.Member(keys: stranger.identity.keys, name: "Eve", since: 1))
         try raw.put("roster/team.json", try CanonicalJSON.encode(try Signed.make(bogus, by: stranger.identity)))
         XCTAssertThrowsError(try member.fetch())

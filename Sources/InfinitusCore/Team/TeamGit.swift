@@ -33,15 +33,18 @@ public final class TeamGit: TeamStore {
         self.dir = dir; self.remote = remote; self.token = token; self.author = author
     }
 
-    /// Creates the bare mirror on first use and fetches.
+    /// Creates the bare mirror on first use and fetches only then: an
+    /// existing mirror opens offline and callers `sync()` when they want
+    /// the network (so `team status` never waits on a remote).
     public func open() throws {
-        if !FileManager.default.fileExists(atPath: gitDir.appendingPathComponent("HEAD").path) {
+        let fresh = !FileManager.default.fileExists(atPath: gitDir.appendingPathComponent("HEAD").path)
+        if fresh {
             try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
             _ = try run(["init", "--bare", "-q", gitDir.path], useGitDir: false)
             _ = try run(["remote", "add", "origin", remote])
         }
         opened = true
-        try sync()
+        if fresh { try sync() }
     }
 
     // MARK: TeamStore
