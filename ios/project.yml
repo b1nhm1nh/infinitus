@@ -93,11 +93,18 @@ targets:
     sources:
       - InfinitusMobileWidgets
       - InfinitusMobile/LiveActivityAttributes.swift
+      - InfinitusMobile/SharedKeychain.swift
+      - InfinitusMobile/WidgetBridge.swift
     dependencies:
       - package: Infinitus
         product: InfinitusCore
       - package: Infinitus
         product: InfinitusUI
+    # The fleet widget (#80) reads its states from the shared keychain item.
+    entitlements:
+      path: InfinitusMobileWidgets/InfinitusMobileWidgets.entitlements
+      properties:
+        keychain-access-groups: ["$(AppIdentifierPrefix)com.huuloc.infinitus.shared"]
     info:
       path: InfinitusMobileWidgets/Info.plist
       properties:
@@ -123,6 +130,7 @@ targets:
       - InfinitusMobileShare
       - InfinitusMobile/NetworkFleetMirror.swift
       - InfinitusMobile/ShareBridge.swift
+      - InfinitusMobile/SharedKeychain.swift
       - InfinitusMobile/AttachmentImage.swift
     dependencies:
       - package: Infinitus

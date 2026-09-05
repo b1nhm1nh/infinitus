@@ -7,6 +7,7 @@ import WidgetKit
 @main
 struct InfinitusWidgets: WidgetBundle {
     var body: some Widget {
+        FleetWidget()
         RevivalLiveActivity()
         WorkingLiveActivity()
     }
@@ -204,7 +205,7 @@ private struct WorkingLockScreen: View {
 
 /// One themed gauge row — "MP ▮▮▮▯ 73% 4h20m·17:49", the popup's cell,
 /// as three grid cells so every bar starts on the same column.
-private struct WindowRow: View {
+struct WindowRow: View {
     let window: ActivityWindow
     var body: some View {
         let color = ThemeColor.resolve(window.color)
@@ -220,7 +221,7 @@ private struct WindowRow: View {
 }
 
 /// "⚡ ▮▮▯ 1.2k/min" — the popup footer's tokens/minute gauge.
-private struct TokenRow: View {
+struct TokenRow: View {
     let perMinute: Int
     let fraction: Double
     var body: some View {
@@ -233,7 +234,7 @@ private struct TokenRow: View {
     }
 }
 
-private func sessionsLine(_ state: WorkingActivityState) -> String {
+func sessionsLine(_ state: WorkingActivityState) -> String {
     var line = "\(state.busy) working · \(state.total) session\(state.total == 1 ? "" : "s")"
     if state.waiting > 0 { line += " · \(state.waiting) waiting on you" }
     return line

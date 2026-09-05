@@ -1,13 +1,11 @@
 import Foundation
 import InfinitusCore
-import Security
 import os
 
 /// The pairing the share extension (#64) needs to reach the Mac — routes,
 /// token, device identity — as one keychain item both bundles open
-/// through the shared access group (`…com.huuloc.infinitus.shared`, the
-/// only group either target lists, so it is the default one and no team
-/// prefix appears in code). The app writes it; the extension reads it.
+/// through the shared access group (SharedKeychain). The app writes it;
+/// the extension reads it.
 /// Sessions are not bridged: the app is backgrounded most of the time,
 /// so the extension asks the Mac for the live list instead.
 enum ShareBridge {
@@ -39,18 +37,7 @@ enum ShareBridge {
             deviceId: NetworkFleetMirror.deviceId,
             deviceName: NetworkFleetMirror.deviceName)
         guard pairing != lastWritten, let data = try? JSONEncoder().encode(pairing) else { return }
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: account,
-        ]
-        var status = SecItemUpdate(query as CFDictionary, [kSecValueData as String: data] as CFDictionary)
-        if status == errSecItemNotFound {
-            var add = query
-            add[kSecValueData as String] = data
-            add[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
-            status = SecItemAdd(add as CFDictionary, nil)
-        }
+        let status = SharedKeychain.write(service: service, account: account, data: data)
         guard status == errSecSuccess else {
             log.error("share bridge write failed: \(status)")
             return
@@ -65,15 +52,7 @@ enum ShareBridge {
     /// device. False when the app never paired (or has no saved route —
     /// the extension does not browse Bonjour).
     static func adopt(into defaults: UserDefaults = .standard) -> Bool {
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: account,
-            kSecReturnData as String: true,
-        ]
-        var item: CFTypeRef?
-        guard SecItemCopyMatching(query as CFDictionary, &item) == errSecSuccess,
-              let data = item as? Data,
+        guard let data = SharedKeychain.read(service: service, account: account),
               let pairing = try? JSONDecoder().decode(Pairing.self, from: data),
               !pairing.endpoints.isEmpty else { return false }
         defaults.set(pairing.endpoints, forKey: NetworkFleetMirror.manualKey)
