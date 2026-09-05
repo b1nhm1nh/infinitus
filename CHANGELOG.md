@@ -13,6 +13,7 @@ publishes the matching section as the GitHub release body.
 
 ### Fixes
 - AWS logins survive a Mac relaunch, and a need that failed just before a launch still reaches the phone.
+- A session stuck behind the credential broker's refresh lock (another process sitting in `aws login`) now shows the AWS login card too.
 - Haiku session names now cover the sessions Claude Code named itself (`limitless-bf`, `banyan-51`…).
 - Phone dictation never sits on "Translating…": a missing language pack asks to download, and after ten seconds the take goes out as spoken.
 
@@ -36,6 +37,7 @@ publishes the matching section as the GitHub release body.
 - Loading, empty and "looking for the Mac" placeholders speak the theme, with the theme's icon in motion.
 - Settings › Chat header previews every style live, in the current theme.
 - The Game HUD header is a glossy unit frame now: the portrait rides the panel, the bars carry a pace tick.
+- Live Activity: the next account and the "then …" line are readable on the Lock Screen's dark card.
 
 ### Team (preview)
 - `infinitusctl team` creates a team on any git remote and exchanges end-to-end encrypted files between members (create, code, request, approve, publish, read).

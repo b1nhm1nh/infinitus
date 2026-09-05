@@ -217,6 +217,10 @@ public enum AwsLogin {
         // session token past its life (past transcripts, 2026-09-03).
         "pending authorization to retrieve an sso token has expired",
         "the security token included in the request is expired",
+        // The cred broker's refresh lock is held past its 30 s wait only
+        // while the holder sits in the interactive login; every other
+        // caller then fails with this line (peon-wave-16, 2026-09-05).
+        "waiting for the refresh lock held by pid",
     ]
 
     /// The failure must OPEN an output line: the CLI and the broker print
