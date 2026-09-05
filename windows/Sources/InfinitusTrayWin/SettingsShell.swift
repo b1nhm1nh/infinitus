@@ -354,18 +354,16 @@ public enum SettingsShell {
         // 10 General + 3 Engine + 1 Legacy
         let allDescriptors: [(PaneDescriptor, (PaneDescriptor) -> SettingsPane)] = [
             (
-                PaneDescriptor(id: "display", title: "Display", glyph: "\u{E7F4}", tintRGB: (155, 89, 182),
-                               keywords: ["layout", "popup", "size", "compact", "menu bar", "icon", "title", "tray"]),
-                { PlaceholderPane(descriptor: $0) }
+                DisplayPane.descriptor,
+                { _ in DisplayPane() }
             ),
             (
                 AccountsPane.descriptor,
                 { _ in AccountsPane() }
             ),
             (
-                PaneDescriptor(id: "themes", title: "Themes", glyph: "\u{E790}", tintRGB: (230, 126, 34),
-                               keywords: ["theme", "skin", "gallery", "community", "rpg", "row", "gamification"]),
-                { PlaceholderPane(descriptor: $0) }
+                ThemesPane.descriptor,
+                { _ in ThemesPane() }
             ),
             (
                 PushPane.descriptor,

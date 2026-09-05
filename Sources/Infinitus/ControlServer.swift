@@ -256,6 +256,11 @@ final class ControlServer {
             await model.refreshSnapshot()
             return ControlReply(ok: true, result: try .of(["fleet": fleetPayload(fleet)]))
 
+        case "crashes":
+            return ControlReply(ok: true, result: try .of(["crashes": model.crashReports.map { r in
+                CrashListing(id: r.id, platform: r.platform, device: r.device, at: r.at, kind: r.kind,
+                             reason: r.reason, frames: r.frames) }]))
+
         case "aws-logins":
             return ControlReply(ok: true, result: try .of(["logins": model.awsLogins]))
 
@@ -541,4 +546,9 @@ final class ControlServer {
         ]
         return table.filter { caps.contains($0.0) }.map(\.1)
     }
+}
+
+/// `crashes`: the reports without their raw diagnostic.
+private struct CrashListing: Encodable {
+    let id: String, platform: String, device: String, at: Date, kind: String, reason: String, frames: [String]
 }

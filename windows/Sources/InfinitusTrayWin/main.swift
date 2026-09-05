@@ -245,13 +245,27 @@ func refresh() {
 
     // Announce only what the user would want pulled away for: a session
     // now waiting on them, or one that died mid-turn.
+    let settings = WinSettingsStore.load()
     let statuses = Dictionary(uniqueKeysWithValues: rows.map { ($0.pid, $0.status) })
     let names = Dictionary(uniqueKeysWithValues: rows.map { ($0.pid, $0.name) })
-    for line in TrayNotify.transitions(previous: state.lastStatuses,
-                                       current: statuses, names: names) {
-        TrayNotify.balloon(window, title: "Infinitus", body: line)
+    if settings.trayBalloonsEnabled {
+        for line in TrayNotify.transitions(previous: state.lastStatuses,
+                                           current: statuses, names: names) {
+            TrayNotify.balloon(window, title: "Infinitus", body: line)
+        }
     }
     state.lastStatuses = statuses
+
+    // Keep Windows awake while sessions are working
+    if settings.keepAwake {
+        if busy > 0 {
+            SetThreadExecutionState(DWORD(ES_CONTINUOUS | ES_SYSTEM_REQUIRED))
+        } else {
+            SetThreadExecutionState(DWORD(ES_CONTINUOUS))
+        }
+    } else {
+        SetThreadExecutionState(DWORD(ES_CONTINUOUS))
+    }
     let wasBusy = state.icon != nil && busy > 0
     if let fresh = TrayIcon.make(busy: busy > 0) {
         let previous = state.icon
@@ -685,6 +699,8 @@ func run() -> Int32 {
     state.busy = busy
     var data = notifyData(window, tip: "\(rows.count) sessions")
     guard Shell_NotifyIconW(DWORD(NIM_ADD), &data) else { return 1 }
+    let initialSettings = WinSettingsStore.load()
+    TrayFleet.cacheSeconds = TimeInterval(initialSettings.refreshIntervalSeconds)
     refresh()
     SetTimer(window, 1, refreshMilliseconds, nil)
     SetTimer(window, timerUpdateCheckID, timerUpdateCheckIntervalMs, nil)
