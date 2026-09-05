@@ -36,6 +36,10 @@ public struct MachineSample: Equatable, Sendable, Codable {
     public var windowServerCPU: Double
     /// nil when the listing hit its deadline — itself a symptom.
     public var tempEntries: Int?
+    /// The same listing split by who left the entries (`Residue.tempOwner`:
+    /// mktemp / pip / python), the rest under "other" — so the warning
+    /// names the tool, not just a number (#115 item 7).
+    public var tempByOwner: [String: Int]?
     public var tempListSeconds: Double
     public var claudeRSSMB: Int
 
@@ -157,10 +161,20 @@ public enum MachineSampler {
 
     /// Entries in a directory, counted with a deadline.
     public static func countEntries(_ dir: String, timeout: TimeInterval) -> (Int?, TimeInterval) {
-        let (count, seconds) = timed(timeout) {
-            (try? FileManager.default.contentsOfDirectory(atPath: dir))?.count ?? -1
+        let (by, seconds) = countByOwner(dir, timeout: timeout)
+        return (by.map { $0.values.reduce(0, +) }, seconds)
+    }
+
+    /// Entries by owner (`Residue.tempOwner`, "other" for the rest); nil
+    /// when the listing did not finish in time.
+    public static func countByOwner(_ dir: String, timeout: TimeInterval) -> ([String: Int]?, TimeInterval) {
+        let (by, seconds) = timed(timeout) { () -> [String: Int]? in
+            guard let names = try? FileManager.default.contentsOfDirectory(atPath: dir) else { return nil }
+            var out: [String: Int] = [:]
+            for name in names { out[Residue.tempOwner(of: name) ?? "other", default: 0] += 1 }
+            return out
         }
-        return (count.flatMap { $0 >= 0 ? $0 : nil }, seconds)
+        return (by ?? nil, seconds)
     }
 
     #if canImport(Darwin) && !os(iOS)
@@ -180,8 +194,9 @@ public enum MachineSampler {
                                    uninterruptible: summary.uninterruptible, zombies: summary.zombies,
                                    windowServerCPU: summary.windowServerCPU, claudeRSSMB: summary.claudeRSSMB)
         if countTemp {
-            let (count, seconds) = countEntries(tempDir, timeout: tempTimeout)
-            sample.tempEntries = count
+            let (by, seconds) = countByOwner(tempDir, timeout: tempTimeout)
+            sample.tempByOwner = by
+            sample.tempEntries = by.map { $0.values.reduce(0, +) }
             sample.tempListSeconds = seconds
         }
         return (sample, rows)

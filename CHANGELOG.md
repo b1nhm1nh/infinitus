@@ -14,11 +14,13 @@ publishes the matching section as the GitHub release body.
 ### Phone
 - The phone pairs with more than one Mac: other Macs' fleets and sessions show under their name, and any of them can be made primary from Settings › Devices.
 - The Sessions list wears the theme: session names in the theme's accent, state words in their state color.
+- The share sheet's session picker lists waiting sessions first and names each one by session · repo.
 - The Game HUD bars' cool glow (usage behind pace) is a real glow now, scaled to the bar, instead of a tinted rim.
 - The chat composer's placeholder speaks the theme's language too ("Send word…" in the Wild West, "Codec open…" while dictating in Metal Gear).
 - Allow… on a permission card offers "Allow for this session": the Mac remembers the tool (Bash by command verb) and the plugin's PreToolUse hook skips that prompt for the rest of the session.
 
 ### Mac
+- Right-click an account row → Re-roll name gives that one account a fresh themed name nobody in the fleet wears; `infinitusctl randomize-names <fleet> <n>` does the same.
 - Settings › Machine watches what many sessions do to this Mac — load, swap, stuck hooks, runaway processes, residue — with confirmed kill, reclaim and hook-disable actions and notifications for new hook registrations and idle sessions.
 - Sessions whose sub-agents hit a limit get a nudge that the swapped-in account has headroom, so they stop waiting for the reset.
 - When a revival countdown ends the Mac asks the engine again right away (three tries a minute apart) instead of waiting for the next poll.
@@ -38,6 +40,7 @@ publishes the matching section as the GitHub release body.
 - Tokens/min records: every day's peak minute, the all-time best and the days it fell, a 30-day sparkline and a week-over-week trend, on the Mac and the phone — one full rescan on first refresh.
 
 ### Fixes
+- Machine names who filled the temp directory (pip, Python tempfile, mktemp) and flags a tool that registers several commands on one event, which spawn on every call.
 - A resume nudge after an account switch waits until the new account has held for 30 s and been polled alive since, and its retries stop when the engine switches again, so a flapping engine no longer burns three nudges in a minute.
 - The idle-session note is sent once per session, app relaunches included.
 - `infinitusctl status` and the phone show the Mac build's real git sha instead of "dev".
