@@ -54,6 +54,11 @@ final class StatusItemHolder: ObservableObject {
         model.popOut = { [weak controller] in controller?.popOut() }
         model.showWall = { [weak controller] in controller?.toggleWall() }
         model.lock.showSettings = { [weak controller] in controller?.showSettingsWindow() }
+        model.team.showSettings = { [weak controller] in controller?.showSettingsWindow() }
+        // A cold-launch `infinitus://join/…` can call TeamModel.open(url:)
+        // before this holder (and its showSettings closure) exists; replay
+        // the reveal now that Settings can actually open.
+        if model.team.pendingCode != nil { model.team.revealSetting() }
     }
 }
 

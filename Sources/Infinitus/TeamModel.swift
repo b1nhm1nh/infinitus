@@ -186,19 +186,26 @@ final class TeamModel: ObservableObject {
 
     /// Leaders: approve every pending request whose nonce is in the
     /// invite book (one round trip, no tap); each nonce is spent once.
+    /// The book is saved after the prune and after every consumed nonce
+    /// (not once at the end), so one request's failure can't leave an
+    /// already-approved member's nonce looking unspent on disk; that
+    /// request's error is swallowed (left for a manual Approve) instead
+    /// of aborting the rest of the pass.
     private nonisolated static func autoApprove(_ client: TeamClient, paths: TeamPaths) throws {
         guard client.isLeader else { return }
         let dir = paths.teamDir(client.config.id)
         var book = TeamInvites.load(teamDir: dir)
         let now = Int(Date().timeIntervalSince1970)
+        let before = book.nonces
         book.prune(now: now)
-        var changed = false
+        if book.nonces != before { try book.save(teamDir: dir) }
         for request in try client.requests() where book.matches(request.doc, now: now) {
-            try client.approve(kid: request.doc.keys.kid, now: now)
-            book.consume(request.doc.nonce ?? "")
-            changed = true
+            guard let nonce = request.doc.nonce else { continue }
+            do { try client.approve(kid: request.doc.keys.kid, now: now) }
+            catch is TeamClient.ClientError { continue }
+            book.consume(nonce)
+            try book.save(teamDir: dir)
         }
-        if changed || book.nonces.isEmpty == false { try book.save(teamDir: dir) }
     }
 
     // MARK: user actions
@@ -291,7 +298,7 @@ final class TeamModel: ObservableObject {
             try book.save(teamDir: dir)
             minted = try client.code(expiresIn: days * 86_400, nonce: nonce)
         }
-        code = minted
+        if let minted { code = minted }
     }
 
     func approve(kid: String) async {

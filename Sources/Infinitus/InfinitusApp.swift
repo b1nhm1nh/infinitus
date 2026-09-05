@@ -59,7 +59,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// `infinitus://join/…` from a QR, a message or the phone (spec §6.2).
     func application(_ application: NSApplication, open urls: [URL]) {
         guard let model else { return }
-        for url in urls where model.team.open(url: url) { break }
+        for url in urls {
+            if model.team.open(url: url) { break }
+        }
     }
 }
 
