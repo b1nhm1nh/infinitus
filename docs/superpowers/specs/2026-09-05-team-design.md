@@ -39,7 +39,7 @@ biometric auth on app. joining a team requires enabling this";
 | leader | invites, approves, removes, promotes, publishes team-wide aggregates, reads whatever members share to leaders |
 | co-leader | a leader who cannot remove or demote the founding leader; otherwise identical |
 | member | publishes their own data to the audiences they pick |
-| identity | an X25519 key pair (encryption) + an Ed25519 key pair (signing), both derived from one 32-byte identity secret; `kid` = first 16 bytes of SHA-256(public encryption key), base32 |
+| identity | an X25519 key pair (encryption) + an Ed25519 key pair (signing), both derived from one 32-byte identity secret; `kid` = first 16 bytes of SHA-256(public encryption key ‖ public signing key), base32 — binding both keys, so a request cannot pair one member's encryption key with another's signing key (#57) |
 | audience | per data kind: **leaders** (default), **team**, or **chosen** members |
 | data kinds | `stats` (Stats.Day), `now` (live state), `sessions` (session index + fleet health), `transcripts` |
 
