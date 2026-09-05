@@ -9,8 +9,8 @@ import Foundation
 /// - `turn_context` — the model and effort every later token count
 ///   belongs to (the counts don't carry them).
 /// - `event_msg.user_message` — the person typed: a human message, a
-///   stretch boundary. A message that opens with a `<system_instruction>`
-///   tag is a host app's preamble (Conductor), not the person.
+///   stretch boundary. `<system_instruction>` blocks are a host app's
+///   preamble (Conductor), not the person; what's left outside them is.
 /// - `event_msg.token_count` — one response's usage in
 ///   `info.last_token_usage`; `total_token_usage` is the running sum.
 ///   OpenAI's `input_tokens` includes the cached part, so the uncached
@@ -44,6 +44,18 @@ public enum StatsCodex {
 
     static let commandTools: Set<String> = ["exec", "shell", "exec_command", "container.exec", "local_shell"]
 
+    /// Conductor puts the person's own words after its tagged blocks in
+    /// the same message — sometimes after two of them (the attachments
+    /// list is another).
+    static func withoutPreamble(_ text: String) -> String {
+        var rest = text
+        while let open = rest.range(of: "<system_instruction>"),
+              let close = rest.range(of: "</system_instruction>", range: open.upperBound..<rest.endIndex) {
+            rest.removeSubrange(open.lowerBound..<close.upperBound)
+        }
+        return rest.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
     public static func ingest(_ obj: [String: Any], sessionID: String, into entry: inout StatsScanner.FileEntry,
                               calendar: Calendar = .current) {
         guard let type = obj["type"] as? String,
@@ -63,8 +75,7 @@ public enum StatsCodex {
         case "event_msg":
             switch payload["type"] as? String {
             case "user_message":
-                let text = payload["message"] as? String ?? ""
-                guard !text.hasPrefix("<system_instruction>") else { return }
+                guard !withoutPreamble(payload["message"] as? String ?? "").isEmpty else { return }
                 StatsScanner.closeStretch(into: &entry, current: &day, currentKey: key)
                 entry.state.stretch = StatsScanner.Stretch(dayKey: key, at: t, engine: .codex)
                 day.humanMessages += 1
@@ -126,10 +137,13 @@ public enum StatsCodex {
         case "response_item":
             guard let kind = payload["type"] as? String, kind == "function_call" || kind == "custom_tool_call",
                   let name = payload["name"] as? String else { return }
+            if entry.state.stretch != nil { entry.state.stretch!.lastAt = max(entry.state.stretch!.lastAt, t) }
+            // `wait` re-polls a command that is still running: the agent
+            // is busy, but it isn't another tool call.
+            guard name != "wait" else { return }
             day.toolCalls[name, default: 0] += 1
             entry.state.toolsSinceHuman += 1
             guard entry.state.stretch != nil else { return }
-            entry.state.stretch!.lastAt = max(entry.state.stretch!.lastAt, t)
             if commandTools.contains(name) {
                 // The command text — a JS snippet for `exec`, a JSON
                 // arguments string otherwise — carries the same markers

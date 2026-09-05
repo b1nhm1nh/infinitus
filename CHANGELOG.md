@@ -8,7 +8,7 @@ publishes the matching section as the GitHub release body.
 ## 0.4.3 (unreleased)
 
 ### Stats
-- Stats reads Codex CLI transcripts too, with two more effort tables: per engine and per effort setting.
+- Stats reads Codex CLI transcripts too, with two more effort tables, per engine and per effort setting — one full rescan on first refresh.
 - Where the effort went: minutes, tokens and spend per activity (review, tests, plan, debugging, browser, simulator, explanations, coding) and per model, on the Mac and the phone — heuristic labels, one full rescan on first refresh.
 
 ### Fixes

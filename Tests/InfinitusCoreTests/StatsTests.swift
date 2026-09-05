@@ -418,26 +418,29 @@ final class StatsTests: XCTestCase {
             #"{"timestamp":"2026-07-14T06:40:33.027Z","type":"session_meta","payload":{"id":"x","cwd":"/w/app","cli_version":"0.144.1","model_provider":"openai"}}"#,
             #"{"timestamp":"2026-07-14T06:40:35.724Z","type":"turn_context","payload":{"turn_id":"t1","cwd":"/w/app","model":"gpt-5.6-sol","effort":"high"}}"#,
             #"{"timestamp":"2026-07-14T06:40:35.732Z","type":"event_msg","payload":{"type":"user_message","message":"<system_instruction>\nYou are working inside Conductor\n</system_instruction>"}}"#,
-            #"{"timestamp":"2026-07-14T06:40:36.000Z","type":"event_msg","payload":{"type":"user_message","message":"fix the thumbnail crash"}}"#,
+            #"{"timestamp":"2026-07-14T06:40:36.000Z","type":"event_msg","payload":{"type":"user_message","message":"<system_instruction>\nThe user has attached these files.\n</system_instruction>\n<system_instruction>\nRead them first.\n</system_instruction>\n\nfix the thumbnail crash"}}"#,
             #"{"timestamp":"2026-07-14T06:40:40.457Z","type":"response_item","payload":{"type":"reasoning","id":"rs_1","summary":[],"encrypted_content":"gAAAA"}}"#,
             #"{"timestamp":"2026-07-14T06:40:42.871Z","type":"response_item","payload":{"type":"custom_tool_call","id":"ctc_1","status":"completed","call_id":"c1","name":"exec","input":"const r = await tools.exec_command({cmd: \"xcrun simctl boot X && ls\"})"}}"#,
+            #"{"timestamp":"2026-07-14T06:40:50.000Z","type":"response_item","payload":{"type":"function_call","id":"fc_1","status":"completed","call_id":"c2","name":"wait","arguments":"{\"session_id\":1}"}}"#,
             #"{"timestamp":"2026-07-14T06:40:54.113Z","type":"response_item","payload":{"type":"custom_tool_call_output","call_id":"c1","output":"ok"}}"#,
+            #"{"timestamp":"2026-07-14T06:40:55.000Z","type":"world_state","payload":{"files":{"/w/app/utils/thumb.ts":"..."}}}"#,
             #"{"timestamp":"2026-07-14T06:40:54.127Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":22462,"cached_input_tokens":0,"output_tokens":439,"reasoning_output_tokens":151,"total_tokens":22901},"last_token_usage":{"input_tokens":22462,"cached_input_tokens":12000,"output_tokens":439,"reasoning_output_tokens":151,"total_tokens":22901}},"rate_limits":null}}"#,
             #"{"timestamp":"2026-07-14T06:45:13.953Z","type":"event_msg","payload":{"type":"patch_apply_end","call_id":"e1","turn_id":"t1","success":true,"changes":{"/w/app/utils/thumb.test.ts":{"type":"add"},"/w/app/utils/thumb.ts":{"type":"update"}}}}"#,
             #"{"timestamp":"2026-07-14T06:45:20.000Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":30000,"cached_input_tokens":0,"output_tokens":600,"total_tokens":30600},"last_token_usage":{"input_tokens":8000,"cached_input_tokens":1000,"output_tokens":200,"reasoning_output_tokens":50,"total_tokens":8200}},"rate_limits":null}}"#,
             #"{"timestamp":"2026-07-14T06:50:54.387Z","type":"event_msg","payload":{"type":"task_complete","turn_id":"t1","last_agent_message":"Fixed."}}"#,
+            #"{"timestamp":"2026-07-14T08:21:37.800Z","type":"compacted","payload":{"message":"summary","replacement_history":[]}}"#,
             #"{"timestamp":"2026-07-14T08:21:37.835Z","type":"event_msg","payload":{"type":"context_compacted"}}"#,
             #"{"timestamp":"2026-07-14T08:30:00.000Z","type":"event_msg","payload":{"type":"user_message","message":"thanks"}}"#,
         ]
         for line in lines {
-            let data = Data(line.utf8)
-            XCTAssertEqual(StatsCodex.worthParsing(data), !line.contains("encrypted_content") && !line.contains("call_output"), line)
-            StatsCodex.ingest(entry(line), sessionID: "rollout-1", into: &e, calendar: cal)
+            let skipped = ["encrypted_content", "call_output", "\"world_state\"", "\"compacted\""].contains { line.contains($0) }
+            XCTAssertEqual(StatsCodex.worthParsing(Data(line.utf8)), !skipped, line)
+            if !skipped { StatsCodex.ingest(entry(line), sessionID: "rollout-1", into: &e, calendar: cal) }
         }
         let d = e.days["2026-07-14"]!
         XCTAssertEqual(e.cwd, "/w/app")
-        XCTAssertEqual(d.humanMessages, 2)                                   // the Conductor preamble is not a person
-        XCTAssertEqual(d.toolCalls, ["exec": 1, "apply_patch": 1])
+        XCTAssertEqual(d.humanMessages, 2)                                   // the Conductor preamble is not a person; the words after it are
+        XCTAssertEqual(d.toolCalls, ["exec": 1, "apply_patch": 1])          // `wait` is polling, not a call
         XCTAssertEqual(d.inputTokens, 10462 + 7000)                          // uncached input
         XCTAssertEqual(d.outputTokens, 639)
         XCTAssertEqual(d.usd, 0)                                             // OpenAI models: unpriced
@@ -884,7 +887,10 @@ final class StatsTests: XCTestCase {
         XCTAssertFalse(c.total.activities.isEmpty)
     }
 
-    func testBundleWithEffortTalliesStaysUnderTwelveKilobytes() throws {
+    /// Every tally populated in all four periods — worse than any real
+    /// week. `GET /snapshot` has no response cap; the bound keeps the
+    /// bundle a small part of the snapshot the phone fetches.
+    func testBundleWithEffortTalliesStaysUnderSixteenKilobytes() throws {
         var d = Stats.Day()
         for i in 0..<30 { d.toolCalls["ToolNumber\(i)"] = i + 1 }
         d.sessions = Set((0..<20).map { "session-\($0)" })
@@ -894,9 +900,11 @@ final class StatsTests: XCTestCase {
         t.stretches = 3; t.seconds = 900; t.inputTokens = 120_000; t.outputTokens = 9_000; t.usd = 12.34
         for a in Stats.Activity.allCases { d.activities[a.rawValue] = t }
         for i in 0..<9 { d.byModel["claude-m\(i)"] = t }
+        for e in Stats.Engine.allCases { d.byEngine[e.rawValue] = t }
+        for e in ["minimal", "low", "medium", "high", "max", "unset"] { d.byEffort[e] = t }
         let b = Stats.Bundle(days: ["2026-09-04": d], now: date("2026-09-04T03:00:00Z"), calendar: cal)
         let json = String(decoding: try JSONEncoder().encode(b), as: UTF8.self)
-        XCTAssertLessThan(json.utf8.count, 12_288)
+        XCTAssertLessThan(json.utf8.count, 16_384)
         XCTAssertTrue(b.periods.allSatisfy { $0.total.byModel.count <= 7 })
     }
 
