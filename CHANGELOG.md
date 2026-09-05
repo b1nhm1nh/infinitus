@@ -11,6 +11,7 @@ publishes the matching section as the GitHub release body.
 - The activity tables read the ask off your own message — "debug the crash" counts as debugging even when the tools only edited — and the plugin's UserPromptSubmit hook refreshes a session the moment a prompt goes in.
 
 ### Mac
+- `/infinitus:handoff <session>` passes the current task and its context to another live session through the plugin.
 - Live Activity pushes drop a phone token from before the bundle id move instead of failing on it every minute.
 - "Needs AWS login" banners no longer repeat after a relaunch, and every banner's headline is now its subtitle.
 
