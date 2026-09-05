@@ -119,6 +119,26 @@ public enum MirrorPairing {
         return Pairing(endpoints: endpoints, token: token)
     }
 
+    // MARK: - Several Macs per phone (#144 phase 1): one entry per OTHER
+    // paired Mac (the primary stays in the existing manual-endpoints/
+    // token keys). `id` is the normalized token — the natural identity,
+    // since two Macs can't share a pairing token.
+    public struct MacPairing: Codable, Sendable, Identifiable, Equatable {
+        public var id: String
+        public var name: String
+        public var endpoints: [String]
+        public var token: String
+        public var lastGood: String?
+
+        public init(id: String, name: String, endpoints: [String], token: String, lastGood: String? = nil) {
+            self.id = id
+            self.name = name
+            self.endpoints = endpoints
+            self.token = token
+            self.lastGood = lastGood
+        }
+    }
+
     // MARK: - Which addresses to offer
 
     /// A tailnet address, if this machine is on one: Tailscale hands out
@@ -152,6 +172,50 @@ public enum MirrorPairing {
             return nil
         }
         return octets
+    }
+
+    // MARK: - Several Macs per phone (#144 phase 1)
+    //
+    // The PRIMARY Mac still rides `NetworkFleetMirror.shared`'s own
+    // UserDefaults keys (unchanged, so nothing else needs to move); every
+    // OTHER paired Mac is one `MacPairing` in the phone's `others` list.
+    // These helpers are pure so the add-vs-replace and swap logic is
+    // tested without a `UserDefaults` or a running mirror.
+
+    public enum Others {
+        /// A scanned QR replaces the primary (today's behaviour) when
+        /// there's no primary yet, or the scanned token IS the primary's
+        /// — anything else is another Mac, added rather than replacing.
+        public static func replacesPrimary(scannedToken: String, primaryToken: String,
+                                           primaryEndpoints: [String]) -> Bool {
+            let primary = normalize(primaryToken)
+            if primary.isEmpty, primaryEndpoints.isEmpty { return true }
+            return normalize(scannedToken) == primary
+        }
+
+        /// Adds a pairing, or updates the existing one for the same
+        /// (normalized) token in place — position in the list otherwise
+        /// unchanged.
+        public static func upsert(_ pairing: MacPairing, into list: [MacPairing]) -> [MacPairing] {
+            var list = list
+            if let index = list.firstIndex(where: { $0.id == pairing.id }) {
+                list[index] = pairing
+            } else {
+                list.append(pairing)
+            }
+            return list
+        }
+
+        /// Swaps a chosen other Mac into the primary slot: its endpoints
+        /// and token become the new `Pairing`, and the demoted former
+        /// primary re-enters `others` under `oldPrimaryName`.
+        public static func swapPrimary(oldPrimary: Pairing, oldPrimaryName: String,
+                                       chosen: MacPairing, others: [MacPairing]) -> (primary: Pairing, others: [MacPairing]) {
+            var remaining = others.filter { $0.id != chosen.id }
+            remaining.append(MacPairing(id: normalize(oldPrimary.token), name: oldPrimaryName,
+                                        endpoints: oldPrimary.endpoints, token: oldPrimary.token))
+            return (Pairing(endpoints: chosen.endpoints, token: chosen.token), remaining)
+        }
     }
 
     // MARK: - Cloudflare quick tunnel

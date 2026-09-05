@@ -64,6 +64,7 @@ struct FleetScreen: View {
             InfinitusHeader(model: model)
             mirrorState
             accountArea
+            otherMacsArea
             AllDeadBanner(model: model)
             sessionsCard
             Divider()
@@ -110,6 +111,22 @@ struct FleetScreen: View {
             }
         }
         .introContent(model)
+    }
+
+    /// Every OTHER paired Mac (#144 phase 1), read-only: the phone drives
+    /// no engine even for the primary, so `FleetStack`'s rows are already
+    /// a no-op tap here — the only addition is the Mac's name.
+    @ViewBuilder private var otherMacsArea: some View {
+        ForEach(model.others) { other in
+            if !other.fleets.isEmpty {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(other.pairing.name)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                    FleetStack(fleets: other.fleets)
+                }
+            }
+        }
     }
 
     /// The mac pops this card over the brain chip; the phone has no

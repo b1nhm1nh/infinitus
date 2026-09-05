@@ -35,6 +35,23 @@ final class MirrorModel: ObservableObject, FleetModel {
     @Published private(set) var fleets: [MirrorFleetModel] = []
     private var fleetSinks: [String: AnyCancellable] = [:]
     @Published private(set) var error: String?
+
+    /// One OTHER paired Mac (#144 phase 1): read-only on the phone — only
+    /// the primary drives chats, approvals, start-session, widgets and
+    /// Live Activities. `pairing` is the persisted identity; the rest is
+    /// this refresh's live state.
+    struct OtherMac: Identifiable {
+        let pairing: MacPairing
+        var snapshot: MirrorSnapshot?
+        var fleets: [MirrorFleetModel] = []
+        var status: String = ""
+        var id: String { pairing.id }
+    }
+    @Published private(set) var others: [OtherMac] = []
+    /// One cached `NetworkFleetMirror` per other Mac, reused across
+    /// refreshes so its last-good endpoint ordering survives — same
+    /// reasoning as `.shared` for the primary.
+    private var otherMirrors: [String: NetworkFleetMirror] = [:]
     /// The Mac's display prefs (#9 phase C1: "Follow Mac"); `nil` for
     /// snapshots captured before this field existed.
     @Published private(set) var prefs: FleetPrefs?
@@ -124,17 +141,68 @@ final class MirrorModel: ObservableObject, FleetModel {
     }
 
     /// Pairs with a Mac from a scanned QR or an `infinitus://pair?…` deep
-    /// link: every route the QR carries replaces the stored list (#9 pair
-    /// once, every route) — a fresh scan is meant to reset, not append —
-    /// the token beside it. Returns false for anything that isn't one of
-    /// our pair URLs.
+    /// link. Today's behaviour — every route the QR carries replaces the
+    /// stored list (#9 pair once, every route), the token beside it — is
+    /// kept for the first Mac, or a rescan of the current primary; a scan
+    /// of any OTHER Mac ADDS it instead (#144 phase 1). Returns false for
+    /// anything that isn't one of our pair URLs.
     @discardableResult
     func applyPairing(_ text: String) -> Bool {
         guard let pairing = MirrorPairing.parsePairURL(text) else { return false }
-        manualEndpoints = pairing.endpoints
-        pairToken = pairing.token
+        if MirrorPairing.Others.replacesPrimary(scannedToken: pairing.token,
+                                                primaryToken: pairToken, primaryEndpoints: manualEndpoints) {
+            manualEndpoints = pairing.endpoints
+            pairToken = pairing.token
+            Task { await refresh() }
+            return true
+        }
+        let id = MirrorPairing.normalize(pairing.token)
+        let host = MirrorTransport.parseEndpoint(pairing.endpoint)?.host ?? pairing.endpoint
+        let mac = MacPairing(id: id, name: host, endpoints: pairing.endpoints, token: pairing.token)
+        MacPairing.save(MirrorPairing.Others.upsert(mac, into: MacPairing.load(defaults)), defaults)
+        otherMirrors.removeValue(forKey: id)
         Task { await refresh() }
         return true
+    }
+
+    /// Settings › Devices, "Other Macs": drops a pairing for good.
+    func forgetOther(id: String) {
+        var list = MacPairing.load(defaults)
+        list.removeAll { $0.id == id }
+        MacPairing.save(list, defaults)
+        otherMirrors.removeValue(forKey: id)
+        others.removeAll { $0.id == id }
+    }
+
+    /// Settings › Devices, "Make primary": the chosen other Mac's
+    /// endpoints and token become the primary's; the demoted former
+    /// primary re-enters `others` under its last-known name.
+    func makePrimary(id: String) {
+        let list = MacPairing.load(defaults)
+        guard let chosen = list.first(where: { $0.id == id }) else { return }
+        let swapped = MirrorPairing.Others.swapPrimary(
+            oldPrimary: MirrorPairing.Pairing(endpoints: manualEndpoints, token: pairToken),
+            oldPrimaryName: snapshot?.machineName ?? "the Mac", chosen: chosen, others: list)
+        // The chosen Mac's own last-good route, not the demoted primary's
+        // — otherwise ShareBridge ships a mismatched (new endpoints, old
+        // last-good) pair to the share extension.
+        if let lastGood = chosen.lastGood {
+            defaults.set(lastGood, forKey: NetworkFleetMirror.lastGoodKey)
+        } else {
+            defaults.removeObject(forKey: NetworkFleetMirror.lastGoodKey)
+        }
+        manualEndpoints = swapped.primary.endpoints
+        pairToken = swapped.primary.token
+        MacPairing.save(swapped.others, defaults)
+        otherMirrors.removeValue(forKey: id)
+        others.removeAll { $0.id == id }
+        snapshot = nil
+        Task {
+            // The old primary's cached snapshot must not linger under the
+            // new pairing if the new one fails to answer right away.
+            await NetworkFleetMirror.shared.forgetCached()
+            await refresh()
+        }
     }
 
     /// Adds an endpoint typed into Settings, de-duplicated — the field
@@ -183,26 +251,13 @@ final class MirrorModel: ObservableObject, FleetModel {
                 fleets = []
                 fleetSinks = [:]
                 if usesLAN { transportStatus = await NetworkFleetMirror.shared.statusText }
+                await refreshOthers()
                 return
             }
-            let engineFleets: [EngineFleet]
-            if let snapshotFleets = snapshot.fleets {
-                // Newer Mac: one EngineFleet per engine, already in
-                // popup order — listJSON is cswap's `raw` bytes under
-                // this roof, so it's never re-decoded here.
-                engineFleets = snapshotFleets
-            } else {
-                // Older Mac: the only fleet is the legacy listJSON one,
-                // wrapped as an EngineFleet so `apply` stays one path.
-                guard let list = Self.decodeList(snapshot.listJSON) else {
-                    error = "couldn't read the mirrored fleet data"
-                    return
-                }
-                engineFleets = [EngineFleet(
-                    engineID: MirrorFleetModel.cswapEngineID, provider: .claude,
-                    accounts: list.accounts, activeNumber: list.activeAccountNumber,
-                    nextCandidate: list.nextCandidate, nextRecovery: list.nextRecovery,
-                    liveSessions: list.liveSessions, raw: snapshot.listJSON)]
+            guard let engineFleets = Self.engineFleets(from: snapshot) else {
+                error = "couldn't read the mirrored fleet data"
+                await refreshOthers()
+                return
             }
             self.snapshot = snapshot
             prefs = snapshot.prefs
@@ -228,9 +283,103 @@ final class MirrorModel: ObservableObject, FleetModel {
             if firstLoad {
                 DispatchQueue.main.async { self.replayIntro() }
             }
+            await refreshOthers()
         } catch {
             self.error = error.localizedDescription
+            await refreshOthers()
         }
+    }
+
+    /// Pure decode of one snapshot into the `EngineFleet`s `reconcile`
+    /// applies — shared with `refreshOthers` so an other Mac's fleets
+    /// come from the exact same rule (`nil` on an unreadable legacy
+    /// snapshot).
+    private static func engineFleets(from snapshot: MirrorSnapshot) -> [EngineFleet]? {
+        if let snapshotFleets = snapshot.fleets {
+            // Newer Mac: one EngineFleet per engine, already in popup
+            // order — listJSON is cswap's `raw` bytes under this roof,
+            // so it's never re-decoded here.
+            return snapshotFleets
+        }
+        // Older Mac: the only fleet is the legacy listJSON one, wrapped
+        // as an EngineFleet so `apply` stays one path.
+        guard let list = decodeList(snapshot.listJSON) else { return nil }
+        return [EngineFleet(
+            engineID: MirrorFleetModel.cswapEngineID, provider: .claude,
+            accounts: list.accounts, activeNumber: list.activeAccountNumber,
+            nextCandidate: list.nextCandidate, nextRecovery: list.nextRecovery,
+            liveSessions: list.liveSessions, raw: snapshot.listJSON)]
+    }
+
+    /// Refreshes every OTHER paired Mac concurrently (#144 phase 1),
+    /// each through its own cached `NetworkFleetMirror(pairing:)` so one
+    /// dead Mac's retries don't hold up the rest. Read-only: no Live
+    /// Activities, widgets or share bridge for these.
+    private func refreshOthers() async {
+        let pairings = MacPairing.load(defaults)
+        let ids = Set(pairings.map(\.id))
+        otherMirrors = otherMirrors.filter { ids.contains($0.key) }
+        guard !pairings.isEmpty else { others = []; return }
+        let mirrors = pairings.map { ($0, otherMirror(for: $0)) }
+        // `for await` yields in COMPLETION order, not the pairings' own
+        // order — collecting by id and remapping keeps the Fleet/
+        // Sessions/Settings sections from reordering every poll.
+        let fetched = await withTaskGroup(of: (String, MirrorSnapshot?, String).self) { group in
+            for (pairing, mirror) in mirrors {
+                group.addTask {
+                    let snapshot = try? await mirror.latest()
+                    return (pairing.id, snapshot, await mirror.statusText)
+                }
+            }
+            var collected: [String: (MirrorSnapshot?, String)] = [:]
+            for await (id, snapshot, status) in group { collected[id] = (snapshot, status) }
+            return collected
+        }
+        let existingByID = Dictionary(uniqueKeysWithValues: others.map { ($0.id, $0) })
+        others = pairings.map { pairing in
+            guard let (snapshot, status) = fetched[pairing.id] else {
+                return OtherMac(pairing: pairing, status: "")
+            }
+            // Show the Mac's own name the moment it answers, not a poll
+            // later — `renameOther` is what makes it stick.
+            var named = pairing
+            if let snapshot, snapshot.machineName != pairing.name {
+                named.name = snapshot.machineName
+                renameOther(id: pairing.id, to: snapshot.machineName)
+            }
+            var other = OtherMac(pairing: named, snapshot: snapshot, status: status)
+            guard let snapshot, let engineFleets = Self.engineFleets(from: snapshot) else { return other }
+            other.fleets = reconcileFleets(engineFleets, existing: existingByID[pairing.id]?.fleets ?? [],
+                                           hostUsage: false).fleets
+            return other
+        }
+    }
+
+    /// The cached actor for one other Mac — created once per pairing so
+    /// its last-good endpoint ordering survives across refreshes, and
+    /// its successful route is written back into `mirror_other_macs`.
+    private func otherMirror(for pairing: MacPairing) -> NetworkFleetMirror {
+        if let existing = otherMirrors[pairing.id] { return existing }
+        let id = pairing.id
+        let mirror = NetworkFleetMirror(pairing: pairing) { [weak self] endpoint in
+            Task { @MainActor in self?.recordOtherLastGood(id: id, endpoint: endpoint) }
+        }
+        otherMirrors[id] = mirror
+        return mirror
+    }
+
+    private func recordOtherLastGood(id: String, endpoint: String) {
+        var list = MacPairing.load(defaults)
+        guard let index = list.firstIndex(where: { $0.id == id }) else { return }
+        list[index].lastGood = endpoint
+        MacPairing.save(list, defaults)
+    }
+
+    private func renameOther(id: String, to name: String) {
+        var list = MacPairing.load(defaults)
+        guard let index = list.firstIndex(where: { $0.id == id }) else { return }
+        list[index].name = name
+        MacPairing.save(list, defaults)
     }
 
     /// Find-or-create one `MirrorFleetModel` per reported fleet — stable
@@ -241,29 +390,39 @@ final class MirrorModel: ObservableObject, FleetModel {
     /// snapshot — `refresh` uses that to decide whether to replay the
     /// intro, exactly as `AppModel.refreshSnapshot` does off `primary`.
     private func reconcile(_ engineFleets: [EngineFleet]) -> Bool {
-        var existing = Dictionary(uniqueKeysWithValues: fleets.map { ($0.id, $0) })
-        var changesByID: [String: MirrorFleetModel.Change] = [:]
-        var newFleets: [MirrorFleetModel] = []
-        for ef in engineFleets {
-            let fleet: MirrorFleetModel
-            if let found = existing.removeValue(forKey: ef.key) {
-                fleet = found
-            } else {
-                fleet = MirrorFleetModel(engineID: ef.engineID, provider: ef.provider, host: self)
-                // Delayed mutations (death/revive ticks, the switch
-                // flash) land on the fleet with no coincident publish
-                // here — forward them so every observer of `self`
-                // (haptics, the facade) still sees them.
-                fleetSinks[ef.key] = fleet.objectWillChange
-                    .sink { [weak self] _ in self?.objectWillChange.send() }
-            }
-            changesByID[ef.key] = fleet.apply(ef)
-            newFleets.append(fleet)
+        let previousIDs = Set(fleets.map(\.id))
+        let (newFleets, changesByID) = reconcileFleets(engineFleets, existing: fleets)
+        for fleet in newFleets where !previousIDs.contains(fleet.id) {
+            // Delayed mutations (death/revive ticks, the switch flash)
+            // land on the fleet with no coincident publish here —
+            // forward them so every observer of `self` (haptics, the
+            // facade) still sees them.
+            fleetSinks[fleet.id] = fleet.objectWillChange
+                .sink { [weak self] _ in self?.objectWillChange.send() }
         }
-        for goneID in existing.keys { fleetSinks.removeValue(forKey: goneID) }
+        let newIDs = Set(newFleets.map(\.id))
+        for goneID in previousIDs.subtracting(newIDs) { fleetSinks.removeValue(forKey: goneID) }
         fleets = newFleets
         let primaryID = (newFleets.first { $0.provider == .claude } ?? newFleets.first)?.id
         return primaryID.flatMap { changesByID[$0] }?.firstLoad ?? false
+    }
+
+    /// The pure find-or-create diff, shared by the primary's `reconcile`
+    /// (which also tracks sinks/first-load above) and `refreshOthers`
+    /// (neither of which an other Mac needs).
+    private func reconcileFleets(_ engineFleets: [EngineFleet], existing existingFleets: [MirrorFleetModel],
+                                 hostUsage: Bool = true)
+        -> (fleets: [MirrorFleetModel], changesByID: [String: MirrorFleetModel.Change]) {
+        var existing = Dictionary(uniqueKeysWithValues: existingFleets.map { ($0.id, $0) })
+        var changesByID: [String: MirrorFleetModel.Change] = [:]
+        var newFleets: [MirrorFleetModel] = []
+        for ef in engineFleets {
+            let fleet = existing.removeValue(forKey: ef.key)
+                ?? MirrorFleetModel(engineID: ef.engineID, provider: ef.provider, host: self, hostUsage: hostUsage)
+            changesByID[ef.key] = fleet.apply(ef)
+            newFleets.append(fleet)
+        }
+        return (newFleets, changesByID)
     }
 
     /// The primary Claude fleet — cswap's, on a cswap machine — the

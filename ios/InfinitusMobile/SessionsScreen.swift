@@ -84,8 +84,16 @@ struct SessionsScreen: View {
         model.fleets.filter { !($0.liveSessions?.sessions?.isEmpty ?? true) }
     }
 
+    /// Every OTHER paired Mac (#144 phase 1) that has a session to show —
+    /// one appended section per Mac, plain rows (no chat to open yet).
+    private var othersWithSessions: [MirrorModel.OtherMac] {
+        model.others.filter { other in
+            other.fleets.contains { !($0.liveSessions?.sessions?.isEmpty ?? true) }
+        }
+    }
+
     @ViewBuilder private var content: some View {
-        if !fleetsWithSessions.isEmpty {
+        if !fleetsWithSessions.isEmpty || !othersWithSessions.isEmpty {
             List {
                 if !model.awsLogins.isEmpty {
                     // Up top, whatever the session's place in the list
@@ -121,6 +129,19 @@ struct SessionsScreen: View {
                         }
                     } header: {
                         sectionHeader(fleet: fleet, live: live)
+                    }
+                }
+                ForEach(othersWithSessions) { other in
+                    let sessions = other.fleets.flatMap { $0.liveSessions?.sessions ?? [] }
+                        .sorted { ($0.status == "waiting" ? 0 : 1) < ($1.status == "waiting" ? 0 : 1) }
+                    Section {
+                        ForEach(sessions, id: \.pid) { session in
+                            row(session).foregroundStyle(.secondary)
+                        }
+                    } header: {
+                        Text(other.pairing.name)
+                    } footer: {
+                        Text("Make this Mac primary in Settings › Devices to open its chats.")
                     }
                 }
             }

@@ -15,6 +15,11 @@ final class MirrorFleetModel: ObservableObject, Identifiable {
     let engineID: String
     let provider: Provider
     unowned let host: MirrorModel
+    /// False for another paired Mac's fleet (#144 phase 1): the mirror
+    /// only ever carries the PRIMARY's `usageJSON`, so a fleet that isn't
+    /// the primary's must not borrow it under a coincidentally-matching
+    /// account number.
+    let hostUsage: Bool
 
     @Published private(set) var accounts: [Account] = []
     @Published private(set) var activeNumber: Int?
@@ -30,12 +35,13 @@ final class MirrorFleetModel: ObservableObject, Identifiable {
     @Published private(set) var report: UsageReport?
     private var usageCapturedAt: Date?
 
-    init(engineID: String, provider: Provider, host: MirrorModel) {
+    init(engineID: String, provider: Provider, host: MirrorModel, hostUsage: Bool = true) {
         // EngineRegistry's key: an engine may yield one fleet per provider.
         self.id = "\(engineID)/\(provider.rawValue)"
         self.engineID = engineID
         self.provider = provider
         self.host = host
+        self.hostUsage = hostUsage
     }
 
     /// The intro replay's celebration beat (MirrorModel.replayIntro) —
@@ -180,7 +186,7 @@ extension MirrorFleetModel: UsageSource {
     /// report ever rides the mirror (`MirrorSnapshot.usageJSON`), so
     /// every other engine's fleet simply keeps empty cells.
     func loadIfNeeded() {
-        guard engineID == Self.cswapEngineID else { return }
+        guard hostUsage, engineID == Self.cswapEngineID else { return }
         guard let snapshot = host.snapshot, snapshot.capturedAt != usageCapturedAt,
               let data = snapshot.usageJSON else { return }
         usageCapturedAt = snapshot.capturedAt

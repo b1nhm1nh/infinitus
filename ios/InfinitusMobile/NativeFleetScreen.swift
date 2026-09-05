@@ -22,6 +22,11 @@ struct NativeFleetScreen: View {
     /// wrapper between the navigation stack and the list breaks the
     /// large title (it collapsed to an inline one, first run).
     @State private var width: CGFloat = 0
+    /// Other Macs' rows (#144 phase 1) share this ONE never-loaded
+    /// `MobileUsage` — its `report` stays nil forever, so their cash
+    /// cells render as the blank placeholder rather than the primary's
+    /// figures for a coincidentally-matching account number.
+    @StateObject private var otherUsage = MobileUsage()
 
     /// `.sheet(item:)` needs identity; an account number alone collides
     /// across fleets (two engines can both have a #1), so the ref also
@@ -114,6 +119,13 @@ struct NativeFleetScreen: View {
                 outlookSection
                 ForEach(model.fleets) { fleet in
                     accountSection(fleet, isFirst: fleet.id == model.fleets.first?.id, wide: wide)
+                }
+                // Every OTHER paired Mac (#144 phase 1): read-only, its
+                // name as the section header, no row tap.
+                ForEach(model.others) { other in
+                    ForEach(other.fleets) { fleet in
+                        otherAccountSection(other, fleet: fleet, wide: wide)
+                    }
                 }
             }
             .listStyle(.insetGrouped)
@@ -257,6 +269,57 @@ struct NativeFleetScreen: View {
                 }
             }
         }
+    }
+
+    /// One other Mac's fleet (#144 phase 1) — the same row content
+    /// (`AccountHeaderLine`/`AccountUsageLines`) the primary uses, headed
+    /// by the Mac's name instead of the machine/as-of caption. A fresh,
+    /// never-loaded `MobileUsage` keeps its cash cells blank rather than
+    /// borrowing the primary's own estimate for the same account number.
+    private func otherAccountSection(_ other: MirrorModel.OtherMac, fleet: MirrorFleetModel, wide: Bool) -> some View {
+        Section {
+            ForEach(fleet.displayAccounts, id: \.number) { account in
+                otherRow(account, fleet: fleet, wide: wide,
+                        full: account.active || fleet.nextCandidate == account.number || needsFullLines(account))
+            }
+        } header: {
+            VStack(alignment: .leading, spacing: 6) {
+                Text(other.pairing.name).textCase(nil)
+                if other.fleets.count > 1, let label = fleet.fleetLabel {
+                    HStack(spacing: 6) {
+                        Text(label.provider.displayName).fontWeight(.semibold)
+                        Text("·").foregroundStyle(.tertiary)
+                        Text(label.engineName).foregroundStyle(.secondary)
+                    }
+                    .font(.subheadline)
+                    .textCase(nil)
+                }
+            }
+        }
+    }
+
+    /// No `Button`, no context menu, no sheet — a tap does nothing
+    /// (#144 phase 1: no rename/switch on another Mac).
+    private func otherRow(_ account: Account, fleet: MirrorFleetModel, wide: Bool, full: Bool) -> some View {
+        VStack(alignment: .leading, spacing: full ? 8 : 3) {
+            AccountHeaderLine(model: fleet, usage: otherUsage, account: account)
+            if full {
+                AccountUsageLines(model: fleet, usage: otherUsage, account: account, wide: wide)
+                    .allowsHitTesting(false)
+            } else {
+                Text(compactUsage(account))
+                    .font(.caption).monospacedDigit()
+                    .foregroundStyle(ThemeColor.resolve(
+                        AccountHeadroom.colorName(forPct: AccountHeadroom.worstPct(account))))
+                    .lineLimit(1)
+            }
+        }
+        .padding(.vertical, 6)
+        .frame(minHeight: 44)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .opacity((account.disabled ?? false) ? 0.55 : 1)
+        .foregroundStyle(.secondary)
+        .listRowBackground(Color(.secondarySystemGroupedBackground))
     }
 
     /// Limited or attention-needing accounts keep their full lines — the
