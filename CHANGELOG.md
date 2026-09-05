@@ -14,6 +14,7 @@ publishes the matching section as the GitHub release body.
 ### Fixes
 - AWS logins survive a Mac relaunch, and a need that failed just before a launch still reaches the phone.
 - A session stuck behind the credential broker's refresh lock (another process sitting in `aws login`) now shows the AWS login card too.
+- A session whose check kept only the broker's "Fix: aws login" line (a `| tail -1`) shows the AWS login card too.
 - Haiku session names now cover the sessions Claude Code named itself (`limitless-bf`, `banyan-51`…).
 - Phone dictation never sits on "Translating…": a missing language pack asks to download, and after ten seconds the take goes out as spoken.
 - A chat opens in well under a second on sessions with hundreds of sub-agents; the Mac read every sub-agent's log per request and the phone gave up after three ("the Mac didn't answer").
