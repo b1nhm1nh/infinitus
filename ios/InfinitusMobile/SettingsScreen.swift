@@ -151,6 +151,7 @@ struct SettingsForm: View {
                      + "nothing on the Mac.")
                     .font(.caption).foregroundStyle(.secondary)
             }
+            AboutSettings(model: model)
         }
         .onChange(of: fleetAlarms) { _, on in
             if !on { FleetAlarmCenter.shared.clearPending() }
@@ -284,6 +285,75 @@ private struct ScreenshotSettings: View {
                  + "for one-tap sending. Needs full Photos access. Without it: the camera button in a "
                  + "chat's header sends that screen, and a shake on any screen captures it and asks "
                  + "which session to send it to.")
+        }
+    }
+}
+
+/// Both apps' versions, and the Mac's own update — one tap from the
+/// phone, brew doing the actual upgrade (#121).
+private struct AboutSettings: View {
+    @ObservedObject var model: MirrorModel
+    @State private var confirming = false
+    @State private var updating = false
+    @State private var result: String?
+
+    private var phoneVersion: String {
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "?"
+    }
+    private var phoneBuild: String {
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "?"
+    }
+
+    var body: some View {
+        Section("About") {
+            LabeledContent("This iPhone", value: "Infinitus \(phoneVersion) (\(phoneBuild))")
+            if let snapshot = model.snapshot {
+                if let app = snapshot.app {
+                    LabeledContent(snapshot.machineName,
+                                  value: "Infinitus \(app.version) · \(app.sha.prefix(7))")
+                    if app.updateChannel == "source" {
+                        Text("source build — update from the repo")
+                            .font(.caption).foregroundStyle(.secondary)
+                    } else if let updateVersion = app.updateVersion {
+                        LabeledContent("Mac update available: \(updateVersion)") {
+                            Button("Update the Mac") { confirming = true }
+                                .disabled(updating)
+                        }
+                        .confirmationDialog("Update the Mac to \(updateVersion)? brew upgrades "
+                                             + "Infinitus and relaunches it.",
+                                            isPresented: $confirming, titleVisibility: .visible) {
+                            Button("Update") { update() }
+                        }
+                        if let result {
+                            Text(result).font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
+                    if let phoneLatest = app.phoneLatest,
+                       let latest = PackageVersion(phoneLatest), let mine = PackageVersion(phoneVersion),
+                       mine < latest {
+                        Text("A newer Infinitus (\(phoneLatest)) is out — rebuild the phone app from the release.")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                } else {
+                    LabeledContent(snapshot.machineName, value: "version not reported")
+                }
+            } else {
+                LabeledContent("Mac", value: "not connected")
+            }
+        }
+    }
+
+    private func update() {
+        updating = true
+        result = nil
+        Task {
+            do {
+                let reply = try await NetworkFleetMirror.shared.updateMac()
+                result = reply.detail ?? reply.outcome
+            } catch {
+                result = error.localizedDescription
+            }
+            updating = false
         }
     }
 }

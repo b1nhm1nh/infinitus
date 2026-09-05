@@ -22,6 +22,7 @@ publishes the matching section as the GitHub release body.
 
 ### Phone
 - The phone raises its own alarms, no push service needed: an exhausted account's limit lifting in 10 minutes, and the account the fleet just swapped to; off in Settings › Notifications.
+- Settings shows the Mac's and the phone's versions, can trigger the Mac's update, and says when a newer phone build is out.
 
 ## 0.4.3
 
