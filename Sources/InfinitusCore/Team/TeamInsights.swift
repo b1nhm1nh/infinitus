@@ -218,4 +218,24 @@ public enum TeamInsights {
         }
         .sorted { $0.name == $1.name ? $0.kid < $1.kid : $0.name < $1.name }
     }
+
+    // MARK: aggregates (§8.3)
+
+    public static func aggregates(_ reader: TeamReader, roster: TeamRoster, period: Stats.Period, now: Date = Date(),
+                                  calendar: Calendar = .current) -> TeamDocs.Aggregates {
+        let rows = comparison(reader, period: period, now: now, calendar: calendar)
+        let team = Stats.fold(days: reader.teamDays(), period: period, now: now, calendar: calendar)
+        let repos = repos(reader, period: period, now: now, calendar: calendar)
+        let cost = cost(rows, repos: repos)
+        var total = team.total.compacted(); total.hours = hours(rows)
+        let perMember: [TeamDocs.Aggregates.MemberTotal]? = roster.policy.membersSeeEachOther ? rows.map {
+            TeamDocs.Aggregates.MemberTotal(kid: $0.kid, name: $0.name, role: $0.role, usd: $0.summary.total.usd,
+                                            commits: $0.summary.total.commits, messages: $0.summary.total.messages,
+                                            outputTokens: $0.summary.total.outputTokens, sessions: $0.summary.total.sessionCount, online: $0.online)
+        } : nil
+        return TeamDocs.Aggregates(period: period.rawValue, from: team.from, to: team.to, at: Int(now.timeIntervalSince1970),
+                                   members: roster.everyone.count, total: total, previous: team.previous.compacted(),
+                                   hours: hours(rows), repos: repos.map { TeamDocs.Aggregates.Repo(project: $0.project, usd: $0.usd, minutes: $0.minutes, members: $0.members.count) },
+                                   byModel: cost.byModel, onNow: whoIsOn(reader, now: now).map(\.name), perMember: perMember)
+    }
 }
