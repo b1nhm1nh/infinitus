@@ -15,6 +15,7 @@ publishes the matching section as the GitHub release body.
 
 ### Mac
 - Settings › Machine watches what many sessions do to this Mac — load, swap, stuck hooks, runaway processes, residue — with confirmed kill, reclaim and hook-disable actions and notifications for new hook registrations and idle sessions.
+- Sessions whose sub-agents hit a limit get a nudge that the swapped-in account has headroom, so they stop waiting for the reset.
 - When a revival countdown ends the Mac asks the engine again right away (three tries a minute apart) instead of waiting for the next poll.
 - "<account> is back" notifications, with "reset early" when Anthropic reset before the advertised time and "all accounts are back" when the whole fleet returns (Settings › Notifications).
 - `/infinitus:handoff <session>` passes the current task and its context to another live session through the plugin.
@@ -23,6 +24,7 @@ publishes the matching section as the GitHub release body.
 
 ### Phone
 - The phone raises its own alarms, no push service needed: an exhausted account's limit lifting in 10 minutes, and the account the fleet just swapped to; off in Settings › Notifications.
+- Settings shows the Mac's and the phone's versions, can trigger the Mac's update, and says when a newer phone build is out.
 
 ## 0.4.3
 
@@ -32,6 +34,7 @@ publishes the matching section as the GitHub release body.
 - Tokens/min records: every day's peak minute, the all-time best and the days it fell, a 30-day sparkline and a week-over-week trend, on the Mac and the phone — one full rescan on first refresh.
 
 ### Fixes
+- Machine › Reclaim also clears abandoned pip and Python tempfile directories older than an hour, and finds open files without walking the temp directory (which is what hangs on a loaded Mac).
 - Settings › Machine warns once per hook owner, names the owner of a shell-conditional hook, and can kill a hook's live instances (`infinitusctl machine-hook kill <owner> --yes`).
 - Stats scan parses transcripts 4.6× faster (byte-level line scanning, no regex on tool results) and decodes the cache once per backfill instead of every pass.
 - Tokens/min records: the day's minute buckets survive the stats cache, so the peak is the day's real busiest minute, not the last scan's.
@@ -92,6 +95,7 @@ publishes the matching section as the GitHub release body.
 ### Team (preview)
 - `infinitusctl team` creates a team on any git remote and exchanges end-to-end encrypted files between members (create, code, request, approve, publish, read).
 - Nearby: a discoverable Mac or Linux box shows up to teammates on the same network, and `infinitusctl team request --nearby <kid>` sends a join request straight to a leader — no code to paste.
+- Members publish their stats, live state, session index, redacted transcripts and crash summaries to the audiences they pick, with per-project exclusions (`infinitusctl team share|exclude|publish|members|member`).
 
 ## 0.4.2
 

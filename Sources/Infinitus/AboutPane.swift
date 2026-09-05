@@ -146,11 +146,14 @@ final class UpdateModel: ObservableObject {
 /// install just gets the GitHub release check.
 @MainActor
 final class AppReleaseModel: ObservableObject {
-    @Published var latest: String?
+    @Published var latest: String? { didSet { onLatest?(latest) } }
     @Published var updateAvailable = false
     @Published var status: String?
     /// Popup hook: the version string when newer, nil otherwise.
     var onUpdate: ((String?) -> Void)?
+    /// Mirror hook (#121): fires with whatever `latest` found, newer or
+    /// not, so the phone can compare its own version against it.
+    var onLatest: ((String?) -> Void)?
     private static let api = URL(
         string: "https://api.github.com/repos/deathemperor/infinitus/releases/latest")!
     private static let nightlyAPI = URL(
@@ -249,7 +252,8 @@ final class AppReleaseModel: ObservableObject {
 /// bundle at a new inode, so the running process survives until relaunch.
 @MainActor
 final class BrewUpdater: ObservableObject {
-    enum Channel { case source, stable, nightly }
+    /// Raw value is the phone's `app.updateChannel` label (#121).
+    enum Channel: String { case source, stable, nightly }
     @Published var running = false
     @Published var status: String?
 
@@ -349,7 +353,9 @@ final class BrewUpdater: ObservableObject {
 /// trailing arrow, and a license footer.
 struct AboutPane: View {
     @ObservedObject var appRelease: AppReleaseModel
-    @StateObject private var brew = BrewUpdater()
+    /// Shared with the phone's `/app/update` route (#121) so the two
+    /// never run two upgrades at once.
+    @ObservedObject var brew: BrewUpdater
     @AppStorage("update_channel") private var updateChannel = "stable"
     @Environment(\.openURL) private var openURL
 

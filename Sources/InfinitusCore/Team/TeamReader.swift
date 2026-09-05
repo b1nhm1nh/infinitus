@@ -1,0 +1,114 @@
+import Foundation
+
+/// Spec §8.1: what this identity can read, folded per member into the
+/// shapes the app already renders — `Stats.Day` per day (Stats v2 `+`),
+/// the latest `now.json`, the session index, crash summaries, and the
+/// transcript chunks a session has (decrypted on demand through
+/// `transcript`, then `SessionFeedReader.parse` like a live session).
+public struct TeamReader {
+    public struct Member: Equatable {
+        public var kid: String
+        public var name: String
+        /// "leader" | "member" | "removed" (pre-removal history still readable).
+        public var role: String
+        public var days: [String: Stats.Day] = [:]
+        public var now: TeamDocs.Now?
+        public var sessions: [TeamDocs.SessionRow] = []
+        public var crashes: [String] = []
+        /// `TeamPublisher.TranscriptSource.key` → chunk store paths in seq order.
+        public var transcripts: [String: [String]] = [:]
+        public var lastPublished: Int?
+        public var kinds: Set<String> = []
+        public init(kid: String, name: String, role: String) { self.kid = kid; self.name = name; self.role = role }
+    }
+
+    public private(set) var members: [String: Member] = [:]
+
+    public init() {}
+
+    /// Pure: `read` returns an envelope's plaintext (the client's `read`
+    /// in practice). A document that fails to decode or carries a
+    /// schema this build does not know is skipped.
+    public static func fold(headers: [(entry: StoreEntry, header: Envelope.Header)], roster: TeamRoster,
+                            read: (String) throws -> Data) -> TeamReader {
+        var reader = TeamReader()
+        for m in roster.everyone {
+            reader.members[m.keys.kid] = Member(kid: m.keys.kid, name: m.name, role: roster.isLeader(m.keys.kid) ? "leader" : "member")
+        }
+        func decode<T: Decodable>(_ type: T.Type, _ path: String) -> T? {
+            guard let data = try? read(path) else { return nil }
+            return try? CanonicalJSON.decode(type, from: data)
+        }
+        for (entry, header) in headers {
+            var member = reader.members[header.from] ?? Member(kid: header.from, name: header.from, role: "removed")
+            member.kinds.insert(header.kind)
+            member.lastPublished = max(member.lastPublished ?? 0, header.at)
+            switch header.kind {
+            case TeamKinds.stats:
+                // One file per day (spec §4.3): the file is the day, never a slice of it.
+                if let doc = decode(TeamDocs.DayDoc.self, entry.path), doc.schema == 1 { member.days[doc.day] = doc.stats }
+            case TeamKinds.now:
+                if let doc = decode(TeamDocs.Now.self, entry.path), doc.schema == 1 { member.now = doc }
+            case TeamKinds.sessions:
+                if let doc = decode(TeamDocs.SessionsIndex.self, entry.path), doc.schema == 1 { member.sessions = doc.sessions }
+            case TeamKinds.crashes:
+                if let doc = decode(TeamDocs.Crashes.self, entry.path), doc.schema == 1 { member.crashes = doc.crashes }
+            case TeamKinds.transcripts:
+                // m/<kid>/transcripts/<key…>/<seq>.jsonl
+                let parts = entry.path.split(separator: "/").map(String.init)
+                if parts.count >= 5 {
+                    let key = parts[3..<(parts.count - 1)].joined(separator: "/")
+                    member.transcripts[key, default: []].append(entry.path)
+                }
+            default:
+                break
+            }
+            reader.members[header.from] = member
+        }
+        for kid in reader.members.keys {
+            let transcripts = reader.members[kid]!.transcripts
+            reader.members[kid]?.transcripts = transcripts.mapValues { paths in
+                paths.sorted { Self.seq($0) < Self.seq($1) }
+            }
+        }
+        return reader
+    }
+
+    static func seq(_ path: String) -> Int {
+        Int(URL(fileURLWithPath: path).deletingPathExtension().lastPathComponent) ?? 0
+    }
+
+    public static func load(client: TeamClient) throws -> TeamReader {
+        guard let roster = client.roster?.doc else { throw TeamClient.ClientError.noRoster }
+        return fold(headers: try client.readableHeaders(), roster: roster) { try client.read($0).1 }
+    }
+
+    /// One member's period summary in the app's own shape (`Stats.fold`).
+    public func summary(kid: String, period: Stats.Period, now: Date = Date(), calendar: Calendar = .current) -> Stats.Summary? {
+        guard let member = members[kid] else { return nil }
+        return Stats.fold(days: member.days, period: period, now: now, calendar: calendar)
+    }
+
+    /// Every member's days summed (Stats v2 `+`) — the team picture.
+    public func teamDays() -> [String: Stats.Day] {
+        var out: [String: Stats.Day] = [:]
+        for member in members.values {
+            for (key, day) in member.days { out[key] = (out[key] ?? Stats.Day()) + day }
+        }
+        return out
+    }
+
+    /// A member's session as chat items: every chunk of the session's own
+    /// transcript in order, decrypted now, through the same parser the
+    /// phone uses for live sessions. Sub-agent chunks are listed under
+    /// `transcripts["<session>/subagents/<agent>"]` for a later view.
+    public func transcript(kid: String, session: String, client: TeamClient, limit: Int = 200) throws -> [SessionFeedItem] {
+        guard let paths = members[kid]?.transcripts[session], !paths.isEmpty else { return [] }
+        var lines: [String] = []
+        for path in paths {
+            let text = String(decoding: try client.read(path).1, as: UTF8.self)
+            lines += text.split(separator: "\n").map(String.init)
+        }
+        return SessionFeedReader.parse(lines: lines, limit: limit)
+    }
+}
