@@ -29,6 +29,8 @@ publishes the matching section as the GitHub release body.
 
 ### Team (preview)
 - Leaders publish a team-wide picture (spend, hours, repos, who's on) that every teammate reads back, with per-member detail only when the team opts in to seeing each other.
+- Leaders see the team: per-member comparison for a period, leaderboards by spend, tokens, commits, PRs, lines, messages, tool calls, waiting time and sessions, who works in which repo, a blockers board, cost by member / model / repo, the hours heatmap and who's on now (`infinitusctl team members --period|insights`).
+- Leaders publish the team picture to everyone (`team aggregates publish`), with per-member rows only when the roster's members-see-each-other policy is on, and `team policy` sets that and whether new requests are accepted.
 
 ## 0.4.3
 
