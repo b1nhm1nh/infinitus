@@ -224,6 +224,9 @@ public struct ControlCommand: Codable, Sendable, Equatable {
                        effect: .write,
                        summary: "PUT the proxy's routing strategy.",
                        replyShape: "{routingStrategy}"),
+        ControlCommand(name: "team-discoverable", args: ["on|off"], effect: .write,
+                       summary: "Advertise this Mac to teams on the LAN (TXT d=1, /team/key and /team/request), or hide it.",
+                       replyShape: "{discoverable}"),
     ]
 
     public static func named(_ name: String) -> ControlCommand? {

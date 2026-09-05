@@ -167,6 +167,33 @@ final class MirrorSessionInputBox: @unchecked Sendable {
     }
 }
 
+/// The Nearby standing (TXT record + `/team/*` routes, spec §6.4), boxed
+/// like the rest: the main actor refreshes it when the discoverable
+/// switch flips, the connection handlers read it on the network queue.
+final class MirrorTeamBox: @unchecked Sendable {
+    private let lock = NSLock()
+    private var local: TeamNearby.Local = .hidden
+
+    var current: TeamNearby.Local {
+        lock.lock(); defer { lock.unlock() }
+        return local
+    }
+
+    func set(_ new: TeamNearby.Local) {
+        lock.lock(); local = new; lock.unlock()
+    }
+
+    /// Where a LAN request lands: pending under the team, then the
+    /// requests branch — a git push, so callers run it off the network
+    /// queue.
+    var endpoint: TeamNearby.Endpoint {
+        TeamNearby.Endpoint(local: current) { request in
+            let paths = TeamPaths.standard()
+            return try TeamNearby.Store.save(request, paths: paths, secrets: FileSecrets(dir: paths.secretsDir))
+        }
+    }
+}
+
 /// Serves the fleet snapshot to the phone (#9): one Bonjour advertised
 /// (`_infinitus._tcp`) TCP listener answering `GET /snapshot` with the
 /// exact bytes MirrorExporter wrote. Off by default behind the Sync
@@ -206,6 +233,11 @@ final class MirrorServer: ObservableObject {
     let awsLogin = MirrorAwsLoginBox()
     /// Answers `POST /crashes`; set by AppModel once at start.
     let crashes = MirrorCrashBox()
+    /// Nearby (spec §6.4): the TXT record and `/team/key` + `/team/request`.
+    let team = MirrorTeamBox()
+    private var advertisedName = ""
+    private var teamDiscoverable = false
+    private var defaultsObserver: NSObjectProtocol?
     /// Event-log sink (icon, text), set by AppModel.
     var log: ((String, String) -> Void)?
     /// Fires with the bound port once the listener is up — the quick
@@ -218,14 +250,25 @@ final class MirrorServer: ObservableObject {
     func start(machineName: String, token: String) {
         self.token.set(token)
         guard listener == nil else { return }
+        advertisedName = machineName
         // The last export renders immediately: a phone that asks before
         // the first refresh of this launch still gets a fleet.
         if payload.latest == nil,
            let data = try? Data(contentsOf: MirrorExporter.url) {
             payload.set(data)
         }
+        if defaultsObserver == nil {
+            // Event-driven, never polled: the Team pane (plan 5) or
+            // `infinitusctl team-discoverable` flips the default and this
+            // re-advertises once per change.
+            defaultsObserver = NotificationCenter.default.addObserver(
+                forName: UserDefaults.didChangeNotification, object: nil, queue: .main) { [weak self] _ in
+                Task { @MainActor in self?.refreshTeamStanding() }
+            }
+        }
         status = "starting…"
         listen(on: MirrorTransport.defaultPort, name: machineName)
+        refreshTeamStanding(force: true)
     }
 
     func stop() {
@@ -233,6 +276,34 @@ final class MirrorServer: ObservableObject {
         listener = nil
         port = nil
         status = nil
+    }
+
+    /// Reads the switch and, when it changed, rebuilds the standing off
+    /// the main actor (it opens the team clones) and re-advertises.
+    private func refreshTeamStanding(force: Bool = false) {
+        let on = UserDefaults.standard.bool(forKey: TeamNearby.discoverableDefaultsKey)
+        guard force || on != teamDiscoverable else { return }
+        teamDiscoverable = on
+        let name = advertisedName
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            let paths = TeamPaths.standard()
+            let local = TeamNearby.Local.load(name: name, discoverable: on, paths: paths,
+                                              secrets: FileSecrets(dir: paths.secretsDir))
+            Task { @MainActor in
+                guard let self else { return }
+                self.team.set(local)
+                self.advertise()
+                self.log?("📡", on ? "nearby: discoverable as \(name)" : "nearby: hidden")
+            }
+        }
+    }
+
+    /// (Re)registers the Bonjour service with the current TXT record —
+    /// setting `service` on a running listener updates the record in
+    /// place (nw_listener_set_advertise_descriptor).
+    private func advertise() {
+        listener?.service = NWListener.Service(name: advertisedName, type: MirrorTransport.bonjourType,
+                                               txtRecord: team.current.record.txtData)
     }
 
     private func listen(on rawPort: UInt16, name: String) {
@@ -251,8 +322,8 @@ final class MirrorServer: ObservableObject {
             status = "couldn't open a port"
             return
         }
-        listener.service = NWListener.Service(name: name,
-                                              type: MirrorTransport.bonjourType)
+        listener.service = NWListener.Service(name: name, type: MirrorTransport.bonjourType,
+                                              txtRecord: team.current.record.txtData)
         let payload = self.payload
         let token = self.token
         let sessionFeed = self.sessionFeed
@@ -261,6 +332,7 @@ final class MirrorServer: ObservableObject {
         let activityTokens = self.activityTokens
         let awsLogin = self.awsLogin
         let crashes = self.crashes
+        let team = self.team
         let served: @Sendable (MirrorTransport.Request) -> Void = { [weak self] request in
             let client = MirrorClient(request: request)
             Task { @MainActor in
@@ -272,7 +344,7 @@ final class MirrorServer: ObservableObject {
         listener.newConnectionHandler = { [queue] connection in
             Self.serve(connection, payload: payload, token: token, sessionFeed: sessionFeed,
                        sessionInput: sessionInput, sessionImage: sessionImage, activityTokens: activityTokens, crashes: crashes,
-                       awsLogin: awsLogin, queue: queue, onServed: served)
+                       team: team, awsLogin: awsLogin, queue: queue, onServed: served)
         }
         listener.stateUpdateHandler = { [weak self] state in
             Task { @MainActor in self?.handle(state, wasFixedPort: rawPort != 0, name: name) }
@@ -311,6 +383,35 @@ final class MirrorServer: ObservableObject {
 
     // MARK: - Connection handling (network queue)
 
+    /// RFC 1918 / link-local / loopback IPv4, or IPv6 link-local / ULA /
+    /// loopback: the addresses a same-LAN peer can have. A tunnel or
+    /// tailnet client (100.64/10, public v4, global v6) is never "nearby",
+    /// and `/team/*` carries no pairing token, so nothing else gets in.
+    nonisolated static func isLANPeer(_ endpoint: NWEndpoint?) -> Bool {
+        guard let endpoint, case .hostPort(let host, _) = endpoint else { return false }
+        switch host {
+        case .ipv4(let v4):
+            let b = [UInt8](v4.rawValue)
+            guard b.count == 4 else { return false }
+            return b[0] == 10 || b[0] == 127 || (b[0] == 172 && (16...31).contains(b[1]))
+                || (b[0] == 192 && b[1] == 168) || (b[0] == 169 && b[1] == 254)
+        case .ipv6(let v6):
+            let b = [UInt8](v6.rawValue)
+            guard b.count == 16 else { return false }
+            if b[0] == 0xfe && (b[1] & 0xc0) == 0x80 { return true }   // fe80::/10
+            if (b[0] & 0xfe) == 0xfc { return true }                     // fc00::/7
+            if b.prefix(15).allSatisfy({ $0 == 0 }) && b[15] == 1 { return true }   // ::1
+            // ::ffff:a.b.c.d — the v4-only listener never yields one, but be exact.
+            if b.prefix(10).allSatisfy({ $0 == 0 }) && b[10] == 0xff && b[11] == 0xff,
+               let v4 = IPv4Address(Data(b[12...])) {
+                return isLANPeer(.hostPort(host: .ipv4(v4), port: 0))
+            }
+            return false
+        default:
+            return false
+        }
+    }
+
     private nonisolated static func serve(_ connection: NWConnection,
                                           payload: MirrorPayloadBox,
                                           token: MirrorTokenBox,
@@ -318,13 +419,14 @@ final class MirrorServer: ObservableObject {
                                           sessionInput: MirrorSessionInputBox,
                                             sessionImage: MirrorSessionImageBox,
                                           activityTokens: MirrorActivityTokenBox, crashes: MirrorCrashBox,
+                                          team: MirrorTeamBox,
                                           awsLogin: MirrorAwsLoginBox,
                                           queue: DispatchQueue,
                                           onServed: @escaping @Sendable (MirrorTransport.Request) -> Void) {
         connection.start(queue: queue)
         receive(connection, buffer: Data(), payload: payload, token: token,
                sessionFeed: sessionFeed, sessionInput: sessionInput, sessionImage: sessionImage,
-               activityTokens: activityTokens, crashes: crashes, awsLogin: awsLogin, onServed: onServed)
+               activityTokens: activityTokens, crashes: crashes, team: team, awsLogin: awsLogin, onServed: onServed)
     }
 
     private nonisolated static func receive(_ connection: NWConnection,
@@ -335,6 +437,7 @@ final class MirrorServer: ObservableObject {
                                             sessionInput: MirrorSessionInputBox,
                                             sessionImage: MirrorSessionImageBox,
                                             activityTokens: MirrorActivityTokenBox, crashes: MirrorCrashBox,
+                                            team: MirrorTeamBox,
                                             awsLogin: MirrorAwsLoginBox,
                                             onServed: @escaping @Sendable (MirrorTransport.Request) -> Void) {
         connection.receive(minimumIncompleteLength: 1, maximumLength: 4096) {
@@ -350,7 +453,13 @@ final class MirrorServer: ObservableObject {
             // for a caller that was always going to get a 401
             // (2026-09-03 attachments).
             let head = MirrorTransport.parseRequest(buffer)
-            if let head, !MirrorTransport.isAuthorized(head, token: token.current) {
+            // Peers hold no pairing token: `/team/*` from a LAN address is
+            // routed on its own (TeamNearby.respond answers 404 while
+            // hidden); everything else — including `/team/*` from a
+            // tunnel — still needs the token before a body byte is buffered.
+            let teamRoute = (head.map { $0.path.hasPrefix(TeamNearby.routePrefix) } ?? false)
+                && Self.isLANPeer(connection.currentPath?.remoteEndpoint ?? connection.endpoint)
+            if let head, !teamRoute, !MirrorTransport.isAuthorized(head, token: token.current) {
                 connection.send(content: MirrorTransport.unauthorizedResponse(),
                                 completion: .contentProcessed { _ in connection.cancel() })
                 return
@@ -364,6 +473,17 @@ final class MirrorServer: ObservableObject {
             // above; the check below stays as the route dispatch's own
             // defense in depth (e.g. a token regenerated mid-request).
             if let request = MirrorTransport.parseRequestWithBody(buffer, bodyCap: cap) {
+                if request.path.hasPrefix(TeamNearby.routePrefix),
+                   Self.isLANPeer(connection.currentPath?.remoteEndpoint ?? connection.endpoint) {
+                    // Off this queue: a stored request pushes to git.
+                    DispatchQueue.global(qos: .utility).async {
+                        let response = TeamNearby.respond(request, endpoint: team.endpoint)
+                            ?? MirrorTransport.notFoundResponse()
+                        connection.send(content: response,
+                                        completion: .contentProcessed { _ in connection.cancel() })
+                    }
+                    return
+                }
                 let response: Data
                 if !MirrorTransport.isAuthorized(request, token: token.current) {
                     response = MirrorTransport.unauthorizedResponse()
@@ -492,7 +612,7 @@ final class MirrorServer: ObservableObject {
             }
             receive(connection, buffer: buffer, payload: payload, token: token,
                    sessionFeed: sessionFeed, sessionInput: sessionInput, sessionImage: sessionImage,
-                   activityTokens: activityTokens, crashes: crashes, awsLogin: awsLogin, onServed: onServed)
+                   activityTokens: activityTokens, crashes: crashes, team: team, awsLogin: awsLogin, onServed: onServed)
         }
     }
 }
