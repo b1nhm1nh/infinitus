@@ -72,7 +72,14 @@ public struct ControlReply: Codable, Sendable {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         schemaVersion = try c.decode(Int.self, forKey: .schemaVersion)
         ok = try c.decode(Bool.self, forKey: .ok)
-        result = try c.decodeIfPresent(JSONValue.self, forKey: .result)
+        // A `null` result is a value (team-status with no team answers
+        // `null`), distinct from no result at all: decodeIfPresent folds
+        // both into nil and the CLI would print nothing.
+        if c.contains(.result) {
+            result = try c.decodeNil(forKey: .result) ? .null : try c.decode(JSONValue.self, forKey: .result)
+        } else {
+            result = nil
+        }
         error = try c.decodeIfPresent(String.self, forKey: .error)
         restarting = try c.decodeIfPresent(Bool.self, forKey: .restarting) ?? false
     }

@@ -339,7 +339,7 @@ INFINITUS_TEAM_DIR="$CLI_TEAM" "$CTL" team publish --projects "$SOCKDIR/fixture/
     | expect "d['transcriptChunks']>=1" || fail "cli team publish"
 "$CTL" team-fetch | expect "any(m['name']=='Bo' and 'stats' in m['kinds'] and 'transcripts' in m['kinds'] for m in d['members'])" || fail "the member's files are not readable"
 "$CTL" team-publish | expect "'published' in d" || fail "team-publish"
-"$CTL" team-status | expect "d['lastPublish'] is not None and d['lastError'] is None" || fail "loop state after publish"
+"$CTL" team-status | expect "d.get('lastPublish') is not None and d.get('lastError') is None" || fail "loop state after publish"
 echo "team: ok (leader Ann, member Bo $KID)"
 
 # --- performance --------------------------------------------------------
