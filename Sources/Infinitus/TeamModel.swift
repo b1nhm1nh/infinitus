@@ -78,6 +78,18 @@ final class TeamModel: ObservableObject {
         Stats.dayKey(Date(), calendar: calendar)
     }
 
+    /// Same intent as `TeamSnapshot.maskRemote`, for free-text errors:
+    /// `TeamGit.GitError.failed` carries git's stderr verbatim, which
+    /// echoes a credentialed remote (`https://user:token@host/repo.git`)
+    /// on failure. Strips any `scheme://user[:pass]@` fragment rather
+    /// than assuming the whole message is a bare URL.
+    private nonisolated static func mask(_ error: Error) -> String {
+        let message = "\(error)"
+        guard let regex = try? NSRegularExpression(pattern: "([a-zA-Z][a-zA-Z0-9+.-]*://)[^/@\\s]+@") else { return message }
+        let range = NSRange(message.startIndex..., in: message)
+        return regex.stringByReplacingMatches(in: message, range: range, withTemplate: "$1")
+    }
+
     /// Rebuilds the snapshot from the local clone (no network): status +
     /// reader + (leaders) the request list.
     private nonisolated static func snapshot(_ client: TeamClient, lastFetch: Int?, lastPublish: Int?, lastError: String?) throws -> (TeamSnapshot, TeamReader?) {
@@ -95,7 +107,10 @@ final class TeamModel: ObservableObject {
         Task {
             do {
                 let result: (TeamSnapshot?, TeamReader?, TeamShares, TeamExclusions, String?) = try await run { paths, secrets in
-                    let kid = (try? TeamClient.identity(paths: paths, secrets: secrets))?.kid
+                    // Non-creating: showing a kid must never mint (and, on
+                    // a denied keychain read, clobber) an identity that
+                    // exists but the process could not decrypt.
+                    let kid = secrets.read(TeamClient.identitySecretName).flatMap { try? TeamIdentity(secret: $0) }?.kid
                     let exclusions = TeamExclusions.load(paths: paths)
                     guard let client = try Self.openClient(paths, secrets) else { return (nil, nil, TeamShares(), exclusions, kid) }
                     let (snap, reader) = try Self.snapshot(client, lastFetch: fetch, lastPublish: publish, lastError: err)
@@ -105,7 +120,7 @@ final class TeamModel: ObservableObject {
                     snapshot = result.0; reader = result.1; shares = result.2; exclusions = result.3; kid = result.4
                 }
             } catch {
-                lastError = "\(error)"
+                lastError = Self.mask(error)
             }
         }
     }
@@ -152,7 +167,7 @@ final class TeamModel: ObservableObject {
             load()
             return true
         } catch {
-            lastError = "\(error)"
+            lastError = Self.mask(error)
             load()
             return false
         }
@@ -177,7 +192,7 @@ final class TeamModel: ObservableObject {
             try await run(work)
             lastError = nil
         } catch {
-            lastError = "\(error)"
+            lastError = Self.mask(error)
         }
         load()
     }
@@ -221,7 +236,7 @@ final class TeamModel: ObservableObject {
             _ = try client.fetch()
             minted = try client.code(expiresIn: days * 86_400)
         }
-        code = minted
+        if let minted { code = minted }
     }
 
     func approve(kid: String) async {

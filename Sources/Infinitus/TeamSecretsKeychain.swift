@@ -4,13 +4,19 @@ import InfinitusCore
 /// The Mac app's `TeamSecrets` (spec §2.1): identity secret + store
 /// tokens in the login keychain under `Keychain.teamService`. Reads skip
 /// the access-prompt UI (a dev build's ACL prompt must never block the
-/// app): no grant = no identity = "pending" until the user re-signs in.
+/// app): no grant = no identity = "pending" until the user re-signs in —
+/// `write` refuses to replace an item that exists but couldn't be read,
+/// so a denied grant can never be mistaken for "no identity yet" and
+/// clobbered with a freshly minted one.
 struct KeychainTeamSecrets: TeamSecrets, Sendable {
-    enum SecretsError: Error { case writeFailed }
+    enum SecretsError: Error { case writeFailed, unreadableItemExists }
 
     func read(_ name: String) -> Data? { Keychain.readData(account: name, service: Keychain.teamService) }
 
     func write(_ name: String, _ data: Data) throws {
+        if read(name) == nil, Keychain.exists(account: name, service: Keychain.teamService) {
+            throw SecretsError.unreadableItemExists
+        }
         guard Keychain.writeData(account: name, value: data, service: Keychain.teamService) else { throw SecretsError.writeFailed }
     }
 
