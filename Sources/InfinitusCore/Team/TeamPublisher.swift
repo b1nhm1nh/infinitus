@@ -133,6 +133,31 @@ public struct TeamPublisher {
         return out
     }
 
+    /// `Stats.Day` carries two `Set<String>`s whose JSON order follows
+    /// Swift's per-process hash seed, so the canonical bytes of an
+    /// unchanged day differ between CLI runs; `peakMinute` follows the
+    /// same seed on a tie (`finalizePeak` keeps the first maximum met).
+    /// The change check hashes this copy instead: the sets emptied,
+    /// their members alongside as sorted arrays; `peakMinute` blanked —
+    /// it is derived from `minuteTokens`, which stays (a key-sorted
+    /// object). Nothing dropped, so a change confined to them still
+    /// republishes.
+    struct DayDigest: Encodable {
+        var doc: TeamDocs.DayDoc
+        var sessions: [String]
+        var repos: [String]
+    }
+
+    static func dayDigestBytes(_ doc: TeamDocs.DayDoc) throws -> Data {
+        var copy = doc
+        copy.stats.sessions = []
+        copy.stats.repos = []
+        copy.stats.peakMinute = nil
+        return try CanonicalJSON.encode(DayDigest(doc: copy, sessions: doc.stats.sessions.sorted(), repos: doc.stats.repos.sorted()))
+    }
+
+    static func dayDigest(_ doc: TeamDocs.DayDoc) throws -> String { hex(try dayDigestBytes(doc)) }
+
     private func writeCopy(_ path: String, _ data: Data) throws {
         let url = copiesDir.appendingPathComponent(path)
         try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
@@ -153,17 +178,14 @@ public struct TeamPublisher {
         let scan = StatsScanner.scan(projectsDir: sources.projectsDir, codexDir: sources.codexDir, cacheURL: sources.cacheURL,
                                      calendar: calendar, maxAge: Double(sources.historyDays) * 86_400, now: now)
         let collected = Self.collect(entries: scan.entries, exclusions: exclusions)
-        let redaction = TeamRedaction.Options(home: sources.home, includeImages: sources.includeImages)
+        let redact = TeamRedaction.redactor(options: TeamRedaction.Options(home: sources.home, includeImages: sources.includeImages))
         var items: [TeamClient.PublishItem] = []
         var report = Report()
 
-        // The hash is over the canonical bytes. `Stats.Day` carries two
-        // `Set<String>`s whose JSON order follows Swift's per-process
-        // hash seed, so across CLI runs an unchanged day can hash
-        // differently and go out again — a wasted envelope, never a
-        // wrong one. Within one process (the app's timer) it is stable.
-        func stage(_ kind: String, _ path: String, _ plaintext: Data, always: Bool = false) throws {
-            let digest = Self.hex(plaintext)
+        // `digest` defaults to the canonical bytes; day files pass
+        // `dayDigest` because their bytes are not stable across processes.
+        func stage(_ kind: String, _ path: String, _ plaintext: Data, digest: String? = nil, always: Bool = false) throws {
+            let digest = digest ?? Self.hex(plaintext)
             if !always, state.hashes[path] == digest { report.skipped += 1; return }
             try writeCopy(path, plaintext)
             items.append(TeamClient.PublishItem(kind: kind, path: path, plaintext: plaintext, audience: shares.target(for: kind)))
@@ -173,7 +195,8 @@ public struct TeamPublisher {
         let floor = calendar.date(byAdding: .day, value: -sources.historyDays, to: calendar.startOfDay(for: now)) ?? .distantPast
         for (key, day) in collected.days.sorted(by: { $0.key < $1.key }) {
             guard let date = Stats.date(fromDayKey: key, calendar: calendar), date >= floor else { continue }
-            try stage(TeamKinds.stats, "days/\(key).json", try CanonicalJSON.encode(TeamDocs.DayDoc(day: key, stats: day)))
+            let doc = TeamDocs.DayDoc(day: key, stats: day)
+            try stage(TeamKinds.stats, "days/\(key).json", try CanonicalJSON.encode(doc), digest: try Self.dayDigest(doc))
         }
         try stage(TeamKinds.sessions, "sessions/index.json",
                   try CanonicalJSON.encode(TeamDocs.SessionsIndex(at: at, sessions: collected.sessions, fleets: sources.fleets)),
@@ -193,8 +216,7 @@ public struct TeamPublisher {
 
         for source in collected.transcripts {
             var cursor = state.transcripts[source.key] ?? TeamPublishState.Cursor()
-            let (chunks, offset) = try TeamChunker.chunks(of: source.url, from: cursor.offset,
-                                                          redact: { TeamRedaction.redact($0, options: redaction) })
+            let (chunks, offset) = try TeamChunker.chunks(of: source.url, from: cursor.offset, redact: redact)
             for chunk in chunks {
                 cursor.seq += 1
                 let path = source.chunkPath(seq: cursor.seq)

@@ -55,4 +55,12 @@ final class TeamRedactionTests: XCTestCase {
         let out = String(decoding: TeamRedaction.redact(jsonl: input, options: options), as: UTF8.self)
         XCTAssertEqual(out, "a [redacted-key]\nb\n\nc ~/y\n")
     }
+
+    func testRedactorMatchesPerLineRedact() {
+        let redact = TeamRedaction.redactor(options: options)
+        for line in ["x /Users/loc/y sk-abcdefghijklmnopqrstuvwxyz", "plain", #"{"data":"\#(String(repeating: "A", count: 300))"}"#] {
+            XCTAssertEqual(redact(line), TeamRedaction.redact(line, options: options), line)
+        }
+        XCTAssertEqual(redact("/Users/loc/z"), "~/z")
+    }
 }

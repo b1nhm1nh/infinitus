@@ -178,6 +178,38 @@ final class TeamPublisherTests: XCTestCase {
         XCTAssertEqual(try publisher.reshare(days: 0, now: Date(timeIntervalSince1970: 4_000_000_000)).published, [])
     }
 
+    /// The change check must not follow `Set` iteration order (finding 1
+    /// of the final review): the sets ride as sorted arrays, and nothing
+    /// is dropped, so a change confined to them still republishes.
+    func testDayDigestIsOrderIndependentAndLossless() throws {
+        var a = Stats.Day(); a.inputTokens = 3
+        for s in ["s3", "s1", "s2"] { a.sessions.insert(s) }
+        for r in ["zeta", "alpha"] { a.repos.insert(r) }
+        a.minuteTokens = [5: 9, 7: 9]; a.peakTokensPerMinute = 9; a.peakMinute = 5
+        var b = Stats.Day(); b.inputTokens = 3
+        for s in ["s1", "s2", "s3"] { b.sessions.insert(s) }
+        for r in ["alpha", "zeta"] { b.repos.insert(r) }
+        b.minuteTokens = [7: 9, 5: 9]; b.peakTokensPerMinute = 9; b.peakMinute = 7   // the other side of the tie
+        let bytes = String(decoding: try TeamPublisher.dayDigestBytes(TeamDocs.DayDoc(day: "2026-09-04", stats: a)), as: UTF8.self)
+        XCTAssertTrue(bytes.contains(#""sessions":["s1","s2","s3"]"#), bytes)
+        XCTAssertTrue(bytes.contains(#""repos":["alpha","zeta"]"#), bytes)
+        XCTAssertTrue(bytes.contains(#""minuteTokens":{"5":9,"7":9}"#), bytes)
+        XCTAssertFalse(bytes.contains("peakMinute"), bytes)
+        XCTAssertEqual(try TeamPublisher.dayDigest(TeamDocs.DayDoc(day: "2026-09-04", stats: a)),
+                       try TeamPublisher.dayDigest(TeamDocs.DayDoc(day: "2026-09-04", stats: b)))
+        var c = b; c.sessions.insert("s4")
+        XCTAssertNotEqual(try TeamPublisher.dayDigest(TeamDocs.DayDoc(day: "2026-09-04", stats: b)),
+                          try TeamPublisher.dayDigest(TeamDocs.DayDoc(day: "2026-09-04", stats: c)))
+        var d = b; d.repos.insert("omega")
+        XCTAssertNotEqual(try TeamPublisher.dayDigest(TeamDocs.DayDoc(day: "2026-09-04", stats: b)),
+                          try TeamPublisher.dayDigest(TeamDocs.DayDoc(day: "2026-09-04", stats: d)))
+        var e = b; e.minuteTokens[8] = 1
+        XCTAssertNotEqual(try TeamPublisher.dayDigest(TeamDocs.DayDoc(day: "2026-09-04", stats: b)),
+                          try TeamPublisher.dayDigest(TeamDocs.DayDoc(day: "2026-09-04", stats: e)))
+        XCTAssertNotEqual(try TeamPublisher.dayDigest(TeamDocs.DayDoc(day: "2026-09-04", stats: b)),
+                          try TeamPublisher.dayDigest(TeamDocs.DayDoc(day: "2026-09-05", stats: b)))
+    }
+
     func testPendingMemberCannotPublish() throws {
         let remote = try makeRemote()
         let (lp, ls) = machine("leader"), (pp, ps) = machine("pending")

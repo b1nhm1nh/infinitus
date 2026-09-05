@@ -45,9 +45,8 @@ public struct TeamReader {
             member.lastPublished = max(member.lastPublished ?? 0, header.at)
             switch header.kind {
             case TeamKinds.stats:
-                if let doc = decode(TeamDocs.DayDoc.self, entry.path), doc.schema == 1 {
-                    member.days[doc.day] = (member.days[doc.day] ?? Stats.Day()) + doc.stats
-                }
+                // One file per day (spec §4.3): the file is the day, never a slice of it.
+                if let doc = decode(TeamDocs.DayDoc.self, entry.path), doc.schema == 1 { member.days[doc.day] = doc.stats }
             case TeamKinds.now:
                 if let doc = decode(TeamDocs.Now.self, entry.path), doc.schema == 1 { member.now = doc }
             case TeamKinds.sessions:

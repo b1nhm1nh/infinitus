@@ -193,6 +193,8 @@ func runTeam(_ args: [String]) -> Int32 {
             guard let target = TeamShares.parseTarget(Array(positional.dropFirst())) else { return fail(teamUsage(), code: 2) }
             let c = try client()
             if case .members(let kids) = target {
+                // Named kids are checked against the roster as it is now, not the cached one.
+                _ = try c.fetch()
                 let known = Set(c.roster?.doc.everyone.map(\.keys.kid) ?? [])
                 for kid in kids where !known.contains(kid) {
                     return fail("unknown kid \(kid)", code: 2)

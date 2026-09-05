@@ -60,6 +60,13 @@ public enum TeamRedaction {
         redact(line, options: options, home: homeRegex(options))
     }
 
+    /// The per-line redactor with the home regex compiled once — what a
+    /// publisher hands `TeamChunker`, which calls it for every line.
+    public static func redactor(options: Options) -> (String) -> String {
+        let home = homeRegex(options)
+        return { redact($0, options: options, home: home) }
+    }
+
     private static func redact(_ line: String, options: Options, home: NSRegularExpression?) -> String {
         var out = line
         if let home {
@@ -80,7 +87,7 @@ public enum TeamRedaction {
     public static func redact(jsonl: Data, options: Options) -> Data {
         let text = String(decoding: jsonl, as: UTF8.self)
         let lines = text.split(separator: "\n", omittingEmptySubsequences: false)
-        let home = homeRegex(options)
-        return Data(lines.map { redact(String($0), options: options, home: home) }.joined(separator: "\n").utf8)
+        let redact = redactor(options: options)
+        return Data(lines.map { redact(String($0)) }.joined(separator: "\n").utf8)
     }
 }
