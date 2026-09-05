@@ -92,7 +92,7 @@ final class SettingsShellTests: XCTestCase {
         let file = tempDir.appendingPathComponent("settings.json")
         let json = """
         {
-            "popup_layout": "compact",
+            "some_future_key": "compact",
             "glass_opacity": 0.8,
             "title_pct": "both"
         }
@@ -102,6 +102,15 @@ final class SettingsShellTests: XCTestCase {
         let loaded = WinSettingsStore.load(from: file)
         XCTAssertEqual(loaded.titlePct, "both")
         XCTAssertEqual(loaded.showAccountName, true)
+    }
+
+    func testPopupLayoutRoundTrip() throws {
+        let file = tempDir.appendingPathComponent("settings.json")
+        try WinSettingsStore.update(fileURL: file) { s in
+            s.popupLayout = "stacked"
+        }
+        let loaded = WinSettingsStore.load(from: file)
+        XCTAssertEqual(loaded.popupLayout, "stacked")
     }
 
     func testUpdateIsLastWriterPerField() throws {

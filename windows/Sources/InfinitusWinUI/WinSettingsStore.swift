@@ -28,6 +28,7 @@ public struct WinSettings: Codable, Sendable, Equatable {
     public var trayBalloonsEnabled: Bool = true
     public var sortByHeadroom: Bool = true
     public var keepAwake: Bool = false
+    public var popupLayout: String = "wide" // "wide" | "stacked" | "hstack"
 
     // Engine toggles
     public var engineCswapEnabled: Bool = true
@@ -75,6 +76,7 @@ public struct WinSettings: Codable, Sendable, Equatable {
         case trayBalloonsEnabled = "tray_balloons"
         case sortByHeadroom = "sort_headroom"
         case keepAwake = "keep_awake"
+        case popupLayout = "popup_layout"
         case engineCswapEnabled = "engine_cswap_enabled"
         case engineCLIProxyEnabled = "engine_cliproxy_enabled"
         case engineNineRouterEnabled = "engine_9router_enabled"
@@ -120,6 +122,7 @@ public struct WinSettings: Codable, Sendable, Equatable {
         trayBalloonsEnabled = try c.decodeIfPresent(Bool.self, forKey: .trayBalloonsEnabled) ?? d.trayBalloonsEnabled
         sortByHeadroom = try c.decodeIfPresent(Bool.self, forKey: .sortByHeadroom) ?? d.sortByHeadroom
         keepAwake = try c.decodeIfPresent(Bool.self, forKey: .keepAwake) ?? d.keepAwake
+        popupLayout = try c.decodeIfPresent(String.self, forKey: .popupLayout) ?? d.popupLayout
         engineCswapEnabled = try c.decodeIfPresent(Bool.self, forKey: .engineCswapEnabled) ?? d.engineCswapEnabled
         engineCLIProxyEnabled = try c.decodeIfPresent(Bool.self, forKey: .engineCLIProxyEnabled) ?? d.engineCLIProxyEnabled
         engineNineRouterEnabled = try c.decodeIfPresent(Bool.self, forKey: .engineNineRouterEnabled) ?? d.engineNineRouterEnabled

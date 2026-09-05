@@ -48,27 +48,118 @@ enum FleetWindow {
         return (min(width, metrics.px(980)), min(height, metrics.px(680)))
     }
 
-    /// The panel's paint plan: every header and row with the y it sits
-    /// at, so painting and hit-testing can never fall out of step (the
-    /// old code recomputed `index * rowHeight` in two places, which a
-    /// variable-height header would have broken).
-    struct Placed {
-        let line: FleetLayout.Line
-        let top: Int32
-        let height: Int32
+    /// Layout-aware ideal size matching Mac popup layouts ("wide", "stacked", "hstack").
+    static func idealSize(panel: FleetLayout.Panel, metrics: Metrics, layout: String) -> (width: Int32, height: Int32) {
+        switch layout {
+        case "stacked":
+            let cardW = metrics.px(380)
+            let width = metrics.pad * 2 + cardW
+            var bodyH: Int32 = 0
+            for line in panel.lines {
+                switch line {
+                case .header:
+                    bodyH += metrics.fleetHeaderHeight + metrics.px(4)
+                case .account(let row):
+                    let cardH = metrics.px(26) + Int32(max(1, row.gauges.count)) * metrics.px(20) + metrics.px(10)
+                    bodyH += cardH + metrics.px(8)
+                }
+            }
+            let height = metrics.headerHeight + max(bodyH, metrics.px(60)) + metrics.footerHeight + metrics.pad
+            return (min(width, metrics.px(980)), min(height, metrics.px(760)))
+
+        case "hstack":
+            let cardW = metrics.px(230)
+            var maxCardH: Int32 = metrics.px(80)
+            for row in panel.rows {
+                let h = metrics.px(26) + Int32(max(1, row.gauges.count)) * metrics.px(20) + metrics.px(10)
+                if h > maxCardH { maxCardH = h }
+            }
+            let headersCount = panel.lines.filter { if case .header = $0 { return true } else { return false } }.count
+            let accCount = max(1, panel.rows.count)
+            let width = metrics.pad * 2 + Int32(accCount) * cardW + Int32(max(0, accCount - 1)) * metrics.px(8)
+            let height = metrics.headerHeight + Int32(headersCount) * metrics.fleetHeaderHeight + maxCardH + metrics.footerHeight + metrics.pad * 2
+            return (min(width, metrics.px(1100)), min(height, metrics.px(680)))
+
+        default: // "wide"
+            let gauges = panel.rows.map(\.gauges.count).max() ?? 2
+            let headers = panel.lines.filter { if case .header = $0 { return true } else { return false } }.count
+            return idealSize(rows: max(1, panel.rows.count), gauges: gauges, metrics: metrics, fleetHeaders: headers)
+        }
     }
 
-    static func place(_ panel: FleetLayout.Panel, metrics: Metrics) -> [Placed] {
-        var y = metrics.headerHeight
+    /// The panel's paint plan: every header and row with the bounds it sits
+    /// at, so painting and hit-testing can never fall out of step.
+    struct Placed {
+        let line: FleetLayout.Line
+        let rect: RECT
+    }
+
+    static func place(_ panel: FleetLayout.Panel, metrics: Metrics,
+                      layout: String = "wide", clientWidth: Int32 = 0) -> [Placed] {
         var out: [Placed] = []
-        for line in panel.lines {
-            let height: Int32
-            switch line {
-            case .header: height = metrics.fleetHeaderHeight
-            case .account: height = metrics.rowHeight
+        let pad = metrics.pad
+
+        switch layout {
+        case "stacked":
+            var y = metrics.headerHeight
+            let w = max(metrics.px(200), (clientWidth > 0 ? clientWidth : metrics.px(420)) - pad * 2)
+            for line in panel.lines {
+                switch line {
+                case .header:
+                    let r = RECT(left: pad, top: y, right: pad + w, bottom: y + metrics.fleetHeaderHeight)
+                    out.append(Placed(line: line, rect: r))
+                    y += metrics.fleetHeaderHeight + metrics.px(4)
+                case .account(let row):
+                    let cardH = metrics.px(26) + Int32(max(1, row.gauges.count)) * metrics.px(20) + metrics.px(10)
+                    let r = RECT(left: pad, top: y, right: pad + w, bottom: y + cardH)
+                    out.append(Placed(line: line, rect: r))
+                    y += cardH + metrics.px(8)
+                }
             }
-            out.append(Placed(line: line, top: y, height: height))
-            y += height
+
+        case "hstack":
+            var y = metrics.headerHeight
+            let cardW = metrics.px(230)
+            var maxCardH: Int32 = metrics.px(80)
+            for row in panel.rows {
+                let h = metrics.px(26) + Int32(max(1, row.gauges.count)) * metrics.px(20) + metrics.px(10)
+                if h > maxCardH { maxCardH = h }
+            }
+            var curX = pad
+            for line in panel.lines {
+                switch line {
+                case .header:
+                    if curX > pad {
+                        curX = pad
+                        y += maxCardH + metrics.px(8)
+                    }
+                    let r = RECT(left: pad, top: y, right: max(pad + cardW, clientWidth - pad), bottom: y + metrics.fleetHeaderHeight)
+                    out.append(Placed(line: line, rect: r))
+                    y += metrics.fleetHeaderHeight + metrics.px(4)
+                case .account:
+                    let r = RECT(left: curX, top: y, right: curX + cardW, bottom: y + maxCardH)
+                    out.append(Placed(line: line, rect: r))
+                    curX += cardW + metrics.px(8)
+                }
+            }
+
+        default: // "wide"
+            var y = metrics.headerHeight
+            let w = max(metrics.px(200), clientWidth > 0 ? clientWidth : metrics.px(600))
+            for line in panel.lines {
+                let height: Int32
+                let rect: RECT
+                switch line {
+                case .header:
+                    height = metrics.fleetHeaderHeight
+                    rect = RECT(left: pad, top: y, right: w - pad, bottom: y + height)
+                case .account:
+                    height = metrics.rowHeight
+                    rect = RECT(left: pad / 2, top: y, right: w - pad / 2, bottom: y + height - 2)
+                }
+                out.append(Placed(line: line, rect: rect))
+                y += height
+            }
         }
         return out
     }
@@ -197,11 +288,8 @@ enum FleetWindow {
     /// SetWindowPos takes.
     private static func resizeToFit(_ hwnd: HWND, panel: FleetLayout.Panel, style: DWORD) {
         let metrics = Metrics(hwnd: hwnd)
-        let gauges = panel.rows.map(\.gauges.count).max() ?? 2
-        let headers = panel.lines.filter { if case .header = $0 { return true } else { return false } }.count
-        let content = idealSize(rows: max(1, panel.rows.count),
-                                gauges: gauges, metrics: metrics,
-                                fleetHeaders: headers)
+        let layout = WinSettingsStore.load().popupLayout
+        let content = idealSize(panel: panel, metrics: metrics, layout: layout)
         var rect = RECT(left: 0, top: 0, right: content.width, bottom: content.height)
         AdjustWindowRectExForDpi(&rect, style, false, 0, GetDpiForWindow(hwnd))
         SetWindowPos(hwnd, nil, 0, 0, rect.right - rect.left, rect.bottom - rect.top,
@@ -353,8 +441,11 @@ enum FleetWindow {
             return 0
 
         case WM_MOUSEMOVE:
+            var clientRc = RECT()
+            GetClientRect(hwnd, &clientRc)
+            let x = Int32(truncatingIfNeeded: lParam & 0xffff)
             let y = Int32(truncatingIfNeeded: lParam >> 16)
-            let row = rowIndex(at: y, hwnd: hwnd, state: state)
+            let row = rowIndex(at: POINT(x: x, y: y), hwnd: hwnd, state: state, clientWidth: clientRc.right)
             if row != state.hotRow {
                 state.hotRow = row
                 InvalidateRect(hwnd, nil, false)
@@ -376,8 +467,11 @@ enum FleetWindow {
             return 0
 
         case WM_LBUTTONUP:
+            var clientRc = RECT()
+            GetClientRect(hwnd, &clientRc)
+            let x = Int32(truncatingIfNeeded: lParam & 0xffff)
             let y = Int32(truncatingIfNeeded: lParam >> 16)
-            let index = rowIndex(at: y, hwnd: hwnd, state: state)
+            let index = rowIndex(at: POINT(x: x, y: y), hwnd: hwnd, state: state, clientWidth: clientRc.right)
             if index >= 0, index < state.panel.rows.count {
                 clickRow(state.panel.rows[index], state: state, hwnd: hwnd)
             }
@@ -406,14 +500,16 @@ enum FleetWindow {
         }
     }
 
-    /// Which ROW a client-area y lands on, or -1 — a fleet header is not
+    /// Which ROW a client-area (x, y) lands on, or -1 — a fleet header is not
     /// a row. Walks the same placement the paint uses, so a header's
     /// height can never desync the two.
-    private static func rowIndex(at y: Int32, hwnd: HWND, state: State) -> Int {
+    private static func rowIndex(at pt: POINT, hwnd: HWND, state: State, clientWidth: Int32 = 0) -> Int {
         let metrics = Metrics(hwnd: hwnd)
+        let layout = WinSettingsStore.load().popupLayout
         var index = 0
-        for placed in place(state.panel, metrics: metrics) {
-            let hit = y >= placed.top && y < placed.top + placed.height
+        for placed in place(state.panel, metrics: metrics, layout: layout, clientWidth: clientWidth) {
+            let hit = pt.x >= placed.rect.left && pt.x <= placed.rect.right
+                && pt.y >= placed.rect.top && pt.y <= placed.rect.bottom
             switch placed.line {
             case .header:
                 if hit { return -1 }
@@ -504,14 +600,19 @@ enum FleetWindow {
                         color: dim)
         } else {
             let theme = currentTheme()
+            let layout = WinSettingsStore.load().popupLayout
             var index = 0
-            for placed in place(state.panel, metrics: metrics) {
+            for placed in place(state.panel, metrics: metrics, layout: layout, clientWidth: client.right) {
                 switch placed.line {
                 case .header(let label):
-                    paintFleetHeader(memDC, label, top: placed.top, metrics: metrics, state: state)
+                    paintFleetHeader(memDC, label, top: placed.rect.top, metrics: metrics, state: state)
                 case .account(let row):
-                    paintRow(memDC, row, index: index, top: placed.top, width: client.right,
-                             metrics: metrics, state: state, theme: theme)
+                    if layout == "stacked" || layout == "hstack" {
+                        paintCard(memDC, row, index: index, rect: placed.rect, metrics: metrics, state: state, theme: theme)
+                    } else {
+                        paintRow(memDC, row, index: index, top: placed.rect.top, width: client.right,
+                                 metrics: metrics, state: state, theme: theme)
+                    }
                     index += 1
                 }
             }
@@ -546,6 +647,138 @@ enum FleetWindow {
             x += textExtent(dc, label.engineName).cx + metrics.px(6)
             drawClipped(dc, "\u{2014} " + caveat, x: x, y: y,
                         maxWidth: metrics.px(360), color: warmTint)
+        }
+    }
+
+    private static func paintCard(_ dc: HDC, _ row: FleetLayout.Row, index: Int,
+                                  rect: RECT, metrics: Metrics, state: State,
+                                  theme: RowTheme? = nil) {
+        // Card background: active gets highlighted border/accent, hover gets lighter plate
+        if row.active {
+            fill(dc, rect, activeBg)
+            // Accent outline
+            if let pen = CreatePen(PS_SOLID, metrics.px(1), WinDark.selection) {
+                let oldPen = SelectObject(dc, pen)
+                let oldBrush = SelectObject(dc, GetStockObject(NULL_BRUSH))
+                Rectangle(dc, rect.left, rect.top, rect.right, rect.bottom)
+                SelectObject(dc, oldBrush)
+                SelectObject(dc, oldPen)
+                DeleteObject(pen)
+            }
+        } else if index == state.hotRow {
+            fill(dc, rect, rowBg)
+            if let pen = CreatePen(PS_SOLID, metrics.px(1), WinDark.separator) {
+                let oldPen = SelectObject(dc, pen)
+                let oldBrush = SelectObject(dc, GetStockObject(NULL_BRUSH))
+                Rectangle(dc, rect.left, rect.top, rect.right, rect.bottom)
+                SelectObject(dc, oldBrush)
+                SelectObject(dc, oldPen)
+                DeleteObject(pen)
+            }
+        } else {
+            fill(dc, rect, WinDark.control)
+            if let pen = CreatePen(PS_SOLID, metrics.px(1), WinDark.separator) {
+                let oldPen = SelectObject(dc, pen)
+                let oldBrush = SelectObject(dc, GetStockObject(NULL_BRUSH))
+                Rectangle(dc, rect.left, rect.top, rect.right, rect.bottom)
+                SelectObject(dc, oldBrush)
+                SelectObject(dc, oldPen)
+                DeleteObject(pen)
+            }
+        }
+
+        let innerPad = metrics.px(8)
+        var curY = rect.top + innerPad
+        let innerW = rect.right - rect.left - innerPad * 2
+        var curX = rect.left + innerPad
+
+        // Header line in Card: Slot badge + Name + [Dead / Email]
+        if let font = state.captionFont { SelectObject(dc, font) }
+        let slotStr = (theme?.slotPrefix ?? "") + "\(row.number)"
+        draw(dc, slotStr, x: curX, y: curY + metrics.px(2),
+             color: row.active ? text : faint)
+        let slotW = textExtent(dc, slotStr).cx + metrics.px(6)
+        curX += slotW
+
+        if let font = state.bodyFont { SelectObject(dc, font) }
+        let name = row.disabled ? "\(row.name) (held)" : row.name
+        let availNameW = max(metrics.px(60), innerW - slotW)
+        drawClipped(dc, name, x: curX, y: curY, maxWidth: availNameW,
+                    color: row.dead ? dim : text)
+
+        curY += metrics.px(18)
+
+        // Subtitle: note or email
+        if let note = row.deadNote {
+            if let font = state.captionFont { SelectObject(dc, font) }
+            let deadStr = (theme != nil && !theme!.plain && !theme!.deadMarker.isEmpty) ? "\(theme!.deadMarker) \(note)" : note
+            drawClipped(dc, deadStr, x: rect.left + innerPad, y: curY,
+                        maxWidth: innerW, color: dangerColor)
+            curY += metrics.px(14)
+        } else if !row.email.isEmpty {
+            if let font = state.captionFont { SelectObject(dc, font) }
+            drawClipped(dc, row.email, x: rect.left + innerPad, y: curY,
+                        maxWidth: innerW, color: faint)
+            curY += metrics.px(14)
+        }
+
+        // Gauges stacked inside card
+        curY += metrics.px(2)
+        for gauge in row.gauges {
+            paintGaugeBar(dc, gauge, x: rect.left + innerPad, top: curY, width: innerW,
+                          metrics: metrics, state: state, theme: theme)
+            curY += metrics.px(20)
+        }
+    }
+
+    /// Single gauge bar spanning custom width, used in card layouts
+    private static func paintGaugeBar(_ dc: HDC, _ gauge: FleetLayout.Gauge,
+                                      x: Int32, top: Int32, width: Int32,
+                                      metrics: Metrics, state: State,
+                                      theme: RowTheme? = nil) {
+        let tint = color(for: gauge, theme: theme)
+        let percent = "\(Int(gauge.usedPct.rounded()))%"
+
+        if let font = state.captionFont { SelectObject(dc, font) }
+        let pctSize = textExtent(dc, percent)
+        let pctX = max(x, x + width - pctSize.cx)
+        draw(dc, percent, x: pctX, y: top,
+             color: gauge.spent ? dangerColor : text)
+
+        let maxLabelWidth = max(metrics.px(10), pctX - x - metrics.px(4))
+        let displayLabel: String = {
+            guard let theme, !theme.plain else { return gauge.label }
+            switch gauge.label {
+            case "5h": return theme.sessionLabel
+            case "7d": return theme.weeklyLabel
+            default: return theme.scopedPrefix + theme.modelName(gauge.label)
+            }
+        }()
+        drawClipped(dc, displayLabel, x: x, y: top,
+                    maxWidth: maxLabelWidth, color: tint)
+
+        // The bar sits under label & pct
+        let barTop = top + metrics.px(13)
+        let barHeight = metrics.px(4)
+        let barRect = RECT(left: x, top: barTop,
+                           right: x + width, bottom: barTop + barHeight)
+        fill(dc, barRect, track)
+
+        let filled = Int32((Double(width) * gauge.remaining / 100).rounded())
+        if filled > 0 {
+            fill(dc, RECT(left: x, top: barTop, right: x + filled,
+                          bottom: barTop + barHeight), tint)
+        }
+
+        if gauge.burnHeat > 0 || gauge.chill > 0 {
+            let ahead = gauge.burnHeat > 0
+            let markColor = ahead ? warmTint : coolTint
+            let intensity = ahead ? gauge.burnHeat : gauge.chill
+            let markWidth = max(metrics.px(2), Int32((Double(metrics.px(6)) * intensity).rounded()))
+            let markLeft = min(x + width - markWidth, x + filled)
+            fill(dc, RECT(left: max(x, markLeft), top: barTop - metrics.px(1),
+                          right: max(x, markLeft) + markWidth,
+                          bottom: barTop + barHeight + metrics.px(1)), markColor)
         }
     }
 

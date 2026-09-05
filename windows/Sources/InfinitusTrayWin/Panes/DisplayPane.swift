@@ -30,6 +30,9 @@ public final class DisplayPane: SettingsPane {
     private var previewLabelHwnd: HWND?
 
     // Accounts section HWNDs
+    private var popupLayoutLabelHwnd: HWND?
+    private var popupLayoutComboHwnd: HWND?
+    private var popupLayoutHelpHwnd: HWND?
     private var sortByHeadroomHwnd: HWND?
 
     // Notifications section HWNDs
@@ -72,11 +75,14 @@ public final class DisplayPane: SettingsPane {
         static let autostart: Int32 = 9
         static let refreshInterval: Int32 = 10
         static let keepAwake: Int32 = 11
+        static let popupLayout: Int32 = 12
     }
 
     private let pctOptions = ["off", "5h", "7d", "both"]
     private let resetOptions = ["off", "countdown", "clock"]
     private let refreshOptions = [30, 60, 300]
+    private let layoutOptions = ["Wide rows", "Stacked cards", "Horizontal cards"]
+    private let layoutKeys = ["wide", "stacked", "hstack"]
 
     private static let sampleAccount = Account(
         number: 1,
@@ -118,6 +124,9 @@ public final class DisplayPane: SettingsPane {
         previewLabelHwnd = PaneControls.label("", in: ctx, x: 0, y: 0, w: 0, h: 0, color: WinDark.warmTint)
 
         accountsHeaderHwnd = PaneControls.label("Accounts panel", in: ctx, x: 0, y: 0, w: 0, h: 0, bold: true)
+        popupLayoutLabelHwnd = PaneControls.label("Panel layout:", in: ctx, x: 0, y: 0, w: 0, h: 0)
+        popupLayoutComboHwnd = PaneControls.combo(layoutOptions, in: ctx, id: base + Cmd.popupLayout, x: 0, y: 0, w: 0, h: 0)
+        popupLayoutHelpHwnd = PaneControls.label("Wide rows (table grid), Stacked cards, or Horizontal cards side by side.", in: ctx, x: 0, y: 0, w: 0, h: 0, caption: true, color: WinDark.dim)
         sortByHeadroomHwnd = PaneControls.checkbox("Sort rows by headroom (active and next first)", in: ctx, id: base + Cmd.sortByHeadroom, x: 0, y: 0, w: 0, h: 0)
         accountsHelpHwnd = PaneControls.label("Display only — slot numbers don't move.", in: ctx, x: 0, y: 0, w: 0, h: 0, caption: true, color: WinDark.dim)
 
@@ -217,6 +226,17 @@ public final class DisplayPane: SettingsPane {
         if let h = accountsHeaderHwnd { MoveWindow(h, pad, y, fullW, m.px(20), true) }
         y += m.px(24)
 
+        if let lbl = popupLayoutLabelHwnd, let cb = popupLayoutComboHwnd {
+            MoveWindow(lbl, pad, y + m.px(3), colW, fieldH, true)
+            MoveWindow(cb, pad + colW, y, m.px(160), m.px(140), true)
+        }
+        y += fieldH + m.px(2)
+
+        let layoutHelpText = "Wide rows (table grid), Stacked cards, or Horizontal cards side by side."
+        let layoutHelpH = measureHelp(layoutHelpText, w: fullW)
+        if let h = popupLayoutHelpHwnd { MoveWindow(h, pad, y, fullW, layoutHelpH, true) }
+        y += layoutHelpH + gap * 2
+
         if let h = sortByHeadroomHwnd { MoveWindow(h, pad, y, fullW, fieldH, true) }
         y += fieldH + m.px(2)
 
@@ -275,8 +295,8 @@ public final class DisplayPane: SettingsPane {
     }
 
     public func contentHeight(width: Int32) -> Int32 {
-        guard let ctx else { return 820 }
-        return ctx.metrics.px(820)
+        guard let ctx else { return 890 }
+        return ctx.metrics.px(890)
     }
 
     public func activate() {
@@ -288,6 +308,9 @@ public final class DisplayPane: SettingsPane {
         PaneControls.setComboSelection(titleResetComboHwnd, s.titleReset)
         PaneControls.setChecked(titleScopedHwnd, s.titleScoped)
         PaneControls.setChecked(titleRemainingHwnd, s.titleRemaining)
+
+        let layoutIdx = layoutKeys.firstIndex(of: s.popupLayout) ?? 0
+        PaneControls.setComboSelection(popupLayoutComboHwnd, layoutOptions[layoutIdx])
 
         PaneControls.setChecked(sortByHeadroomHwnd, s.sortByHeadroom)
         PaneControls.setChecked(balloonsHwnd, s.trayBalloonsEnabled)
@@ -350,6 +373,17 @@ public final class DisplayPane: SettingsPane {
             let val = PaneControls.checked(titleRemainingHwnd)
             _ = try? WinSettingsStore.update { $0.titleRemaining = val }
             updatePreview()
+            return true
+
+        case Cmd.popupLayout:
+            if code == UINT(CBN_SELCHANGE) {
+                let sel = PaneControls.comboSelection(popupLayoutComboHwnd)
+                if let idx = layoutOptions.firstIndex(of: sel) {
+                    let key = layoutKeys[idx]
+                    _ = try? WinSettingsStore.update { $0.popupLayout = key }
+                    FleetWindow.refresh()
+                }
+            }
             return true
 
         case Cmd.sortByHeadroom:
