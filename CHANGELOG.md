@@ -53,6 +53,8 @@ publishes the matching section as the GitHub release body.
 - Settings › Chat header previews every style live, in the current theme.
 - The Game HUD header is a glossy unit frame now: the portrait rides the panel, the bars carry a pace tick.
 - Live Activity: the next account and the "then …" line are readable on the Lock Screen's dark card.
+- AWS login: the card shows the profile's account id and IAM user name, tap to copy.
+- AWS login: the in-app sign-in page gets the account id and user name filled in.
 
 ### Team (preview)
 - `infinitusctl team` creates a team on any git remote and exchanges end-to-end encrypted files between members (create, code, request, approve, publish, read).

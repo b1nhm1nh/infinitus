@@ -82,14 +82,18 @@ public enum AwsLogin {
         /// the push keys on it, so a fresh failure after a relaunch is
         /// news and a re-failure hours later is news again (#29).
         public let failedAt: Date?
+        /// The account id (and IAM user name) the sign-in page asks for,
+        /// from the profile's config; nil when the config names none.
+        public let account: Account?
         public init(profile: String, flow: Flow, pid: Int?, sessionLabel: String?, state: State?,
-                    failedAt: Date? = nil) {
+                    failedAt: Date? = nil, account: Account? = nil) {
             self.profile = profile
             self.flow = flow
             self.pid = pid
             self.sessionLabel = sessionLabel
             self.state = state
             self.failedAt = failedAt
+            self.account = account
         }
     }
 
@@ -272,7 +276,44 @@ public enum AwsLogin {
     /// relay (`aws login` with the phone intercepting the callback).
     /// `.remote` stays the paste-back fallback a client may ask for.
     public static func flow(profile: String, configText: String) -> Flow {
+        let values = profileValues(profile: profile, configText: configText)
+        return values["sso_session"] != nil || values["sso_start_url"] != nil ? .deviceCode : .relay
+    }
+
+    /// What the sign-in page asks for and the user can't recall across
+    /// accounts (user 2026-09-05: "I can't remember the aws account ids,
+    /// I also have multiple"): the account id and, for an IAM user, the
+    /// user name — both sit in `~/.aws/config` already (`login_session`
+    /// is `arn:aws:iam::<account>:user/<name>`; SSO profiles carry
+    /// `sso_account_id`). Never a secret, never `~/.aws/login`.
+    public struct Account: Codable, Sendable, Equatable {
+        public let accountId: String
+        public let userName: String?
+        public init(accountId: String, userName: String?) {
+            self.accountId = accountId
+            self.userName = userName
+        }
+    }
+
+    public static func account(profile: String, configText: String) -> Account? {
+        let values = profileValues(profile: profile, configText: configText)
+        if let arn = values["login_session"] {
+            let parts = arn.split(separator: ":", omittingEmptySubsequences: false).map(String.init)
+            if parts.count >= 6, parts[4].count == 12, parts[4].allSatisfy(\.isNumber) {
+                let resource = parts[5...].joined(separator: ":")
+                let user = resource.hasPrefix("user/") ? String(resource.dropFirst("user/".count)) : nil
+                return Account(accountId: parts[4], userName: user.flatMap { $0.isEmpty ? nil : $0 })
+            }
+        }
+        if let id = values["sso_account_id"], !id.isEmpty { return Account(accountId: id, userName: nil) }
+        return nil
+    }
+
+    /// The `key = value` pairs of one profile section (`[profile X]`, or
+    /// `[default]` for "default").
+    static func profileValues(profile: String, configText: String) -> [String: String] {
         var inProfile = false
+        var values: [String: String] = [:]
         for raw in configText.split(separator: "\n", omittingEmptySubsequences: false) {
             let line = raw.trimmingCharacters(in: .whitespaces)
             if line.hasPrefix("[") {
@@ -281,11 +322,49 @@ public enum AwsLogin {
                 inProfile = name == "profile \(profile)" || (profile == "default" && name == "default")
                 continue
             }
-            guard inProfile, let eq = line.firstIndex(of: "=") else { continue }
+            guard inProfile, !line.hasPrefix("#"), let eq = line.firstIndex(of: "=") else { continue }
             let key = line[..<eq].trimmingCharacters(in: .whitespaces)
-            if key == "sso_session" || key == "sso_start_url" { return .deviceCode }
+            let value = line[line.index(after: eq)...].trimmingCharacters(in: .whitespaces)
+            if values[key] == nil { values[key] = value }
         }
-        return .relay
+        return values
+    }
+
+    /// JavaScript for the relay web view: fills the sign-in page's empty
+    /// account and user-name inputs (several ids, AWS renames them),
+    /// through the native value setter so a framework-controlled input
+    /// keeps it, and again whenever the single-page flow reveals the
+    /// next step. Never a password field, never a click. Values are
+    /// JSON-encoded, so nothing in a user name can escape the string.
+    public static func fillScript(account: Account?) -> String? {
+        guard let account else { return nil }
+        func json(_ s: String?) -> String {
+            guard let s, let data = try? JSONSerialization.data(withJSONObject: [s]),
+                  let text = String(data: data, encoding: .utf8) else { return "null" }
+            return String(text.dropFirst().dropLast())   // ["…"] → "…"
+        }
+        return """
+        (function () {
+          var A = \(json(account.accountId)), U = \(json(account.userName));
+          var set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
+          function fill(sel, v) {
+            if (!v) return;
+            document.querySelectorAll(sel).forEach(function (el) {
+              if (el.type === 'password' || el.value || el.dataset.infinitusFilled) return;
+              set.call(el, v);
+              el.dataset.infinitusFilled = '1';
+              el.dispatchEvent(new Event('input', { bubbles: true }));
+              el.dispatchEvent(new Event('change', { bubbles: true }));
+            });
+          }
+          function run() {
+            fill('#resolving_input, #account, input[name="account"], input[name="accountId"]', A);
+            fill('#username, input[name="username"]', U);
+          }
+          run();
+          new MutationObserver(run).observe(document.documentElement, { childList: true, subtree: true });
+        })();
+        """
     }
 
     public static func defaultConfigURL() -> URL {
