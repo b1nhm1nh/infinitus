@@ -550,23 +550,30 @@ final class AppModel: ObservableObject {
             ClaudeSessions.list(claudeDir: ClaudeSessions.configHome())
                 .first { $0.sessionId == id }.map { Int($0.pid) }
         }
-        logEvent("hook", icon: "bolt.horizontal", event.logLine)
         if let line = event.pushLine, !isPlayground {
+            logEvent("hook", icon: "bolt.horizontal", event.logLine)
             if let pid { pushTriggers.announceWaiting(pid: pid) }
             if pushWaiting { push(line) }
         }
-        // One refresh per burst: the record's status flips a beat after
-        // the hook fires, and Stop + Notification often land together.
+        // One refresh per burst, at most every 30 s: the record's status
+        // flips a beat after the hook fires, Stop + Notification often
+        // land together, and the "sessions done" trigger counts quiet
+        // polls — hook polls a second apart would fire it mid-typing.
         if hookRefresh == nil {
+            let wait = max(1, Self.hookRefreshSpacing - Date().timeIntervalSince(lastHookRefresh))
             hookRefresh = Task { [weak self] in
-                try? await Task.sleep(for: .seconds(1))
-                await self?.refreshSnapshot()
-                self?.hookRefresh = nil
+                try? await Task.sleep(for: .seconds(wait))
+                guard let self else { return }
+                lastHookRefresh = Date()
+                await refreshSnapshot()
+                hookRefresh = nil
             }
         }
         return pid
     }
     private var hookRefresh: Task<Void, Never>?
+    private var lastHookRefresh = Date.distantPast
+    static let hookRefreshSpacing: TimeInterval = 30
 
     func notify(_ body: String) {
         Notifier.post(title: "Infinitus", body: body)

@@ -16,7 +16,7 @@ final class HookEventTests: XCTestCase {
     }
 
     func testMessagelessPromptFallsBackToThePollWording() {
-        let event = HookEvent(name: "Notification", cwd: "/r/app", notificationType: "idle_prompt")
+        let event = HookEvent(name: "Notification", cwd: "/r/app", notificationType: "permission_prompt")
         XCTAssertEqual(event.pushLine, "waiting on you — app needs an answer")
     }
 
@@ -24,6 +24,8 @@ final class HookEventTests: XCTestCase {
         XCTAssertNil(HookEvent(name: "Stop", cwd: "/r/app").pushLine)
         XCTAssertNil(HookEvent(name: "Notification", cwd: "/r/app",
                                notificationType: "auth_success").pushLine)
+        XCTAssertNil(HookEvent(name: "Notification", cwd: "/r/app",
+                               notificationType: "idle_prompt").pushLine)
         XCTAssertEqual(HookEvent(name: "Stop").logLine, "Stop — a session")
     }
 

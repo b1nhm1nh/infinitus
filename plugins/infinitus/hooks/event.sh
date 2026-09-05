@@ -4,5 +4,9 @@
 ctl="${INFINITUS_CTL:-$(command -v infinitusctl 2>/dev/null)}"
 [ -x "$ctl" ] || ctl=/Applications/Infinitus.app/Contents/MacOS/infinitusctl
 [ -x "$ctl" ] || exit 0
-"$ctl" event >/dev/null 2>&1
+payload=$(cat)
+# One retry: the app answers one control command at a time, and two
+# sessions' hooks can land together.
+printf '%s' "$payload" | "$ctl" event >/dev/null 2>&1 \
+  || { sleep 1; printf '%s' "$payload" | "$ctl" event >/dev/null 2>&1; }
 exit 0

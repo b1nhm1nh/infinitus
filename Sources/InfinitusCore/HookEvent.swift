@@ -32,10 +32,12 @@ public struct HookEvent: Equatable, Sendable {
         cwd.map { URL(fileURLWithPath: $0).lastPathComponent } ?? "a session"
     }
 
-    /// The notification types a human must act on.
+    /// The notification types a human must act on. Not `idle_prompt`:
+    /// it fires a minute after every finished turn, which is the
+    /// "sessions done" trigger's job, not a prompt.
     public static let humanTypes: Set<String> = [
-        "permission_prompt", "idle_prompt", "elicitation_dialog",
-        "elicitation_url_dialog", "agent_needs_input",
+        "permission_prompt", "elicitation_dialog", "elicitation_url_dialog",
+        "agent_needs_input",
     ]
 
     public var needsHuman: Bool {
