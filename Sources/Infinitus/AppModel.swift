@@ -1967,7 +1967,7 @@ final class AppModel: ObservableObject {
             let info = Bundle.main.infoDictionary ?? [:]
             let appInfo = AppInfo(
                 version: info["CFBundleShortVersionString"] as? String ?? "dev",
-                sha: info["InfinitusGitSHA"] as? String ?? "dev",
+                sha: info["InfinitusGitSHA"] as? String ?? info["CFBundleVersion"] as? String ?? "dev",
                 updateVersion: appUpdateVersion,
                 updateChannel: BrewUpdater.channel.rawValue,
                 phoneLatest: appReleaseLatest)
