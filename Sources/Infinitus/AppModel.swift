@@ -513,13 +513,13 @@ final class AppModel: ObservableObject {
     /// Every app notification: Notification Center here, and the same
     /// text to any phone that registered an alert token (issue #3).
     func notify(_ body: String) {
-        Notifier.post(title: "claude-swap", body: body)
-        liveActivityPusher.pushAlert(title: "claude-swap", body: body)
+        Notifier.post(title: "Infinitus", body: body)
+        liveActivityPusher.pushAlert(title: "Infinitus", body: body)
     }
     private let awake = KeepAwake()
     private var pushTriggers = PushTriggers()
     private let defaults: UserDefaults
-    static let playgroundSuite = "com.huuloc.infinitus.playground"
+    static let playgroundSuite = "run.infinitus.playground"
 
     /// Custom skins from themes.json, loaded at launch and on demand
     /// (the Display pane reloads when it appears).
@@ -563,7 +563,8 @@ final class AppModel: ObservableObject {
     /// keys are never overwritten.
     private static func migrateLegacyDefaults() {
         let std = UserDefaults.standard
-        for (domain, marker) in [("com.huuloc.limitless", "migrated_from_limitless_id"),
+        for (domain, marker) in [("com.huuloc.infinitus", "migrated_from_huuloc_id"),
+                                 ("com.huuloc.limitless", "migrated_from_limitless_id"),
                                  ("io.github.claude-swap.CswapBar.g2", "migrated_from_g2")] {
             guard !std.bool(forKey: marker), let legacy = std.persistentDomain(forName: domain) else { continue }
             for (key, value) in legacy where std.object(forKey: key) == nil {
@@ -1043,7 +1044,8 @@ final class AppModel: ObservableObject {
                                        flow: AwsLogin.flow(profile: profile, configText: configText),
                                        pid: pid, sessionLabel: label,
                                        state: AwsLogin.current(byProfile[profile], needFailedAt: progress.awsLoginFailedAt),
-                                       failedAt: progress.awsLoginFailedAt))
+                                       failedAt: progress.awsLoginFailedAt,
+                                       account: AwsLogin.account(profile: profile, configText: configText)))
         }
         // Logins started by hand (no session asked) still show while they
         // run or after they fail; one a session asked for belongs with
@@ -1051,7 +1053,8 @@ final class AppModel: ObservableObject {
         for state in awsLoginStates where !needed.contains(state.profile) && state.phase != .done
             && state.pid == nil {
             items.append(AwsLogin.Item(profile: state.profile, flow: state.flow, pid: state.pid,
-                                       sessionLabel: nil, state: state))
+                                       sessionLabel: nil, state: state,
+                                       account: AwsLogin.account(profile: state.profile, configText: configText)))
         }
         if items != awsLogins { awsLogins = items }
         if sessionProgress.scanned { awsLoginsScanned = true }

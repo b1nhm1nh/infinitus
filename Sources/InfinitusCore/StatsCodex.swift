@@ -98,6 +98,7 @@ public enum StatsCodex {
                 }
                 day.inputTokens += input
                 day.outputTokens += output
+                if output > 0 { day.minuteTokens[Stats.minuteOfDay(t, calendar: calendar), default: 0] += output }
                 day.usd += cost
                 day.charge(model: model, engine: entry.engine, effort: effort, input: input, output: output, usd: cost)
                 if entry.state.stretch != nil {

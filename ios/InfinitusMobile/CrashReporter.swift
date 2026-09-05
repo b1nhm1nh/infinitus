@@ -12,7 +12,7 @@ import InfinitusCore
 /// launch.
 final class CrashReporter: NSObject, MXMetricManagerSubscriber {
     static let shared = CrashReporter()
-    private let log = Logger(subsystem: "com.huuloc.infinitus.mobile", category: "crash")
+    private let log = Logger(subsystem: "run.infinitus.mobile", category: "crash")
     private var spool: URL {
         (FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first ?? FileManager.default.temporaryDirectory)
             .appendingPathComponent("crash-spool")

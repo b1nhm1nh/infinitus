@@ -10,14 +10,17 @@ publishes the matching section as the GitHub release body.
 ### Stats
 - Stats reads Codex CLI transcripts too, with two more effort tables, per engine and per effort setting — one full rescan on first refresh.
 - Where the effort went: minutes, tokens and spend per activity (review, tests, plan, debugging, browser, simulator, explanations, coding) and per model, on the Mac and the phone — heuristic labels, one full rescan on first refresh.
+- Tokens/min records: every day's peak minute, the all-time best and the days it fell, a 30-day sparkline and a week-over-week trend, on the Mac and the phone — one full rescan on first refresh.
 
 ### Fixes
 - AWS logins survive a Mac relaunch, and a need that failed just before a launch still reaches the phone.
 - A session stuck behind the credential broker's refresh lock (another process sitting in `aws login`) now shows the AWS login card too.
+- A session whose check kept only the broker's "Fix: aws login" line (a `| tail -1`) shows the AWS login card too.
 - Haiku session names now cover the sessions Claude Code named itself (`limitless-bf`, `banyan-51`…).
 - Phone dictation never sits on "Translating…": a missing language pack asks to download, and after ten seconds the take goes out as spoken.
 - A chat opens in well under a second on sessions with hundreds of sub-agents; the Mac read every sub-agent's log per request and the phone gave up after three ("the Mac didn't answer").
 - The phone's composer no longer floats mid-screen after the keyboard is dragged away.
+- Mac notifications are titled Infinitus, not claude-swap; engine update notices name the engine in the body.
 - A chat swipes back from anywhere on the screen, not only from the left edge.
 - The terminal's own "[Image: original …]" note after a screenshot is read no longer shows as a message you sent.
 
@@ -29,13 +32,15 @@ publishes the matching section as the GitHub release body.
 - Randomize names: every account gets a fresh name from the current theme's pool (Settings › Accounts, or `infinitusctl randomize-names`).
 
 ### Mac
+- Bundle ids move to `run.infinitus` and `run.infinitus.mobile`: settings carry over; notifications, login item, proxy key and phone pairing are asked once more.
 - Capture Screen for a Session… in the menu-bar menu: pick a region or window, choose a session, add a note, and it lands in that session's chat like a phone message.
 
 ### Phone
 - The working Live Activity follows an account switch when the app opens, and a card nothing has reached says "out of date".
 - A lighter chat header: compact by default, or a stat strip with mini gauges (Settings › Appearance › Chat header).
 - A capture of the app — the capture button in a chat, a shake anywhere, or a screenshot the phone just took — lands in the composer as an attachment so you can say what it's about.
-- The Game HUD header draws every window as a bar, the models' too, and the capture and photo-library buttons sit in the composer's tool row left of the text.
+- The Game HUD header draws every window as a bar, the models' too, and one + button left of the text holds every attachment: capture this screen, photo library, camera, files, paste.
+- The phone app is called Infinitus on the home screen and in search.
 - A session that comes to need an AWS sign-in raises a notification on the phone, tap to sign in, and the Quests badge counts it.
 - The phone build carries the push entitlement, so Live Activities and alerts move with the app closed once the Mac holds an APNs key (Settings › Sync).
 - Home-screen and lock-screen widgets in the fleet's theme: the active account's windows as your theme names and colors them, what's waiting, and the revival countdown when every account is limited.
@@ -51,6 +56,8 @@ publishes the matching section as the GitHub release body.
 - Settings › Chat header previews every style live, in the current theme.
 - The Game HUD header is a glossy unit frame now: the portrait rides the panel, the bars carry a pace tick.
 - Live Activity: the next account and the "then …" line are readable on the Lock Screen's dark card.
+- AWS login: the card shows the profile's account id and IAM user name, tap to copy.
+- AWS login: the in-app sign-in page gets the account id and user name filled in.
 
 ### Team (preview)
 - `infinitusctl team` creates a team on any git remote and exchanges end-to-end encrypted files between members (create, code, request, approve, publish, read).

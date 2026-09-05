@@ -13,7 +13,7 @@ import os
 final class LiveActivities {
     static let shared = LiveActivities()
 
-    private let log = Logger(subsystem: "com.huuloc.infinitus.mobile", category: "live-activity")
+    private let log = Logger(subsystem: "run.infinitus.mobile", category: "live-activity")
     private var revival: Activity<RevivalActivity>?
     private var working: Activity<WorkingActivity>?
     private var tokenWatchers: [String: Task<Void, Never>] = [:]

@@ -4,10 +4,10 @@ import os
 /// The app's trail in the unified log (#54): the 2026-09-05 06:21 exit
 /// left no crash report and no log line, because the app wrote none.
 /// Read it back with
-/// `log show --last 1d --predicate 'subsystem == "com.huuloc.infinitus"'`.
+/// `log show --last 1d --predicate 'subsystem == "run.infinitus"'`.
 /// Notices persist to the store; nothing here is user data.
 enum Lifecycle {
-    static let log = Logger(subsystem: "com.huuloc.infinitus", category: "lifecycle")
+    static let log = Logger(subsystem: "run.infinitus", category: "lifecycle")
 
     static func armed() {
         let info = Bundle.main.infoDictionary ?? [:]

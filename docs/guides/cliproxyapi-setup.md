@@ -77,7 +77,7 @@ Or by hand:
 3. Management key: paste the plaintext key → **Test connection** →
    "reachable — 0 credential files, routing fill-first".
 4. **Save & restart.** The key goes into the keychain
-   (`com.huuloc.infinitus.cliproxy`), never into defaults or logs.
+   (`run.infinitus.cliproxy`), never into defaults or logs.
 5. Flip **Engine on**. The app restarts with the proxy fleet registered.
 
 If cswap is also on you get the layer-fight warning under the toggle.

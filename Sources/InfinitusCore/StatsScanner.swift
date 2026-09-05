@@ -250,6 +250,7 @@ public enum StatsScanner {
                     day.inputTokens += input
                     day.outputTokens += output
                     day.usd += cost
+                    if output > 0 { day.minuteTokens[Stats.minuteOfDay(t, calendar: calendar), default: 0] += output }
                     // Per model / engine / effort, per entry — exact, and
                     // the only route a sub-agent file's spend takes into
                     // v2. An empty model name has nothing to key under;
@@ -326,9 +327,10 @@ public enum StatsScanner {
     }
 
     struct Cache: Codable {
-        /// 6 (2026-09-05): `byEngine`/`byEffort` and the Codex source
-        /// need every entry re-read; 5 was Stats v2's activities/models.
-        var version = 6
+        /// 7 (2026-09-05): per-minute output tokens for the tokens/min
+        /// record book (#89); 6 was `byEngine`/`byEffort` and the Codex
+        /// source; 5 was Stats v2's activities/models.
+        var version = 7
         var files: [String: FileEntry] = [:]
     }
 
@@ -523,6 +525,9 @@ public enum StatsScanner {
         // says exactly this, and rewriting the whole corpus's JSON on
         // every 5-minute refresh is pure IO. The checkpoint writes
         // inside a backfill above are untouched.
+        // Every file's share of a day is in: the day's peak minute is
+        // the sum across sessions, not any one file's.
+        for key in result.days.keys { result.days[key]!.finalizePeak() }
         let unchanged = filesTouched == 0 && live.count == cache.files.count
         cache.files = live
         if let cacheURL, !unchanged { writeCache(cache, to: cacheURL, fm: fm) }
