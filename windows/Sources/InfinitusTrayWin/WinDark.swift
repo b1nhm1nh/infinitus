@@ -1,4 +1,5 @@
 import Foundation
+import InfinitusCore
 import WinSDK
 
 /// The tray's dark palette and the two things Win32 needs to actually
@@ -45,6 +46,19 @@ enum WinDark {
 
     static func rgb(_ r: Int, _ g: Int, _ b: Int) -> COLORREF {
         COLORREF(UInt32(r) | (UInt32(g) << 8) | (UInt32(b) << 16))
+    }
+
+    /// Maps a theme color string — named or hex — to a COLORREF using ThemePalette.
+    /// Named colors fall back to dim for secondary/gray and text for primary/unknown.
+    static func themeColor(_ name: String) -> COLORREF {
+        if let c = InfinitusCore.ThemePalette.rgb(name) {
+            return rgb(Int(c.r), Int(c.g), Int(c.b))
+        }
+        let lower = name.lowercased()
+        if lower == "secondary" || lower == "gray" {
+            return dim
+        }
+        return text
     }
 
     // MARK: brushes

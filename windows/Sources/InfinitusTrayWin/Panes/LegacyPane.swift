@@ -28,7 +28,6 @@ public final class LegacyPane: SettingsPane {
     private var strategyHwnd: HWND?
     private var includeApiKeyHwnd: HWND?
     private var unhealthyTicksHwnd: HWND?
-    private var themeHwnd: HWND?
 
     private var nineRouterBaseURLHwnd: HWND?
     private var nineRouterPasswordHwnd: HWND?
@@ -56,7 +55,6 @@ public final class LegacyPane: SettingsPane {
         static let strategy: Int32 = 24
         static let includeApiKey: Int32 = 25
         static let unhealthyTicks: Int32 = 26
-        static let theme: Int32 = 27
         static let nrBaseURL: Int32 = 40
         static let nrPassword: Int32 = 41
         static let nrTest: Int32 = 42
@@ -93,9 +91,6 @@ public final class LegacyPane: SettingsPane {
         hysteresisHwnd = PaneControls.edit(in: ctx, id: base + Cmd.hysteresis, x: 0, y: 0, w: 0, h: 0)
         unhealthyTicksHwnd = PaneControls.edit(in: ctx, id: base + Cmd.unhealthyTicks, x: 0, y: 0, w: 0, h: 0)
         includeApiKeyHwnd = PaneControls.checkbox("Auto-switch API key accounts", in: ctx, id: base + Cmd.includeApiKey, x: 0, y: 0, w: 0, h: 0)
-
-        let themeChoices = ["auto", "dark", "light", "catppuccin-mocha", "catppuccin-latte", "nord", "tokyo-night"]
-        themeHwnd = PaneControls.combo(themeChoices, in: ctx, id: base + Cmd.theme, x: 0, y: 0, w: 0, h: 0)
 
         // 9Router controls
         nineRouterBaseURLHwnd = PaneControls.edit(in: ctx, id: base + Cmd.nrBaseURL, x: 0, y: 0, w: 0, h: 0)
@@ -163,11 +158,6 @@ public final class LegacyPane: SettingsPane {
 
         if let h = includeApiKeyHwnd {
             MoveWindow(h, pad, y, width - pad * 2, fieldH, true)
-        }
-        y += fieldH + rowGap
-
-        if let h = themeHwnd {
-            MoveWindow(h, pad + colW, y, m.px(160), m.px(140), true)
         }
         y += fieldH + rowGap * 2
 
@@ -320,8 +310,6 @@ public final class LegacyPane: SettingsPane {
                 PaneControls.setText(unhealthyTicksHwnd, strVal.isEmpty ? "3" : strVal)
             case "autoswitch.includeApiKeyAccounts":
                 PaneControls.setChecked(includeApiKeyHwnd, strVal == "true")
-            case "ui.theme":
-                PaneControls.setComboSelection(themeHwnd, strVal.isEmpty ? "auto" : strVal)
             default:
                 break
             }
@@ -357,7 +345,6 @@ public final class LegacyPane: SettingsPane {
         targetValues["autoswitch.hysteresisPct"] = PaneControls.text(hysteresisHwnd).trimmingCharacters(in: .whitespaces)
         targetValues["autoswitch.unhealthyTicks"] = PaneControls.text(unhealthyTicksHwnd).trimmingCharacters(in: .whitespaces)
         targetValues["autoswitch.includeApiKeyAccounts"] = PaneControls.checked(includeApiKeyHwnd) ? "true" : "false"
-        targetValues["ui.theme"] = PaneControls.comboSelection(themeHwnd)
 
         for (key, newVal) in targetValues {
             let oldVal = originalValues[key] ?? ""

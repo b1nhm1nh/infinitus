@@ -1,4 +1,5 @@
 import XCTest
+import InfinitusCore
 @testable import InfinitusWinUI
 
 final class SettingsShellTests: XCTestCase {
@@ -149,5 +150,67 @@ final class SettingsShellTests: XCTestCase {
         let resFits = SettingsCatalogWin.clampScroll(offset: 50, contentHeight: 300, viewportHeight: 400)
         XCTAssertEqual(resFits.maxOffset, 0)
         XCTAssertEqual(resFits.offset, 0)
+    }
+
+    func testCardGridColumns() {
+        // Width 980 -> N columns; width 320 -> 1; never 0
+        let cols980 = SettingsCatalogWin.cardGridColumns(contentWidth: 980)
+        XCTAssertGreaterThan(cols980, 1)
+
+        let cols320 = SettingsCatalogWin.cardGridColumns(contentWidth: 320)
+        XCTAssertEqual(cols320, 1)
+
+        let colsTiny = SettingsCatalogWin.cardGridColumns(contentWidth: 50)
+        XCTAssertGreaterThanOrEqual(colsTiny, 1)
+    }
+
+    func testCardGridContentHeight() {
+        // 15 built-ins at 2 columns -> 8 rows
+        let h = SettingsCatalogWin.cardGridContentHeight(itemCount: 15, columns: 2, cardHeight: 120, gap: 10, chromeHeight: 240)
+        // 8 rows * (120 + 10) + 240 = 8 * 130 + 240 = 1040 + 240 = 1280
+        XCTAssertEqual(h, 1280)
+    }
+
+    func testThemeSelectionFallsBackToOff() {
+        let nonexistent = "nonexistent-theme-xyz"
+        let custom = RowTheme.loadCustom(from: WinSettingsStore.windowsThemesURL)
+        let all = RowTheme.builtins + custom
+        let resolved = all.first { $0.id == nonexistent } ?? RowTheme.off
+        XCTAssertEqual(resolved.id, RowTheme.off.id)
+    }
+
+    func testDisplayPrefsRoundTripThroughTitleFormatter() {
+        var s = WinSettings()
+        s.showAccountName = true
+        s.titlePct = "both"
+        s.titleRemaining = true
+        s.titleReset = "countdown"
+        s.titleScoped = true
+
+        let prefs = TitlePrefs(
+            showAccountName: s.showAccountName,
+            titlePct: s.titlePct,
+            titleScoped: s.titleScoped,
+            titleRemaining: s.titleRemaining,
+            titleReset: s.titleReset
+        )
+
+        let account = Account(
+            number: 1,
+            email: "dev@example.com",
+            active: true,
+            usage: Usage(
+                fiveHour: UsageWindow(pct: 20, resetsAt: "2999-01-01T00:00:00Z"),
+                sevenDay: UsageWindow(pct: 50, resetsAt: "2999-01-01T00:00:00Z"),
+                scoped: [UsageWindow(pct: 30, resetsAt: "2999-01-01T00:00:00Z", name: "Opus")]
+            ),
+            alias: "alpha"
+        )
+
+        let title = TitleFormatter.format(account: account, prefs: prefs, now: Date(), icon: "")
+        // Remaining flips 20% -> 80%, 50% -> 50%, Opus 30% -> 70%
+        XCTAssertTrue(title.contains("alpha"))
+        XCTAssertTrue(title.contains("80·50%"))
+        XCTAssertTrue(title.contains("Opus 70%"))
     }
 }

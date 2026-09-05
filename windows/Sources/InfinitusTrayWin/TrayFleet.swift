@@ -27,8 +27,8 @@ enum TrayFleet {
         }
     }
 
-    /// Cache duration matching CswapFleet (30s).
-    static let cacheSeconds: TimeInterval = 30
+    /// Cache duration matching CswapFleet (defaults to 30s, configurable via WinSettings).
+    nonisolated(unsafe) static var cacheSeconds: TimeInterval = 30
     /// Engine command timeout.
     static let timeout: TimeInterval = 20
 

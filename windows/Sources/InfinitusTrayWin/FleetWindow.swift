@@ -1,5 +1,6 @@
 import Foundation
 import InfinitusCore
+import InfinitusWinUI
 import WinSDK
 
 /// The account panel — the Windows answer to the Mac popup's grid of
@@ -98,16 +99,34 @@ enum FleetWindow {
     private static let warmTint = WinDark.warmTint
     private static let coolTint = WinDark.coolTint
 
-    /// A gauge's colour by its label, matching the Mac's row theme
+    /// A gauge's colour by its label, matching the active theme's colors
     /// (session blue, weekly purple, per-model amber) and going red once
     /// the window is spent.
-    static func color(for gauge: FleetLayout.Gauge) -> COLORREF {
+    static func color(for gauge: FleetLayout.Gauge, theme: RowTheme? = nil) -> COLORREF {
         if gauge.spent { return dangerColor }
+        if let theme, !theme.plain {
+            switch gauge.label {
+            case "5h", theme.sessionLabel:
+                return WinDark.themeColor(theme.sessionColor)
+            case "7d", theme.weeklyLabel:
+                return WinDark.themeColor(theme.weeklyColor)
+            default:
+                return WinDark.themeColor(theme.scopedColor)
+            }
+        }
         switch gauge.label {
         case "5h": return sessionColor
         case "7d": return weeklyColor
         default: return scopedColor
         }
+    }
+
+    /// Resolves the currently configured RowTheme from settings.
+    static func currentTheme() -> RowTheme {
+        let style = WinSettingsStore.load().gamificationStyle
+        let custom = RowTheme.loadCustom(from: WinSettingsStore.windowsThemesURL)
+        let all = RowTheme.builtins + custom
+        return all.first { $0.id == style } ?? RowTheme.off
     }
 
     // MARK: - state
@@ -484,6 +503,7 @@ enum FleetWindow {
                              bottom: client.bottom - metrics.footerHeight),
                         color: dim)
         } else {
+            let theme = currentTheme()
             var index = 0
             for placed in place(state.panel, metrics: metrics) {
                 switch placed.line {
@@ -491,7 +511,7 @@ enum FleetWindow {
                     paintFleetHeader(memDC, label, top: placed.top, metrics: metrics, state: state)
                 case .account(let row):
                     paintRow(memDC, row, index: index, top: placed.top, width: client.right,
-                             metrics: metrics, state: state)
+                             metrics: metrics, state: state, theme: theme)
                     index += 1
                 }
             }
@@ -530,7 +550,8 @@ enum FleetWindow {
     }
 
     private static func paintRow(_ dc: HDC, _ row: FleetLayout.Row, index: Int,
-                                 top: Int32, width: Int32, metrics: Metrics, state: State) {
+                                 top: Int32, width: Int32, metrics: Metrics, state: State,
+                                 theme: RowTheme? = nil) {
         let rect = RECT(left: metrics.pad / 2, top: top,
                         right: width - metrics.pad / 2, bottom: top + metrics.rowHeight - 2)
         // Active reads as selected (the screenshot's blue band); hover is
@@ -545,7 +566,8 @@ enum FleetWindow {
         let baseline = top + metrics.px(7)
 
         if let font = state.captionFont { SelectObject(dc, font) }
-        draw(dc, "\(row.number)", x: x, y: baseline + metrics.px(2),
+        let slotStr = (theme?.slotPrefix ?? "") + "\(row.number)"
+        draw(dc, slotStr, x: x, y: baseline + metrics.px(2),
              color: row.active ? text : faint)
         x += metrics.numberWidth
 
@@ -557,7 +579,8 @@ enum FleetWindow {
 
         if let note = row.deadNote {
             if let font = state.captionFont { SelectObject(dc, font) }
-            drawClipped(dc, note, x: x, y: baseline + metrics.px(17),
+            let deadStr = (theme != nil && !theme!.plain && !theme!.deadMarker.isEmpty) ? "\(theme!.deadMarker) \(note)" : note
+            drawClipped(dc, deadStr, x: x, y: baseline + metrics.px(17),
                         maxWidth: metrics.nameWidth - metrics.px(6), color: dangerColor)
         } else if !row.active {
             if let font = state.captionFont { SelectObject(dc, font) }
@@ -567,7 +590,7 @@ enum FleetWindow {
         x += metrics.nameWidth
 
         for gauge in row.gauges {
-            paintGauge(dc, gauge, x: x, top: baseline, metrics: metrics, state: state)
+            paintGauge(dc, gauge, x: x, top: baseline, metrics: metrics, state: state, theme: theme)
             x += metrics.barWidth + metrics.gaugeGap + metrics.px(52)
         }
     }
@@ -575,8 +598,9 @@ enum FleetWindow {
     /// Label, percentage, bar, reset caption — the Mac's `windowCell`
     /// laid out by hand.
     private static func paintGauge(_ dc: HDC, _ gauge: FleetLayout.Gauge,
-                                   x: Int32, top: Int32, metrics: Metrics, state: State) {
-        let tint = color(for: gauge)
+                                   x: Int32, top: Int32, metrics: Metrics, state: State,
+                                   theme: RowTheme? = nil) {
+        let tint = color(for: gauge, theme: theme)
         let percent = "\(Int(gauge.usedPct.rounded()))%"
 
         // Percentage right-aligned against the bar width so the label and percentage
@@ -589,7 +613,15 @@ enum FleetWindow {
 
         if let font = state.captionFont { SelectObject(dc, font) }
         let maxLabelWidth = max(metrics.px(10), pctX - x - metrics.px(4))
-        drawClipped(dc, gauge.label, x: x, y: top + metrics.px(2),
+        let displayLabel: String = {
+            guard let theme, !theme.plain else { return gauge.label }
+            switch gauge.label {
+            case "5h": return theme.sessionLabel
+            case "7d": return theme.weeklyLabel
+            default: return theme.scopedPrefix + theme.modelName(gauge.label)
+            }
+        }()
+        drawClipped(dc, displayLabel, x: x, y: top + metrics.px(2),
                     maxWidth: maxLabelWidth, color: tint)
 
         // The bar sits under the numbers, full width of the cell.

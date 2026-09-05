@@ -28,6 +28,7 @@ public struct WinSettings: Codable, Equatable, Sendable {
     // Tray behaviour
     public var trayBalloonsEnabled: Bool = true
     public var sortByHeadroom: Bool = true
+    public var keepAwake: Bool = false
 
     // Devices
     public var mirrorPort: UInt16 = 47824
@@ -56,6 +57,7 @@ public struct WinSettings: Codable, Equatable, Sendable {
         case pushAwsLogin = "push_aws_login"
         case trayBalloonsEnabled = "tray_balloons"
         case sortByHeadroom = "sort_headroom"
+        case keepAwake = "keep_awake"
         case mirrorPort = "mirror_port"
         case autoResume = "auto_resume"
         case lastPaneID = "last_pane"
@@ -81,6 +83,7 @@ public struct WinSettings: Codable, Equatable, Sendable {
         pushAwsLogin = try c.decodeIfPresent(Bool.self, forKey: .pushAwsLogin) ?? d.pushAwsLogin
         trayBalloonsEnabled = try c.decodeIfPresent(Bool.self, forKey: .trayBalloonsEnabled) ?? d.trayBalloonsEnabled
         sortByHeadroom = try c.decodeIfPresent(Bool.self, forKey: .sortByHeadroom) ?? d.sortByHeadroom
+        keepAwake = try c.decodeIfPresent(Bool.self, forKey: .keepAwake) ?? d.keepAwake
         mirrorPort = try c.decodeIfPresent(UInt16.self, forKey: .mirrorPort) ?? d.mirrorPort
         autoResume = try c.decodeIfPresent(Bool.self, forKey: .autoResume) ?? d.autoResume
         lastPaneID = try c.decodeIfPresent(String.self, forKey: .lastPaneID) ?? d.lastPaneID
@@ -96,6 +99,15 @@ public enum WinSettingsStore {
         return URL(fileURLWithPath: roaming)
             .appendingPathComponent("Infinitus")
             .appendingPathComponent("settings.json")
+    }
+
+    /// `%APPDATA%\Infinitus\themes.json` helper
+    public static var windowsThemesURL: URL {
+        let roaming = ProcessInfo.processInfo.environment["APPDATA"]
+            ?? "\(NSHomeDirectory())\\AppData\\Roaming"
+        return URL(fileURLWithPath: roaming)
+            .appendingPathComponent("Infinitus")
+            .appendingPathComponent("themes.json")
     }
 
     private static let lock = NSLock()

@@ -81,4 +81,17 @@ public enum SettingsCatalogWin {
         let clamped = min(max(0, offset), maxOffset)
         return (clamped, maxOffset)
     }
+
+    /// Card grid columns calculation
+    public static func cardGridColumns(contentWidth: Int32, pad: Int32 = 16, nominalCardWidth: Int32 = 300, gap: Int32 = 10) -> Int32 {
+        let availW = max(nominalCardWidth, contentWidth - pad * 2)
+        return max(1, (availW + gap) / (nominalCardWidth + gap))
+    }
+
+    /// Card grid content height calculation
+    public static func cardGridContentHeight(itemCount: Int, columns: Int32, cardHeight: Int32 = 120, gap: Int32 = 10, chromeHeight: Int32 = 240) -> Int32 {
+        guard columns > 0 else { return chromeHeight }
+        let rows = Int32(ceil(Double(itemCount) / Double(columns)))
+        return rows * (cardHeight + gap) + chromeHeight
+    }
 }
