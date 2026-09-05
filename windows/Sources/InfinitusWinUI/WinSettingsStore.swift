@@ -79,9 +79,7 @@ public struct WinSettings: Codable, Sendable, Equatable {
         case updateAutoCheck = "update_auto_check"
         case updateAutoInstall = "update_auto_install"
         case appUpdateLastCheck = "app_update_last_check"
-        case updateLastCheckLegacy = "update_last_check"
         case appUpdateNotifiedVersion = "app_update_notified_version"
-        case updateNotifiedVersionLegacy = "update_notified_version"
         case updateAttemptedVersion = "update_attempted_version"
         case mirrorPort = "mirror_port"
         case autoResume = "auto_resume"
@@ -92,6 +90,13 @@ public struct WinSettings: Codable, Sendable, Equatable {
         case lastPaneID = "last_pane"
         case windowWidth = "window_width"
         case windowHeight = "window_height"
+    }
+
+    private struct DynamicKey: CodingKey {
+        var stringValue: String
+        init?(stringValue: String) { self.stringValue = stringValue }
+        var intValue: Int? { nil }
+        init?(intValue: Int) { nil }
     }
 
     public init(from decoder: Decoder) throws {
@@ -117,11 +122,23 @@ public struct WinSettings: Codable, Sendable, Equatable {
         engineNineRouterEnabled = try c.decodeIfPresent(Bool.self, forKey: .engineNineRouterEnabled) ?? d.engineNineRouterEnabled
         updateAutoCheck = try c.decodeIfPresent(Bool.self, forKey: .updateAutoCheck) ?? d.updateAutoCheck
         updateAutoInstall = try c.decodeIfPresent(Bool.self, forKey: .updateAutoInstall) ?? d.updateAutoInstall
-        appUpdateLastCheck = try c.decodeIfPresent(Double.self, forKey: .appUpdateLastCheck)
-            ?? (try c.decodeIfPresent(Double.self, forKey: .updateLastCheckLegacy))
+
+        var legacyLastCheck: Double? = nil
+        var legacyNotified: String? = nil
+        if let raw = try? decoder.container(keyedBy: DynamicKey.self) {
+            if let k = DynamicKey(stringValue: "update_last_check") {
+                legacyLastCheck = try? raw.decodeIfPresent(Double.self, forKey: k)
+            }
+            if let k = DynamicKey(stringValue: "update_notified_version") {
+                legacyNotified = try? raw.decodeIfPresent(String.self, forKey: k)
+            }
+        }
+
+        appUpdateLastCheck = (try c.decodeIfPresent(Double.self, forKey: .appUpdateLastCheck))
+            ?? legacyLastCheck
             ?? d.appUpdateLastCheck
-        appUpdateNotifiedVersion = try c.decodeIfPresent(String.self, forKey: .appUpdateNotifiedVersion)
-            ?? (try c.decodeIfPresent(String.self, forKey: .updateNotifiedVersionLegacy))
+        appUpdateNotifiedVersion = (try c.decodeIfPresent(String.self, forKey: .appUpdateNotifiedVersion))
+            ?? legacyNotified
             ?? d.appUpdateNotifiedVersion
         updateAttemptedVersion = try c.decodeIfPresent(String.self, forKey: .updateAttemptedVersion) ?? d.updateAttemptedVersion
         mirrorPort = try c.decodeIfPresent(UInt16.self, forKey: .mirrorPort) ?? d.mirrorPort
@@ -211,16 +228,21 @@ public enum WinSettingsStore {
     }
 
     @discardableResult
-    public static func update(at url: URL = url, _ mutate: (inout WinSettings) -> Void) throws -> WinSettings {
-        var current = load(from: url)
+    public static func update(at url: URL = url, fileURL: URL? = nil, _ mutate: (inout WinSettings) -> Void) throws -> WinSettings {
+        let target = fileURL ?? url
+        var current = load(from: target)
         mutate(&current)
-        try save(current, to: url)
+        try save(current, to: target)
         return current
     }
 
-    public static func resetCacheForTests() {
+    public static func resetCache() {
         lock.lock()
         defer { lock.unlock() }
         cache = nil
+    }
+
+    public static func resetCacheForTests() {
+        resetCache()
     }
 }
