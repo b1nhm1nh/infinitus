@@ -131,6 +131,8 @@ final class AppModel: ObservableObject {
     let resume = ResumeService()
     /// Sessions popover's mini progress rows (SessionProgressModel.swift).
     let sessionProgress = SessionProgressModel()
+    /// The machine-health guardian (#115): Settings › Machine's model.
+    let machineModel = MachineModel()
     /// "Allow for this session" rules from the phone (#79), per session id.
     let toolApprovals = ToolApprovals()
     @Published var lastError: String?
@@ -834,6 +836,7 @@ final class AppModel: ObservableObject {
             namer.enabled = sessionAutoNames
             sessionProgress.namer = namer
         }
+        machineModel.host = self
     }
 
     /// App-side cache of our own subprocess output (never an engine
@@ -1748,6 +1751,14 @@ final class AppModel: ObservableObject {
     /// the only engine. An engine that fails keeps its last good rows
     /// (the rumps menubar's _worker policy) and records its error.
     func refreshSnapshot() async {
+        // Fire-and-forget: the machine sample (ps, hook scan, occasional
+        // tree-size walk) must never stall the fleet poll this pass
+        // exists for. `sampling` guards overlap; never in the
+        // playground (writes real UserDefaults keys, pushes real
+        // notifications — the same guard every other side effect here
+        // uses) or a mock/e2e instance sharing this Mac's real process
+        // table with the perf gate's launch-time samples.
+        if !isPlayground, !mockMode { Task { await machineModel.tick() } }
         let engines = registry.engines
         guard !engines.isEmpty else { return }
         var results: [(id: String, fleets: [EngineFleet]?, error: Error?)] = []

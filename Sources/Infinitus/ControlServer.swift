@@ -204,6 +204,36 @@ final class ControlServer {
             return ControlReply(ok: reply.outcome == "delivered", result: try .of(reply),
                                 error: reply.outcome == "delivered" ? nil : "\(reply.outcome)\(reply.detail.map { ": " + $0 } ?? "")")
 
+        case "machine":
+            if let report = model.machineModel.report {
+                return ControlReply(ok: true, result: try .of(report))
+            }
+            Task { await model.machineModel.sample() }
+            return ControlReply(ok: true, result: .object(["sampling": .bool(true)]))
+
+        case "machine-kill":
+            guard let pidText = r.args.first, let pid = Int(pidText) else {
+                throw Fail("usage: machine-kill <pid>")
+            }
+            let result = await model.machineModel.killRunaway(pid: pid)
+            return ControlReply(ok: true, result: .object(["result": .string(result)]))
+
+        case "machine-reclaim":
+            guard r.options["yes"] != nil else { throw Fail("machine-reclaim removes files; pass --yes") }
+            let result = await model.machineModel.reclaim()
+            return ControlReply(ok: true, result: .object(["result": .string(result)]))
+
+        case "machine-hook":
+            guard r.args.count >= 2, ["disable", "restore"].contains(r.args[0]) else {
+                throw Fail("usage: machine-hook disable|restore <owner>")
+            }
+            guard r.options["yes"] != nil else { throw Fail("machine-hook edits settings.json; pass --yes") }
+            let owner = r.args[1]
+            let result = r.args[0] == "disable"
+                ? await model.machineModel.disableHook(owner: owner)
+                : await model.machineModel.restoreHook(owner: owner)
+            return ControlReply(ok: true, result: .object(["result": .string(result)]))
+
         case "approve":
             guard let payload = r.secret, let event = HookEvent.parse(payload), event.name == "PreToolUse",
                   let sessionId = event.sessionId, let tool = event.toolName else {

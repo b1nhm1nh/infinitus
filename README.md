@@ -227,6 +227,7 @@ to drive the running app.
   calls the panes make. An onboarding "Copy for an AI agent" brief and
   `docs/guides/agent-setup.md` walk a coding agent through the whole
   setup (engine, accounts, proxy, phone).
+- **Machine guardian** — Settings › Machine: load, swap, stuck hooks by tool, runaway processes by session, temp/socket residue; kill, reclaim and disable a tool's hooks after a confirm; `infinitusctl machine --json`.
 
 ## Privacy
 
