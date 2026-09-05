@@ -33,6 +33,7 @@ publishes the matching section as the GitHub release body.
 - A capture of the app — the capture button in a chat, a shake anywhere, or a screenshot the phone just took — lands in the composer as an attachment so you can say what it's about.
 - The Game HUD header draws every window as a bar, the models' too, and the capture and photo-library buttons sit in the composer's tool row left of the text.
 - A session that comes to need an AWS sign-in raises a notification on the phone, tap to sign in, and the Quests badge counts it.
+- The phone build carries the push entitlement, so Live Activities and alerts move with the app closed once the Mac holds an APNs key (Settings › Sync).
 - Share → Infinitus from any app sends the image into a session with a note, picked from the Mac's live list, without opening the app.
 - A message from another session shows as "Message from @name" with a preview, the full text a tap away.
 - Your own turns render Markdown too.
