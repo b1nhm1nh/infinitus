@@ -117,36 +117,44 @@ public enum NineRouterFleet {
         return (NineRouterEngine.defaultBaseURL, "")
     }
 
-    /// Returns the cached primary AccountList, triggering an asynchronous refresh if nil.
+    /// Returns the cached primary AccountList, triggering an asynchronous
+    /// refresh when the cache is cold or stale. Stale rows keep rendering
+    /// while the fetch runs — a stale-while-revalidate read, so a panel
+    /// open across `invalidate()` never wipes to the placeholder.
     public static func list(now: Date = Date(), wait: Bool = false) -> AccountList? {
         guard isAvailable() else { return nil }
         lock.lock()
         let list = cachedList
         let at = cachedAt
         lock.unlock()
-        if list == nil && at == nil {
+        if at == nil {
             refresh(now: now, wait: wait)
-            lock.lock()
-            let res = cachedList
-            lock.unlock()
-            return res
+            if wait {
+                lock.lock()
+                let res = cachedList
+                lock.unlock()
+                return res
+            }
         }
         return list
     }
 
-    /// Returns the cached EngineFleets across providers, triggering refresh if nil.
+    /// Returns the cached EngineFleets across providers, same
+    /// stale-while-revalidate contract as `list`.
     public static func fleets(now: Date = Date(), wait: Bool = false) -> [EngineFleet]? {
         guard isAvailable() else { return nil }
         lock.lock()
         let f = cachedFleets
         let at = cachedAt
         lock.unlock()
-        if f == nil && at == nil {
+        if at == nil {
             refresh(now: now, wait: wait)
-            lock.lock()
-            let res = cachedFleets
-            lock.unlock()
-            return res
+            if wait {
+                lock.lock()
+                let res = cachedFleets
+                lock.unlock()
+                return res
+            }
         }
         return f
     }
@@ -220,12 +228,14 @@ public enum NineRouterFleet {
         }
     }
 
-    /// Invalidate cache.
+    /// Marks the cache stale WITHOUT dropping the last known fleets —
+    /// callers invalidate to force a re-read, not to erase what the user
+    /// is looking at. The next `list`/`fleets` see the nil stamp, refetch,
+    /// and swap the data in when it lands; the previous rows stay on
+    /// screen meanwhile instead of collapsing to "no data".
     public static func invalidate() {
         lock.lock()
         defer { lock.unlock() }
-        cachedFleets = nil
-        cachedList = nil
         cachedAt = nil
     }
 

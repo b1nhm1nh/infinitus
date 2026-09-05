@@ -64,10 +64,12 @@ public enum CLIProxyFleet {
         return (url, key)
     }
 
+    /// Marks the cache stale WITHOUT dropping the last known fleets —
+    /// the next read refetches and swaps the data in when it lands, so a
+    /// panel open across an invalidate keeps its rows instead of wiping.
     public static func invalidate() {
         lock.lock()
         defer { lock.unlock() }
-        cachedFleets = nil
         cachedAt = nil
     }
 
@@ -78,14 +80,9 @@ public enum CLIProxyFleet {
         let at = cachedAt
         lock.unlock()
 
-        if fleets == nil && at == nil {
-            refresh(now: now, wait: wait)
-            lock.lock()
-            let res = cachedFleets
-            lock.unlock()
-            return res
-        }
-        if let at, now.timeIntervalSince(at) >= cacheSeconds {
+        // Cold or stale: refetch. Stale rows keep rendering meanwhile
+        // (stale-while-revalidate) instead of collapsing to empty.
+        if at == nil || now.timeIntervalSince(at!) >= cacheSeconds {
             refresh(now: now, wait: wait)
         }
         return fleets

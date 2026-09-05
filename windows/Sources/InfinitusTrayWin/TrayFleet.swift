@@ -100,8 +100,10 @@ enum TrayFleet {
         let at = cachedAt
         lock.unlock()
 
-        if list == nil && at == nil {
-            // First access: trigger asynchronous fetch so UI does not stall.
+        if at == nil {
+            // Never fetched (or just invalidated): trigger asynchronous
+            // fetch so UI does not stall. Stale rows keep rendering
+            // meanwhile instead of collapsing to the placeholder.
             refresh()
         }
         return formatLines(from: list ?? (NineRouterFleet.isAvailable() ? NineRouterFleet.list() : nil))
@@ -221,7 +223,8 @@ enum TrayFleet {
 
     /// The cached list as-is, without triggering a fetch — for a second
     /// view (the account panel) that renders the same data the menu does
-    /// and must not shell out on its own paint.
+    /// and must not shell out on its own paint. Stale rows are returned
+    /// as-is while the revalidation fetch runs, so the panel never wipes.
     static func cached() -> AccountList? {
         if NineRouterFleet.shouldUseNineRouter(), let nrList = NineRouterFleet.list() {
             return nrList
@@ -230,17 +233,21 @@ enum TrayFleet {
         let list = cachedList
         let at = cachedAt
         lock.unlock()
-        if list == nil, at == nil { refresh() }
+        if at == nil { refresh() }
         return list ?? (NineRouterFleet.isAvailable() ? NineRouterFleet.list() : nil)
     }
 
-    /// Invalidate cache for manual refresh.
+    /// Invalidate cache for manual refresh. KEEPS the last roster — only
+    /// the freshness stamp is dropped — so a panel open across a switch
+    /// or an edit keeps showing the old rows until the fresh read lands
+    /// (stale-while-revalidate). Wiping the list here used to blank the
+    /// panel to "Reading accounts…" and repopulate it a beat later.
+    /// First-ever load (nothing cached at all) still shows the placeholder.
     static func invalidate() {
         NineRouterFleet.invalidate()
         CLIProxyFleet.invalidate()
         lock.lock()
         defer { lock.unlock() }
-        cachedList = nil
         cachedAt = nil
     }
 
