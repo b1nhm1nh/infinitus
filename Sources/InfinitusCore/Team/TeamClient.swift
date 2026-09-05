@@ -36,6 +36,8 @@ public final class TeamClient {
         case alreadyLeader
         /// The kid is already a member under different keys.
         case keyMismatch
+        /// Another leader kept winning the roster push race.
+        case rosterConflict
     }
 
     public static let identitySecretName = "identity"
@@ -154,9 +156,12 @@ public final class TeamClient {
         return self.roster!.doc
     }
 
+    /// The roster is computed from the roster we read, so a lost push
+    /// race must never be retried with the same bytes: it would discard
+    /// the other leader's edit. Callers recompute (see `approve`).
     private func saveRoster(_ roster: TeamRoster) throws {
         let signed = try Signed.make(roster, by: identity)
-        try store.put("roster/team.json", try CanonicalJSON.encode(signed))
+        try store.putAll(["roster/team.json": try CanonicalJSON.encode(signed)], retryOnRace: false)
         self.roster = signed
         try persist()
     }
@@ -187,22 +192,33 @@ public final class TeamClient {
 
     public func approve(kid: String, now: Int = Int(Date().timeIntervalSince1970)) throws {
         guard Self.isPathSegment(kid) else { throw ClientError.unknownRequest }
-        guard let current = roster?.doc else { throw ClientError.noRoster }
-        guard isLeader else { throw ClientError.notALeader }
-        // Approving a leader would append a second entry under their kid.
-        guard !current.isLeader(kid) else { throw ClientError.alreadyLeader }
-        guard let request = try requests().first(where: { $0.doc.keys.kid == kid }) else { throw ClientError.unknownRequest }
-        // Re-approving the same keys is fine; different keys under a kid
-        // this roster already knows would silently replace a member.
-        if let known = current.keys(for: kid), known != request.doc.keys { throw ClientError.keyMismatch }
-        var next = current
-        next.members.removeAll { $0.keys.kid == kid }
-        next.removed.removeAll { $0.kid == kid }
-        next.members.append(TeamRoster.Member(keys: request.doc.keys, name: request.doc.name, since: now,
-                                              devices: request.doc.devices))
-        next.rev += 1
-        try saveRoster(next)
-        try store.delete("requests/\(kid).json")
+        // Another leader may push a roster between our read and our push;
+        // recompute on theirs rather than overwrite it.
+        for _ in 0..<3 {
+            guard let current = roster?.doc else { throw ClientError.noRoster }
+            guard isLeader else { throw ClientError.notALeader }
+            // Approving a leader would append a second entry under their kid.
+            guard !current.isLeader(kid) else { throw ClientError.alreadyLeader }
+            guard let request = try requests().first(where: { $0.doc.keys.kid == kid }) else { throw ClientError.unknownRequest }
+            // Re-approving the same keys is fine; different keys under a kid
+            // this roster already knows would silently replace a member.
+            if let known = current.keys(for: kid), known != request.doc.keys { throw ClientError.keyMismatch }
+            var next = current
+            next.members.removeAll { $0.keys.kid == kid }
+            next.removed.removeAll { $0.kid == kid }
+            next.members.append(TeamRoster.Member(keys: request.doc.keys, name: request.doc.name, since: now,
+                                                  devices: request.doc.devices))
+            next.rev += 1
+            do {
+                try saveRoster(next)
+            } catch TeamGit.GitError.raceLost {
+                _ = try fetch()
+                continue
+            }
+            try store.delete("requests/\(kid).json")
+            return
+        }
+        throw ClientError.rosterConflict
     }
 
     public func decline(kid: String) throws {

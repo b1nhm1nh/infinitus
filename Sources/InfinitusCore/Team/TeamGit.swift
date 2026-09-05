@@ -4,7 +4,9 @@ import Foundation
 /// mirror — no working tree, no checkouts: writes build a tree on top of
 /// the branch's remote-tracking commit with a private index file and
 /// push the new commit; reads use `ls-tree` / `cat-file`. A write that
-/// loses a push race fetches and retries once on the new tip.
+/// loses a push race fetches and retries once on the new tip; a caller
+/// that computed its bytes from what it read (the roster) passes
+/// `retryOnRace: false` and gets `raceLost` instead.
 ///
 /// The credential never touches argv: it rides in the child's
 /// environment as `INFINITUS_TEAM_TOKEN` and an inline credential helper
@@ -16,6 +18,8 @@ public final class TeamGit: TeamStore {
         case failed(command: String, status: Int32, stderr: String)
         case notOpen
         case badPath(String)
+        /// The push was rejected and the caller asked not to retry.
+        case raceLost
     }
 
     public let dir: URL
@@ -50,7 +54,12 @@ public final class TeamGit: TeamStore {
 
     public func delete(_ path: String) throws { try putAll([path: nil]) }
 
-    public func putAll(_ writes: [String: Data?]) throws {
+    public func putAll(_ writes: [String: Data?]) throws { try putAll(writes, retryOnRace: true) }
+
+    /// `retryOnRace: false` refuses to rebuild the same bytes on the
+    /// winner's tip — for an object computed from what was read (the
+    /// roster) that would silently discard the other writer's change.
+    public func putAll(_ writes: [String: Data?], retryOnRace: Bool) throws {
         guard opened else { throw GitError.notOpen }
         var byBranch: [String: [(String, Data?)]] = [:]
         for (path, data) in writes {
@@ -62,6 +71,7 @@ public final class TeamGit: TeamStore {
                 try commitAndPush(branch: branch, items: items)
             } catch GitError.failed(let command, _, _) where command.hasPrefix("push") {
                 // Someone else (another device of ours) pushed first: rebuild on the new tip.
+                guard retryOnRace else { throw GitError.raceLost }
                 try sync()
                 try commitAndPush(branch: branch, items: items)
             }

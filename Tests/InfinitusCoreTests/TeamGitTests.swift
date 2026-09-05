@@ -89,4 +89,24 @@ final class TeamGitTests: XCTestCase {
         XCTAssertThrowsError(try g.put("m/k/../../x", Data()))
         XCTAssertThrowsError(try g.put("m/k/.git/config", Data()))
     }
+
+    /// I1: rebuilding the same bytes on the winner's tip is a blind
+    /// overwrite for read-modify-write objects like the roster.
+    func testALostRaceIsReportedWhenRetryIsOff() throws {
+        let remote = try makeRemote()
+        let a = TeamGit(dir: scratch.appendingPathComponent("r-a"), remote: remote, token: nil, author: "kid-a")
+        let b = TeamGit(dir: scratch.appendingPathComponent("r-b"), remote: remote, token: nil, author: "kid-b")
+        try a.open(); try b.open()
+        try a.put("roster/team.json", Data("one".utf8))
+        // b never saw a's commit, so its push is not a fast-forward.
+        XCTAssertThrowsError(try b.putAll(["roster/team.json": Data("two".utf8)], retryOnRace: false)) {
+            guard case TeamGit.GitError.raceLost = $0 else { return XCTFail("expected raceLost, got \($0)") }
+        }
+        try b.sync()
+        XCTAssertEqual(try b.get("roster/team.json"), Data("one".utf8))
+        // Retrying is still the default for append-only objects.
+        try b.putAll(["roster/team.json": Data("two".utf8)])
+        try a.sync()
+        XCTAssertEqual(try a.get("roster/team.json"), Data("two".utf8))
+    }
 }
