@@ -23,7 +23,7 @@ public struct TeamShares: Codable, Equatable, Sendable {
     }
 
     /// The CLI / UI spelling: `leaders`, `team`, or kids separated by
-    /// commas and/or spaces.
+    /// commas, or as separate arguments.
     public static func parseTarget(_ words: [String]) -> TeamRoster.ShareTarget? {
         let kids = words.flatMap { $0.split(separator: ",") }.map(String.init).filter { !$0.isEmpty }
         guard !kids.isEmpty else { return nil }

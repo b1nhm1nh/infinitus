@@ -8,7 +8,14 @@ public struct TeamExclusions: Codable, Equatable, Sendable {
     /// Absolute project directories, no trailing slash.
     public var projects: [String]
 
-    public init(projects: [String] = []) { self.projects = projects.map(Self.normalise) }
+    public init(projects: [String] = []) { self.projects = projects.map(Self.normalise).filter { !$0.isEmpty } }
+
+    private enum CodingKeys: String, CodingKey { case projects }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(projects: try c.decode([String].self, forKey: .projects))
+    }
 
     static func normalise(_ path: String) -> String {
         var s = path
@@ -25,12 +32,14 @@ public struct TeamExclusions: Codable, Equatable, Sendable {
     public mutating func set(_ project: String, excluded: Bool) {
         let p = Self.normalise(project)
         projects.removeAll { $0 == p }
-        if excluded { projects.append(p) }
+        if excluded, !p.isEmpty { projects.append(p) }
     }
 
     /// `cwd` is the transcript's own cwd when it recorded one;
     /// `projectDir` the `~/.claude/projects/<dir>` it sits in (nil for
-    /// Codex files, whose directories are dates).
+    /// Codex files, whose directories are dates). Either signal excludes
+    /// on its own — the slug check runs regardless of `cwd`, so it can
+    /// over-match a lossy slug; that's the safe direction.
     public func excludes(cwd: String?, projectDir: String?) -> Bool {
         for p in projects {
             if let cwd, cwd == p || cwd.hasPrefix(p + "/") { return true }

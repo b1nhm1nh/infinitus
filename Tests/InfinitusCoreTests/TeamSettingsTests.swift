@@ -28,6 +28,9 @@ final class TeamSettingsTests: XCTestCase {
         ex.set("/r/secret", excluded: false)
         XCTAssertEqual(ex.projects, ["/r/app"])
         XCTAssertFalse(TeamExclusions().excludes(cwd: "/r/app", projectDir: "-r-app"))
+        ex.set("", excluded: true)
+        XCTAssertEqual(ex.projects, ["/r/app"])
+        XCTAssertFalse(ex.excludes(cwd: "/anything", projectDir: nil))
     }
 
     func testExclusionsRoundTripOnDisk() throws {
@@ -38,6 +41,11 @@ final class TeamSettingsTests: XCTestCase {
         try ex.save(paths: paths)
         XCTAssertEqual(TeamExclusions.load(paths: paths), ex)
         XCTAssertEqual(TeamExclusions.file(paths: paths).lastPathComponent, "exclusions.json")
+
+        try Data("{\"projects\":[\"/r/secret/\"]}".utf8).write(to: TeamExclusions.file(paths: paths))
+        let decoded = TeamExclusions.load(paths: paths)
+        XCTAssertEqual(decoded.projects, ["/r/secret"])
+        XCTAssertTrue(decoded.excludes(cwd: "/r/secret/sub", projectDir: nil))
     }
 
     func testSharesDefaultToLeadersAndRoundTrip() throws {
