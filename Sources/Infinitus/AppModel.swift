@@ -519,7 +519,7 @@ final class AppModel: ObservableObject {
     private let awake = KeepAwake()
     private var pushTriggers = PushTriggers()
     private let defaults: UserDefaults
-    static let playgroundSuite = "com.huuloc.infinitus.playground"
+    static let playgroundSuite = "run.infinitus.playground"
 
     /// Custom skins from themes.json, loaded at launch and on demand
     /// (the Display pane reloads when it appears).
@@ -563,7 +563,8 @@ final class AppModel: ObservableObject {
     /// keys are never overwritten.
     private static func migrateLegacyDefaults() {
         let std = UserDefaults.standard
-        for (domain, marker) in [("com.huuloc.limitless", "migrated_from_limitless_id"),
+        for (domain, marker) in [("com.huuloc.infinitus", "migrated_from_huuloc_id"),
+                                 ("com.huuloc.limitless", "migrated_from_limitless_id"),
                                  ("io.github.claude-swap.CswapBar.g2", "migrated_from_g2")] {
             guard !std.bool(forKey: marker), let legacy = std.persistentDomain(forName: domain) else { continue }
             for (key, value) in legacy where std.object(forKey: key) == nil {

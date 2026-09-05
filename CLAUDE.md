@@ -19,16 +19,20 @@ Native macOS menu bar app for the claude-swap engine. Split out of
   2026-08-30; upstream never merged PR #250's copy). InfinitusCore
   ClaudeSessions/Transcript/PeerSocket/PtyHosts/PtyNudge/SessionResume
   + ResumeService. Never rebuild it engine-side.
-- **Bundle id is `com.huuloc.infinitus`** (user-approved explicit ask,
-  2026-09-03; before it `com.huuloc.limitless` from 2026-08-30, before
-  that the CswapBar g2 id). Prefs copy-migrate from the previous id's
-  domain on first launch (AppModel.migrateLegacyDefaults). App Support
-  is `Infinitus/` (copy-migrated from `Limitless/`, which came from
-  `CswapBar/`; legacy dirs left for rollback). The local checkout may
-  still live at `~/death/limitless`. Notification Center and login-item
-  grants key on the id and must be re-granted once under it; keychain
-  items prompt once. Never change the id casually again — the
-  2026-08-29 casual change cost a day of ControlCenter-ban debugging.
+- **Bundle id is `run.infinitus`**, the phone's `run.infinitus.mobile`
+  (+`.widgets`, `.share`), every derived service id under the same
+  prefix (user-approved explicit ask, 2026-09-05, with the paid Apple
+  team `Q783W6B4FA`; before it `com.huuloc.infinitus` from 2026-09-03,
+  `com.huuloc.limitless` from 2026-08-30, before that the CswapBar g2
+  id). Prefs copy-migrate from the previous id's domain on first launch
+  (AppModel.migrateLegacyDefaults). App Support is `Infinitus/`
+  (copy-migrated from `Limitless/`, which came from `CswapBar/`; legacy
+  dirs left for rollback). The local checkout may still live at
+  `~/death/limitless`. Notification Center and login-item grants key on
+  the id and must be re-granted once under it; keychain items are
+  ACL'd to the old signature, so the proxy key is re-entered and the
+  phone re-paired. Never change the id casually again — the 2026-08-29
+  casual change cost a day of ControlCenter-ban debugging.
 - **Push nothing to any remote** unless explicitly asked. Commit locally.
 - **main takes commits only through pull requests** (GitHub ruleset
   "main via pull requests", user 2026-09-04): no direct push, no
@@ -99,7 +103,7 @@ Native macOS menu bar app for the claude-swap engine. Split out of
   `EngineFleet`s; the popup stacks one `FleetState` per fleet and
   `AppModel` is only a FleetModel FACADE over the primary Claude fleet.
   Gate UI on `capabilities`, never on engine identity.
-- The CLIProxyAPI key lives in the keychain (`com.huuloc.infinitus.cliproxy`,
+- The CLIProxyAPI key lives in the keychain (`run.infinitus.cliproxy`,
   account = base URL). Unsigned debug binaries trip an ACL prompt on
   every rebuild — reads skip UI, and the dev loop codesigns the debug
   binary with the Apple Development identity so the grant sticks.
@@ -119,7 +123,7 @@ Native macOS menu bar app for the claude-swap engine. Split out of
   hosting controller on close, and reuse the NSWindow — a closed
   borderless one lingers in AppKit's list regardless.
 - Dev instances: sign the debug binary `--identifier
-  com.huuloc.infinitus` (tools/e2e.sh does) or the keychain ACL prompt
+  run.infinitus` (tools/e2e.sh does) or the keychain ACL prompt
   blocks AppModel.init forever (no socket, SecurityAgent spawns).
   `swift build --target X` may not relink — use `--product`, ONE per
   invocation: with two `--product` flags SwiftPM builds only the last

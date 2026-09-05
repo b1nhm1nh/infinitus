@@ -10,8 +10,8 @@ import os
 /// activities. Genuinely live updates with the app closed need APNs
 /// pushes from the Mac — the follow-up; this is the free tier.
 enum BackgroundRefresh {
-    static let taskID = "com.huuloc.infinitus.mobile.refresh"
-    private static let log = Logger(subsystem: "com.huuloc.infinitus.mobile", category: "bg-refresh")
+    static let taskID = "run.infinitus.mobile.refresh"
+    private static let log = Logger(subsystem: "run.infinitus.mobile", category: "bg-refresh")
 
     static func register(model: MirrorModel) {
         BGTaskScheduler.shared.register(forTaskWithIdentifier: taskID, using: nil) { task in

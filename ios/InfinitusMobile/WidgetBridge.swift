@@ -16,9 +16,9 @@ enum WidgetBridge {
         var capturedAt: Date
     }
 
-    static let service = "com.huuloc.infinitus.widget"
+    static let service = "run.infinitus.widget"
     static let account = "fleet"
-    private static let log = Logger(subsystem: "com.huuloc.infinitus.mobile", category: "widgets")
+    private static let log = Logger(subsystem: "run.infinitus.mobile", category: "widgets")
     private static var lastWritten: Payload?
 
     @MainActor

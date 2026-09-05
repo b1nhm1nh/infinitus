@@ -47,11 +47,11 @@ targets:
         # the background refresh that keeps them moving with the app closed.
         NSSupportsLiveActivities: true
         UIBackgroundModes: [fetch]
-        BGTaskSchedulerPermittedIdentifiers: [com.huuloc.infinitus.mobile.refresh]
+        BGTaskSchedulerPermittedIdentifiers: [run.infinitus.mobile.refresh]
         # `infinitus://pair?url=…&token=…` — the same pair link, opened
         # from a message or a browser instead of the camera.
         CFBundleURLTypes:
-          - CFBundleURLName: com.huuloc.infinitus.mobile.pair
+          - CFBundleURLName: run.infinitus.mobile.pair
             CFBundleURLSchemes: [infinitus]
     # The share extension (#64) reads the pairing (routes, token, device
     # id) from a keychain item both bundles can open. Keychain sharing
@@ -61,7 +61,7 @@ targets:
     entitlements:
       path: InfinitusMobile/InfinitusMobile.entitlements
       properties:
-        keychain-access-groups: ["$(AppIdentifierPrefix)com.huuloc.infinitus.shared"]
+        keychain-access-groups: ["$(AppIdentifierPrefix)run.infinitus.shared"]
         aps-environment: development
     dependencies:
       - package: Infinitus
@@ -74,14 +74,18 @@ targets:
         embed: true
     settings:
       base:
-        # Mobile has its own id under the mac app's com.huuloc.infinitus
+        # Mobile has its own id under the mac app's run.infinitus
         # (CLAUDE.md). Revisit before TestFlight if wanted.
-        PRODUCT_BUNDLE_IDENTIFIER: com.huuloc.infinitus.mobile
+        PRODUCT_BUNDLE_IDENTIFIER: run.infinitus.mobile
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         # One alternate icon per theme (#83), AppIcon-<id> sets.
         ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS: "YES"
-        # Simulator-only until the Apple Developer account lands (#9).
-        CODE_SIGNING_ALLOWED: "NO"
+        # Signed on the paid personal team (2026-09-05; #9 done): a plain
+        # build is a device build, `-allowProvisioningUpdates` mints the
+        # profiles. CI's simulator job passes CODE_SIGNING_ALLOWED=NO on
+        # the command line (ci.yml). docs/RELEASING.md has the setup.
+        DEVELOPMENT_TEAM: Q783W6B4FA
+        CODE_SIGN_STYLE: Automatic
         GENERATE_INFOPLIST_FILE: "YES"
         # The home screen says Infinitus, not the target's name (user
         # 2026-09-05: "mobile app renames to Infinitus").
@@ -109,7 +113,7 @@ targets:
     entitlements:
       path: InfinitusMobileWidgets/InfinitusMobileWidgets.entitlements
       properties:
-        keychain-access-groups: ["$(AppIdentifierPrefix)com.huuloc.infinitus.shared"]
+        keychain-access-groups: ["$(AppIdentifierPrefix)run.infinitus.shared"]
     info:
       path: InfinitusMobileWidgets/Info.plist
       properties:
@@ -119,8 +123,9 @@ targets:
           NSExtensionPointIdentifier: com.apple.widgetkit-extension
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.huuloc.infinitus.mobile.widgets
-        CODE_SIGNING_ALLOWED: "NO"
+        PRODUCT_BUNDLE_IDENTIFIER: run.infinitus.mobile.widgets
+        DEVELOPMENT_TEAM: Q783W6B4FA
+        CODE_SIGN_STYLE: Automatic
         GENERATE_INFOPLIST_FILE: "YES"
         INFOPLIST_KEY_CFBundleDisplayName: Infinitus
         SWIFT_VERSION: "5.9"
@@ -143,7 +148,7 @@ targets:
     entitlements:
       path: InfinitusMobileShare/InfinitusMobileShare.entitlements
       properties:
-        keychain-access-groups: ["$(AppIdentifierPrefix)com.huuloc.infinitus.shared"]
+        keychain-access-groups: ["$(AppIdentifierPrefix)run.infinitus.shared"]
     info:
       path: InfinitusMobileShare/Info.plist
       properties:
@@ -163,8 +168,9 @@ targets:
               NSExtensionActivationSupportsText: true
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.huuloc.infinitus.mobile.share
-        CODE_SIGNING_ALLOWED: "NO"
+        PRODUCT_BUNDLE_IDENTIFIER: run.infinitus.mobile.share
+        DEVELOPMENT_TEAM: Q783W6B4FA
+        CODE_SIGN_STYLE: Automatic
         GENERATE_INFOPLIST_FILE: "YES"
         INFOPLIST_KEY_CFBundleDisplayName: Infinitus
         SWIFT_VERSION: "5.9"
