@@ -16,10 +16,19 @@ func teamUsage() -> String {
       status [--team <id>]                         this machine's team(s)
       requests                                     pending join requests (leaders)
       approve <kid> | decline <kid>                answer a request (leaders)
+      remove <kid> | promote <kid>                 roster edits (leaders; the founder cannot be removed)
       fetch                                        pull the store and accept the roster
-      publish --kind <k> --path <p> --file <f> [--audience leaders|team|<kid,kid>]
+      members                                      the roster with what each member shares to me and when
+      member <kid> [--period day|week|month|year]  one member's Stats summary (default week)
+      share <kind> leaders|team|<kid>[,<kid>…]     audience for stats|now|sessions|transcripts|crashes (new envelopes; see reshare)
+      exclude <project-dir> [--off]                keep a Claude Code project private (local, never sent)
+      publish [--projects <dir>] [--days N]        publish stats, now, sessions, redacted transcripts, crashes (default 30 days)
+      reshare [--days N]                           re-wrap the last N days (default 30) to the current audiences
+      put --kind <k> --path <p> --file <f> [--audience leaders|team|<kid,kid>]   one opaque file (debugging)
       list                                         envelopes addressed to me
       read <path> [--out <file>]                   decrypt one envelope
+
+    Narrowing an audience cannot recall ciphertext teammates already fetched.
 
     """
 }
@@ -39,6 +48,11 @@ private struct ReadableEntry: Encodable {
     var path: String; var size: Int; var kind: String; var from: String; var at: Int
 }
 
+private struct MemberRow: Encodable {
+    var kid: String; var name: String; var role: String; var lastPublished: Int?
+    var shares: [String]; var sessionsNow: Int; var blockers: [String]; var crashes: Int
+}
+
 func runTeam(_ args: [String]) -> Int32 {
     guard let sub = args.first, sub != "--help", sub != "-h" else {
         print(teamUsage(), terminator: "")
@@ -46,13 +60,16 @@ func runTeam(_ args: [String]) -> Int32 {
     }
     var positional: [String] = []
     var options: [String: String] = [:]
+    let bareFlags: Set<String> = ["off"]
+    var flags: Set<String> = []
     var i = 1
     while i < args.count {
         let a = args[i]
         if a.hasPrefix("--") {
-            // Every team option takes a value; a bare flag is a typo, not a
-            // boolean (`read --out` must never write to a file named "true").
             let key = String(a.dropFirst(2))
+            if bareFlags.contains(key) { flags.insert(key); i += 1; continue }
+            // Every other team option takes a value; a bare flag is a typo,
+            // not a boolean (`read --out` must never write to a file named "true").
             guard i + 1 < args.count, !args[i + 1].hasPrefix("--") else {
                 return fail("--\(key) needs a value\n\n\(teamUsage())", code: 2)
             }
@@ -138,7 +155,7 @@ func runTeam(_ args: [String]) -> Int32 {
             let c = try client(); _ = try c.fetch(); try c.decline(kid: kid); emit(try c.status())
         case "fetch":
             let c = try client(); _ = try c.fetch(); emit(try c.status())
-        case "publish":
+        case "put":
             guard let kind = options["kind"], let path = options["path"], let file = options["file"] else { return fail(teamUsage(), code: 2) }
             let audience: TeamRoster.ShareTarget
             switch options["audience"] ?? "leaders" {
@@ -161,6 +178,77 @@ func runTeam(_ args: [String]) -> Int32 {
             let (_, plain) = try c.read(path)
             if let out = options["out"] { try plain.write(to: URL(fileURLWithPath: out)) }
             else { FileHandle.standardOutput.write(plain) }
+        case "remove":
+            guard let kid = positional.first else { return fail(teamUsage(), code: 2) }
+            let c = try client(); _ = try c.fetch(); try c.remove(kid: kid); emit(try c.status())
+        case "promote":
+            guard let kid = positional.first else { return fail(teamUsage(), code: 2) }
+            let c = try client(); _ = try c.fetch(); try c.promote(kid: kid); emit(try c.status())
+        case "share":
+            guard positional.count >= 2 else { return fail(teamUsage(), code: 2) }
+            let kind = positional[0]
+            guard TeamKinds.memberKinds.contains(kind) else {
+                return fail("kind must be one of \(TeamKinds.memberKinds.joined(separator: ", "))", code: 2)
+            }
+            guard let target = TeamShares.parseTarget(Array(positional.dropFirst())) else { return fail(teamUsage(), code: 2) }
+            let c = try client()
+            if case .members(let kids) = target {
+                // Named kids are checked against the roster as it is now, not the cached one.
+                _ = try c.fetch()
+                let known = Set(c.roster?.doc.everyone.map(\.keys.kid) ?? [])
+                for kid in kids where !known.contains(kid) {
+                    return fail("unknown kid \(kid)", code: 2)
+                }
+            }
+            let teamDir = paths.teamDir(c.config.id)
+            var shares = TeamShares.load(teamDir: teamDir)
+            shares.byKind[kind] = target
+            try shares.save(teamDir: teamDir)
+            emit(shares)
+        case "exclude":
+            guard let raw = positional.first else { return fail(teamUsage(), code: 2) }
+            let project = URL(fileURLWithPath: raw).standardizedFileURL.path
+            var exclusions = TeamExclusions.load(paths: paths)
+            exclusions.set(project, excluded: !flags.contains("off"))
+            try exclusions.save(paths: paths)
+            emit(exclusions)
+        case "members":
+            let c = try client(); _ = try c.fetch()
+            let reader = try TeamReader.load(client: c)
+            emit(reader.members.values.sorted { $0.name == $1.name ? $0.kid < $1.kid : $0.name < $1.name }.map { m in
+                MemberRow(kid: m.kid, name: m.name, role: m.role, lastPublished: m.lastPublished,
+                          shares: m.kinds.sorted(), sessionsNow: m.now?.sessions.count ?? 0,
+                          blockers: m.now?.blockers ?? [], crashes: m.crashes.count)
+            })
+        case "member":
+            guard let kid = positional.first else { return fail(teamUsage(), code: 2) }
+            guard let period = Stats.Period(rawValue: options["period"] ?? "week") else {
+                return fail("--period is day, week, month or year", code: 2)
+            }
+            let c = try client(); _ = try c.fetch()
+            guard let summary = try TeamReader.load(client: c).summary(kid: kid, period: period) else {
+                return fail("nothing readable from \(kid)")
+            }
+            emit(summary.compacted())
+        case "publish":
+            let c = try client(); _ = try c.fetch()
+            let claudeDir = ClaudeSessions.configHome()
+            var sources = TeamPublisher.Sources(
+                projectsDir: options["projects"].map { URL(fileURLWithPath: $0) } ?? claudeDir.appendingPathComponent("projects"),
+                home: NSHomeDirectory())
+            // `--projects` only swaps the Claude Code projects dir and skips the
+            // Codex scan; live sessions, the scan cache and crashes still come
+            // from this machine regardless.
+            sources.codexDir = options["projects"] == nil ? StatsScanner.defaultCodexDir() : nil
+            sources.cacheURL = paths.teamDir(c.config.id).appendingPathComponent("scan-cache.json")
+            sources.liveSessions = ClaudeSessions.list(claudeDir: claudeDir)
+            sources.crashes = CrashStore(directory: CrashStore.defaultDirectory()).list()
+            if let days = options["days"].flatMap(Int.init) { sources.historyDays = days }
+            emit(try TeamPublisher(client: c, paths: paths).publish(sources: sources))
+        case "reshare":
+            let c = try client(); _ = try c.fetch()
+            let days = options["days"].flatMap(Int.init) ?? 30
+            emit(try TeamPublisher(client: c, paths: paths).reshare(days: days))
         default:
             return fail("unknown team subcommand \(sub)\n\n\(teamUsage())", code: 2)
         }

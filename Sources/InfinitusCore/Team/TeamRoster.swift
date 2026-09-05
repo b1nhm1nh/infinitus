@@ -48,7 +48,11 @@ public struct TeamRoster: Codable, Equatable, Sendable {
     public struct Removed: Codable, Equatable, Sendable {
         public var kid: String
         public var at: Int
-        public init(kid: String, at: Int) { self.kid = kid; self.at = at }
+        /// The keys the member had, kept so envelopes sealed BEFORE `at`
+        /// still verify (spec §3: only what is published after removal is
+        /// rejected). Nil in rosters written before this field existed.
+        public var keys: TeamKeys?
+        public init(kid: String, at: Int, keys: TeamKeys? = nil) { self.kid = kid; self.at = at; self.keys = keys }
     }
 
     public struct Policy: Codable, Equatable, Sendable {
@@ -70,9 +74,11 @@ public struct TeamRoster: Codable, Equatable, Sendable {
     public var policy: Policy
     public var rev: Int
 
+    public static let schemaVersion = 1
+
     public init(id: String, name: String, createdAt: Int, leaders: [Member], members: [Member] = [],
                 removed: [Removed] = [], policy: Policy = Policy(), rev: Int) {
-        self.schema = 1
+        self.schema = Self.schemaVersion
         self.id = id; self.name = name; self.createdAt = createdAt
         self.leaders = leaders; self.members = members; self.removed = removed
         self.policy = policy; self.rev = rev
@@ -84,26 +90,34 @@ public struct TeamRoster: Codable, Equatable, Sendable {
         everyone.first { $0.keys.kid == kid }?.keys
     }
 
+    /// The keys `kid` had at `at`: a current member's, or a removed
+    /// member's for an envelope sealed before the removal.
+    public func keys(for kid: String, at: Int) -> TeamKeys? {
+        if let current = keys(for: kid) { return current }
+        guard let gone = removed.first(where: { $0.kid == kid }), at < gone.at else { return nil }
+        return gone.keys
+    }
+
     public func isLeader(_ kid: String) -> Bool {
         leaders.contains { $0.keys.kid == kid }
     }
 
-    /// Leaders always read; `.team` adds every member; `.members` adds the
-    /// named ones that exist. The sender is added by `Envelope.seal`.
+    /// `.leaders` wraps to the leaders, `.team` to everyone, `.members`
+    /// to exactly the named kids (leaders included only when named —
+    /// spec §8.4: a teammate's detail is visible only to who they chose).
+    /// The sender is added by `Envelope.seal`.
     public func recipients(for target: ShareTarget) -> [TeamKeys] {
-        var out = leaders.map(\.keys)
         switch target {
-        case .leaders: break
-        case .team: out += members.map(\.keys)
-        case .members(let kids): out += members.filter { kids.contains($0.keys.kid) }.map(\.keys)
+        case .leaders: return leaders.map(\.keys)
+        case .team: return everyone.map(\.keys)
+        case .members(let kids): return everyone.filter { kids.contains($0.keys.kid) }.map(\.keys)
         }
-        return out
     }
 
     // MARK: acceptance
 
     public enum RosterError: Error, Equatable {
-        case lowerRev, notALeader, badSignature, differentTeam, noLeaders
+        case lowerRev, notALeader, badSignature, differentTeam, noLeaders, badSchema
     }
 
     public enum Acceptance {
@@ -115,6 +129,7 @@ public struct TeamRoster: Codable, Equatable, Sendable {
         public static func check(_ candidate: Signed<TeamRoster>, previous: Signed<TeamRoster>?,
                                  trustRoot: String? = nil) throws {
             let roster = candidate.doc
+            guard roster.schema == TeamRoster.schemaVersion else { throw RosterError.badSchema }
             guard !roster.leaders.isEmpty else { throw RosterError.noLeaders }
             let authority = previous?.doc ?? roster
             if let previous {

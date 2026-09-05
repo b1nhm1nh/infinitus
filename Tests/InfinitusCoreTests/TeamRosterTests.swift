@@ -63,7 +63,7 @@ final class TeamRosterTests: XCTestCase {
         let r = roster(rev: 1, leaders: [leader], members: [member, stranger])
         XCTAssertEqual(r.recipients(for: .leaders).map(\.kid), [leader.kid])
         XCTAssertEqual(Set(r.recipients(for: .team).map(\.kid)), [leader.kid, member.kid, stranger.kid])
-        XCTAssertEqual(Set(r.recipients(for: .members([stranger.kid, "nobody"])).map(\.kid)), [leader.kid, stranger.kid])
+        XCTAssertEqual(r.recipients(for: .members([stranger.kid, "nobody"])).map(\.kid), [stranger.kid])   // #55 (d): leaders only when named
         XCTAssertTrue(r.isLeader(leader.kid)); XCTAssertFalse(r.isLeader(member.kid))
         XCTAssertEqual(r.keys(for: member.kid), member.keys)
         // ShareTarget JSON shapes.
