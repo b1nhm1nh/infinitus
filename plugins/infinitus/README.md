@@ -1,9 +1,10 @@
 # Infinitus plugin for Claude Code
 
-Two hooks, one script: `Notification` and `Stop` pipe their payload to
-`infinitusctl event`. The Mac app pushes a permission or question to your
-phone the moment it appears (the poll alone takes up to a minute) and
-refreshes the fleet when a turn ends. Nothing here can block a session —
+Three hooks, one script: `Notification`, `UserPromptSubmit` and `Stop`
+pipe their payload to `infinitusctl event`. The Mac app pushes a
+permission or question to your phone the moment it appears (the poll
+alone takes up to a minute) and refreshes the fleet when a prompt goes in
+or a turn ends, so the session's status and goal follow within a second. Nothing here can block a session —
 the script exits 0 whether the app is running or not.
 
 An MCP server (`infinitusctl mcp`, wired by `.mcp.json`) gives every
