@@ -164,10 +164,12 @@ final class StatsModel: ObservableObject {
             var cumulativeConsumed = 0
             var firstBytesTotal: Int?
             var previousBytesRemaining = Int.max
+            let cacheHandle = StatsScanner.CacheHandle()   // decoded once per loop, not per pass
             while remaining > 0 {
                 passCount += 1
                 let transcripts = StatsScanner.scan(projectsDir: projectsDir, codexDir: codexDir, cacheURL: cacheURL,
-                                                    calendar: calendar, byteBudget: Self.chunkByteBudget)
+                                                    calendar: calendar, byteBudget: Self.chunkByteBudget,
+                                                    handle: cacheHandle)
                 remaining = transcripts.remaining
                 if firstBytesTotal == nil { firstBytesTotal = transcripts.bytesTotal }
                 let consumedThisPass = transcripts.bytesTotal - transcripts.bytesRemaining

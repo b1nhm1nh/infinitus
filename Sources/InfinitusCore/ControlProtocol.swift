@@ -236,6 +236,18 @@ public struct ControlCommand: Codable, Sendable, Equatable {
         ControlCommand(name: "send", args: ["<pid|name>"], effect: .write,
                        summary: "Text on stdin goes to that session as if typed into its prompt (peer socket first, then its terminal).",
                        replyShape: "{outcome, channel?, detail?}"),
+        ControlCommand(name: "machine", effect: .read,
+                       summary: "The machine-health guardian's last sample (#115): load, swap, processes, hooks with live instances, runaway processes, residue counts, session health, warnings. Triggers a sample when none has run yet.",
+                       replyShape: "MachineReport | {sampling:true}"),
+        ControlCommand(name: "machine-kill", args: ["<pid>"], options: ["--yes"], effect: .destructive,
+                       summary: "SIGTERM a runaway the last `machine` report flagged (its own process group when it has one, never a session's), SIGKILL after 3 s if it's still alive. Refused without --yes.",
+                       replyShape: "{result}"),
+        ControlCommand(name: "machine-reclaim", options: ["--yes"], effect: .destructive,
+                       summary: "Remove stale cc-socks, stale session-env dirs, and temp files older than an hour that no process holds open. Refused without --yes.",
+                       replyShape: "{result}"),
+        ControlCommand(name: "machine-hook", args: ["disable|restore", "<owner>"], options: ["--yes"], effect: .write,
+                       summary: "Move a tool's hook registrations out of ~/.claude/settings.json (a timestamped backup is written beside it), or put them back. Refused without --yes.",
+                       replyShape: "{result}"),
     ]
 
     public static func named(_ name: String) -> ControlCommand? {
