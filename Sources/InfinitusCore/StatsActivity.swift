@@ -172,13 +172,17 @@ extension Stats.Day {
     /// table at once (model, engine, effort) — the exact path, sub-agent
     /// files included.
     public mutating func charge(model: String, engine: String, effort: String,
-                                input: Int, output: Int, usd: Double) {
+                                input: Int, output: Int, usd: Double,
+                                cacheRead: Int = 0, cacheWrite: Int = 0, savings: Double = 0) {
         func add(_ table: inout [String: Stats.ActivityTally], _ key: String) {
             guard !key.isEmpty else { return }
             var m = table[key] ?? Stats.ActivityTally()
             m.inputTokens += input
             m.outputTokens += output
             m.usd += usd
+            m.cacheReadTokens += cacheRead
+            m.cacheWriteTokens += cacheWrite
+            m.cacheSavingsUSD += savings
             table[key] = m
         }
         add(&byModel, model)

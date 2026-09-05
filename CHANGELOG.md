@@ -8,6 +8,7 @@ publishes the matching section as the GitHub release body.
 ## 0.4.4 (unreleased)
 
 ### Stats
+- Stats show processed tokens, cached vs uncached input, cache writes and the estimated cache savings, per model and engine.
 - The activity tables read the ask off your own message — "debug the crash" counts as debugging even when the tools only edited — and the plugin's UserPromptSubmit hook refreshes a session the moment a prompt goes in.
 
 ### Phone

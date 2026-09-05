@@ -262,20 +262,26 @@ public enum StatsScanner {
                     let cacheRead = usage["cache_read_input_tokens"] as? Int ?? 0
                     let cacheWrite = usage["cache_creation_input_tokens"] as? Int ?? 0
                     var cost = 0.0
+                    var savings = 0.0
                     if let p = StaticPriceTable.price(model: model) {
                         cost = (Double(input) * p.input + Double(output) * p.output
                             + Double(cacheRead) * p.cacheRead + Double(cacheWrite) * p.cacheWrite) / 1_000_000
+                        savings = Double(cacheRead) * max(0, p.input - p.cacheRead) / 1_000_000
                     }
                     day.inputTokens += input
                     day.outputTokens += output
                     day.usd += cost
+                    day.cacheReadTokens += cacheRead
+                    day.cacheWriteTokens += cacheWrite
+                    day.cacheSavingsUSD += savings
                     if output > 0 { day.minuteTokens[Stats.minuteOfDay(t, calendar: calendar), default: 0] += output }
                     // Per model / engine / effort, per entry — exact, and
                     // the only route a sub-agent file's spend takes into
                     // v2. An empty model name has nothing to key under;
                     // the day totals above still count it.
                     day.charge(model: model, engine: entry.engine, effort: effort,
-                               input: input, output: output, usd: cost)
+                               input: input, output: output, usd: cost,
+                               cacheRead: cacheRead, cacheWrite: cacheWrite, savings: savings)
                     if entry.state.stretch != nil {
                         entry.state.stretch!.model = model
                         entry.state.stretch!.effort = effort
@@ -350,13 +356,14 @@ public enum StatsScanner {
     }
 
     struct Cache: Codable {
-        /// 8 (2026-09-05): the Day decoder finally keeps the minute
-        /// buckets and workflow sub-agent transcripts are walked, so
-        /// every file is re-read once; 7 added per-minute output tokens
-        /// for the tokens/min record book (#89); 6 was `byEngine`/
-        /// `byEffort` and the Codex source; 5 was Stats v2's
-        /// activities/models.
-        var version = 8
+        /// 9 (2026-09-06): cache reads/writes and cache savings (#139)
+        /// need every file re-read once to backfill them; 8 (2026-09-05)
+        /// the Day decoder finally keeps the minute buckets and workflow
+        /// sub-agent transcripts are walked, so every file is re-read
+        /// once; 7 added per-minute output tokens for the tokens/min
+        /// record book (#89); 6 was `byEngine`/`byEffort` and the Codex
+        /// source; 5 was Stats v2's activities/models.
+        var version = 9
         var files: [String: FileEntry] = [:]
     }
 

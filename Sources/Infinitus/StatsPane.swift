@@ -176,7 +176,7 @@ struct StatsPane: View {
             // A GridRow can't wear a modifier (it collapses to one cell — CLAUDE.md);
             // the Group inside distributes it to every cell.
             GridRow {
-                Group { Text(title); Text("Stretches"); Text("Time"); Text("Tokens"); Text("Spend"); Text("Share") }
+                Group { Text(title); Text("Stretches"); Text("Time"); Text("Tokens"); Text("Cached"); Text("Spend"); Text("Share") }
                     .font(.caption).foregroundStyle(.secondary)
             }
             if rows.isEmpty {
@@ -192,6 +192,7 @@ struct StatsPane: View {
                     Text(r.count.formatted()).monospacedDigit()
                     Text(r.minutesText).monospacedDigit()
                     Text(r.tokensText).monospacedDigit()
+                    Text(r.cachedPercentText).monospacedDigit()
                     Text(r.usdText).monospacedDigit()
                     ZStack(alignment: .leading) {
                         RoundedRectangle(cornerRadius: 2).fill(Color.accentColor.opacity(0.6))
