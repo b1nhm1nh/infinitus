@@ -200,7 +200,8 @@ can read the roster.
   the leader copies into the roster on the next roster save; readers
   still rely on the envelope recipients, never on the hint.
 - Signed by a leader; `rev` increases monotonically; clients refuse a
-  roster with a lower `rev` or a signature from a non-leader.
+  roster with a lower `rev` or a signature from a non-leader. The first
+  roster a joiner accepts must be signed by the leader named in the code.
 - Promote / demote / remove edit this file. One leader minimum.
 
 ## 6. Join and invite (all in-app)
@@ -233,7 +234,8 @@ carries the **same write credential** as an invite; what limits it is
 code), code rotation (= credential rotation, §4.2), and the signature
 rules that make any other write ignorable. The vandalism surface (§4.2)
 grows with how widely the code is shared; the Team pane says so next to
-the code. Enter the code → request lands → leader taps Approve/Decline.
+the code. Enter the code → request lands → leader taps Approve/Decline. The
+code is pasted on stdin, never argv.
 
 ### 6.4 Nearby (same LAN)
 - The existing `_infinitus._tcp` advertisement (MirrorServer on Mac;

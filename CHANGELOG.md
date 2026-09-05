@@ -36,6 +36,9 @@ publishes the matching section as the GitHub release body.
 - Settings › Chat header previews every style live, in the current theme.
 - The Game HUD header is a glossy unit frame now: the portrait rides the panel, the bars carry a pace tick.
 
+### Team (preview)
+- `infinitusctl team` creates a team on any git remote and exchanges end-to-end encrypted files between members (create, code, request, approve, publish, read).
+
 ## 0.4.2
 
 ### All accounts limited

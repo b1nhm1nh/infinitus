@@ -8,6 +8,11 @@ import InfinitusCore
 
 let args = Array(CommandLine.arguments.dropFirst())
 
+// `team` runs in-process (TeamCommand.swift) and needs no app.
+if args.first == "team" {
+    exit(runTeam(Array(args.dropFirst())))
+}
+
 func usage() -> String {
     var out = "usage: infinitusctl <command> [args] [--option value]\n\n"
     let width = ControlCommand.all.map { ($0.name + " " + $0.args.joined(separator: " ")).count }.max() ?? 20
@@ -17,6 +22,7 @@ func usage() -> String {
         if !c.options.isEmpty { out += "  [\(c.options.joined(separator: ", "))]" }
         out += "\n"
     }
+    out += "  team <subcommand>      teams: create, code, request, approve, publish… (`infinitusctl team --help`)\n"
     out += "\nFleet keys come from `infinitusctl fleets` (e.g. cswap/claude, cliproxy/claude).\n"
     out += "proxy-key, 9router-password and aws-login-code read their secret from stdin.\n"
     out += "Socket: \(ControlProtocol.socketURL().path)\n"
@@ -62,6 +68,7 @@ let request = ControlRequest(command: command, args: positional, options: option
 
 // MARK: socket round-trip (blocking; a CLI has no reason to be async)
 
+#if canImport(Darwin)
 func connect(path: String) -> Int32? {
     let fd = socket(AF_UNIX, SOCK_STREAM, 0)
     guard fd >= 0 else { return nil }
@@ -135,3 +142,7 @@ if reply.restarting {
     }
 }
 exit(reply.ok ? 0 : 1)
+#else
+FileHandle.standardError.write(Data("\(command) needs the Infinitus Mac app (control socket); only `team` runs here\n".utf8))
+exit(3)
+#endif
