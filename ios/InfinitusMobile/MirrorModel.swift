@@ -203,6 +203,7 @@ final class MirrorModel: ObservableObject, FleetModel {
             sessionProgress.apply(snapshot.progressByPid ?? [:], tokenRate: snapshot.tokenRate)
             let firstLoad = reconcile(engineFleets)
             error = nil
+            AwsLoginAlerts.shared.sync(snapshot.awsLogins ?? [])
             LiveActivities.shared.sync(
                 fleet: fleets.first { $0.provider == .claude } ?? fleets.first,
                 machine: snapshot.machineName, tokenRate: snapshot.tokenRate,
@@ -290,6 +291,9 @@ final class MirrorModel: ObservableObject, FleetModel {
     /// A shake's capture, with the session it's for; the Sessions tab
     /// opens that feed and the feed moves it into its composer.
     @Published var stagedCapture: StagedCapture?
+    /// The AWS login a tapped notification asks for; the Sessions tab
+    /// opens its sign-in sheet.
+    @Published var requestedAwsLogin: String?
     func openForecast() { outlookShown = true }
     var switchFlashTick: Int { primary?.switchFlashTick ?? 0 }
     var deathTicks: [Int: Int] { primary?.deathTicks ?? [:] }

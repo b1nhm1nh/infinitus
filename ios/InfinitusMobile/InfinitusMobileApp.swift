@@ -41,6 +41,17 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
                                 willPresent notification: UNNotification) async -> UNNotificationPresentationOptions {
         [.banner, .sound]
     }
+
+    /// An AWS sign-in notification's tap lands on its sheet.
+    func userNotificationCenter(_ center: UNUserNotificationCenter,
+                                didReceive response: UNNotificationResponse) async {
+        guard let id = response.notification.request.content.userInfo[AwsLoginAlerts.userInfoKey] as? String
+        else { return }
+        await MainActor.run {
+            MirrorModel.shared.requestedAwsLogin = id
+            MirrorModel.shared.requestedTab = "sessions"
+        }
+    }
 }
 
 @main
