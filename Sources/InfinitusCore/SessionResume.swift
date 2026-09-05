@@ -13,6 +13,19 @@ public struct ResumeCoordinator {
     public static func nudgeText(attempt: Int) -> String {
         attempt == 0 ? message : "\(message) (nudge \(attempt + 1))"
     }
+    /// A session whose SUB-AGENTS hit the limit while its own transcript
+    /// kept going: it read the limit off the sub-agents' results and
+    /// parked itself, so it never lands its own limit-stop entry (#117).
+    public static func subagentMessage(account: String?, pct: Int?) -> String {
+        let clause: String
+        if let account, let pct {
+            clause = "the account has been swapped: \(account) has \(100 - pct)% headroom now"
+        } else {
+            clause = "an account with headroom is active now"
+        }
+        return "[Infinitus] Your sub-agents hit a usage limit, but \(clause). "
+            + "It is safe to continue right away — no need to wait for the reset."
+    }
     /// Credentials propagate to a running session within seconds; the
     /// second retry waits out a slow one.
     public static let retryDelays: [TimeInterval] = [5, 15]
@@ -63,6 +76,13 @@ public struct ResumeCoordinator {
             }
         }
         return nil
+    }
+
+    /// One-shot nudge for a sub-agent limit: the parent is not stopped —
+    /// it is running, just waiting on a stale usage read — so there is
+    /// nothing to verify and no retry loop, unlike `resume`.
+    public func nudgeSubagent(_ hit: Transcript.SubagentLimit, text: String) -> Bool {
+        deliver(hit.session, text: text) != nil
     }
 
     /// Nudge every stopped session, retrying the ones whose nudge burned.

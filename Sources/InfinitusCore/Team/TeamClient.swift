@@ -38,6 +38,12 @@ public final class TeamClient {
         case keyMismatch
         /// Another leader kept winning the roster push race.
         case rosterConflict
+        /// The kid is neither a leader nor a member.
+        case unknownMember
+        /// The founding leader cannot be removed (spec §1 co-leader rule).
+        case founder
+        /// A team keeps at least one leader.
+        case lastLeader
     }
 
     public static let identitySecretName = "identity"
@@ -231,34 +237,127 @@ public final class TeamClient {
         try store.delete(path)
     }
 
+    /// One roster edit with the same race loop as `approve`: recompute
+    /// on the other leader's roster rather than overwrite it.
+    private func editRoster(_ edit: (TeamRoster) throws -> TeamRoster) throws {
+        for _ in 0..<3 {
+            guard let current = roster?.doc else { throw ClientError.noRoster }
+            guard isLeader else { throw ClientError.notALeader }
+            var next = try edit(current)
+            next.rev = current.rev + 1
+            do {
+                try saveRoster(next)
+                return
+            } catch TeamGit.GitError.raceLost {
+                _ = try fetch()
+                continue
+            }
+        }
+        throw ClientError.rosterConflict
+    }
+
+    /// Spec §6.5: the kid moves to `removed` with its keys and the
+    /// removal instant; envelopes it sealed before `now` stay readable,
+    /// later ones are ignored, and its next `fetch` ends its membership.
+    public func remove(kid: String, now: Int = Int(Date().timeIntervalSince1970)) throws {
+        try editRoster { current in
+            guard let keys = current.keys(for: kid) else { throw ClientError.unknownMember }
+            if let target = current.leaders.first(where: { $0.keys.kid == kid }) {
+                guard !target.founder else { throw ClientError.founder }
+                guard current.leaders.count > 1 else { throw ClientError.lastLeader }
+            }
+            var next = current
+            next.leaders.removeAll { $0.keys.kid == kid }
+            next.members.removeAll { $0.keys.kid == kid }
+            next.removed.removeAll { $0.kid == kid }
+            next.removed.append(TeamRoster.Removed(kid: kid, at: now, keys: keys))
+            return next
+        }
+    }
+
+    /// Spec §6.5: a member becomes a (non-founder) leader; its key is a
+    /// `.leaders` recipient from now on. Re-wrapping history is the
+    /// member's choice (`TeamPublisher.reshare`).
+    public func promote(kid: String, now: Int = Int(Date().timeIntervalSince1970)) throws {
+        try editRoster { current in
+            guard !current.isLeader(kid) else { throw ClientError.alreadyLeader }
+            guard let member = current.members.first(where: { $0.keys.kid == kid }) else { throw ClientError.unknownMember }
+            var next = current
+            next.members.removeAll { $0.keys.kid == kid }
+            next.leaders.append(member)
+            return next
+        }
+    }
+
     // MARK: files
 
-    /// Seals `plaintext` to the audience plus every leader and pushes it
-    /// under `m/<my kid>/<path>`. Returns the store path.
+    public struct PublishItem: Equatable {
+        public var kind: String
+        public var path: String
+        public var plaintext: Data
+        public var audience: TeamRoster.ShareTarget
+        public init(kind: String, path: String, plaintext: Data, audience: TeamRoster.ShareTarget) {
+            self.kind = kind; self.path = path; self.plaintext = plaintext; self.audience = audience
+        }
+    }
+
+    /// Seals every item to its audience and pushes them under
+    /// `m/<my kid>/` as ONE commit (a publish is five-plus files). Each
+    /// path's shape must name the item's kind (`TeamKinds`), or readers
+    /// would drop it. Returns the store paths in item order.
+    @discardableResult
+    public func publish(_ items: [PublishItem], now: Int = Int(Date().timeIntervalSince1970)) throws -> [String] {
+        guard let roster = roster?.doc, isMember else { throw ClientError.notInTeam }
+        var writes: [String: Data?] = [:]
+        var paths: [String] = []
+        for item in items {
+            let storePath = "m/\(identity.kid)/\(item.path)"
+            try TeamKinds.check(kind: item.kind, from: identity.kid, at: storePath)
+            writes[storePath] = try Envelope.seal(item.plaintext, kind: item.kind, from: identity,
+                                                  to: roster.recipients(for: item.audience), at: now)
+            paths.append(storePath)
+        }
+        if !writes.isEmpty { try store.putAll(writes) }
+        return paths
+    }
+
+    /// One file; see `publish(_:now:)`.
     @discardableResult
     public func publish(kind: String, path: String, plaintext: Data, audience: TeamRoster.ShareTarget,
                         now: Int = Int(Date().timeIntervalSince1970)) throws -> String {
-        guard let roster = roster?.doc, isMember else { throw ClientError.notInTeam }
-        let file = try Envelope.seal(plaintext, kind: kind, from: identity, to: roster.recipients(for: audience), at: now)
-        let storePath = "m/\(identity.kid)/\(path)"
-        try store.put(storePath, file)
-        return storePath
+        try publish([PublishItem(kind: kind, path: path, plaintext: plaintext, audience: audience)], now: now)[0]
     }
 
-    /// Envelopes under `m/` that name me as a reader and come from someone
-    /// in the roster. Reads headers only.
-    public func readable() throws -> [StoreEntry] {
-        guard let roster = roster?.doc else { return [] }
-        return try store.list("m/").filter { entry in
-            guard let data = try store.get(entry.path), let header = try? Envelope.header(of: data) else { return false }
-            return roster.keys(for: header.from) != nil && header.to.contains { $0.kid == identity.kid }
-        }
+    /// Deletes `m/<my kid>/<path>` (spec §7: `now.json` goes on quit).
+    public func unpublish(path: String) throws {
+        guard isMember else { throw ClientError.notInTeam }
+        try store.delete("m/\(identity.kid)/\(path)")
     }
+
+    /// Envelopes under `m/` that name me as a reader, sit at a path whose
+    /// shape matches their kind and sender, and come from someone who
+    /// was in the roster when they were sealed. Reads headers only.
+    public func readableHeaders() throws -> [(entry: StoreEntry, header: Envelope.Header)] {
+        guard let roster = roster?.doc else { return [] }
+        var out: [(entry: StoreEntry, header: Envelope.Header)] = []
+        for entry in try store.list("m/") {
+            guard let data = try store.get(entry.path), let header = try? Envelope.header(of: data),
+                  (try? TeamKinds.check(header, at: entry.path)) != nil,
+                  roster.keys(for: header.from, at: header.at) != nil,
+                  header.to.contains(where: { $0.kid == identity.kid }) else { continue }
+            out.append((entry, header))
+        }
+        return out
+    }
+
+    public func readable() throws -> [StoreEntry] { try readableHeaders().map(\.entry) }
 
     public func read(_ path: String) throws -> (Envelope.Header, Data) {
         guard let roster = roster?.doc else { throw ClientError.noRoster }
         guard let data = try store.get(path) else { throw Envelope.EnvelopeError.malformed }
-        return try Envelope.open(data, as: identity, senderKey: { roster.keys(for: $0) })
+        let header = try Envelope.header(of: data)
+        try TeamKinds.check(header, at: path)
+        return try Envelope.open(data, as: identity, senderKey: { roster.keys(for: $0, at: header.at) })
     }
 
     // MARK: status

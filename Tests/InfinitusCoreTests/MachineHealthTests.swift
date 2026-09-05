@@ -110,8 +110,15 @@ final class MachineHealthTests: XCTestCase {
 
         XCTAssertEqual(Residue.staleSockets(dir: socks.path, alive: { $0 == 100 }).map(\.path), [socks.appendingPathComponent("200.sock").path])
         XCTAssertEqual(Residue.staleSessionEnvs(dir: envs.path, liveSessionIds: ["live-id"]).map(\.path), [envs.appendingPathComponent("gone-id").path])
+        let pip = tmp.appendingPathComponent("pip-unpack-abc12"), py = tmp.appendingPathComponent("TemporaryDirectory.x9"), theirs = tmp.appendingPathComponent("roadmap-report-1")
+        for d in [pip, py, theirs] {
+            try FileManager.default.createDirectory(at: d, withIntermediateDirectories: false)
+            FileManager.default.createFile(atPath: d.appendingPathComponent("f").path, contents: Data("y".utf8))
+            try FileManager.default.setAttributes([.modificationDate: Date(timeIntervalSinceNow: -7200)], ofItemAtPath: d.path)
+        }
         let temps = Residue.orphanTemps(dir: tmp.path, openPaths: [held.path])
-        XCTAssertEqual(temps.map(\.path), [old.path])
+        XCTAssertEqual(Set(temps.map(\.path)), [old.path, pip.path, py.path])
+        XCTAssertNil(Residue.tempOwner(of: "roadmap-report-1"))
         XCTAssertEqual(Residue.reclaim(temps).count, 0)
         XCTAssertFalse(FileManager.default.fileExists(atPath: old.path))
         XCTAssertTrue(FileManager.default.fileExists(atPath: fresh.path))

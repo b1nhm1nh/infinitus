@@ -209,6 +209,12 @@ final class AppModel: ObservableObject {
     /// A newer Infinitus release than this build (About → Updates does
     /// the check; the popup chip just points there).
     @Published var appUpdateVersion: String?
+    /// Whatever About's release check last found, newer or not (#121) —
+    /// the phone mirrors this to know when a newer PHONE build is out.
+    @Published var appReleaseLatest: String?
+    /// The one BrewUpdater instance the About pane's button and the
+    /// phone's `POST /app/update` route both drive; set by InfinitusApp.
+    var brewUpdater: BrewUpdater?
     private let launchExecutableDate = AppModel.executableDate()
     private var supervisor: CswapSupervisor?
     private var refreshTask: Task<Void, Never>?
@@ -1022,6 +1028,9 @@ final class AppModel: ObservableObject {
         resume.log = { [weak self] icon, text in
             self?.logEvent("nudge", icon: icon, text)
         }
+        resume.push = { [weak self] text in
+            self?.push(text)
+        }
         mirrorServer.log = { [weak self] icon, text in
             self?.logEvent("other", icon: icon, text)
         }
@@ -1035,6 +1044,10 @@ final class AppModel: ObservableObject {
         }
         mirrorServer.crashes.set { [weak self] report in
             Task { @MainActor in self?.ingestCrash(report, announce: true) }
+        }
+        mirrorServer.appUpdate.set { [weak self] in
+            guard let self else { return AppUpdate.Reply(outcome: "unavailable", detail: nil) }
+            return await self.triggerAppUpdate()
         }
         let host = sessionHost
         mirrorServer.sessionStart.set { [weak self] request in
@@ -1079,6 +1092,22 @@ final class AppModel: ObservableObject {
                 try? await Task.sleep(nanoseconds: UInt64(seconds) * 1_000_000_000)
             }
         }
+    }
+
+    /// `POST /app/update` (#121): the phone's own trigger for this Mac's
+    /// update, reusing the same BrewUpdater the About pane's button
+    /// drives so the two never run two upgrades at once.
+    private func triggerAppUpdate() -> AppUpdate.Reply {
+        guard BrewUpdater.channel != .source else {
+            return AppUpdate.Reply(outcome: "unavailable",
+                                   detail: "this Mac runs a source build — rebuild from the repo")
+        }
+        guard appUpdateVersion != nil else {
+            return AppUpdate.Reply(outcome: "upToDate", detail: nil)
+        }
+        brewUpdater?.upgrade()
+        return AppUpdate.Reply(outcome: "started",
+                               detail: "brew is upgrading Infinitus; the Mac relaunches when it's done")
     }
 
     /// Starts or stops the phone companion's LAN listener (#9). Never in
@@ -1935,6 +1964,15 @@ final class AppModel: ObservableObject {
             }
             statsModel.refreshIfStale()
             let stats = statsModel.bundle
+            // This Mac's own version, mirrored for the phone's Settings
+            // (#121) — same keys ControlServer.status reads.
+            let info = Bundle.main.infoDictionary ?? [:]
+            let appInfo = AppInfo(
+                version: info["CFBundleShortVersionString"] as? String ?? "dev",
+                sha: info["InfinitusGitSHA"] as? String ?? "dev",
+                updateVersion: appUpdateVersion,
+                updateChannel: BrewUpdater.channel.rawValue,
+                phoneLatest: appReleaseLatest)
             Task.detached(priority: .utility) { [mirrorExporter] in
                 await mirrorExporter.record(listJSON: raw, prefs: prefs,
                                             serviceStatus: serviceStatus,
@@ -1942,7 +1980,8 @@ final class AppModel: ObservableObject {
                                             forecast: forecast, plan: plan,
                                             awsLogins: awsLogins, progress: progress,
                                             stats: stats,
-                                            pushesAlerts: self.liveActivityPusher.configured)
+                                            pushesAlerts: self.liveActivityPusher.configured,
+                                            app: appInfo)
             }
         }
         // All-limited: count the limit-stopped sessions waiting to be
@@ -2013,7 +2052,9 @@ final class AppModel: ObservableObject {
                         activeAlive: active.map { !AccountVitals.isDead($0.usage) } ?? false,
                         activeNumber: list.activeAccountNumber,
                         activeFetchedAt: active?.usageFetchedAt
-                            .flatMap(UsageHistory.parseISO))
+                            .flatMap(UsageHistory.parseISO),
+                        activeName: active.map { $0.alias ?? String($0.email.prefix(while: { $0 != "@" })) },
+                        activePct: active.flatMap { PushTriggers.worstPlanPct($0.usage) }.map { Int($0) })
         }
         // Same display-feed vantage as the switch diff above: these
         // triggers fire even while the supervised engine is parked.

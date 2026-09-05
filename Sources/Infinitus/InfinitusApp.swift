@@ -64,6 +64,7 @@ struct InfinitusApp: App {
     @StateObject private var utilizationModel = UtilizationModel()
     @StateObject private var updateModel: UpdateModel
     @StateObject private var appRelease: AppReleaseModel
+    @StateObject private var brew: BrewUpdater
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
 
     init() {
@@ -96,7 +97,14 @@ struct InfinitusApp: App {
         let release = AppReleaseModel()
         _appRelease = StateObject(wrappedValue: release)
         release.onUpdate = { [weak model] in model?.appUpdateVersion = $0 }
+        release.onLatest = { [weak model] in model?.appReleaseLatest = $0 }
         release.startAutoCheck()
+        // Hoisted out of AboutPane so the phone's `/app/update` route
+        // (#121) drives the SAME BrewUpdater as the About pane's button
+        // — never two upgrades in flight.
+        let brew = BrewUpdater()
+        _brew = StateObject(wrappedValue: brew)
+        model.brewUpdater = brew
         let reliabilityModel = ResumeReliabilityModel()
         _reliabilityModel = StateObject(wrappedValue: reliabilityModel)
         // Warm the multi-second transcript scan at launch so the Usage tab
@@ -112,7 +120,7 @@ struct InfinitusApp: App {
                         notifyModel: notifyModel, usageModel: usage,
                         utilizationModel: utilization,
                         statsModel: model.statsModel,
-                        updateModel: update, appRelease: release)
+                        updateModel: update, appRelease: release, brew: brew)
                 })
         }
         model.startFeeds()
@@ -145,7 +153,7 @@ struct InfinitusApp: App {
                 notifyModel: notifyModel, usageModel: usageModel,
                 utilizationModel: utilizationModel,
                 statsModel: model.statsModel,
-                updateModel: updateModel, appRelease: appRelease))
+                updateModel: updateModel, appRelease: appRelease, brew: brew))
         }
         // ⌘, would raise that hidden scene window (and the controller
         // would hide it again — "opened and closed immediately", user
@@ -171,7 +179,7 @@ struct InfinitusApp: App {
     notifyModel: NotifyModel, usageModel: UsageModel,
     utilizationModel: UtilizationModel,
     statsModel: StatsModel,
-    updateModel: UpdateModel, appRelease: AppReleaseModel
+    updateModel: UpdateModel, appRelease: AppReleaseModel, brew: BrewUpdater
 ) -> [SettingsTab] {
     // Ordered by how often each pane is reached for (user 2026-08-30:
     // "reorder the settings"): everyday looks first, plumbing after,
@@ -235,7 +243,7 @@ struct InfinitusApp: App {
         SettingsTab(title: "About", symbol: "info.circle", tint: .indigo,
                     keywords: ["update", "version", "license", "links"],
                     image: AboutPane.infinitusIcon,
-                    view: AnyView(AboutPane(appRelease: appRelease))),
+                    view: AnyView(AboutPane(appRelease: appRelease, brew: brew))),
         // Providers under everything, CodexBar-style (user 2026-08-30).
         // The engine is cswap; Claude is what it drives (user 2026-08-30:
         // "claude is not an engine, cswap is").

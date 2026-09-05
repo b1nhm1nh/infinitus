@@ -109,6 +109,23 @@ final class MirrorSessionStartBox: @unchecked Sendable {
     }
 }
 
+/// Answers `POST /app/update` (#121). Async, unlike `MirrorSessionStartBox`:
+/// deciding needs live @MainActor state (`AppModel.appUpdateVersion`,
+/// `BrewUpdater`), same reason `MirrorAwsLoginBox`'s handlers are async.
+final class MirrorAppUpdateBox: @unchecked Sendable {
+    private let lock = NSLock()
+    private var handler: (@Sendable () async -> AppUpdate.Reply)?
+
+    func set(_ new: @escaping @Sendable () async -> AppUpdate.Reply) {
+        lock.lock(); handler = new; lock.unlock()
+    }
+
+    func call() async -> AppUpdate.Reply? {
+        lock.lock(); let current = handler; lock.unlock()
+        return await current?()
+    }
+}
+
 final class MirrorCrashBox: @unchecked Sendable {
     private let lock = NSLock()
     private var sink: (@Sendable (CrashReport) -> Void)?
@@ -222,6 +239,8 @@ final class MirrorServer: ObservableObject {
     let crashes = MirrorCrashBox()
     /// Answers `POST /sessions/start` (#91); set by AppModel once at start.
     let sessionStart = MirrorSessionStartBox()
+    /// Answers `POST /app/update` (#121); set by AppModel once at start.
+    let appUpdate = MirrorAppUpdateBox()
     /// Event-log sink (icon, text), set by AppModel.
     var log: ((String, String) -> Void)?
     /// Fires with the bound port once the listener is up — the quick
@@ -273,6 +292,7 @@ final class MirrorServer: ObservableObject {
         let token = self.token
         let sessionFeed = self.sessionFeed
         let sessionStart = self.sessionStart
+        let appUpdate = self.appUpdate
         let sessionInput = self.sessionInput
         let sessionImage = self.sessionImage
         let activityTokens = self.activityTokens
@@ -289,7 +309,7 @@ final class MirrorServer: ObservableObject {
         listener.newConnectionHandler = { [queue] connection in
             Self.serve(connection, payload: payload, token: token, sessionFeed: sessionFeed,
                        sessionInput: sessionInput, sessionImage: sessionImage, activityTokens: activityTokens, crashes: crashes, sessionStart: sessionStart,
-                       awsLogin: awsLogin, queue: queue, onServed: served)
+                       appUpdate: appUpdate, awsLogin: awsLogin, queue: queue, onServed: served)
         }
         listener.stateUpdateHandler = { [weak self] state in
             Task { @MainActor in self?.handle(state, wasFixedPort: rawPort != 0, name: name) }
@@ -335,13 +355,15 @@ final class MirrorServer: ObservableObject {
                                           sessionInput: MirrorSessionInputBox,
                                             sessionImage: MirrorSessionImageBox,
                                           activityTokens: MirrorActivityTokenBox, crashes: MirrorCrashBox, sessionStart: MirrorSessionStartBox,
+                                          appUpdate: MirrorAppUpdateBox,
                                           awsLogin: MirrorAwsLoginBox,
                                           queue: DispatchQueue,
                                           onServed: @escaping @Sendable (MirrorTransport.Request) -> Void) {
         connection.start(queue: queue)
         receive(connection, buffer: Data(), payload: payload, token: token,
                sessionFeed: sessionFeed, sessionInput: sessionInput, sessionImage: sessionImage,
-               activityTokens: activityTokens, crashes: crashes, sessionStart: sessionStart, awsLogin: awsLogin, onServed: onServed)
+               activityTokens: activityTokens, crashes: crashes, sessionStart: sessionStart,
+               appUpdate: appUpdate, awsLogin: awsLogin, onServed: onServed)
     }
 
     private nonisolated static func receive(_ connection: NWConnection,
@@ -352,6 +374,7 @@ final class MirrorServer: ObservableObject {
                                             sessionInput: MirrorSessionInputBox,
                                             sessionImage: MirrorSessionImageBox,
                                             activityTokens: MirrorActivityTokenBox, crashes: MirrorCrashBox, sessionStart: MirrorSessionStartBox,
+                                            appUpdate: MirrorAppUpdateBox,
                                             awsLogin: MirrorAwsLoginBox,
                                             onServed: @escaping @Sendable (MirrorTransport.Request) -> Void) {
         connection.receive(minimumIncompleteLength: 1, maximumLength: 4096) {
@@ -492,6 +515,16 @@ final class MirrorServer: ObservableObject {
                                         completion: .contentProcessed { _ in connection.cancel() })
                     }
                     return
+                } else if request.method == "POST", request.path == MirrorTransport.appUpdatePath {
+                    Task {
+                        let reply = await appUpdate.call()
+                        let response = reply.flatMap { try? JSONEncoder().encode($0) }
+                            .map(MirrorTransport.jsonResponse) ?? MirrorTransport.notFoundResponse()
+                        onServed(request)
+                        connection.send(content: response,
+                                        completion: .contentProcessed { _ in connection.cancel() })
+                    }
+                    return
                 } else if request.method == "POST", request.path == MirrorTransport.crashesPath {
                     let decoder = JSONDecoder()
                     decoder.dateDecodingStrategy = .iso8601
@@ -530,7 +563,8 @@ final class MirrorServer: ObservableObject {
             }
             receive(connection, buffer: buffer, payload: payload, token: token,
                    sessionFeed: sessionFeed, sessionInput: sessionInput, sessionImage: sessionImage,
-                   activityTokens: activityTokens, crashes: crashes, sessionStart: sessionStart, awsLogin: awsLogin, onServed: onServed)
+                   activityTokens: activityTokens, crashes: crashes, sessionStart: sessionStart,
+                   appUpdate: appUpdate, awsLogin: awsLogin, onServed: onServed)
         }
     }
 }
