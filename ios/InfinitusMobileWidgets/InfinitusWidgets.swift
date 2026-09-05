@@ -94,7 +94,7 @@ private struct RevivalLockScreen: View {
 struct WorkingLiveActivity: Widget {
     var body: some WidgetConfiguration {
         ActivityConfiguration(for: WorkingActivity.self) { context in
-            WorkingLockScreen(state: context.state)
+            WorkingLockScreen(state: context.state, stale: context.isStale)
                 .activityBackgroundTint(nil)
                 .widgetURL(URL(string: "infinitus://sessions"))
         } dynamicIsland: { context in
@@ -161,6 +161,9 @@ struct WorkingLiveActivity: Widget {
 
 private struct WorkingLockScreen: View {
     let state: WorkingActivityState
+    /// Past the stale date: nothing has reached the card for a while —
+    /// the account and the counts are what the Mac last said.
+    let stale: Bool
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 8) {
@@ -188,7 +191,9 @@ private struct WorkingLockScreen: View {
             HStack {
                 Text(sessionsLine(state)).font(.caption).foregroundStyle(.secondary)
                 Spacer()
-                if let next = state.next {
+                if stale {
+                    Text("out of date").font(.caption2).foregroundStyle(.tertiary)
+                } else if let next = state.next {
                     Text(next).font(.caption2).foregroundStyle(.tertiary)
                 }
             }

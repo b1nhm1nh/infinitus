@@ -154,6 +154,7 @@ final class StatsModel: ObservableObject {
         Task.detached(priority: .utility) {
             let calendar = Calendar.current
             let projectsDir = TokenRateScanner.defaultProjectsDir()
+            let codexDir = StatsScanner.defaultCodexDir()
             let cacheURL = StatsScanner.defaultCacheURL()
             let events = await store.load()
             let eventDays = StatsEvents.days(events, calendar: calendar)
@@ -165,7 +166,7 @@ final class StatsModel: ObservableObject {
             var previousBytesRemaining = Int.max
             while remaining > 0 {
                 passCount += 1
-                let transcripts = StatsScanner.scan(projectsDir: projectsDir, cacheURL: cacheURL,
+                let transcripts = StatsScanner.scan(projectsDir: projectsDir, codexDir: codexDir, cacheURL: cacheURL,
                                                     calendar: calendar, byteBudget: Self.chunkByteBudget)
                 remaining = transcripts.remaining
                 if firstBytesTotal == nil { firstBytesTotal = transcripts.bytesTotal }

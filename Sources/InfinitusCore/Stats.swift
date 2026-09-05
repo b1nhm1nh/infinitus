@@ -28,6 +28,19 @@ public enum Stats {
         }
     }
 
+    /// Which tool wrote a transcript. Raw values are the `Day.byEngine`
+    /// keys — cached and mirrored, so never rename one.
+    public enum Engine: String, CaseIterable, Codable, Sendable {
+        case claude, codex
+
+        public var title: String {
+            switch self {
+            case .claude: return "Claude Code"
+            case .codex: return "Codex CLI"
+            }
+        }
+    }
+
     /// One bucket of effort — per activity, or per model. Short coding
     /// keys: eight Days × (9 activities + 6 models) of these ride in
     /// every mirrored bundle.
@@ -89,6 +102,11 @@ public enum Stats {
         /// everything else here, so folding needs nothing new.
         public var activities: [String: ActivityTally] = [:]
         public var byModel: [String: ActivityTally] = [:]
+        /// Per engine (`Engine.rawValue`: the tool that wrote the
+        /// transcript) and per effort setting (`low`…`max`, `unset`
+        /// when the entry carries none), the same way.
+        public var byEngine: [String: ActivityTally] = [:]
+        public var byEffort: [String: ActivityTally] = [:]
         // Sessions
         public var sessions: Set<String> = []
         public var sessionTally = 0       // compact form for the phone: set emptied, count kept
@@ -140,6 +158,8 @@ public enum Stats {
             c.usd += b.usd
             c.activities.merge(b.activities, uniquingKeysWith: +)
             c.byModel.merge(b.byModel, uniquingKeysWith: +)
+            c.byEngine.merge(b.byEngine, uniquingKeysWith: +)
+            c.byEffort.merge(b.byEffort, uniquingKeysWith: +)
             c.sessions.formUnion(b.sessions)
             c.sessionTally += b.sessionTally
             c.sessionSeconds += b.sessionSeconds
@@ -238,6 +258,8 @@ public enum Stats {
             usd = try c.decodeIfPresent(Double.self, forKey: .usd) ?? d.usd
             activities = try c.decodeIfPresent([String: ActivityTally].self, forKey: .activities) ?? d.activities
             byModel = try c.decodeIfPresent([String: ActivityTally].self, forKey: .byModel) ?? d.byModel
+            byEngine = try c.decodeIfPresent([String: ActivityTally].self, forKey: .byEngine) ?? d.byEngine
+            byEffort = try c.decodeIfPresent([String: ActivityTally].self, forKey: .byEffort) ?? d.byEffort
             sessions = try c.decodeIfPresent(Set<String>.self, forKey: .sessions) ?? d.sessions
             sessionTally = try c.decodeIfPresent(Int.self, forKey: .sessionTally) ?? d.sessionTally
             sessionSeconds = try c.decodeIfPresent(Double.self, forKey: .sessionSeconds) ?? d.sessionSeconds
@@ -325,10 +347,14 @@ public enum Stats {
             s.previous = s.previous.compacted()
             s.previous.activities = [:]
             s.previous.byModel = [:]
+            s.previous.byEngine = [:]
+            s.previous.byEffort = [:]
             s.daily = s.daily.map {
                 var day = $0.day.compacted()
                 day.activities = [:]
                 day.byModel = [:]
+                day.byEngine = [:]
+                day.byEffort = [:]
                 return DayPoint(key: $0.key, day: day)
             }
             return s

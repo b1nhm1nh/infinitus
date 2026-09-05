@@ -123,7 +123,7 @@ extension Stats {
             public var usdText: String { "$" + String(format: usd >= 100 ? "%.0f" : "%.2f", usd) }
         }
 
-        public static let activityFootnote = "Heuristic: each stretch between two of your messages is labeled by its strongest signal — a review skill or reviewer sub-agent, a plan skill, a debugging skill, browser tools, simulator commands; then test-file edits; then prose-only replies. A stretch counts on the day it started; sub-agent spend shows under models only."
+        public static let activityFootnote = "Heuristic: each stretch between two of your messages is labeled by its strongest signal — a review skill or reviewer sub-agent, a plan skill, a debugging skill, browser tools, simulator commands; then test-file edits; then prose-only replies. A stretch counts on the day it started; sub-agent spend shows under models, engines and effort only. Claude Code and Codex CLI transcripts are read; models without a price count tokens at $0."
 
         /// Catalogue order; activities with no stretches are left out.
         public static func activityRows(_ s: Stats.Summary) -> [Row] {
@@ -156,6 +156,33 @@ extension Stats {
             }
             return sorted.map { key, tally in
                 Row(id: key == "other" ? "Other models" : key, tally: tally, share: share(tally, total: total, tokenTotal: tokenTotal))
+            }
+        }
+
+        /// By $ descending. An engine whose models carry no price (Codex
+        /// CLI's OpenAI models today) is marked unpriced: its tokens are
+        /// real, its $0 is not a saving.
+        public static func engineRows(_ s: Stats.Summary) -> [Row] {
+            keyedRows(s.total.byEngine) { key, tally in
+                let title = Stats.Engine(rawValue: key)?.title ?? key
+                return tally.usd == 0 && tally.inputTokens + tally.outputTokens > 0 ? title + " · unpriced" : title
+            }
+        }
+
+        /// By $ descending; "Unset" is an entry with no effort recorded.
+        public static func effortRows(_ s: Stats.Summary) -> [Row] {
+            keyedRows(s.total.byEffort) { key, _ in key == "unset" ? "Unset" : key.prefix(1).uppercased() + key.dropFirst() }
+        }
+
+        private static func keyedRows(_ table: [String: Stats.ActivityTally],
+                                      title: (String, Stats.ActivityTally) -> String) -> [Row] {
+            let total = table.values.reduce(0) { $0 + $1.usd }
+            let tokenTotal = table.values.reduce(0) { $0 + $1.inputTokens + $1.outputTokens }
+            let sorted = table.sorted { a, b in
+                a.value.usd == b.value.usd ? a.key < b.key : a.value.usd > b.value.usd
+            }
+            return sorted.map { key, tally in
+                Row(id: title(key, tally), tally: tally, share: share(tally, total: total, tokenTotal: tokenTotal))
             }
         }
 

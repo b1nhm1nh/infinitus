@@ -26,14 +26,19 @@ extension StatsScanner {
         public var endedInProse = false
         /// The model of the last usage-bearing entry; "" before one.
         public var model = ""
+        /// Its effort setting the same way ("unset" when the entry has none).
+        public var effort = ""
+        /// The transcript's engine — fixed for the file.
+        public var engine = Stats.Engine.claude.rawValue
         public var inputTokens = 0
         public var outputTokens = 0
         public var usd = 0.0
 
-        public init(dayKey: String, at t: Double) {
+        public init(dayKey: String, at t: Double, engine: Stats.Engine = .claude) {
             self.dayKey = dayKey
             startedAt = t
             lastAt = t
+            self.engine = engine.rawValue
         }
 
         /// Spec rules, first match wins: a rule-1 label; every edit a
@@ -112,19 +117,42 @@ extension StatsScanner {
 
 extension Stats.Day {
     /// Fold a closed stretch in: its whole tally under its activity, and
-    /// its stretch count + wall time under its model. The model's
-    /// tokens/$ are NOT added here — `ingest` already charged them per
-    /// entry (that path also covers sub-agent files, which never form a
-    /// stretch).
+    /// its stretch count + wall time under its model, engine and effort.
+    /// Their tokens/$ are NOT added here — `ingest` already charged them
+    /// per entry (that path also covers sub-agent files, which never
+    /// form a stretch).
     public mutating func add(stretch s: StatsScanner.Stretch) {
         guard s.entries > 0 else { return }
         let t = s.tally
         activities[s.activity.rawValue] = (activities[s.activity.rawValue] ?? Stats.ActivityTally()) + t
-        guard !s.model.isEmpty else { return }
-        var m = byModel[s.model] ?? Stats.ActivityTally()
-        m.stretches += 1
-        m.seconds += t.seconds
-        byModel[s.model] = m
+        func count(_ table: inout [String: Stats.ActivityTally], _ key: String) {
+            guard !key.isEmpty else { return }
+            var m = table[key] ?? Stats.ActivityTally()
+            m.stretches += 1
+            m.seconds += t.seconds
+            table[key] = m
+        }
+        count(&byModel, s.model)
+        count(&byEngine, s.engine)
+        count(&byEffort, s.effort)
+    }
+
+    /// Tokens and $ of one usage-bearing entry, under every per-key
+    /// table at once (model, engine, effort) — the exact path, sub-agent
+    /// files included.
+    public mutating func charge(model: String, engine: String, effort: String,
+                                input: Int, output: Int, usd: Double) {
+        func add(_ table: inout [String: Stats.ActivityTally], _ key: String) {
+            guard !key.isEmpty else { return }
+            var m = table[key] ?? Stats.ActivityTally()
+            m.inputTokens += input
+            m.outputTokens += output
+            m.usd += usd
+            table[key] = m
+        }
+        add(&byModel, model)
+        add(&byEngine, engine)
+        add(&byEffort, effort)
     }
 }
 

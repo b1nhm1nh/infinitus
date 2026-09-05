@@ -198,7 +198,8 @@ final class MirrorModel: ObservableObject, FleetModel {
             error = nil
             LiveActivities.shared.sync(
                 fleet: fleets.first { $0.provider == .claude } ?? fleets.first,
-                machine: snapshot.machineName, tokenRate: snapshot.tokenRate)
+                machine: snapshot.machineName, tokenRate: snapshot.tokenRate,
+                capturedAt: snapshot.capturedAt)
             if firstLoad {
                 DispatchQueue.main.async { self.replayIntro() }
             }
