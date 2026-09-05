@@ -1,17 +1,30 @@
 import ImageIO
 import InfinitusCore
+import Intents
 import Social
 import UIKit
 import UniformTypeIdentifiers
 
-/// Share → Infinitus from any app (#64): the image goes into a session
-/// with the note typed here, over the mirror client the app uses. The
-/// pairing arrives through the shared keychain item (ShareBridge); the
-/// session list is asked of the Mac live, so a picked session exists.
+/// Share → Infinitus from any app (#64, #82): images, files, a link or
+/// text go into a session with the note typed here, over the mirror
+/// client the app uses. The pairing arrives through the shared keychain
+/// item (ShareBridge); the session list is asked of the Mac live, so a
+/// picked session exists — a session tapped in the suggestions row is
+/// preselected by its working directory.
 final class ShareViewController: SLComposeServiceViewController {
     struct Session {
         let pid: Int
+        let cwd: String
         let label: String
+    }
+
+    /// What the host app handed over, sorted into the message and its
+    /// attachments.
+    struct Shared {
+        var text: [String] = []
+        var attachments: [SessionInput.Attachment] = []
+        var tooBig: [String] = []
+        var isEmpty: Bool { text.isEmpty && attachments.isEmpty }
     }
 
     private static let lastPidKey = "share_last_pid"
@@ -71,7 +84,9 @@ final class ShareViewController: SLComposeServiceViewController {
                 return
             }
             let lastPid = UserDefaults.standard.integer(forKey: Self.lastPidKey)
-            selected = sessions.first { $0.pid == lastPid } ?? sessions[0]
+            let suggested = (extensionContext?.intent as? INSendMessageIntent)?.conversationIdentifier
+            selected = sessions.first { $0.cwd == suggested }
+                ?? sessions.first { $0.pid == lastPid } ?? sessions[0]
         } catch {
             sessionItem.value = error.localizedDescription
         }
@@ -89,7 +104,7 @@ final class ShareViewController: SLComposeServiceViewController {
             guard seen.insert(session.pid).inserted else { return nil }
             let name = snapshot.progressByPid?[session.pid]?.name
                 ?? URL(fileURLWithPath: session.cwd).lastPathComponent
-            return Session(pid: session.pid, label: "\(name) · \(session.status)")
+            return Session(pid: session.pid, cwd: session.cwd, label: "\(name) · \(session.status)")
         }
     }
 
@@ -105,15 +120,15 @@ final class ShareViewController: SLComposeServiceViewController {
     // MARK: - Posting
 
     private func post(_ text: String, to session: Session) async {
-        guard let image = await loadImage(), let jpeg = AttachmentImage.jpeg(image) else {
-            fail("couldn't read that image")
+        let shared = await loadShared()
+        guard !shared.isEmpty else {
+            fail(shared.tooBig.isEmpty ? "couldn't read what was shared"
+                 : "\(shared.tooBig.joined(separator: ", ")) is over \(SessionInput.maxAttachmentBytes / 1_048_576) MB")
             return
         }
-        let stamp = ISO8601DateFormatter().string(from: Date())
-            .replacingOccurrences(of: ":", with: "-")
-        let request = SessionInput.Request(
-            kind: .message, text: text,
-            attachments: [.init(name: "share-\(stamp).jpg", mime: "image/jpeg", data: jpeg)])
+        let body = ([text] + shared.text).filter { !$0.isEmpty }.joined(separator: "\n\n")
+        let request = SessionInput.Request(kind: .message, text: body,
+                                           attachments: shared.attachments.isEmpty ? nil : shared.attachments)
         do {
             let reply = try await NetworkFleetMirror.shared.sessionInput(pid: Int32(session.pid), request: request)
             // Only "delivered" means the session has it; "running" and
@@ -141,21 +156,59 @@ final class ShareViewController: SLComposeServiceViewController {
         }
     }
 
-    /// The shared image, whichever shape the host app hands over: a file
-    /// URL (Photos), a UIImage (the screenshot preview) or raw bytes.
-    /// Files and bytes are downsampled while decoding: an extension has
-    /// a fraction of an app's memory, and a full-resolution photo decoded
-    /// whole (100 MB and up) ends the sheet with no alert. Returned at
-    /// scale 1 so the JPEG step reads its size as pixels.
-    private func loadImage() async -> UIImage? {
+    /// Everything the host app handed over: images (any shape — a file
+    /// URL from Photos, a UIImage from the screenshot preview, raw
+    /// bytes) become JPEG attachments, files the Mac accepts (PDF, text)
+    /// go as they are, a link or text joins the message. Files and
+    /// images decode downsampled: an extension has a fraction of an
+    /// app's memory. Four attachments at most, five MB each.
+    private func loadShared() async -> Shared {
         let providers = (extensionContext?.inputItems as? [NSExtensionItem])?
             .flatMap { $0.attachments ?? [] } ?? []
-        let type = UTType.image.identifier
-        guard let provider = providers.first(where: { $0.hasItemConformingToTypeIdentifier(type) }) else {
-            return nil
+        var shared = Shared()
+        for provider in providers {
+            if provider.hasItemConformingToTypeIdentifier(UTType.image.identifier) {
+                guard shared.attachments.count < SessionInput.maxAttachments else { continue }
+                if let image = await Self.loadImage(provider), let jpeg = AttachmentImage.jpeg(image) {
+                    let stamp = ISO8601DateFormatter().string(from: Date()).replacingOccurrences(of: ":", with: "-")
+                    shared.attachments.append(.init(name: "share-\(stamp)-\(shared.attachments.count + 1).jpg",
+                                                    mime: "image/jpeg", data: jpeg))
+                }
+            } else if provider.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) {
+                guard shared.attachments.count < SessionInput.maxAttachments,
+                      let url = await Self.load(provider, UTType.fileURL.identifier) as? URL else { continue }
+                let mime = UTType(filenameExtension: url.pathExtension)?.preferredMIMEType ?? "application/octet-stream"
+                guard SessionInput.allowedAttachmentMimes.contains(mime),
+                      let data = try? Data(contentsOf: url) else { continue }
+                guard data.count <= SessionInput.maxAttachmentBytes else {
+                    shared.tooBig.append(url.lastPathComponent)
+                    continue
+                }
+                shared.attachments.append(.init(name: url.lastPathComponent, mime: mime, data: data))
+            } else if provider.hasItemConformingToTypeIdentifier(UTType.url.identifier) {
+                if let url = await Self.load(provider, UTType.url.identifier) as? URL {
+                    shared.text.append(url.absoluteString)
+                }
+            } else if provider.hasItemConformingToTypeIdentifier(UTType.plainText.identifier) {
+                if let text = await Self.load(provider, UTType.plainText.identifier) as? String,
+                   !text.isEmpty { shared.text.append(text) }
+            }
         }
-        let image: UIImage? = await withCheckedContinuation { continuation in
+        return shared
+    }
+
+    private static func load(_ provider: NSItemProvider, _ type: String) async -> NSSecureCoding? {
+        await withCheckedContinuation { continuation in
             provider.loadItem(forTypeIdentifier: type, options: nil) { item, _ in
+                continuation.resume(returning: item)
+            }
+        }
+    }
+
+    /// Returned at scale 1 so the JPEG step reads its size as pixels.
+    private static func loadImage(_ provider: NSItemProvider) async -> UIImage? {
+        let image: UIImage? = await withCheckedContinuation { continuation in
+            provider.loadItem(forTypeIdentifier: UTType.image.identifier, options: nil) { item, _ in
                 switch item {
                 case let url as URL:
                     continuation.resume(returning: CGImageSourceCreateWithURL(url as CFURL, nil).flatMap(Self.downsampled))

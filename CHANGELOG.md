@@ -39,7 +39,7 @@ publishes the matching section as the GitHub release body.
 - A session that comes to need an AWS sign-in raises a notification on the phone, tap to sign in, and the Quests badge counts it.
 - The phone build carries the push entitlement, so Live Activities and alerts move with the app closed once the Mac holds an APNs key (Settings › Sync).
 - Home-screen and lock-screen widgets in the fleet's theme: the active account's windows as your theme names and colors them, what's waiting, and the revival countdown when every account is limited.
-- Share → Infinitus from any app sends the image into a session with a note, picked from the Mac's live list, without opening the app.
+- Share → Infinitus from any app sends images, files, a link or text into a session with a note, picked from the Mac's live list, without opening the app; your sessions sit in the share sheet's suggestions row.
 - A message from another session shows as "Message from @name" with a preview, the full text a tap away.
 - Your own turns render Markdown too.
 - Live Activities are back on the lock screen and Dynamic Island.

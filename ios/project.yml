@@ -148,8 +148,14 @@ targets:
           NSExtensionPointIdentifier: com.apple.share-services
           NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).ShareViewController
           NSExtensionAttributes:
+            # A tapped session in the suggestions row (#82) arrives as
+            # an INSendMessageIntent naming it.
+            IntentsSupported: [INSendMessageIntent]
             NSExtensionActivationRule:
-              NSExtensionActivationSupportsImageWithMaxCount: 1
+              NSExtensionActivationSupportsImageWithMaxCount: 4
+              NSExtensionActivationSupportsFileWithMaxCount: 4
+              NSExtensionActivationSupportsWebURLWithMaxCount: 1
+              NSExtensionActivationSupportsText: true
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.huuloc.infinitus.mobile.share
