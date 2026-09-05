@@ -8,7 +8,7 @@ struct TeamMemberPane: View {
     let kid: String
     @State private var period: Stats.Period = .week
     @State private var openSession: TeamDocs.SessionRow?
-    @State private var items: [SessionFeedItem] = []
+    @State private var items: [SessionFeedItem]?
 
     private var member: TeamReader.Member? { team.reader?.members[kid] }
     private var summary: Stats.Summary? { team.reader?.summary(kid: kid, period: period) }
@@ -31,7 +31,7 @@ struct TeamMemberPane: View {
             }
             if let m = member, !m.sessions.isEmpty {
                 Section("Sessions") {
-                    ForEach(m.sessions.sorted { $0.startedAt > $1.startedAt }, id: \.id) { row in
+                    ForEach(m.sessions, id: \.id) { row in
                         HStack {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(row.name ?? row.project).bold()
@@ -40,8 +40,15 @@ struct TeamMemberPane: View {
                             }
                             Spacer()
                             if m.transcripts[row.id] != nil {
-                                Button("Transcript") { openSession = row; Task { items = await team.transcript(kid: kid, session: row.id) } }
-                                    .buttonStyle(.link)
+                                Button("Transcript") {
+                                    items = nil
+                                    openSession = row
+                                    Task {
+                                        let r = await team.transcript(kid: kid, session: row.id)
+                                        if openSession?.id == row.id { items = r }
+                                    }
+                                }
+                                .buttonStyle(.link)
                             }
                         }
                     }
@@ -52,15 +59,20 @@ struct TeamMemberPane: View {
         .navigationTitle(member?.name ?? kid)
         .sheet(item: $openSession) { row in
             VStack(alignment: .leading, spacing: 0) {
-                HStack { Text(row.name ?? row.project).font(.headline); Spacer(); Button("Close") { openSession = nil; items = [] } }.padding()
-                if items.isEmpty { Spacer(); HStack { Spacer(); ProgressView(); Spacer() }; Spacer() }
-                else {
-                    List(Array(items.enumerated()), id: \.offset) { _, item in
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(item.kind.rawValue).font(.caption2).foregroundStyle(.secondary)
-                            Text(item.text).font(.callout).textSelection(.enabled)
+                HStack { Text(row.name ?? row.project).font(.headline); Spacer(); Button("Close") { openSession = nil; items = nil } }.padding()
+                if let items {
+                    if items.isEmpty {
+                        Spacer(); Text("Nothing to show").foregroundStyle(.secondary); Spacer()
+                    } else {
+                        List(Array(items.enumerated()), id: \.offset) { _, item in
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(item.kind.rawValue).font(.caption2).foregroundStyle(.secondary)
+                                Text(item.text).font(.callout).textSelection(.enabled)
+                            }
                         }
                     }
+                } else {
+                    Spacer(); HStack { Spacer(); ProgressView(); Spacer() }; Spacer()
                 }
             }
             .frame(minWidth: 520, minHeight: 420)
