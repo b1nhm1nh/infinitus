@@ -12,7 +12,10 @@ public enum SessionInput {
         /// the Mac composes the continue message itself; `text` is
         /// ignored. Whatever stopped the session — a limit, a crash, a
         /// closed terminal, a lost network — the ask is the same.
-        public enum Kind: String, Codable, Sendable { case message, key, resume }
+        /// `approve` (#79): "allow for this session" from the phone —
+        /// `text` is `ToolApproval.encode(tool:input:)`; the Mac records
+        /// the rule and answers the prompt with Yes.
+        public enum Kind: String, Codable, Sendable { case message, key, resume, approve }
         public let kind: Kind
         /// `message`: free text. `key`: one of `SessionInput.allowedKeys`.
         public let text: String
@@ -176,6 +179,12 @@ extension SessionInput {
         let ancestors = ancestorsOf(record.pid)
 
         switch request.kind {
+        case .approve:
+            // The rule itself is the app's to keep; here it is a Yes.
+            return deliver(request: Request(kind: .key, text: "1"), record: record,
+                           hosts: hosts, claudeDir: claudeDir, attachmentsDir: attachmentsDir,
+                           ttyOfPid: ttyOfPid, ancestorsOf: ancestorsOf, socketSend: socketSend,
+                           sleep: sleep)
         case .resume:
             // The message path, with the Mac's own text: socket first,
             // terminal fallback, the same outcomes.
