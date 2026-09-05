@@ -27,6 +27,10 @@ publishes the matching section as the GitHub release body.
 - The phone raises its own alarms, no push service needed: an exhausted account's limit lifting in 10 minutes, and the account the fleet just swapped to; off in Settings › Notifications.
 - Settings shows the Mac's and the phone's versions, can trigger the Mac's update, and says when a newer phone build is out.
 
+### Team (preview)
+- `infinitusctl team identity export|import` seals your identity with a passphrase (PBKDF2 600k + ChaChaPoly, the same file on every platform), `identity recovery --show` prints the 8-group recovery key, and either restores the same kid on a new machine.
+- The site serves the passkey relying-party file for infinitus.run, and a release built with a provisioning profile carries the associated-domains entitlement the passkey identity needs.
+
 ## 0.4.3
 
 ### Stats
