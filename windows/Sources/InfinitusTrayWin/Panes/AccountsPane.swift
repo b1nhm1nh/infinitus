@@ -277,7 +277,12 @@ public final class AccountsPane: SettingsPane {
         if let ctx {
             layout(width: ctx.metrics.px(600), height: ctx.metrics.px(500))
         }
-        timerID = SetTimer(ctx?.host, 1, 3000, nil)
+        // A TIMERPROC, as DevicesPane does: the host's window procedure
+        // has no WM_TIMER case, so a callback-less timer posted a message
+        // every 3 s that nobody handled — the roster never caught up with
+        // the async first read, and the wakeups were pure waste.
+        AccountsPane.activePane = self
+        timerID = SetTimer(ctx?.host, 1, 3000, AccountsPane.timerCallback)
     }
 
     public func deactivate() {
@@ -285,6 +290,33 @@ public final class AccountsPane: SettingsPane {
             KillTimer(host, timerID)
             timerID = 0
         }
+        if AccountsPane.activePane === self {
+            AccountsPane.activePane = nil
+        }
+    }
+
+    private nonisolated(unsafe) static var activePane: AccountsPane?
+
+    private static let timerCallback: TIMERPROC = { (hwnd, msg, id, time) in
+        AccountsPane.activePane?.timerTick()
+    }
+
+    /// Re-read the cache and relayout ONLY when a row changed: `layout`
+    /// destroys and recreates every row control, which would clobber a
+    /// rename in progress and flicker the pane every 3 s.
+    private func timerTick() {
+        let fresh = TrayFleet.cachedFleets()
+        var freshModels: [AccountRowModel] = []
+        for fleet in fresh {
+            let caps = EngineCatalog.capabilities(for: fleet.engineID)
+            for acc in fleet.accounts {
+                freshModels.append(AccountRowModel(
+                    account: acc, activeNumber: fleet.activeNumber,
+                    engineID: fleet.engineID, provider: fleet.provider, capabilities: caps))
+            }
+        }
+        guard freshModels != rowModels else { return }
+        refreshFleets()
     }
 
     public func command(id: Int32, code: UINT, from: HWND?) -> Bool {
@@ -444,21 +476,13 @@ public final class AccountsPane: SettingsPane {
                 _ = CLIProxyFleet.setHold(row.number, provider: row.provider, held: targetHeld)
                 return targetHeld ? "Held account #\(row.number)" : "Released hold #\(row.number)"
             } else if row.engineID == "9router" {
-                guard let engine = NineRouterFleet.loadConfig().0 as URL? else { return "9Router not configured" }
-                let nrEngine = NineRouterEngine(baseURL: engine, password: NineRouterFleet.loadConfig().1)
-                let sem = DispatchSemaphore(value: 0)
-                var msg = ""
-                Task {
-                    do {
-                        try await nrEngine.setHold(fleet: row.provider, number: row.number, held: targetHeld)
-                        msg = targetHeld ? "Held account #\(row.number)" : "Released hold #\(row.number)"
-                    } catch {
-                        msg = error.localizedDescription
-                    }
-                    sem.signal()
+                // The SHARED engine: a fresh one knows no connection ids
+                // and refused every number ("no Claude account #n in the
+                // last snapshot").
+                if let failure = NineRouterFleet.setHold(row.number, provider: row.provider, held: targetHeld) {
+                    return failure
                 }
-                sem.wait()
-                return msg
+                return targetHeld ? "Held account #\(row.number)" : "Released hold #\(row.number)"
             }
             return ""
         }, then: { [weak self] msg in
@@ -494,21 +518,10 @@ public final class AccountsPane: SettingsPane {
                 _ = CLIProxyFleet.remove(row.number, provider: row.provider)
                 return "Removed credential"
             } else if row.engineID == "9router" {
-                let nrCfg = NineRouterFleet.loadConfig()
-                let nrEngine = NineRouterEngine(baseURL: nrCfg.0, password: nrCfg.1)
-                let sem = DispatchSemaphore(value: 0)
-                var msg = ""
-                Task {
-                    do {
-                        try await nrEngine.remove(fleet: row.provider, number: row.number)
-                        msg = "Removed connection #\(row.number)"
-                    } catch {
-                        msg = error.localizedDescription
-                    }
-                    sem.signal()
+                if let failure = NineRouterFleet.remove(row.number, provider: row.provider) {
+                    return failure
                 }
-                sem.wait()
-                return msg
+                return "Removed connection #\(row.number)"
             }
             return ""
         }, then: { [weak self] msg in
