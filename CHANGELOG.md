@@ -5,7 +5,26 @@ links, no internals or workflow detail; one feature note is one line,
 a single short sentence (user 2026-09-04). The release workflow
 publishes the matching section as the GitHub release body.
 
-## 0.4.3 (unreleased)
+## 0.4.4 (unreleased)
+
+### Stats
+- The activity tables read the ask off your own message — "debug the crash" counts as debugging even when the tools only edited — and the plugin's UserPromptSubmit hook refreshes a session the moment a prompt goes in.
+
+### Phone
+- Allow… on a permission card offers "Allow for this session": the Mac remembers the tool (Bash by command verb) and the plugin's PreToolUse hook skips that prompt for the rest of the session.
+
+### Mac
+- Settings › Machine watches what many sessions do to this Mac — load, swap, stuck hooks, runaway processes, residue — with confirmed kill, reclaim and hook-disable actions and notifications for new hook registrations and idle sessions.
+- When a revival countdown ends the Mac asks the engine again right away (three tries a minute apart) instead of waiting for the next poll.
+- "<account> is back" notifications, with "reset early" when Anthropic reset before the advertised time and "all accounts are back" when the whole fleet returns (Settings › Notifications).
+- `/infinitus:handoff <session>` passes the current task and its context to another live session through the plugin.
+- Live Activity pushes drop a phone token from before the bundle id move instead of failing on it every minute.
+- "Needs AWS login" banners no longer repeat after a relaunch, and every banner's headline is now its subtitle.
+
+### Phone
+- The phone raises its own alarms, no push service needed: an exhausted account's limit lifting in 10 minutes, and the account the fleet just swapped to; off in Settings › Notifications.
+
+## 0.4.3
 
 ### Stats
 - Stats reads Codex CLI transcripts too, with two more effort tables, per engine and per effort setting — one full rescan on first refresh.
@@ -13,6 +32,9 @@ publishes the matching section as the GitHub release body.
 - Tokens/min records: every day's peak minute, the all-time best and the days it fell, a 30-day sparkline and a week-over-week trend, on the Mac and the phone — one full rescan on first refresh.
 
 ### Fixes
+- Stats scan parses transcripts 4.6× faster (byte-level line scanning, no regex on tool results) and decodes the cache once per backfill instead of every pass.
+- Tokens/min records: the day's minute buckets survive the stats cache, so the peak is the day's real busiest minute, not the last scan's.
+- Stats count workflow sub-agent transcripts (`subagents/workflows/…`), which were invisible to tokens, cost and peaks.
 - AWS logins survive a Mac relaunch, and a need that failed just before a launch still reaches the phone.
 - A session stuck behind the credential broker's refresh lock (another process sitting in `aws login`) now shows the AWS login card too.
 - A session whose check kept only the broker's "Fix: aws login" line (a `| tail -1`) shows the AWS login card too.
@@ -32,10 +54,17 @@ publishes the matching section as the GitHub release body.
 - Randomize names: every account gets a fresh name from the current theme's pool (Settings › Accounts, or `infinitusctl randomize-names`).
 
 ### Mac
+- The plugin's MCP server: `fleet_status`, `list_sessions` and `session_message` tools in every session, plus `/infinitus:status`; `infinitusctl sessions` and `infinitusctl send <pid|name>` for scripts.
+- A Claude Code plugin (`infinitusctl plugin install`): its hooks push a permission or question to the phone the moment it appears and refresh the fleet when a turn ends.
+- Settings › Sync names this Mac for the phone, widgets and crash reports; the default drops the " (7)" macOS appends after name collisions.
+- Compact account rows no longer run under the cash column.
+- Releases are signed with a Developer ID and notarized: no more right-click → Open on first launch.
 - Bundle ids move to `run.infinitus` and `run.infinitus.mobile`: settings carry over; notifications, login item, proxy key and phone pairing are asked once more.
+- The menu bar item follows the theme — the loop in its color, the theme's icon beside it — and glows on a switch, a death or a revival, with an ember breath while the active account burns (Settings › Display).
 - Capture Screen for a Session… in the menu-bar menu: pick a region or window, choose a session, add a note, and it lands in that session's chat like a phone message.
 
 ### Phone
+- Start a session from the phone: + on the Quests tab picks a repository, the engine and a first prompt, and the Mac opens it in a cmux workspace or Terminal; Siri and Shortcuts have "Start a session in Infinitus".
 - The working Live Activity follows an account switch when the app opens, and a card nothing has reached says "out of date".
 - A lighter chat header: compact by default, or a stat strip with mini gauges (Settings › Appearance › Chat header).
 - A capture of the app — the capture button in a chat, a shake anywhere, or a screenshot the phone just took — lands in the composer as an attachment so you can say what it's about.

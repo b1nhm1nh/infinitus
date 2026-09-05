@@ -12,6 +12,14 @@ let args = Array(CommandLine.arguments.dropFirst())
 if args.first == "team" {
     exit(runTeam(Array(args.dropFirst())))
 }
+// `plugin` drives `claude plugin …` (PluginCommand.swift); no app needed.
+if args.first == "plugin" {
+    exit(PluginCommand.run(Array(args.dropFirst())))
+}
+// `mcp` serves the plugin's MCP tools over stdio (MCPCommand.swift).
+if args.first == "mcp" {
+    exit(MCPCommand.run())
+}
 
 func usage() -> String {
     var out = "usage: infinitusctl <command> [args] [--option value]\n\n"
@@ -23,6 +31,8 @@ func usage() -> String {
         out += "\n"
     }
     out += "  team <subcommand>      teams: create, code, request, approve, publish… (`infinitusctl team --help`)\n"
+    out += "  plugin install|uninstall|status   the Claude Code plugin: hooks that push prompts to the phone the moment they appear\n"
+    out += "  mcp                    the plugin's MCP server over stdio (fleet_status, list_sessions, session_message)\n"
     out += "\nFleet keys come from `infinitusctl fleets` (e.g. cswap/claude, cliproxy/claude).\n"
     out += "proxy-key, 9router-password and aws-login-code read their secret from stdin.\n"
     out += "Socket: \(ControlProtocol.socketURL().path)\n"
@@ -59,7 +69,7 @@ while i < args.count {
 }
 
 var secret: String?
-if ["proxy-key", "9router-password", "aws-login-code", "aws-login-callback"].contains(command) {
+if ["proxy-key", "9router-password", "aws-login-code", "aws-login-callback", "event", "send", "approve"].contains(command) {
     let data = FileHandle.standardInput.readDataToEndOfFile()
     secret = String(decoding: data, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
 }

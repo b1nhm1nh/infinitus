@@ -307,6 +307,12 @@ actor NetworkFleetMirror: FleetMirror {
     /// AWS sign-in from the phone: start (idempotent — returns the
     /// in-flight state, so it doubles as the poll), the intercepted
     /// relay callback, or the paste-back code. Same route as replies.
+    /// A new session on the Mac (#91): opens a terminal there and waits
+    /// for the session to register, so this takes seconds.
+    func startSession(_ request: SessionStart.Request) async throws -> SessionStart.Reply {
+        try await postJSON(SessionStart.path, body: request, timeout: Self.attachmentInputTimeout)
+    }
+
     func awsLoginStart(_ request: AwsLogin.StartRequest) async throws -> AwsLogin.Reply {
         try await postJSON(AwsLogin.startPath, body: request)
     }
@@ -317,7 +323,8 @@ actor NetworkFleetMirror: FleetMirror {
         try await postJSON(AwsLogin.codePath, body: request)
     }
 
-    private func postJSON<B: Encodable, R: Decodable>(_ path: String, body: B) async throws -> R {
+    private func postJSON<B: Encodable, R: Decodable>(_ path: String, body: B,
+                                                      timeout: TimeInterval = NetworkFleetMirror.inputTimeout) async throws -> R {
         let token = MirrorPairing.normalize(
             UserDefaults.standard.string(forKey: Self.tokenKey) ?? "")
         let payload = try JSONEncoder().encode(body)
@@ -328,12 +335,12 @@ actor NetworkFleetMirror: FleetMirror {
                 port: NWEndpoint.Port(rawValue: manual.port) ?? .any)
             (data, _) = try await fetch(endpoint, path: path, hostHeader: manual.host,
                                         useTLS: manual.useTLS, token: token,
-                                        timeout: Self.inputTimeout, method: "POST", body: payload)
+                                        timeout: timeout, method: "POST", body: payload)
         } else {
             startBrowsing()
             guard let discovered = await firstEndpoint() else { throw MirrorTransportError.timedOut }
             (data, _) = try await fetch(discovered, path: path, hostHeader: "infinitus",
-                                        useTLS: false, token: token, timeout: Self.inputTimeout,
+                                        useTLS: false, token: token, timeout: timeout,
                                         method: "POST", body: payload)
         }
         return try JSONDecoder().decode(R.self, from: data)

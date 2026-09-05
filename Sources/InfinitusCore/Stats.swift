@@ -220,7 +220,9 @@ public enum Stats {
         /// share of the day has been merged in (a merge of two files'
         /// same minute adds up to more than either's peak).
         public mutating func finalizePeak() {
-            guard let top = minuteTokens.max(by: { $0.value < $1.value }) else { return }
+            // Ties go to the earliest minute, so the answer doesn't depend
+            // on dictionary order (a cached and a fresh scan must agree).
+            guard let top = minuteTokens.max(by: { $0.value < $1.value || ($0.value == $1.value && $0.key > $1.key) }) else { return }
             peakTokensPerMinute = top.value
             peakMinute = top.key
         }
@@ -307,6 +309,12 @@ public enum Stats {
             ignites = try c.decodeIfPresent(Int.self, forKey: .ignites) ?? d.ignites
             resumes = try c.decodeIfPresent(Int.self, forKey: .resumes) ?? d.resumes
             minutesLostToLimits = try c.decodeIfPresent(Double.self, forKey: .minutesLostToLimits) ?? d.minutesLostToLimits
+            // Added with the tokens/min records (#89) and missed here at
+            // first: every cache load then dropped the minute buckets, so
+            // the "peak" was only the last pass's fresh bytes (2026-09-05).
+            minuteTokens = try c.decodeIfPresent([Int: Int].self, forKey: .minuteTokens) ?? d.minuteTokens
+            peakTokensPerMinute = try c.decodeIfPresent(Int.self, forKey: .peakTokensPerMinute) ?? d.peakTokensPerMinute
+            peakMinute = try c.decodeIfPresent(Int.self, forKey: .peakMinute) ?? d.peakMinute
         }
 
         // Derived — nil when the denominator is zero (tiles show "—").

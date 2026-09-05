@@ -130,7 +130,7 @@ struct AccountGrid<M: FleetModel, U: UsageSource>: View {
                             .fixedSize()
                             .alignedColumn("usage")
                             .activeBand(account.active)
-                            .gridCellColumns(usageColumns)
+                            oneLineFillers
                             cells.cashCell.alignedColumn("cash")
                         } else {
                             cells.deadCell.alignedColumn("5h")
@@ -161,6 +161,11 @@ struct AccountGrid<M: FleetModel, U: UsageSource>: View {
                         // cell vanished would show its 7d gauge floating in
                         // the wrong column. Pack the visible cells tight in
                         // ONE cell; only number/name/plan/cash stay columns.
+                        // The packed cell sizes the 5h column like the
+                        // dead/ready one-liners do and fillers keep the
+                        // cash column in place: a spanning cell never fed
+                        // its width to the columns, so a wide packed row
+                        // ran under the cash figures (#100).
                         HStack(spacing: 12) {
                             cells.windowCell(account.usage?.fiveHour, session: true)
                             cells.windowCell(account.usage?.sevenDay, session: false)
@@ -170,7 +175,7 @@ struct AccountGrid<M: FleetModel, U: UsageSource>: View {
                         .fixedSize()
                         .alignedColumn("usage")
                         .activeBand(account.active)
-                        .gridCellColumns(usageColumns)
+                        oneLineFillers
                         cells.cashCell.alignedColumn("cash")
                     } else {
                         cells.windowCell(account.usage?.fiveHour, session: true).alignedColumn("5h")

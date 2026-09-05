@@ -19,6 +19,10 @@ extension StatsScanner {
         /// The first rule-1 vote (`Stats.Activity.rawValue`); nil until
         /// a skill / sub-agent / tool says something.
         public var label: String?
+        /// Rule 0: what the person asked for, read off the message that
+        /// opened the stretch (`ActivitySignals.label(prompt:)`); nil
+        /// when the words carry no clear intent.
+        public var promptLabel: String?
         public var edits = 0
         public var testEdits = 0
         public var bash = 0
@@ -41,12 +45,14 @@ extension StatsScanner {
             self.engine = engine.rawValue
         }
 
-        /// Spec rules, first match wins: a rule-1 label; every edit a
-        /// test file → tests, a mix → code; no edits and no commands
-        /// but a prose ending → explanation; something ran → code;
-        /// nothing at all (a read-only stretch cut short) → other.
+        /// Spec rules, first match wins: a rule-1 label; the person's
+        /// stated intent; every edit a test file → tests, a mix → code;
+        /// no edits and no commands but a prose ending → explanation;
+        /// something ran → code; nothing at all (a read-only stretch cut
+        /// short) → other.
         public var activity: Stats.Activity {
             if let label, let a = Stats.Activity(rawValue: label) { return a }
+            if let promptLabel, let a = Stats.Activity(rawValue: promptLabel) { return a }
             if edits > 0 { return testEdits == edits ? .tests : .code }
             if bash > 0 { return .code }
             return endedInProse ? .explanation : .other
@@ -94,6 +100,31 @@ extension StatsScanner {
             default: return nil
             }
         }
+
+        /// Rule 0: the intent in the person's own words, checked in this
+        /// order so "review the plan" is a review and "plan the tests" a
+        /// plan. Only the opening 400 characters count — a pasted log
+        /// below the ask must not vote. Ground truth where the tools
+        /// are ambiguous ("debug the crash" is edits, not coding), and
+        /// the poll-free half of the plugin's UserPromptSubmit hook.
+        public static func label(prompt: String) -> Stats.Activity? {
+            let text = " " + prompt.prefix(400).lowercased()
+                .replacingOccurrences(of: "[^a-z0-9 ]+", with: " ", options: .regularExpression) + " "
+            for (activity, markers) in promptMarkers {
+                if markers.contains(where: { text.contains(" \($0) ") }) { return activity }
+            }
+            return nil
+        }
+
+        static let promptMarkers: [(Stats.Activity, [String])] = [
+            (.review, ["review", "code review", "critique", "audit", "look over", "second opinion"]),
+            (.plan, ["plan", "brainstorm", "design", "architecture", "spec", "propose", "options for"]),
+            (.tests, ["write tests", "add tests", "add a test", "unit tests", "unit test", "test coverage", "tests for", "spec for"]),
+            (.debug, ["debug", "fix the bug", "fix this bug", "crash", "crashes", "crashing", "failing", "broken", "doesn t work", "not working", "why does", "why is", "regression", "stack trace"]),
+            (.browser, ["browser", "chrome", "website", "web page", "webpage", "playwright", "the site"]),
+            (.simulator, ["simulator", "on the phone", "on my phone", "on device", "on the device"]),
+            (.explanation, ["explain", "what does", "what is", "how does", "how do", "walk me through", "describe", "summarize", "summarise"]),
+        ]
 
         static let simulatorMarkers = ["xcrun simctl", "simctl ", "platform=iOS Simulator", "devicectl", "adb "]
         static let reviewCommands = ["gh pr review", "gh pr diff"]

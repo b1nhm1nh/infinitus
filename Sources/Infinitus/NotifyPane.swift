@@ -119,6 +119,9 @@ struct NotifyPane: View {
                           + "permission prompt or a question — answer it "
                           + "from the phone's session feed.")
                 Toggle("A session needs an AWS login", isOn: $app.pushAwsLogin)
+                Toggle("An account comes back", isOn: $app.pushRevived)
+                    .help("A limited account's windows reset — named, and flagged "
+                          + "when Anthropic reset it before the advertised time.")
                     .help("Fires once per session and profile when an aws "
                           + "command fails on an expired sign-in — sign in "
                           + "from the phone's sessions list.")
