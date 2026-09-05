@@ -12,7 +12,10 @@ public enum SessionInput {
         /// the Mac composes the continue message itself; `text` is
         /// ignored. Whatever stopped the session — a limit, a crash, a
         /// closed terminal, a lost network — the ask is the same.
-        public enum Kind: String, Codable, Sendable { case message, key, resume }
+        /// `approve` (#79): "allow for this session" from the phone —
+        /// `text` is `ToolApproval.encode(tool:input:)`; the Mac records
+        /// the rule and answers the prompt with Yes.
+        public enum Kind: String, Codable, Sendable { case message, key, resume, approve }
         public let kind: Kind
         /// `message`: free text. `key`: one of `SessionInput.allowedKeys`.
         public let text: String
@@ -96,10 +99,15 @@ extension SessionInput {
     }
 
     /// `~/Library/Application Support/Infinitus/attachments` on macOS,
+    /// `%LOCALAPPDATA%\Infinitus\attachments` on Windows,
     /// `$XDG_STATE_HOME/infinitus/attachments` (Linux tray parity) —
     /// same base as `MirrorExporter.url` / `TrayMirror.stateDir`.
     public static var defaultAttachmentsDir: URL {
-        #if canImport(Glibc)
+        #if os(Windows)
+        let base = ProcessInfo.processInfo.environment["LOCALAPPDATA"]
+            ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].path
+        return URL(fileURLWithPath: base).appendingPathComponent("Infinitus\\attachments")
+        #elseif canImport(Glibc)
         return MirrorWriter.linuxStateDir(env: ProcessInfo.processInfo.environment,
                                           home: NSHomeDirectory())
             .appendingPathComponent("attachments")
@@ -176,6 +184,12 @@ extension SessionInput {
         let ancestors = ancestorsOf(record.pid)
 
         switch request.kind {
+        case .approve:
+            // The rule itself is the app's to keep; here it is a Yes.
+            return deliver(request: Request(kind: .key, text: "1"), record: record,
+                           hosts: hosts, claudeDir: claudeDir, attachmentsDir: attachmentsDir,
+                           ttyOfPid: ttyOfPid, ancestorsOf: ancestorsOf, socketSend: socketSend,
+                           sleep: sleep)
         case .resume:
             // The message path, with the Mac's own text: socket first,
             // terminal fallback, the same outcomes.

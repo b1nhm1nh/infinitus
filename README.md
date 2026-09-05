@@ -74,6 +74,18 @@ Arch users can build from [`packaging/aur/PKGBUILD`](packaging/aur/) —
 > desktop session were involved. Reports from actual Linux desktops
 > welcome.
 
+### Windows — phone remote daemon (`infinitus-win`)
+
+Windows runs Claude Code natively (Windows Terminal + `claude.exe`), but
+Claude Code's built-in `--remote-control` is disabled under custom
+`ANTHROPIC_BASE_URL` configs. `infinitus-win` provides a native Windows daemon
+and CLI that bridges local Claude Code sessions, transcripts, and named pipes to
+the [Infinitus mobile companion](ios/InfinitusMobile).
+
+See [`windows/README.md`](windows/README.md) for toolchain setup (`winget install --id Swift.Toolchain -e`),
+build instructions, firewall configuration, and CLI commands (`serve`, `sessions`,
+`pair`, `snapshot`, `message`, `resume`).
+
 ### Requirements
 
 - macOS 14+ (best on macOS 26 — the glass chrome uses it)
@@ -189,6 +201,8 @@ to drive the running app.
   every session `fleet_status`, `list_sessions` and `session_message`
   (text to another live session by name), and `/infinitus:status`
   answers "how are the accounts doing" from them.
+  With the plugin installed, "Allow for this session" on the phone's
+  permission card skips that tool's prompt for the rest of the session.
 - **Capture the desktop into a session** — Capture Screen for a
   Session… in the menu-bar menu: a region or window, a session, a note,
   delivered like a phone message.
