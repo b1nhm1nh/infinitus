@@ -9,8 +9,10 @@ the script exits 0 whether the app is running or not.
 
 An MCP server (`infinitusctl mcp`, wired by `.mcp.json`) gives every
 session three tools — `fleet_status`, `list_sessions`, `session_message`
-(send text to another live session by pid or name) — and the `/infinitus:status`
-skill answers "how are the accounts doing" in three lines from them.
+(send text to another live session by pid or name); the `/infinitus:status`
+skill answers "how are the accounts doing" in three lines from them, and
+`/infinitus:handoff <session>` passes the current task, with its context, to
+another live session.
 
 Install: `infinitusctl plugin install` (or `claude plugin marketplace add
 deathemperor/infinitus` then `claude plugin install infinitus@infinitus`).
