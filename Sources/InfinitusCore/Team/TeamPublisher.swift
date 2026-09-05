@@ -82,4 +82,176 @@ public struct TeamPublisher {
         out.sessions = rows.values.sorted { $0.startedAt == $1.startedAt ? $0.id < $1.id : $0.startedAt > $1.startedAt }
         return out
     }
+
+    // MARK: publishing
+
+    /// Everything a publish reads, injected so tests and the CLI point
+    /// at any directory. `fleets`/`blockers` come from the app's fleet
+    /// view (plan 5); the CLI sends none.
+    public struct Sources {
+        public var projectsDir: URL
+        public var codexDir: URL?
+        /// A scan cache of the publisher's OWN (never the app's, which
+        /// the app writes concurrently).
+        public var cacheURL: URL?
+        public var liveSessions: [ClaudeSessionRecord] = []
+        public var crashes: [CrashReport] = []
+        public var fleets: [TeamDocs.Fleet] = []
+        public var blockers: [String] = []
+        public var home: String
+        public var includeImages = false
+        /// Days of `days/` files published and files scanned (`maxAge`).
+        public var historyDays = 30
+        public var calendar: Calendar = .current
+        public init(projectsDir: URL, home: String) { self.projectsDir = projectsDir; self.home = home }
+    }
+
+    public struct Report: Equatable, Encodable {
+        public var published: [String] = []
+        public var transcriptChunks = 0
+        /// Whole-object files whose content had not changed.
+        public var skipped = 0
+        public init() {}
+    }
+
+    public let client: TeamClient
+    public let paths: TeamPaths
+
+    public init(client: TeamClient, paths: TeamPaths) { self.client = client; self.paths = paths }
+
+    public var teamDir: URL { paths.teamDir(client.config.id) }
+    /// Plaintext copies of what was published (spec §7 "re-share history
+    /// re-wraps the local plaintext copies"); grows with the transcripts.
+    public var copiesDir: URL { teamDir.appendingPathComponent("published") }
+
+    static func hex(_ data: Data) -> String {
+        let digits = Array("0123456789abcdef")
+        var out = ""
+        for byte in Crypto.SHA256.hash(data: data) {
+            out.append(digits[Int(byte >> 4)]); out.append(digits[Int(byte & 0x0f)])
+        }
+        return out
+    }
+
+    private func writeCopy(_ path: String, _ data: Data) throws {
+        let url = copiesDir.appendingPathComponent(path)
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try data.write(to: url, options: .atomic)
+    }
+
+    /// One push (spec §7 cadence is the caller's): days that changed in
+    /// the window, the session index and `now.json` every time, the
+    /// crash list on change, every new transcript chunk. State advances
+    /// only after the push succeeded.
+    public func publish(sources: Sources, now: Date = Date()) throws -> Report {
+        guard client.isMember else { throw TeamClient.ClientError.notInTeam }
+        let shares = TeamShares.load(teamDir: teamDir)
+        let exclusions = TeamExclusions.load(paths: paths)
+        var state = TeamPublishState.load(teamDir: teamDir)
+        let at = Int(now.timeIntervalSince1970)
+        let calendar = sources.calendar
+        let scan = StatsScanner.scan(projectsDir: sources.projectsDir, codexDir: sources.codexDir, cacheURL: sources.cacheURL,
+                                     calendar: calendar, maxAge: Double(sources.historyDays) * 86_400, now: now)
+        let collected = Self.collect(entries: scan.entries, exclusions: exclusions)
+        let redaction = TeamRedaction.Options(home: sources.home, includeImages: sources.includeImages)
+        var items: [TeamClient.PublishItem] = []
+        var report = Report()
+
+        // The hash is over the canonical bytes. `Stats.Day` carries two
+        // `Set<String>`s whose JSON order follows Swift's per-process
+        // hash seed, so across CLI runs an unchanged day can hash
+        // differently and go out again — a wasted envelope, never a
+        // wrong one. Within one process (the app's timer) it is stable.
+        func stage(_ kind: String, _ path: String, _ plaintext: Data, always: Bool = false) throws {
+            let digest = Self.hex(plaintext)
+            if !always, state.hashes[path] == digest { report.skipped += 1; return }
+            try writeCopy(path, plaintext)
+            items.append(TeamClient.PublishItem(kind: kind, path: path, plaintext: plaintext, audience: shares.target(for: kind)))
+            state.hashes[path] = digest
+        }
+
+        let floor = calendar.date(byAdding: .day, value: -sources.historyDays, to: calendar.startOfDay(for: now)) ?? .distantPast
+        for (key, day) in collected.days.sorted(by: { $0.key < $1.key }) {
+            guard let date = Stats.date(fromDayKey: key, calendar: calendar), date >= floor else { continue }
+            try stage(TeamKinds.stats, "days/\(key).json", try CanonicalJSON.encode(TeamDocs.DayDoc(day: key, stats: day)))
+        }
+        try stage(TeamKinds.sessions, "sessions/index.json",
+                  try CanonicalJSON.encode(TeamDocs.SessionsIndex(at: at, sessions: collected.sessions, fleets: sources.fleets)),
+                  always: true)
+        let live = sources.liveSessions
+            .filter { !exclusions.excludes(cwd: $0.cwd, projectDir: TeamExclusions.slug($0.cwd)) }
+            .map { TeamDocs.LiveSession(id: $0.sessionId, project: URL(fileURLWithPath: $0.cwd).lastPathComponent,
+                                        status: $0.status ?? "", name: $0.name) }
+        let today = calendar.startOfDay(for: now)
+        let crashesToday = sources.crashes.filter { $0.at >= today }.count
+        try stage(TeamKinds.now, "now.json",
+                  try CanonicalJSON.encode(TeamDocs.Now(at: at, sessions: live, fleets: sources.fleets, blockers: sources.blockers,
+                                                        crashesToday: crashesToday, sharesTo: shares.byKind)),
+                  always: true)
+        try stage(TeamKinds.crashes, "crashes.json",
+                  try CanonicalJSON.encode(TeamDocs.Crashes(crashes: sources.crashes.map(\.summary))))
+
+        for source in collected.transcripts {
+            var cursor = state.transcripts[source.key] ?? TeamPublishState.Cursor()
+            let (chunks, offset) = try TeamChunker.chunks(of: source.url, from: cursor.offset,
+                                                          redact: { TeamRedaction.redact($0, options: redaction) })
+            for chunk in chunks {
+                cursor.seq += 1
+                let path = source.chunkPath(seq: cursor.seq)
+                try writeCopy(path, chunk)
+                items.append(TeamClient.PublishItem(kind: TeamKinds.transcripts, path: path, plaintext: chunk,
+                                                    audience: shares.target(for: TeamKinds.transcripts)))
+                report.transcriptChunks += 1
+            }
+            cursor.offset = offset
+            state.transcripts[source.key] = cursor
+        }
+
+        report.published = try client.publish(items, now: at)
+        try state.save(teamDir: teamDir)
+        return report
+    }
+
+    /// Spec §6.5 / §7: re-wraps the local plaintext copies of the last
+    /// `days` days to the CURRENT audiences and republishes them — after
+    /// a promotion, or an audience change the member wants applied to
+    /// history. Day files go by their date, everything else by the
+    /// copy's modification time.
+    public func reshare(days: Int, now: Date = Date(), calendar: Calendar = .current) throws -> Report {
+        guard client.isMember else { throw TeamClient.ClientError.notInTeam }
+        let shares = TeamShares.load(teamDir: teamDir)
+        let floor = calendar.date(byAdding: .day, value: -days, to: calendar.startOfDay(for: now)) ?? .distantPast
+        var items: [TeamClient.PublishItem] = []
+        let fm = FileManager.default
+        // `subpathsOfDirectory` returns paths already relative to
+        // `copiesDir` — `FileManager.enumerator(at:)` hands back resolved
+        // URLs (macOS's temp dir is a `/var` -> `/private/var` symlink),
+        // so counting `copiesDir`'s own `pathComponents` against them
+        // drops the wrong prefix and every path fails `TeamKinds.expected`.
+        guard let subpaths = try? fm.subpathsOfDirectory(atPath: copiesDir.path) else { return Report() }
+        for path in subpaths {
+            let url = copiesDir.appendingPathComponent(path)
+            guard (try? url.resourceValues(forKeys: [.isRegularFileKey]))?.isRegularFile == true else { continue }
+            guard let kind = TeamKinds.expected(at: "m/\(client.identity.kid)/\(path)")?.kind else { continue }
+            // Live state is never re-shared: the copy is stale, and it would
+            // come back after `quit()` deleted it. The next publish rewraps it.
+            if kind == TeamKinds.now { continue }
+            if kind == TeamKinds.stats {
+                let key = String(url.deletingPathExtension().lastPathComponent)
+                guard let date = Stats.date(fromDayKey: key, calendar: calendar), date >= floor else { continue }
+            } else {
+                let mtime = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? .distantPast
+                guard mtime >= floor else { continue }
+            }
+            items.append(TeamClient.PublishItem(kind: kind, path: path, plaintext: try Data(contentsOf: url),
+                                                audience: shares.target(for: kind)))
+        }
+        items.sort { $0.path < $1.path }
+        var report = Report()
+        report.published = try client.publish(items, now: Int(now.timeIntervalSince1970))
+        return report
+    }
+
+    /// Spec §7: `now.json` is deleted on quit.
+    public func quit() throws { try client.unpublish(path: "now.json") }
 }
