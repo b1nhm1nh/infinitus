@@ -369,9 +369,8 @@ public enum SettingsShell {
                 { PlaceholderPane(descriptor: $0) }
             ),
             (
-                PaneDescriptor(id: "push", title: "Push", glyph: "\u{E95A}", tintRGB: (231, 76, 60),
-                               keywords: ["slack", "telegram", "webhook", "notification"]),
-                { PlaceholderPane(descriptor: $0) }
+                PushPane.descriptor,
+                { _ in PushPane() }
             ),
             (
                 PaneDescriptor(id: "usage", title: "Usage", glyph: "\u{E9D2}", tintRGB: (46, 204, 113),
@@ -394,9 +393,8 @@ public enum SettingsShell {
                 { PlaceholderPane(descriptor: $0) }
             ),
             (
-                PaneDescriptor(id: "devices", title: "Devices", glyph: "\u{E8EA}", tintRGB: (0, 184, 212),
-                               keywords: ["sync", "settings", "devices", "phone", "iphone", "lan", "companion", "tailscale", "pair", "qr"]),
-                { PlaceholderPane(descriptor: $0) }
+                DevicesPane.descriptor,
+                { _ in DevicesPane() }
             ),
             (
                 PaneDescriptor(id: "about", title: "About", glyph: "\u{E946}", tintRGB: (116, 125, 140),
