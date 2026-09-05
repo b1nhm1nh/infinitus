@@ -40,6 +40,9 @@ publishes the matching section as the GitHub release body.
 - Randomize names: every account gets a fresh name from the current theme's pool (Settings › Accounts, or `infinitusctl randomize-names`).
 
 ### Mac
+- A Claude Code plugin (`infinitusctl plugin install`): its hooks push a permission or question to the phone the moment it appears and refresh the fleet when a turn ends.
+- Settings › Sync names this Mac for the phone, widgets and crash reports; the default drops the " (7)" macOS appends after name collisions.
+- Compact account rows no longer run under the cash column.
 - Releases are signed with a Developer ID and notarized: no more right-click → Open on first launch.
 - Bundle ids move to `run.infinitus` and `run.infinitus.mobile`: settings carry over; notifications, login item, proxy key and phone pairing are asked once more.
 - The menu bar item follows the theme — the loop in its color, the theme's icon beside it — and glows on a switch, a death or a revival, with an ember breath while the active account burns (Settings › Display).

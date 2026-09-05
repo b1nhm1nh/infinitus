@@ -449,6 +449,17 @@ final class AppModel: ObservableObject {
     @Published var pushLastAlive: Bool { didSet { defaults.set(pushLastAlive, forKey: "push_last_alive") } }
     @Published var pushWaiting: Bool { didSet { defaults.set(pushWaiting, forKey: "push_waiting") } }
     @Published var pushAwsLogin: Bool { didSet { defaults.set(pushAwsLogin, forKey: "push_aws_login") } }
+    /// Settings › Sync "This Mac's name" (#99); empty follows the computer name.
+    @Published var machineNameOverride: String {
+        didSet {
+            defaults.set(machineNameOverride, forKey: MachineName.overrideKey)
+            guard machineNameOverride != oldValue else { return }
+            // The Bonjour service carries the name — re-advertise.
+            mirrorServer.stop()
+            applyMirrorLAN()
+        }
+    }
+    var machineName: String { MachineName.current(defaults: defaults) }
     /// Where a session started from the phone opens (#91): "auto" (cmux
     /// when installed, else Terminal), "cmux", "terminal".
     @Published var sessionHost: String { didSet { defaults.set(sessionHost, forKey: "session_host") } }
@@ -519,6 +530,51 @@ final class AppModel: ObservableObject {
 
     /// Every app notification: Notification Center here, and the same
     /// text to any phone that registered an alert token (issue #3).
+    /// Both push channels: the Mac notice (+ Live Activity alert) and the
+    /// engine's away-push. Text over stdin, matching the channel-setup
+    /// commands; no channels configured is a quiet no-op (try?). The
+    /// away-push channels are cswap's.
+    func push(_ msg: String) {
+        notify(msg)
+        if let cswap {
+            Task { _ = try? await cswap.run(["notify", "push", "-"], stdin: msg) }
+        }
+    }
+
+    /// A Claude Code hook event from the plugin (#79): a prompt is pushed
+    /// the moment it appears — the poll would take up to a minute — and
+    /// the fleet refreshes right after, so a turn's end shows up as fast
+    /// as its prompts. Returns the session's pid when the record is known.
+    func handleHookEvent(_ event: HookEvent) -> Int? {
+        let pid = event.sessionId.flatMap { id in
+            ClaudeSessions.list(claudeDir: ClaudeSessions.configHome())
+                .first { $0.sessionId == id }.map { Int($0.pid) }
+        }
+        if let line = event.pushLine, !isPlayground {
+            logEvent("hook", icon: "bolt.horizontal", event.logLine)
+            if let pid { pushTriggers.announceWaiting(pid: pid) }
+            if pushWaiting { push(line) }
+        }
+        // One refresh per burst, at most every 30 s: the record's status
+        // flips a beat after the hook fires, Stop + Notification often
+        // land together, and the "sessions done" trigger counts quiet
+        // polls — hook polls a second apart would fire it mid-typing.
+        if hookRefresh == nil {
+            let wait = max(1, Self.hookRefreshSpacing - Date().timeIntervalSince(lastHookRefresh))
+            hookRefresh = Task { [weak self] in
+                try? await Task.sleep(for: .seconds(wait))
+                guard let self else { return }
+                lastHookRefresh = Date()
+                await refreshSnapshot()
+                hookRefresh = nil
+            }
+        }
+        return pid
+    }
+    private var hookRefresh: Task<Void, Never>?
+    private var lastHookRefresh = Date.distantPast
+    static let hookRefreshSpacing: TimeInterval = 30
+
     func notify(_ body: String) {
         Notifier.post(title: "Infinitus", body: body)
         liveActivityPusher.pushAlert(title: "Infinitus", body: body)
@@ -652,6 +708,7 @@ final class AppModel: ObservableObject {
         pushLastAlive = defaults.object(forKey: "push_last_alive") as? Bool ?? true
         pushWaiting = defaults.object(forKey: "push_waiting") as? Bool ?? true
         pushAwsLogin = defaults.object(forKey: "push_aws_login") as? Bool ?? true
+        machineNameOverride = defaults.string(forKey: MachineName.overrideKey) ?? ""
         sessionHost = defaults.string(forKey: "session_host") ?? "auto"
         menuBarThemed = defaults.object(forKey: "menubar_themed") as? Bool ?? true
         menuBarEffects = defaults.object(forKey: "menubar_effects") as? Bool ?? true
@@ -769,6 +826,7 @@ final class AppModel: ObservableObject {
         pushLastAlive = defaults.object(forKey: "push_last_alive") as? Bool ?? true
         pushWaiting = defaults.object(forKey: "push_waiting") as? Bool ?? true
         pushAwsLogin = defaults.object(forKey: "push_aws_login") as? Bool ?? true
+        machineNameOverride = defaults.string(forKey: MachineName.overrideKey) ?? ""
         sessionHost = defaults.string(forKey: "session_host") ?? "auto"
         menuBarThemed = defaults.object(forKey: "menubar_themed") as? Bool ?? true
         menuBarEffects = defaults.object(forKey: "menubar_effects") as? Bool ?? true
@@ -982,7 +1040,7 @@ final class AppModel: ObservableObject {
         }
         let payload = mirrorServer.payload
         Task { [mirrorExporter] in await mirrorExporter.attach(payload: payload) }
-        mirrorServer.start(machineName: Host.current().localizedName ?? "Mac",
+        mirrorServer.start(machineName: machineName,
                            token: mirrorPairToken)
         mirrorServer.sessionFeed.set { pid, limit, since, wait in
             let claudeDir = ClaudeSessions.configHome()
@@ -1187,7 +1245,7 @@ final class AppModel: ObservableObject {
             guard let mtime = (try? FileManager.default.attributesOfItem(atPath: url.path))?[.modificationDate] as? Date,
                   mtime.timeIntervalSince1970 > since,
                   let text = try? String(contentsOf: url, encoding: .utf8),
-                  let report = CrashReport.fromIPS(text, device: Host.current().localizedName ?? "Mac") else { continue }
+                  let report = CrashReport.fromIPS(text, device: machineName) else { continue }
             ingestCrash(report, announce: false)
         }
     }
@@ -1767,7 +1825,7 @@ final class AppModel: ObservableObject {
             let progress = sessionProgress.byPid
             if let primaryFleet = primary.lastFleet {
                 liveActivityPusher.tick(fleet: primaryFleet,
-                                        machine: Host.current().localizedName ?? "Mac",
+                                        machine: machineName,
                                         themes: availableThemes, macTheme: rowTheme,
                                         report: usageModel?.report,
                                         tokenRate: sessionProgress.tokenRate)
@@ -1876,15 +1934,7 @@ final class AppModel: ObservableObject {
             persistedAwsLoginKeys = pushTriggers.announcedAwsLoginKeys
             defaults.set(persistedAwsLoginKeys.sorted(), forKey: Self.announcedAwsLoginsKey)
         }
-        for msg in pushes where !isPlayground {
-            notify(msg)
-            // Text over stdin, matching the channel-setup commands;
-            // no channels configured is a quiet no-op (try?). The
-            // away-push channels are cswap's.
-            if let cswap {
-                Task { _ = try? await cswap.run(["notify", "push", "-"], stdin: msg) }
-            }
-        }
+        for msg in pushes where !isPlayground { push(msg) }
         if !isPlayground { await sync.tick() }
     }
 
