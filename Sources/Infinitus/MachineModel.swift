@@ -34,9 +34,17 @@ final class MachineModel: ObservableObject {
     private var lastSizesAt: Date?
     private var lastSizes: (transcripts: Int, pluginCache: Int, mem: Int) = (0, 0, 0)
     private var pushedWarnings = Set<String>()
-    private var announcedIdle = Set<Int>()
+    /// Persisted: an app relaunch must not re-announce every long-idle
+    /// session (the ship pipeline relaunches several times an evening).
+    /// Pids are stable for a session's life; a reused pid is a new
+    /// session that goes idle 12 h later at the earliest.
+    private static let announcedIdleKey = "machine_idle_announced"
+    private var announcedIdle: Set<Int> {
+        didSet { UserDefaults.standard.set(Array(announcedIdle), forKey: Self.announcedIdleKey) }
+    }
 
     init() {
+        announcedIdle = Set(UserDefaults.standard.array(forKey: Self.announcedIdleKey) as? [Int] ?? [])
         idleHours = UserDefaults.standard.object(forKey: "machine_idle_hours") as? Double ?? 12
         enabled = UserDefaults.standard.object(forKey: "machine_guardian") as? Bool ?? true
     }
