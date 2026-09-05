@@ -1,0 +1,172 @@
+import XCTest
+@testable import InfinitusCore
+
+final class TeamNearbyTests: XCTestCase {
+    var scratch: URL!
+
+    override func setUpWithError() throws {
+        scratch = FileManager.default.temporaryDirectory.appendingPathComponent("teamnearby-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: scratch, withIntermediateDirectories: true)
+    }
+
+    override func tearDownWithError() throws { try? FileManager.default.removeItem(at: scratch) }
+
+    func makeRemote() throws -> String {
+        let bare = scratch.appendingPathComponent("remote.git")
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+        p.arguments = ["git", "init", "--bare", "-q", bare.path]
+        try p.run(); p.waitUntilExit()
+        return "file://" + bare.path
+    }
+
+    /// One "machine": its own paths and secrets.
+    func machine(_ name: String) -> (TeamPaths, FileSecrets) {
+        let paths = TeamPaths(base: scratch.appendingPathComponent(name))
+        return (paths, FileSecrets(dir: paths.secretsDir))
+    }
+
+    func http(_ method: String, _ path: String, body: Data = Data()) -> MirrorTransport.Request {
+        MirrorTransport.Request(method: method, target: path, headers: [:], body: body)
+    }
+
+    func status(_ data: Data?) -> Int? { data.flatMap(MirrorTransport.parseResponse)?.status }
+
+    func body<T: Decodable>(_ type: T.Type, _ data: Data?) throws -> T {
+        try CanonicalJSON.decode(type, from: try XCTUnwrap(data.flatMap(MirrorTransport.parseResponse)).body)
+    }
+
+    func testLocalStandingFollowsTheRosterAndTheSwitch() throws {
+        let remote = try makeRemote()
+        let (lp, ls) = machine("leader")
+        let leader = try TeamClient.create(name: "Papaya", remote: remote, token: nil, paths: lp, secrets: ls, now: 1_000)
+        let on = TeamNearby.Local.load(name: "Loc", discoverable: true, paths: lp, secrets: ls)
+        XCTAssertEqual(on.record, NearbyRecord(name: "Loc", kid: leader.identity.kid, team: leader.config.id,
+                                               role: "leader", discoverable: true))
+        XCTAssertEqual(on.keys, leader.identity.keys)
+        XCTAssertEqual(TeamNearby.Local.load(name: "Loc", discoverable: false, paths: lp, secrets: ls), .hidden)
+        // No team yet: role none, and an identity is minted so an invite has a kid to target.
+        let (jp, js) = machine("joiner")
+        let joiner = TeamNearby.Local.load(name: "Bo", discoverable: true, paths: jp, secrets: js)
+        XCTAssertEqual(joiner.record.role, "none")
+        XCTAssertNil(joiner.record.team)
+        XCTAssertEqual(joiner.keys, try TeamClient.identity(paths: jp, secrets: js).keys)
+        // Hidden never mints one.
+        let (hp, hs) = machine("hidden")
+        _ = TeamNearby.Local.load(name: "H", discoverable: false, paths: hp, secrets: hs)
+        XCTAssertNil(hs.read(TeamClient.identitySecretName))
+    }
+
+    func testRoutesAnswerOnlyWhenDiscoverable() throws {
+        let remote = try makeRemote()
+        let (lp, ls) = machine("leader")
+        let leader = try TeamClient.create(name: "Papaya", remote: remote, token: nil, paths: lp, secrets: ls, now: 1_000)
+        let local = TeamNearby.Local.load(name: "Loc", discoverable: true, paths: lp, secrets: ls)
+        let endpoint = TeamNearby.Endpoint(local: local) { _ in "branch" }
+        // Not ours: the caller keeps routing.
+        XCTAssertNil(TeamNearby.respond(http("GET", "/snapshot"), endpoint: endpoint))
+        let key = TeamNearby.respond(http("GET", TeamNearby.keyPath), endpoint: endpoint)
+        XCTAssertEqual(status(key), 200)
+        XCTAssertEqual(try body(TeamNearby.KeyReply.self, key),
+                       TeamNearby.KeyReply(name: "Loc", keys: leader.identity.keys, team: leader.config.id, role: "leader"))
+        // Hidden or absent: 404 on every team route, nothing about the team leaks.
+        XCTAssertEqual(status(TeamNearby.respond(http("GET", TeamNearby.keyPath), endpoint: nil)), 404)
+        let hidden = TeamNearby.Endpoint(local: .hidden) { _ in "branch" }
+        XCTAssertEqual(status(TeamNearby.respond(http("GET", TeamNearby.keyPath), endpoint: hidden)), 404)
+        XCTAssertEqual(status(TeamNearby.respond(http("POST", TeamNearby.requestPath), endpoint: hidden)), 404)
+        // Wrong method, and step 6's route that isn't here yet.
+        XCTAssertEqual(status(TeamNearby.respond(http("GET", TeamNearby.requestPath), endpoint: endpoint)), 404)
+        XCTAssertEqual(status(TeamNearby.respond(http("POST", "/team/invite"), endpoint: endpoint)), 404)
+    }
+
+    func testRequestOverTheLanLandsInTheRequestsBranch() throws {
+        let remote = try makeRemote()
+        let (lp, ls) = machine("leader")
+        let (jp, js) = machine("joiner")
+        let leader = try TeamClient.create(name: "Papaya", remote: remote, token: nil, paths: lp, secrets: ls, now: 1_000)
+        let joiner = try TeamClient.identity(paths: jp, secrets: js)
+        let signed = try Signed.make(TeamRequest(keys: joiner.keys, name: "Bo", devices: ["Linux"], platform: "linux", at: 1_010),
+                                     by: joiner)
+        let request = try CanonicalJSON.encode(TeamNearby.Request(team: leader.config.id, request: signed))
+        let local = TeamNearby.Local.load(name: "Loc", discoverable: true, paths: lp, secrets: ls)
+        let endpoint = TeamNearby.Endpoint(local: local) { try TeamNearby.Store.save($0, paths: lp, secrets: ls) }
+
+        let response = TeamNearby.respond(http("POST", TeamNearby.requestPath, body: request), endpoint: endpoint)
+        XCTAssertEqual(status(response), 200)
+        XCTAssertEqual(try body(TeamNearby.RequestReply.self, response), TeamNearby.RequestReply(ok: true, stored: "branch"))
+        XCTAssertEqual(TeamNearby.Store.pending(team: leader.config.id, paths: lp), [])
+        // The leader's ordinary path sees it and approves it.
+        _ = try leader.fetch()
+        XCTAssertEqual(try leader.requests().map(\.doc.name), ["Bo"])
+        try leader.approve(kid: joiner.kid, now: 1_020)
+        XCTAssertEqual(leader.roster?.doc.members.map(\.name), ["Bo"])
+
+        // Wrong team → 404; a tampered document → 400; not JSON → 400.
+        let elsewhere = try CanonicalJSON.encode(TeamNearby.Request(team: "other", request: signed))
+        XCTAssertEqual(status(TeamNearby.respond(http("POST", TeamNearby.requestPath, body: elsewhere), endpoint: endpoint)), 404)
+        var forged = signed
+        forged.doc.name = "Eve"
+        let forgedBody = try CanonicalJSON.encode(TeamNearby.Request(team: leader.config.id, request: forged))
+        XCTAssertEqual(status(TeamNearby.respond(http("POST", TeamNearby.requestPath, body: forgedBody), endpoint: endpoint)), 400)
+        XCTAssertEqual(status(TeamNearby.respond(http("POST", TeamNearby.requestPath, body: Data("nope".utf8)), endpoint: endpoint)), 400)
+        // The store refusing is a 503, not a crash.
+        let broken = TeamNearby.Endpoint(local: local) { _ in throw TeamNearby.StoreError.full }
+        XCTAssertEqual(status(TeamNearby.respond(http("POST", TeamNearby.requestPath, body: request), endpoint: broken)), 503)
+    }
+
+    func testRequestStaysPendingWhenTheStoreIsUnreachable() throws {
+        let (lp, ls) = machine("leader")
+        // A team whose remote doesn't exist: config on disk, store never cloned.
+        let me = try TeamClient.identity(paths: lp, secrets: ls)
+        let config = TeamConfig(id: "t-offline", name: "Ghost", remote: "file:///nonexistent/ghost.git",
+                                kid: me.kid, joinedAt: 1, leaderKid: me.kid)
+        try FileManager.default.createDirectory(at: lp.teamDir("t-offline"), withIntermediateDirectories: true)
+        try CanonicalJSON.encode(config).write(to: lp.configFile("t-offline"))
+        let joiner = TeamIdentity.random()
+        let signed = try Signed.make(TeamRequest(keys: joiner.keys, name: "Bo", devices: [], platform: "linux", at: 5), by: joiner)
+        let incoming = TeamNearby.Request(team: "t-offline", request: signed)
+        XCTAssertEqual(try TeamNearby.Store.save(incoming, paths: lp, secrets: ls), "pending")
+        XCTAssertEqual(TeamNearby.Store.pending(team: "t-offline", paths: lp), [signed])
+        // The same kid again replaces, never duplicates.
+        XCTAssertEqual(try TeamNearby.Store.save(incoming, paths: lp, secrets: ls), "pending")
+        XCTAssertEqual(TeamNearby.Store.pending(team: "t-offline", paths: lp).count, 1)
+        // An unknown team is refused.
+        XCTAssertThrowsError(try TeamNearby.Store.save(TeamNearby.Request(team: "nope", request: signed), paths: lp, secrets: ls)) {
+            XCTAssertEqual($0 as? TeamNearby.StoreError, .unknownTeam)
+        }
+        // A garbled pending file is skipped, not fatal.
+        try Data("junk".utf8).write(to: TeamNearby.Store.pendingDir(team: "t-offline", paths: lp).appendingPathComponent("zzz.json"))
+        XCTAssertEqual(TeamNearby.Store.pending(team: "t-offline", paths: lp), [signed])
+    }
+
+    /// Stream ruling: a leader who has closed requests (`policy.requests
+    /// == "off"`, spec §6.3/§6.4) refuses `POST /team/request` outright —
+    /// 403, and the store is never touched (nothing pending, nothing on
+    /// the branch).
+    func testRequestRefusedWhenLeaderHasClosedRequests() throws {
+        let remote = try makeRemote()
+        let (lp, ls) = machine("leader")
+        let (jp, js) = machine("joiner")
+        let leader = try TeamClient.create(name: "Papaya", remote: remote, token: nil, paths: lp, secrets: ls, now: 1_000)
+        var closed = try XCTUnwrap(leader.roster).doc
+        closed.policy.requests = "off"
+        closed.rev += 1
+        let signedRoster = try Signed.make(closed, by: leader.identity)
+        try CanonicalJSON.encode(signedRoster).write(to: lp.rosterFile(leader.config.id))
+
+        let joiner = try TeamClient.identity(paths: jp, secrets: js)
+        let signed = try Signed.make(TeamRequest(keys: joiner.keys, name: "Bo", devices: [], platform: "linux", at: 1_010),
+                                     by: joiner)
+        let request = try CanonicalJSON.encode(TeamNearby.Request(team: leader.config.id, request: signed))
+
+        let local = TeamNearby.Local.load(name: "Loc", discoverable: true, paths: lp, secrets: ls)
+        XCTAssertFalse(local.requestsOpen)
+        let endpoint = TeamNearby.Endpoint(local: local) { _ in
+            XCTFail("closed requests must never reach storage")
+            return "branch"
+        }
+        let response = TeamNearby.respond(http("POST", TeamNearby.requestPath, body: request), endpoint: endpoint)
+        XCTAssertEqual(status(response), 403)
+        XCTAssertEqual(TeamNearby.Store.pending(team: leader.config.id, paths: lp), [])
+    }
+}
