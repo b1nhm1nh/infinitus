@@ -601,19 +601,20 @@ enum FleetWindow {
     private static func paintGauge(_ dc: HDC, _ gauge: FleetLayout.Gauge,
                                    x: Int32, top: Int32, metrics: Metrics, state: State) {
         let tint = color(for: gauge)
-        if let font = state.captionFont { SelectObject(dc, font) }
-        draw(dc, gauge.label, x: x, y: top + metrics.px(2), color: tint)
-        // Measure the label instead of assuming a fixed cell: "5h" and
-        // "7d" fit anything, but a model name ("Fable") ran straight into
-        // its own percentage (seen 2026-09-04). Clamped so one very long
-        // name can't shove the number out of the row.
-        let labelWidth = min(metrics.px(56),
-                             textExtent(dc, gauge.label).cx + metrics.px(5))
-
-        if let font = state.bodyFont { SelectObject(dc, font) }
         let percent = "\(Int(gauge.usedPct.rounded()))%"
-        draw(dc, percent, x: x + labelWidth, y: top,
+
+        // Percentage right-aligned against the bar width so the label and percentage
+        // never collide regardless of how long the model name is (e.g. Gemini 3.1 Flash Image).
+        if let font = state.bodyFont { SelectObject(dc, font) }
+        let pctSize = textExtent(dc, percent)
+        let pctX = max(x, x + metrics.barWidth - pctSize.cx)
+        draw(dc, percent, x: pctX, y: top,
              color: gauge.spent ? dangerColor : text)
+
+        if let font = state.captionFont { SelectObject(dc, font) }
+        let maxLabelWidth = max(metrics.px(10), pctX - x - metrics.px(4))
+        drawClipped(dc, gauge.label, x: x, y: top + metrics.px(2),
+                    maxWidth: maxLabelWidth, color: tint)
 
         // The bar sits under the numbers, full width of the cell.
         let barTop = top + metrics.px(20)
