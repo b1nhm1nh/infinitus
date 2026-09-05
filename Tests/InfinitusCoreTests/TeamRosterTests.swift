@@ -111,4 +111,15 @@ final class TeamRosterTests: XCTestCase {
         let next = try Signed.make(roster(rev: 2, leaders: [leader, stranger]), by: stranger)
         XCTAssertNoThrow(try TeamRoster.Acceptance.check(next, previous: honest, trustRoot: leader.kid))
     }
+
+    func testTeamKeysDecodingBindsTheKidToTheEncryptionKey() throws {
+        // C2: kid, enc and sig used to be three independent strings, so a
+        // store writer could put anyone's kid on their own keys.
+        let good = try CanonicalJSON.encode(member.keys)
+        XCTAssertEqual(try CanonicalJSON.decode(TeamKeys.self, from: good), member.keys)
+        let forged = try CanonicalJSON.encode(TeamKeys(kid: leader.kid, enc: stranger.keys.enc, sig: stranger.keys.sig))
+        XCTAssertThrowsError(try CanonicalJSON.decode(TeamKeys.self, from: forged))
+        // enc that isn't base64 at all.
+        XCTAssertThrowsError(try CanonicalJSON.decode(TeamKeys.self, from: Data(#"{"enc":"!!!","kid":"x","sig":"y"}"#.utf8)))
+    }
 }

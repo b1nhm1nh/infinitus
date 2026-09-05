@@ -32,6 +32,10 @@ public struct TeamStatus: Codable, Equatable, Sendable {
 public final class TeamClient {
     public enum ClientError: Error, Equatable {
         case notALeader, notInTeam, noRoster, unknownRequest, badCode, alreadyJoined
+        /// The kid is already a leader of this roster.
+        case alreadyLeader
+        /// The kid is already a member under different keys.
+        case keyMismatch
     }
 
     public static let identitySecretName = "identity"
@@ -176,10 +180,21 @@ public final class TeamClient {
         }
     }
 
+    /// A kid names one file under `requests/`, so it is one path segment.
+    private static func isPathSegment(_ kid: String) -> Bool {
+        !kid.isEmpty && !kid.contains("/") && kid != "." && kid != ".."
+    }
+
     public func approve(kid: String, now: Int = Int(Date().timeIntervalSince1970)) throws {
+        guard Self.isPathSegment(kid) else { throw ClientError.unknownRequest }
         guard let current = roster?.doc else { throw ClientError.noRoster }
         guard isLeader else { throw ClientError.notALeader }
+        // Approving a leader would append a second entry under their kid.
+        guard !current.isLeader(kid) else { throw ClientError.alreadyLeader }
         guard let request = try requests().first(where: { $0.doc.keys.kid == kid }) else { throw ClientError.unknownRequest }
+        // Re-approving the same keys is fine; different keys under a kid
+        // this roster already knows would silently replace a member.
+        if let known = current.keys(for: kid), known != request.doc.keys { throw ClientError.keyMismatch }
         var next = current
         next.members.removeAll { $0.keys.kid == kid }
         next.removed.removeAll { $0.kid == kid }
@@ -192,7 +207,10 @@ public final class TeamClient {
 
     public func decline(kid: String) throws {
         guard isLeader else { throw ClientError.notALeader }
-        try store.delete("requests/\(kid).json")
+        guard Self.isPathSegment(kid) else { throw ClientError.unknownRequest }
+        let path = "requests/\(kid).json"
+        guard try store.get(path) != nil else { throw ClientError.unknownRequest }
+        try store.delete(path)
     }
 
     // MARK: files

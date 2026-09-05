@@ -13,6 +13,23 @@ public struct TeamKeys: Codable, Equatable, Sendable {
         self.kid = kid; self.enc = enc; self.sig = sig
     }
 
+    private enum CodingKeys: String, CodingKey { case kid, enc, sig }
+
+    /// Every set of keys that arrives from the store — a roster member, a
+    /// join request, a team code — comes through here, so `kid` is always
+    /// the one its own encryption key derives: nobody can wear another
+    /// member's kid over their own keys.
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        let kid = try c.decode(String.self, forKey: .kid)
+        let enc = try c.decode(String.self, forKey: .enc)
+        let sig = try c.decode(String.self, forKey: .sig)
+        guard let raw = Data(base64Encoded: enc), Self.kid(forEncryptionKey: raw) == kid else {
+            throw KeyError.badKey
+        }
+        self.init(kid: kid, enc: enc, sig: sig)
+    }
+
     public enum KeyError: Error { case badKey }
 
     public func encryptionKey() throws -> Curve25519.KeyAgreement.PublicKey {

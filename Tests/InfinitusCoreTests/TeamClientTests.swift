@@ -149,4 +149,45 @@ final class TeamClientTests: XCTestCase {
         XCTAssertEqual(jp.teamIDs(), [])
         XCTAssertFalse(FileManager.default.fileExists(atPath: jp.rosterFile(leader.config.id).path))
     }
+
+    /// C2: a kid names exactly one encryption key, so nobody can plant a
+    /// request under someone else's kid, and a leader's kid is never
+    /// re-approved as a member.
+    func testAnImpostorRequestUnderAnotherKidIsIgnored() throws {
+        let remote = try makeRemote()
+        let (lp, ls) = machine("leader")
+        let (ep, es) = machine("eve")
+
+        let leader = try TeamClient.create(name: "Papaya", remote: remote, token: nil, paths: lp, secrets: ls, now: 1_000)
+        let eve = try TeamClient.identity(paths: ep, secrets: es)
+
+        // Eve holds the code, so she can write requests/<founder kid>.json:
+        // the founder's kid over her own keys, signed by her.
+        let claim = TeamRequest(keys: TeamKeys(kid: leader.identity.kid, enc: eve.keys.enc, sig: eve.keys.sig),
+                                name: "Eve", devices: [], platform: "linux", at: 1_001)
+        let forged = Signed(doc: claim, by: leader.identity.kid,
+                            sig: try eve.sign(try CanonicalJSON.encode(claim)).base64EncodedString())
+        let raw = TeamGit(dir: ep.storeDir(leader.config.id), remote: remote, token: nil, author: eve.kid)
+        try raw.open(); try raw.sync()
+        try raw.put("requests/\(leader.identity.kid).json", try CanonicalJSON.encode(forged))
+
+        _ = try leader.fetch()
+        XCTAssertEqual(try leader.requests(), [])
+        XCTAssertThrowsError(try leader.approve(kid: leader.identity.kid, now: 1_002)) {
+            XCTAssertEqual($0 as? TeamClient.ClientError, .alreadyLeader)
+        }
+        XCTAssertEqual(leader.roster?.doc.rev, 1)
+        XCTAssertEqual(leader.roster?.doc.members, [])
+        // A kid that is not one path segment never reaches the store.
+        XCTAssertThrowsError(try leader.approve(kid: "../../x", now: 1_003)) {
+            XCTAssertEqual($0 as? TeamClient.ClientError, .unknownRequest)
+        }
+        XCTAssertThrowsError(try leader.decline(kid: "")) {
+            XCTAssertEqual($0 as? TeamClient.ClientError, .unknownRequest)
+        }
+        // Declining something that was never requested says so.
+        XCTAssertThrowsError(try leader.decline(kid: "nobody")) {
+            XCTAssertEqual($0 as? TeamClient.ClientError, .unknownRequest)
+        }
+    }
 }
