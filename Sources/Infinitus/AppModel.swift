@@ -460,6 +460,13 @@ final class AppModel: ObservableObject {
         }
     }
     var machineName: String { MachineName.current(defaults: defaults) }
+    /// Where a session started from the phone opens (#91): "auto" (cmux
+    /// when installed, else Terminal), "cmux", "terminal".
+    @Published var sessionHost: String { didSet { defaults.set(sessionHost, forKey: "session_host") } }
+    /// The status item in the theme's color with the theme's icon (#90),
+    /// and its effects (switch/death/revival flash, the burn breath).
+    @Published var menuBarThemed: Bool { didSet { defaults.set(menuBarThemed, forKey: "menubar_themed") } }
+    @Published var menuBarEffects: Bool { didSet { defaults.set(menuBarEffects, forKey: "menubar_effects") } }
     // Phone companion (#9): serve the mirror snapshot over the LAN when
     // the Sync pane's toggle is on. Off by default — it's an open port.
     @Published var mirrorLANEnabled: Bool {
@@ -652,6 +659,9 @@ final class AppModel: ObservableObject {
         pushWaiting = defaults.object(forKey: "push_waiting") as? Bool ?? true
         pushAwsLogin = defaults.object(forKey: "push_aws_login") as? Bool ?? true
         machineNameOverride = defaults.string(forKey: MachineName.overrideKey) ?? ""
+        sessionHost = defaults.string(forKey: "session_host") ?? "auto"
+        menuBarThemed = defaults.object(forKey: "menubar_themed") as? Bool ?? true
+        menuBarEffects = defaults.object(forKey: "menubar_effects") as? Bool ?? true
         if playground {
             // Isolation is the contract: no demo script, no data at all
             // (never fall back to the real engine here).
@@ -767,6 +777,9 @@ final class AppModel: ObservableObject {
         pushWaiting = defaults.object(forKey: "push_waiting") as? Bool ?? true
         pushAwsLogin = defaults.object(forKey: "push_aws_login") as? Bool ?? true
         machineNameOverride = defaults.string(forKey: MachineName.overrideKey) ?? ""
+        sessionHost = defaults.string(forKey: "session_host") ?? "auto"
+        menuBarThemed = defaults.object(forKey: "menubar_themed") as? Bool ?? true
+        menuBarEffects = defaults.object(forKey: "menubar_effects") as? Bool ?? true
     }
 
     /// Playground reset (user 2026-08-31): wipe the sandbox suite so
@@ -910,6 +923,16 @@ final class AppModel: ObservableObject {
         }
         mirrorServer.crashes.set { [weak self] report in
             Task { @MainActor in self?.ingestCrash(report, announce: true) }
+        }
+        let host = sessionHost
+        mirrorServer.sessionStart.set { [weak self] request in
+            let reply = SessionLauncher.start(request, preferredHost: host)
+            let label = (request.cwd as NSString).lastPathComponent
+            Task { @MainActor in
+                self?.logMirrorInput(reply.outcome == "started" ? "🚀" : "⚠️",
+                                     "phone started a session in \(label): \(reply.outcome)\(reply.host.map { " via \($0)" } ?? "")")
+            }
+            return reply
         }
         crashReports = crashStore.list()
         scanMacCrashReports()

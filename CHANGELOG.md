@@ -5,7 +5,7 @@ links, no internals or workflow detail; one feature note is one line,
 a single short sentence (user 2026-09-04). The release workflow
 publishes the matching section as the GitHub release body.
 
-## 0.4.3 (unreleased)
+## 0.4.3
 
 ### Stats
 - Stats reads Codex CLI transcripts too, with two more effort tables, per engine and per effort setting — one full rescan on first refresh.
@@ -34,10 +34,13 @@ publishes the matching section as the GitHub release body.
 ### Mac
 - Settings › Sync names this Mac for the phone, widgets and crash reports; the default drops the " (7)" macOS appends after name collisions.
 - Compact account rows no longer run under the cash column.
+- Releases are signed with a Developer ID and notarized: no more right-click → Open on first launch.
 - Bundle ids move to `run.infinitus` and `run.infinitus.mobile`: settings carry over; notifications, login item, proxy key and phone pairing are asked once more.
+- The menu bar item follows the theme — the loop in its color, the theme's icon beside it — and glows on a switch, a death or a revival, with an ember breath while the active account burns (Settings › Display).
 - Capture Screen for a Session… in the menu-bar menu: pick a region or window, choose a session, add a note, and it lands in that session's chat like a phone message.
 
 ### Phone
+- Start a session from the phone: + on the Quests tab picks a repository, the engine and a first prompt, and the Mac opens it in a cmux workspace or Terminal; Siri and Shortcuts have "Start a session in Infinitus".
 - The working Live Activity follows an account switch when the app opens, and a card nothing has reached says "out of date".
 - A lighter chat header: compact by default, or a stat strip with mini gauges (Settings › Appearance › Chat header).
 - A capture of the app — the capture button in a chat, a shake anywhere, or a screenshot the phone just took — lands in the composer as an attachment so you can say what it's about.

@@ -77,6 +77,7 @@ final class StatusItemController {
     private var pinnedIdeal: CGSize = .zero
     private var settings: NSWindow?
     private lazy var desktopCapture = DesktopCaptureController(model: model)
+    private lazy var effects = MenuBarEffects(button: item.button)
     private let model: AppModel
     private let usage: UsageModel
     private let wall = WallWindowController()
@@ -143,8 +144,20 @@ final class StatusItemController {
     }
 
     private func apply() {
-        item.button?.title = model.title
-        item.button?.imagePosition = model.title.isEmpty ? .imageOnly : .imageLeading
+        // The theme's color and icon on the item (#90), the template
+        // loop under Off or with the toggle off.
+        let theme = model.rowTheme
+        let themed = model.menuBarThemed && !theme.plain
+        var title = model.title
+        if themed, !theme.activeIcon.isEmpty {
+            title = title.isEmpty ? theme.activeIcon : theme.activeIcon + " " + title
+        }
+        item.button?.image = themed
+            ? MenuBarGlyph.image(tint: NSColor(ThemeColor.flash(theme)), key: theme.flashColor)
+            : MenuBarGlyph.image
+        item.button?.title = title
+        item.button?.imagePosition = title.isEmpty ? .imageOnly : .imageLeading
+        effects.sync(model: model, enabled: model.menuBarEffects && themed)
         if item.isVisible != model.menuBarIconShown {
             item.isVisible = model.menuBarIconShown
         }
