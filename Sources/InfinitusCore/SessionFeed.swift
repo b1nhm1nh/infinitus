@@ -191,10 +191,15 @@ public enum SessionFeedReader {
     /// `agent-<id>.meta.json` names the spawning `toolUseId`, `agent-<id>.jsonl`
     /// is the sub-agent's own transcript (tail-read, 64 KiB). Running =
     /// the transcript's newest entry is not a final assistant text and it
-    /// was touched in the last two minutes.
+    /// was touched in the last two minutes. Only the agents the window's
+    /// rows point at are read: a long session accumulates hundreds
+    /// (735 under one worktree, 2026-09-05), and tailing every log on
+    /// every request took the route past the phone's 3 s ("couldn't
+    /// reach the Mac: the Mac didn't answer").
     static func attachAgents(_ items: [SessionFeedItem], transcript: URL,
                              now: Date = Date()) -> [SessionFeedItem] {
-        guard items.contains(where: { $0.kind == .agent }) else { return items }
+        let wanted = Set(items.compactMap { $0.kind == .agent ? $0.toolUseId : nil })
+        guard !wanted.isEmpty else { return items }
         let dir = transcript.deletingPathExtension().appendingPathComponent("subagents")
         guard let names = try? FileManager.default.contentsOfDirectory(atPath: dir.path) else { return items }
         var byToolUse: [String: SessionFeedItem.Agent] = [:]
@@ -202,7 +207,7 @@ public enum SessionFeedReader {
             let id = String(name.dropFirst("agent-".count).dropLast(".meta.json".count))
             guard let data = try? Data(contentsOf: dir.appendingPathComponent(name)),
                   let meta = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                  let toolUseId = meta["toolUseId"] as? String else { continue }
+                  let toolUseId = meta["toolUseId"] as? String, wanted.contains(toolUseId) else { continue }
             let log = dir.appendingPathComponent("agent-\(id).jsonl")
             let entries = tail(of: log, maxBytes: 64 * 1024).compactMap(decodeLine)
             var toolCalls = 0
