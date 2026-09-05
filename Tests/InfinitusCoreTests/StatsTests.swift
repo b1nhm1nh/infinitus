@@ -1083,10 +1083,43 @@ final class StatsTests: XCTestCase {
         XCTAssertEqual(s.activity, .tests)                        // every edit is a test file
         s.testEdits = 1
         XCTAssertEqual(s.activity, .code)                         // a mix
+        s.promptLabel = "debug"
+        XCTAssertEqual(s.activity, .debug)                        // the person's words beat the path rules
         s.label = "review"
         XCTAssertEqual(s.activity, .review)                       // rule 1 beats everything
         s.label = "not-a-label"
-        XCTAssertEqual(s.activity, .code)                         // unknown label → the path rules
+        XCTAssertEqual(s.activity, .debug)                        // unknown label → rule 0, then the path rules
+        s.promptLabel = nil
+        XCTAssertEqual(s.activity, .code)
+    }
+
+    func testActivitySignalsPromptIntent() {
+        typealias S = StatsScanner.ActivitySignals
+        XCTAssertEqual(S.label(prompt: "Review PR #42 for me"), .review)
+        XCTAssertEqual(S.label(prompt: "review the plan before we start"), .review)
+        XCTAssertEqual(S.label(prompt: "Plan the tests for the new parser"), .plan)
+        XCTAssertEqual(S.label(prompt: "add tests for SessionStart"), .tests)
+        XCTAssertEqual(S.label(prompt: "the app crashes on launch, why?"), .debug)
+        XCTAssertEqual(S.label(prompt: "Why is the build failing"), .debug)
+        XCTAssertEqual(S.label(prompt: "open the website and check the login form"), .browser)
+        XCTAssertEqual(S.label(prompt: "run it on the simulator"), .simulator)
+        XCTAssertEqual(S.label(prompt: "Explain how the mirror server routes requests"), .explanation)
+        XCTAssertNil(S.label(prompt: "rename the button"))
+        XCTAssertNil(S.label(prompt: "previewer"))                                     // whole words only
+        XCTAssertNil(S.label(prompt: String(repeating: "x ", count: 300) + "explain"))  // past the opening
+    }
+
+    func testIngestReadsThePromptIntentOffTheOpeningMessage() {
+        var e = StatsScanner.FileEntry()
+        let lines = [
+            #"{"type":"user","timestamp":"2026-09-05T01:00:00.000Z","origin":{"kind":"human"},"message":{"role":"user","content":"debug the crash on launch"}}"#,
+            #"{"type":"assistant","timestamp":"2026-09-05T01:00:10.000Z","message":{"id":"a1","model":"claude-opus-5","usage":{"input_tokens":10,"output_tokens":1},"content":[{"type":"tool_use","id":"t1","name":"Edit","input":{"file_path":"/r/Sources/A.swift"}}]}}"#,
+            #"{"type":"user","timestamp":"2026-09-05T01:05:00.000Z","origin":{"kind":"peer","from":"uds:/tmp/infinitus-1.sock"},"message":{"role":"user","content":"<cross-session-message from=\"uds:/tmp/infinitus-1.sock\" from-name=\"Infinitus\" from-mode=\"bypass\">\nexplain the feed\n</cross-session-message>"}}"#,
+        ]
+        for line in lines { StatsScanner.ingest(entry(line), sessionID: "s1", into: &e, calendar: cal) }
+        let day = try! XCTUnwrap(e.days["2026-09-05"])
+        XCTAssertEqual(day.activities["debug"]?.stretches, 1)     // edits alone would have said "code"
+        XCTAssertEqual(e.state.stretch?.promptLabel, "explanation")
     }
 
     func testDayAddStretchFeedsActivitiesAndModelStretchCounts() {

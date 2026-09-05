@@ -90,6 +90,17 @@ public enum StatsScanner {
         }
     }
 
+    /// The person's words in a user entry (a peer message unwrapped),
+    /// nil for tool results and machinery.
+    public static func userText(_ obj: [String: Any]) -> String? {
+        guard let message = obj["message"] as? [String: Any] else { return nil }
+        if let s = message["content"] as? String { return wrappedBody(s) }
+        guard let blocks = message["content"] as? [[String: Any]],
+              !blocks.contains(where: { ($0["type"] as? String) == "tool_result" }),
+              let t = blocks.first(where: { ($0["type"] as? String) == "text" })?["text"] as? String else { return nil }
+        return wrappedBody(t)
+    }
+
     public static func classifyUser(_ obj: [String: Any]) -> UserKind {
         if (obj["isCompactSummary"] as? Bool) == true { return .compaction }
         guard let message = obj["message"] as? [String: Any] else { return .machinery }
@@ -208,7 +219,11 @@ public enum StatsScanner {
             let kind = classifyUser(obj)
             if !isSubagent, [.human, .phone, .agent, .nudge].contains(kind) {
                 closeStretch(into: &entry, current: &day, currentKey: key)
-                entry.state.stretch = Stretch(dayKey: key, at: t)
+                var stretch = Stretch(dayKey: key, at: t)
+                if kind == .human || kind == .phone, let text = userText(obj) {
+                    stretch.promptLabel = ActivitySignals.label(prompt: text)?.rawValue
+                }
+                entry.state.stretch = stretch
             }
             switch kind {
             case .human, .phone:
