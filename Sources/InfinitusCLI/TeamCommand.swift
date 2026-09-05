@@ -192,13 +192,20 @@ func runTeam(_ args: [String]) -> Int32 {
             }
             guard let target = TeamShares.parseTarget(Array(positional.dropFirst())) else { return fail(teamUsage(), code: 2) }
             let c = try client()
+            if case .members(let kids) = target {
+                let known = Set(c.roster?.doc.everyone.map(\.keys.kid) ?? [])
+                for kid in kids where !known.contains(kid) {
+                    return fail("unknown kid \(kid)", code: 2)
+                }
+            }
             let teamDir = paths.teamDir(c.config.id)
             var shares = TeamShares.load(teamDir: teamDir)
             shares.byKind[kind] = target
             try shares.save(teamDir: teamDir)
             emit(shares)
         case "exclude":
-            guard let project = positional.first else { return fail(teamUsage(), code: 2) }
+            guard let raw = positional.first else { return fail(teamUsage(), code: 2) }
+            let project = URL(fileURLWithPath: raw).standardizedFileURL.path
             var exclusions = TeamExclusions.load(paths: paths)
             exclusions.set(project, excluded: !flags.contains("off"))
             try exclusions.save(paths: paths)
@@ -227,8 +234,9 @@ func runTeam(_ args: [String]) -> Int32 {
             var sources = TeamPublisher.Sources(
                 projectsDir: options["projects"].map { URL(fileURLWithPath: $0) } ?? claudeDir.appendingPathComponent("projects"),
                 home: NSHomeDirectory())
-            // `--projects` points at a fixture: no Codex scan then, or a
-            // smoke run would fold this machine's real Codex days in.
+            // `--projects` only swaps the Claude Code projects dir and skips the
+            // Codex scan; live sessions, the scan cache and crashes still come
+            // from this machine regardless.
             sources.codexDir = options["projects"] == nil ? StatsScanner.defaultCodexDir() : nil
             sources.cacheURL = paths.teamDir(c.config.id).appendingPathComponent("scan-cache.json")
             sources.liveSessions = ClaudeSessions.list(claudeDir: claudeDir)
