@@ -313,6 +313,13 @@ actor NetworkFleetMirror: FleetMirror {
         try await postJSON(SessionStart.path, body: request, timeout: Self.attachmentInputTimeout)
     }
 
+    /// Triggers this Mac's own update (#121) — the reply comes back as
+    /// soon as the Mac has decided/kicked off `brew upgrade`, not once
+    /// it's done.
+    func updateMac() async throws -> AppUpdate.Reply {
+        try await postJSON(MirrorTransport.appUpdatePath, body: [String: String]())
+    }
+
     func awsLoginStart(_ request: AwsLogin.StartRequest) async throws -> AwsLogin.Reply {
         try await postJSON(AwsLogin.startPath, body: request)
     }

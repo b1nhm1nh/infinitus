@@ -163,6 +163,37 @@ final class FleetMirrorTests: XCTestCase {
         XCTAssertNil(got.fleets)
     }
 
+    func testRoundTripWithAppInfo() async throws {
+        let url = tempURL()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let app = AppInfo(version: "0.4.4", sha: "abc1234", updateVersion: "0.4.5",
+                          updateChannel: "stable", phoneLatest: "0.4.5")
+        let snapshot = MirrorSnapshot(
+            capturedAt: Date(), machineName: "Test Mac",
+            listJSON: Data("{\"accounts\":[]}".utf8), sessions: [], app: app)
+        try MirrorWriter.write(snapshot, to: url)
+        let read = try await FileFleetMirror(url: url).latest()
+        let got = try XCTUnwrap(read)
+        XCTAssertEqual(got.app, app)
+    }
+
+    func testMissingAppDecodesToNil() async throws {
+        let url = tempURL()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        // Hand-written JSON matching a pre-#121 snapshot (no "app" key)
+        // to prove old Macs' snapshots still decode on a new phone.
+        let json = """
+        {"capturedAt":"2026-01-01T00:00:00Z","machineName":"Old Mac",
+         "listJSON":"e30=","sessions":[]}
+        """
+        try FileManager.default.createDirectory(
+            at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data(json.utf8).write(to: url)
+        let read = try await FileFleetMirror(url: url).latest()
+        let got = try XCTUnwrap(read)
+        XCTAssertNil(got.app)
+    }
+
     func testServiceStatusSummaryWording() {
         XCTAssertEqual(ServiceStatusSummary(indicator: "none").shortText, "claude ok")
         XCTAssertEqual(ServiceStatusSummary(indicator: "critical").shortText, "critical outage")

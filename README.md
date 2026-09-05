@@ -108,6 +108,7 @@ One line per feature; the site and the CHANGELOG carry the detail.
 - **Pop-out window, compact mode, three layouts, popup scaling** — the pop-out remembers its spot.
 - **Sessions by name** — `/rename` names label the rows on the Mac and the phone, with branch, model, kind and output size.
 - **Phone companion, four ways in** — Wi-Fi (Bonjour), Tailscale, your own Cloudflare tunnel or a free quick tunnel; one QR carries every route.
+- **Versions on the phone** — Settings shows both apps' versions, updates the Mac with one tap (brew builds), and says when a newer phone build is out.
 - **Session chat from the phone** — each transcript as a chat with markdown, tool chips and sub-agent cards; reply, attach photos and files, answer prompts.
 - **Allow for this session** — the phone's permission card can allow a tool for the rest of the session; with the plugin, that prompt never comes back.
 - **Start a session from the phone** — a repository, the engine, a first prompt; the Mac opens cmux or Terminal and the chat follows. Siri too.

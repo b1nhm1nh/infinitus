@@ -54,6 +54,9 @@ public enum MirrorTransport {
     public static let activityTokenPath = "/activities/token"
     /// `POST /crashes`: the phone's MetricKit crash/hang reports.
     public static let crashesPath = "/crashes"
+    /// `POST /app/update` (#121): the phone's trigger for this Mac's
+    /// own update, empty body.
+    public static let appUpdatePath = "/app/update"
     public static let tailLimitQueryName = "n"
     /// Long-poll: `?since=<feed.stamp>&wait=<seconds>` holds the reply until
     /// the transcript's stamp differs from `since`, or `wait` elapses
