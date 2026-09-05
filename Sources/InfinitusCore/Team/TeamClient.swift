@@ -44,6 +44,8 @@ public final class TeamClient {
         case founder
         /// A team keeps at least one leader.
         case lastLeader
+        /// `policy.requests == "off"`: no new codes, no request list.
+        case requestsOff
     }
 
     public static let identitySecretName = "identity"
@@ -177,6 +179,7 @@ public final class TeamClient {
     public func code(expiresIn seconds: Int = 7 * 86_400,
                      now: Int = Int(Date().timeIntervalSince1970)) throws -> String {
         guard isLeader else { throw ClientError.notALeader }
+        guard roster?.doc.policy.requests != "off" else { throw ClientError.requestsOff }
         let token = secrets.read(Self.tokenName(config.id)).map { String(decoding: $0, as: UTF8.self) }
         return try TeamCode(team: config.id, name: config.name, remote: config.remote, token: token,
                             leader: identity.keys, expires: now + seconds).encoded(by: identity)
@@ -184,6 +187,7 @@ public final class TeamClient {
 
     public func requests() throws -> [Signed<TeamRequest>] {
         guard isLeader else { throw ClientError.notALeader }
+        if roster?.doc.policy.requests == "off" { return [] }
         return try store.list("requests/").compactMap { entry in
             guard let data = try store.get(entry.path),
                   let signed = try? CanonicalJSON.decode(Signed<TeamRequest>.self, from: data),
@@ -378,6 +382,15 @@ public final class TeamClient {
         }
         if !writes.isEmpty { try store.putAll(writes) }
         return paths
+    }
+
+    /// Spec §5: one roster edit, leaders only (race loop as `approve`).
+    public func setPolicy(_ policy: TeamRoster.Policy) throws {
+        try editRoster { current in
+            var next = current
+            next.policy = policy
+            return next
+        }
     }
 
     // MARK: status

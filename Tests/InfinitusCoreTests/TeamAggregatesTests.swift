@@ -75,4 +75,17 @@ final class TeamAggregatesTests: XCTestCase {
         XCTAssertNil(try TeamReader.load(client: leader).aggregates["week"])
         XCTAssertNil(try TeamReader.load(client: leader).members[member.identity.kid]?.kinds.first { $0 == TeamKinds.aggregates }, "not counted as the member's kind either")
     }
+
+    func testPolicyOffHidesRequestsAndTheCode() throws {
+        let (leader, member) = try team()
+        XCTAssertNoThrow(try leader.code(expiresIn: 60, now: 3_000))
+        try leader.setPolicy(TeamRoster.Policy(requests: "off", membersSeeEachOther: true))
+        XCTAssertEqual(leader.roster?.doc.policy.requests, "off")
+        XCTAssertEqual(leader.roster?.doc.rev, 3)
+        XCTAssertThrowsError(try leader.code(expiresIn: 60, now: 3_001)) { XCTAssertEqual($0 as? TeamClient.ClientError, .requestsOff) }
+        XCTAssertEqual(try leader.requests(), [])
+        _ = try member.fetch()
+        XCTAssertEqual(member.roster?.doc.policy.membersSeeEachOther, true)
+        XCTAssertThrowsError(try member.setPolicy(TeamRoster.Policy())) { XCTAssertEqual($0 as? TeamClient.ClientError, .notALeader) }
+    }
 }
