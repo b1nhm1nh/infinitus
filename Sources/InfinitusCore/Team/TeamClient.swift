@@ -80,8 +80,9 @@ public final class TeamClient {
         self.paths = paths; self.secrets = secrets; self.store = store
     }
 
-    public static func create(name: String, remote: String, token: String?, paths: TeamPaths,
-                              secrets: TeamSecrets, now: Int = Int(Date().timeIntervalSince1970)) throws -> TeamClient {
+    public static func create(name: String, remote: String, token: String?, leaderName: String = "Leader",
+                              paths: TeamPaths, secrets: TeamSecrets,
+                              now: Int = Int(Date().timeIntervalSince1970)) throws -> TeamClient {
         let me = try identity(paths: paths, secrets: secrets)
         let id = UUID().uuidString.lowercased()
         let config = TeamConfig(id: id, name: name, remote: remote, kid: me.kid, joinedAt: now, leaderKid: me.kid)
@@ -89,7 +90,7 @@ public final class TeamClient {
         let store = TeamGit(dir: paths.storeDir(id), remote: remote, token: token, author: me.kid)
         try store.open()
         let roster = TeamRoster(id: id, name: name, createdAt: now,
-                                leaders: [TeamRoster.Member(keys: me.keys, name: "Leader", since: now, founder: true)],
+                                leaders: [TeamRoster.Member(keys: me.keys, name: leaderName, since: now, founder: true)],
                                 rev: 1)
         let signed = try Signed.make(roster, by: me)
         try store.put("roster/team.json", try CanonicalJSON.encode(signed))
@@ -176,13 +177,13 @@ public final class TeamClient {
         try persist()
     }
 
-    public func code(expiresIn seconds: Int = 7 * 86_400,
+    public func code(expiresIn seconds: Int = 7 * 86_400, nonce: String? = nil,
                      now: Int = Int(Date().timeIntervalSince1970)) throws -> String {
         guard isLeader else { throw ClientError.notALeader }
         guard roster?.doc.policy.requests != "off" else { throw ClientError.requestsOff }
         let token = secrets.read(Self.tokenName(config.id)).map { String(decoding: $0, as: UTF8.self) }
         return try TeamCode(team: config.id, name: config.name, remote: config.remote, token: token,
-                            leader: identity.keys, expires: now + seconds).encoded(by: identity)
+                            leader: identity.keys, expires: now + seconds, nonce: nonce).encoded(by: identity)
     }
 
     public func requests() throws -> [Signed<TeamRequest>] {
@@ -336,6 +337,25 @@ public final class TeamClient {
     public func unpublish(path: String) throws {
         guard isMember else { throw ClientError.notInTeam }
         try store.delete("m/\(identity.kid)/\(path)")
+    }
+
+    /// Spec §6.5 leave: every file under `m/<my kid>/` is deleted (the
+    /// history stays, ciphertext) and `requests/<kid>.leave` tells the
+    /// leaders — one push. The caller then forgets the team locally
+    /// (team dir + token secret); the identity stays.
+    public func leave(now: Int = Int(Date().timeIntervalSince1970)) throws {
+        try store.sync()  // list() reads local refs only; a stale tree leaves another device's files behind
+        var writes: [String: Data?] = [:]
+        for entry in try store.list("m/") where entry.path.hasPrefix("m/\(identity.kid)/") {
+            // A plain `writes[entry.path] = nil` subscript-assign on a
+            // `[String: Data?]` collapses the double optional and REMOVES
+            // the key instead of staging a delete — `updateValue` is the
+            // one that keeps the key with a nil payload.
+            writes.updateValue(nil, forKey: entry.path)
+        }
+        let note = TeamRequest(keys: identity.keys, name: "", devices: [], platform: "leave", at: now)
+        writes["requests/\(identity.kid).leave"] = try CanonicalJSON.encode(try Signed.make(note, by: identity))
+        try store.putAll(writes)
     }
 
     /// Envelopes under `m/` that name me as a reader, sit at a path whose

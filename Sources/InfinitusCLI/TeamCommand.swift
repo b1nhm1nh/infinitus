@@ -10,7 +10,7 @@ func teamUsage() -> String {
     """
     usage: infinitusctl team <subcommand> [args] [--option value]
 
-      create <name> --remote <url> [--token -]     create a team on an empty git remote (token from stdin)
+      create <name> --remote <url> [--token -] [--as <your name>]     create a team on an empty git remote (token from stdin)
       code [--days N]                              team code for joiners (default 7 days)
       request - --name <n> [--devices a,b]         ask to join; the code on stdin (argv only if it carries no credential)
       status [--team <id>]                         this machine's team(s)
@@ -128,7 +128,8 @@ func runTeam(_ args: [String]) -> Int32 {
                     .trimmingCharacters(in: .whitespacesAndNewlines)
                 if token?.isEmpty == true { token = nil }
             }
-            let c = try TeamClient.create(name: name, remote: remote, token: token, paths: paths, secrets: secrets)
+            let c = try TeamClient.create(name: name, remote: remote, token: token, leaderName: options["as"] ?? "Leader",
+                                          paths: paths, secrets: secrets)
             emit(try c.status())
         case "code":
             let days = Int(options["days"] ?? "7") ?? 7

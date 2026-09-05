@@ -160,6 +160,12 @@ final class ControlServer {
         init(_ m: String) { errorDescription = m }
     }
 
+    /// The snapshot after a team action, or the action's error.
+    private func teamReply() throws -> ControlReply {
+        if let err = model.team.lastError { throw Fail(err) }
+        return ControlReply(ok: true, result: try model.team.snapshot.map { try JSONValue.of($0) } ?? .null)
+    }
+
     private func dispatch(_ r: ControlRequest) async throws -> ControlReply {
         switch r.command {
         case "manifest":
@@ -481,6 +487,43 @@ final class ControlServer {
                 "locked": .bool(policy.locked),
                 "relock": .string(policy.relock.label),
             ]))
+
+        case "team-status":
+            return ControlReply(ok: true, result: try model.team.snapshot.map { try JSONValue.of($0) } ?? .null)
+
+        case "team-create":
+            // infinitusctl's arg parser treats `--remote` as a bare flag (it
+            // has no way to know team-create wants a value), so the URL
+            // lands as the second positional instead of options["remote"].
+            // Fall back to that positional when the option came back as the
+            // flag sentinel (review round 1, C1).
+            let remote = r.options["remote"].flatMap { $0 == "true" ? nil : $0 } ?? r.args.dropFirst().first
+            guard let name = r.args.first, !name.isEmpty, let remote, !remote.isEmpty else {
+                throw Fail("usage: team-create <name> --remote <url> [--as <your name>]")
+            }
+            await model.team.create(name: name, remote: remote, token: nil, leaderName: r.options["as"] ?? "Leader")
+            return try teamReply()
+
+        case "team-code":
+            let days = min(max(r.options["days"].flatMap(Int.init) ?? 7, 1), 3650)
+            if r.options["invite"] != nil { await model.team.mintInvite(days: days) } else { await model.team.mintCode(days: days) }
+            if let err = model.team.lastError { throw Fail(err) }
+            guard let code = model.team.code else { throw Fail("no code") }
+            return ControlReply(ok: true, result: .object(["code": .string(code)]))
+
+        case "team-fetch":
+            await model.team.fetchNow()
+            return try teamReply()
+
+        case "team-publish":
+            await model.team.publishNow()
+            if let err = model.team.lastError { throw Fail(err) }
+            return ControlReply(ok: true, result: try JSONValue.of(model.team.lastReport ?? TeamPublisher.Report()))
+
+        case "team-approve", "team-decline":
+            guard let kid = r.args.first, !kid.isEmpty else { throw Fail("usage: \(r.command) <kid>") }
+            if r.command == "team-approve" { await model.team.approve(kid: kid) } else { await model.team.decline(kid: kid) }
+            return try teamReply()
 
         case "show":
             guard let controller = AppDelegate.shared?.statusHolder?.controller else {

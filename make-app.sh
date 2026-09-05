@@ -43,6 +43,10 @@ cat > "$APP/Contents/Info.plist" <<PLIST
     <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
     <key>CFBundleIconFile</key><string>AppIcon</string>
     <key>LSMinimumSystemVersion</key><string>14.0</string>
+    <key>CFBundleURLTypes</key><array><dict>
+        <key>CFBundleURLName</key><string>run.infinitus.join</string>
+        <key>CFBundleURLSchemes</key><array><string>infinitus</string></array>
+    </dict></array>
     <key>LSUIElement</key><true/>
     <key>NSLocalNetworkUsageDescription</key><string>Infinitus advertises the fleet snapshot to the Infinitus iPhone app on your local network (Sync → Phone companion).</string>
     <key>NSBonjourServices</key><array><string>_infinitus._tcp</string></array>

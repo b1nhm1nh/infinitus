@@ -224,4 +224,56 @@ final class TeamMembershipTests: XCTestCase {
         XCTAssertEqual(try leader.readable().map(\.path), [paths[1]])
         XCTAssertEqual(try member.publish([], now: 1_031), [])
     }
+
+    // MARK: plan 5 — founder name, leave
+
+    func testCreateNamesTheFounder() throws {
+        let remote = try makeRemote()
+        let (lp, ls) = machine("leader")
+        let leader = try TeamClient.create(name: "Papaya", remote: remote, token: nil, leaderName: "Ann", paths: lp, secrets: ls, now: 1_000)
+        XCTAssertEqual(leader.roster?.doc.leaders.first?.name, "Ann")
+        XCTAssertEqual(leader.roster?.doc.leaders.first?.founder, true)
+    }
+
+    func testLeaveDeletesOwnFilesAndLeavesANote() throws {
+        let (leader, member, _) = try team()
+        try member.publish(kind: TeamKinds.now, path: "now.json",
+                           plaintext: try CanonicalJSON.encode(TeamDocs.Now(at: 1, sessions: [], fleets: [], blockers: [], crashesToday: 0, sharesTo: [:])),
+                           audience: .leaders, now: 1_030)
+        _ = try leader.fetch()
+        XCTAssertEqual(try leader.readableHeaders().count, 1)
+        try member.leave(now: 1_040)
+        _ = try leader.fetch()
+        XCTAssertEqual(try leader.readableHeaders().count, 0, "own files are gone")
+        XCTAssertNotNil(try leader.store.get("requests/\(member.identity.kid).leave"), "the leaders get a note")
+        XCTAssertEqual(try leader.requests().count, 0, ".leave is not a join request")
+    }
+
+    func testLeaveSyncsFirstSoAnotherDeviceOfMineIsNotLeftBehind() throws {
+        let remote = try makeRemote()
+        let (lp, ls) = machine("leader"), (mp, ms) = machine("member")
+        let leader = try TeamClient.create(name: "Papaya", remote: remote, token: nil, paths: lp, secrets: ls, now: 1_000)
+        let member = try TeamClient.request(code: try leader.code(expiresIn: 600, now: 1_000), name: "Bo", devices: [],
+                                            platform: "linux", paths: mp, secrets: ms, now: 1_010)
+        _ = try leader.fetch()
+        try leader.approve(kid: member.identity.kid, now: 1_020)
+        _ = try member.fetch()
+
+        // A second device under the same identity: same config and keys,
+        // its own local store dir (so its own remote-tracking refs).
+        let (mp2, ms2) = machine("member2")
+        try ms2.write(TeamClient.identitySecretName, member.identity.secret)
+        try FileManager.default.createDirectory(at: mp2.teamDir(member.config.id), withIntermediateDirectories: true)
+        try FileManager.default.copyItem(at: mp.configFile(member.config.id), to: mp2.configFile(member.config.id))
+        try FileManager.default.copyItem(at: mp.rosterFile(member.config.id), to: mp2.rosterFile(member.config.id))
+        let member2 = try TeamClient.open(id: member.config.id, paths: mp2, secrets: ms2)
+        try member2.publish(kind: TeamKinds.now, path: "now.json",
+                            plaintext: try CanonicalJSON.encode(TeamDocs.Now(at: 1, sessions: [], fleets: [], blockers: [], crashesToday: 0, sharesTo: [:])),
+                            audience: .leaders, now: 1_030)
+
+        // `member` (device A) never fetched/synced since device B published.
+        try member.leave(now: 1_040)
+        _ = try leader.fetch()
+        XCTAssertEqual(try leader.readableHeaders().count, 0, "device B's file under the same kid must be gone too")
+    }
 }

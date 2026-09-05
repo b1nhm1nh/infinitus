@@ -42,6 +42,13 @@ final class ControlProtocolTests: XCTestCase {
         XCTAssertEqual(ControlCommand.named("prefer")?.requires, "prefer")
         XCTAssertEqual(ControlCommand.named("lock-status")?.effect, .read)
         XCTAssertEqual(ControlCommand.named("lock-status")?.args, [])
+        XCTAssertEqual(ControlCommand.named("team-status")?.effect, .read)
+        XCTAssertEqual(ControlCommand.named("team-create")?.args, ["<name>"])
+        XCTAssertEqual(ControlCommand.named("team-create")?.effect, .write)
+        XCTAssertEqual(ControlCommand.named("team-approve")?.args, ["<kid>"])
+        XCTAssertEqual(ControlCommand.named("team-publish")?.effect, .write)
+        XCTAssertEqual(ControlCommand.named("team-code")?.effect, .write, "fetches the store and (--invite) writes the nonce book")
+        XCTAssertNotNil(ControlCommand.named("team-code")); XCTAssertNotNil(ControlCommand.named("team-fetch")); XCTAssertNotNil(ControlCommand.named("team-decline"))
         XCTAssertNil(ControlCommand.named("nope"))
     }
 
