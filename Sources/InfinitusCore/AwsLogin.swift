@@ -232,6 +232,9 @@ public enum AwsLogin {
         "[aws-cred-broker]",
         "error when retrieving token from sso",
         "the sso session",
+        // The broker's advisory line is indented by exactly two spaces;
+        // it is all that survives a `| tail -1` (2026-09-05).
+        "  fix: aws login",
     ]
 
     /// The profile a transcript excerpt says needs a login, or nil when

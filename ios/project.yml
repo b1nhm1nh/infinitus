@@ -78,6 +78,8 @@ targets:
         # (CLAUDE.md). Revisit before TestFlight if wanted.
         PRODUCT_BUNDLE_IDENTIFIER: run.infinitus.mobile
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        # One alternate icon per theme (#83), AppIcon-<id> sets.
+        ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS: "YES"
         # Signed on the paid personal team (2026-09-05; #9 done): a plain
         # build is a device build, `-allowProvisioningUpdates` mints the
         # profiles. CI's simulator job passes CODE_SIGNING_ALLOWED=NO on
@@ -85,6 +87,9 @@ targets:
         DEVELOPMENT_TEAM: Q783W6B4FA
         CODE_SIGN_STYLE: Automatic
         GENERATE_INFOPLIST_FILE: "YES"
+        # The home screen says Infinitus, not the target's name (user
+        # 2026-09-05: "mobile app renames to Infinitus").
+        INFOPLIST_KEY_CFBundleDisplayName: Infinitus
         INFOPLIST_KEY_UILaunchScreen_Generation: "YES"
         INFOPLIST_KEY_UISupportedInterfaceOrientations: UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight
         SWIFT_VERSION: "5.9"

@@ -14,10 +14,12 @@ publishes the matching section as the GitHub release body.
 ### Fixes
 - AWS logins survive a Mac relaunch, and a need that failed just before a launch still reaches the phone.
 - A session stuck behind the credential broker's refresh lock (another process sitting in `aws login`) now shows the AWS login card too.
+- A session whose check kept only the broker's "Fix: aws login" line (a `| tail -1`) shows the AWS login card too.
 - Haiku session names now cover the sessions Claude Code named itself (`limitless-bf`, `banyan-51`…).
 - Phone dictation never sits on "Translating…": a missing language pack asks to download, and after ten seconds the take goes out as spoken.
 - A chat opens in well under a second on sessions with hundreds of sub-agents; the Mac read every sub-agent's log per request and the phone gave up after three ("the Mac didn't answer").
 - The phone's composer no longer floats mid-screen after the keyboard is dragged away.
+- Mac notifications are titled Infinitus, not claude-swap; engine update notices name the engine in the body.
 - A chat swipes back from anywhere on the screen, not only from the left edge.
 - The terminal's own "[Image: original …]" note after a screenshot is read no longer shows as a message you sent.
 
@@ -36,10 +38,12 @@ publishes the matching section as the GitHub release body.
 - The working Live Activity follows an account switch when the app opens, and a card nothing has reached says "out of date".
 - A lighter chat header: compact by default, or a stat strip with mini gauges (Settings › Appearance › Chat header).
 - A capture of the app — the capture button in a chat, a shake anywhere, or a screenshot the phone just took — lands in the composer as an attachment so you can say what it's about.
-- The Game HUD header draws every window as a bar, the models' too, and the capture and photo-library buttons sit in the composer's tool row left of the text.
+- The Game HUD header draws every window as a bar, the models' too, and one + button left of the text holds every attachment: capture this screen, photo library, camera, files, paste.
+- The phone app is called Infinitus on the home screen and in search.
 - A session that comes to need an AWS sign-in raises a notification on the phone, tap to sign in, and the Quests badge counts it.
 - The phone build carries the push entitlement, so Live Activities and alerts move with the app closed once the Mac holds an APNs key (Settings › Sync).
 - Home-screen and lock-screen widgets in the fleet's theme: the active account's windows as your theme names and colors them, what's waiting, and the revival countdown when every account is limited.
+- The phone's app icon follows the theme: a crown for RPG, a snake for Metal Gear, a planet for Cosmos… the stock loop for Off and custom themes.
 - Share → Infinitus from any app sends images, files, a link or text into a session with a note, picked from the Mac's live list, without opening the app; your sessions sit in the share sheet's suggestions row.
 - A message from another session shows as "Message from @name" with a preview, the full text a tap away.
 - Your own turns render Markdown too.

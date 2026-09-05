@@ -21,6 +21,11 @@ final class AwsLoginTests: XCTestCase {
         // Quoted, not suffered: a grep hit / Read line / source fixture.
         XCTAssertNil(AwsLogin.profile(in: "99:    let failed = \"aws: [ERROR]: Your session has expired. Please reauthenticate using 'aws login'.\""))
         XCTAssertNil(AwsLogin.profile(in: "    [aws-cred-broker] ...\n      Fix: aws login --profile papaya-login"))
+        // `… 2>&1 | tail -1` keeps only the broker's own two-space "Fix:"
+        // line — that indentation is the broker's, not a quote's
+        // (2026-09-05 11:02, banyan: nothing shown on the phone).
+        XCTAssertEqual(AwsLogin.profile(in: "=== A sts\n  Fix: aws login --profile papaya-login\n=== B refs\ndocs/x.md:33:- rows"), "papaya-login")
+        XCTAssertNil(AwsLogin.profile(in: "357:            f\"  Fix: aws login --profile {anchor}\""), "the broker's source, read")
     }
 
     func testFlowFollowsTheProfileKindInTheConfig() {

@@ -544,12 +544,21 @@ struct SessionFeedScreen: View {
                         .padding(.horizontal)
                 }
             }
-            HStack(spacing: 2) {
+            HStack(spacing: 8) {
+                // One button for everything attachable (user 2026-09-05:
+                // "Combine the 3 items into one"): the capture of this
+                // screen first, then the library, camera, files, paste.
                 Menu {
+                    Button { stageAppScreenshot() } label: {
+                        Label("Capture This Screen", systemImage: "camera.viewfinder")
+                    }
                     // A PhotosPicker inside a Menu never presents (the menu
                     // dismisses first — user 2026-09-03 "Choose library
                     // doesn't show anything"); the picker is a modifier
                     // below, flipped from a plain button like the importer.
+                    Button { showPhotoPicker = true } label: {
+                        Label("Photo Library", systemImage: "photo.on.rectangle")
+                    }
                     if CameraCapture.isAvailable {
                         Button { showCamera = true } label: {
                             Label("Take Photo", systemImage: "camera")
@@ -567,26 +576,10 @@ struct SessionFeedScreen: View {
                         }
                     }
                 } label: {
-                    Image(systemName: "paperclip").font(.title2)
+                    Image(systemName: "plus.circle.fill").font(.title2)
                         .frame(width: 44, height: 44)
                 }
                 .accessibilityLabel("Attach")
-                .disabled(sendingMessage || attachments.count >= SessionInput.maxAttachments)
-                // The tool row left of the text (user 2026-09-05, with a
-                // Messenger composer as the reference: "Screencap icon:
-                // put on tool list left of chatbox"): a capture of this
-                // screen, then the photo library, each one tap.
-                Button { stageAppScreenshot() } label: {
-                    Image(systemName: "camera.viewfinder").font(.title2)
-                        .frame(width: 36, height: 44)
-                }
-                .accessibilityLabel("Attach a screenshot of this screen")
-                .disabled(sendingMessage || attachments.count >= SessionInput.maxAttachments)
-                Button { showPhotoPicker = true } label: {
-                    Image(systemName: "photo.on.rectangle").font(.title2)
-                        .frame(width: 36, height: 44)
-                }
-                .accessibilityLabel("Photo Library")
                 .disabled(sendingMessage || attachments.count >= SessionInput.maxAttachments)
                 ZStack(alignment: .topLeading) {
                     if draft.isEmpty {

@@ -513,8 +513,8 @@ final class AppModel: ObservableObject {
     /// Every app notification: Notification Center here, and the same
     /// text to any phone that registered an alert token (issue #3).
     func notify(_ body: String) {
-        Notifier.post(title: "claude-swap", body: body)
-        liveActivityPusher.pushAlert(title: "claude-swap", body: body)
+        Notifier.post(title: "Infinitus", body: body)
+        liveActivityPusher.pushAlert(title: "Infinitus", body: body)
     }
     private let awake = KeepAwake()
     private var pushTriggers = PushTriggers()
