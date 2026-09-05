@@ -157,9 +157,10 @@ public enum MachineSampler {
 
     /// Entries in a directory, counted with a deadline.
     public static func countEntries(_ dir: String, timeout: TimeInterval) -> (Int?, TimeInterval) {
-        timed(timeout) {
-            (try? FileManager.default.contentsOfDirectory(atPath: dir))?.count
+        let (count, seconds) = timed(timeout) {
+            (try? FileManager.default.contentsOfDirectory(atPath: dir))?.count ?? -1
         }
+        return (count.flatMap { $0 >= 0 ? $0 : nil }, seconds)
     }
 
     #if canImport(Darwin)
