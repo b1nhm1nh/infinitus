@@ -292,7 +292,7 @@ struct MachinePane: View {
     private func residueSection(_ report: MachineReport) -> some View {
         let r = report.residue
         return Section("Residue") {
-            Text("\(r.staleSockets) stale sockets, \(r.staleSessionEnvs) stale session-env dirs, \(r.tempEntries.map { "\($0)" } ?? "?") temp entries")
+            Text("\(r.staleSockets) stale sockets, \(r.staleSessionEnvs) stale session-env dirs, \(r.tempEntries.map { "\($0)" } ?? "?") temp entries" + MachineReport.tempBreakdown(r.tempByOwner))
                 .font(PopupFont.caption).monospacedDigit()
             Text("transcripts \(bytesString(r.transcriptsBytes)) · plugin cache \(bytesString(r.pluginCacheBytes)) · claude-mem \(bytesString(r.memBytes))")
                 .font(PopupFont.caption).foregroundStyle(.secondary).monospacedDigit()

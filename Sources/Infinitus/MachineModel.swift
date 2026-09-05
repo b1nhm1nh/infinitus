@@ -102,6 +102,7 @@ final class MachineModel: ObservableObject {
             residue.staleSockets = Residue.staleSockets(dir: "/tmp/cc-socks", alive: { kill(pid_t($0), 0) == 0 || errno == EPERM }).count
             residue.staleSessionEnvs = Residue.staleSessionEnvs(dir: home + "/.claude/session-env", liveSessionIds: liveSessionIds).count
             residue.tempEntries = tempCount
+            residue.tempByOwner = sample.tempByOwner
 
             let sizes: (Int, Int, Int) = doSizes
                 ? (Residue.size(of: home + "/.claude/projects"),
