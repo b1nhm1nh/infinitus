@@ -248,8 +248,8 @@ public struct ControlCommand: Codable, Sendable, Equatable {
         ControlCommand(name: "machine-reclaim", options: ["--yes"], effect: .destructive,
                        summary: "Remove stale cc-socks, stale session-env dirs, and temp files older than an hour that no process holds open. Refused without --yes.",
                        replyShape: "{result}"),
-        ControlCommand(name: "machine-hook", args: ["disable|restore", "<owner>"], options: ["--yes"], effect: .write,
-                       summary: "Move a tool's hook registrations out of ~/.claude/settings.json (a timestamped backup is written beside it), or put them back. Refused without --yes.",
+        ControlCommand(name: "machine-hook", args: ["disable|restore|kill", "<owner>"], options: ["--yes"], effect: .destructive,
+                       summary: "disable: move a tool's hook registrations out of ~/.claude/settings.json (a timestamped backup is written beside it); restore: put them back; kill: SIGTERM every live instance of its hooks and their helpers from the last `machine` sample (never a session's own pid), SIGKILL the survivors after 3 s. Refused without --yes.",
                        replyShape: "{result}"),
     ]
 

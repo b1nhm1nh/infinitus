@@ -11,6 +11,7 @@ struct MachinePane: View {
 
     @State private var pendingDisable: HookGroup?
     @State private var pendingKill: Runaways.Runaway?
+    @State private var pendingHookKill: HookGroup?
     @State private var pendingReclaim = false
     @State private var resultMessage: String?
 
@@ -35,6 +36,17 @@ struct MachinePane: View {
             Button("Disable", role: .destructive) {
                 let owner = group.owner
                 Task { resultMessage = await model.disableHook(owner: owner) }
+            }
+            Button("Cancel", role: .cancel) {}
+        }
+        .confirmationDialog(
+            "Send SIGTERM to \(pendingHookKill?.owner ?? "")'s \((pendingHookKill?.instances ?? 0) + (pendingHookKill?.helpers ?? 0)) live hook processes, then SIGKILL after 3 s? The sessions themselves are never signalled.",
+            isPresented: Binding(get: { pendingHookKill != nil }, set: { if !$0 { pendingHookKill = nil } }),
+            presenting: pendingHookKill
+        ) { group in
+            Button("Kill instances", role: .destructive) {
+                let owner = group.owner
+                Task { resultMessage = await model.killHookInstances(owner: owner) }
             }
             Button("Cancel", role: .cancel) {}
         }
@@ -150,19 +162,31 @@ struct MachinePane: View {
         var id: String { owner }
     }
 
+    /// One row per owner. The same script registered on several events
+    /// shows the same live instances under each registration, so live
+    /// counts take the max, not the sum; spawn rates do add up.
     private func hookGroups(_ report: MachineReport) -> [HookGroup] {
-        Dictionary(grouping: report.hooks, by: \.registration.owner).map { owner, hooks in
-            HookGroup(owner: owner,
-                      kind: hooks.first!.registration.ownerKind,
-                      events: Array(Set(hooks.map(\.registration.event))).sorted(),
-                      spawnsPerHour: hooks.map(\.spawnsPerHour).reduce(0, +),
-                      heavy: hooks.contains { $0.registration.heavy },
-                      instances: hooks.map(\.live.instances).reduce(0, +),
-                      helpers: hooks.map(\.live.helpers).reduce(0, +),
-                      oldestSeconds: hooks.map(\.live.oldestSeconds).max() ?? 0,
-                      stuckCount: hooks.filter(\.stuck).count,
-                      registrationCount: hooks.count)
-        }.sorted { $0.owner < $1.owner }
+        var byOwner: [String: [MachineReport.Hook]] = [:]
+        for hook in report.hooks { byOwner[hook.registration.owner, default: []].append(hook) }
+        var groups: [HookGroup] = []
+        for (owner, hooks) in byOwner {
+            guard let first = hooks.first else { continue }
+            var events = Set<String>()
+            var spawns = 0.0, heavy = false, instances = 0, helpers = 0, oldest = 0, stuck = 0
+            for hook in hooks {
+                events.insert(hook.registration.event)
+                spawns += hook.spawnsPerHour
+                if hook.registration.heavy { heavy = true }
+                instances = max(instances, hook.live.instances)
+                helpers = max(helpers, hook.live.helpers)
+                oldest = max(oldest, hook.live.oldestSeconds)
+                if hook.stuck { stuck += 1 }
+            }
+            groups.append(HookGroup(owner: owner, kind: first.registration.ownerKind, events: events.sorted(),
+                                    spawnsPerHour: spawns, heavy: heavy, instances: instances, helpers: helpers,
+                                    oldestSeconds: oldest, stuckCount: stuck, registrationCount: hooks.count))
+        }
+        return groups.sorted { $0.owner < $1.owner }
     }
 
     private func kindLabel(_ kind: HookRegistration.OwnerKind) -> String {
@@ -197,6 +221,9 @@ struct MachinePane: View {
                         .background(Color.orange.opacity(0.2), in: Capsule())
                 }
                 Spacer()
+                if group.instances > 0 {
+                    Button("Kill instances…") { pendingHookKill = group }
+                }
                 if group.kind == .plugin {
                     Text("managed by Claude Code").font(.caption2).foregroundStyle(.secondary)
                 } else if model.parkedOwners.contains(group.owner) {
