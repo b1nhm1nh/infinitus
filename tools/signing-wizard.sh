@@ -189,7 +189,9 @@ cd "$(dirname "$0")/.."
 
 # Nothing here lands in the repo: ids and paths persist under ~/.config,
 # secrets go straight to the keychain / GitHub and are never written.
-ENV_FILE="${ENV_FILE:-$HOME/.config/infinitus/signing.env}"
+# The library defaults ENV_FILE to ./.env before this runs, so the
+# assignment is unconditional (INFINITUS_SIGNING_ENV overrides).
+ENV_FILE="${INFINITUS_SIGNING_ENV:-$HOME/.config/infinitus/signing.env}"
 mkdir -p "$(dirname "$ENV_FILE")"
 touch "$ENV_FILE" && chmod 600 "$ENV_FILE"
 
@@ -337,14 +339,14 @@ ask APNS_KEY_ID "APNs Key ID (10 characters, blank to skip):"
 if [[ -n "$APNS_KEY_ID" ]]; then
   write_env APNS_KEY_ID "$APNS_KEY_ID"
   step "Open the .p8 in a text editor and copy its whole contents to the clipboard."
-  step "Infinitus (menu bar) → Settings → Sync → Key ID '$APNS_KEY_ID', Team ID '$TEAM_ID' → 'Paste .p8 from clipboard'."
+  step "Infinitus (menu bar) → Settings → Devices → 'Phone lock screen' → Team ID '$TEAM_ID', Key ID '$APNS_KEY_ID' → 'Paste .p8 from clipboard'."
   note "The key lives in the Mac keychain only (run.infinitus.apns); shown masked."
-  pause "Press Enter once Sync shows 'key stored in the keychain'"
+  pause "Press Enter once the row says 'key in the keychain'"
   security find-generic-password -s run.infinitus.apns -a "$APNS_KEY_ID" >/dev/null 2>&1 \
     && printf '  %s✓ found%s the APNs key in the keychain\n' "$GREEN" "$RESET" \
-    || warn "no keychain item for key $APNS_KEY_ID yet — paste it in Settings › Sync"
+    || warn "no keychain item for key $APNS_KEY_ID yet — paste it in Settings › Devices"
 else
-  SKIPPED+=("APNs key → Settings › Sync (issue #70)")
+  SKIPPED+=("APNs key → Settings › Devices (issue #70)")
 fi
 
 finish
