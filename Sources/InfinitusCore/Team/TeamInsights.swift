@@ -29,8 +29,7 @@ public enum TeamInsights {
                       blockers: m.now?.blockers ?? [], crashes: m.crashes.count, lastPublished: m.lastPublished)
         }
         .sorted { x, y in
-            if x.role != y.role { return x.role == "leader" }
-            return x.name == y.name ? x.kid < y.kid : x.name < y.name
+            (x.role == "leader" ? 0 : 1, x.name, x.kid) < (y.role == "leader" ? 0 : 1, y.name, y.kid)
         }
     }
 
@@ -113,8 +112,7 @@ public enum TeamInsights {
     /// started inside the period, grouped by project, by effort.
     public static func repos(_ reader: TeamReader, period: Stats.Period, now: Date = Date(),
                              calendar: Calendar = .current) -> [RepoRow] {
-        let fromKey = Stats.fold(days: [:], period: period, now: now, calendar: calendar).from
-        let start = Int((Stats.date(fromDayKey: fromKey, calendar: calendar) ?? now).timeIntervalSince1970)
+        let start = Int(Stats.range(period, now: now, calendar: calendar).0.timeIntervalSince1970)
         var byProject: [String: [String: RepoRow.Share]] = [:]
         for m in reader.members.values {
             for s in m.sessions where s.startedAt >= start {
@@ -183,7 +181,7 @@ public enum TeamInsights {
         let byMember = rows.map { (r: MemberRow) -> Cost.MemberCost in Cost.MemberCost(kid: r.kid, name: r.name, usd: r.summary.total.usd) }
             .sorted { (x: Cost.MemberCost, y: Cost.MemberCost) -> Bool in x.usd == y.usd ? x.name < y.name : x.usd > y.usd }
         return Cost(total: rows.reduce(0) { $0 + $1.summary.total.usd }, byMember: byMember, byModel: byModel,
-                    byRepo: Dictionary(uniqueKeysWithValues: repos.map { ($0.project, $0.usd) }))
+                    byRepo: Dictionary(repos.map { ($0.project, $0.usd) }, uniquingKeysWith: +))
     }
 
     /// The team's 168-slot heatmap (weekday × hour) for the rows' period.
