@@ -172,6 +172,9 @@ to drive the running app.
   title from Claude Haiku and keep it fresh as the work moves; the
   phone opens on what's waiting for you, with a Continue button for a
   session a limit or a crash stopped.
+- **Capture the desktop into a session** — Capture Screen for a
+  Session… in the menu-bar menu: a region or window, a session, a note,
+  delivered like a phone message.
 - **Dictate in any language** — the phone's mic takes Vietnamese (or
   anything Apple's recognizer knows), translates on the phone into an
   editable English draft or sends it as spoken with an English-reply

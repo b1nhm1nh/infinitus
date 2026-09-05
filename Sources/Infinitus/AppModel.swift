@@ -1170,16 +1170,24 @@ final class AppModel: ObservableObject {
         let attachment = SessionInput.Attachment(name: "crash-\(report.id.prefix(8)).txt", mime: "text/plain",
                                                  data: Data(report.transcript.utf8))
         let request = SessionInput.Request(kind: .message, text: text, attachments: [attachment])
-        Task.detached(priority: .utility) { [weak self] in
+        Task { await send(request, toPid: pid, icon: "💥", what: "crash report") }
+    }
+
+    /// A message from this Mac into a session — a crash report, a
+    /// desktop capture (#69) — over the route phone messages take,
+    /// logged in Settings › Sync like them.
+    @discardableResult
+    func send(_ request: SessionInput.Request, toPid pid: Int, icon: String, what: String) async -> SessionInput.Reply {
+        let reply = await Task.detached(priority: .utility) { () -> SessionInput.Reply in
             let claudeDir = ClaudeSessions.configHome()
-            guard let record = ClaudeSessions.list(claudeDir: claudeDir).first(where: { Int($0.pid) == pid }) else { return }
-            let reply = SessionInput.deliver(request: request, record: record,
-                                             hosts: PtyHosts.available(), claudeDir: claudeDir)
-            await MainActor.run { [weak self] in
-                self?.logMirrorInput(reply.outcome == "delivered" ? "💥" : "⚠️",
-                                     "crash report sent to session \(pid): \(reply.outcome)")
+            guard let record = ClaudeSessions.list(claudeDir: claudeDir).first(where: { Int($0.pid) == pid }) else {
+                return SessionInput.Reply(outcome: "noSurface", detail: "that session is gone")
             }
-        }
+            return SessionInput.deliver(request: request, record: record,
+                                        hosts: PtyHosts.available(), claudeDir: claudeDir)
+        }.value
+        logMirrorInput(reply.outcome == "delivered" ? icon : "⚠️", "\(what) → session \(pid): \(reply.outcome)")
+        return reply
     }
 
     private func nudgeAfterAwsLogin(pid: Int, profile: String, fromPhone: Bool) {
