@@ -40,6 +40,7 @@ private struct ReadableEntry: Encodable {
 }
 
 func runTeam(_ args: [String]) -> Int32 {
+    if let code = runTeamNearby(args) { return code }   // nearby | --discoverable | request --nearby (TeamNearbyCommand.swift)
     guard let sub = args.first, sub != "--help", sub != "-h" else {
         print(teamUsage(), terminator: "")
         return args.isEmpty ? 2 : 0
