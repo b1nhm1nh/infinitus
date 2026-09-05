@@ -149,9 +149,11 @@ final class MachineModel: ObservableObject {
         self.report = finalReport
 
         // Every warning currently true gets pushed once; dropping out of
-        // `currentWarnings` re-arms it for the next time it appears.
-        let currentWarnings = Set(finalReport.warnings)
-        for warning in currentWarnings where !pushedWarnings.contains(warning) {
+        // `currentWarnings` re-arms it for the next time it appears. The
+        // identity is the text minus its digits — "oldest 53 min" ticks
+        // every sample and must not re-notify.
+        let currentWarnings = Set(finalReport.warnings.map(Self.warningKey))
+        for warning in finalReport.warnings where !pushedWarnings.contains(Self.warningKey(warning)) {
             host?.push(warning)
         }
         pushedWarnings = currentWarnings
@@ -169,8 +171,23 @@ final class MachineModel: ObservableObject {
 
     enum ReclaimKind: String, CaseIterable, Sendable { case sockets, sessionEnvs, temps }
 
+    static func warningKey(_ warning: String) -> String { warning.filter { !$0.isNumber } }
+
+    /// Only a pid the last report flagged, and only while `ps` still
+    /// shows the flagged command there (pids get reused).
     func killRunaway(pid: Int) async -> String {
-        let ok = await Task.detached(priority: .utility) { Runaways.kill(pid: pid) }.value
+        guard pid > 1, let runaway = report?.runaways.first(where: { $0.pid == pid }) else {
+            return "pid \(pid) is not a flagged runaway — run `machine` first"
+        }
+        let sessionPids = report?.sessions.map(\.pid) ?? []
+        let ok = await Task.detached(priority: .utility) { () -> Bool? in
+            let now = (try? Subprocess.run("/bin/ps", ["-o", "command=", "-p", String(pid)]))?
+                .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            guard !now.isEmpty, now.hasPrefix(runaway.command.prefix(40)) else { return nil }
+            let groups = Set(sessionPids.map { Int(getpgid(pid_t($0))) })
+            return Runaways.kill(pid: pid, protectedGroups: groups)
+        }.value
+        guard let ok else { return "pid \(pid) no longer runs the flagged command — nothing sent" }
         host?.logEvent("other", icon: "wrench.and.screwdriver",
                        ok ? "killed runaway pid \(pid)" : "sent kill to pid \(pid) — still alive")
         await sample()
@@ -189,8 +206,7 @@ final class MachineModel: ObservableObject {
             if kinds.contains(.sessionEnvs) {
                 items += Residue.staleSessionEnvs(dir: home + "/.claude/session-env", liveSessionIds: liveSessionIds)
             }
-            if kinds.contains(.temps) {
-                let openPaths = Residue.openPaths(under: tempDir, timeout: 60)
+            if kinds.contains(.temps), let openPaths = Residue.openPaths(under: tempDir, timeout: 60) {
                 items += Residue.orphanTemps(dir: tempDir, openPaths: openPaths)
             }
             let failures = Residue.reclaim(items)

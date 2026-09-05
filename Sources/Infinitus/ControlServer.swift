@@ -212,9 +212,10 @@ final class ControlServer {
             return ControlReply(ok: true, result: .object(["sampling": .bool(true)]))
 
         case "machine-kill":
-            guard let pidText = r.args.first, let pid = Int(pidText) else {
-                throw Fail("usage: machine-kill <pid>")
+            guard let pidText = r.args.first, let pid = Int(pidText), pid > 1 else {
+                throw Fail("usage: machine-kill <pid> --yes")
             }
+            guard r.options["yes"] != nil else { throw Fail("machine-kill signals a process; pass --yes") }
             let result = await model.machineModel.killRunaway(pid: pid)
             return ControlReply(ok: true, result: .object(["result": .string(result)]))
 

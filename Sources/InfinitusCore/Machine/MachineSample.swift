@@ -126,7 +126,7 @@ public enum MachineSampler {
             case "Z": zombies += 1
             default: break
             }
-            if row.command.hasSuffix("/WindowServer") || row.command == "WindowServer" { ws = row.cpu }
+            if row.command.split(separator: " ").first?.hasSuffix("WindowServer") == true { ws = row.cpu }
             if sessionPids.contains(row.pid) { claude += row.rssMB }
         }
         return (running, uninterruptible, zombies, ws, claude)

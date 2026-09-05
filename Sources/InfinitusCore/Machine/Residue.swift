@@ -35,9 +35,11 @@ public enum Residue {
                                    now: Date = Date(), limit: Int = 20_000, fm: FileManager = .default) -> [Item] {
         guard let names = try? fm.contentsOfDirectory(atPath: dir) else { return [] }
         var out: [Item] = []
+        let held = Set(openPaths.map(canonical))
         for name in names where name.hasPrefix("tmp.") && name.count == 14 {
             let path = dir + "/" + name
-            guard !openPaths.contains(path),
+            let mine = canonical(path)
+            guard !held.contains(mine), !held.contains(where: { $0.hasPrefix(mine + "/") }),
                   let attrs = try? fm.attributesOfItem(atPath: path),
                   let modified = attrs[.modificationDate] as? Date,
                   now.timeIntervalSince(modified) > minAge else { continue }
@@ -47,11 +49,22 @@ public enum Residue {
         return out
     }
 
+    /// `TMPDIR` ends in `/` and lsof reports `/private/var/…` for
+    /// `/var/…`; both sides of the held-file check go through this.
+    public static func canonical(_ path: String) -> String {
+        (path as NSString).resolvingSymlinksInPath
+    }
+
     #if canImport(Darwin)
     /// Paths open under `dir`, from `lsof +D` (one call; can take a while
-    /// on a wedged directory, so callers give it a deadline).
-    public static func openPaths(under dir: String, timeout: TimeInterval = 60) -> Set<String> {
-        let out = (try? Subprocess.run("/usr/sbin/lsof", ["-Fn", "+D", dir], timeout: timeout)) ?? ""
+    /// on a wedged directory, so callers give it a deadline). `nil` when
+    /// lsof did not finish — lsof exits 1 for "nothing open" too, so the
+    /// shell marker is what tells a clean run from a killed one; callers
+    /// skip the temp reclaim on nil rather than reclaim unprotected.
+    public static func openPaths(under dir: String, timeout: TimeInterval = 60) -> Set<String>? {
+        let script = "/usr/sbin/lsof -Fn +D \"$1\" 2>/dev/null; echo __lsof_done__"
+        guard let out = try? Subprocess.run("/bin/sh", ["-c", script, "sh", dir], timeout: timeout),
+              out.contains("__lsof_done__") else { return nil }
         return Set(out.split(separator: "\n").filter { $0.hasPrefix("n") }.map { String($0.dropFirst()) })
     }
     #endif

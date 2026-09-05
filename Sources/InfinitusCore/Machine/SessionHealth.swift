@@ -36,8 +36,10 @@ public struct SessionHealth: Equatable, Sendable, Codable, Identifiable {
         }.sorted { $0.rssMB > $1.rssMB }
     }
 
-    /// The sessions idle past the threshold that were not nudged yet.
+    /// The sessions idle past the threshold that were not nudged yet. A
+    /// session without a known last activity is unknown, not idle — the
+    /// age fallback is for display only, never for a nudge.
     public static func idle(_ sessions: [SessionHealth], hours: Double, announced: Set<Int>, now: Date = Date()) -> [SessionHealth] {
-        sessions.filter { $0.idleHours(now: now) >= hours && !announced.contains($0.pid) }
+        sessions.filter { $0.lastActivityAt != nil && $0.idleHours(now: now) >= hours && !announced.contains($0.pid) }
     }
 }

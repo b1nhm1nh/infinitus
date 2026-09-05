@@ -11,7 +11,7 @@ final class MachineHealthTests: XCTestCase {
      5003  5000 R  140000000       55:00  99.0 bun test src/a.test.ts
      5004  5000 S     50000    03:10:00   0.0 node /x/node_modules/typescript/lib/tsc.js
      5005     1 S     10000       00:05   0.0 python3 /Users/me/.claude/hooks/cst_post_tool_use.py
-      300     1 S    100000 04-00:00:00  85.0 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer
+      300     1 S    100000 04-00:00:00  85.0 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
     """
 
     func testPSParsesColumnsAndElapsed() {
@@ -37,6 +37,12 @@ final class MachineHealthTests: XCTestCase {
         let (value, seconds) = MachineSampler.timed(0.2) { Thread.sleep(forTimeInterval: 2); return 1 }
         XCTAssertNil(value); XCTAssertLessThan(seconds, 1)
         XCTAssertEqual(MachineSampler.timed(1) { 7 }.0, 7)
+    }
+
+    func testScriptPathSkipsInterpretersAndExpandsHome() {
+        XCTAssertEqual(HookInventory.scriptPath(in: "/bin/bash /Users/me/.claude/hooks/x.sh", home: "/Users/me"), "/Users/me/.claude/hooks/x.sh")
+        XCTAssertEqual(HookInventory.scriptPath(in: "python3 ~/.claude/hooks/y.py --fast", home: "/Users/me"), "/Users/me/.claude/hooks/y.py")
+        XCTAssertNil(HookInventory.scriptPath(in: "/usr/bin/env node", home: "/Users/me"))
     }
 
     func testHookInventoryAttributesOwnersAndCountsLiveInstances() {
@@ -152,5 +158,7 @@ final class MachineHealthTests: XCTestCase {
         XCTAssertEqual(SessionHealth.idle([s], hours: 12, announced: [], now: now).count, 1)
         XCTAssertEqual(SessionHealth.idle([s], hours: 12, announced: [1], now: now).count, 0)
         XCTAssertEqual(SessionHealth.idle([s], hours: 24, announced: [], now: now).count, 0)
+        let unknown = SessionHealth(pid: 2, name: "b", cwd: "/r", rssMB: 100, ageSeconds: 4 * 86400, lastActivityAt: nil)
+        XCTAssertEqual(SessionHealth.idle([unknown], hours: 12, announced: [], now: now).count, 0)
     }
 }

@@ -124,11 +124,19 @@ public enum HookInventory {
         return (first.trimmingCharacters(in: CharacterSet(charactersIn: "\"'")) as NSString).lastPathComponent
     }
 
-    /// The first path-like token: what `ps` shows for a running instance.
-    public static func scriptPath(in command: String) -> String? {
+    static let interpreters: Set<String> = ["sh", "bash", "zsh", "python", "python3", "node", "bun", "ruby", "deno", "env"]
+
+    /// The first path-like token that is not an interpreter: what `ps`
+    /// shows for a running instance (`/bin/bash x.sh` would otherwise
+    /// count every bash on the Mac). A leading `~` is expanded the way
+    /// the shell does before the command reaches `ps`.
+    public static func scriptPath(in command: String, home: String = NSHomeDirectory()) -> String? {
         for token in command.split(separator: " ") {
-            let clean = token.trimmingCharacters(in: CharacterSet(charactersIn: "\"'"))
-            if clean.hasPrefix("/") || clean.hasPrefix("~") { return clean }
+            var clean = token.trimmingCharacters(in: CharacterSet(charactersIn: "\"'"))
+            if clean.hasPrefix("~/") { clean = home + clean.dropFirst() }
+            guard clean.hasPrefix("/") else { continue }
+            if interpreters.contains((clean as NSString).lastPathComponent) { continue }
+            return clean
         }
         return nil
     }

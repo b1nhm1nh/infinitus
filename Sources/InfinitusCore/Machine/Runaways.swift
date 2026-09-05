@@ -81,10 +81,17 @@ public enum Runaways {
 
     #if canImport(Darwin)
     /// SIGTERM to the process group, SIGKILL to whatever is left after
-    /// `grace`. Returns what was still alive at the end.
-    public static func kill(pid: Int, grace: TimeInterval = 3, sleep: (TimeInterval) -> Void = { Thread.sleep(forTimeInterval: $0) }) -> Bool {
+    /// `grace`. Returns whether the pid is gone at the end. The group is
+    /// only signalled when it is the runaway's own: a tool child usually
+    /// shares its Claude session's group (and the app's, when launched
+    /// from a shell), and `protectedGroups` keeps those to a single-pid
+    /// signal. pid 0/-1 would address our own group or every process.
+    public static func kill(pid: Int, protectedGroups: Set<Int> = [], grace: TimeInterval = 3,
+                            sleep: (TimeInterval) -> Void = { Thread.sleep(forTimeInterval: $0) }) -> Bool {
+        guard pid > 1 else { return false }
         let pgid = getpgid(pid_t(pid))
-        let target: pid_t = pgid > 1 ? -pgid : pid_t(pid)
+        let own = Set([Int(getpgid(getpid()))]).union(protectedGroups)
+        let target: pid_t = pgid > 1 && !own.contains(Int(pgid)) ? -pgid : pid_t(pid)
         _ = Darwin.kill(target, SIGTERM)
         sleep(grace)
         if Darwin.kill(pid_t(pid), 0) == 0 {
