@@ -32,6 +32,7 @@ publishes the matching section as the GitHub release body.
 - Randomize names: every account gets a fresh name from the current theme's pool (Settings › Accounts, or `infinitusctl randomize-names`).
 
 ### Mac
+- Bundle ids move to `run.infinitus` and `run.infinitus.mobile`: settings carry over; notifications, login item, proxy key and phone pairing are asked once more.
 - The menu bar item follows the theme — the loop in its color, the theme's icon beside it — and glows on a switch, a death or a revival, with an ember breath while the active account burns (Settings › Display).
 - Capture Screen for a Session… in the menu-bar menu: pick a region or window, choose a session, add a note, and it lands in that session's chat like a phone message.
 
@@ -56,6 +57,8 @@ publishes the matching section as the GitHub release body.
 - Settings › Chat header previews every style live, in the current theme.
 - The Game HUD header is a glossy unit frame now: the portrait rides the panel, the bars carry a pace tick.
 - Live Activity: the next account and the "then …" line are readable on the Lock Screen's dark card.
+- AWS login: the card shows the profile's account id and IAM user name, tap to copy.
+- AWS login: the in-app sign-in page gets the account id and user name filled in.
 
 ### Team (preview)
 - `infinitusctl team` creates a team on any git remote and exchanges end-to-end encrypted files between members (create, code, request, approve, publish, read).

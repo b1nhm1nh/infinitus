@@ -52,7 +52,7 @@ public struct ActivityPushRegistration: Codable, Sendable, Equatable {
 }
 
 public enum LiveActivityPush {
-    public static let bundleID = "com.huuloc.infinitus.mobile"
+    public static let bundleID = "run.infinitus.mobile"
     public static let topic = bundleID + ".push-type.liveactivity"
     public static let workingAttributesType = "WorkingActivity"
     public static let revivalAttributesType = "RevivalActivity"

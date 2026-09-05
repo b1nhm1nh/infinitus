@@ -485,7 +485,7 @@ actor NetworkFleetMirror: FleetMirror {
         let params = useTLS ? NWParameters(tls: NWProtocolTLS.Options(), tcp: tcp)
             : NWParameters(tls: nil, tcp: tcp)
         let connection = NWConnection(to: endpoint, using: params)
-        let queue = DispatchQueue(label: "com.huuloc.infinitus.mobile.mirror")
+        let queue = DispatchQueue(label: "run.infinitus.mobile.mirror")
         let once = ContinuationOnce()
         return try await withCheckedThrowingContinuation { continuation in
             once.attach(continuation) { connection.cancel() }

@@ -9,7 +9,7 @@ import WidgetKit
 /// from the states the Live Activities use, read from WidgetBridge.
 struct FleetWidget: Widget {
     var body: some WidgetConfiguration {
-        StaticConfiguration(kind: "com.huuloc.infinitus.mobile.fleet", provider: FleetProvider()) { entry in
+        StaticConfiguration(kind: "run.infinitus.mobile.fleet", provider: FleetProvider()) { entry in
             FleetWidgetView(entry: entry)
                 .containerBackground(.fill.tertiary, for: .widget)
                 .widgetURL(URL(string: "infinitus://sessions"))

@@ -25,15 +25,17 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 <plist version="1.0">
 <dict>
     <key>CFBundleExecutable</key><string>Infinitus</string>
-    <!-- com.huuloc.infinitus (2026-09-03, user-approved, explicit ask):
-         the id finally follows the app name. Notification and login-item
-         grants key on the id — re-grant both after this; keychain items
-         prompt once. Prefs migrate in-app from com.huuloc.limitless
-         (2026-08-30 id), which itself migrated from
-         io.github.claude-swap.CswapBar.g2 — a rename away from a
-         persistent macOS 26 ControlCenter per-id ban acquired in the
-         2026-08-29 MenuBarExtra insert/evict war. Never change casually. -->
-    <key>CFBundleIdentifier</key><string>com.huuloc.infinitus</string>
+    <!-- run.infinitus (2026-09-05, user-approved, explicit ask): the
+         reverse-DNS of infinitus.run, alongside the phone's
+         run.infinitus.mobile on the paid team. Notification and
+         login-item grants key on the id — re-grant both after this;
+         keychain items under the old id are not readable (re-enter).
+         Prefs migrate in-app from com.huuloc.infinitus (2026-09-03 id)
+         ← com.huuloc.limitless (2026-08-30) ← io.github.claude-swap.CswapBar.g2,
+         a rename away from a persistent macOS 26 ControlCenter per-id
+         ban acquired in the 2026-08-29 MenuBarExtra insert/evict war.
+         Never change casually. -->
+    <key>CFBundleIdentifier</key><string>run.infinitus</string>
     <key>CFBundleName</key><string>Infinitus</string>
     <key>CFBundlePackageType</key><string>APPL</string>
     <key>CFBundleShortVersionString</key><string>${VERSION:-0.0.0}</string>
@@ -60,10 +62,17 @@ find_identity() {
 IDENTITY="${SIGN_IDENTITY:-}"
 [ -n "$IDENTITY" ] || IDENTITY="$(find_identity 'Developer ID Application')"
 [ -n "$IDENTITY" ] || IDENTITY="$(find_identity 'Apple Development')"
+# Inside-out: a codesign of the bundle leaves the nested infinitusctl on
+# its ad-hoc linker signature, which notarization rejects ("binary is not
+# signed with a valid Developer ID certificate"), so the helper is signed
+# first with the same flags, then the bundle.
 case "$IDENTITY" in
     "Developer ID Application"*)
+        codesign --force --options runtime --timestamp --sign "$IDENTITY" \
+            "$APP/Contents/MacOS/infinitusctl"
         codesign --force --options runtime --timestamp --sign "$IDENTITY" "$APP" ;;
     *)
+        codesign --force --sign "${IDENTITY:--}" "$APP/Contents/MacOS/infinitusctl"
         codesign --force --sign "${IDENTITY:--}" "$APP" ;;
 esac
 echo "Built $PWD/$APP — launch with: open $APP"
