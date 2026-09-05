@@ -32,6 +32,7 @@ publishes the matching section as the GitHub release body.
 - Tokens/min records: every day's peak minute, the all-time best and the days it fell, a 30-day sparkline and a week-over-week trend, on the Mac and the phone — one full rescan on first refresh.
 
 ### Fixes
+- Machine › Reclaim also clears abandoned pip and Python tempfile directories older than an hour, and finds open files without walking the temp directory (which is what hangs on a loaded Mac).
 - Settings › Machine warns once per hook owner, names the owner of a shell-conditional hook, and can kill a hook's live instances (`infinitusctl machine-hook kill <owner> --yes`).
 - Stats scan parses transcripts 4.6× faster (byte-level line scanning, no regex on tool results) and decodes the cache once per backfill instead of every pass.
 - Tokens/min records: the day's minute buckets survive the stats cache, so the peak is the day's real busiest minute, not the last scan's.

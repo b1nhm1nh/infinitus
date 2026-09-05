@@ -28,7 +28,19 @@ public enum Residue {
             .map { Item(path: dir + "/" + $0, kind: "session-env", bytes: 0) }
     }
 
-    /// `mktemp` leftovers (`tmp.XXXXXXXXXX`) older than `minAge` that no
+    /// Which tool left a temp entry, by its name — the only entries the
+    /// reclaim touches. `mktemp` files (`tmp.XXXXXXXXXX`), pip's unpack /
+    /// metadata / build-tracker / wheel-cache dirs (`pip-*`, abandoned
+    /// when a hook timeout kills the install) and Python `tempfile`
+    /// dirs (`TemporaryDirectory.*`). Anything else is someone's.
+    public static func tempOwner(of name: String) -> String? {
+        if name.hasPrefix("tmp.") && name.count == 14 { return "mktemp" }
+        if name.hasPrefix("pip-") { return "pip" }
+        if name.hasPrefix("TemporaryDirectory.") { return "python" }
+        return nil
+    }
+
+    /// Temp entries with a known owner older than `minAge` that no
     /// process holds open. `openPaths` comes from one `lsof` call at
     /// reclaim time — never from the sampler.
     public static func orphanTemps(dir: String, minAge: TimeInterval = 3600, openPaths: Set<String>,
@@ -36,7 +48,7 @@ public enum Residue {
         guard let names = try? fm.contentsOfDirectory(atPath: dir) else { return [] }
         var out: [Item] = []
         let held = Set(openPaths.map(canonical))
-        for name in names where name.hasPrefix("tmp.") && name.count == 14 {
+        for name in names where tempOwner(of: name) != nil {
             let path = dir + "/" + name
             let mine = canonical(path)
             guard !held.contains(mine), !held.contains(where: { $0.hasPrefix(mine + "/") }),
@@ -56,16 +68,20 @@ public enum Residue {
     }
 
     #if canImport(Darwin) && !os(iOS)
-    /// Paths open under `dir`, from `lsof +D` (one call; can take a while
-    /// on a wedged directory, so callers give it a deadline). `nil` when
-    /// lsof did not finish — lsof exits 1 for "nothing open" too, so the
-    /// shell marker is what tells a clean run from a killed one; callers
-    /// skip the temp reclaim on nil rather than reclaim unprotected.
-    public static func openPaths(under dir: String, timeout: TimeInterval = 60) -> Set<String>? {
-        let script = "/usr/sbin/lsof -Fn +D \"$1\" 2>/dev/null; echo __lsof_done__"
-        guard let out = try? Subprocess.run("/bin/sh", ["-c", script, "sh", dir], timeout: timeout),
+    /// Paths open under `dir`, from every process's open files (`lsof
+    /// -Fn`, NOT `+D`: walking a wedged temp directory is exactly what
+    /// hangs on a loaded Mac, while the fd tables always answer). `nil`
+    /// when lsof did not finish — lsof exits 1 for "nothing open" too,
+    /// so the shell marker is what tells a clean run from a killed one;
+    /// callers skip the temp reclaim on nil rather than reclaim
+    /// unprotected.
+    public static func openPaths(under dir: String, timeout: TimeInterval = 120) -> Set<String>? {
+        let script = "/usr/sbin/lsof -Fn 2>/dev/null; echo __lsof_done__"
+        guard let out = try? Subprocess.run("/bin/sh", ["-c", script, "sh"], timeout: timeout),
               out.contains("__lsof_done__") else { return nil }
-        return Set(out.split(separator: "\n").filter { $0.hasPrefix("n") }.map { String($0.dropFirst()) })
+        let root = canonical(dir) + "/"
+        return Set(out.split(separator: "\n").filter { $0.hasPrefix("n") }
+            .map { String($0.dropFirst()) }.filter { canonical($0).hasPrefix(root) })
     }
     #endif
 
