@@ -37,7 +37,8 @@ publishes the matching section as the GitHub release body.
 - The working Live Activity follows an account switch when the app opens, and a card nothing has reached says "out of date".
 - A lighter chat header: compact by default, or a stat strip with mini gauges (Settings › Appearance › Chat header).
 - A capture of the app — the capture button in a chat, a shake anywhere, or a screenshot the phone just took — lands in the composer as an attachment so you can say what it's about.
-- The Game HUD header draws every window as a bar, the models' too, and the capture and photo-library buttons sit in the composer's tool row left of the text.
+- The Game HUD header draws every window as a bar, the models' too, and one + button left of the text holds every attachment: capture this screen, photo library, camera, files, paste.
+- The phone app is called Infinitus on the home screen and in search.
 - A session that comes to need an AWS sign-in raises a notification on the phone, tap to sign in, and the Quests badge counts it.
 - The phone build carries the push entitlement, so Live Activities and alerts move with the app closed once the Mac holds an APNs key (Settings › Sync).
 - Home-screen and lock-screen widgets in the fleet's theme: the active account's windows as your theme names and colors them, what's waiting, and the revival countdown when every account is limited.
