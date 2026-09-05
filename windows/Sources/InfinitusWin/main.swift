@@ -7,8 +7,8 @@ import InfinitusCore
 import CRT   // exit(3): Foundation doesn't re-export it on Windows
 #endif
 
-/// Tracks the app release (VERSION); W17 bumps it with the docs.
-let infinitusWinVersion = "0.4.1"
+/// Tracks the app release (VERSION) via unified InfinitusVersion constant.
+let infinitusWinVersion = InfinitusVersion.current
 
 /// The Mac's mirror port, so a QR from either host scans the same.
 let defaultMirrorPort: UInt16 = 47824

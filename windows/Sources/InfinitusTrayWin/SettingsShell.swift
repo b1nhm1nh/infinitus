@@ -399,9 +399,8 @@ public enum SettingsShell {
                 { PlaceholderPane(descriptor: $0) }
             ),
             (
-                PaneDescriptor(id: "about", title: "About", glyph: "\u{E946}", tintRGB: (116, 125, 140),
-                               keywords: ["update", "version", "license", "links"]),
-                { PlaceholderPane(descriptor: $0) }
+                AboutPane.descriptor,
+                { _ in AboutPane() }
             ),
             (
                 PaneDescriptor(id: "cswap", title: "cswap", glyph: "\u{E713}", tintRGB: (149, 165, 166),

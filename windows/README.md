@@ -115,7 +115,7 @@ powershell -ExecutionPolicy Bypass -File .\windows\install.ps1 -Uninstall
 
 ## Subcommands & Real Output
 
-All examples below show verified output from `infinitus-win 0.4.1` on Windows 11.
+All examples below show verified output from `infinitus-win 0.4.2` on Windows 11.
 
 ### Version: `--version` / `-V`
 
@@ -125,7 +125,7 @@ Prints the current version matching the Infinitus release track.
 .\.build\debug\infinitus-win.exe --version
 ```
 ```text
-infinitus-win 0.4.1
+infinitus-win 0.4.2
 ```
 
 ### Sessions: `sessions`

@@ -9,10 +9,9 @@ enum TrayIcon {
     static let busyColor: UInt32 = 0xFFFF_9500     // amber (BGRA, opaque)
     static let idleColor: UInt32 = 0xFF8E_8E93     // slate
 
-    /// A 16×16 icon coloured for the given state. The caller owns the
-    /// handle and must `DestroyIcon` it.
-    static func make(busy: Bool) -> HICON? {
-        let side: Int32 = 16
+    /// An icon coloured for the given state, sized to `side`×`side` (default 16×16).
+    /// The caller owns the handle and must `DestroyIcon` it.
+    static func make(busy: Bool, side: Int32 = 16) -> HICON? {
         guard let screen = GetDC(nil) else { return nil }
         defer { ReleaseDC(nil, screen) }
         guard let memory = CreateCompatibleDC(screen) else { return nil }

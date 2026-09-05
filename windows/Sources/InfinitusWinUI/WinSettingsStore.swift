@@ -29,6 +29,11 @@ public struct WinSettings: Codable, Equatable, Sendable {
     public var trayBalloonsEnabled: Bool = true
     public var sortByHeadroom: Bool = true
 
+    // Updates
+    public var updateAutoCheck: Bool = true
+    public var appUpdateLastCheck: Double = 0
+    public var appUpdateNotifiedVersion: String = ""
+
     // Devices
     public var mirrorPort: UInt16 = 47824
     public var autoResume: Bool = false
@@ -56,6 +61,9 @@ public struct WinSettings: Codable, Equatable, Sendable {
         case pushAwsLogin = "push_aws_login"
         case trayBalloonsEnabled = "tray_balloons"
         case sortByHeadroom = "sort_headroom"
+        case updateAutoCheck = "update_auto_check"
+        case appUpdateLastCheck = "app_update_last_check"
+        case appUpdateNotifiedVersion = "app_update_notified_version"
         case mirrorPort = "mirror_port"
         case autoResume = "auto_resume"
         case lastPaneID = "last_pane"
@@ -81,6 +89,9 @@ public struct WinSettings: Codable, Equatable, Sendable {
         pushAwsLogin = try c.decodeIfPresent(Bool.self, forKey: .pushAwsLogin) ?? d.pushAwsLogin
         trayBalloonsEnabled = try c.decodeIfPresent(Bool.self, forKey: .trayBalloonsEnabled) ?? d.trayBalloonsEnabled
         sortByHeadroom = try c.decodeIfPresent(Bool.self, forKey: .sortByHeadroom) ?? d.sortByHeadroom
+        updateAutoCheck = try c.decodeIfPresent(Bool.self, forKey: .updateAutoCheck) ?? d.updateAutoCheck
+        appUpdateLastCheck = try c.decodeIfPresent(Double.self, forKey: .appUpdateLastCheck) ?? d.appUpdateLastCheck
+        appUpdateNotifiedVersion = try c.decodeIfPresent(String.self, forKey: .appUpdateNotifiedVersion) ?? d.appUpdateNotifiedVersion
         mirrorPort = try c.decodeIfPresent(UInt16.self, forKey: .mirrorPort) ?? d.mirrorPort
         autoResume = try c.decodeIfPresent(Bool.self, forKey: .autoResume) ?? d.autoResume
         lastPaneID = try c.decodeIfPresent(String.self, forKey: .lastPaneID) ?? d.lastPaneID

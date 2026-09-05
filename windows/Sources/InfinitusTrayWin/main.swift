@@ -8,6 +8,9 @@
 // Accounts and usage stay out of this window; when a swap engine is
 // installed the phone and `infinitus-win snapshot` already show them.
 import Foundation
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 import InfinitusCore
 import InfinitusWinUI
 import WinSDK
@@ -17,6 +20,10 @@ let trayMessage = UINT(WM_APP) + 1
 /// Posted by a background switch when the engine has answered, so the
 /// balloon goes up on the thread that owns the window.
 let engineReportMessage = UINT(WM_APP) + 2
+/// Posted when background auto-update check discovers a new release.
+let updateCheckMessage = UINT(WM_APP) + 3
+let timerUpdateCheckID: UINT_PTR = 2
+let timerUpdateCheckIntervalMs: UINT = 6 * 3600 * 1000 // 6 hours
 let commandBase: UINT = 0x1000
 /// Fixed command ids, above any session row.
 let commandCopyPair: UINT = 0x0F01
@@ -63,6 +70,7 @@ final class TrayState {
     /// drained by the window procedure — hence the lock.
     let pending = NSLock()
     var pendingReports: [String] = []
+    var pendingUpdateTag: String? = nil
     /// The `infinitus-win serve` child, when this tray started one. A
     /// daemon someone else started is not ours to stop.
     var daemon: Process?
@@ -348,6 +356,45 @@ func switchAccount(to account: Int?) {
 /// the text under a lock and POSTS — this process pumps a Win32
 /// GetMessageW loop and never drains DispatchQueue.main, so a dispatched
 /// block would simply never run.
+func checkUpdateAsync(window: HWND) {
+    let settings = WinSettingsStore.load()
+    let now = Date().timeIntervalSince1970
+    guard UpdateLogicWin.shouldCheck(lastCheck: settings.appUpdateLastCheck, now: now, enabled: settings.updateAutoCheck) else {
+        return
+    }
+
+    Thread.detachNewThread {
+        guard let url = URL(string: "https://api.github.com/repos/deathemperor/infinitus/releases/latest") else { return }
+        var req = URLRequest(url: url)
+        req.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
+        req.setValue("Infinitus-Win/\(InfinitusVersion.current)", forHTTPHeaderField: "User-Agent")
+
+        let sema = DispatchSemaphore(value: 0)
+        let session = URLSession(configuration: .ephemeral)
+        let task = session.dataTask(with: req) { data, response, _ in
+            defer { sema.signal() }
+            guard let http = response as? HTTPURLResponse, http.statusCode == 200, let data else { return }
+            struct Release: Decodable { let tag_name: String }
+            guard let rel = try? JSONDecoder().decode(Release.self, from: data) else { return }
+            let tag = UpdateLogicWin.normalizeTag(rel.tag_name)
+            let curr = InfinitusVersion.current
+            let s = WinSettingsStore.load()
+            if UpdateLogicWin.isUpdateAvailable(current: curr, latest: tag) &&
+               UpdateLogicWin.shouldNotify(latest: tag, lastNotified: s.appUpdateNotifiedVersion) {
+                state.pending.lock()
+                state.pendingUpdateTag = tag
+                state.pending.unlock()
+                PostMessageW(window, updateCheckMessage, 0, 0)
+            }
+            _ = try? WinSettingsStore.update {
+                $0.appUpdateLastCheck = Date().timeIntervalSince1970
+            }
+        }
+        task.resume()
+        sema.wait()
+    }
+}
+
 func postEngineReport(_ message: String) {
     state.pending.lock()
     state.pendingReports.append(message)
@@ -426,10 +473,26 @@ let windowProc: @convention(c) (HWND?, UINT, WPARAM, LPARAM) -> LRESULT = {
         }
         if !reports.isEmpty { refresh() }
         return 0
+    case Int32(updateCheckMessage):
+        state.pending.lock()
+        let newTag = state.pendingUpdateTag
+        state.pendingUpdateTag = nil
+        state.pending.unlock()
+        if let window, let tag = newTag {
+            TrayNotify.balloon(window, title: "Infinitus", body: "Infinitus \(tag) is available")
+            _ = try? WinSettingsStore.update {
+                $0.appUpdateNotifiedVersion = tag
+            }
+        }
+        return 0
     case WM_COMMAND:
         handleCommand(UINT(wParam & 0xFFFF))
         return 0
     case WM_TIMER:
+        if wParam == timerUpdateCheckID {
+            if let window { checkUpdateAsync(window: window) }
+            return 0
+        }
         refresh()
         // Engine data refreshes off the same tick, in the background —
         // the menu must never wait on a subprocess to open.
@@ -461,7 +524,15 @@ extension String {
     var wide: [WCHAR] { Array(utf16) + [0] }
 }
 
+let infinitusTrayWinVersion = InfinitusVersion.current
+
 func run() -> Int32 {
+    let firstArg = CommandLine.arguments.dropFirst().first
+    if firstArg == "--version" || firstArg == "-V" {
+        print("infinitus-tray-win \(infinitusTrayWinVersion)")
+        return 0
+    }
+
     // 1. DPI awareness as first statement before any CreateWindowExW
     _ = SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2)
 
@@ -616,6 +687,8 @@ func run() -> Int32 {
     guard Shell_NotifyIconW(DWORD(NIM_ADD), &data) else { return 1 }
     refresh()
     SetTimer(window, 1, refreshMilliseconds, nil)
+    SetTimer(window, timerUpdateCheckID, timerUpdateCheckIntervalMs, nil)
+    checkUpdateAsync(window: window)
 
     var message = MSG()
     // Swift maps GetMessageW's BOOL to Bool: false is WM_QUIT (and the
