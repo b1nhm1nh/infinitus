@@ -120,4 +120,33 @@ final class TeamClientTests: XCTestCase {
         XCTAssertThrowsError(try member.fetch())
         XCTAssertEqual(member.roster?.doc.rev, 2)
     }
+
+    /// C1: anyone holding the team code can write to the store, so the
+    /// roster a joiner accepts first must carry the code leader's own
+    /// signature — not merely list them.
+    func testAForgedFirstRosterIsRefusedAndNothingIsPersisted() throws {
+        let remote = try makeRemote()
+        let (lp, ls) = machine("leader")
+        let (jp, js) = machine("joiner")
+        let (ep, es) = machine("eve")
+
+        let leader = try TeamClient.create(name: "Papaya", remote: remote, token: nil, paths: lp, secrets: ls, now: 1_000)
+        let code = try leader.code(expiresIn: 600, now: 1_000)
+
+        // Eve holds the code, so she can write: rev 1, leaders [real, eve],
+        // signed by eve.
+        let eve = try TeamClient.identity(paths: ep, secrets: es)
+        var forged = try XCTUnwrap(leader.roster).doc
+        forged.leaders.append(TeamRoster.Member(keys: eve.keys, name: "Eve", since: 1_001))
+        let raw = TeamGit(dir: ep.storeDir(leader.config.id), remote: remote, token: nil, author: eve.kid)
+        try raw.open(); try raw.sync()
+        try raw.put("roster/team.json", try CanonicalJSON.encode(try Signed.make(forged, by: eve)))
+
+        XCTAssertThrowsError(try TeamClient.request(code: code, name: "Bo", devices: [], platform: "linux",
+                                                    paths: jp, secrets: js, now: 1_010)) {
+            XCTAssertEqual($0 as? TeamClient.ClientError, .badCode)
+        }
+        XCTAssertEqual(jp.teamIDs(), [])
+        XCTAssertFalse(FileManager.default.fileExists(atPath: jp.rosterFile(leader.config.id).path))
+    }
 }

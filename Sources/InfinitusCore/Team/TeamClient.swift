@@ -139,11 +139,11 @@ public final class TeamClient {
                 self.roster = candidate
             }
         } else {
-            // First roster: the code's leader must be among its leaders and
-            // must have signed it (or a leader it lists did, and the code's
-            // leader is one of them).
-            try TeamRoster.Acceptance.check(candidate, previous: nil)
-            guard candidate.doc.isLeader(config.leaderKid) else { throw TeamRoster.RosterError.notALeader }
+            // First roster: it must be this team's, and the leader the code
+            // named must have SIGNED it — listing them is not enough, since
+            // every code holder can write to the store.
+            guard candidate.doc.id == config.id else { throw TeamRoster.RosterError.differentTeam }
+            try TeamRoster.Acceptance.check(candidate, previous: nil, trustRoot: config.leaderKid)
             self.roster = candidate
         }
         try persist()

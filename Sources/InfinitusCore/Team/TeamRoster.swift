@@ -108,9 +108,12 @@ public struct TeamRoster: Codable, Equatable, Sendable {
 
     public enum Acceptance {
         /// `previous` is the roster this client last accepted (nil on the
-        /// very first fetch, when the founder's self-signature is the root
-        /// of trust — the team code the joiner used names that founder).
-        public static func check(_ candidate: Signed<TeamRoster>, previous: Signed<TeamRoster>?) throws {
+        /// very first fetch). Anyone holding the store credential can write
+        /// `roster/team.json`, so on that first roster listing the trusted
+        /// leader is not enough: `trustRoot` — the leader kid the team code
+        /// carried — must be the kid that SIGNED it.
+        public static func check(_ candidate: Signed<TeamRoster>, previous: Signed<TeamRoster>?,
+                                 trustRoot: String? = nil) throws {
             let roster = candidate.doc
             guard !roster.leaders.isEmpty else { throw RosterError.noLeaders }
             let authority = previous?.doc ?? roster
@@ -118,6 +121,7 @@ public struct TeamRoster: Codable, Equatable, Sendable {
                 guard roster.id == previous.doc.id else { throw RosterError.differentTeam }
                 guard roster.rev > previous.doc.rev else { throw RosterError.lowerRev }
             }
+            if previous == nil, let trustRoot, candidate.by != trustRoot { throw RosterError.notALeader }
             guard let signer = authority.leaders.first(where: { $0.keys.kid == candidate.by }) else {
                 throw RosterError.notALeader
             }

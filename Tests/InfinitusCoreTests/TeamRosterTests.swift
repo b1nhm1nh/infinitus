@@ -87,4 +87,28 @@ final class TeamRosterTests: XCTestCase {
         let forgedText = try forged.encoded(by: leader)
         XCTAssertThrowsError(try TeamCode.decode(forgedText, now: 1_000)) { XCTAssertEqual($0 as? TeamCode.CodeError, .badSignature) }
     }
+
+    func testFirstRosterMustBeSignedByTheLeaderTheCodeNamed() throws {
+        // A code holder writes a rev-1 roster that lists itself next to the
+        // real leader and signs it (C1).
+        let forged = try Signed.make(roster(rev: 1, leaders: [leader, stranger]), by: stranger)
+        // With no trust root the old rule still holds: a listed leader signed it.
+        XCTAssertNoThrow(try TeamRoster.Acceptance.check(forged, previous: nil))
+        // The code named the real leader, so only that leader's signature counts.
+        XCTAssertThrowsError(try TeamRoster.Acceptance.check(forged, previous: nil, trustRoot: leader.kid)) {
+            XCTAssertEqual($0 as? TeamRoster.RosterError, .notALeader)
+        }
+        // The same roster signed by the code's leader is fine.
+        let honest = try Signed.make(roster(rev: 1, leaders: [leader, stranger]), by: leader)
+        XCTAssertNoThrow(try TeamRoster.Acceptance.check(honest, previous: nil, trustRoot: leader.kid))
+        // A forger is accepted only by a joiner whose code named the forger.
+        XCTAssertNoThrow(try TeamRoster.Acceptance.check(forged, previous: nil, trustRoot: stranger.kid))
+        // The trust root must still be a leader of the roster it signed.
+        XCTAssertThrowsError(try TeamRoster.Acceptance.check(honest, previous: nil, trustRoot: member.kid)) {
+            XCTAssertEqual($0 as? TeamRoster.RosterError, .notALeader)
+        }
+        // A later roster is judged by the previous one, not the trust root.
+        let next = try Signed.make(roster(rev: 2, leaders: [leader, stranger]), by: stranger)
+        XCTAssertNoThrow(try TeamRoster.Acceptance.check(next, previous: honest, trustRoot: leader.kid))
+    }
 }
