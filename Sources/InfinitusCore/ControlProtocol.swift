@@ -224,6 +224,9 @@ public struct ControlCommand: Codable, Sendable, Equatable {
                        effect: .write,
                        summary: "PUT the proxy's routing strategy.",
                        replyShape: "{routingStrategy}"),
+        ControlCommand(name: "event", effect: .write,
+                       summary: "A Claude Code hook payload on stdin (the plugin's Notification/Stop hooks): a prompt is pushed the moment it appears, then the fleet refreshes.",
+                       replyShape: "{pid?}"),
     ]
 
     public static func named(_ name: String) -> ControlCommand? {

@@ -182,6 +182,10 @@ to drive the running app.
   title from Claude Haiku and keep it fresh as the work moves; the
   phone opens on what's waiting for you, with a Continue button for a
   session a limit or a crash stopped.
+- **A Claude Code plugin** — `infinitusctl plugin install` adds hooks
+  that tell the Mac app the moment a session needs you or ends a turn,
+  so the phone gets the permission or question at once instead of at
+  the next poll; the hooks never block a session.
 - **Capture the desktop into a session** — Capture Screen for a
   Session… in the menu-bar menu: a region or window, a session, a note,
   delivered like a phone message.
