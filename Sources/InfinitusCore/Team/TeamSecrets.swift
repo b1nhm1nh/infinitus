@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(Glibc)
+import Glibc   // rename(2), errno
+#endif
 
 /// Where the identity secret and store tokens live. The Mac app supplies
 /// a keychain-backed implementation (plan 5); the CLI, Linux and tests
