@@ -45,8 +45,12 @@ public struct MachineReport: Equatable, Sendable, Codable {
         for hook in newcomers {
             out.append("new hook: \(hook.owner) on \(hook.event) (\(hook.source.label))")
         }
-        let stuck = hooks.filter(\.stuck)
-        for hook in stuck.sorted(by: { $0.live.instances > $1.live.instances }).prefix(3) {
+        // One script registered on several events reports the same live
+        // instances under each registration: one warning per owner.
+        var seenOwners = Set<String>()
+        let stuck = hooks.filter(\.stuck).sorted(by: { $0.live.instances > $1.live.instances })
+            .filter { seenOwners.insert($0.registration.owner).inserted }
+        for hook in stuck.prefix(3) {
             out.append("\(hook.registration.owner) has \(hook.live.instances) instances (oldest \(hook.live.oldestSeconds / 60) min, \(hook.live.uninterruptible) stuck)")
         }
         if sample.swapPct >= 90 { out.append("swap \(Int(sample.swapPct))% full") }
