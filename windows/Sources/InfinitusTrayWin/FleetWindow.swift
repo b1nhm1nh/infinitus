@@ -36,11 +36,45 @@ enum FleetWindow {
 
     // MARK: - metrics (moved to shared Metrics.swift)
 
+    /// The slot badge's text for a row — the theme's prefix ("agent-",
+    /// "P", "🎬", …) plus the number, or the active icon on the active
+    /// row (the Mac's `slotDisplay` rule).
+    static func slotString(for row: FleetLayout.Row, theme: RowTheme?) -> String {
+        if row.active, let theme, !theme.plain, !theme.activeIcon.isEmpty {
+            return theme.activeIcon
+        }
+        return (theme?.slotPrefix ?? "") + "\(row.number)"
+    }
+
+    /// Widest slot badge in the panel, so every row's name column starts
+    /// at the same x (the Mac's `alignedColumn("slot")` rule). Measured
+    /// exactly with `dc` + `font` when available; estimated from character
+    /// counts otherwise (window sizing has no DC yet — resizeToFit does).
+    static func slotColumnWidth(_ panel: FleetLayout.Panel, metrics: Metrics,
+                                theme: RowTheme?, dc: HDC? = nil, font: HFONT? = nil) -> Int32 {
+        var oldFont: HGDIOBJ? = nil
+        if let dc, let font { oldFont = SelectObject(dc, font) }
+        defer {
+            if let dc, let oldFont { _ = SelectObject(dc, oldFont) }
+        }
+        var maxW = metrics.numberWidth
+        for row in panel.rows {
+            let s = slotString(for: row, theme: theme)
+            if let dc {
+                maxW = max(maxW, textExtent(dc, s).cx + metrics.px(8))
+            } else {
+                // ~6.5 px/char at 96 dpi for Segoe UI caption; emoji count as two
+                maxW = max(maxW, metrics.px(Int32(s.count) * 7 + 10))
+            }
+        }
+        return maxW
+    }
+
     /// The window's own size for a given panel — computed, not guessed,
     /// so the frame always fits its rows AND its fleet headers.
     static func idealSize(rows: Int, gauges: Int, metrics: Metrics,
-                          fleetHeaders: Int = 0) -> (width: Int32, height: Int32) {
-        let width = metrics.pad * 2 + metrics.numberWidth + metrics.nameWidth
+                          fleetHeaders: Int = 0, slotWidth: Int32? = nil) -> (width: Int32, height: Int32) {
+        let width = metrics.pad * 2 + (slotWidth ?? metrics.numberWidth) + metrics.nameWidth
             + Int32(max(1, gauges)) * (metrics.barWidth + metrics.gaugeGap + metrics.px(52))
         let body = Int32(max(1, rows)) * metrics.rowHeight
             + Int32(fleetHeaders) * metrics.fleetHeaderHeight
@@ -48,42 +82,57 @@ enum FleetWindow {
         return (min(width, metrics.px(980)), min(height, metrics.px(680)))
     }
 
+    /// True when a card paints a subtitle line under its header — dead
+    /// note, or the email on a non-active row. cardHeight and paintCard
+    /// must agree on this or content overflows the card's bottom edge.
+    static func hasCardSubtitle(_ row: FleetLayout.Row) -> Bool {
+        if row.deadNote != nil { return true }
+        return !row.active && !row.email.isEmpty
+    }
+
+    /// A card's full height: top pad, header line, optional subtitle,
+    /// gauge rows, bottom pad — the same arithmetic paintCard walks.
+    /// One source of truth: place() sizes the cards, idealSize sizes the
+    /// window, paintCard draws inside — drift between them clipped the
+    /// subtitle under the card edge.
+    static func cardHeight(_ row: FleetLayout.Row, metrics: Metrics) -> Int32 {
+        metrics.px(8 + 18 + (hasCardSubtitle(row) ? 14 : 0) + 2)
+            + Int32(max(1, row.gauges.count)) * metrics.px(20) + metrics.px(8)
+    }
+
     /// Layout-aware ideal size matching Mac popup layouts ("wide", "stacked", "hstack").
+    /// The card layouts run place() itself and take the final y — one
+    /// walk decides both the cards' bounds and the window's height, so
+    /// the two can never drift.
     static func idealSize(panel: FleetLayout.Panel, metrics: Metrics, layout: String) -> (width: Int32, height: Int32) {
         switch layout {
         case "stacked":
-            let cardW = metrics.px(380)
-            let width = metrics.pad * 2 + cardW
-            var bodyH: Int32 = 0
-            for line in panel.lines {
-                switch line {
-                case .header:
-                    bodyH += metrics.fleetHeaderHeight + metrics.px(4)
-                case .account(let row):
-                    let cardH = metrics.px(26) + Int32(max(1, row.gauges.count)) * metrics.px(20) + metrics.px(10)
-                    bodyH += cardH + metrics.px(8)
-                }
-            }
-            let height = metrics.headerHeight + max(bodyH, metrics.px(60)) + metrics.footerHeight + metrics.pad
-            return (min(width, metrics.px(980)), min(height, metrics.px(760)))
+            let width = min(metrics.pad * 2 + metrics.px(380), metrics.px(980))
+            let bodyH = place(panel, metrics: metrics, layout: layout, clientWidth: width)
+                .last?.rect.bottom ?? metrics.headerHeight
+            let height = bodyH + metrics.footerHeight + metrics.pad
+            return (width, min(height, metrics.px(760)))
 
         case "hstack":
             let cardW = metrics.px(230)
-            var maxCardH: Int32 = metrics.px(80)
-            for row in panel.rows {
-                let h = metrics.px(26) + Int32(max(1, row.gauges.count)) * metrics.px(20) + metrics.px(10)
-                if h > maxCardH { maxCardH = h }
-            }
-            let headersCount = panel.lines.filter { if case .header = $0 { return true } else { return false } }.count
+            let gap = metrics.px(8)
             let accCount = max(1, panel.rows.count)
-            let width = metrics.pad * 2 + Int32(accCount) * cardW + Int32(max(0, accCount - 1)) * metrics.px(8)
-            let height = metrics.headerHeight + Int32(headersCount) * metrics.fleetHeaderHeight + maxCardH + metrics.footerHeight + metrics.pad * 2
-            return (min(width, metrics.px(1100)), min(height, metrics.px(680)))
+            // Enough columns for every card, capped so the window stays
+            // within the max width — extra cards wrap onto further rows.
+            let availW = metrics.px(1100) - metrics.pad * 2
+            let cols = min(Int32(accCount), max(1, (availW + gap) / (cardW + gap)))
+            let width = metrics.pad * 2 + cols * cardW + (cols - 1) * gap
+            let bodyH = place(panel, metrics: metrics, layout: layout, clientWidth: width)
+                .last?.rect.bottom ?? metrics.headerHeight
+            let height = bodyH + metrics.footerHeight + metrics.pad
+            return (width, min(height, metrics.px(680)))
 
         default: // "wide"
             let gauges = panel.rows.map(\.gauges.count).max() ?? 2
             let headers = panel.lines.filter { if case .header = $0 { return true } else { return false } }.count
-            return idealSize(rows: max(1, panel.rows.count), gauges: gauges, metrics: metrics, fleetHeaders: headers)
+            let slotW = slotColumnWidth(panel, metrics: metrics, theme: currentTheme())
+            return idealSize(rows: max(1, panel.rows.count), gauges: gauges, metrics: metrics,
+                             fleetHeaders: headers, slotWidth: slotW)
         }
     }
 
@@ -110,7 +159,7 @@ enum FleetWindow {
                     out.append(Placed(line: line, rect: r))
                     y += metrics.fleetHeaderHeight + metrics.px(4)
                 case .account(let row):
-                    let cardH = metrics.px(26) + Int32(max(1, row.gauges.count)) * metrics.px(20) + metrics.px(10)
+                    let cardH = cardHeight(row, metrics: metrics)
                     let r = RECT(left: pad, top: y, right: pad + w, bottom: y + cardH)
                     out.append(Placed(line: line, rect: r))
                     y += cardH + metrics.px(8)
@@ -118,28 +167,38 @@ enum FleetWindow {
             }
 
         case "hstack":
-            var y = metrics.headerHeight
             let cardW = metrics.px(230)
+            let gap = metrics.px(8)
             var maxCardH: Int32 = metrics.px(80)
             for row in panel.rows {
-                let h = metrics.px(26) + Int32(max(1, row.gauges.count)) * metrics.px(20) + metrics.px(10)
-                if h > maxCardH { maxCardH = h }
+                maxCardH = max(maxCardH, cardHeight(row, metrics: metrics))
             }
-            var curX = pad
+            // Wrap into a grid of `cols` per row — 8 Gemini accounts at
+            // 238px each must never run off the window's right edge.
+            let availW = max(cardW, (clientWidth > 0 ? clientWidth : metrics.px(1100)) - pad * 2)
+            let cols = max(1, (availW + gap) / (cardW + gap))
+            var y = metrics.headerHeight
+            var col = 0
             for line in panel.lines {
                 switch line {
                 case .header:
-                    if curX > pad {
-                        curX = pad
-                        y += maxCardH + metrics.px(8)
+                    if col > 0 {
+                        col = 0
+                        y += maxCardH + gap
                     }
-                    let r = RECT(left: pad, top: y, right: max(pad + cardW, clientWidth - pad), bottom: y + metrics.fleetHeaderHeight)
+                    let r = RECT(left: pad, top: y, right: pad + availW, bottom: y + metrics.fleetHeaderHeight)
                     out.append(Placed(line: line, rect: r))
                     y += metrics.fleetHeaderHeight + metrics.px(4)
-                case .account:
-                    let r = RECT(left: curX, top: y, right: curX + cardW, bottom: y + maxCardH)
+                case .account(let row):
+                    let h = cardHeight(row, metrics: metrics)
+                    let x = pad + Int32(col) * (cardW + gap)
+                    let r = RECT(left: x, top: y, right: x + cardW, bottom: y + maxCardH)
                     out.append(Placed(line: line, rect: r))
-                    curX += cardW + metrics.px(8)
+                    col += 1
+                    if col >= cols {
+                        col = 0
+                        y += maxCardH + gap
+                    }
                 }
             }
 
@@ -601,6 +660,16 @@ enum FleetWindow {
         } else {
             let theme = currentTheme()
             let layout = WinSettingsStore.load().popupLayout
+            // Exact slot-column width from the live DC — the estimated one
+            // used at resize time can undershoot a long theme prefix.
+            let slotW = slotColumnWidth(state.panel, metrics: metrics, theme: theme,
+                                        dc: memDC, font: state.captionFont)
+            if let style = DWORD(exactly: Int32(truncatingIfNeeded:
+                GetWindowLongPtrW(hwnd, GWL_STYLE))),
+               abs(Int(idealSize(panel: state.panel, metrics: metrics, layout: layout).width
+                       - client.right)) > metrics.px(8) {
+                resizeToFit(hwnd, panel: state.panel, style: style)
+            }
             var index = 0
             for placed in place(state.panel, metrics: metrics, layout: layout, clientWidth: client.right) {
                 switch placed.line {
@@ -611,7 +680,7 @@ enum FleetWindow {
                         paintCard(memDC, row, index: index, rect: placed.rect, metrics: metrics, state: state, theme: theme)
                     } else {
                         paintRow(memDC, row, index: index, top: placed.rect.top, width: client.right,
-                                 metrics: metrics, state: state, theme: theme)
+                                 metrics: metrics, state: state, theme: theme, slotWidth: slotW)
                     }
                     index += 1
                 }
@@ -694,7 +763,7 @@ enum FleetWindow {
 
         // Header line in Card: Slot badge + Name + [Dead / Email]
         if let font = state.captionFont { SelectObject(dc, font) }
-        let slotStr = (theme?.slotPrefix ?? "") + "\(row.number)"
+        let slotStr = slotString(for: row, theme: theme)
         draw(dc, slotStr, x: curX, y: curY + metrics.px(2),
              color: row.active ? text : faint)
         let slotW = textExtent(dc, slotStr).cx + metrics.px(6)
@@ -708,14 +777,16 @@ enum FleetWindow {
 
         curY += metrics.px(18)
 
-        // Subtitle: note or email
+        // Subtitle: note or email — only when hasCardSubtitle agreed the
+        // card reserves the line, else the text paints past the card's
+        // bottom edge.
         if let note = row.deadNote {
             if let font = state.captionFont { SelectObject(dc, font) }
             let deadStr = (theme != nil && !theme!.plain && !theme!.deadMarker.isEmpty) ? "\(theme!.deadMarker) \(note)" : note
             drawClipped(dc, deadStr, x: rect.left + innerPad, y: curY,
                         maxWidth: innerW, color: dangerColor)
             curY += metrics.px(14)
-        } else if !row.email.isEmpty {
+        } else if !row.active, !row.email.isEmpty {
             if let font = state.captionFont { SelectObject(dc, font) }
             drawClipped(dc, row.email, x: rect.left + innerPad, y: curY,
                         maxWidth: innerW, color: faint)
@@ -784,7 +855,7 @@ enum FleetWindow {
 
     private static func paintRow(_ dc: HDC, _ row: FleetLayout.Row, index: Int,
                                  top: Int32, width: Int32, metrics: Metrics, state: State,
-                                 theme: RowTheme? = nil) {
+                                 theme: RowTheme? = nil, slotWidth: Int32? = nil) {
         let rect = RECT(left: metrics.pad / 2, top: top,
                         right: width - metrics.pad / 2, bottom: top + metrics.rowHeight - 2)
         // Active reads as selected (the screenshot's blue band); hover is
@@ -799,10 +870,13 @@ enum FleetWindow {
         let baseline = top + metrics.px(7)
 
         if let font = state.captionFont { SelectObject(dc, font) }
-        let slotStr = (theme?.slotPrefix ?? "") + "\(row.number)"
+        let slotStr = slotString(for: row, theme: theme)
         draw(dc, slotStr, x: x, y: baseline + metrics.px(2),
              color: row.active ? text : faint)
-        x += metrics.numberWidth
+        // Advance past the slot badge itself (the Mac's aligned slot
+        // column) — a fixed width broke the moment a theme prefixed the
+        // number ("agent-1" is 3× wider than the 18px that "1" needs).
+        x += max(slotWidth ?? 0, textExtent(dc, slotStr).cx + metrics.px(8))
 
         if let font = state.bodyFont { SelectObject(dc, font) }
         // Truncate rather than overflow into the gauges.
