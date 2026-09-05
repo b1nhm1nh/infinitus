@@ -49,4 +49,43 @@ final class TeamSecretsTests: XCTestCase {
     private func mode(_ attrs: [FileAttributeKey: Any]) -> Int? {
         (attrs[.posixPermissions] as? Int) ?? (attrs[.posixPermissions] as? NSNumber)?.intValue
     }
+
+    /// I6: the doc comment promised a temp file and a rename, but the
+    /// target was deleted first — a reader in that window saw no secret.
+    func testWriteReplacesAnExistingSecretAtomically() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("secrets-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let s = FileSecrets(dir: dir)
+        try s.write("identity", Data([0]))
+
+        final class Box: @unchecked Sendable {
+            let lock = NSLock()
+            var missing = 0
+            var stop = false
+        }
+        let box = Box()
+        let done = DispatchSemaphore(value: 0)
+        DispatchQueue.global().async {
+            let reader = FileSecrets(dir: dir)
+            while true {
+                box.lock.lock(); let stop = box.stop; box.lock.unlock()
+                if stop { break }
+                if reader.read("identity") == nil {
+                    box.lock.lock(); box.missing += 1; box.lock.unlock()
+                }
+            }
+            done.signal()
+        }
+        for i in 0..<400 { try s.write("identity", Data([UInt8(i % 251)])) }
+        box.lock.lock(); box.stop = true; box.lock.unlock()
+        done.wait()
+
+        box.lock.lock(); let missing = box.missing; box.lock.unlock()
+        XCTAssertEqual(missing, 0, "a concurrent reader saw the secret gone mid-write")
+        XCTAssertEqual(s.read("identity"), Data([UInt8(399 % 251)]))
+        let leftovers = try FileManager.default.contentsOfDirectory(atPath: dir.path).filter { $0.contains(".tmp-") }
+        XCTAssertEqual(leftovers, [])
+        let attrs = try FileManager.default.attributesOfItem(atPath: dir.appendingPathComponent("identity").path)
+        XCTAssertEqual(mode(attrs), 0o600)
+    }
 }

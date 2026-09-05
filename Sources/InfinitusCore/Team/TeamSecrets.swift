@@ -14,7 +14,7 @@ public protocol TeamSecrets {
 public struct FileSecrets: TeamSecrets {
     public let dir: URL
 
-    public enum SecretsError: Error { case badName }
+    public enum SecretsError: Error, Equatable { case badName, writeFailed(Int32) }
 
     public init(dir: URL) { self.dir = dir }
 
@@ -34,10 +34,14 @@ public struct FileSecrets: TeamSecrets {
                                                 attributes: [.posixPermissions: 0o700])
         try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: dir.path)
         let tmp = dir.appendingPathComponent(".\(name).tmp-\(UUID().uuidString)")
+        var renamed = false
+        defer { if !renamed { try? FileManager.default.removeItem(at: tmp) } }
         try data.write(to: tmp)
         try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: tmp.path)
-        _ = try? FileManager.default.removeItem(at: target)
-        try FileManager.default.moveItem(at: tmp, to: target)
+        // rename(2) replaces the target in one step: a concurrent reader
+        // sees either the old secret or the new one, never none.
+        guard rename(tmp.path, target.path) == 0 else { throw SecretsError.writeFailed(errno) }
+        renamed = true
     }
 
     public func delete(_ name: String) {
