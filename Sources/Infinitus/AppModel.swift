@@ -1017,6 +1017,9 @@ final class AppModel: ObservableObject {
         resume.log = { [weak self] icon, text in
             self?.logEvent("nudge", icon: icon, text)
         }
+        resume.push = { [weak self] text in
+            self?.push(text)
+        }
         mirrorServer.log = { [weak self] icon, text in
             self?.logEvent("other", icon: icon, text)
         }
@@ -2000,7 +2003,9 @@ final class AppModel: ObservableObject {
                         activeAlive: active.map { !AccountVitals.isDead($0.usage) } ?? false,
                         activeNumber: list.activeAccountNumber,
                         activeFetchedAt: active?.usageFetchedAt
-                            .flatMap(UsageHistory.parseISO))
+                            .flatMap(UsageHistory.parseISO),
+                        activeName: active.map { $0.alias ?? String($0.email.prefix(while: { $0 != "@" })) },
+                        activePct: active.flatMap { PushTriggers.worstPlanPct($0.usage) }.map { Int($0) })
         }
         // Same display-feed vantage as the switch diff above: these
         // triggers fire even while the supervised engine is parked.
