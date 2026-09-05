@@ -9,7 +9,7 @@ import os
 /// effective theme moved to a different icon.
 @MainActor
 enum AppIcons {
-    private static let log = Logger(subsystem: "com.huuloc.infinitus.mobile", category: "icons")
+    private static let log = Logger(subsystem: "run.infinitus.mobile", category: "icons")
     private static let themed: Set<String> = [
         "rpg", "movie", "hades", "mgs", "agent", "swe", "scifi", "west",
         "cyber", "gothic", "musical", "earth", "cosmo", "ocean",
