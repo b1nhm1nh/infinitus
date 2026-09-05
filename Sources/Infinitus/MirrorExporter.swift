@@ -63,7 +63,7 @@ actor MirrorExporter {
         tokenPeak = TokenRate.nextPeak(tokenPeak, seeing: perMinute)
         let snapshot = MirrorSnapshot(
             capturedAt: now,
-            machineName: Host.current().localizedName ?? "Mac",
+            machineName: MachineName.current(),
             listJSON: listJSON,
             sessions: sessions,
             prefs: prefs,

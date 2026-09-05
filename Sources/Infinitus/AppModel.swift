@@ -449,6 +449,17 @@ final class AppModel: ObservableObject {
     @Published var pushLastAlive: Bool { didSet { defaults.set(pushLastAlive, forKey: "push_last_alive") } }
     @Published var pushWaiting: Bool { didSet { defaults.set(pushWaiting, forKey: "push_waiting") } }
     @Published var pushAwsLogin: Bool { didSet { defaults.set(pushAwsLogin, forKey: "push_aws_login") } }
+    /// Settings › Sync "This Mac's name" (#99); empty follows the computer name.
+    @Published var machineNameOverride: String {
+        didSet {
+            defaults.set(machineNameOverride, forKey: MachineName.overrideKey)
+            guard machineNameOverride != oldValue else { return }
+            // The Bonjour service carries the name — re-advertise.
+            mirrorServer.stop()
+            applyMirrorLAN()
+        }
+    }
+    var machineName: String { MachineName.current(defaults: defaults) }
     // Phone companion (#9): serve the mirror snapshot over the LAN when
     // the Sync pane's toggle is on. Off by default — it's an open port.
     @Published var mirrorLANEnabled: Bool {
@@ -640,6 +651,7 @@ final class AppModel: ObservableObject {
         pushLastAlive = defaults.object(forKey: "push_last_alive") as? Bool ?? true
         pushWaiting = defaults.object(forKey: "push_waiting") as? Bool ?? true
         pushAwsLogin = defaults.object(forKey: "push_aws_login") as? Bool ?? true
+        machineNameOverride = defaults.string(forKey: MachineName.overrideKey) ?? ""
         if playground {
             // Isolation is the contract: no demo script, no data at all
             // (never fall back to the real engine here).
@@ -754,6 +766,7 @@ final class AppModel: ObservableObject {
         pushLastAlive = defaults.object(forKey: "push_last_alive") as? Bool ?? true
         pushWaiting = defaults.object(forKey: "push_waiting") as? Bool ?? true
         pushAwsLogin = defaults.object(forKey: "push_aws_login") as? Bool ?? true
+        machineNameOverride = defaults.string(forKey: MachineName.overrideKey) ?? ""
     }
 
     /// Playground reset (user 2026-08-31): wipe the sandbox suite so
@@ -954,7 +967,7 @@ final class AppModel: ObservableObject {
         }
         let payload = mirrorServer.payload
         Task { [mirrorExporter] in await mirrorExporter.attach(payload: payload) }
-        mirrorServer.start(machineName: Host.current().localizedName ?? "Mac",
+        mirrorServer.start(machineName: machineName,
                            token: mirrorPairToken)
         mirrorServer.sessionFeed.set { pid, limit, since, wait in
             let claudeDir = ClaudeSessions.configHome()
@@ -1159,7 +1172,7 @@ final class AppModel: ObservableObject {
             guard let mtime = (try? FileManager.default.attributesOfItem(atPath: url.path))?[.modificationDate] as? Date,
                   mtime.timeIntervalSince1970 > since,
                   let text = try? String(contentsOf: url, encoding: .utf8),
-                  let report = CrashReport.fromIPS(text, device: Host.current().localizedName ?? "Mac") else { continue }
+                  let report = CrashReport.fromIPS(text, device: machineName) else { continue }
             ingestCrash(report, announce: false)
         }
     }
@@ -1739,7 +1752,7 @@ final class AppModel: ObservableObject {
             let progress = sessionProgress.byPid
             if let primaryFleet = primary.lastFleet {
                 liveActivityPusher.tick(fleet: primaryFleet,
-                                        machine: Host.current().localizedName ?? "Mac",
+                                        machine: machineName,
                                         themes: availableThemes, macTheme: rowTheme,
                                         report: usageModel?.report,
                                         tokenRate: sessionProgress.tokenRate)
