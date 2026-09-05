@@ -225,14 +225,17 @@ final class ControlServer {
             return ControlReply(ok: true, result: .object(["result": .string(result)]))
 
         case "machine-hook":
-            guard r.args.count >= 2, ["disable", "restore"].contains(r.args[0]) else {
-                throw Fail("usage: machine-hook disable|restore <owner>")
+            guard r.args.count >= 2, ["disable", "restore", "kill"].contains(r.args[0]) else {
+                throw Fail("usage: machine-hook disable|restore|kill <owner> --yes")
             }
-            guard r.options["yes"] != nil else { throw Fail("machine-hook edits settings.json; pass --yes") }
+            guard r.options["yes"] != nil else { throw Fail("machine-hook edits settings.json or signals processes; pass --yes") }
             let owner = r.args[1]
-            let result = r.args[0] == "disable"
-                ? await model.machineModel.disableHook(owner: owner)
-                : await model.machineModel.restoreHook(owner: owner)
+            let result: String
+            switch r.args[0] {
+            case "disable": result = await model.machineModel.disableHook(owner: owner)
+            case "kill": result = await model.machineModel.killHookInstances(owner: owner)
+            default: result = await model.machineModel.restoreHook(owner: owner)
+            }
             return ControlReply(ok: true, result: .object(["result": .string(result)]))
 
         case "approve":
