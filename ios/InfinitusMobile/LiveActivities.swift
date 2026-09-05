@@ -33,6 +33,15 @@ final class LiveActivities {
 
     func sync(fleet: MirrorFleetModel?, machine: String, tokenRate: TokenRate?, capturedAt: Date) {
         guard let fleet else { return }
+        let engineFleet = EngineFleet(engineID: fleet.id, provider: fleet.provider, accounts: fleet.accounts,
+                                      activeNumber: fleet.activeNumber, nextCandidate: fleet.nextCandidate,
+                                      nextRecovery: fleet.nextRecovery, liveSessions: fleet.liveSessions, raw: nil)
+        let revivalState = LiveActivityBuilder.revival(fleet: engineFleet, theme: fleet.rowTheme)
+        let workingState = LiveActivityBuilder.working(fleet: engineFleet, theme: fleet.rowTheme,
+                                                       report: fleet.report, tokenRate: tokenRate)
+        // The widgets (#80) draw the same states, activities enabled or not.
+        WidgetBridge.publish(.init(working: workingState, revival: revivalState,
+                                   machine: machine, capturedAt: capturedAt))
         guard ActivityAuthorizationInfo().areActivitiesEnabled else {
             log.notice("live activities disabled for this app")
             return
@@ -44,12 +53,9 @@ final class LiveActivities {
         // old one stayed on the lock screen with the old account.
         working = Self.adopt(Activity<WorkingActivity>.activities, current: working)
         revival = Self.adopt(Activity<RevivalActivity>.activities, current: revival)
-        let engineFleet = EngineFleet(engineID: fleet.id, provider: fleet.provider, accounts: fleet.accounts,
-                                      activeNumber: fleet.activeNumber, nextCandidate: fleet.nextCandidate,
-                                      nextRecovery: fleet.nextRecovery, liveSessions: fleet.liveSessions, raw: nil)
         // The revival card runs on the wall clock (its builder ends it once
         // the reset instant passes), so an old snapshot still drives it.
-        syncRevival(LiveActivityBuilder.revival(fleet: engineFleet, theme: fleet.rowTheme), machine: machine)
+        syncRevival(revivalState, machine: machine)
         // The working card names the active account, and an old snapshot
         // — the Documents fallback when the Mac is out of reach — names
         // whichever one was active when the phone last heard from it; it
@@ -61,8 +67,7 @@ final class LiveActivities {
             return
         }
         skippingOld = false
-        syncWorking(LiveActivityBuilder.working(fleet: engineFleet, theme: fleet.rowTheme,
-                                                report: fleet.report, tokenRate: tokenRate), machine: machine)
+        syncWorking(workingState, machine: machine)
     }
 
     // MARK: #1

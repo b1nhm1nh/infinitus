@@ -148,6 +148,10 @@ to drive the running app.
   the terminal. Tap the header for the account behind the session and
   its limits (CLIProxyAPI included). Any app's Share sheet → Infinitus
   sends an image into a session with a note, no app switch.
+- **Widgets in your theme** — home-screen and lock-screen widgets show
+  the active account's windows as the theme names and colors them
+  (MP / HP / Dragon under the RPG theme), what's waiting on you, and the
+  revival countdown when every account is limited.
 - **AWS sign-in from the phone** — a session that hits an expired
   `aws login` shows up on the Mac and the phone; the phone runs the
   login on the Mac and opens the AWS page in Safari (passkeys work),
