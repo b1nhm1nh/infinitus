@@ -200,21 +200,16 @@ public enum TeamInsights {
         public var kinds: [String]
     }
 
-    /// What each teammate shares TO `me`, read off their `now.sharesTo`
-    /// (a member with no fresh `now.json` shows an empty row). Leaders
-    /// are never listed as a teammate here — this is the members' view
-    /// of each other (spec §8.4), not the leaders' comparison.
+    /// What each teammate shares TO `me`: the kinds of the envelopes `me`
+    /// is a recipient of (`TeamReader.Member.kinds`, from the client's
+    /// audience-filtered headers) — never the `now.sharesTo` hint, which
+    /// readers must not rely on (spec §5). A teammate with nothing
+    /// readable shows an empty row. Leaders are never listed as a
+    /// teammate here — this is the members' view of each other (spec
+    /// §8.4), not the leaders' comparison.
     public static func sharedWithMe(_ reader: TeamReader, roster: TeamRoster, me: String) -> [ShareRow] {
         roster.members.filter { $0.keys.kid != me }.map { member in
-            let shares = reader.members[member.keys.kid]?.now?.sharesTo ?? [:]
-            let kinds = shares.filter { _, target in
-                switch target {
-                case .team: true
-                case .leaders: roster.isLeader(me)
-                case .members(let kids): kids.contains(me)
-                }
-            }.keys.sorted()
-            return ShareRow(kid: member.keys.kid, name: member.name, kinds: kinds)
+            ShareRow(kid: member.keys.kid, name: member.name, kinds: (reader.members[member.keys.kid]?.kinds ?? []).sorted())
         }
         .sorted { $0.name == $1.name ? $0.kid < $1.kid : $0.name < $1.name }
     }
@@ -228,7 +223,10 @@ public enum TeamInsights {
         let repos = repos(reader, period: period, now: now, calendar: calendar)
         let cost = cost(rows, repos: repos)
         var total = team.total.compacted(); total.hours = hours(rows)
-        let perMember: [TeamDocs.Aggregates.MemberTotal]? = roster.policy.membersSeeEachOther ? rows.map {
+        // Removed senders still fold (pre-removal history) but are never
+        // republished to the team.
+        let kids = Set(roster.everyone.map(\.keys.kid))
+        let perMember: [TeamDocs.Aggregates.MemberTotal]? = roster.policy.membersSeeEachOther ? rows.filter { kids.contains($0.kid) }.map {
             TeamDocs.Aggregates.MemberTotal(kid: $0.kid, name: $0.name, role: $0.role, usd: $0.summary.total.usd,
                                             commits: $0.summary.total.commits, messages: $0.summary.total.messages,
                                             outputTokens: $0.summary.total.outputTokens, sessions: $0.summary.total.sessionCount, online: $0.online)

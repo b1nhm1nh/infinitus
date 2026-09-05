@@ -49,6 +49,25 @@ final class TeamAggregatesTests: XCTestCase {
         XCTAssertEqual(open.perMember?[1].usd ?? 0, 2, accuracy: 0.001)
     }
 
+    func testAggregatesNeverRepublishRemovedSenders() throws {
+        let l = TeamIdentity.random(), a = TeamIdentity.random(), gone = TeamIdentity.random()
+        var roster = TeamRoster(id: "t", name: "T", createdAt: 1, leaders: [TeamRoster.Member(keys: l.keys, name: "Lee", since: 1, founder: true)],
+                                members: [TeamRoster.Member(keys: a.keys, name: "Ann", since: 2)], rev: 1)
+        roster.policy.membersSeeEachOther = true
+        var day = Stats.Day(); day.usd = 2
+        let doc = try CanonicalJSON.encode(TeamDocs.DayDoc(day: "2026-09-05", stats: day))
+        let headers = [a.kid, gone.kid].map { kid in
+            (StoreEntry(path: "m/\(kid)/days/2026-09-05.json", size: 1, version: "v"),
+             Envelope.Header(v: 1, kind: "stats", from: kid, eph: "", to: [], at: 5, nonce: "", sig: nil))
+        }
+        let reader = TeamReader.fold(headers: headers, roster: roster) { _ in doc }
+        XCTAssertEqual(reader.members[gone.kid]?.role, "removed", "pre-removal history still folds")
+        var cal = Calendar(identifier: .gregorian); cal.timeZone = TimeZone(identifier: "UTC")!
+        let open = TeamInsights.aggregates(reader, roster: roster, period: .week, now: Date(timeIntervalSince1970: 1_788_609_600), calendar: cal)
+        XCTAssertEqual(open.perMember?.map(\.name), ["Lee", "Ann"])
+        XCTAssertEqual(open.perMember?.count, open.members)
+    }
+
     func testLeaderPublishesAndMemberReadsAggregates() throws {
         let (leader, member) = try team()
         let now = Date(timeIntervalSince1970: 1_788_609_600)

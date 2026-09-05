@@ -14,12 +14,20 @@ final class TeamInsightsTests: XCTestCase {
                    policy: TeamRoster.Policy(requests: "code", membersSeeEachOther: false), rev: 2)
     }
 
-    func entry(_ path: String, _ kind: String, _ from: String, _ at: Int) -> (entry: StoreEntry, header: Envelope.Header) {
-        (StoreEntry(path: path, size: 1, version: "v"), Envelope.Header(v: 1, kind: kind, from: from, eph: "", to: [], at: at, nonce: "", sig: nil))
+    func entry(_ path: String, _ kind: String, _ from: String, _ at: Int, to: [Envelope.Recipient] = []) -> (entry: StoreEntry, header: Envelope.Header) {
+        (StoreEntry(path: path, size: 1, version: "v"), Envelope.Header(v: 1, kind: kind, from: from, eph: "", to: to, at: at, nonce: "", sig: nil))
+    }
+
+    /// Each fixture doc's audience: Ann shares stats to the team and transcripts to Lee + Bo; everything else goes to leaders.
+    func audience(_ path: String, _ kind: String) -> [Envelope.Recipient] {
+        let target: TeamRoster.ShareTarget = path.hasPrefix("m/\(a.kid)/") && kind == "stats" ? .team
+            : path.hasPrefix("m/\(a.kid)/") && kind == "transcripts" ? .members([l.kid, b.kid]) : .leaders
+        return roster.recipients(for: target).map { Envelope.Recipient(kid: $0.kid, wrap: "") }
     }
 
     /// Ann: 2 days this week ($3 + $1, 3 commits), busy now with one blocker; Bo: $10 last month only, stale now; Lee: nothing.
-    func reader() throws -> TeamReader {
+    /// `as` folds only the envelopes that name that kid, the way `readableHeaders` does; Lee (the default) is in every audience.
+    func reader(as me: String? = nil) throws -> TeamReader {
         var d1 = Stats.Day(); d1.usd = 3; d1.commits = 2; d1.humanMessages = 5; d1.outputTokens = 100; d1.hours[10] = 4; d1.repos = ["app"]
         var opus = Stats.ActivityTally(); opus.stretches = 1; opus.seconds = 1; opus.inputTokens = 1; opus.outputTokens = 1; opus.usd = 1
         var d2 = Stats.Day(); d2.usd = 1; d2.commits = 1; d2.byModel = ["claude-opus-5": opus]
@@ -40,11 +48,14 @@ final class TeamInsightsTests: XCTestCase {
             "m/\(a.kid)/sessions/index.json": try CanonicalJSON.encode(TeamDocs.SessionsIndex(at: nowSec, sessions: [s1, s3], fleets: [])),
             "m/\(b.kid)/sessions/index.json": try CanonicalJSON.encode(TeamDocs.SessionsIndex(at: nowSec, sessions: [s2], fleets: [])),
             "m/\(a.kid)/crashes.json": try CanonicalJSON.encode(TeamDocs.Crashes(crashes: ["Mac · crash · x", "Mac · crash · y"])),
+            "m/\(a.kid)/transcripts/s1/0.jsonl": Data(),
         ]
         let headers = docs.keys.sorted().map { path -> (entry: StoreEntry, header: Envelope.Header) in
-            let kind = path.contains("/days/") ? "stats" : path.hasSuffix("now.json") ? "now" : path.contains("/sessions/") ? "sessions" : "crashes"
-            return entry(path, kind, path.split(separator: "/")[1].description, nowSec - 60)
+            let kind = path.contains("/days/") ? "stats" : path.hasSuffix("now.json") ? "now" : path.contains("/sessions/") ? "sessions"
+                : path.contains("/transcripts/") ? "transcripts" : "crashes"
+            return entry(path, kind, path.split(separator: "/")[1].description, nowSec - 60, to: audience(path, kind))
         }
+        .filter { me == nil || $0.header.to.contains { $0.kid == me } }
         return TeamReader.fold(headers: headers, roster: roster) { docs[$0]! }
     }
 
@@ -103,12 +114,18 @@ final class TeamInsightsTests: XCTestCase {
     }
 
     func testSharedWithMeReadsEachTeammatesAudiences() throws {
-        let r = try reader()
-        XCTAssertEqual(TeamInsights.sharedWithMe(r, roster: roster, me: l.kid).map { "\($0.name):\($0.kinds.joined(separator: ","))" },
-                       ["Ann:now,stats,transcripts", "Bo:stats"])
-        XCTAssertEqual(TeamInsights.sharedWithMe(r, roster: roster, me: b.kid).map { "\($0.name):\($0.kinds.joined(separator: ","))" },
-                       ["Ann:stats,transcripts"], "Bo is named for transcripts, in the team for stats, not a leader for now")
-        XCTAssertEqual(TeamInsights.sharedWithMe(r, roster: roster, me: a.kid).map(\.name), ["Bo"], "never myself; Bo shares nothing with Ann → empty kinds row")
-        XCTAssertEqual(TeamInsights.sharedWithMe(r, roster: roster, me: a.kid)[0].kinds, [])
+        func shared(_ me: String) throws -> [String] {
+            TeamInsights.sharedWithMe(try reader(as: me), roster: roster, me: me).map { "\($0.name):\($0.kinds.joined(separator: ","))" }
+        }
+        XCTAssertEqual(try shared(l.kid), ["Ann:crashes,now,sessions,stats,transcripts", "Bo:now,sessions,stats"], "a leader is in every audience")
+        XCTAssertEqual(try shared(b.kid), ["Ann:stats,transcripts"], "Bo is named for transcripts, in the team for stats, not a leader for the rest")
+        XCTAssertEqual(try shared(a.kid), ["Bo:"], "never myself; Bo shares nothing with Ann → empty kinds row")
+        // The envelope recipients are the truth, never the now.sharesTo hint:
+        // Ann's hint names Bo for transcripts, but Bo's reader holds only a
+        // now envelope, so that is the one kind listed.
+        let unaddressed = TeamReader.fold(headers: [entry("m/\(a.kid)/now.json", "now", a.kid, 1)], roster: roster) { _ in
+            try CanonicalJSON.encode(TeamDocs.Now(at: 1, sessions: [], fleets: [], blockers: [], crashesToday: 0, sharesTo: ["transcripts": .members([b.kid])]))
+        }
+        XCTAssertEqual(TeamInsights.sharedWithMe(unaddressed, roster: roster, me: b.kid).map(\.kinds), [["now"]])
     }
 }
