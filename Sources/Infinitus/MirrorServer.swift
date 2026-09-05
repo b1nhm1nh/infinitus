@@ -246,6 +246,10 @@ final class MirrorServer: ObservableObject {
 
     private var listener: NWListener?
     private let queue = DispatchQueue(label: "run.infinitus.mirror-server")
+    /// `/team/*` requests only: serialized so concurrent LAN callers can't
+    /// race `TeamGit`'s bare-repo push (no in-process lock of its own) and
+    /// turn each other's request into an unearned 503.
+    private static let teamStoreQueue = DispatchQueue(label: "run.infinitus.team-store")
 
     func start(machineName: String, token: String) {
         self.token.set(token)
@@ -290,7 +294,11 @@ final class MirrorServer: ObservableObject {
             let local = TeamNearby.Local.load(name: name, discoverable: on, paths: paths,
                                               secrets: FileSecrets(dir: paths.secretsDir))
             Task { @MainActor in
-                guard let self else { return }
+                // A newer toggle may have already landed while this one
+                // was opening team clones on the concurrent queue — an
+                // out-of-order finish must not overwrite the standing
+                // with a stale one.
+                guard let self, on == self.teamDiscoverable else { return }
                 self.team.set(local)
                 self.advertise()
                 self.log?("📡", on ? "nearby: discoverable as \(name)" : "nearby: hidden")
@@ -383,24 +391,27 @@ final class MirrorServer: ObservableObject {
 
     // MARK: - Connection handling (network queue)
 
-    /// RFC 1918 / link-local / loopback IPv4, or IPv6 link-local / ULA /
-    /// loopback: the addresses a same-LAN peer can have. A tunnel or
-    /// tailnet client (100.64/10, public v4, global v6) is never "nearby",
-    /// and `/team/*` carries no pairing token, so nothing else gets in.
+    /// RFC 1918 / link-local IPv4, or IPv6 link-local / ULA: the addresses
+    /// a same-LAN peer can have. Loopback is deliberately excluded — a
+    /// machine is never "nearby" to itself, and `cloudflared`'s quick
+    /// tunnel proxies every internet request to this listener over
+    /// 127.0.0.1, which would otherwise let a tunnel URL reach
+    /// `/team/*` with no pairing token. A tailnet client (100.64/10,
+    /// public v4, global v6) is never "nearby" either, and `/team/*`
+    /// carries no pairing token, so nothing else gets in.
     nonisolated static func isLANPeer(_ endpoint: NWEndpoint?) -> Bool {
         guard let endpoint, case .hostPort(let host, _) = endpoint else { return false }
         switch host {
         case .ipv4(let v4):
             let b = [UInt8](v4.rawValue)
             guard b.count == 4 else { return false }
-            return b[0] == 10 || b[0] == 127 || (b[0] == 172 && (16...31).contains(b[1]))
+            return b[0] == 10 || (b[0] == 172 && (16...31).contains(b[1]))
                 || (b[0] == 192 && b[1] == 168) || (b[0] == 169 && b[1] == 254)
         case .ipv6(let v6):
             let b = [UInt8](v6.rawValue)
             guard b.count == 16 else { return false }
             if b[0] == 0xfe && (b[1] & 0xc0) == 0x80 { return true }   // fe80::/10
             if (b[0] & 0xfe) == 0xfc { return true }                     // fc00::/7
-            if b.prefix(15).allSatisfy({ $0 == 0 }) && b[15] == 1 { return true }   // ::1
             // ::ffff:a.b.c.d — the v4-only listener never yields one, but be exact.
             if b.prefix(10).allSatisfy({ $0 == 0 }) && b[10] == 0xff && b[11] == 0xff,
                let v4 = IPv4Address(Data(b[12...])) {
@@ -475,8 +486,9 @@ final class MirrorServer: ObservableObject {
             if let request = MirrorTransport.parseRequestWithBody(buffer, bodyCap: cap) {
                 if request.path.hasPrefix(TeamNearby.routePrefix),
                    Self.isLANPeer(connection.currentPath?.remoteEndpoint ?? connection.endpoint) {
-                    // Off this queue: a stored request pushes to git.
-                    DispatchQueue.global(qos: .utility).async {
+                    // Off this queue, and serialized: a stored request
+                    // pushes to git, and TeamGit holds no lock of its own.
+                    teamStoreQueue.async {
                         let response = TeamNearby.respond(request, endpoint: team.endpoint)
                             ?? MirrorTransport.notFoundResponse()
                         connection.send(content: response,
