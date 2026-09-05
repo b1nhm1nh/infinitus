@@ -84,6 +84,10 @@ final class FleetState: ObservableObject, Identifiable {
         lastFleet = fleet
     }
 
+    /// Dead or alive as of each account's last snapshot WITH usage —
+    /// the diff's memory, unaffected by a refresh that dropped the usage.
+    private var knownDead: [Int: Bool] = [:]
+
     @discardableResult
     func apply(_ fleet: EngineFleet) -> Change {
         let list = fleet.accounts
@@ -93,18 +97,22 @@ final class FleetState: ObservableObject, Identifiable {
         // instead of snapping them.
         let changed = !Self.visuallyEqual(accounts, list)
         let firstLoad = accounts.isEmpty && !list.isEmpty
-        // alive -> dead diff BEFORE the state swap. First load has no
-        // previous state, so nothing fires on launch by construction.
-        let wasAlive = Set(accounts.filter {
-            !AccountVitals.isDead($0.usage) }.map(\.number))
+        // alive -> dead diff BEFORE the state swap, against the last
+        // liveness each account was SEEN with: a snapshot that carries no
+        // usage for an account (#159: one refresh out of three) says
+        // nothing about it — `isDead(nil)` is false for the grid, but a
+        // revival needs the account's own fresh sample below the limit,
+        // and the death after the glitch must not fire twice. First load
+        // has no previous state, so nothing fires on launch.
         let newlyDead = list.filter {
-            AccountVitals.isDead($0.usage) && wasAlive.contains($0.number)
+            $0.usage != nil && AccountVitals.isDead($0.usage) && knownDead[$0.number] == false
         }.map(\.number)
-        let wasDead = Set(accounts.filter {
-            AccountVitals.isDead($0.usage) }.map(\.number))
         let newlyAlive = list.filter {
-            !AccountVitals.isDead($0.usage) && wasDead.contains($0.number)
+            $0.usage != nil && !AccountVitals.isDead($0.usage) && knownDead[$0.number] == true
         }.map(\.number)
+        for account in list where account.usage != nil {
+            knownDead[account.number] = AccountVitals.isDead(account.usage)
+        }
         if !snapshotLoaded { snapshotLoaded = true }
         lastFleet = fleet
         // Each @Published set synchronously re-runs every observer's body
