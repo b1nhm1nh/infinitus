@@ -78,6 +78,8 @@ targets:
         # (CLAUDE.md). Revisit before TestFlight if wanted.
         PRODUCT_BUNDLE_IDENTIFIER: com.huuloc.infinitus.mobile
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        # One alternate icon per theme (#83), AppIcon-<id> sets.
+        ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS: "YES"
         # Simulator-only until the Apple Developer account lands (#9).
         CODE_SIGNING_ALLOWED: "NO"
         GENERATE_INFOPLIST_FILE: "YES"
