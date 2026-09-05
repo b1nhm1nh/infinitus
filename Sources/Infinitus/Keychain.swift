@@ -13,6 +13,18 @@ enum Keychain {
     static let nineRouterService = "run.infinitus.9router"
     /// The APNs auth key (.p8) for Live Activity pushes, account = key id.
     static let apnsService = "run.infinitus.apns"
+    /// Team secrets (spec §2.1 local path): the identity secret and one
+    /// store token per team, account = the TeamSecrets name. Binary
+    /// values travel base64 in the generic-password slot.
+    static let teamService = "run.infinitus.team"
+
+    static func readData(account: String, service: String) -> Data? {
+        read(account: account, service: service).flatMap { Data(base64Encoded: $0) }
+    }
+
+    static func writeData(account: String, value: Data, service: String) -> Bool {
+        write(account: account, value: value.base64EncodedString(), service: service)
+    }
 
     static func read(account: String, service: String = Self.service) -> String? {
         let query: [String: Any] = [
