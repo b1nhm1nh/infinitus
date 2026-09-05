@@ -54,6 +54,47 @@ targets.append(.executableTarget(
 ))
 products.append(.executable(name: "infinitusctl", targets: ["InfinitusCLI"]))
 #endif
+#if os(Windows)
+// Pure Win32 settings models and catalog (testable without HWND).
+targets.append(.target(
+    name: "InfinitusWinUI",
+    dependencies: ["InfinitusCore"],
+    path: "windows/Sources/InfinitusWinUI"
+))
+// Headless mirror daemon (docs/plan-windows/01-stack.md): the same
+// InfinitusCore feed/pairing/HTTP contract over Winsock + named pipes.
+// Its sources live under windows/, so macOS and Linux never see them.
+targets.append(.executableTarget(
+    name: "InfinitusWin",
+    dependencies: ["InfinitusCore"],
+    path: "windows/Sources/InfinitusWin",
+    linkerSettings: [.linkedLibrary("ws2_32"), .linkedLibrary("dnsapi"), .linkedLibrary("iphlpapi")]
+))
+products.append(.executable(name: "infinitus-win", targets: ["InfinitusWin"]))
+// Desktop tray: a Win32 notification-area icon over the same core — the
+// session list this box already has, without a browser or a phone. No
+// shared view code with the Mac (AppKit/SwiftUI don't exist here), so it
+// is its own target rather than a port of Sources/Infinitus.
+targets.append(.executableTarget(
+    name: "InfinitusTrayWin",
+    dependencies: ["InfinitusCore", "InfinitusWinUI"],
+    path: "windows/Sources/InfinitusTrayWin",
+    // dwmapi: immersive dark mode for the panel/settings title bars
+    // (WinDarkTitleBar.swift) — DWM draws the non-client area, so a dark
+    // client area alone leaves a white caption on top of it.
+    linkerSettings: [.linkedLibrary("user32"), .linkedLibrary("shell32"),
+                     .linkedLibrary("gdi32"), .linkedLibrary("comctl32"),
+                     .linkedLibrary("ws2_32"), .linkedLibrary("iphlpapi"),
+                     .linkedLibrary("dwmapi"), .linkedLibrary("crypt32"),
+                     .linkedLibrary("comdlg32")]
+))
+products.append(.executable(name: "infinitus-tray-win", targets: ["InfinitusTrayWin"]))
+targets.append(.testTarget(
+    name: "InfinitusWinTests",
+    dependencies: ["InfinitusWin", "InfinitusWinUI"],
+    path: "windows/Tests/InfinitusWinTests"
+))
+#endif
 
 let package = Package(
     name: "Infinitus",
