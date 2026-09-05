@@ -50,6 +50,16 @@ final class ResumeService: ObservableObject {
     /// once-only rule as `nudged`, kept separate since these are the
     /// SUB-AGENT's uuid, not the parent's.
     private var nudgedSubagents: Set<String> = []
+    private let activeBox = ActiveBox()
+
+    /// The active account number as of the latest snapshot, readable
+    /// from the detached resume round.
+    final class ActiveBox: @unchecked Sendable {
+        private let lock = NSLock()
+        private var number: Int?
+        func set(_ n: Int?) { lock.lock(); number = n; lock.unlock() }
+        func get() -> Int? { lock.lock(); defer { lock.unlock() }; return number }
+    }
 
     init() {
         resumeEnabled = defaults.object(forKey: "resume_stopped_sessions") as? Bool ?? false
@@ -69,7 +79,11 @@ final class ResumeService: ObservableObject {
     /// Blocking work runs detached; single-flight.
     func tick(switched: Bool, activeAlive: Bool,
               activeNumber: Int? = nil, activeFetchedAt: Date? = nil,
-              activeName: String? = nil, activePct: Int? = nil) {
+              activeName: String? = nil, activePct: Int? = nil,
+              activeSince: Date? = nil) {
+        // Every snapshot updates the box, busy or not: a resume round in
+        // flight reads it to notice the engine flipping under it (#136).
+        activeBox.set(activeNumber)
         let doRearm = switched && rearmEnabled
         let doResume = resumeEnabled && activeAlive
         guard doRearm || doResume, !busy else { return }
@@ -80,6 +94,7 @@ final class ResumeService: ObservableObject {
         let lastNudgeCopy = lastNudge
         let firstActiveCopy = stopFirstActive
         let alreadySubagent = nudgedSubagents
+        let activeBox = activeBox
         Task.detached(priority: .utility) { [weak self] in
             let hosts = PtyHosts.available()
             let sessions = ClaudeSessions.list(claudeDir: claudeDir)
@@ -113,14 +128,18 @@ final class ResumeService: ObservableObject {
                                          firstSeenActive: first,
                                          currentActive: activeNumber,
                                          activeFetchedAt: activeFetchedAt,
-                                         lastNudge: lastNudgeCopy[s.sessionId]) {
+                                         lastNudge: lastNudgeCopy[s.sessionId],
+                                         activeSince: activeSince) {
                         eligible.append(s)
                     } else {
                         held += 1
                     }
                 }
                 if !eligible.isEmpty {
-                    outcome = ResumeCoordinator(hosts: hosts, claudeDir: claudeDir).resume(eligible)
+                    var coordinator = ResumeCoordinator(hosts: hosts, claudeDir: claudeDir)
+                    let startActive = activeBox.get()
+                    coordinator.activeChanged = { activeBox.get() != startActive }
+                    outcome = coordinator.resume(eligible)
                     // Whatever still shows a limit stop after our best
                     // effort is remembered so the next tick leaves it alone.
                     standing = Transcript.findStopped(sessions: sessions, claudeDir: claudeDir)
@@ -150,7 +169,8 @@ final class ResumeService: ObservableObject {
                                             firstSeenActive: first,
                                             currentActive: activeNumber,
                                             activeFetchedAt: activeFetchedAt,
-                                            lastNudge: lastNudgeCopy[hit.session.sessionId]) else { continue }
+                                            lastNudge: lastNudgeCopy[hit.session.sessionId],
+                                            activeSince: activeSince) else { continue }
                     // One attempt per stop, delivered or not: an
                     // unreachable parent must not cost a PTY sweep per tick.
                     subagentAttempted.append(hit.session.stopUuid)
