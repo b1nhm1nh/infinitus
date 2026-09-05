@@ -541,6 +541,32 @@ final class AppModel: ObservableObject {
         }
     }
 
+    struct SessionRow { let pid: Int; let name: String?; let cwd: String; let status: String?; let kind: String }
+
+    /// The live sessions as the control socket lists them (#79): the
+    /// record plus the name the popup shows.
+    func sessionRows() -> [SessionRow] {
+        ClaudeSessions.list(claudeDir: ClaudeSessions.configHome()).map { record in
+            let pid = Int(record.pid)
+            let progress = sessionProgress.byPid[pid]
+            let shown = SessionNaming.displayName(name: progress?.name ?? record.name,
+                                                  autoName: progress?.autoName, cwd: record.cwd)
+            return SessionRow(pid: pid, name: shown, cwd: record.cwd, status: record.status, kind: record.kind)
+        }
+    }
+
+    /// A pid, or a name / folder name, case-insensitively; the newest
+    /// session wins a tie.
+    func sessionPid(matching who: String) -> Int? {
+        let rows = sessionRows()
+        if let pid = Int(who), rows.contains(where: { $0.pid == pid }) { return pid }
+        let wanted = who.lowercased()
+        return rows.last { row in
+            row.name?.lowercased() == wanted
+                || URL(fileURLWithPath: row.cwd).lastPathComponent.lowercased() == wanted
+        }?.pid
+    }
+
     /// A Claude Code hook event from the plugin (#79): a prompt is pushed
     /// the moment it appears — the poll would take up to a minute — and
     /// the fleet refreshes right after, so a turn's end shows up as fast
