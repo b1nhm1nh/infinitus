@@ -95,55 +95,9 @@ struct SessionsScreen: View {
     @ViewBuilder private var content: some View {
         if !fleetsWithSessions.isEmpty || !othersWithSessions.isEmpty {
             List {
-                if !model.awsLogins.isEmpty {
-                    // Up top, whatever the session's place in the list
-                    // (user 2026-09-03 "not seeing session with aws
-                    // login button"): one row per login the Mac reports,
-                    // pid-less ones included.
-                    Section("Needs AWS login") {
-                        ForEach(model.awsLogins) { item in
-                            Button { awsLoginItem = item } label: {
-                                HStack(spacing: 10) {
-                                    Image(systemName: "key.fill").foregroundStyle(.orange)
-                                    VStack(alignment: .leading, spacing: 2) {
-                                        Text(item.sessionLabel ?? "Profile \(item.profile)").font(.headline)
-                                        Text("profile \(item.profile) · \(awsPhase(item))")
-                                            .font(.caption).foregroundStyle(.secondary)
-                                    }
-                                    Spacer()
-                                    Text("Sign in").font(.subheadline.bold()).foregroundStyle(.orange)
-                                }
-                            }
-                            .buttonStyle(.plain)
-                        }
-                    }
-                }
-                ForEach(fleetsWithSessions) { fleet in
-                    let live = fleet.liveSessions!
-                    Section {
-                        // Sessions waiting on you first — they're what
-                        // the phone is opened for.
-                        ForEach((live.sessions ?? []).sorted { ($0.status == "waiting" ? 0 : 1) < ($1.status == "waiting" ? 0 : 1) },
-                                id: \.pid) { session in
-                            NavigationLink(value: session) { row(session) }
-                        }
-                    } header: {
-                        sectionHeader(fleet: fleet, live: live)
-                    }
-                }
-                ForEach(othersWithSessions) { other in
-                    let sessions = other.fleets.flatMap { $0.liveSessions?.sessions ?? [] }
-                        .sorted { ($0.status == "waiting" ? 0 : 1) < ($1.status == "waiting" ? 0 : 1) }
-                    Section {
-                        ForEach(sessions, id: \.pid) { session in
-                            row(session).foregroundStyle(.secondary)
-                        }
-                    } header: {
-                        Text(other.pairing.name)
-                    } footer: {
-                        Text("Make this Mac primary in Settings › Devices to open its chats.")
-                    }
-                }
+                awsLoginSection
+                primarySections
+                otherMacSections
             }
             .listStyle(.insetGrouped)
             .sheet(item: $awsLoginItem) { AwsLoginScreen(item: $0) }
@@ -161,6 +115,67 @@ struct SessionsScreen: View {
     }
 
     @State private var awsLoginItem: AwsLogin.Item?
+
+    /// The List body is split into three builders — one expression with
+    /// all three sections is more than CI's compiler type-checks in time.
+    @ViewBuilder private var awsLoginSection: some View {
+        if !model.awsLogins.isEmpty {
+            // Up top, whatever the session's place in the list
+            // (user 2026-09-03 "not seeing session with aws
+            // login button"): one row per login the Mac reports,
+            // pid-less ones included.
+            Section("Needs AWS login") {
+                ForEach(model.awsLogins) { item in
+                    Button { awsLoginItem = item } label: {
+                        HStack(spacing: 10) {
+                            Image(systemName: "key.fill").foregroundStyle(.orange)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(item.sessionLabel ?? "Profile \(item.profile)").font(.headline)
+                                Text("profile \(item.profile) · \(awsPhase(item))")
+                                    .font(.caption).foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            Text("Sign in").font(.subheadline.bold()).foregroundStyle(.orange)
+                        }
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+    }
+
+    /// Sessions waiting on you first — they're what the phone is opened for.
+    private func waitingFirst(_ sessions: [SessionDetail]) -> [SessionDetail] {
+        sessions.sorted { ($0.status == "waiting" ? 0 : 1) < ($1.status == "waiting" ? 0 : 1) }
+    }
+
+    private var primarySections: some View {
+        ForEach(fleetsWithSessions) { fleet in
+            let live = fleet.liveSessions!
+            Section {
+                ForEach(waitingFirst(live.sessions ?? []), id: \.pid) { session in
+                    NavigationLink(value: session) { row(session) }
+                }
+            } header: {
+                sectionHeader(fleet: fleet, live: live)
+            }
+        }
+    }
+
+    private var otherMacSections: some View {
+        ForEach(othersWithSessions) { other in
+            let sessions = waitingFirst(other.fleets.flatMap { $0.liveSessions?.sessions ?? [] })
+            Section {
+                ForEach(sessions, id: \.pid) { session in
+                    row(session).foregroundStyle(.secondary)
+                }
+            } header: {
+                Text(other.pairing.name)
+            } footer: {
+                Text("Make this Mac primary in Settings › Devices to open its chats.")
+            }
+        }
+    }
 
     /// A session started from the + sheet: its chat opens the moment the
     /// snapshot lists the pid.
