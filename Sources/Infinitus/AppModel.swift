@@ -540,6 +540,14 @@ final class AppModel: ObservableObject {
     private(set) lazy var controlServer = ControlServer(model: self)
     /// The biometric lock (LockModel.swift); the surfaces and the Lock pane read it.
     private(set) lazy var lock = LockModel(defaults: defaults)
+    /// Settings › Team (spec §9). Secrets in the keychain, or files when
+    /// INFINITUS_TEAM_DIR redirects the team dir (e2e, a second instance).
+    private(set) lazy var team: TeamModel = {
+        let paths = TeamPaths.standard()
+        let model = TeamModel(paths: paths, makeSecrets: TeamSecretsFactory.make(paths: paths))
+        model.enabled = !isPlayground && (!mockMode || ProcessInfo.processInfo.environment["INFINITUS_TEAM_DIR"] != nil)
+        return model
+    }()
     let quickTunnel = QuickTunnel()
     let namedTunnel = NamedTunnel()
     /// Live Activity pushes to the phone (APNs), LiveActivityPusher.swift.
@@ -1062,6 +1070,9 @@ final class AppModel: ObservableObject {
             }
             return reply
         }
+        team.gate = { [weak self] in TeamGate.check(lockEnabled: self?.lock.enabled) }
+        team.sources = { [weak self] in self?.teamSources() ?? TeamPublisher.Sources(projectsDir: URL(fileURLWithPath: "/nonexistent"), home: NSHomeDirectory()) }
+        team.load()
         crashReports = crashStore.list()
         scanMacCrashReports()
         quickTunnel.onURL = { [weak self] url in self?.publishRendezvous(url) }
@@ -1329,6 +1340,36 @@ final class AppModel: ObservableObject {
     func removeCrash(_ id: String) {
         crashStore.remove(id)
         crashReports = crashStore.list()
+    }
+
+    /// What this Mac publishes to its team (spec §7): Claude Code's own
+    /// files, this Mac's live sessions and crash reports, each engine's
+    /// active account with its window percentages, and the blockers
+    /// the pop-out shows (lapsed AWS logins, an all-limited fleet).
+    /// INFINITUS_TEAM_PROJECTS swaps the projects dir for a fixture
+    /// (the e2e gate) and skips the Codex scan.
+    func teamSources() -> TeamPublisher.Sources {
+        let claudeDir = ClaudeSessions.configHome()
+        var s = TeamPublisher.Sources(projectsDir: claudeDir.appendingPathComponent("projects"), home: NSHomeDirectory())
+        s.codexDir = StatsScanner.defaultCodexDir()
+        if let fixture = ProcessInfo.processInfo.environment["INFINITUS_TEAM_PROJECTS"], !fixture.isEmpty {
+            s.projectsDir = URL(fileURLWithPath: fixture)
+            s.codexDir = nil
+        }
+        s.liveSessions = ClaudeSessions.list(claudeDir: claudeDir)
+        s.crashes = crashStore.list()
+        let lastFleets = fleets.compactMap(\.lastFleet)
+        s.fleets = lastFleets.map { fleet in
+            let active = fleet.accounts.first { $0.number == fleet.activeNumber }
+            var windows: [TeamDocs.Window] = []
+            if let w = active?.usage?.fiveHour { windows.append(TeamDocs.Window(label: "5h", pct: Int(w.pct.rounded()))) }
+            if let w = active?.usage?.sevenDay { windows.append(TeamDocs.Window(label: "7d", pct: Int(w.pct.rounded()))) }
+            return TeamDocs.Fleet(engine: fleet.engineID, account: active.map { $0.alias ?? $0.email }, windows: windows)
+        }
+        s.blockers = awsLogins.map { "AWS login: \($0.profile)" }
+            + lastFleets.filter { !$0.accounts.isEmpty && $0.activeNumber == nil && $0.nextCandidate == nil }
+                .map { "\($0.engineID): every account limited" }
+        return s
     }
 
     /// This Mac's own crashes: `~/Library/Logs/DiagnosticReports/
@@ -1966,7 +2007,9 @@ final class AppModel: ObservableObject {
                                         tokenRate: sessionProgress.tokenRate)
             }
             statsModel.refreshIfStale()
+            team.refreshIfStale()
             let stats = statsModel.bundle
+            let teamSnapshot = team.snapshot
             // This Mac's own version, mirrored for the phone's Settings
             // (#121) — same keys ControlServer.status reads.
             let info = Bundle.main.infoDictionary ?? [:]
@@ -1984,7 +2027,7 @@ final class AppModel: ObservableObject {
                                             awsLogins: awsLogins, progress: progress,
                                             stats: stats,
                                             pushesAlerts: self.liveActivityPusher.configured,
-                                            app: appInfo)
+                                            app: appInfo, team: teamSnapshot)
             }
         }
         // All-limited: count the limit-stopped sessions waiting to be

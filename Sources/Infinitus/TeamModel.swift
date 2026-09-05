@@ -21,6 +21,9 @@ final class TeamModel: ObservableObject {
     @Published private(set) var lastError: String?
     /// The team code or invite link minted last; shown until the pane closes it.
     @Published private(set) var code: String?
+    /// The most recent publish pass's report (loop or `publishNow`); what
+    /// `team-publish` replies with.
+    @Published private(set) var lastReport: TeamPublisher.Report?
     @Published private(set) var shares = TeamShares()
     @Published private(set) var exclusions = TeamExclusions()
     /// My identity's kid once read (creating it on first use, like the CLI).
@@ -104,10 +107,13 @@ final class TeamModel: ObservableObject {
     }
 
     /// Every action ends here: reload the snapshot, settings and the kid.
-    func load() {
-        guard enabled else { return }
+    /// Returns the reload `Task` so an action can `await` it before
+    /// replying — a control command must see the fresh snapshot.
+    @discardableResult
+    func load() -> Task<Void, Never> {
+        guard enabled else { return Task {} }
         let fetch = lastFetchAt, publish = lastPublishAt, err = lastError
-        Task {
+        return Task {
             do {
                 let result: (TeamSnapshot?, TeamReader?, TeamShares, TeamExclusions, String?) = try await run { paths, secrets in
                     // Non-creating: showing a kid must never mint (and, on
@@ -150,28 +156,30 @@ final class TeamModel: ObservableObject {
     @discardableResult
     private func loop(sources: TeamPublisher.Sources, publish: Bool) async -> Bool {
         do {
-            let (fetched, published) = try await run { paths, secrets in
-                guard let client = try Self.openClient(paths, secrets) else { return (nil as Int?, nil as Int?) }
+            let (fetched, published, report) = try await run { paths, secrets in
+                guard let client = try Self.openClient(paths, secrets) else { return (nil as Int?, nil as Int?, nil as TeamPublisher.Report?) }
                 _ = try client.fetch()
                 let fetched = Int(Date().timeIntervalSince1970)
                 try Self.autoApprove(client, paths: paths)   // Task 6 fills this in; a no-op until then
                 var published: Int?
+                var report: TeamPublisher.Report?
                 if publish, client.isMember {
                     var s = sources
                     s.cacheURL = paths.teamDir(client.config.id).appendingPathComponent("scan-cache.json")
-                    _ = try TeamPublisher(client: client, paths: paths).publish(sources: s)
+                    report = try TeamPublisher(client: client, paths: paths).publish(sources: s)
                     published = Int(Date().timeIntervalSince1970)
                 }
-                return (fetched, published)
+                return (fetched, published, report)
             }
             if let fetched { lastFetchAt = fetched }
             if let published { lastPublishAt = published }
+            if let report { lastReport = report }
             lastError = nil
-            load()
+            await load().value
             return true
         } catch {
             lastError = Self.mask(error)
-            load()
+            await load().value
             return false
         }
     }
@@ -197,7 +205,7 @@ final class TeamModel: ObservableObject {
         } catch {
             lastError = Self.mask(error)
         }
-        load()
+        await load().value
     }
 
     func fetchNow() async {
@@ -240,6 +248,13 @@ final class TeamModel: ObservableObject {
             minted = try client.code(expiresIn: days * 86_400)
         }
         if let minted { code = minted }
+    }
+
+    /// Task 6: mints a one-time nonce the store auto-approves. Until then
+    /// it mints a plain team code (§6.3), same as `mintCode`.
+    func mintInvite(days: Int) async {
+        // Task 6: invite
+        await mintCode(days: days)
     }
 
     func approve(kid: String) async {
