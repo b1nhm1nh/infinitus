@@ -142,7 +142,7 @@ public enum LiveActivityBuilder {
                                now: Date = Date()) -> RevivalActivityState? {
         guard fleet.nextCandidate == nil,
               let rec = RecoveryMath.corrected(engine: fleet.nextRecovery, accounts: fleet.accounts,
-                                               activeNumber: fleet.activeNumber),
+                                               activeNumber: fleet.activeNumber, now: now),
               let at = WeeklyRoll.parse(rec.at), at > now else { return nil }
         let glyph = { (s: String) in textGlyphs ? GlyphText.textPresentation(s) : s }
         let account = fleet.accounts.first { $0.number == rec.number }
@@ -218,11 +218,10 @@ public enum LiveActivityBuilder {
         formatter.dateStyle = .none
         formatter.timeStyle = .short
         let rows: [(Date, String)] = fleet.accounts.compactMap { account in
-            guard account.number != number, let usage = account.usage else { return nil }
-            let resets = [usage.fiveHour, usage.sevenDay].compactMap { $0 }
-                .filter { $0.pct >= 100 }
-                .compactMap { WeeklyRoll.parse($0.resetsAt) }
-            guard let at = resets.max(), at > now else { return nil }
+            // The same pick as the headline's, so every surface agrees
+            // on who revives when (#226).
+            guard account.number != number, account.disabled != true,
+                  let at = RecoveryMath.revival(of: account, now: now)?.at, at > now else { return nil }
             let clock = Calendar.current.isDate(at, inSameDayAs: now)
                 ? formatter.string(from: at)
                 : at.formatted(.dateTime.month(.abbreviated).day())

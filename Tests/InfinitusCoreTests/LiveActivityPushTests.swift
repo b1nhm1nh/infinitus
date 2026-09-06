@@ -33,6 +33,18 @@ final class LiveActivityPushTests: XCTestCase {
     }
     #endif
 
+    // #226: ActivityKit decodes content-state with a default JSONDecoder,
+    // so a Date must travel as seconds since the 2001 reference date —
+    // Unix seconds landed 31 years out.
+    func testContentStateDatesAreReferenceDateSeconds() throws {
+        struct S: Encodable { let at: Date }
+        let at = Date(timeIntervalSinceReferenceDate: 812_000_000)
+        let update = try JSONSerialization.jsonObject(with: LiveActivityPush.updatePayload(
+            state: S(at: at), staleDate: nil)) as! [String: Any]
+        let state = (update["aps"] as! [String: Any])["content-state"] as! [String: Any]
+        XCTAssertEqual(state["at"] as? Double, 812_000_000)
+    }
+
     func testPayloadShapes() throws {
         struct S: Encodable { let a = 1 }
         let now = Date(timeIntervalSince1970: 100)
