@@ -283,6 +283,20 @@ final class TeamNearbyTests: XCTestCase {
         let unwired = TeamNearby.Endpoint(local: local, store: { _ in "branch" })
         XCTAssertEqual(status(TeamNearby.respond(http("POST", TeamNearby.invitePath, body: try CanonicalJSON.encode(invite)), endpoint: unwired)), 503)
 
+        // A forged envelope — same `from`, same header shape, but a
+        // signature nobody but the leader could have made — is refused
+        // outright, never parked under the leader's kid where it would
+        // silently replace the genuine invitation.
+        var corruptHeader = try Envelope.header(of: sealed)
+        var sigBytes = try XCTUnwrap(Data(base64Encoded: try XCTUnwrap(corruptHeader.sig)))
+        sigBytes[0] ^= 0xFF
+        corruptHeader.sig = sigBytes.base64EncodedString()
+        let split = try XCTUnwrap(sealed.firstIndex(of: UInt8(ascii: "\n")))
+        let corrupted = try CanonicalJSON.encode(corruptHeader) + Data([UInt8(ascii: "\n")]) + sealed[(split + 1)...]
+        let forged = TeamNearby.Invite(from: leader.identity.keys, fromName: "Mallory", teamName: "Papaya", envelope: corrupted)
+        XCTAssertEqual(status(TeamNearby.respond(http("POST", TeamNearby.invitePath, body: try CanonicalJSON.encode(forged)), endpoint: endpoint)), 400)
+        XCTAssertEqual(TeamNearby.Store.invites(paths: jp), [invite])
+
         // Opening gives the link back verbatim and the code it decodes to.
         let opened = try TeamNearby.openInvite(invite, identity: joiner, now: 1_002)
         XCTAssertEqual(opened.text, link)

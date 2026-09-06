@@ -197,16 +197,21 @@ public enum TeamNearby {
         case ("POST", TeamNearby.invitePath):
             // The peer that sealed this must be the peer the body names,
             // and it must have sealed it to ME: an invitation nobody here
-            // can open is refused rather than parked on disk. Everything
-            // else about it — team, expiry, leader signature — is checked
-            // when it is opened (`openInvite`), on the identity that can
-            // actually read it.
+            // can open is refused rather than parked on disk. The
+            // envelope's signature is checked here too — it needs only
+            // the sender's PUBLIC key, which the body carries, so a
+            // forged envelope is refused now rather than overwriting the
+            // genuine invitation under the same kid. Everything else
+            // about it — team, expiry, leader signature over the CODE —
+            // is checked when it is opened (`openInvite`), on the
+            // identity that can actually read it.
             guard let invite = try? CanonicalJSON.decode(Invite.self, from: request.body),
                   Store.isPathSegment(invite.from.kid),
                   let header = try? Envelope.header(of: invite.envelope),
                   header.kind == "invite",
                   header.from == invite.from.kid,
-                  header.to.contains(where: { $0.kid == keys.kid }) else {
+                  header.to.contains(where: { $0.kid == keys.kid }),
+                  Self.sealedBySender(invite) else {
                 return MirrorTransport.badRequestResponse()
             }
             do {
@@ -222,6 +227,22 @@ public enum TeamNearby {
         default:
             return MirrorTransport.notFoundResponse()
         }
+    }
+
+    /// Verifies `invite.envelope`'s signature against `invite.from`,
+    /// mirroring `Envelope.open`'s own check (Envelope.swift) but without
+    /// decrypting anything — the signature covers header-without-sig ‖
+    /// body and needs only the sender's public Ed25519 key, which the
+    /// body carries.
+    private static func sealedBySender(_ invite: Invite) -> Bool {
+        guard let header = try? Envelope.header(of: invite.envelope),
+              let split = invite.envelope.firstIndex(of: UInt8(ascii: "\n")),
+              let sig = header.sig.flatMap({ Data(base64Encoded: $0) }) else { return false }
+        var unsignedHeader = header
+        unsignedHeader.sig = nil
+        guard let unsigned = try? CanonicalJSON.encode(unsignedHeader) else { return false }
+        let body = invite.envelope[(split + 1)...]
+        return (try? invite.from.signingKey().isValidSignature(sig, for: unsigned + body)) == true
     }
 
     // MARK: storage
@@ -298,7 +319,8 @@ public enum TeamNearby {
             let dir = invitesDir(paths: paths)
             try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
             let file = dir.appendingPathComponent("\(kid).json")
-            let existing = (try? FileManager.default.contentsOfDirectory(atPath: dir.path)) ?? []
+            let existing = ((try? FileManager.default.contentsOfDirectory(atPath: dir.path)) ?? [])
+                .filter { $0.hasSuffix(".json") }
             guard existing.count < TeamNearby.inviteCap || FileManager.default.fileExists(atPath: file.path) else {
                 throw StoreError.full
             }
