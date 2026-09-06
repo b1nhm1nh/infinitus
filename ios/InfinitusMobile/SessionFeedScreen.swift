@@ -1039,7 +1039,16 @@ struct SessionFeedScreen: View {
                     messageResult = reply.detail.map { "\(Self.describe(reply.outcome)) — \($0)" }
                         ?? Self.describe(reply.outcome)
                 }
-            } onFailure: {
+            } onFailure: { error in
+                // An HTTP error is the Mac answering (a wrong pairing
+                // token, a stale route) — not something a retry later
+                // fixes, so it is shown, not queued; the draft stays put.
+                if case MirrorTransportError.http(let code) = error {
+                    messageResult = code == 401
+                        ? "the Mac refused it — check the pairing token in Settings"
+                        : "the Mac refused it (HTTP \(code))"
+                    return
+                }
                 let request = SessionInput.Request(kind: .message, text: text,
                                                    attachments: picked.isEmpty ? nil : picked,
                                                    sessionId: feed?.sessionId)
@@ -1072,7 +1081,7 @@ struct SessionFeedScreen: View {
             await send(request) { reply in
                 if reply.outcome == "delivered" { deliveredTick += 1; selectedOption = nil }
                 actionResult = reply.outcome == "delivered" ? nil : Self.describe(reply.outcome)
-            } onFailure: {
+            } onFailure: { _ in
                 actionResult = "couldn't reach the Mac"
             } finished: {
                 actionSending = false
@@ -1149,13 +1158,13 @@ struct SessionFeedScreen: View {
     }
 
     private func send(_ request: SessionInput.Request, onReply: @escaping (SessionInput.Reply) -> Void,
-                      onFailure: @escaping () -> Void, finished: @escaping () -> Void) async {
+                      onFailure: @escaping (Error) -> Void, finished: @escaping () -> Void) async {
         do {
             let reply = try await NetworkFleetMirror.shared.sessionInput(pid: Int32(session.pid),
                                                                          request: request)
             onReply(reply)
         } catch {
-            onFailure()
+            onFailure(error)
         }
         finished()
         await load()

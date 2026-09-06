@@ -15,7 +15,20 @@ enum OutboxDelivery {
 
     static var macKey: String { NetworkFleetMirror.parkedKey() }
 
+    /// `reachableAgain` and the first-successful-load trigger can fire
+    /// within moments of each other — single-flight so a second call
+    /// doesn't re-send an item the first call already marked in flight.
+    @MainActor private static var flushing = false
+
     static func flush() async {
+        let canRun = await MainActor.run { () -> Bool in
+            guard !flushing else { return false }
+            flushing = true
+            return true
+        }
+        guard canRun else { return }
+        defer { Task { @MainActor in flushing = false } }
+
         // Names by id, captured before the flush — a delivered item's
         // file is gone by the time `results` comes back.
         let names = Dictionary(uniqueKeysWithValues: outbox.items(macKey: macKey).map { ($0.id, $0.sessionName) })

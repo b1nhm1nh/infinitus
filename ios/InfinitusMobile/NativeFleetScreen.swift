@@ -177,10 +177,10 @@ struct NativeFleetScreen: View {
     @ViewBuilder private var statusHeader: some View {
         VStack(alignment: .leading, spacing: 6) {
             if let snapshot = model.snapshot {
-                // Fresh: machine + as-of on one caption. Stale: the
-                // capsule below carries the as-of, so the caption drops
-                // it rather than printing the same time twice.
-                Text(isStale(snapshot.capturedAt)
+                // Fresh: machine + as-of on one caption. Stale, or
+                // parked: the capsule/label below carries its own time,
+                // so the caption drops it rather than printing it twice.
+                Text(isStale(snapshot.capturedAt) || model.parked
                      ? snapshot.machineName
                      : "\(snapshot.machineName) · as of "
                        + snapshot.capturedAt.formatted(date: .omitted, time: .shortened))
