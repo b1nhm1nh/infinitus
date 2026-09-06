@@ -31,6 +31,12 @@ struct SyncPane: View {
     @State private var tailscale = TailscaleStatus.notInstalled
     /// Open until every step is ticked; closes itself once paired.
     @State private var walkthroughOpen = true
+    /// The secondary addresses stay folded: one scan pairs every route,
+    /// so the other two are for typing by hand, which is rare.
+    @State private var otherAddressesOpen = false
+    /// Regenerating un-pairs every phone, so it asks (the alert itself
+    /// lands with the crash-report pass; the button sets this).
+    @State private var confirmRegenerate = false
     private let reprobe = Timer.publish(every: 3, on: .main, in: .common).autoconnect()
 
     init(sync: SettingsSyncModel, app: AppModel) {
@@ -49,13 +55,8 @@ struct SyncPane: View {
             // tailnet, or through a throwaway Cloudflare tunnel. No
             // backend of ours anywhere; the pairing token is the lock.
             walkthrough
-            Section("Phone companion") {
-                Toggle("Serve the fleet to my phone",
-                       isOn: $app.mirrorLANEnabled)
-                    .help("Advertises this Mac as _infinitus._tcp and answers "
-                          + "GET /snapshot with the same fleet snapshot the "
-                          + "menu bar shows. Every request must carry the "
-                          + "pairing token below.")
+            Section {
+                Toggle("Serve the fleet to my phone", isOn: $app.mirrorLANEnabled)
                 if let status = server.status {
                     Text(status).font(.caption).foregroundStyle(.secondary)
                 }
@@ -65,31 +66,16 @@ struct SyncPane: View {
                              : MirrorPairing.mask(app.mirrorPairToken))
                             .font(.system(.caption, design: .monospaced))
                             .textSelection(.enabled)
-                        Button(revealToken ? "Hide" : "Reveal") {
-                            revealToken.toggle()
-                        }
+                        Button(revealToken ? "Hide" : "Reveal") { revealToken.toggle() }
                         Button("Copy") { copy(app.mirrorPairToken) }
-                        Button("Regenerate") {
-                            app.regeneratePairToken()
-                        }
-                        .help("Every paired phone must scan again.")
+                        Button("Regenerate\u{2026}") { confirmRegenerate = true }
                     }
                 }
                 TextField("This Mac's name", text: $app.machineNameOverride,
                           prompt: Text(MachineName.system()))
-                    .help("How the phone, the widgets and crash reports name "
-                          + "this Mac. Empty keeps the computer name from "
-                          + "System Settings › General › About.")
-                Text("Requests without `Authorization: Bearer <token>` (or "
-                     + "`?t=<token>`) get a 401. The snapshot carries account "
-                     + "aliases, emails and usage estimates; never tokens or "
-                     + "push secrets.")
-                    .font(.caption).foregroundStyle(.secondary)
-            }
-            if app.mirrorLANEnabled {
-                Section("Pair a phone") {
+                if app.mirrorLANEnabled {
                     if app.pairRoutes.isEmpty {
-                        Text("Waiting for the listener to come up…")
+                        Text("Waiting for the listener to come up\u{2026}")
                             .font(.caption).foregroundStyle(.secondary)
                     } else {
                         HStack(alignment: .top, spacing: 12) {
@@ -101,103 +87,119 @@ struct SyncPane: View {
                                     .padding(4)
                                     .background(.white)
                                     .clipShape(RoundedRectangle(cornerRadius: 4))
+                                    .accessibilityLabel("Pairing QR code")
                             }
                             VStack(alignment: .leading, spacing: 6) {
-                                ForEach(app.pairRoutes) { route in
-                                    VStack(alignment: .leading, spacing: 2) {
-                                        Text(route.title).font(.callout).bold()
-                                        HStack {
-                                            Text(route.endpoint)
-                                                .font(.system(.caption, design: .monospaced))
-                                                .textSelection(.enabled)
-                                            Button("Copy") { copy(route.endpoint) }
-                                        }
-                                    }
+                                if let primary = app.pairRoutes.first {
+                                    addressRow(primary)
                                 }
-                                Button("Copy pair link") { copy(app.pairURL) }
+                                Button("Copy Pair Link") { copy(app.pairURL) }
                             }
                             Spacer(minLength: 0)
                         }
                         .padding(.vertical, 2)
-                        Text("One scan pairs every route. The phone tries them in "
-                             + "this order and keeps whichever answers — a tunnel "
-                             + "URL that changes on restart falls through to "
-                             + "Wi-Fi or Tailscale. Away from home with no "
-                             + "Tailscale on the phone, the tunnel is the only "
-                             + "route, so a restart means one more scan.")
-                            .font(.caption).foregroundStyle(.secondary)
+                        if app.pairRoutes.count > 1 {
+                            DisclosureGroup("Other addresses", isExpanded: $otherAddressesOpen) {
+                                ForEach(app.pairRoutes.dropFirst()) { route in
+                                    addressRow(route)
+                                }
+                            }
+                        }
                     }
                 }
-                Section("Anywhere") {
+            } header: {
+                Text("Pairing")
+            } footer: {
+                Text("The phone scans the code once and keeps every address in it, trying "
+                     + "them in order \u{2014} so a tunnel address that changes on restart "
+                     + "falls through to Wi-Fi or Tailscale. Every request must carry the "
+                     + "pairing token; the snapshot it answers with carries account names, "
+                     + "emails and usage estimates, never tokens or push secrets.")
+                    .font(.caption2).foregroundStyle(.secondary)
+            }
+            // The Tunnel group below shows once this Mac is serving — the
+            // gate the old "Pair a phone" section opened, re-opened here.
+            if app.mirrorLANEnabled {
+                Section {
                     tailscaleRow
                     if QuickTunnel.binaryPath != nil {
                         Toggle("Expose through a Cloudflare quick tunnel",
                                isOn: $app.mirrorTunnelEnabled)
-                            .help("Runs `cloudflared tunnel --url` and puts the "
-                                  + "random https URL on a QR. No Cloudflare "
-                                  + "account, no backend — and no secrecy in "
-                                  + "the URL itself.")
                         if let status = tunnel.status {
                             Text(status).font(.caption).foregroundStyle(.secondary)
                         }
-                        Text("The URL is public and changes every start; the "
-                             + "pairing token is the only thing keeping the "
-                             + "snapshot private. Stops when you turn this off "
-                             + "or quit.")
-                            .font(.caption).foregroundStyle(.secondary)
                         Toggle("Publish the current URL to infinitus.run",
                                isOn: $app.mirrorRendezvousEnabled)
                             .disabled(!app.mirrorTunnelEnabled)
-                            .help("Each start PUTs the new trycloudflare URL under "
-                                  + "a key derived from the pairing token (SHA-256), "
-                                  + "so a paired phone finds it instead of rescanning. "
-                                  + "The URL alone opens nothing.")
-                        Text("Without this, a phone with no other route needs a "
-                             + "fresh scan after every restart. What's sent: the "
-                             + "URL, keyed by a hash of the token — never the "
-                             + "token, never a snapshot.")
-                            .font(.caption).foregroundStyle(.secondary)
                         namedTunnelRows
                     } else {
                         LabeledContent("Cloudflare quick tunnel") {
-                            Button("Copy install command") { copy("brew install cloudflared") }
+                            Button("Copy Install Command") { copy("brew install cloudflared") }
+                                .help("Copies: brew install cloudflared")
                         }
-                        Text("Not installed. `brew install cloudflared` adds it; "
-                             + "a toggle appears here to expose this Mac through "
-                             + "a random trycloudflare.com URL, no account needed.")
+                        Text("Not installed. Paste the copied command into Terminal and a "
+                             + "toggle appears here to reach this Mac through a random "
+                             + "public address \u{2014} no Cloudflare account needed.")
                             .font(.caption).foregroundStyle(.secondary)
                     }
+                } header: {
+                    Text("Tunnel")
+                } footer: {
+                    Text("Same Wi-Fi needs none of this. From anywhere, pick one: Tailscale "
+                         + "on both devices, a quick tunnel (a random public address that "
+                         + "changes every start), or your own Cloudflare tunnel (a hostname "
+                         + "that never changes). The pairing token is what keeps the "
+                         + "snapshot private in every case. Publishing the current address "
+                         + "to infinitus.run stores only a hash of the token and the "
+                         + "address, so a paired phone finds the new one instead of "
+                         + "rescanning.")
+                        .font(.caption2).foregroundStyle(.secondary)
                 }
                 .onAppear { probeTailscale(); namedHost = app.mirrorNamedTunnelHost }
                 .onReceive(reprobe) { _ in probeTailscale() }
             }
             CrashReportsSection(app: app)
-            Section("Phone lock screen") {
+            Section {
                 liveActivityRows
+            } header: {
+                Text("Phone lock screen")
+            } footer: {
+                Text("The phone's Live Activities (working sessions, revival countdown) "
+                     + "update while the app is open. To keep them live with the app "
+                     + "closed, this Mac pushes through Apple (APNs) with a key from "
+                     + "your developer account: Certificates, Identifiers & Profiles \u{2192} "
+                     + "Keys \u{2192} + \u{2192} Apple Push Notifications service, download the .p8.")
+                    .font(.caption2).foregroundStyle(.secondary)
             }
-            Section("iCloud") {
+            Section {
                 Toggle("Sync settings via iCloud Drive", isOn: $sync.enabled)
-                    .help("Display prefs, custom themes, and set cswap "
-                          + "engine settings travel through one JSON file "
-                          + "in iCloud Drive/Infinitus. Never credentials "
-                          + "or push secrets. Last writer wins.")
                 if let status = sync.status {
                     Text(status).font(.caption).foregroundStyle(.secondary)
                 }
+            } header: {
+                Text("iCloud")
+            } footer: {
+                Text("Display preferences, custom themes and engine settings travel through "
+                     + "one file in your iCloud Drive. Never credentials, never push "
+                     + "secrets. The last Mac to write wins.")
+                    .font(.caption2).foregroundStyle(.secondary)
             }
             // Manual path for machines outside the iCloud account
             // (user request 2026-08-30). Same snapshot, same scope.
-            Section("File") {
+            Section {
                 LabeledContent("Settings as a file") {
                     HStack {
-                        Button("Export…") { runExportPanel() }
-                        Button("Import…") { runImportPanel() }
+                        Button("Export\u{2026}") { runExportPanel() }
+                        Button("Import\u{2026}") { runImportPanel() }
                     }
                 }
-                Text("The same settings the iCloud sync carries — display "
-                     + "prefs, custom themes, cswap engine config. Never "
-                     + "credentials or push secrets.")
-                    .font(.caption).foregroundStyle(.secondary)
+            } header: {
+                Text("File")
+            } footer: {
+                Text("The same settings the iCloud sync carries \u{2014} display "
+                     + "preferences, custom themes and engine settings. Never "
+                     + "credentials, never push secrets.")
+                    .font(.caption2).foregroundStyle(.secondary)
             }
         }
         .formStyle(.grouped)
@@ -219,22 +221,16 @@ struct SyncPane: View {
     /// Live Activity pushes (APNs): the .p8 key that lets this Mac keep
     /// the phone's lock-screen activities moving with the app closed.
     @ViewBuilder private var liveActivityRows: some View {
-        Text("The phone's Live Activities (working sessions, revival countdown) "
-             + "update while the app is open. To keep them live with the app "
-             + "closed, this Mac pushes through Apple (APNs) with a key from "
-             + "your developer account: Certificates, Identifiers & Profiles → "
-             + "Keys → + → Apple Push Notifications service, download the .p8.")
-            .font(.caption).foregroundStyle(.secondary)
         TextField("Team ID", text: $pusher.teamID, prompt: Text("ABCDE12345"))
         TextField("Key ID", text: $pusher.keyID, prompt: Text("the key's 10-character id"))
         HStack {
-            Button(pusher.keyStored ? "Replace .p8 from clipboard" : "Paste .p8 from clipboard") {
+            Button(pusher.keyStored ? "Replace Key from Clipboard" : "Paste Key from Clipboard") {
                 pusher.storeKey(pem: NSPasteboard.general.string(forType: .string) ?? "")
             }
             if pusher.keyStored {
-                Button("Forget key") { pusher.storeKey(pem: "") }
+                Button("Forget Key") { pusher.storeKey(pem: "") }
             }
-            Text(pusher.keyStored ? "key in the keychain" : "no key yet")
+            Text(pusher.keyStored ? "In the keychain" : "Not Set Up")
                 .font(.caption).foregroundStyle(.secondary)
         }
         if pusher.registrations.isEmpty {
@@ -287,15 +283,13 @@ struct SyncPane: View {
     @ViewBuilder private var namedTunnelRows: some View {
         Toggle("Expose through your own Cloudflare tunnel",
                isOn: $app.mirrorNamedTunnelEnabled)
-            .help("Runs `cloudflared tunnel run` with the token below. The "
-                  + "hostname is yours and never changes, so a paired phone "
-                  + "survives every restart.")
         TextField("Hostname", text: $namedHost, prompt: Text("infinitus.example.com"))
             .textFieldStyle(.roundedBorder)
             .onSubmit { app.mirrorNamedTunnelHost = namedHost }
         if app.namedTunnelLocalConfig {
             LabeledContent("Tunnel token") {
-                Text("not needed — ~/.cloudflared/config.yml routes this hostname")
+                Text("Not needed \u{2014} Cloudflare's config file on this Mac already "
+                     + "routes this hostname.")
                     .font(.caption).foregroundStyle(.secondary)
             }
         } else {
@@ -305,7 +299,7 @@ struct SyncPane: View {
                 .textFieldStyle(.roundedBorder)
         }
         HStack {
-            Button("Save") {
+            Button("Save Tunnel") {
                 app.mirrorNamedTunnelHost = namedHost
                 if !namedToken.isEmpty { app.saveNamedTunnelToken(namedToken) }
                 namedToken = ""
@@ -313,7 +307,7 @@ struct SyncPane: View {
             .buttonStyle(.borderedProminent)
             .disabled(NamedTunnel.normalizeHostname(namedHost).isEmpty)
             if app.namedTunnelTokenPresent {
-                Button("Forget token") { app.saveNamedTunnelToken("") }
+                Button("Forget Token") { app.saveNamedTunnelToken("") }
             }
         }
         if let status = named.status {
@@ -327,13 +321,18 @@ struct SyncPane: View {
                  + "http://localhost:\(port).")
                 .font(.caption).foregroundStyle(.orange)
         }
-        Text("Two ways to set it up, both need a Cloudflare account with your domain on it. "
-             + "Dashboard: Zero Trust → Networks → Tunnels → Create → Cloudflared, name it, "
-             + "copy the token here; Public hostname = the hostname above, service = "
-             + "http://localhost:\(MirrorTransport.defaultPort). Terminal: `cloudflared tunnel "
-             + "login`, `tunnel create infinitus`, `tunnel route dns infinitus <hostname>`, "
-             + "and a ~/.cloudflared/config.yml with that ingress — then no token is needed.")
+        Text("Both ways need a Cloudflare account with your domain on it. In the "
+             + "dashboard: Zero Trust \u{2192} Networks \u{2192} Tunnels \u{2192} Create "
+             + "\u{2192} Cloudflared, name it, paste its token above, and point its public "
+             + "hostname at this Mac's port \(MirrorTransport.defaultPort). In Terminal: "
+             + "create and route a tunnel with cloudflared, add this hostname to its config "
+             + "file, and no token is needed here.")
             .font(.caption).foregroundStyle(.secondary)
+        HStack {
+            Button("Copy the Config File Path") { copy("~/.cloudflared/config.yml") }
+                .help("Copies: ~/.cloudflared/config.yml")
+            Spacer()
+        }
     }
 
     private var steps: [Step] {
@@ -391,7 +390,7 @@ struct SyncPane: View {
                 // pasteable brief. The token rides along only while it's
                 // revealed above — a masked pane copies a masked brief.
                 HStack {
-                    Button("Copy for an AI agent") { copy(agentBrief(steps)) }
+                    Button("Copy for an AI Agent") { copy(agentBrief(steps)) }
                     Text(revealToken
                          ? "Includes the pairing token."
                          : "Token left out — Reveal it below to include it.")
@@ -491,7 +490,7 @@ struct SyncPane: View {
             }
             Text("Free for personal use. Install it here and on the phone, "
                  + "sign both into the same tailnet, and a Tailscale route "
-                 + "appears under Pair a phone by itself — reachable from "
+                 + "appears under Pairing by itself \u{2014} reachable from "
                  + "anywhere, no port forwarding, no public URL.")
                 .font(.caption).foregroundStyle(.secondary)
         case .installed(let app):
@@ -501,21 +500,40 @@ struct SyncPane: View {
                         NSWorkspace.shared.openApplication(at: app, configuration: .init())
                     }
                 } else {
-                    Text("installed, not connected").font(.caption)
+                    Text("Installed, not connected").font(.caption)
                 }
             }
-            Text("Installed but not connected — open it and sign in; the "
-                 + "route shows up under Pair a phone once it is.")
+            Text("Installed but not connected \u{2014} open it and sign in; the "
+                 + "route shows up under Pairing once it is.")
                 .font(.caption).foregroundStyle(.secondary)
         case .connected(let ip):
             LabeledContent("Tailscale") {
-                Text("connected · \(ip)")
+                Text("Connected \u{00B7} \(ip)")
                     .font(.system(.caption, design: .monospaced))
                     .textSelection(.enabled)
             }
-            Text("The Tailscale route is under Pair a phone. The phone needs "
+            Text("The Tailscale route is under Pairing. The phone needs "
                  + "Tailscale too, signed into the same tailnet.")
                 .font(.caption).foregroundStyle(.secondary)
+        }
+    }
+
+    /// One route: its name, its address, and a Copy that says what it
+    /// copies. `PairRoute.title` is already the human name ("On this
+    /// Wi-Fi", "Anywhere via Tailscale").
+    private func addressRow(_ route: PairRoute) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(route.title).font(.callout).bold()
+            HStack {
+                Text(route.endpoint)
+                    .font(.system(.caption, design: .monospaced))
+                    .textSelection(.enabled)
+                Button { copy(route.endpoint) } label: { Image(systemName: "doc.on.doc") }
+                    .buttonStyle(.borderless)
+                    .accessibilityLabel("Copy the \(route.title) address")
+                    .accessibilityHint("Copy the \(route.title) address.")
+                    .help("Copy the \(route.title) address.")
+            }
         }
     }
 
