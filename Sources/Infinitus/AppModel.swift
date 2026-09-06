@@ -1076,6 +1076,7 @@ final class AppModel: ObservableObject {
         mirrorServer.pastSessions.set { limit, search in
             PastSessions.Reply(sessions: PastSessions.list(claudeDir: ClaudeSessions.configHome(),
                                                            limit: limit, search: search))
+        }
         // The phone's Team tab (spec §9 step 8) — every call lands on the
         // main actor, where TeamModel lives.
         mirrorServer.teamMirror.set { [weak self] request in
