@@ -33,6 +33,8 @@ publishes the matching section as the GitHub release body.
 - Settings shows the Mac's and the phone's versions, can trigger the Mac's update, and says when a newer phone build is out.
 
 ### Team (preview)
+- An invite link's request now proves the invite without carrying its secret, so a copied request can't ride someone else's invite; invited requests are approved automatically again.
+- `infinitusctl team-create --remote <url>` takes the URL as written.
 - `infinitusctl team create --as <name>` names you as the team's founder instead of "Leader".
 - Settings › Team: create or join a team, approve requests, see every member's latest publish, today's effort and blockers, and open their Stats and transcripts — the Mac fetches and publishes every 5 minutes.
 - Settings › Team: pick which audiences see each kind of your own data, and which project folders publish at all.
