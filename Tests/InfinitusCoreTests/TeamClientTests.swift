@@ -49,6 +49,9 @@ final class TeamClientTests: XCTestCase {
     }
 
     func testCreateRequestApprovePublishRead() throws {
+        #if os(Windows)
+        try XCTSkipIf(true, "Team git shellouts / POSIX file modes are not ported to Windows yet")
+        #endif
         let remote = try makeRemote()
         let (lp, ls) = machine("leader")
         let (mp, ms) = machine("member")
@@ -139,6 +142,9 @@ final class TeamClientTests: XCTestCase {
     /// roster a joiner accepts first must carry the code leader's own
     /// signature — not merely list them.
     func testAForgedFirstRosterIsRefusedAndNothingIsPersisted() throws {
+        #if os(Windows)
+        try XCTSkipIf(true, "Team git shellouts / POSIX file modes are not ported to Windows yet")
+        #endif
         let remote = try makeRemote()
         let (lp, ls) = machine("leader")
         let (jp, js) = machine("joiner")
@@ -168,6 +174,9 @@ final class TeamClientTests: XCTestCase {
     /// request under someone else's kid, and a leader's kid is never
     /// re-approved as a member.
     func testAnImpostorRequestUnderAnotherKidIsIgnored() throws {
+        #if os(Windows)
+        try XCTSkipIf(true, "Team git shellouts / POSIX file modes are not ported to Windows yet")
+        #endif
         let remote = try makeRemote()
         let (lp, ls) = machine("leader")
         let (ep, es) = machine("eve")

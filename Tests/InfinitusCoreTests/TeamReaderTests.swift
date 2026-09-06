@@ -9,6 +9,14 @@ final class TeamReaderTests: XCTestCase {
         try FileManager.default.createDirectory(at: scratch, withIntermediateDirectories: true)
     }
 
+    /// The Team store shells `/usr/bin/env git` and its residue rules
+    /// assert POSIX modes - neither exists on Windows yet (upstream).
+    func skipOffPOSIX() throws {
+        #if os(Windows)
+        try XCTSkipIf(true, "Team git shellouts / POSIX modes are not ported to Windows yet")
+        #endif
+    }
+
     override func tearDownWithError() throws { try? FileManager.default.removeItem(at: scratch) }
 
     // MARK: pure folding
@@ -110,6 +118,7 @@ final class TeamReaderTests: XCTestCase {
     }
 
     func testCreateCodeRequestApprovePublishFetchReadThenRemove() throws {
+        try skipOffPOSIX()
         let remote = try makeRemote()
         let (lp, ls) = machine("leader"), (ap, asec) = machine("alice"), (bp, bs) = machine("bob")
         // create → code → request → approve

@@ -9,6 +9,14 @@ final class TeamPublisherTests: XCTestCase {
         try FileManager.default.createDirectory(at: scratch, withIntermediateDirectories: true)
     }
 
+    /// The Team store shells `/usr/bin/env git` and its residue rules
+    /// assert POSIX modes - neither exists on Windows yet (upstream).
+    func skipOffPOSIX() throws {
+        #if os(Windows)
+        try XCTSkipIf(true, "Team git shellouts / POSIX modes are not ported to Windows yet")
+        #endif
+    }
+
     override func tearDownWithError() throws { try? FileManager.default.removeItem(at: scratch) }
 
     func makeRemote() throws -> String {
@@ -81,6 +89,7 @@ final class TeamPublisherTests: XCTestCase {
     }
 
     func testPublishWrapsEachKindToItsAudienceHonoursExclusionsAndRedacts() throws {
+        try skipOffPOSIX()
         let t = try team()
         let projects = try writeProjects(scratch)
         let teamDir = t.alicePaths.teamDir(t.alice.config.id)
@@ -165,6 +174,7 @@ final class TeamPublisherTests: XCTestCase {
     }
 
     func testTranscriptWindowIsNarrowerThanTheStatsWindow() throws {
+        try skipOffPOSIX()
         let t = try team()
         let projects = try writeProjects(scratch)
         var s = sources(projects)
@@ -182,6 +192,7 @@ final class TeamPublisherTests: XCTestCase {
     }
 
     func testBatchesPushSeparatelyAndSaveStateBetweenThem() throws {
+        try skipOffPOSIX()
         let t = try team()
         let projects = try writeProjects(scratch)
         var s = sources(projects)
@@ -197,6 +208,7 @@ final class TeamPublisherTests: XCTestCase {
     }
 
     func testHeaderScanRemembersHeadersByBlobVersion() throws {
+        try skipOffPOSIX()
         let t = try team()
         let me = "m/\(t.alice.identity.kid)/"
         try t.alice.publish(kind: "now", path: "now.json", plaintext: Data("{}".utf8), audience: .leaders, now: 5_000)
@@ -219,6 +231,7 @@ final class TeamPublisherTests: XCTestCase {
     }
 
     func testReshareRewrapsHistoryToTheCurrentAudienceAfterPromotion() throws {
+        try skipOffPOSIX()
         let t = try team()
         let projects = try writeProjects(scratch)
         var ex = TeamExclusions(); ex.set("/r/secret", excluded: true); try ex.save(paths: t.alicePaths)
@@ -275,6 +288,7 @@ final class TeamPublisherTests: XCTestCase {
     }
 
     func testPendingMemberCannotPublish() throws {
+        try skipOffPOSIX()
         let remote = try makeRemote()
         let (lp, ls) = machine("leader"), (pp, ps) = machine("pending")
         let leader = try TeamClient.create(name: "P", remote: remote, token: nil, paths: lp, secrets: ls, now: 1_000)
@@ -289,6 +303,7 @@ final class TeamPublisherTests: XCTestCase {
     /// Spec §7: a kind shared with Nobody is not chunked, not sealed, not
     /// copied and not hinted at on the store.
     func testAKindSharedWithNobodyNeverLeavesTheMac() throws {
+        try skipOffPOSIX()
         let t = try team()
         let projects = try writeProjects(scratch)
         let teamDir = t.alicePaths.teamDir(t.alice.config.id)
@@ -333,6 +348,7 @@ final class TeamPublisherTests: XCTestCase {
     /// `now` off after a publish would leave this member looking "on"
     /// forever, so the stale now.json is retired once.
     func testNowSharedWithNobodyIsRetiredFromTheStore() throws {
+        try skipOffPOSIX()
         let t = try team()
         let projects = try writeProjects(scratch)
         let teamDir = t.alicePaths.teamDir(t.alice.config.id)
@@ -355,6 +371,7 @@ final class TeamPublisherTests: XCTestCase {
     /// Spec §7: the member picks which sessions' transcripts travel; a
     /// session's sub-agents ride its choice.
     func testOnlyChosenSessionsAreChunkedAndThePickerListsTheRecentOnes() throws {
+        try skipOffPOSIX()
         let t = try team()
         let projects = try writeProjects(scratch)
         let teamDir = t.alicePaths.teamDir(t.alice.config.id)
@@ -396,6 +413,7 @@ final class TeamPublisherTests: XCTestCase {
     /// bound (a month of transcripts was 9 GB): the oldest transcript
     /// copies go, and only those.
     func testPublishedCopiesArePrunedOldestTranscriptFirst() throws {
+        try skipOffPOSIX()
         let t = try team()
         let projects = try writeProjects(scratch)
         let publisher = TeamPublisher(client: t.alice, paths: t.alicePaths)
@@ -426,6 +444,7 @@ final class TeamPublisherTests: XCTestCase {
     /// corpus is thousands of chunks and every main-actor hop is a CA
     /// transaction (the pop-out must idle at ~0%).
     func testProgressFiresPerSourceAndPerBatchOnly() throws {
+        try skipOffPOSIX()
         let t = try team()
         let projects = try writeProjects(scratch)
         // `publish` is synchronous on this thread and so is the callback,
@@ -449,6 +468,7 @@ final class TeamPublisherTests: XCTestCase {
     /// Quit asks the publisher to stop; what it had pushed stays pushed
     /// and the cursor is saved, so the next pass resumes.
     func testStopBetweenSourcesSavesTheCursorAndLeavesTheRestForNextTime() throws {
+        try skipOffPOSIX()
         let t = try team()
         let projects = try writeProjects(scratch)
         let publisher = TeamPublisher(client: t.alice, paths: t.alicePaths)

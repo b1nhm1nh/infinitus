@@ -1,6 +1,12 @@
 import XCTest
 @testable import InfinitusCore
 
+    func skipOffPOSIX() throws {
+        #if os(Windows)
+        try XCTSkipIf(true, "Team git shellouts / POSIX modes are not ported to Windows yet")
+        #endif
+    }
+
 final class MachineHealthTests: XCTestCase {
     func testWarningKindsMatchTheMutes() {
         XCTAssertEqual(MachineReport.warningKind("new hook: semgrep on PostToolUse (plugin)"), .hooks)
@@ -136,6 +142,7 @@ final class MachineHealthTests: XCTestCase {
     }
 
     func testResidueRulesAreOwnerDead() throws {
+        try skipOffPOSIX()
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("residue-\(UUID().uuidString)")
         let socks = dir.appendingPathComponent("cc-socks"); let envs = dir.appendingPathComponent("session-env"); let tmp = dir.appendingPathComponent("T")
         for d in [socks, envs, tmp] { try FileManager.default.createDirectory(at: d, withIntermediateDirectories: true) }
