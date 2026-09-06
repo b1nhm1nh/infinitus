@@ -147,6 +147,9 @@ actor NetworkFleetMirror: FleetMirror {
         case .defaults: parked = Self.parkedCache
         case .pairing(let pairing): parked = Self.parkedCache(key: Self.parkedKey(token: pairing.token))
         }
+        // A promoted Mac's directory is keyed by its token, which is now
+        // the primary's — start from what it already cached (#144 phase 3).
+        cached = parked?.loadSnapshot()
         lastServedFromCache = false
         statusText = "looking for a Mac on this Wi-Fi…"
     }

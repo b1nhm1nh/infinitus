@@ -125,15 +125,21 @@ struct PastSessionsScreen: View {
     }
 
     private func load() async {
+        // The Mac this load is for: switching Macs mid-fetch (a parked
+        // one takes the full timeout) must not land the late reply, or
+        // its error, under the newly chosen Mac's label.
+        let target = macId
         loading = true
-        defer { loading = false }
+        defer { if target == macId { loading = false } }
         do {
             let query = search.trimmingCharacters(in: .whitespaces)
-            let reply = try await model.mirror(for: macId).pastSessions(
+            let reply = try await model.mirror(for: target).pastSessions(
                 limit: query.isEmpty ? 50 : 200, search: query.isEmpty ? nil : query)
+            guard target == macId else { return }
             sessions = reply.sessions
             error = nil
         } catch {
+            guard target == macId else { return }
             self.error = error.localizedDescription
         }
     }
