@@ -61,6 +61,68 @@ final class MirrorModel: ObservableObject, FleetModel {
     /// refreshes so its last-good endpoint ordering survives — same
     /// reasoning as `.shared` for the primary.
     private var otherMirrors: [String: NetworkFleetMirror] = [:]
+
+    /// Runs with a Mac's id when that Mac answers after not answering
+    /// (or on its first answered poll) — the per-Mac outbox flush (#144
+    /// phase 2). Per Mac, not per round: a Mac that stays down must not
+    /// re-flush every other Mac's queue every poll.
+    var otherReachable: ((String) -> Void)?
+    private var othersReachable: Set<String> = []
+
+    // MARK: per-Mac reads (#144 phase 2) — `nil` is the primary and
+    // returns exactly what the screens read before other Macs opened.
+
+    func other(_ macId: String) -> OtherMac? { others.first { $0.id == macId } }
+
+    /// The mirror a session's screens talk to: the primary's, or the
+    /// cached one for its Mac. An unknown id (forgotten while a feed
+    /// was open) falls back to the primary rather than a dead actor.
+    func mirror(for macId: String?) -> NetworkFleetMirror {
+        guard let macId, let pairing = other(macId)?.pairing else { return .shared }
+        return otherMirror(for: pairing)
+    }
+
+    func progress(macId: String?, pid: Int) -> SessionProgress? {
+        guard let macId else { return sessionProgress.byPid[pid] }
+        return other(macId)?.snapshot?.progressByPid?[pid]
+    }
+
+    func accountSummary(macId: String?, pid: Int) -> SessionAccountSummary? {
+        guard let macId else { return accountSummary(forSessionPid: pid) }
+        guard let snapshot = other(macId)?.snapshot,
+              let fleets = Self.engineFleets(from: snapshot) else { return nil }
+        return SessionAccountLookup.summarize(pid: pid, fleets: fleets)
+    }
+
+    func fleets(macId: String?) -> [MirrorFleetModel] {
+        guard let macId else { return fleets }
+        return other(macId)?.fleets ?? []
+    }
+
+    func awsLogin(macId: String?, pid: Int) -> AwsLogin.Item? {
+        guard let macId else { return awsLogin(for: pid) }
+        return other(macId)?.snapshot?.awsLogins?.first { $0.pid == pid }
+    }
+
+    func birth(macId: String?, pid: Int) -> SessionBirth? {
+        guard let macId else { return snapshot?.births?[pid] }
+        return other(macId)?.snapshot?.births?[pid]
+    }
+
+    func transportStatus(macId: String?) -> String {
+        guard let macId else { return transportStatus }
+        return other(macId)?.status ?? ""
+    }
+
+    func macName(_ macId: String?) -> String? {
+        macId.flatMap { other($0)?.pairing.name }
+    }
+
+    /// Pull-to-refresh and post-action refresh for a session's own Mac.
+    func refresh(macId: String?) async {
+        if macId == nil { await refresh() } else { await refreshOthers() }
+    }
+
     /// The Mac's display prefs (#9 phase C1: "Follow Mac"); `nil` for
     /// snapshots captured before this field existed.
     @Published private(set) var prefs: FleetPrefs?
@@ -387,6 +449,12 @@ final class MirrorModel: ObservableObject, FleetModel {
                                            hostUsage: false).fleets
             return other
         }
+        // Per-Mac reachable edge: newly answering ids fire once; a Mac
+        // still down stays out of the set and fires nothing.
+        let answered = Set(others.compactMap { $0.snapshot == nil ? nil : $0.id })
+        let newlyReachable = answered.subtracting(othersReachable)
+        othersReachable = answered
+        for id in newlyReachable { otherReachable?(id) }
     }
 
     /// The cached actor for one other Mac — created once per pairing so
