@@ -203,13 +203,21 @@ private let mirrorInputQueue = DispatchQueue(label: "run.infinitus.mirror-input"
 final class MirrorSessionInputBox: @unchecked Sendable {
     private let lock = NSLock()
     private var provider: (@Sendable (Int32, SessionInput.Request) -> SessionInput.Reply?)?
+    /// #168: a request the phone's outbox sends twice (it died between
+    /// send and reply) is answered once; the repeat is "delivered" again
+    /// without touching the session.
+    private var dedup = InputDedup()
 
     func set(_ new: @escaping @Sendable (Int32, SessionInput.Request) -> SessionInput.Reply?) {
         lock.lock(); provider = new; lock.unlock()
     }
 
     func call(_ pid: Int32, _ request: SessionInput.Request) -> SessionInput.Reply? {
-        lock.lock(); let current = provider; lock.unlock()
+        lock.lock()
+        let current = provider
+        let fresh = request.requestId.map { dedup.firstSight(pid: pid, requestId: $0) } ?? true
+        lock.unlock()
+        guard fresh else { return SessionInput.Reply(outcome: "delivered", detail: "duplicate") }
         return current?(pid, request)
     }
 }
