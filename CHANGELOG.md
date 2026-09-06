@@ -8,6 +8,7 @@ publishes the matching section as the GitHub release body.
 ## Unreleased
 
 ### Phone
+- Face ID or the passcode can lock the whole app — on launch and on return from the background — not only the Team tab (#212).
 - Settings' theme chooser shows every theme as a live row — its gauges, spend line, status word and tab bar — and the Theme row carries its colors.
 - Pace fire, content entrance and title flourish are picked from tiles that show the effect instead of a menu of words.
 - The pairing token is covered until you tap to reveal it.
