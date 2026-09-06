@@ -74,6 +74,8 @@ struct MachinePane: View {
             Toggle("Watch this Mac", isOn: $model.enabled)
             Text("one process listing a minute; the temp directory every five")
                 .font(.caption).foregroundStyle(.secondary)
+            Toggle("Notify about hooks (new, stuck, fanned out)", isOn: $model.notifyHooks)
+            Toggle("Notify about the temp directory", isOn: $model.notifyTemp)
             HStack {
                 Button("Sample now") { Task { resultMessage = nil; await model.sample() } }
                     .disabled(model.sampling)

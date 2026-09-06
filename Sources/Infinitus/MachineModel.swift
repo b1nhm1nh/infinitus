@@ -19,6 +19,15 @@ final class MachineModel: ObservableObject {
     @Published var enabled: Bool {
         didSet { UserDefaults.standard.set(enabled, forKey: "machine_guardian") }
     }
+    /// Per-kind mutes for the pushed warnings (user 2026-09-06: "stop the
+    /// hook and tmp dir notifications"): the guardian keeps sampling and
+    /// the pane keeps listing them; only the notification is skipped.
+    @Published var notifyHooks: Bool {
+        didSet { UserDefaults.standard.set(notifyHooks, forKey: "machine_notify_hooks") }
+    }
+    @Published var notifyTemp: Bool {
+        didSet { UserDefaults.standard.set(notifyTemp, forKey: "machine_notify_temp") }
+    }
 
     /// AppModel owns this model; reaching back for session names,
     /// last-activity and the push/log channels must never cycle.
@@ -48,6 +57,8 @@ final class MachineModel: ObservableObject {
         announcedIdle = Set(UserDefaults.standard.array(forKey: Self.announcedIdleKey) as? [Int] ?? [])
         idleHours = UserDefaults.standard.object(forKey: "machine_idle_hours") as? Double ?? 12
         enabled = UserDefaults.standard.object(forKey: "machine_guardian") as? Bool ?? true
+        notifyHooks = UserDefaults.standard.object(forKey: "machine_notify_hooks") as? Bool ?? true
+        notifyTemp = UserDefaults.standard.object(forKey: "machine_notify_temp") as? Bool ?? true
     }
 
     /// Called once per `AppModel.refreshSnapshot()` pass; samples at
@@ -172,7 +183,7 @@ final class MachineModel: ObservableObject {
         // identity is the text minus its digits — "oldest 53 min" ticks
         // every sample and must not re-notify.
         let currentWarnings = Set(finalReport.warnings.map(Self.warningKey))
-        for warning in finalReport.warnings where !pushedWarnings.contains(Self.warningKey(warning)) {
+        for warning in finalReport.warnings where !pushedWarnings.contains(Self.warningKey(warning)) && notifies(warning) {
             host?.push(warning)
         }
         pushedWarnings = currentWarnings
@@ -191,6 +202,14 @@ final class MachineModel: ObservableObject {
     enum ReclaimKind: String, CaseIterable, Sendable { case sockets, sessionEnvs, temps }
 
     static func warningKey(_ warning: String) -> String { warning.filter { !$0.isNumber } }
+
+    private func notifies(_ warning: String) -> Bool {
+        switch MachineReport.warningKind(warning) {
+        case .hooks: return notifyHooks
+        case .temp: return notifyTemp
+        case .other: return true
+        }
+    }
 
     /// Only a pid the last report flagged, and only while `ps` still
     /// shows the flagged command there (pids get reused).

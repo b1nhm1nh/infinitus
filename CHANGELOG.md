@@ -21,6 +21,7 @@ publishes the matching section as the GitHub release body.
 
 ### Mac
 - An AWS sign-in that lapses inside a sub-agent shows up on the parent session — key badge, Sign in row, push — and the continue nudge after signing in goes to the parent.
+- Settings › Machine mutes the hook and temp-directory notifications separately; the pane keeps listing them.
 - Right-click an account row → Re-roll name gives that one account a fresh themed name nobody in the fleet wears; `infinitusctl randomize-names <fleet> <n>` does the same.
 - Settings › Machine watches what many sessions do to this Mac — load, swap, stuck hooks, runaway processes, residue — with confirmed kill, reclaim and hook-disable actions and notifications for new hook registrations and idle sessions.
 - Sessions whose sub-agents hit a limit get a nudge that the swapped-in account has headroom, so they stop waiting for the reset.
@@ -35,6 +36,7 @@ publishes the matching section as the GitHub release body.
 - `infinitusctl past-sessions` lists every Claude Code session this Mac has run, newest first, and `resume-session <id>` reopens one in its folder.
 
 ### Team (preview)
+- A publish sends transcripts only from sessions active in the last two days (stats keep 30) and pushes in 200 MB batches, saving its place after each, so a huge history can't stall or crash it.
 - `infinitusctl team create --as <name>` names you as the team's founder instead of "Leader".
 - Settings › Team: create or join a team, approve requests, see every member's latest publish, today's effort and blockers, and open their Stats and transcripts — the Mac fetches and publishes every 5 minutes.
 - Settings › Team: pick which audiences see each kind of your own data, and which project folders publish at all.
