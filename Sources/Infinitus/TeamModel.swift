@@ -201,16 +201,18 @@ final class TeamModel: ObservableObject {
                 if auto { try Self.autoApprove(client, paths: paths) }
                 var published: Int?
                 var report: TeamPublisher.Report?
+                var aggregated = false
                 if publish, client.isMember {
                     var s = sources
                     s.cacheURL = paths.teamDir(client.config.id).appendingPathComponent("scan-cache.json")
                     report = try TeamPublisher(client: client, paths: paths).publish(sources: s)
                     published = Int(Date().timeIntervalSince1970)
-                }
-                var aggregated = false
-                if aggregatesDue, client.isLeader {
-                    try Self.publishAggregates(client)
-                    aggregated = true
+                    if aggregatesDue, client.isLeader {
+                        // Don't let an aggregates-only failure erase the
+                        // publish that just succeeded; retry next tick
+                        // since `aggregated` stays false.
+                        do { try Self.publishAggregates(client); aggregated = true } catch {}
+                    }
                 }
                 return (fetched, published, report, aggregated)
             }
@@ -394,12 +396,14 @@ final class TeamModel: ObservableObject {
     }
 
     func publishAggregatesNow() async {
+        var ok = false
         await action("Publishing the team picture…") { paths, secrets in
             guard let client = try Self.openClient(paths, secrets) else { throw TeamClient.ClientError.notInTeam }
             _ = try client.fetch()
             try Self.publishAggregates(client)
+            ok = true
         }
-        lastAggregatesAt = Int(Date().timeIntervalSince1970)
+        if ok { lastAggregatesAt = Int(Date().timeIntervalSince1970) }
     }
 
     // MARK: identity (spec §2.1) — the secret is shown only as the recovery key, after Touch ID
