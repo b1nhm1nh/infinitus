@@ -410,6 +410,38 @@ actor NetworkFleetMirror: FleetMirror {
         try await postJSON(AwsLogin.codePath, body: request)
     }
 
+    // MARK: team (spec §9 step 8) — `/mirror/team/*`, token-gated like everything else
+
+    private func teamGet<R: Decodable>(_ path: String) async throws -> R {
+        let token = pairToken()
+        let data: Data
+        if let stored = try await fetchFromStored(path: path, token: token, timeout: Self.candidateTimeout) {
+            data = stored
+        } else {
+            startBrowsing()
+            guard let discovered = await firstEndpoint() else { throw MirrorTransportError.timedOut }
+            (data, _) = try await fetch(discovered, path: path, hostHeader: "infinitus",
+                                        useTLS: false, token: token, timeout: Self.candidateTimeout)
+        }
+        return try JSONDecoder().decode(R.self, from: data)
+    }
+
+    func teamAggregates() async throws -> [String: TeamDocs.Aggregates] { try await teamGet(TeamMirror.aggregatesPath) }
+    func teamMember(kid: String, period: Stats.Period) async throws -> TeamMirror.MemberReply {
+        try await teamGet(TeamMirror.memberPath + "?" + TeamMirror.memberQuery(kid: kid, period: period))
+    }
+    func teamTranscript(kid: String, session: String) async throws -> [SessionFeedItem] {
+        try await teamGet(TeamMirror.transcriptPath + "?" + TeamMirror.transcriptQuery(kid: kid, session: session))
+    }
+    func teamApprove(kid: String) async throws -> TeamMirror.ActionReply { try await postJSON(TeamMirror.approvePath, body: TeamMirror.KidRequest(kid: kid)) }
+    func teamDecline(kid: String) async throws -> TeamMirror.ActionReply { try await postJSON(TeamMirror.declinePath, body: TeamMirror.KidRequest(kid: kid)) }
+    func teamJoin(code: String, name: String) async throws -> TeamMirror.ActionReply {
+        try await postJSON(TeamMirror.joinPath, body: TeamMirror.JoinRequest(code: code, name: name), timeout: 60)
+    }
+    func teamCode(days: Int, invite: Bool) async throws -> TeamMirror.ActionReply {
+        try await postJSON(TeamMirror.codePath, body: TeamMirror.CodeRequest(days: days, invite: invite), timeout: 60)
+    }
+
     private func postJSON<B: Encodable, R: Decodable>(_ path: String, body: B,
                                                       timeout: TimeInterval = NetworkFleetMirror.inputTimeout) async throws -> R {
         let token = pairToken()
