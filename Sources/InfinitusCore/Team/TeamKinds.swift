@@ -11,6 +11,10 @@ public enum TeamKinds {
     public static let transcripts = "transcripts"
     public static let crashes = "crashes"
     public static let aggregates = "aggregates"
+    /// `m/<kid>/fleet.json` (#221). Not in `memberKinds` until the
+    /// publisher writes it: that list is the share picker and the
+    /// "shares …" sentence, and must not advertise what nothing sends.
+    public static let fleet = "fleet"
     /// The kinds a member publishes about itself (§7), in table order.
     public static let memberKinds = [stats, now, sessions, transcripts, crashes]
 
@@ -35,6 +39,8 @@ public enum TeamKinds {
             return (owner, now)
         case 1 where parts[0] == "crashes.json":
             return (owner, crashes)
+        case 1 where parts[0] == "fleet.json":
+            return (owner, fleet)
         case 2 where parts[0] == "days" && parts[1].hasSuffix(".json"):
             return (owner, stats)
         case 2 where parts[0] == "sessions" && parts[1] == "index.json":
