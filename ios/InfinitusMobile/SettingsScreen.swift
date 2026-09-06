@@ -34,6 +34,12 @@ struct SettingsForm: View {
     @State private var paired = false
     /// The other Mac a "Make primary" tap is confirming (#144 phase 1).
     @State private var promoting: MirrorModel.OtherMac?
+    /// The Mac a swipe is asking to forget (critique [P1]: the
+    /// destructive action was the unconfirmed one).
+    @State private var forgetting: MirrorModel.OtherMac?
+    /// The pairing token is a bearer credential for the whole fleet, so
+    /// it is covered until its owner asks to see it.
+    @State private var tokenShown = false
 
     var body: some View {
         Form {
@@ -82,6 +88,17 @@ struct SettingsForm: View {
         } message: { other in
             Text("Make \(other.pairing.name) the primary Mac? Chats, approvals, widgets and Live Activities follow it.")
         }
+        .confirmationDialog("Forget This Mac?",
+                            isPresented: Binding(get: { forgetting != nil },
+                                                 set: { if !$0 { forgetting = nil } }),
+                            presenting: forgetting) { other in
+            Button("Forget \(other.pairing.name)", role: .destructive) {
+                model.forgetOther(id: other.id)
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: { other in
+            Text("This phone stops seeing \(other.pairing.name)'s fleet and sessions. The Mac itself is untouched — scan its QR code again to add it back.")
+        }
     }
 
     /// A token is what a pairing IS — with none, nothing this screen
@@ -115,11 +132,28 @@ struct SettingsForm: View {
             LabeledContent("Status", value: statusText)
             if isPaired, PairScanner.isSupported { scanButton }
             LabeledContent("Pairing token") {
-                TextField("Paste or scan", text: $model.pairToken)
+                HStack(spacing: 8) {
+                    Group {
+                        if tokenShown {
+                            TextField("Paste or scan", text: $model.pairToken)
+                        } else {
+                            SecureField("Paste or scan", text: $model.pairToken)
+                        }
+                    }
                     .multilineTextAlignment(.trailing)
                     .autocorrectionDisabled()
                     .textInputAutocapitalization(.never)
                     .font(.system(.body, design: .monospaced))
+                    Button {
+                        tokenShown.toggle()
+                    } label: {
+                        Image(systemName: tokenShown ? "eye.slash" : "eye")
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.secondary)
+                    .accessibilityLabel(tokenShown ? "Hide the pairing token" : "Show the pairing token")
+                    .accessibilityHint("The token lets this phone read the Mac's fleet.")
+                }
             }
         } header: {
             Text(isPaired ? "Mac connection" : "Pair with a Mac")
@@ -185,9 +219,7 @@ struct SettingsForm: View {
                 }
                 .accessibilityElement(children: .combine)
                 .swipeActions {
-                    Button("Forget", role: .destructive) {
-                        model.forgetOther(id: other.id)
-                    }
+                    Button("Forget", role: .destructive) { forgetting = other }
                 }
                 .contextMenu {
                     Button("Make Primary") { promoting = other }
