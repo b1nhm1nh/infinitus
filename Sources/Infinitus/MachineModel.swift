@@ -44,6 +44,7 @@ final class MachineModel: ObservableObject {
     private var lastSizesAt: Date?
     private var lastSizes: (transcripts: Int, pluginCache: Int, mem: Int) = (0, 0, 0)
     private var pushedWarnings = Set<String>()
+    private var lastPipTarget: String?
     /// Persisted: an app relaunch must not re-announce every long-idle
     /// session (the ship pipeline relaunches several times an evening).
     /// Pids are stable for a session's life; a reused pid is a new
@@ -88,8 +89,8 @@ final class MachineModel: ObservableObject {
         // (SessionProgressModel); read them here, pass the dictionary in.
         let byPid = host?.sessionProgress.byPid ?? [:]
 
-        let (report, fingerprint, tempCount, sizes, parked, rows, pipSpawner) = await Task.detached(priority: .utility) {
-            () -> (MachineReport, Set<String>, Int?, (Int, Int, Int), [String], [ProcessRow], String?) in
+        let (report, fingerprint, tempCount, sizes, parked, rows, pipSpawner, pipTarget) = await Task.detached(priority: .utility) {
+            () -> (MachineReport, Set<String>, Int?, (Int, Int, Int), [String], [ProcessRow], String?, String?) in
             let records = ClaudeSessions.list(claudeDir: claudeDir)
             let sessionPids = Set(records.map { Int($0.pid) })
             let cwds = Array(Set(records.map(\.cwd)))
@@ -140,9 +141,13 @@ final class MachineModel: ObservableObject {
                                        residue: residue, sessions: sessions, warnings: [])
             let parked = Self.readParkedOwners()
             let pipSpawner = HookInventory.spawner(of: "pip install", rows: rows, registrations: hookRegs)
-            return (report, Set(hookRegs.map(\.id)), tempCount, sizes, parked, rows, pipSpawner)
+            let pipTarget = MachineReport.pipInstallTarget(rows: rows)
+            return (report, Set(hookRegs.map(\.id)), tempCount, sizes, parked, rows, pipSpawner, pipTarget)
         }.value
         lastRows = rows
+        // A retrying install runs a minute in every five: remember the last
+        // pip seen so the warning can still name its venv between bursts.
+        if let pipTarget { lastPipTarget = pipTarget }
 
         lastSampledAt = Date()
         // Gate on the ATTEMPT (`countTemp`), not the value: a timed-out
@@ -175,7 +180,8 @@ final class MachineModel: ObservableObject {
 
         var finalReport = report
         finalReport.warnings = MachineReport.warnings(sample: report.sample, hooks: report.hooks, newcomers: newcomers,
-                                                      tempGrowthPerHour: tempGrowth, pipSpawner: pipSpawner)
+                                                      tempGrowthPerHour: tempGrowth, pipSpawner: pipSpawner,
+                                                      pipTarget: lastPipTarget)
         self.report = finalReport
 
         // Every warning currently true gets pushed once; dropping out of

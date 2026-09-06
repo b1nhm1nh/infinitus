@@ -8,6 +8,7 @@ final class MachineHealthTests: XCTestCase {
         XCTAssertEqual(MachineReport.warningKind("semgrep runs 4 commands on every PreToolUse Bash call"), .hooks)
         XCTAssertEqual(MachineReport.warningKind("temp directory holds 12000 entries (pip 9600)"), .temp)
         XCTAssertEqual(MachineReport.warningKind("temp directory listing timed out"), .temp)
+        XCTAssertEqual(MachineReport.warningKind("a hook installing into ~/.claude/security/agent-sdk-venv keeps re-running pip install — 185 new temp dirs per hour; its installs die and get retried"), .hooks)
         XCTAssertEqual(MachineReport.warningKind("swap 95% full"), .other)
     }
 
@@ -65,7 +66,18 @@ final class MachineHealthTests: XCTestCase {
         XCTAssertEqual(growth["pip"], 60); XCTAssertEqual(growth["python"], 20); XCTAssertNil(growth["other"])
         let warnings = MachineReport.warnings(sample: MachineSample(), hooks: [], newcomers: [],
                                               tempGrowthPerHour: growth, pipSpawner: "security-guidance")
-        XCTAssertTrue(warnings.contains("security-guidance's hook keeps re-running pip install — 80 new temp dirs per hour"))
+        XCTAssertTrue(warnings.contains("security-guidance's hook keeps re-running pip install — 80 new temp dirs per hour; its installs die and get retried"))
+        // No hook tree holds the pip (spawned detached): the venv names it.
+        let byTarget = MachineReport.warnings(sample: MachineSample(), hooks: [], newcomers: [],
+                                              tempGrowthPerHour: growth, pipTarget: "~/.claude/security/agent-sdk-venv")
+        XCTAssertTrue(byTarget.contains("a hook installing into ~/.claude/security/agent-sdk-venv keeps re-running pip install — 80 new temp dirs per hour; its installs die and get retried"))
+        let venvRow = ProcessRow(pid: 12, ppid: 1, stat: "S", rssKB: 1, elapsedSeconds: 4, cpu: 0,
+                                 command: "/Users/me/.claude/security/agent-sdk-venv/bin/python -m pip install --quiet claude-agent-sdk")
+        XCTAssertEqual(MachineReport.pipInstallTarget(rows: [venvRow], home: "/Users/me"), "~/.claude/security/agent-sdk-venv")
+        let targetRow = ProcessRow(pid: 13, ppid: 1, stat: "S", rssKB: 1, elapsedSeconds: 4, cpu: 0,
+                                   command: "/usr/bin/python3 -m pip install --target /opt/libs --upgrade sdk")
+        XCTAssertEqual(MachineReport.pipInstallTarget(rows: [targetRow], home: "/Users/me"), "/opt/libs")
+        XCTAssertNil(MachineReport.pipInstallTarget(rows: [], home: "/Users/me"))
         XCTAssertTrue(MachineReport.warnings(sample: MachineSample(), hooks: [], newcomers: [], tempGrowthPerHour: ["pip": 8]).isEmpty)
         let rows = [
             ProcessRow(pid: 10, ppid: 1, stat: "S", rssKB: 1, elapsedSeconds: 5, cpu: 0, command: "python3 /Users/me/.claude/plugins/cache/m/security-guidance/1/hooks/ensure_agent_sdk.py"),
