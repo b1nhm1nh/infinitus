@@ -137,7 +137,9 @@ private func runDiscoverable(name: String?, port: UInt16, paths: TeamPaths, secr
     #if canImport(Glibc)
     let machine = name ?? ProcessInfo.processInfo.hostName
     let local = TeamNearby.Local.load(name: machine, discoverable: true, paths: paths, secrets: secrets)
-    let endpoint = TeamNearby.Endpoint(local: local) { try TeamNearby.Store.save($0, paths: paths, secrets: secrets) }
+    let endpoint = TeamNearby.Endpoint(local: local,
+                                       store: { try TeamNearby.Store.save($0, paths: paths, secrets: secrets) },
+                                       storeInvite: { try TeamNearby.Store.saveInvite($0, paths: paths) })
     let server = PosixHTTPServer { request in
         TeamNearby.respond(request, endpoint: endpoint) ?? MirrorTransport.notFoundResponse()
     }

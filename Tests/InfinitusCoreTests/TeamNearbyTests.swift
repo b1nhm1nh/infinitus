@@ -348,4 +348,57 @@ final class TeamNearbyTests: XCTestCase {
         try Data("junk".utf8).write(to: dir.appendingPathComponent("zzz.json"))
         XCTAssertEqual(TeamNearby.Store.invites(paths: jp).count, TeamNearby.inviteCap)
     }
+
+    func testLeaderInvitesAPeerAndTheOpenedLinkJoinsAndAutoApproves() throws {
+        let remote = try makeRemote()
+        let (lp, ls) = machine("leader")
+        let (jp, js) = machine("joiner")
+        let leader = try TeamClient.create(name: "Papaya", remote: remote, token: nil, paths: lp, secrets: ls, now: 1_000)
+        let joiner = try TeamClient.identity(paths: jp, secrets: js)
+        let peerLocal = TeamNearby.Local.load(name: "Bo", discoverable: true, paths: jp, secrets: js)
+        let peerEndpoint = TeamNearby.Endpoint(local: peerLocal, store: { _ in "branch" },
+                                               storeInvite: { try TeamNearby.Store.saveInvite($0, paths: jp) })
+        // An HTTP function that routes into the peer's own `respond` — no sockets.
+        let http: TeamNearby.Client.HTTP = { method, _, _, path, body in
+            let reply = TeamNearby.respond(MirrorTransport.Request(method: method, target: path, headers: [:],
+                                                                   body: body ?? Data()), endpoint: peerEndpoint)
+            let parsed = try XCTUnwrap(reply.flatMap(MirrorTransport.parseResponse))
+            return (parsed.status, parsed.body)
+        }
+        let peer = TeamNearby.Peer(name: "Bo", host: "bo.local", port: 1, kid: joiner.kid,
+                                   team: nil, role: "none", discoverable: true)
+
+        let out = try TeamNearby.Client.invite(to: peer, fromName: "Loc", days: 7,
+                                               paths: lp, secrets: ls, http: http, now: 1_010)
+        XCTAssertEqual(out, TeamNearby.Client.InviteOutcome(team: leader.config.id, teamName: "Papaya",
+                                                            to: joiner.kid, ok: true))
+        let stored = try XCTUnwrap(TeamNearby.Store.invites(paths: jp).first)
+        XCTAssertEqual(stored.from, leader.identity.keys)
+        XCTAssertEqual(stored.fromName, "Loc")
+        XCTAssertEqual(stored.teamName, "Papaya")
+
+        // The nonce is in the leader's own book with the link's expiry.
+        let opened = try TeamNearby.openInvite(stored, identity: joiner, now: 1_011)
+        let nonce = try XCTUnwrap(opened.code.nonce)
+        XCTAssertEqual(TeamInvites.load(teamDir: lp.teamDir(leader.config.id)).nonces[nonce], 1_010 + 7 * 86_400)
+
+        // Accepting with the opened text lands a request the leader's
+        // auto-approve recognises (#161's proof).
+        let member = try TeamClient.request(code: opened.text, name: "Bo", devices: ["Linux"], platform: "linux",
+                                            paths: jp, secrets: js, now: 1_012)
+        XCTAssertEqual(member.config.id, leader.config.id)
+        _ = try leader.fetch()
+        let pending = try XCTUnwrap(try leader.requests().first)
+        XCTAssertEqual(TeamInvites.load(teamDir: lp.teamDir(leader.config.id)).matches(pending.doc, now: 1_013), nonce)
+
+        // A peer whose TXT kid is not what /team/key answers: nothing sealed, nothing sent.
+        var liar = peer; liar.kid = TeamIdentity.random().kid
+        XCTAssertThrowsError(try TeamNearby.Client.invite(to: liar, fromName: "Loc", paths: lp, secrets: ls, http: http)) {
+            guard case TeamNearby.Client.ClientError.keyMismatch = $0 else { return XCTFail("\($0)") }
+        }
+        // A machine that leads no team cannot invite (the joiner is a member at best).
+        XCTAssertThrowsError(try TeamNearby.Client.invite(to: peer, fromName: "Bo", paths: jp, secrets: js, http: http)) {
+            XCTAssertEqual($0 as? TeamNearby.Client.ClientError, .notALeader)
+        }
+    }
 }

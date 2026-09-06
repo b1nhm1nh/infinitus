@@ -446,5 +446,45 @@ extension TeamNearby {
             }
             return Outcome(team: team, leader: kid, kid: me.kid, stored: stored)
         }
+
+        public struct InviteOutcome: Equatable, Sendable {
+            public var team: String, teamName: String, to: String, ok: Bool
+        }
+
+        /// The leader's half of §6.4: mint an invite link, seal it to the
+        /// keys `GET /team/key` hands back — checked against the TXT kid
+        /// exactly as `request` does, so a peer that lies about who it is
+        /// never receives a credential — and POST it. Nothing but
+        /// ciphertext crosses the LAN. `team` picks which team when this
+        /// machine leads several; nil takes the first it leads.
+        public static func invite(to peer: Peer, fromName: String, days: Int = 7, team: String? = nil,
+                                  paths: TeamPaths, secrets: TeamSecrets, http: HTTP,
+                                  now: Int = Int(Date().timeIntervalSince1970)) throws -> InviteOutcome {
+            guard peer.discoverable, let peerKid = peer.kid else { throw ClientError.notALeader }
+            var mine: TeamClient?
+            for id in team.map({ [$0] }) ?? paths.teamIDs() {
+                guard let candidate = try? TeamClient.open(id: id, paths: paths, secrets: secrets),
+                      candidate.isLeader else { continue }
+                mine = candidate
+                break
+            }
+            guard let client = mine else { throw ClientError.notALeader }
+            let (keyStatus, keyBody) = try http("GET", peer.host, peer.port, keyPath, nil)
+            guard keyStatus == 200,
+                  let reply = try? CanonicalJSON.decode(KeyReply.self, from: keyBody),
+                  reply.keys.kid == peerKid else { throw ClientError.keyMismatch(keyStatus) }
+            let link = try TeamInvites.mint(client: client, teamDir: paths.teamDir(client.config.id),
+                                            days: days, now: now)
+            let sealed = try Envelope.seal(Data(link.utf8), kind: "invite", from: client.identity,
+                                           to: [reply.keys], at: now)
+            let body = try CanonicalJSON.encode(Invite(from: client.identity.keys, fromName: fromName,
+                                                       teamName: client.config.name, envelope: sealed))
+            let (status, replyBody) = try http("POST", peer.host, peer.port, invitePath, body)
+            guard status == 200,
+                  let sent = try? CanonicalJSON.decode(InviteReply.self, from: replyBody), sent.ok else {
+                throw ClientError.refused(status)
+            }
+            return InviteOutcome(team: client.config.id, teamName: client.config.name, to: peerKid, ok: true)
+        }
     }
 }
