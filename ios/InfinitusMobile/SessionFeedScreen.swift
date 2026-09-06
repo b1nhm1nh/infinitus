@@ -14,6 +14,11 @@ struct SessionFeedScreen: View {
     let session: SessionDetail
     /// `nil` is the primary Mac (#144 phase 2).
     var macId: String? = nil
+    /// The Mac this session lives on — the primary's mirror, or its own
+    /// Mac's (#144 phase 2). Same-body children read it from the
+    /// environment (`.environment(\.sessionMirror, mirror)` below).
+    private var mirror: NetworkFleetMirror { model.mirror(for: macId) }
+    private var outboxKey: String { OutboxDelivery.macKey(for: macId, model: model) }
 
     @State private var feed: SessionFeed?
     @State private var errorText: String?
@@ -99,7 +104,7 @@ struct SessionFeedScreen: View {
     /// The session hit an expired AWS session; the login runs on the
     /// Mac, driven from AwsLoginScreen.
     @ViewBuilder private var awsLoginBar: some View {
-        if let item = model.awsLogin(for: session.pid) {
+        if let item = model.awsLogin(macId: macId, pid: session.pid) {
             Button { awsLoginItem = item } label: {
                 HStack(spacing: 8) {
                     Image(systemName: "key.fill").foregroundStyle(.orange)
@@ -209,6 +214,7 @@ struct SessionFeedScreen: View {
             }
             .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: lastRowVisible)
         }
+        .environment(\.sessionMirror, mirror)
         .sheet(item: $awsLoginItem) { AwsLoginScreen(item: $0) }
         .sheet(item: $reviewTarget) { target in
             NavigationStack { CheckpointDiffScreen(pid: Int32(session.pid), checkpoint: target.checkpoint) }
@@ -222,7 +228,7 @@ struct SessionFeedScreen: View {
             VStack(spacing: 0) {
                 VStack(spacing: 0) {
                     ChatHeaderView(style: headerStyle, theme: theme, data: headerData,
-                                   route: SessionDetailRoute(session: session),
+                                   route: SessionDetailRoute(session: session, macId: macId),
                                    onBack: { dismiss() })
                 }
                 .background(theme.plain ? Color.clear : ThemeColor.flash(theme).opacity(0.16))
@@ -388,15 +394,15 @@ struct SessionFeedScreen: View {
     /// on appear, since the outbox lives on disk and a flush can clear it
     /// from under this screen.
     private func reloadQueued() {
-        queued = OutboxDelivery.outbox.items(macKey: OutboxDelivery.macKey).first { $0.pid == Int32(session.pid) }
+        queued = OutboxDelivery.outbox.items(macKey: outboxKey).first { $0.pid == Int32(session.pid) }
     }
 
     /// The account behind this session: the summary's account and the
     /// fleet that renders it, when there is one.
     private var headerAccount: (account: Account, fleet: MirrorFleetModel)? {
-        guard let summary = model.accountSummary(forSessionPid: session.pid),
+        guard let summary = model.accountSummary(macId: macId, pid: session.pid),
               let account = summary.account,
-              let fleet = model.fleets.first(where: { $0.engineID == summary.engineID }) else { return nil }
+              let fleet = model.fleets(macId: macId).first(where: { $0.engineID == summary.engineID }) else { return nil }
         return (account, fleet)
     }
 
@@ -410,6 +416,7 @@ struct SessionFeedScreen: View {
                                   plan: pair?.account.plan,
                                   chips: pair.map { ChatHeaderData.chips($0.account, theme: model.rowTheme,
                                                                          burnStyle: $0.fleet.burnStyle) } ?? [])
+        data.macName = model.macName(macId)
         // The Fleet card's beats for this account (the fleet's ticks
         // reach here through MirrorModel's objectWillChange relay); the
         // switch celebration only when this account is the one switched to.
@@ -522,7 +529,7 @@ struct SessionFeedScreen: View {
         do {
             if longPoll, let since = feed?.stamp {
                 do {
-                    let fresh = try await NetworkFleetMirror.shared.sessionTail(
+                    let fresh = try await mirror.sessionTail(
                         pid: Int32(session.pid), limit: 30, since: since,
                         wait: MirrorTransport.tailWaitMax)
                     // A poll loop that was replaced (foreground return)
@@ -537,19 +544,19 @@ struct SessionFeedScreen: View {
                     // below walks every route again.
                 }
             }
-            let fresh = try await NetworkFleetMirror.shared.sessionTail(pid: Int32(session.pid), limit: 30)
+            let fresh = try await mirror.sessionTail(pid: Int32(session.pid), limit: 30)
             if Task.isCancelled { return false }
             feed = fresh
             errorText = nil
             return true
         } catch {
             if Task.isCancelled { return false }
-            if feed == nil, let parked = await NetworkFleetMirror.shared.parkedTail(pid: Int32(session.pid)) {
+            if feed == nil, let parked = await mirror.parkedTail(pid: Int32(session.pid)) {
                 feed = parked
                 errorText = "parked — showing the last transcript"
                 return false
             }
-            errorText = feed == nil ? "couldn't reach the Mac: \(error.localizedDescription)"
+            errorText = feed == nil ? "couldn't reach \(model.macName(macId) ?? "the Mac"): \(error.localizedDescription)"
                 : "offline — showing the last feed"
             return false
         }
@@ -927,7 +934,9 @@ struct SessionFeedScreen: View {
     /// A shake elsewhere in the app captured a screen and picked this
     /// session: the capture is waiting on the model.
     private func takeStagedCapture() {
-        guard let staged = model.stagedCapture, staged.pid == session.pid else { return }
+        // The share extension and the shake stage for the primary Mac
+        // only; another Mac's feed sharing the pid must not swallow it.
+        guard macId == nil, let staged = model.stagedCapture, staged.pid == session.pid else { return }
         model.stagedCapture = nil
         stage(staged.image)
     }
@@ -994,7 +1003,7 @@ struct SessionFeedScreen: View {
         continueResult = nil
         Task {
             do {
-                let reply = try await NetworkFleetMirror.shared.sessionInput(
+                let reply = try await mirror.sessionInput(
                     pid: Int32(session.pid), request: .init(kind: .resume, text: ""))
                 continueResult = reply.outcome == "delivered"
                     ? "asked to continue" + (reply.channel == "socket" ? "" : " (typed into the terminal)")
@@ -1074,7 +1083,7 @@ struct SessionFeedScreen: View {
                     return
                 }
                 if (try? OutboxDelivery.outbox.enqueue(
-                        macKey: OutboxDelivery.macKey, pid: Int32(session.pid), sessionId: feed?.sessionId,
+                        macKey: outboxKey, pid: Int32(session.pid), sessionId: feed?.sessionId,
                         sessionName: feed?.name ?? repoName(session.cwd), request: request)) != nil {
                     pendingSent.append(PendingSent(text: text, images: attachments.compactMap(\.thumbnail),
                                                    files: attachments.filter { $0.thumbnail == nil }.map(\.name),
@@ -1099,7 +1108,7 @@ struct SessionFeedScreen: View {
         actionResult = nil
         Task {
             do {
-                let reply = try await NetworkFleetMirror.shared.checkpoints(pid: Int32(session.pid))
+                let reply = try await mirror.checkpoints(pid: Int32(session.pid))
                 guard let last = reply.checkpoints.last else {
                     actionResult = "No checkpoints yet — the plugin checkpoints a git folder at every prompt"
                     return
@@ -1167,8 +1176,8 @@ struct SessionFeedScreen: View {
         var words: [String] = []
         if let name = feed?.name { words.append(name) }
         words.append(repoName(session.cwd))
-        if let branch = model.sessionProgress.byPid[session.pid]?.gitBranch { words.append(branch) }
-        if let modelName = model.sessionProgress.byPid[session.pid]?.model { words.append(modelName) }
+        if let branch = model.progress(macId: macId, pid: session.pid)?.gitBranch { words.append(branch) }
+        if let modelName = model.progress(macId: macId, pid: session.pid)?.model { words.append(modelName) }
         for item in (feed?.items ?? []).suffix(40) {
             if let tool = item.toolName { words.append(tool) }
         }
@@ -1199,7 +1208,7 @@ struct SessionFeedScreen: View {
     private func send(_ request: SessionInput.Request, onReply: @escaping (SessionInput.Reply) -> Void,
                       onFailure: @escaping (Error) -> Void, finished: @escaping () -> Void) async {
         do {
-            let reply = try await NetworkFleetMirror.shared.sessionInput(pid: Int32(session.pid),
+            let reply = try await mirror.sessionInput(pid: Int32(session.pid),
                                                                          request: request)
             onReply(reply)
         } catch {
