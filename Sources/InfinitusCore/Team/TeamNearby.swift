@@ -74,8 +74,9 @@ public enum TeamNearby {
 
         public var id: String { from.kid }
         /// When the sender sealed it — read from the signed envelope
-        /// header rather than a field of its own, so nobody can backdate
-        /// an invitation without breaking the signature.
+        /// header rather than a field of its own, so a THIRD PARTY can't
+        /// backdate an invitation without breaking the signature. The
+        /// sender itself may still set any `at` it likes.
         public var at: Int { (try? Envelope.header(of: envelope).at) ?? 0 }
 
         public init(from: TeamKeys, fromName: String, teamName: String, envelope: Data) {
@@ -236,6 +237,7 @@ public enum TeamNearby {
     /// body carries.
     private static func sealedBySender(_ invite: Invite) -> Bool {
         guard let header = try? Envelope.header(of: invite.envelope),
+              header.v == Envelope.version,
               let split = invite.envelope.firstIndex(of: UInt8(ascii: "\n")),
               let sig = header.sig.flatMap({ Data(base64Encoded: $0) }) else { return false }
         var unsignedHeader = header
@@ -251,6 +253,10 @@ public enum TeamNearby {
         case unknownTeam, badKid, full
         /// `removeInvite` on an invitation that is already gone.
         case noInvite
+        /// `openInvite`: the sealed code names a different leader or team
+        /// than the `Invite` body claims (spec §10) — the display strings
+        /// are attacker-chosen and prove nothing on their own.
+        case mismatchedInvite
     }
 
     public enum Store {
@@ -310,9 +316,20 @@ public enum TeamNearby {
             paths.base.appendingPathComponent("invites")
         }
 
+        /// An invitation nobody has come back for in this long is dead
+        /// weight: it can only fail `TeamCode.decode`'s expiry check by
+        /// then (invite links top out at spec §6.2's week-scale expiry),
+        /// so `invites` drops it rather than keep showing it.
+        static let maxInviteAge = 30 * 86_400
+
         /// `<base>/invites/<from kid>.json`, the invitation exactly as it
         /// arrived — the envelope stays SEALED here. One file per sender,
-        /// so a peer can refresh its own invitation but not flood.
+        /// so a peer can refresh its own invitation but not flood. At the
+        /// cap, a NEW sender evicts the oldest invitation (by its signed
+        /// `at`) rather than being refused — the cap protects disk, not a
+        /// queue position, so a stranger filling every slot with fresh
+        /// identities can no longer lock a genuine leader's invite out
+        /// permanently.
         public static func saveInvite(_ invite: Invite, paths: TeamPaths) throws {
             let kid = invite.from.kid
             guard isPathSegment(kid) else { throw StoreError.badKid }
@@ -321,14 +338,22 @@ public enum TeamNearby {
             let file = dir.appendingPathComponent("\(kid).json")
             let existing = ((try? FileManager.default.contentsOfDirectory(atPath: dir.path)) ?? [])
                 .filter { $0.hasSuffix(".json") }
-            guard existing.count < TeamNearby.inviteCap || FileManager.default.fileExists(atPath: file.path) else {
-                throw StoreError.full
+            if existing.count >= TeamNearby.inviteCap, !FileManager.default.fileExists(atPath: file.path) {
+                let oldest = existing.compactMap { name -> (name: String, at: Int)? in
+                    guard let data = try? Data(contentsOf: dir.appendingPathComponent(name)),
+                          let there = try? CanonicalJSON.decode(Invite.self, from: data) else { return nil }
+                    return (name, there.at)
+                }.min { $0.at < $1.at }
+                if let oldest { try? FileManager.default.removeItem(at: dir.appendingPathComponent(oldest.name)) }
             }
             try CanonicalJSON.encode(invite).write(to: file)
         }
 
-        /// Unreadable or misnamed files are skipped, like `pending`.
-        public static func invites(paths: TeamPaths) -> [Invite] {
+        /// Unreadable or misnamed files are skipped, like `pending`; one
+        /// older than `maxInviteAge` is deleted here too, so an
+        /// invitation nobody acted on eventually frees its slot instead
+        /// of sitting on the shelf forever.
+        public static func invites(paths: TeamPaths, now: Int = Int(Date().timeIntervalSince1970)) -> [Invite] {
             let dir = invitesDir(paths: paths)
             let names = ((try? FileManager.default.contentsOfDirectory(atPath: dir.path)) ?? []).sorted()
             return names.compactMap { name in
@@ -336,6 +361,10 @@ public enum TeamNearby {
                       let data = try? Data(contentsOf: dir.appendingPathComponent(name)),
                       let invite = try? CanonicalJSON.decode(Invite.self, from: data),
                       name == "\(invite.from.kid).json" else { return nil }
+                guard now - invite.at < maxInviteAge else {
+                    try? FileManager.default.removeItem(at: dir.appendingPathComponent(name))
+                    return nil
+                }
                 return invite
             }
         }
@@ -371,16 +400,25 @@ public enum TeamNearby {
     /// sender key is pinned to the `from` the body carried, so a stranger
     /// cannot pass its own envelope off as the leader's; `TeamCode.decode`
     /// then checks the leader's signature over the code and its expiry,
-    /// which is what makes an opened invitation safe to join with. The
-    /// TEXT comes back as sealed — the caller hands that to
-    /// `TeamClient.request(code:…)` rather than re-encoding the code,
-    /// which would need the leader's key to sign.
+    /// which is what makes an opened invitation safe to join with. Neither
+    /// of those checks binds the code to `invite.fromName`/`teamName`
+    /// though — those are attacker-chosen display strings — so the
+    /// decoded code's OWN leader and team are pinned here too: without
+    /// this, a LAN stranger could mint a genuine code for their own team,
+    /// seal it to a victim, and label the body with someone else's name
+    /// ("Loc invites you to Papaya"). The TEXT comes back as sealed — the
+    /// caller hands that to `TeamClient.request(code:…)` rather than
+    /// re-encoding the code, which would need the leader's key to sign.
     public static func openInvite(_ invite: Invite, identity: TeamIdentity,
                                   now: Int = Int(Date().timeIntervalSince1970)) throws -> (text: String, code: TeamCode) {
         let (_, plaintext) = try Envelope.open(invite.envelope, as: identity,
                                                senderKey: { $0 == invite.from.kid ? invite.from : nil })
         let text = String(decoding: plaintext, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
-        return (text, try TeamCode.decode(text, now: now))
+        let code = try TeamCode.decode(text, now: now)
+        guard code.leader.kid == invite.from.kid, code.name == invite.teamName else {
+            throw StoreError.mismatchedInvite
+        }
+        return (text, code)
     }
 }
 
@@ -473,16 +511,26 @@ extension TeamNearby {
             guard keyStatus == 200,
                   let reply = try? CanonicalJSON.decode(KeyReply.self, from: keyBody),
                   reply.keys.kid == peerKid else { throw ClientError.keyMismatch(keyStatus) }
-            let link = try TeamInvites.mint(client: client, teamDir: paths.teamDir(client.config.id),
-                                            days: days, now: now)
-            let sealed = try Envelope.seal(Data(link.utf8), kind: "invite", from: client.identity,
-                                           to: [reply.keys], at: now)
-            let body = try CanonicalJSON.encode(Invite(from: client.identity.keys, fromName: fromName,
-                                                       teamName: client.config.name, envelope: sealed))
-            let (status, replyBody) = try http("POST", peer.host, peer.port, invitePath, body)
-            guard status == 200,
-                  let sent = try? CanonicalJSON.decode(InviteReply.self, from: replyBody), sent.ok else {
-                throw ClientError.refused(status)
+            let teamDir = paths.teamDir(client.config.id)
+            let link = try TeamInvites.mint(client: client, teamDir: teamDir, days: days, now: now)
+            // `mint` already committed the nonce; anything from here on
+            // that fails must drop it again, or a refused/unreachable
+            // peer leaves a dangling nonce nobody will ever redeem.
+            do {
+                let sealed = try Envelope.seal(Data(link.utf8), kind: "invite", from: client.identity,
+                                               to: [reply.keys], at: now)
+                let body = try CanonicalJSON.encode(Invite(from: client.identity.keys, fromName: fromName,
+                                                           teamName: client.config.name, envelope: sealed))
+                let (status, replyBody) = try http("POST", peer.host, peer.port, invitePath, body)
+                guard status == 200,
+                      let sent = try? CanonicalJSON.decode(InviteReply.self, from: replyBody), sent.ok else {
+                    throw ClientError.refused(status)
+                }
+            } catch {
+                if let nonce = try? TeamCode.decode(link, now: now).nonce {
+                    TeamInvites.drop(nonce: nonce, teamDir: teamDir)
+                }
+                throw error
             }
             return InviteOutcome(team: client.config.id, teamName: client.config.name, to: peerKid, ok: true)
         }

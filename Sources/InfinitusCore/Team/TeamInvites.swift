@@ -19,17 +19,32 @@ public struct TeamInvites: Codable, Equatable, Sendable {
     /// so this leader's auto-approve recognises the request it comes back
     /// as. The one path from nonce to link: the Mac pane, the CLI and a
     /// LAN invite (spec §6.4) all come through here, so the book and the
-    /// link can never disagree about the expiry. Expired nonces are
-    /// pruned on the way past — the book is a leader's local file, and
-    /// this is the only thing that writes it.
+    /// link can never disagree about the expiry. `client.code` is asked
+    /// for FIRST — it throws `.notALeader`/`.requestsOff` before touching
+    /// anything — so a leader who can't mint right now doesn't leave a
+    /// nonce nobody will ever redeem. Expired nonces are pruned on the
+    /// way past — the book is a leader's local file, and this is the only
+    /// thing that writes it.
     public static func mint(client: TeamClient, teamDir: URL, days: Int,
                             now: Int = Int(Date().timeIntervalSince1970)) throws -> String {
         let nonce = newNonce()
+        let link = try client.code(expiresIn: days * 86_400, nonce: nonce, now: now)
         var book = load(teamDir: teamDir)
         book.prune(now: now)
         book.add(nonce: nonce, expires: now + days * 86_400)
         try book.save(teamDir: teamDir)
-        return try client.code(expiresIn: days * 86_400, nonce: nonce, now: now)
+        return link
+    }
+
+    /// Undoes a `mint` whose link never made it to the peer (a LAN invite
+    /// refused or unreachable after the nonce was already committed).
+    /// Best-effort: the caller is already propagating the failure that
+    /// prompted this, so an I/O error here is swallowed rather than
+    /// masking it.
+    public static func drop(nonce: String, teamDir: URL) {
+        var book = load(teamDir: teamDir)
+        book.consume(nonce)
+        try? book.save(teamDir: teamDir)
     }
 
     public mutating func add(nonce: String, expires: Int) { nonces[nonce] = expires }

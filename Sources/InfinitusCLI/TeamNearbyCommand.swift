@@ -113,6 +113,7 @@ func runTeamNearby(_ args: [String]) -> Int32? {
                     return fail("no discoverable machine called \(target) answered within \(Int(seconds))s")
                 }
                 let days = Int(options["days"] ?? "7") ?? 7
+                guard days >= 1 else { return fail("--days must be at least 1") }
                 let machine = options["as"] ?? ProcessInfo.processInfo.hostName
                 do {
                     let out = try TeamNearby.Client.invite(to: peer, fromName: machine, days: days,
@@ -120,6 +121,13 @@ func runTeamNearby(_ args: [String]) -> Int32? {
                                                            http: { m, h, p, path, body in try http(m, host: h, port: p, path: path, body: body) })
                     emit(InviteSent(ok: out.ok, team: out.team, teamName: out.teamName, to: out.to))
                 } catch TeamNearby.Client.ClientError.notALeader {
+                    // `.notALeader` also covers the peer-side guard in
+                    // `Client.invite` (not discoverable, or no kid) — but
+                    // `browse` only ever hands back peers with both, so
+                    // this machine leading no team is the reachable cause.
+                    if !peer.discoverable || peer.kid == nil {
+                        return fail("\(peer.name) is no longer discoverable enough to invite")
+                    }
                     return fail("this machine leads no team (\(peer.name) can only be invited by a leader)")
                 } catch TeamNearby.Client.ClientError.keyMismatch(let s) {
                     return fail("\(peer.name) is not answering \(TeamNearby.keyPath) (\(s))")
@@ -158,7 +166,9 @@ func runTeamNearby(_ args: [String]) -> Int32? {
             try TeamNearby.Store.removeInvite(from: kid, paths: paths)
             emit(["ignored": kid])
         case "request":
-            guard let kid = options["nearby"], let name = options["name"] else { return fail(teamNearbyUsage(), code: 2) }
+            guard positional.isEmpty, let kid = options["nearby"], let name = options["name"] else {
+                return fail(teamNearbyUsage(), code: 2)
+            }
             guard let peer = try TeamNearby.Client.browse(seconds: seconds).first(where: { $0.kid == kid && $0.discoverable }) else {
                 return fail("no discoverable machine with kid \(kid) answered within \(Int(seconds))s")
             }
@@ -176,6 +186,7 @@ func runTeamNearby(_ args: [String]) -> Int32? {
                 return fail("\(peer.name) refused the request (\(s))")
             }
         case "--discoverable":
+            guard positional.isEmpty else { return fail(teamNearbyUsage(), code: 2) }
             return runDiscoverable(name: options["name"], port: UInt16(options["port"] ?? "0") ?? 0,
                                    paths: paths, secrets: secrets)
         default:

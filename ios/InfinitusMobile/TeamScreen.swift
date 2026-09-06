@@ -323,7 +323,7 @@ struct TeamScreen: View {
                     Text(peer.name).bold()
                     Text("\(peer.role) · \(peer.team == snap.id ? "in this team" : "not in this team")")
                         .font(.caption).foregroundStyle(.secondary)
-                    if peer.team != snap.id {
+                    if peer.team == nil {
                         Button("Invite") {
                             Task {
                                 _ = await act("Inviting \(peer.name)…") {

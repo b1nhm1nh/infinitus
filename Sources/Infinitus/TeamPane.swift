@@ -207,7 +207,7 @@ struct TeamPane: View {
                                     .font(.caption).foregroundStyle(.secondary)
                             }
                             Spacer()
-                            if peer.team != snap.id {
+                            if peer.team == nil {
                                 Button("Invite") { Task { await team.inviteNearby(peer) } }.disabled(!gateOpen)
                             }
                         }
