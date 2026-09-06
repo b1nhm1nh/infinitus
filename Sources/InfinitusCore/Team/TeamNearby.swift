@@ -251,19 +251,24 @@ extension TeamNearby {
     /// `respond`, and the pane runs on its own queue.
     public enum Client {
         public typealias HTTP = @Sendable (_ method: String, _ host: String, _ port: UInt16, _ path: String, _ body: Data?) throws -> (Int, Data)
-        public enum ClientError: Error, Equatable { case notALeader, keyMismatch(Int), refused(Int) }
+        public enum ClientError: Error, Equatable { case notALeader, keyMismatch(Int), refused(Int), unavailable }
         public struct Outcome: Equatable, Sendable {
             public var team: String, leader: String, kid: String, stored: String
         }
 
         public static func browse(seconds: TimeInterval) throws -> [Peer] {
-            try MDNS.browse(seconds: seconds).map { peer in
+            #if os(macOS) || os(Linux)
+            return try MDNS.browse(seconds: seconds).map { peer in
                 let record = NearbyRecord(txtStrings: peer.txt) ?? .hidden
                 let host = peer.ipv4 ?? String(peer.host.dropLast(peer.host.hasSuffix(".") ? 1 : 0))
                 return Peer(name: record.discoverable ? record.name : peer.instance, host: host, port: peer.port,
                             kid: record.discoverable ? record.kid : nil, team: record.discoverable ? record.team : nil,
                             role: record.role, discoverable: record.discoverable)
             }
+            #else
+            // MDNS's sockets are macOS + Linux only (like TeamGit's Process).
+            throw ClientError.unavailable
+            #endif
         }
 
         public static func request(to peer: Peer, name: String, devices: [String], platform: String,

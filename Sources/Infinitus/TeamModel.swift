@@ -121,6 +121,14 @@ final class TeamModel: ObservableObject {
     /// than assuming the whole message is a bare URL.
     private nonisolated static func mask(_ error: Error) -> String {
         if (error as? TeamIdentityExport.ExportError) == .badPassphrase { return "wrong passphrase" }
+        if let nearby = error as? TeamNearby.Client.ClientError {
+            switch nearby {
+            case .notALeader: return "that machine leads no team"
+            case .keyMismatch(let s): return "the leader is not answering \(TeamNearby.keyPath) (\(s))"
+            case .refused(let s): return "the leader refused the request (\(s))"
+            case .unavailable: return "nearby discovery is not built for this platform yet"
+            }
+        }
         let message = "\(error)"
         // The userinfo itself may contain "/" (a base64-ish token), so
         // only "@", whitespace and quotes end the match — erring toward
@@ -211,7 +219,8 @@ final class TeamModel: ObservableObject {
                         // Don't let an aggregates-only failure erase the
                         // publish that just succeeded; retry next tick
                         // since `aggregated` stays false.
-                        do { try Self.publishAggregates(client); aggregated = true } catch {}
+                        do { try Self.publishAggregates(client); aggregated = true }
+                        catch { Lifecycle.log.error("aggregates publish: \(Self.mask(error), privacy: .public)") }
                     }
                 }
                 return (fetched, published, report, aggregated)
