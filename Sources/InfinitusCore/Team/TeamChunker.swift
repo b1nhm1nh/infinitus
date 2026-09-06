@@ -28,7 +28,9 @@ public enum TeamChunker {
         var start = complete.startIndex
         while start < complete.endIndex {
             let end = complete[start...].firstIndex(of: newline) ?? complete.endIndex
-            var line = Data(redact(String(decoding: complete[start..<end], as: UTF8.self)).utf8)
+            // The redactor's regex passes hand back autoreleased strings
+            // sized like the line, several per line: drain per line.
+            var line = drainingPool { Data(redact(String(decoding: complete[start..<end], as: UTF8.self)).utf8) }
             line.append(newline)
             if !current.isEmpty, current.count + line.count > maxBytes {
                 chunks.append(current)

@@ -243,20 +243,22 @@ public struct TeamPublisher {
                   try CanonicalJSON.encode(TeamDocs.Crashes(crashes: sources.crashes.map(\.summary))))
 
         for source in collected.transcripts {
-            var cursor = state.transcripts[source.key] ?? TeamPublishState.Cursor()
-            let (chunks, offset) = try TeamChunker.chunks(of: source.url, from: cursor.offset, redact: redact)
-            for chunk in chunks {
-                cursor.seq += 1
-                let path = source.chunkPath(seq: cursor.seq)
-                try writeCopy(path, chunk)
-                items.append(TeamClient.PublishItem(kind: TeamKinds.transcripts, path: path, plaintext: chunk,
-                                                    audience: shares.target(for: TeamKinds.transcripts)))
-                report.transcriptChunks += 1
-                pendingBytes += chunk.count
+            try drainingPool {
+                var cursor = state.transcripts[source.key] ?? TeamPublishState.Cursor()
+                let (chunks, offset) = try TeamChunker.chunks(of: source.url, from: cursor.offset, redact: redact)
+                for chunk in chunks {
+                    cursor.seq += 1
+                    let path = source.chunkPath(seq: cursor.seq)
+                    try writeCopy(path, chunk)
+                    items.append(TeamClient.PublishItem(kind: TeamKinds.transcripts, path: path, plaintext: chunk,
+                                                        audience: shares.target(for: TeamKinds.transcripts)))
+                    report.transcriptChunks += 1
+                    pendingBytes += chunk.count
+                }
+                cursor.offset = offset
+                state.transcripts[source.key] = cursor
+                if pendingBytes >= sources.batchBytes { try flush() }
             }
-            cursor.offset = offset
-            state.transcripts[source.key] = cursor
-            if pendingBytes >= sources.batchBytes { try flush() }
         }
 
         try flush()
