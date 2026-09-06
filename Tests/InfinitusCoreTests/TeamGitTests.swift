@@ -25,6 +25,21 @@ final class TeamGitTests: XCTestCase {
         return "file://" + bare.path
     }
 
+    /// Raw git, for setting up things the store adapter would refuse.
+    @discardableResult
+    func git(_ args: [String]) throws -> String {
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+        p.arguments = ["git"] + args
+        let out = Pipe()
+        p.standardOutput = out
+        p.standardError = FileHandle.nullDevice
+        try p.run()
+        let data = out.fileHandleForReading.readDataToEndOfFile()
+        p.waitUntilExit()
+        return String(decoding: data, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
     func testPathsMapToBranches() {
         XCTAssertEqual(StorePath.branch(of: "roster/team.json")?.branch, "roster")
         XCTAssertEqual(StorePath.branch(of: "roster/team.json")?.rest, "team.json")
@@ -132,5 +147,117 @@ final class TeamGitTests: XCTestCase {
             done.fulfill()
         }
         wait(for: [done], timeout: 10)
+    }
+
+    /// (a) A rejected push is a race; an unreachable remote is not. They
+    /// used to be the same error, so `approve` retried a dead network
+    /// three times and reported "raceLost" for it.
+    func testOnlyARejectedPushCountsAsALostRace() throws {
+        XCTAssertTrue(TeamGit.isRaceRejection(" ! [rejected]        abc -> roster (fetch first)\n"))
+        XCTAssertTrue(TeamGit.isRaceRejection("Updates were rejected because of a non-fast-forward\n"))
+        XCTAssertFalse(TeamGit.isRaceRejection("fatal: 'origin' does not appear to be a git repository\n"))
+        XCTAssertFalse(TeamGit.isRaceRejection("fatal: could not read Username for 'https://host': terminal prompts disabled\n"))
+
+        let remote = try makeRemote()
+        let g = TeamGit(dir: scratch.appendingPathComponent("gone"), remote: remote, token: nil, author: "k")
+        try g.open()
+        try g.put("m/k/now.json", Data("n".utf8))
+        // The remote disappears under us: a network failure, not a race.
+        try FileManager.default.removeItem(at: scratch.appendingPathComponent("remote.git"))
+        XCTAssertThrowsError(try g.putAll(["m/k/now.json": Data("n2".utf8)], retryOnRace: false)) {
+            guard case TeamGit.GitError.failed(let command, _, let stderr) = $0 else {
+                return XCTFail("expected failed, got \($0)")
+            }
+            XCTAssertTrue(command.hasPrefix("push"))
+            XCTAssertFalse(stderr.isEmpty, "git's own words reach the caller")
+        }
+    }
+
+    /// (b) Whatever git environment we inherited points at ANOTHER
+    /// repository: `init --bare` runs without `--git-dir`, so a stray
+    /// GIT_DIR would silently redirect it. `GIT_CONFIG_NOSYSTEM` is
+    /// deliberately NOT set here (it would drop Apple git's osxkeychain
+    /// credential helper for token-less https remotes).
+    func testTheChildEnvironmentIsScrubbed() {
+        let base = ["GIT_DIR": "/elsewhere/.git", "GIT_WORK_TREE": "/elsewhere",
+                    "GIT_INDEX_FILE": "/elsewhere/index", "GIT_OBJECT_DIRECTORY": "/elsewhere/objects",
+                    "GIT_ALTERNATE_OBJECT_DIRECTORIES": "/elsewhere/alt", "PATH": "/usr/bin"]
+        let env = TeamGit.childEnvironment(base: base, extra: ["GIT_INDEX_FILE": "/ours/index"], token: "t0ken")
+        XCTAssertNil(env["GIT_DIR"])
+        XCTAssertNil(env["GIT_WORK_TREE"])
+        XCTAssertNil(env["GIT_OBJECT_DIRECTORY"])
+        XCTAssertNil(env["GIT_ALTERNATE_OBJECT_DIRECTORIES"])
+        XCTAssertEqual(env["GIT_INDEX_FILE"], "/ours/index", "our own index survives the scrub")
+        XCTAssertNil(env["GIT_CONFIG_NOSYSTEM"], "osxkeychain must survive for token-less https remotes")
+        XCTAssertEqual(env["GIT_TERMINAL_PROMPT"], "0")
+        XCTAssertEqual(env[TeamGit.tokenEnv], "t0ken")
+        XCTAssertEqual(env["PATH"], "/usr/bin")
+        XCTAssertNil(TeamGit.childEnvironment(base: base, extra: [:], token: nil)[TeamGit.tokenEnv])
+    }
+
+    /// (c) A killed git leaves `index.lock` behind and every later write
+    /// refuses to run. A lock a LIVE child holds is young, so only old
+    /// ones go.
+    func testOpenSweepsStaleLocksAndLeavesFreshOnes() throws {
+        let remote = try makeRemote()
+        let dir = scratch.appendingPathComponent("locks")
+        let first = TeamGit(dir: dir, remote: remote, token: nil, author: "k")
+        try first.open()
+        try first.put("m/k/now.json", Data("n".utf8))
+        XCTAssertEqual(first.sweptLocks, [])
+
+        let gitDir = dir.appendingPathComponent("store.git")
+        let stale = gitDir.appendingPathComponent("index.lock")
+        let refLock = gitDir.appendingPathComponent("refs/remotes/origin/m/k.lock")
+        let young = gitDir.appendingPathComponent("config.lock")
+        try FileManager.default.createDirectory(at: refLock.deletingLastPathComponent(), withIntermediateDirectories: true)
+        for url in [stale, refLock, young] { try Data().write(to: url) }
+        for url in [stale, refLock] {
+            try FileManager.default.setAttributes([.modificationDate: Date(timeIntervalSinceNow: -3_600)],
+                                                  ofItemAtPath: url.path)
+        }
+
+        let again = TeamGit(dir: dir, remote: remote, token: nil, author: "k")
+        try again.open()
+        XCTAssertEqual(Set(again.sweptLocks), [stale.path, refLock.path])
+        XCTAssertFalse(FileManager.default.fileExists(atPath: stale.path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: refLock.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: young.path), "a lock a live git may still hold stays")
+        XCTAssertEqual(try again.get("m/k/now.json"), Data("n".utf8))
+    }
+
+    /// (d) The remote may carry anything (a host's initial `main`, a
+    /// stray feature branch); the store reads only the branches §4.2
+    /// defines.
+    func testOnlyTheStoresOwnBranchesAreListed() throws {
+        let remote = try makeRemote()
+        let bare = scratch.appendingPathComponent("remote.git")
+        let g = TeamGit(dir: scratch.appendingPathComponent("filtered"), remote: remote, token: nil, author: "k")
+        try g.open()
+        try g.put("roster/team.json", Data("{}".utf8))
+        try g.put("m/k/now.json", Data("n".utf8))
+        // A branch the layout knows nothing about, pointing at the same tree.
+        try git(["--git-dir", bare.path, "branch", "main", "roster"])
+        try g.sync()
+
+        XCTAssertEqual(try g.list("").map(\.path).sorted(), ["m/k/now.json", "roster/team.json"])
+        XCTAssertEqual(try g.changes(since: nil).0.map(\.path).sorted(), ["m/k/now.json", "roster/team.json"])
+        XCTAssertNil(try g.changes(since: nil).1.heads["main"])
+    }
+
+    /// (e) A cursor's commit can become unreachable (the remote was
+    /// rewritten, the mirror rebuilt, the object gc'd). Re-listing the
+    /// branch is always correct — it is what a nil cursor does.
+    func testAnUnreachableCursorFallsBackToTheFullListing() throws {
+        let remote = try makeRemote()
+        let g = TeamGit(dir: scratch.appendingPathComponent("cursor"), remote: remote, token: nil, author: "k")
+        try g.open()
+        try g.put("roster/team.json", Data("{}".utf8))
+        var bogus = StoreCursor()
+        bogus.heads["roster"] = String(repeating: "0", count: 40)
+        let (entries, cursor) = try g.changes(since: bogus)
+        XCTAssertEqual(entries.map(\.path), ["roster/team.json"])
+        XCTAssertNotEqual(cursor.heads["roster"], bogus.heads["roster"])
+        XCTAssertEqual(try g.changes(since: cursor).0, [], "the fresh cursor works normally")
     }
 }

@@ -39,6 +39,8 @@ public final class TeamGit: TeamStore {
     /// asked git for the branch tip again (1708 files → 1708 extra
     /// subprocesses on the 2026-09-06 first publish).
     private var heads: [String: String?] = [:]
+    /// What the last `open()` cleared, for the log line and the tests.
+    public private(set) var sweptLocks: [String] = []
 
     public init(dir: URL, remote: String, token: String?, author: String) {
         self.dir = dir; self.remote = remote; self.token = token; self.author = author
@@ -55,6 +57,11 @@ public final class TeamGit: TeamStore {
             _ = try run(["remote", "add", "origin", remote])
         }
         opened = true
+        sweptLocks = Self.sweepLocks(in: gitDir)
+        if !sweptLocks.isEmpty {
+            // stderr, not `os.Logger`: InfinitusCore builds on Linux too.
+            FileHandle.standardError.write(Data("infinitus: cleared stale git locks: \(sweptLocks.joined(separator: ", "))\n".utf8))
+        }
         if fresh { try sync() }
     }
 
@@ -97,7 +104,14 @@ public final class TeamGit: TeamStore {
         for (branch, items) in byBranch {
             do {
                 try commitAndPush(branch: branch, items: items)
-            } catch GitError.failed(let command, _, _) where command.hasPrefix("push") {
+            } catch GitError.failed(let command, let status, let stderr) where command.hasPrefix("push") {
+                // Not every failed push is a lost race: no network, DNS,
+                // a 403, a remote that no longer exists all failed here
+                // too, and retrying them three times reported the wrong
+                // thing to the user (#55).
+                guard Self.isRaceRejection(stderr) else {
+                    throw GitError.failed(command: command, status: status, stderr: stderr)
+                }
                 // Someone else (another device of ours) pushed first: rebuild on the new tip.
                 guard retryOnRace else { throw GitError.raceLost }
                 try sync()
@@ -136,9 +150,16 @@ public final class TeamGit: TeamStore {
             cursor.heads[branch] = head
             if let old = since?.heads[branch] {
                 if old == head { continue }
-                let text = String(decoding: try run(["diff-tree", "-r", "--name-only", "--diff-filter=AM", old, head]), as: UTF8.self)
-                let changed = Set(text.split(separator: "\n").map(String.init))
-                out += try tree(commit: head, branch: branch).filter { changed.contains(String($0.path.dropFirst(branch.count + 1))) }
+                // The cursor's commit can be unreachable: the remote was
+                // rewritten, the mirror rebuilt, the object gc'd. Listing
+                // the whole branch is always correct — it is exactly what
+                // a nil cursor does — so fall back instead of throwing.
+                if let raw = try? run(["diff-tree", "-r", "--name-only", "--diff-filter=AM", old, head]) {
+                    let changed = Set(String(decoding: raw, as: UTF8.self).split(separator: "\n").map(String.init))
+                    out += try tree(commit: head, branch: branch).filter { changed.contains(String($0.path.dropFirst(branch.count + 1))) }
+                } else {
+                    out += try tree(commit: head, branch: branch)
+                }
             } else {
                 out += try tree(commit: head, branch: branch)
             }
@@ -148,9 +169,16 @@ public final class TeamGit: TeamStore {
 
     // MARK: plumbing
 
+    /// Only the branches the layout defines (spec §4.2): `roster`,
+    /// `requests`, `m/<kid>`. A remote may carry anything else — a host's
+    /// "initialise with a README" `main`, someone's feature branch,
+    /// `origin/HEAD` — and listing those would hand `list`/`changes`
+    /// blobs the store never promised. `requireEmptyRemote` deliberately
+    /// does NOT go through here: for "is this repo empty?" every ref counts.
     private func branches() throws -> [String] {
         let text = String(decoding: try run(["for-each-ref", "--format=%(refname:short)", "refs/remotes/origin/"]), as: UTF8.self)
         return text.split(separator: "\n").map { String($0.dropFirst("origin/".count)) }
+            .filter { $0 == "roster" || $0 == "requests" || $0.hasPrefix("m/") }
     }
 
     private func head(of branch: String) throws -> String? {
@@ -215,6 +243,65 @@ public final class TeamGit: TeamStore {
         try drainingPool { try runOnce(args, stdin: stdin, env: extra, useGitDir: useGitDir) }
     }
 
+    /// git's own words for "you are not on the tip". A server-side hook
+    /// refusal ("[remote rejected]") matches too and costs one wasted
+    /// retry — better than treating a real race as a hard failure.
+    static func isRaceRejection(_ stderr: String) -> Bool {
+        let text = stderr.lowercased()
+        return text.contains("non-fast-forward") || text.contains("fetch first") || text.contains("rejected")
+    }
+
+    /// Variables that would point git at ANOTHER repository. `init
+    /// --bare <path>` runs without `--git-dir`, so an inherited GIT_DIR
+    /// (a git hook, a CI step, an exported shell variable) silently
+    /// redirects it (#55).
+    static let scrubbedEnv = ["GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE",
+                              "GIT_OBJECT_DIRECTORY", "GIT_ALTERNATE_OBJECT_DIRECTORIES"]
+
+    /// The child's environment: the parent's, minus anything that
+    /// redirects git, plus ours. `GIT_TERMINAL_PROMPT=0` keeps a
+    /// credential prompt from hanging a background publish.
+    /// `GIT_CONFIG_NOSYSTEM` is deliberately NOT set — it would drop
+    /// Apple git's osxkeychain credential helper for token-less https
+    /// remotes. `extra` (the private `GIT_INDEX_FILE`) is applied last,
+    /// so it survives.
+    static func childEnvironment(base: [String: String], extra: [String: String], token: String?) -> [String: String] {
+        var env = base
+        for key in scrubbedEnv { env.removeValue(forKey: key) }
+        env["GIT_TERMINAL_PROMPT"] = "0"
+        if let token { env[Self.tokenEnv] = token }
+        for (k, v) in extra { env[k] = v }
+        return env
+    }
+
+    /// Stale `*.lock` files a killed git left behind (`index.lock`, a
+    /// ref's `.lock`): git refuses to write while one exists, so a crash
+    /// or a hard quit mid-push would wedge every later publish. Only
+    /// files older than `age` go — a lock a live child holds is younger.
+    /// Top level plus `refs/` only: `objects/` is thousands of files on
+    /// a real store and its locks are not ours to clear.
+    static func sweepLocks(in gitDir: URL, olderThan age: TimeInterval = 600, now: Date = Date()) -> [String] {
+        let fm = FileManager.default
+        var found: [URL] = []
+        for name in (try? fm.contentsOfDirectory(atPath: gitDir.path)) ?? [] where name.hasSuffix(".lock") {
+            found.append(gitDir.appendingPathComponent(name))
+        }
+        let refs = gitDir.appendingPathComponent("refs")
+        for sub in (try? fm.subpathsOfDirectory(atPath: refs.path)) ?? [] where sub.hasSuffix(".lock") {
+            found.append(refs.appendingPathComponent(sub))
+        }
+        var swept: [String] = []
+        for url in found {
+            guard let attrs = try? fm.attributesOfItem(atPath: url.path),
+                  (attrs[.type] as? FileAttributeType) == .typeRegular,
+                  let modified = attrs[.modificationDate] as? Date,
+                  now.timeIntervalSince(modified) > age else { continue }
+            guard (try? fm.removeItem(at: url)) != nil else { continue }
+            swept.append(url.path)
+        }
+        return swept
+    }
+
     /// The stderr reader's landing pad; `drain` joins the group before
     /// anyone reads it, so there is nothing to synchronise past that.
     private final class Buffer: @unchecked Sendable { var data = Data() }
@@ -249,11 +336,7 @@ public final class TeamGit: TeamStore {
         }
         argv += args
         p.arguments = argv
-        var env = ProcessInfo.processInfo.environment
-        env["GIT_TERMINAL_PROMPT"] = "0"
-        if let token { env[Self.tokenEnv] = token }
-        for (k, v) in extra { env[k] = v }
-        p.environment = env
+        p.environment = Self.childEnvironment(base: ProcessInfo.processInfo.environment, extra: extra, token: token)
         let out = Pipe(), err = Pipe()
         p.standardOutput = out; p.standardError = err
         if let stdin {
