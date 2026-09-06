@@ -42,9 +42,13 @@ public final class ParkedCache: @unchecked Sendable {
     }
 
     public func loadSnapshot() -> MirrorSnapshot? {
+        // Read under the lock too: a `clear()` between the read and the
+        // marker update would leave the marker claiming a file that is
+        // gone, and the next save of that same snapshot would be skipped.
+        lock.lock(); defer { lock.unlock() }
         guard let data = try? Data(contentsOf: snapshotURL),
               let snapshot = try? Self.decoder().decode(MirrorSnapshot.self, from: data) else { return nil }
-        lock.lock(); lastSavedCapturedAt = snapshot.capturedAt; lock.unlock()
+        lastSavedCapturedAt = snapshot.capturedAt
         return snapshot
     }
 
