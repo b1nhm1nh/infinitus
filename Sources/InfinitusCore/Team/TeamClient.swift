@@ -49,6 +49,10 @@ public final class TeamClient {
         /// A caller asked to seal to the "Nobody" audience. `TeamPublisher`
         /// skips those kinds before it gets here; this is the backstop.
         case audienceOff
+        /// `leave(rotateIdentity: true)` on a Mac that is in another
+        /// team: the identity is the machine's, and that team's roster
+        /// knows the old kid.
+        case identityInUse
     }
 
     public static let identitySecretName = "identity"
@@ -106,6 +110,9 @@ public final class TeamClient {
         if let token { try secrets.write(tokenName(id), Data(token.utf8)) }
         let store = TeamGit(dir: paths.storeDir(id), remote: remote, token: token, author: me.kid)
         try store.open()
+        // Before anything of ours is written: the roster would otherwise
+        // land on top of a repository somebody else is using.
+        try store.requireEmptyRemote()
         let roster = TeamRoster(id: id, name: name, createdAt: now,
                                 leaders: [TeamRoster.Member(keys: me.keys, name: leaderName, since: now, founder: true)],
                                 rev: 1)
@@ -121,11 +128,33 @@ public final class TeamClient {
                                paths: TeamPaths, secrets: TeamSecrets,
                                now: Int = Int(Date().timeIntervalSince1970)) throws -> TeamClient {
         let code = try TeamCode.decode(text, now: now)
+        // `code.team` is attacker-controlled (any leader key signs any
+        // `team` string into a code) and lands in `paths.teamDir`, which is
+        // a bare path join — no traversal or alias check. `create` only
+        // ever mints a lowercase UUID for this field, so requiring the same
+        // shape here rejects both a `../..` traversal and an alias like
+        // `"secrets"` (== `paths.secretsDir`) before the `defer` below can
+        // turn either into a recursive delete of the wrong directory.
+        guard let uuid = UUID(uuidString: code.team), uuid.uuidString.lowercased() == code.team else {
+            throw ClientError.badCode
+        }
         guard !paths.teamIDs().contains(code.team) else { throw ClientError.alreadyJoined }
         let me = try identity(paths: paths, secrets: secrets)
+        var joined = false
+        // The credential rides to git in memory and reaches the secrets
+        // store only once the first fetch proved the code points at a
+        // store we can actually read (#55: a rejected join used to leave
+        // `team.<id>.token` on disk with no config beside it). Same
+        // cleanup as `create`. AFTER the `alreadyJoined` guard on
+        // purpose: before it, this would delete a team we are already in.
+        defer {
+            if !joined {
+                try? FileManager.default.removeItem(at: paths.teamDir(code.team))
+                secrets.delete(tokenName(code.team))
+            }
+        }
         let config = TeamConfig(id: code.team, name: code.name, remote: code.remote, kid: me.kid,
                                 joinedAt: now, leaderKid: code.leader.kid)
-        if let token = code.token { try secrets.write(tokenName(code.team), Data(token.utf8)) }
         let store = TeamGit(dir: paths.storeDir(code.team), remote: code.remote, token: code.token, author: me.kid)
         try store.open()
         let client = TeamClient(config: config, identity: me, roster: nil, paths: paths, secrets: secrets, store: store)
@@ -133,9 +162,11 @@ public final class TeamClient {
         // points at someone else's store: any roster-acceptance failure on
         // this first fetch is the code's fault, not the store's.
         do { _ = try client.fetch() } catch is TeamRoster.RosterError { throw ClientError.badCode }
+        if let token = code.token { try secrets.write(tokenName(code.team), Data(token.utf8)) }
         let request = TeamRequest(keys: me.keys, name: name, devices: devices, platform: platform, at: now, proof: code.nonce.map { TeamRequest.proof(nonce: $0, kid: me.kid) })
         try store.put("requests/\(me.kid).json", try CanonicalJSON.encode(try Signed.make(request, by: me)))
         try client.persist()
+        joined = true
         return client
     }
 
@@ -216,9 +247,12 @@ public final class TeamClient {
         }
     }
 
-    /// A kid names one file under `requests/`, so it is one path segment.
-    private static func isPathSegment(_ kid: String) -> Bool {
-        !kid.isEmpty && !kid.contains("/") && kid != "." && kid != ".."
+    /// A kid names one file under `requests/`, and a team id names one
+    /// directory under the team base: both are interpolated into paths,
+    /// so `.`, `..`, `/` and `\` are refused. `infinitusctl team --team
+    /// <id>` runs the same guard (#55).
+    public static func isPathSegment(_ id: String) -> Bool {
+        !id.isEmpty && !id.contains("/") && !id.contains("\\") && id != "." && id != ".."
     }
 
     public func approve(kid: String, now: Int = Int(Date().timeIntervalSince1970)) throws {
@@ -280,8 +314,9 @@ public final class TeamClient {
     }
 
     /// Spec §6.5: the kid moves to `removed` with its keys and the
-    /// removal instant; envelopes it sealed before `now` stay readable,
-    /// later ones are ignored, and its next `fetch` ends its membership.
+    /// removal instant; envelopes it sealed at or before `now` stay
+    /// readable, later ones are ignored, and its next `fetch` ends its
+    /// membership.
     public func remove(kid: String, now: Int = Int(Date().timeIntervalSince1970)) throws {
         try editRoster { current in
             guard let keys = current.keys(for: kid) else { throw ClientError.unknownMember }
@@ -354,6 +389,54 @@ public final class TeamClient {
         try publish([PublishItem(kind: kind, path: path, plaintext: plaintext, audience: audience)], now: now)[0]
     }
 
+    /// One item sealed on disk, and where it goes in the store.
+    public struct SealedItem: Equatable {
+        /// Member-relative, exactly as `PublishItem.path`.
+        public var path: String
+        /// The envelope's bytes, already sealed.
+        public var file: URL
+        public init(path: String, file: URL) { self.path = path; self.file = file }
+    }
+
+    /// Seals one item to its audience and writes the envelope to `file`
+    /// instead of returning it: a publish keeps its batch on disk, not in
+    /// the heap (one 2026-09-06 pass held ~1 GB of sealed items and the
+    /// app died). Pair with `publish(sealed:)`.
+    public func seal(_ item: PublishItem, to file: URL, now: Int = Int(Date().timeIntervalSince1970)) throws -> SealedItem {
+        guard let roster = roster?.doc, isMember else { throw ClientError.notInTeam }
+        guard item.audience != .off else { throw ClientError.audienceOff }
+        try TeamKinds.check(kind: item.kind, from: identity.kid, at: "m/\(identity.kid)/\(item.path)")
+        try drainingPool {
+            let sealed = try Envelope.seal(item.plaintext, kind: item.kind, from: identity,
+                                           to: roster.recipients(for: item.audience), at: now)
+            try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try sealed.write(to: file, options: .atomic)
+        }
+        return SealedItem(path: item.path, file: file)
+    }
+
+    /// Pushes envelopes already sealed on disk as ONE commit; git reads
+    /// each file itself. Returns the store paths in item order.
+    @discardableResult
+    public func publish(sealed items: [SealedItem]) throws -> [String] {
+        guard isMember else { throw ClientError.notInTeam }
+        var writes: [String: TeamGit.Blob?] = [:]
+        var paths: [String] = []
+        for item in items {
+            let storePath = "m/\(identity.kid)/\(item.path)"
+            // The kind was checked when the bytes were sealed; the path's
+            // shape and its owner are checked again here, because what is
+            // pushed is whatever is on disk now.
+            guard let expected = TeamKinds.expected(at: storePath), expected.from == identity.kid else {
+                throw TeamKinds.KindError.badPath
+            }
+            writes.updateValue(.file(item.file), forKey: storePath)
+            paths.append(storePath)
+        }
+        if !writes.isEmpty { try store.putAll(blobs: writes) }
+        return paths
+    }
+
     /// Deletes `m/<my kid>/<path>` (spec §7: `now.json` goes on quit).
     public func unpublish(path: String) throws {
         guard isMember else { throw ClientError.notInTeam }
@@ -363,8 +446,14 @@ public final class TeamClient {
     /// Spec §6.5 leave: every file under `m/<my kid>/` is deleted (the
     /// history stays, ciphertext) and `requests/<kid>.leave` tells the
     /// leaders — one push. The caller then forgets the team locally
-    /// (team dir + token secret); the identity stays.
-    public func leave(now: Int = Int(Date().timeIntervalSince1970)) throws {
+    /// (team dir + token secret); the identity stays unless `rotateIdentity`.
+    public func leave(rotateIdentity: Bool = false, now: Int = Int(Date().timeIntervalSince1970)) throws {
+        // Spec §6.5 offers key rotation "so even the member can't reopen
+        // old envelopes" — but the identity belongs to this MACHINE, so
+        // rotating it while another team here knows the old kid would
+        // silently unmake that membership. Checked before anything is
+        // pushed, so a refusal leaves the team untouched.
+        if rotateIdentity, paths.teamIDs().contains(where: { $0 != config.id }) { throw ClientError.identityInUse }
         try store.sync()  // list() reads local refs only; a stale tree leaves another device's files behind
         var writes: [String: Data?] = [:]
         for entry in try store.list("m/") where entry.path.hasPrefix("m/\(identity.kid)/") {
@@ -377,36 +466,58 @@ public final class TeamClient {
         let note = TeamRequest(keys: identity.keys, name: "", devices: [], platform: "leave", at: now)
         writes["requests/\(identity.kid).leave"] = try CanonicalJSON.encode(try Signed.make(note, by: identity))
         try store.putAll(writes)
+        // Only after the branch is cleared and the note is pushed: a new
+        // identity cannot sign as the old kid, so rotating first would
+        // leave files nobody can delete.
+        if rotateIdentity { try secrets.write(Self.identitySecretName, TeamIdentity.random().secret) }
+    }
+
+    /// `readableHeaders` plus how many stored files it could not read a
+    /// header from at all — a truncated or garbled blob. Envelopes that
+    /// parse but are not mine, sit at a path their kind does not match,
+    /// or come from a kid the roster does not know are NOT counted:
+    /// those are policy, not damage.
+    public struct ReadableScan {
+        public var headers: [(entry: StoreEntry, header: Envelope.Header)] = []
+        public var skipped = 0
+        public init() {}
     }
 
     /// Envelopes under `m/` that name me as a reader, sit at a path whose
     /// shape matches their kind and sender, and come from someone who
     /// was in the roster when they were sealed. Reads headers only.
-    public func readableHeaders() throws -> [(entry: StoreEntry, header: Envelope.Header)] {
-        guard let roster = roster?.doc else { return [] }
+    public func readableScan() throws -> ReadableScan {
+        var scan = ReadableScan()
+        guard let roster = roster?.doc else { return scan }
         // Headers are remembered per (path, blob version) so a loop pass
         // reads only files that changed; the roster / kind / recipient
         // checks still run every time, since the roster moves.
         let cacheURL = paths.teamDir(config.id).appendingPathComponent("headers.json")
         var cache = HeaderCache.load(cacheURL)
         var kept: [String: HeaderCache.Entry] = [:]
-        var out: [(entry: StoreEntry, header: Envelope.Header)] = []
         for entry in try store.list("m/") + (try store.list("roster/aggregates/")) {
             let header: Envelope.Header
             if let cached = cache.entries[entry.path], cached.version == entry.version {
                 header = cached.header
             } else {
-                guard let parsed = try drainingPool({ try store.get(entry.path).flatMap { try? Envelope.header(of: $0) } }) else { continue }
+                guard let parsed = try drainingPool({ try store.get(entry.path).flatMap { try? Envelope.header(of: $0) } }) else {
+                    scan.skipped += 1
+                    continue
+                }
                 header = parsed
             }
             kept[entry.path] = HeaderCache.Entry(version: entry.version, header: header)
             guard (try? TeamKinds.check(header, at: entry.path)) != nil,
                   roster.keys(for: header.from, at: header.at) != nil,
                   header.to.contains(where: { $0.kid == identity.kid }) else { continue }
-            out.append((entry, header))
+            scan.headers.append((entry, header))
         }
         if kept != cache.entries { cache.entries = kept; try? cache.save(cacheURL) }
-        return out
+        return scan
+    }
+
+    public func readableHeaders() throws -> [(entry: StoreEntry, header: Envelope.Header)] {
+        try readableScan().headers
     }
 
     /// `<team dir>/headers.json`: envelope headers by store path and blob version.

@@ -58,9 +58,10 @@ public struct TeamRoster: Codable, Equatable, Sendable {
     public struct Removed: Codable, Equatable, Sendable {
         public var kid: String
         public var at: Int
-        /// The keys the member had, kept so envelopes sealed BEFORE `at`
-        /// still verify (spec §3: only what is published after removal is
-        /// rejected). Nil in rosters written before this field existed.
+        /// The keys the member had, kept so envelopes sealed AT OR
+        /// BEFORE `at` still verify (spec §3: only what is published
+        /// after removal is rejected). Nil in rosters written before
+        /// this field existed.
         public var keys: TeamKeys?
         public init(kid: String, at: Int, keys: TeamKeys? = nil) { self.kid = kid; self.at = at; self.keys = keys }
     }
@@ -101,10 +102,14 @@ public struct TeamRoster: Codable, Equatable, Sendable {
     }
 
     /// The keys `kid` had at `at`: a current member's, or a removed
-    /// member's for an envelope sealed before the removal.
+    /// member's for an envelope sealed at or before the removal instant.
+    /// Spec §3 rejects an envelope only when the sender was removed
+    /// AFTER its `at`, and §10 promises only that a removed member
+    /// cannot read what is published after removal — the same boundary,
+    /// read from the other side.
     public func keys(for kid: String, at: Int) -> TeamKeys? {
         if let current = keys(for: kid) { return current }
-        guard let gone = removed.first(where: { $0.kid == kid }), at < gone.at else { return nil }
+        guard let gone = removed.first(where: { $0.kid == kid }), at <= gone.at else { return nil }
         return gone.keys
     }
 

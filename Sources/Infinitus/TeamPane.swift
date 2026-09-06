@@ -388,18 +388,31 @@ struct TeamPane: View {
 
     // MARK: helpers
 
+    /// Spec §7 catch-up: a session bigger than one pass's read slice
+    /// takes several passes. The last report carries what is left; whole
+    /// megabytes, from a published value — nothing here ticks.
+    private var catchUp: String? {
+        let bytes = team.lastReport?.remainingBytes ?? 0
+        guard bytes > 0 else { return nil }
+        return "catching up, \(max(1, Int((Double(bytes) / 1_048_576).rounded()))) MB to go"
+    }
+
     /// The busy label plus how far the publisher is through this Mac's
-    /// transcript sources — "Publishing… pushing 3/12". The background
-    /// loop sets no busy label, so a big publish shows progress alone
-    /// (and never disables the form: `.disabled` stays on `busy`).
+    /// transcript sources — "Publishing… pushing 3/12 · catching up, 640
+    /// MB to go". The background loop sets no busy label, so a big
+    /// publish shows progress alone (and never disables the form:
+    /// `.disabled` stays on `busy`).
     private var statusLine: String? {
         let phase = team.progress.map { "\($0.phase == "push" ? "pushing" : "reading") \($0.done)/\($0.total)" }
+        let line: String?
         switch (team.busy, phase) {
-        case let (busy?, phase?): return "\(busy) \(phase)"
-        case let (busy?, nil): return busy
-        case let (nil, phase?): return "Publishing… \(phase)"
-        case (nil, nil): return nil
+        case let (busy?, phase?): line = "\(busy) \(phase)"
+        case let (busy?, nil): line = busy
+        case let (nil, phase?): line = "Publishing… \(phase)"
+        case (nil, nil): line = nil
         }
+        guard let line else { return nil }
+        return catchUp.map { "\(line) · \($0)" } ?? line
     }
 
     private func kindTitle(_ kind: String) -> String {

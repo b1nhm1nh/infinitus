@@ -25,6 +25,7 @@ func teamUsage() -> String {
       aggregates publish [--period all|<p>]   (leaders) publish the team picture to the whole team
       policy [--requests code|off] [--members-see-each-other on|off]   (leaders) show or set the roster policy
       share <kind> off|leaders|team|<kid>[,<kid>…]  audience for stats|now|sessions|transcripts|crashes ("off" keeps it on this machine; new envelopes — see reshare)
+      leave [--rotate-identity]                    delete my files on the store, tell the leaders, forget the team here (and mint a new identity)
       exclude <project-dir> [--off]                keep a Claude Code project private (local, never sent)
       identity [show]                    this machine's identity kid
       identity recovery --show           the recovery key (base32, 8 groups) — keep it offline
@@ -47,8 +48,12 @@ private func emit<T: Encodable>(_ value: T) {
     if let data = try? enc.encode(value) { print(String(decoding: data, as: UTF8.self)) }
 }
 
+/// Every error path prints through here, so the mask lives here: git's
+/// stderr quotes the remote as configured, credential and all (#55).
+private func masked(_ message: String) -> String { TeamGit.masked(message) }
+
 private func fail(_ message: String, code: Int32 = 1) -> Int32 {
-    FileHandle.standardError.write(Data("error: \(message)\n".utf8))
+    FileHandle.standardError.write(Data("error: \(masked(message))\n".utf8))
     return code
 }
 
@@ -71,7 +76,7 @@ func runTeam(_ args: [String]) -> Int32 {
     }
     var positional: [String] = []
     var options: [String: String] = [:]
-    let bareFlags: Set<String> = ["off", "show", "replace", "recovery"]
+    let bareFlags: Set<String> = ["off", "show", "replace", "recovery", "rotate-identity"]
     var flags: Set<String> = []
     var i = 1
     while i < args.count {
@@ -111,6 +116,10 @@ func runTeam(_ args: [String]) -> Int32 {
         guard let id else {
             throw NSError(domain: "team", code: 1, userInfo: [NSLocalizedDescriptionKey:
                 ids.isEmpty ? "no team on this machine (create or request one)" : "several teams: pass --team <id> (\(ids.joined(separator: ", ")))"])
+        }
+        // `--team` is interpolated into <base>/<id>/config.json.
+        guard TeamClient.isPathSegment(id) else {
+            throw NSError(domain: "team", code: 2, userInfo: [NSLocalizedDescriptionKey: "--team takes a team id (one path segment)"])
         }
         return try TeamClient.open(id: id, paths: paths, secrets: secrets)
     }
@@ -191,10 +200,15 @@ func runTeam(_ args: [String]) -> Int32 {
             emit(["path": stored])
         case "list":
             let c = try client(); _ = try c.fetch()
-            emit(try c.readable().map { entry -> ReadableEntry in
-                let (h, _) = try c.read(entry.path)
-                return ReadableEntry(path: entry.path, size: entry.size, kind: h.kind, from: h.from, at: h.at)
-            })
+            // Headers only: `read` decrypts a whole envelope (a transcript
+            // chunk is a megabyte) to print five fields. A blob whose
+            // header will not parse is counted, not fatal (#55).
+            struct Listing: Encodable { var entries: [ReadableEntry]; var skipped: Int }
+            let scan = try c.readableScan()
+            emit(Listing(entries: scan.headers.map {
+                ReadableEntry(path: $0.entry.path, size: $0.entry.size, kind: $0.header.kind,
+                              from: $0.header.from, at: $0.header.at)
+            }, skipped: scan.skipped))
         case "read":
             guard let path = positional.first else { return fail(teamUsage(), code: 2) }
             let c = try client(); _ = try c.fetch()
@@ -228,6 +242,14 @@ func runTeam(_ args: [String]) -> Int32 {
             shares.byKind[kind] = target
             try shares.save(teamDir: teamDir)
             emit(shares)
+        case "leave":
+            // Spec §6.5: the store side, then forget the team locally
+            // (dir + token). The identity stays unless --rotate-identity.
+            let c = try client()
+            try c.leave(rotateIdentity: flags.contains("rotate-identity"))
+            secrets.delete(TeamClient.tokenName(c.config.id))
+            try? FileManager.default.removeItem(at: paths.teamDir(c.config.id))
+            emit(["left": c.config.id, "kid": try TeamClient.identity(paths: paths, secrets: secrets).kid])
         case "exclude":
             guard let raw = positional.first else { return fail(teamUsage(), code: 2) }
             let project = URL(fileURLWithPath: raw).standardizedFileURL.path
