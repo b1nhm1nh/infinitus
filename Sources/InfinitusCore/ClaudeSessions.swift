@@ -67,7 +67,7 @@ public enum ClaudeSessions {
         guard let handle = OpenProcess(DWORD(PROCESS_QUERY_LIMITED_INFORMATION), false, DWORD(pid)) else { return false }
         defer { CloseHandle(handle) }
         var code: DWORD = 0
-        return GetExitCodeProcess(handle, &code).boolValue && code == 259   // STILL_ACTIVE
+        return GetExitCodeProcess(handle, &code) && code == 259   // STILL_ACTIVE
 #else
         if kill(pid, 0) == 0 { return true }
         return errno == EPERM   // exists, just not ours
