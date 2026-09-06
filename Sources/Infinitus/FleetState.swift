@@ -237,7 +237,7 @@ final class FleetState: ObservableObject, Identifiable {
                     try await engine.rename(fleet: provider, number: number, name)
                 }
                 host.reorderError = nil
-            } catch { host.reorderError = "\(error)" }
+            } catch { host.reorderError = EngineFailure.sentence(error) }
             await host.refreshSnapshot()
         }
     }
@@ -259,7 +259,7 @@ final class FleetState: ObservableObject, Identifiable {
             do {
                 try await engine.rename(fleet: provider, number: number, name)
                 host.reorderError = nil
-            } catch { host.reorderError = "\(error)" }
+            } catch { host.reorderError = EngineFailure.sentence(error) }
             await host.refreshSnapshot()
         }
     }
@@ -275,7 +275,7 @@ final class FleetState: ObservableObject, Identifiable {
             do {
                 try await engine.reorder(fleet: provider, order)
                 host.reorderError = nil
-            } catch { host.reorderError = "\(error)" }
+            } catch { host.reorderError = EngineFailure.sentence(error) }
             await host.refreshSnapshot()
             done?()
         }

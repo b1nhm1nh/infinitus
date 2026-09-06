@@ -222,9 +222,12 @@ struct CLIProxyEnginePane: View {
 
     private func test() {
         let urlString = baseURL.isEmpty ? model.cliproxyBaseURL : baseURL
-        guard let url = URL(string: urlString) else { probe = "bad URL"; return }
+        guard let url = URL(string: urlString) else {
+            probe = "That isn't a valid address \u{2014} it should look like \(CLIProxyEngine.defaultBaseURL.absoluteString)."
+            return
+        }
         let k = key.isEmpty ? (Keychain.read(account: model.cliproxyBaseURL) ?? "") : key
-        guard !k.isEmpty else { probe = "enter the management key first"; return }
+        guard !k.isEmpty else { probe = "Enter the management key first, then test."; return }
         probing = true
         Task {
             let engine = CLIProxyEngine(baseURL: url, managementKey: k)
@@ -233,7 +236,7 @@ struct CLIProxyEnginePane: View {
                 probe = "reachable — \(p.credentialFiles) credential file\(p.credentialFiles == 1 ? "" : "s")"
                     + (p.strategy.map { ", routing \($0)" } ?? "")
             } catch {
-                probe = (error as? EngineError)?.errorDescription ?? "\(error)"
+                probe = EngineFailure.sentence(error)
             }
             probing = false
         }
@@ -312,7 +315,10 @@ struct NineRouterEnginePane: View {
 
     private func test() {
         let urlString = baseURL.isEmpty ? model.nineRouterBaseURL : baseURL
-        guard let url = URL(string: urlString) else { probe = "bad URL"; return }
+        guard let url = URL(string: urlString) else {
+            probe = "That isn't a valid address \u{2014} it should look like \(NineRouterEngine.defaultBaseURL.absoluteString)."
+            return
+        }
         let pw = password.isEmpty
             ? (Keychain.read(account: model.nineRouterBaseURL, service: Keychain.nineRouterService) ?? "")
             : password
@@ -324,7 +330,7 @@ struct NineRouterEnginePane: View {
                 probe = "reachable — \(p.connections) connection\(p.connections == 1 ? "" : "s"), "
                     + "\(p.claudeConnections) Claude"
             } catch {
-                probe = (error as? EngineError)?.errorDescription ?? "\(error)"
+                probe = EngineFailure.sentence(error)
             }
             probing = false
         }

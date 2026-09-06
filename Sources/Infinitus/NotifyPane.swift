@@ -28,7 +28,7 @@ final class NotifyModel: ObservableObject {
             telegramStatus = status.telegramBotToken
             telegramChat = status.telegramChatId
             errorText = nil
-        } catch { errorText = "\(error)" }
+        } catch { errorText = EngineFailure.sentence(error) }
     }
 
     func saveSlack() {
@@ -87,7 +87,7 @@ final class NotifyModel: ObservableObject {
                 cleared()
                 message = done
                 await load()
-            } catch { errorText = "\(error)" }
+            } catch { errorText = EngineFailure.sentence(error) }
         }
     }
 }
