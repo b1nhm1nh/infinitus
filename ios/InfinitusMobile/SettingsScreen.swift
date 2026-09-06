@@ -452,9 +452,12 @@ private struct AboutSettings: View {
     @ObservedObject var model: MirrorModel
     @State private var confirming = false
     @State private var updating = false
-    /// What the Mac reported back on a successful update.
+    /// What the Mac reported back, as a house sentence — the update
+    /// started, nothing to update, or it can't take one from here.
     @State private var outcome: String?
-    /// Set when the call failed; drives the Try Again row.
+    /// Set when the call failed and no reply outcome cleared it; it
+    /// stays set across a retry so the Try Again row keeps its place
+    /// (and its spinner) while the second call runs.
     @State private var failed = false
 
     private var phoneVersion: String {
@@ -487,8 +490,13 @@ private struct AboutSettings: View {
                         } message: {
                             Text("Homebrew upgrades Infinitus on \(snapshot.machineName) and relaunches it.")
                         }
-                    }
-                    if failed {
+                    } else if failed {
+                        // Only when the update row is gone (a snapshot
+                        // refresh nulled `updateVersion`): with the row
+                        // present its own button is the retry, and two
+                        // adjacent controls for one action is one too
+                        // many. No re-confirmation — `failed` is only
+                        // reachable after a confirmed tap.
                         if updating {
                             LabeledContent("Try Again") {
                                 ProgressView()
@@ -513,8 +521,11 @@ private struct AboutSettings: View {
         }
         // A new app version means the update this section reported on
         // is over — a stale success sentence or a stuck Try Again row
-        // would outlive the thing they describe.
-        .onChange(of: model.snapshot?.app?.version) { _, _ in
+        // would outlive the thing they describe. The version going
+        // away is not that: it's the Mac relaunching mid-upgrade, the
+        // moment the "installing" sentence is most wanted.
+        .onChange(of: model.snapshot?.app?.version) { _, new in
+            guard new != nil else { return }
             outcome = nil
             failed = false
         }
@@ -525,7 +536,7 @@ private struct AboutSettings: View {
     /// itself is behind. Empty when there is nothing to say.
     private var footer: String {
         var lines: [String] = []
-        if failed {
+        if failed && !updating {
             lines.append("The Mac didn't take the update. Check that the Status line under Mac connection says it's reachable, then try again.")
         } else if let outcome {
             lines.append(outcome)
@@ -546,7 +557,6 @@ private struct AboutSettings: View {
     private func update() {
         updating = true
         outcome = nil
-        failed = false
         Task {
             let machine = model.snapshot?.machineName ?? "the Mac"
             do {
@@ -557,8 +567,16 @@ private struct AboutSettings: View {
                 switch reply.outcome {
                 case "started":
                     outcome = "\(machine) is installing the update and relaunches when it's done."
+                    failed = false
                 case "upToDate":
                     outcome = "\(machine) is already up to date."
+                    failed = false
+                case "unavailable":
+                    // A build from the repository, or the app already
+                    // quitting — not a reachability problem, and nothing
+                    // a retry would change, so no Try Again.
+                    outcome = "\(machine) can't take an update from here right now. Update it from the Mac instead."
+                    failed = false
                 default:
                     failed = true
                 }
