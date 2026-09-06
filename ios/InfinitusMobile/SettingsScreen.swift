@@ -245,23 +245,20 @@ struct SettingsForm: View {
 
     private var motionSection: some View {
         Section {
-            Picker("Pace fire", selection: $model.localBurnStyle) {
-                Text("Off").tag("off")
-                Text("Ember glow").tag("ember")
-                Text("Flame licks").tag("flame")
-                Text("Limit break").tag("limit")
+            NavigationLink {
+                PaceFireChooser(selection: $model.localBurnStyle, theme: localTheme)
+            } label: {
+                LabeledContent("Pace fire", value: Self.paceFireNames[model.localBurnStyle] ?? "Off")
             }
-            Picker("Content entrance", selection: $model.localIntroStyle) {
-                Text("Slide from top").tag("top")
-                Text("Slide from bottom").tag("bottom")
-                Text("Fade in").tag("fade")
-                Text("Rows slide from right").tag("rows")
+            NavigationLink {
+                ContentEntranceChooser(selection: $model.localIntroStyle)
+            } label: {
+                LabeledContent("Content entrance", value: Self.entranceNames[model.localIntroStyle] ?? "Fade in")
             }
-            Picker("Title flourish", selection: $model.localIntroTitle) {
-                Text("Zoom bounce").tag("zoom")
-                Text("Stamp slam").tag("slam")
-                Text("Spin up").tag("spin")
-                Text("Off").tag("off")
+            NavigationLink {
+                TitleFlourishChooser(selection: $model.localIntroTitle, theme: localTheme)
+            } label: {
+                LabeledContent("Title flourish", value: Self.flourishNames[model.localIntroTitle] ?? "Off")
             }
             LabeledContent("Speed") {
                 HStack(spacing: 8) {
@@ -280,6 +277,15 @@ struct SettingsForm: View {
             Text("Pace fire sets the weekly and model bars alight when an account spends faster than the clock. The intro plays once when the app opens: the content enters, the bars fill, then the title lands.")
         }
     }
+
+    /// The value each Motion row shows — the chooser's own names, so the
+    /// row and the pushed screen never disagree.
+    private static let paceFireNames = ["off": "Off", "ember": "Ember glow",
+                                        "flame": "Flame licks", "limit": "Limit break"]
+    private static let entranceNames = ["top": "Slide from top", "bottom": "Slide from bottom",
+                                        "fade": "Fade in", "rows": "Rows slide from right"]
+    private static let flourishNames = ["zoom": "Zoom bounce", "slam": "Stamp slam",
+                                        "spin": "Spin up", "off": "Off"]
 
     private var chatHeaderSection: some View {
         Section {
