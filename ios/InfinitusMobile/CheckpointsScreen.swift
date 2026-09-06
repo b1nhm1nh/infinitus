@@ -68,7 +68,7 @@ struct CheckpointsScreen: View {
                 ProgressView()
             } else if !loading && checkpoints.isEmpty && error == nil {
                 ContentUnavailableView("No checkpoints", systemImage: "clock.arrow.2.circlepath",
-                                       description: Text("With the Infinitus plugin and Display › “Checkpoint the repository at every prompt” on, each prompt in a git folder lands here."))
+                                       description: Text(reply?.emptyReason ?? ""))
             }
         }
         .confirmationDialog(confirming.map { "Restore \($0.subject)?" } ?? "",
