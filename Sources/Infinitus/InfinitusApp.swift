@@ -305,18 +305,28 @@ struct InfinitusApp: App {
     ]
 }
 
-/// CodexBar-style settings shell: a searchable sidebar of icon-tile rows
-/// on the left, the selected pane on the right. Hand-rolled (no
-/// NavigationSplitView): the split view's List-selection -> detail hop
-/// froze under synthetic clicks in the controller-owned window
-/// (2026-08-30), plain Buttons cannot, and the search field finally gets
-/// breathing room under the titlebar (user: "search box needs top
-/// space").
+/// The settings shell: a searchable, grouped sidebar on the left and
+/// the selected pane on the right. The sidebar is a `List(selection:)`
+/// (arrow keys, type-select, focus ring and accessible rows, all free)
+/// inside our own HStack — NOT a NavigationSplitView, whose
+/// List-selection → detail hop froze under synthetic clicks
+/// (2026-08-30). The plain-Button sidebar that replaced it back then
+/// had none of those affordances and announced every row as "button"
+/// (design critique 2026-09-06, P0); a bare List does not take the
+/// split view's hop and restores them.
 struct SettingsRoot: View {
     let tabs: [SettingsTab]
     @State private var selection: String?
+    /// The pane actually on screen. Usually the selection; a search hit
+    /// selects a ROW and opens the pane that row lives on.
+    @State private var pane: String?
     @State private var query = ""
 
+    private var searching: Bool {
+        !query.trimmingCharacters(in: .whitespaces).isEmpty
+    }
+    /// Title+keyword narrowing, as before. Task 7 swaps it for the
+    /// label index that also matches the settings themselves.
     private var filtered: [SettingsTab] {
         let q = query.trimmingCharacters(in: .whitespaces)
         guard !q.isEmpty else { return tabs }
@@ -326,76 +336,66 @@ struct SettingsRoot: View {
         }
     }
     private var current: SettingsTab? {
-        tabs.first { $0.title == selection } ?? tabs.first
+        tabs.first { $0.title == pane } ?? tabs.first
+    }
+    private var group: SettingsGroup {
+        current.map { SettingsGroup.of($0) } ?? .general
     }
 
     var body: some View {
         HStack(spacing: 0) {
-            sidebar
-                .frame(width: 215)
+            VStack(alignment: .leading, spacing: 0) {
+                searchField
+                    .padding(.top, 14)
+                    .padding(.horizontal, 10)
+                    .padding(.bottom, 10)
+                SettingsSidebar(tabs: filtered, results: [], searching: false,
+                                query: query, selection: $selection)
+            }
+            .frame(width: 215)
             Divider()
             Group {
                 if let tab = current {
                     tab.view
+                        .frame(maxWidth: group.contentWidth)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
             }
         }
         .frame(minWidth: 700, idealWidth: 960, minHeight: 480, idealHeight: 640)
-        .onAppear { if selection == nil { selection = tabs.first?.title } }
+        .background(WindowTitler(title: "Settings", subtitle: current?.title ?? ""))
+        .onAppear {
+            if selection == nil {
+                selection = tabs.first?.title
+                pane = tabs.first?.title
+            }
+        }
+        .onChange(of: selection) { _, new in
+            if let new, tabs.contains(where: { $0.title == new }) { pane = new }
+        }
         // Dev harness: `playctl settings <Title>` lands on a named pane
         // (pane screenshots without synthetic sidebar clicks).
         .onReceive(NotificationCenter.default.publisher(
             for: Notification.Name("infinitus.selectPane"))) { note in
             if let title = note.object as? String,
                tabs.contains(where: { $0.title == title }) {
+                query = ""
                 selection = title
+                pane = title
             }
         }
         .reloadOnInjection()
     }
 
-    private var sidebar: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            searchField
-                .padding(.top, 14)
-                .padding(.horizontal, 10)
-                .padding(.bottom, 10)
-            ScrollView(showsIndicators: false) {
-                VStack(alignment: .leading, spacing: 2) {
-                    ForEach(filtered.filter { $0.provider == nil }, id: \.title) { tab in
-                        generalRow(tab)
-                    }
-                    let providers = filtered.filter { $0.provider != nil }
-                    if !providers.isEmpty {
-                        HStack {
-                            Text("Engines")
-                            Spacer()
-                            Text("\(providers.filter { $0.provider?.live == true }.count) on")
-                        }
-                        .font(.caption).foregroundStyle(.secondary)
-                        .padding(.horizontal, 10)
-                        .padding(.top, 14)
-                        .padding(.bottom, 4)
-                        ForEach(providers, id: \.title) { tab in
-                            providerRow(tab)
-                        }
-                    }
-                }
-                .padding(.horizontal, 8)
-                .padding(.bottom, 8)
-            }
-        }
-    }
-
     private var searchField: some View {
         HStack(spacing: 5) {
             Image(systemName: "magnifyingglass")
-                .font(.system(size: 11))
+                .font(.caption)
                 .foregroundStyle(.secondary)
+                .accessibilityHidden(true)
             TextField("Search settings", text: $query)
                 .textFieldStyle(.plain)
-                .font(.system(size: 12))
+                .font(.callout)
         }
         .padding(.horizontal, 7)
         .padding(.vertical, 5)
@@ -403,63 +403,6 @@ struct SettingsRoot: View {
             .fill(Color.primary.opacity(0.06)))
         .overlay(RoundedRectangle(cornerRadius: 7)
             .strokeBorder(Color.secondary.opacity(0.25)))
-    }
-
-    private func generalRow(_ tab: SettingsTab) -> some View {
-        let selected = current?.title == tab.title
-        return Button { selection = tab.title } label: {
-            HStack(spacing: 8) {
-                if let image = tab.image {
-                    Image(nsImage: image)
-                        .resizable()
-                        .frame(width: 22, height: 22)
-                } else {
-                    Image(systemName: tab.symbol)
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(.white)
-                        .frame(width: 22, height: 22)
-                        .background(RoundedRectangle(cornerRadius: 6)
-                            .fill(tab.tint.gradient))
-                }
-                Text(tab.title)
-                    .foregroundStyle(selected ? .white : .primary)
-                Spacer(minLength: 0)
-            }
-            .padding(.horizontal, 6)
-            .padding(.vertical, 4)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .background(RoundedRectangle(cornerRadius: 6)
-            .fill(selected ? Color.accentColor : .clear))
-    }
-
-    private func providerRow(_ tab: SettingsTab) -> some View {
-        let badge = tab.provider ?? ProviderBadge()
-        let selected = current?.title == tab.title
-        return Button { selection = tab.title } label: {
-            HStack(spacing: 9) {
-                Image(systemName: tab.symbol)
-                    .font(.system(size: 12))
-                    .frame(width: 18)
-                Text(tab.title)
-                Spacer()
-                if badge.live {
-                    Circle().fill(.green)
-                        .frame(width: 7, height: 7)
-                }
-            }
-            .foregroundStyle(selected ? AnyShapeStyle(.white)
-                             : badge.placeholder ? AnyShapeStyle(.tertiary)
-                             : AnyShapeStyle(.primary))
-            .padding(.horizontal, 6)
-            .padding(.vertical, 4)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .disabled(badge.placeholder)
-        .background(RoundedRectangle(cornerRadius: 6)
-            .fill(selected ? Color.accentColor : .clear))
     }
 }
 
