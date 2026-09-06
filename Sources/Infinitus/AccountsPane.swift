@@ -735,7 +735,7 @@ private struct FleetAccountsSection: View {
             if let err = model.reorderError {
                 Text(err).font(.caption).foregroundStyle(.red)
             }
-            if undoNames != nil, model.reorderError == nil {
+            if undoNames != nil {
                 HStack {
                     Text("Names randomized.").foregroundStyle(.secondary)
                     Spacer()

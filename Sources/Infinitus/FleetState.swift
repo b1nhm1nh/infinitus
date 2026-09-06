@@ -225,12 +225,30 @@ final class FleetState: ObservableObject, Identifiable {
         perform { try await engine.remove(fleet: provider, number: number) }
     }
 
-    /// The in-flight rename pass from `randomizeNames`/`restoreNames`, so the
-    /// two never interleave: an Undo pressed while the pass it is reverting
-    /// is still running would otherwise race it — read-modify-write on the
-    /// same store, last write per account wins, no error shown (review
-    /// finding 1). `restoreNames` awaits this before writing.
+    /// The in-flight rename pass from `randomizeNames`/`restoreNames`, so
+    /// the two never interleave: an Undo pressed while the pass it is
+    /// reverting is still running (or a Randomize pressed mid-restore)
+    /// would otherwise race it — read-modify-write on the same store,
+    /// last write per account wins, no error shown. `serialRename`
+    /// awaits this before writing.
     private var renameRun: Task<Void, Never>?
+
+    /// One rename pass, strictly ordered after the previous one. `pairs`
+    /// runs after that wait, so it sees the fleet the pass writes to.
+    private func serialRename(_ pairs: @escaping @MainActor () -> [(Int, String)]) {
+        let engine = engine, provider = provider
+        let priorRun = renameRun
+        renameRun = Task {
+            await priorRun?.value
+            do {
+                for (number, name) in pairs() {
+                    try await engine.rename(fleet: provider, number: number, name)
+                }
+                host.reorderError = nil
+            } catch { host.reorderError = EngineFailure.sentence(error) }
+            await host.refreshSnapshot()
+        }
+    }
 
     /// Every account gets a fresh name from the theme's pool, in one
     /// pass (user 2026-09-04 "randomize account names"). Returns the
@@ -241,18 +259,9 @@ final class FleetState: ObservableObject, Identifiable {
     func randomizeNames() -> [Int: String] {
         let previous = Dictionary(uniqueKeysWithValues:
             accounts.map { ($0.number, $0.alias ?? "") })
-        let engine = engine, provider = provider
         let names = rowTheme.randomAccountNames(count: accounts.count)
         let pairs = Array(zip(accounts.map(\.number), names))
-        renameRun = Task {
-            do {
-                for (number, name) in pairs {
-                    try await engine.rename(fleet: provider, number: number, name)
-                }
-                host.reorderError = nil
-            } catch { host.reorderError = EngineFailure.sentence(error) }
-            await host.refreshSnapshot()
-        }
+        serialRename { pairs }
         return previous
     }
 
@@ -260,24 +269,13 @@ final class FleetState: ObservableObject, Identifiable {
     /// clears the alias, which is exactly what the engine's rename does
     /// with one — so an account that had no name gets none back. Only
     /// numbers still in the fleet are replayed — one that left during the
-    /// 30 s window is skipped rather than aborting the rest of the undo
-    /// (review finding 3). A hand-rename made inside the window is still
-    /// overwritten by this — Undo restores the pre-randomize alias
-    /// unconditionally (review finding 4).
+    /// 30 s window is skipped rather than aborting the rest of the undo.
+    /// A hand-rename made inside the window is still overwritten by this
+    /// — Undo restores the pre-randomize alias unconditionally.
     func restoreNames(_ previous: [Int: String]) {
-        let engine = engine, provider = provider
-        let live = Set(accounts.map(\.number))
-        let pairs = previous.filter { live.contains($0.key) }.sorted { $0.key < $1.key }
-        let priorRun = renameRun
-        renameRun = Task {
-            await priorRun?.value
-            do {
-                for (number, name) in pairs {
-                    try await engine.rename(fleet: provider, number: number, name)
-                }
-                host.reorderError = nil
-            } catch { host.reorderError = EngineFailure.sentence(error) }
-            await host.refreshSnapshot()
+        serialRename { [self] in
+            let live = Set(accounts.map(\.number))
+            return previous.filter { live.contains($0.key) }.sorted { $0.key < $1.key }
         }
     }
 
