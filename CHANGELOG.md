@@ -36,6 +36,7 @@ publishes the matching section as the GitHub release body.
 - `infinitusctl past-sessions` lists every Claude Code session this Mac has run, newest first, and `resume-session <id>` reopens one in its folder.
 
 ### Team (preview)
+- Reading the team store remembers each file's header, so a refresh pass reads only new files and the app's memory stays flat.
 - A publish sends transcripts only from sessions active in the last two days (stats keep 30) and pushes in 200 MB batches, saving its place after each, so a huge history can't stall or crash it.
 - `infinitusctl team create --as <name>` names you as the team's founder instead of "Leader".
 - Settings › Team: create or join a team, approve requests, see every member's latest publish, today's effort and blockers, and open their Stats and transcripts — the Mac fetches and publishes every 5 minutes.

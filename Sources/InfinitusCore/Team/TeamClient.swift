@@ -55,6 +55,8 @@ public final class TeamClient {
     public let identity: TeamIdentity
     public private(set) var roster: Signed<TeamRoster>?
     private let paths: TeamPaths
+    /// Test hook: where the client's own files (state, caches) live.
+    var teamDirForTests: URL { paths.teamDir(config.id) }
     private let secrets: TeamSecrets
     let store: TeamGit
 
@@ -363,15 +365,42 @@ public final class TeamClient {
     /// was in the roster when they were sealed. Reads headers only.
     public func readableHeaders() throws -> [(entry: StoreEntry, header: Envelope.Header)] {
         guard let roster = roster?.doc else { return [] }
+        // Headers are remembered per (path, blob version) so a loop pass
+        // reads only files that changed; the roster / kind / recipient
+        // checks still run every time, since the roster moves.
+        let cacheURL = paths.teamDir(config.id).appendingPathComponent("headers.json")
+        var cache = HeaderCache.load(cacheURL)
+        var kept: [String: HeaderCache.Entry] = [:]
         var out: [(entry: StoreEntry, header: Envelope.Header)] = []
         for entry in try store.list("m/") + (try store.list("roster/aggregates/")) {
-            guard let data = try store.get(entry.path), let header = try? Envelope.header(of: data),
-                  (try? TeamKinds.check(header, at: entry.path)) != nil,
+            let header: Envelope.Header
+            if let cached = cache.entries[entry.path], cached.version == entry.version {
+                header = cached.header
+            } else {
+                guard let data = try store.get(entry.path), let parsed = try? Envelope.header(of: data) else { continue }
+                header = parsed
+            }
+            kept[entry.path] = HeaderCache.Entry(version: entry.version, header: header)
+            guard (try? TeamKinds.check(header, at: entry.path)) != nil,
                   roster.keys(for: header.from, at: header.at) != nil,
                   header.to.contains(where: { $0.kid == identity.kid }) else { continue }
             out.append((entry, header))
         }
+        if kept != cache.entries { cache.entries = kept; try? cache.save(cacheURL) }
         return out
+    }
+
+    /// `<team dir>/headers.json`: envelope headers by store path and blob version.
+    struct HeaderCache: Codable, Equatable {
+        struct Entry: Codable, Equatable { var version: String; var header: Envelope.Header }
+        var entries: [String: Entry] = [:]
+        static func load(_ url: URL) -> HeaderCache {
+            (try? Data(contentsOf: url)).flatMap { try? JSONDecoder().decode(HeaderCache.self, from: $0) } ?? HeaderCache()
+        }
+        func save(_ url: URL) throws {
+            try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try JSONEncoder().encode(self).write(to: url)
+        }
     }
 
     public func readable() throws -> [StoreEntry] { try readableHeaders().map(\.entry) }
