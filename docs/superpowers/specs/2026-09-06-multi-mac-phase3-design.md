@@ -174,30 +174,24 @@ primary's `capturedAt`.
 - `ios/InfinitusMobile/SettingsScreen.swift` — caption + footer only
   (lands before Infi2's settings-phone stream starts).
 - `ios/InfinitusMobile/StartSessionSheet.swift`, `PastSessionsScreen.swift`.
-- `ios/InfinitusMobileTests/` — see Testing.
 - `CHANGELOG.md` (one line under Phone), `README.md` (one line),
   `site/` if it lists the multi-Mac feature.
 
 ## Testing
 
-- `ios/InfinitusMobileTests/ParkedCacheTests.swift`: two
-  `NetworkFleetMirror.parkedCache(key:)` roots for two keys are distinct
-  and both under `parked/`; the primary's `parkedCache` equals
-  `parkedCache(key: parkedKey())`.
-- `ios/InfinitusMobileTests/MirrorPairingTests.swift` (MirrorModel with
-  injected defaults): after `forgetOther(id:)`, that Mac's cache directory
-  is gone and `OutboxDelivery.outbox.items(macKey:)` for its key is empty,
-  while the primary's directory and items are untouched.
-- Simulator build of `InfinitusMobile`; `swift test` for InfinitusCore
-  (unchanged, must stay green).
-- Signed device build gate (`tools`/`gate_tp.sh`) before the PR.
+The phone app has no unit-test target (InfinitusCore's tests cannot see
+`NetworkFleetMirror` or `MirrorModel`), so verification is:
+
+- Simulator build of `InfinitusMobile` after every task; `swift test`
+  for InfinitusCore stays green (nothing in core changes).
+- Signed device build gate (`gate_tp.sh`) before the PR.
 - Manual, two Macs: (1) sleep the other Mac, relaunch the phone app — its
   section still lists its sessions with "parked", a session's feed shows
   the last tail; wake it — the label clears. (2) "+" → pick the other
   Mac → its folders and profiles appear → Start → the chat opens under
   that Mac. (3) Past sessions → toolbar menu → the other Mac → resume →
-  same. (4) Forget the other Mac in Settings → its parked directory and
-  queued items are gone (Files app / a re-pair shows an empty section).
+  same. (4) Forget the other Mac in Settings → re-pair it: its section
+  starts empty (no cached fleets) and no queued items deliver.
 
 ## Decisions
 
