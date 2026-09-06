@@ -637,7 +637,12 @@ final class StatusItemController {
             // readable over white apps.
             w.contentView = GlassContainerView.wrap(host, scrim: true)
             w.contentMinSize = NSSize(width: 700, height: 480)
-            w.title = "Infinitus"
+            // System Settings is not freely widenable, and for the same
+            // reason: a grouped Form self-limits to ~700pt, so every
+            // extra pixel of window became empty grey (design critique
+            // 2026-09-06, P1 — a 700pt column in an 1800pt window).
+            w.contentMaxSize = NSSize(width: 1200, height: CGFloat.greatestFiniteMagnitude)
+            w.title = "Settings"
             w.toolbarStyle = .unified
             w.isReleasedWhenClosed = false
             // Float only while KEY: opened from the floating pop-out it
@@ -653,6 +658,10 @@ final class StatusItemController {
                 name: NSWindow.didResignKeyNotification, object: w)
             w.center()
             w.setFrameAutosaveName("InfinitusSettings")
+            // An autosaved frame from before the cap is restored as-is.
+            if w.frame.width > 1200 {
+                w.setContentSize(NSSize(width: 1200, height: w.contentLayoutRect.height))
+            }
             NotificationCenter.default.addObserver(
                 self, selector: #selector(settingsClosed),
                 name: NSWindow.willCloseNotification, object: w)

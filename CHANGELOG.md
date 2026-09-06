@@ -8,6 +8,14 @@ publishes the matching section as the GitHub release body.
 ## Unreleased
 
 ### Phone
+- Face ID or the passcode can lock the whole app — on launch and on return from the background — not only the Team tab (#212).
+- Settings' theme chooser shows every theme as a live row — its gauges, spend line, status word and tab bar — and the Theme row carries its colors.
+- Pace fire, content entrance and title flourish are picked from tiles that show the effect instead of a menu of words.
+- The pairing token is covered until you tap to reveal it.
+- Forgetting a paired Mac asks first and says what it costs.
+- Settings leads with the Mac connection: with nothing paired, scanning the Mac's QR code is the first thing on screen.
+- Every group in Settings explains itself in a footer, and the Mac's addresses are labeled and editable.
+- Updating the Mac from the phone shows its progress and offers Try Again with a plain reason when it fails.
 - The chat header follows Dynamic Type in all three styles; the Game HUD stops growing at the second accessibility size (#209).
 - Other Macs: their sessions and past sessions never reach the primary by mistake, and "+" and Past sessions open once any paired Mac has answered (#215).
 - The all-limited Live Activity counts down to the real revival instead of 31 years out, and every surface picks the reviver by parsed reset date, ignoring implausible ones (#226).
@@ -16,6 +24,20 @@ publishes the matching section as the GitHub release body.
 
 ### Mac
 - Team publishing reuses the Stats scan instead of scanning every transcript a second time, which had taken the app to 5.5 GB (#251).
+- Settings › Accounts leads with Add Account, shows Sign In Again only on the account that needs it, and renames an account in its own field, Tab moving to the next.
+- Randomize Names can be undone for 30 seconds.
+- Regenerating the pairing token, stopping rotation, signing in again, forgetting a stored key or token, and removing a push channel, a profile or a crash report all ask first.
+- Settings › Devices puts one QR code and one address up front, with the rest behind Other addresses.
+- Every icon button in Settings says what it does and to which account, and an engine error now reads as a sentence with a next step.
+- Settings' sidebar is a real list: arrow keys, type-select, a focus ring and VoiceOver names, grouped into General, Accounts, Dashboards and Engines.
+- Settings search finds a setting by its own label, opens its pane and flashes the group it lives in; ⌘F jumps to the field.
+- The Settings window is called Settings and says which pane you're in.
+- Display is five named groups — Menu bar, Popup, Fleet wall, Sessions, Refresh and startup — each with a footer that says what the setting costs.
+- The popup's headroom sorting moved to Settings › Display, where the rest of the popup's appearance lives.
+- Theme cards show the whole theme instead of hiding half of it in a sideways scroller, and name two accounts the way that theme would.
+- Utilization says what its gauge glyphs mean, and its run-rate methodology moved under "How this is measured".
+- The Stats tiles fill their last row instead of stranding one tile beside three empty cells.
+- About has its own Software Update group, and says "Scripted (Notification Center unavailable)" instead of naming the tool it fell back to.
 - The tokens/minute chip speaks the theme — mana/min, baud, knots — with its own icon, on the Mac, the phone, the widgets and both theme previews (#218).
 - Settings › Accounts backs up every cswap account to one file and restores from it, asking before it replaces anything (#229).
 - All accounts limited: the one that revives first floats to the top with a themed pulse and its own hh:mm:ss countdown inside the revive lead, on the popup, pop-out and the phone's rows.
