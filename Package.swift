@@ -6,10 +6,6 @@ import PackageDescription
 // plain `swift build` / `swift test` work on Linux too (core + tray + CLI)
 // without #if litter through the app sources.
 var targets: [Target] = [
-    // System zlib: the team envelope deflates plaintext before sealing
-    // (docs/superpowers/specs/2026-09-05-team-design.md §3). Same bytes
-    // on macOS, Linux and iOS; the Apple SDK and the swift docker image
-    // both ship zlib.
     // Pure layer: models, feed decoding, supervisor state machine.
     // No AppKit import — everything here runs under `swift test`.
     .target(name: "InfinitusCore",
