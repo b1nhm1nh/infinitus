@@ -101,4 +101,25 @@ final class OutboxTests: XCTestCase {
         XCTAssertEqual(box.items(macKey: "m").count, 0)
         _ = a
     }
+
+    func testMergeDuringFlightSurvivesDelivery() async throws {
+        let box = Outbox(root: root)
+        _ = try box.enqueue(macKey: "m", pid: 1, sessionId: nil, sessionName: "a", request: request("one"), now: t0)
+        var deliveredId: String?
+        let results = await box.flush(macKey: "m", now: t0) { item in
+            deliveredId = item.request.requestId
+            // A second message lands on the same session while this one is
+            // in flight — it must not be lost when the first is delivered.
+            _ = try? box.enqueue(macKey: "m", pid: 1, sessionId: nil, sessionName: "a",
+                                 request: request("two"), now: t0.addingTimeInterval(1))
+            return .delivered
+        }
+        XCTAssertEqual(results.map(\.delivery), [.delivered])
+        let left = box.items(macKey: "m")
+        XCTAssertEqual(left.count, 1)
+        XCTAssertEqual(left[0].state, .queued)
+        XCTAssertEqual(left[0].request.text, "two")
+        XCTAssertNotNil(deliveredId)
+        XCTAssertNotEqual(left[0].request.requestId, deliveredId)
+    }
 }

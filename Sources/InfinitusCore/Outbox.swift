@@ -153,6 +153,53 @@ public final class Outbox: @unchecked Sendable {
             do { try save(item) } catch { continue }
             let delivery = await deliver(item)
             results.append(FlushResult(id: item.id, delivery: delivery))
+
+            lock.lock()
+            // A concurrent `enqueue` may have merged a new message into
+            // this same (macKey, pid) file while `deliver` was in flight —
+            // it carries a fresh `requestId`. Apply the outcome to that
+            // merged item instead of clobbering it with the stale one.
+            let onDisk = load(macKey: item.macKey, pid: item.pid)
+            let merged = onDisk.flatMap { $0.request.requestId != item.request.requestId ? $0 : nil }
+            if let merged {
+                var merged = merged
+                switch delivery {
+                case .delivered:
+                    // Keep only the part that wasn't sent: strip the
+                    // delivered text/attachments as a prefix and queue
+                    // the remainder under a fresh id for the next pass.
+                    let sentText = item.request.text
+                    let strippedText: String
+                    if merged.request.text.hasPrefix(sentText + "\n\n") {
+                        strippedText = String(merged.request.text.dropFirst((sentText + "\n\n").count))
+                    } else if merged.request.text == sentText {
+                        strippedText = ""
+                    } else {
+                        strippedText = merged.request.text
+                    }
+                    let sentAttachmentCount = item.request.attachments?.count ?? 0
+                    let remainingAttachments = Array((merged.request.attachments ?? []).dropFirst(sentAttachmentCount))
+                    merged.request = SessionInput.Request(kind: merged.request.kind, text: strippedText,
+                                                          attachments: remainingAttachments.isEmpty ? nil : remainingAttachments,
+                                                          requestId: UUID().uuidString, sessionId: merged.sessionId)
+                    merged.state = .queued
+                    try? save(merged)
+                case .transport:
+                    merged.state = .queued
+                    merged.attempts += 1
+                    try? save(merged)
+                    lock.unlock()
+                    return results
+                case .refused(let why):
+                    merged.state = .refused(why)
+                    try? save(merged)
+                case .ended:
+                    merged.state = .ended
+                    try? save(merged)
+                }
+                lock.unlock()
+                continue
+            }
             switch delivery {
             case .delivered:
                 try? FileManager.default.removeItem(at: url(macKey: item.macKey, pid: item.pid))
@@ -160,6 +207,7 @@ public final class Outbox: @unchecked Sendable {
                 item.state = .queued
                 item.attempts += 1
                 try? save(item)
+                lock.unlock()
                 return results
             case .refused(let why):
                 item.state = .refused(why)
@@ -168,6 +216,7 @@ public final class Outbox: @unchecked Sendable {
                 item.state = .ended
                 try? save(item)
             }
+            lock.unlock()
         }
         return results
     }
