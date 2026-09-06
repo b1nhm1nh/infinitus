@@ -31,6 +31,11 @@ public final class TeamGit: TeamStore {
     private let author: String
     private var gitDir: URL { dir.appendingPathComponent("store.git") }
     private var opened = false
+    /// `rev-parse` per branch, remembered until the next fetch or push:
+    /// a header scan calls `get` once per stored file, and each `get`
+    /// asked git for the branch tip again (1708 files → 1708 extra
+    /// subprocesses on the 2026-09-06 first publish).
+    private var heads: [String: String?] = [:]
 
     public init(dir: URL, remote: String, token: String?, author: String) {
         self.dir = dir; self.remote = remote; self.token = token; self.author = author
@@ -53,6 +58,7 @@ public final class TeamGit: TeamStore {
     // MARK: TeamStore
 
     public func sync() throws {
+        heads = [:]
         _ = try run(["fetch", "-q", "--prune", "origin", "+refs/heads/*:refs/remotes/origin/*"])
     }
 
@@ -72,6 +78,8 @@ public final class TeamGit: TeamStore {
             guard let (branch, rest) = StorePath.branch(of: path) else { throw GitError.badPath(path) }
             byBranch[branch, default: []].append((rest, data))
         }
+        heads = [:]
+        defer { heads = [:] }
         for (branch, items) in byBranch {
             do {
                 try commitAndPush(branch: branch, items: items)
@@ -132,10 +140,14 @@ public final class TeamGit: TeamStore {
     }
 
     private func head(of branch: String) throws -> String? {
+        if let known = heads[branch] { return known }
+        let sha: String?
         do {
-            return String(decoding: try run(["rev-parse", "--verify", "-q", "refs/remotes/origin/\(branch)"]), as: UTF8.self)
+            sha = String(decoding: try run(["rev-parse", "--verify", "-q", "refs/remotes/origin/\(branch)"]), as: UTF8.self)
                 .trimmingCharacters(in: .whitespacesAndNewlines)
-        } catch GitError.failed { return nil }
+        } catch GitError.failed { sha = nil }
+        heads[branch] = sha
+        return sha
     }
 
     /// `ls-tree -r -l` lines: `<mode> blob <sha> <size>\t<path>`.
@@ -184,6 +196,17 @@ public final class TeamGit: TeamStore {
     @discardableResult
     private func run(_ args: [String], stdin: Data? = nil, env extra: [String: String] = [:],
                      useGitDir: Bool = true) throws -> Data {
+        // Thousands of NSTask/NSPipe objects and their blob buffers piled
+        // up autoreleased on the team queue until the whole pass returned
+        // (14 GB RSS on 2026-09-06); a pool per subprocess drains them.
+        #if canImport(ObjectiveC)
+        return try autoreleasepool { try runOnce(args, stdin: stdin, env: extra, useGitDir: useGitDir) }
+        #else
+        return try runOnce(args, stdin: stdin, env: extra, useGitDir: useGitDir)
+        #endif
+    }
+
+    private func runOnce(_ args: [String], stdin: Data?, env extra: [String: String], useGitDir: Bool) throws -> Data {
         #if os(iOS) || os(tvOS) || os(watchOS) || os(visionOS)
         // Foundation has no Process here; InfinitusCore is linked into the
         // phone app, which never drives git itself (spec §6.2: the phone

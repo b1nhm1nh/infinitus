@@ -196,6 +196,28 @@ final class TeamPublisherTests: XCTestCase {
         XCTAssertEqual(TeamPublishState.load(teamDir: t.alicePaths.teamDir(t.alice.config.id)).transcripts.count, 3)
     }
 
+    func testHeaderScanRemembersHeadersByBlobVersion() throws {
+        let t = try team()
+        let me = "m/\(t.alice.identity.kid)/"
+        try t.alice.publish(kind: "now", path: "now.json", plaintext: Data("{}".utf8), audience: .leaders, now: 5_000)
+        _ = try t.leader.fetch()
+        let first = try XCTUnwrap(try t.leader.readableHeaders().first { $0.entry.path == me + "now.json" })
+        XCTAssertEqual(first.header.at, 5_000)
+        // The leader's cache holds that header under the blob's version…
+        let cacheURL = t.leader.teamDirForTests.appendingPathComponent("headers.json")
+        var cache = try JSONDecoder().decode(TeamClient.HeaderCache.self, from: try Data(contentsOf: cacheURL))
+        XCTAssertEqual(cache.entries[me + "now.json"]?.version, first.entry.version)
+        // …and a second scan answers from it (a doctored `at` proves no blob was read).
+        cache.entries[me + "now.json"]!.header.at = 5_001
+        try cache.save(cacheURL)
+        XCTAssertEqual(try t.leader.readableHeaders().first { $0.entry.path == me + "now.json" }?.header.at, 5_001)
+        // A republish (new blob version) is read fresh and replaces the cached header.
+        try t.alice.publish(kind: "now", path: "now.json", plaintext: Data("{ }".utf8), audience: .leaders, now: 6_000)
+        _ = try t.leader.fetch()
+        XCTAssertEqual(try t.leader.readableHeaders().first { $0.entry.path == me + "now.json" }?.header.at, 6_000)
+        XCTAssertEqual(TeamClient.HeaderCache.load(cacheURL).entries[me + "now.json"]?.header.at, 6_000)
+    }
+
     func testReshareRewrapsHistoryToTheCurrentAudienceAfterPromotion() throws {
         let t = try team()
         let projects = try writeProjects(scratch)
