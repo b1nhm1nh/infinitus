@@ -31,160 +31,24 @@ struct SettingsForm: View {
 
     var body: some View {
         Form {
-            Section {
-                Toggle("Follow Mac", isOn: $model.followMac)
-                Text("Renders exactly what the Mac popup shows — its "
-                     + "theme, compact mode, pace fire and intro. Turn "
-                     + "off to pick your own.")
-                    .font(.caption).foregroundStyle(.secondary)
-            }
+            // The transport leads: with nothing paired the only thing
+            // that makes this app work is the first thing on screen,
+            // and the cosmetics wait below it (critique, iOS
+            // hierarchy: "on a phone with nothing paired, the first
+            // screen is a theme picker").
+            connectionSection
+            addressesSection
+            if isPaired { otherMacsSection }
+            appearanceSection
             if !model.followMac {
-                Section("Theme") {
-                    Picker("Theme", selection: $model.localThemeID) {
-                        ForEach(model.availableThemes) { theme in
-                            Text(theme.name).tag(theme.id)
-                        }
-                    }
-                    .pickerStyle(.navigationLink)
-                    ThemePreviewRow(theme: model.rowTheme)
-                }
-                Section("Display") {
-                    Toggle("Compact rows (one line per account)",
-                           isOn: $model.localCompactRows)
-                }
-                Section("Pace fire (7d & model bars)") {
-                    Picker("Style", selection: $model.localBurnStyle) {
-                        Text("Off").tag("off")
-                        Text("Ember glow").tag("ember")
-                        Text("Flame licks").tag("flame")
-                        Text("Limit break").tag("limit")
-                    }
-                }
-                Section("Launch intro") {
-                    Picker("Content entrance", selection: $model.localIntroStyle) {
-                        Text("Slide from top").tag("top")
-                        Text("Slide from bottom").tag("bottom")
-                        Text("Fade in").tag("fade")
-                        Text("Rows slide from right").tag("rows")
-                    }
-                    Picker("Title flourish", selection: $model.localIntroTitle) {
-                        Text("Zoom bounce").tag("zoom")
-                        Text("Stamp slam").tag("slam")
-                        Text("Spin up").tag("spin")
-                        Text("Off").tag("off")
-                    }
-                    LabeledContent("Speed") {
-                        HStack {
-                            Slider(value: $model.localIntroSpeed, in: 0.4...2)
-                            Text(String(format: "%.1fx", model.localIntroSpeed))
-                                .font(.caption).monospacedDigit()
-                                .foregroundStyle(.secondary)
-                                .frame(width: 36, alignment: .trailing)
-                        }
-                    }
-                    Button("Replay intro") { model.replayIntro() }
-                }
+                themeSection
+                motionSection
             }
-            // The transport (#9 remote access): which Mac is being
-            // mirrored, the token that lets us read it, and the ways in
-            // when Bonjour doesn't survive the network.
-            Section {
-                if PairScanner.isSupported {
-                    Button {
-                        scanning = true
-                    } label: {
-                        Label("Scan the Mac's QR code", systemImage: "qrcode.viewfinder")
-                            .font(.body.weight(.semibold))
-                    }
-                } else {
-                    Text("No camera here — type the address and token from the Mac's Settings → Devices below.")
-                        .font(.caption).foregroundStyle(.secondary)
-                }
-                Text(model.transportStatus.isEmpty
-                     ? model.rowTheme.loadingWord("searching")
-                     : model.transportStatus)
-                    .font(.caption).foregroundStyle(.secondary)
-                ForEach(Array(model.manualEndpoints.enumerated()), id: \.element) { _, endpoint in
-                    Text(endpoint)
-                        .font(.system(.caption, design: .monospaced))
-                        .textSelection(.enabled)
-                }
-                .onDelete { model.removeManualEndpoint(at: $0) }
-                LabeledContent("Add address") {
-                    TextField("host:port, or a tunnel's https:// URL", text: $newEndpoint)
-                        .multilineTextAlignment(.trailing)
-                        .autocorrectionDisabled()
-                        .textInputAutocapitalization(.never)
-                        .keyboardType(.URL)
-                        .onSubmit {
-                            model.addManualEndpoint(newEndpoint)
-                            newEndpoint = ""
-                        }
-                }
-                LabeledContent("Pairing token") {
-                    TextField("from the Mac's Devices settings",
-                              text: $model.pairToken)
-                        .multilineTextAlignment(.trailing)
-                        .autocorrectionDisabled()
-                        .textInputAutocapitalization(.never)
-                        .font(.system(.body, design: .monospaced))
-                }
-            } header: {
-                Text("Mac connection")
-            } footer: {
-                Text("Scanning the QR code sets everything up. On the same Wi-Fi the phone "
-                     + "finds the Mac by itself; add an address for anywhere else.")
-            }
-            // Every OTHER paired Mac (#144 phase 1): read-only fleets and
-            // sessions elsewhere in the app, forgettable or promotable
-            // here. Shown even with none yet — the footer is the "how".
-            Section {
-                ForEach(model.others) { other in
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(other.pairing.name).fontWeight(.semibold)
-                        Text(otherCaption(other)).font(.caption).foregroundStyle(.secondary)
-                    }
-                    .swipeActions {
-                        Button("Forget", role: .destructive) {
-                            model.forgetOther(id: other.id)
-                        }
-                    }
-                    .contextMenu {
-                        Button("Make primary") { promoting = other }
-                    }
-                }
-            } header: {
-                Text("Other Macs")
-            } footer: {
-                Text("Scan another Mac's QR to add it; only the primary Mac gets "
-                     + "chats, approvals, widgets and Live Activities in this version.")
-            }
+            chatHeaderSection
             DictationSettings()
             ScreenshotSettings()
-            // The 1:1 Mac rendering isn't lost, just off by default
-            // (#9 native shell): this flips the whole app back to it.
-            Section("Appearance") {
-                ChatHeaderPicker(selection: $chatHeader, theme: model.rowTheme)
-                Toggle("Show as Mac popup", isOn: $model.macPopupView)
-                Text("Renders the Mac popup itself — the same layout, "
-                     + "chrome and scaling, on dark. Off is the native "
-                     + "iOS shell. In Mac view, portrait shows the "
-                     + "stacked cards and landscape the wide rows.")
-                    .font(.caption).foregroundStyle(.secondary)
-            }
-            Section("Notifications") {
-                Toggle("Reset and swap alerts", isOn: $fleetAlarms)
-                Text("From the phone itself, planned from the last snapshot: "
-                     + "an exhausted account's limit lifting in 10 minutes, "
-                     + "and the account the fleet just swapped to. Needs "
-                     + "nothing on the Mac.")
-                    .font(.caption).foregroundStyle(.secondary)
-            }
-            Section("Team") {
-                Toggle("Lock the Team tab with \(lock.methodName)", isOn: $lock.enabled)
-                Text("Joining a team from the phone needs the lock on (the Mac has the same rule).")
-                    .font(.caption).foregroundStyle(.secondary)
-            }
+            notificationsSection
+            teamSection
             AboutSettings(model: model)
         }
         .onChange(of: fleetAlarms) { _, on in
@@ -201,13 +65,228 @@ struct SettingsForm: View {
             Text("Paired with \(model.snapshot?.machineName ?? "the Mac"). Its accounts are on the Fleet tab.")
         }
         .sensoryFeedback(.success, trigger: paired)
-        .confirmationDialog("Make primary",
+        .confirmationDialog("Make Primary",
                             isPresented: Binding(get: { promoting != nil }, set: { if !$0 { promoting = nil } }),
                             presenting: promoting) { other in
-            Button("Make primary") { model.makePrimary(id: other.id) }
+            Button("Make Primary") { model.makePrimary(id: other.id) }
             Button("Cancel", role: .cancel) {}
         } message: { other in
-            Text("Make \(other.pairing.name) the primary Mac? Chats, approvals and widgets follow it.")
+            Text("Make \(other.pairing.name) the primary Mac? Chats, approvals, widgets and Live Activities follow it.")
+        }
+    }
+
+    /// A token is what a pairing IS — with none, nothing this screen
+    /// offers below the fold can work yet.
+    private var isPaired: Bool { !model.pairToken.isEmpty }
+
+    /// The transport's own words while it looks, or the theme's
+    /// ("Scouting for the Mac…" under RPG) before it has any.
+    private var statusText: String {
+        model.transportStatus.isEmpty
+            ? model.rowTheme.loadingWord("searching")
+            : model.transportStatus
+    }
+
+    private var scanButton: some View {
+        Button { scanning = true } label: {
+            Label("Scan the Mac's QR Code", systemImage: "qrcode.viewfinder")
+        }
+    }
+
+    // MARK: - the transport
+
+    /// Which Mac is mirrored and the credential that reads it. Unpaired,
+    /// the section IS the onboarding step and leads with the scan;
+    /// paired, the status leads and the scan drops to a plain row.
+    private var connectionSection: some View {
+        Section {
+            if !isPaired, PairScanner.isSupported {
+                scanButton.font(.body.weight(.semibold))
+            }
+            LabeledContent("Status", value: statusText)
+            if isPaired, PairScanner.isSupported { scanButton }
+            LabeledContent("Pairing token") {
+                TextField("Paste or scan", text: $model.pairToken)
+                    .multilineTextAlignment(.trailing)
+                    .autocorrectionDisabled()
+                    .textInputAutocapitalization(.never)
+                    .font(.system(.body, design: .monospaced))
+            }
+        } header: {
+            Text(isPaired ? "Mac connection" : "Pair with a Mac")
+        } footer: {
+            Text(connectionFooter)
+        }
+    }
+
+    private var connectionFooter: String {
+        let camera = PairScanner.isSupported
+            ? "Open Settings › Devices on the Mac and scan the code it shows — it fills in the address and the token for you."
+            : "This phone has no camera to scan with: copy the address and the token from Settings › Devices on the Mac."
+        return isPaired
+            ? camera + " On the same Wi-Fi the phone finds the Mac by itself."
+            : camera
+    }
+
+    /// Where to reach the Mac when Bonjour can't: one row per address,
+    /// deletable in edit mode or by a swipe.
+    private var addressesSection: some View {
+        Section {
+            ForEach(model.manualEndpoints, id: \.self) { endpoint in
+                Text(endpoint)
+                    .font(.system(.footnote, design: .monospaced))
+                    .textSelection(.enabled)
+                    .accessibilityLabel("Address \(endpoint)")
+            }
+            .onDelete { model.removeManualEndpoint(at: $0) }
+            LabeledContent("Add address") {
+                TextField("host:port, or a tunnel's https:// URL", text: $newEndpoint)
+                    .multilineTextAlignment(.trailing)
+                    .autocorrectionDisabled()
+                    .textInputAutocapitalization(.never)
+                    .keyboardType(.URL)
+                    .onSubmit {
+                        model.addManualEndpoint(newEndpoint)
+                        newEndpoint = ""
+                    }
+            }
+        } header: {
+            HStack {
+                Text("Addresses")
+                Spacer()
+                if !model.manualEndpoints.isEmpty {
+                    EditButton()
+                        .font(.footnote.weight(.semibold))
+                        .textCase(nil)
+                }
+            }
+        } footer: {
+            Text("The phone finds the Mac on this Wi-Fi by itself. Add an address to reach it from anywhere else — a tunnel's URL works from any network.")
+        }
+    }
+
+    /// Every OTHER paired Mac (#144 phase 1): read-only fleets and
+    /// sessions elsewhere in the app, forgettable or promotable here.
+    private var otherMacsSection: some View {
+        Section {
+            ForEach(model.others) { other in
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(other.pairing.name).fontWeight(.semibold)
+                    Text(otherCaption(other)).font(.caption).foregroundStyle(.secondary)
+                }
+                .accessibilityElement(children: .combine)
+                .swipeActions {
+                    Button("Forget", role: .destructive) {
+                        model.forgetOther(id: other.id)
+                    }
+                }
+                .contextMenu {
+                    Button("Make Primary") { promoting = other }
+                }
+            }
+        } header: {
+            Text("Other Macs")
+        } footer: {
+            Text("Scan another Mac's QR code to add it. Only the primary Mac gets chats, approvals, widgets and Live Activities in this version.")
+        }
+    }
+
+    // MARK: - what the app looks like
+
+    private var appearanceSection: some View {
+        Section {
+            Toggle("Follow Mac", isOn: $model.followMac)
+            Toggle("Show as Mac popup", isOn: $model.macPopupView)
+        } header: {
+            Text("Appearance")
+        } footer: {
+            Text("Follow Mac renders exactly what the Mac popup shows — its theme, rows, pace fire and intro; turn it off to choose your own here. Show as Mac popup renders the popup itself instead of the iPhone layout: portrait stacks the cards, landscape shows the wide rows.")
+        }
+    }
+
+    private var themeSection: some View {
+        Section {
+            Picker("Theme", selection: $model.localThemeID) {
+                ForEach(model.availableThemes) { theme in
+                    Text(theme.name).tag(theme.id)
+                }
+            }
+            .pickerStyle(.navigationLink)
+            Toggle("Compact rows", isOn: $model.localCompactRows)
+        } header: {
+            Text("Theme")
+        } footer: {
+            Text("A theme renames the tabs, the gauges, the status words and the fleet's own names, and gives them its colours. Compact rows put one account on a line.")
+        }
+    }
+
+    private var motionSection: some View {
+        Section {
+            Picker("Pace fire", selection: $model.localBurnStyle) {
+                Text("Off").tag("off")
+                Text("Ember glow").tag("ember")
+                Text("Flame licks").tag("flame")
+                Text("Limit break").tag("limit")
+            }
+            Picker("Content entrance", selection: $model.localIntroStyle) {
+                Text("Slide from top").tag("top")
+                Text("Slide from bottom").tag("bottom")
+                Text("Fade in").tag("fade")
+                Text("Rows slide from right").tag("rows")
+            }
+            Picker("Title flourish", selection: $model.localIntroTitle) {
+                Text("Zoom bounce").tag("zoom")
+                Text("Stamp slam").tag("slam")
+                Text("Spin up").tag("spin")
+                Text("Off").tag("off")
+            }
+            LabeledContent("Speed") {
+                HStack(spacing: 8) {
+                    Slider(value: $model.localIntroSpeed, in: 0.4...2)
+                        .accessibilityLabel("Intro speed")
+                    Text(String(format: "%.1f×", model.localIntroSpeed))
+                        .monospacedDigit()
+                        .foregroundStyle(.secondary)
+                        .fixedSize()
+                }
+            }
+            Button("Replay Intro") { model.replayIntro() }
+        } header: {
+            Text("Motion")
+        } footer: {
+            Text("Pace fire sets the weekly and model bars alight when an account spends faster than the clock. The intro plays once when the app opens: the content enters, the bars fill, then the title lands.")
+        }
+    }
+
+    private var chatHeaderSection: some View {
+        Section {
+            ChatHeaderPicker(selection: $chatHeader, theme: model.rowTheme)
+        } header: {
+            Text("Chat header")
+        } footer: {
+            Text("What a session's chat wears above the transcript.")
+        }
+    }
+
+    // MARK: - the rest
+
+    private var notificationsSection: some View {
+        Section {
+            Toggle("Reset and swap alerts", isOn: $fleetAlarms)
+        } header: {
+            Text("Notifications")
+        } footer: {
+            Text("The phone raises these itself from the last snapshot, with nothing needed on the Mac: an exhausted account's limit lifting in ten minutes, and the account the fleet has just swapped to.")
+        }
+    }
+
+    private var teamSection: some View {
+        Section {
+            Toggle("Lock the Team tab with \(lock.methodName)", isOn: $lock.enabled)
+        } header: {
+            Text("Team")
+        } footer: {
+            Text("Joining a team from this phone needs the lock on; the Mac has the same rule.")
         }
     }
 
@@ -215,7 +294,7 @@ struct SettingsForm: View {
     /// or the mirror's own status line while it hasn't answered yet.
     private func otherCaption(_ other: MirrorModel.OtherMac) -> String {
         guard other.snapshot != nil else {
-            return other.status.isEmpty ? "looking for this Mac…" : other.status
+            return other.status.isEmpty ? "Looking for this Mac…" : other.status
         }
         let sessions = other.fleets.reduce(0) { $0 + ($1.liveSessions?.total ?? 0) }
         return "\(other.fleets.count) fleet\(other.fleets.count == 1 ? "" : "s") · "
