@@ -22,7 +22,7 @@ enum TeamMirrorHandler {
         case ("GET", TeamMirror.memberPath):
             guard let kid = r.query("kid"), let reader = team.reader, let m = reader.members[kid] else { return nil }
             let period = r.query("period").flatMap(Stats.Period.init(rawValue:)) ?? .week
-            return json(TeamMirror.MemberReply(kid: kid, name: m.name, summary: reader.summary(kid: kid, period: period),
+            return json(TeamMirror.MemberReply(kid: kid, name: m.name, summary: reader.summary(kid: kid, period: period)?.compacted(),
                                                sessions: m.sessions, transcripts: Array(m.transcripts.keys).sorted()))
         case ("GET", TeamMirror.transcriptPath):
             guard let kid = r.query("kid"), let session = r.query("session") else { return nil }
@@ -39,10 +39,12 @@ enum TeamMirrorHandler {
         case ("POST", TeamMirror.codePath):
             guard let body = try? JSONDecoder().decode(TeamMirror.CodeRequest.self, from: r.body),
                   (1...30).contains(body.days) else { return nil }
-            team.clearError(); team.clearCode()
+            team.clearError()
             if body.invite { await team.mintInvite(days: body.days) } else { await team.mintCode(days: body.days) }
-            let code = team.code
-            team.clearCode()   // the pane's QR must not pop because the phone asked
+            // A failed mint leaves `code` untouched, so read it only on
+            // success or the pane's open code would ship as the phone's.
+            let code = team.lastError == nil ? team.code : nil
+            if code != nil { team.clearCode() }   // the pane's QR must not pop because the phone asked
             return json(TeamMirror.ActionReply(ok: code != nil, error: team.lastError, code: code))
         default:
             return nil
