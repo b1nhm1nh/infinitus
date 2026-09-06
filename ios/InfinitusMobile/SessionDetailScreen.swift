@@ -95,8 +95,9 @@ struct SessionDetailScreen: View {
 
     @State private var settingMode = false
     @State private var modeResult: String?
-    private var p: SessionProgress? { progress.byPid[session.pid] }
-    private var summary: SessionAccountSummary? { model.accountSummary(forSessionPid: session.pid) }
+    private var p: SessionProgress? { model.progress(macId: macId, pid: session.pid) }
+    private var summary: SessionAccountSummary? { model.accountSummary(macId: macId, pid: session.pid) }
+    private var mirror: NetworkFleetMirror { model.mirror(for: macId) }
 
     var body: some View {
         List {
@@ -149,7 +150,7 @@ struct SessionDetailScreen: View {
             accountSection
 
             Section {
-                NavigationLink(value: CheckpointsRoute(session: session)) {
+                NavigationLink(value: CheckpointsRoute(session: session, macId: macId)) {
                     Label("Checkpoints", systemImage: "clock.arrow.2.circlepath")
                 }
             } footer: {
@@ -157,7 +158,7 @@ struct SessionDetailScreen: View {
             }
 
             Section {
-                Text(model.transportStatus.isEmpty ? model.rowTheme.loadingWord("searching") : model.transportStatus)
+                Text(model.transportStatus(macId: macId).isEmpty ? model.rowTheme.loadingWord("searching") : model.transportStatus(macId: macId))
                     .font(.caption).foregroundStyle(.secondary)
             } header: {
                 Text("Connection")
@@ -174,6 +175,7 @@ struct SessionDetailScreen: View {
         .listStyle(.insetGrouped)
         .navigationTitle("Session detail")
         .navigationBarTitleDisplayMode(.inline)
+        .environment(\.sessionMirror, mirror)
     }
 
     /// The session's permission mode (#163 phase 2), changeable while it
@@ -181,7 +183,7 @@ struct SessionDetailScreen: View {
     /// widening is offered past the start mode — Claude Code already lets
     /// a start mode's tools through, so a narrower pick would only pretend.
     @ViewBuilder private var permissionsRow: some View {
-        let birth = model.snapshot?.births?[session.pid]
+        let birth = model.birth(macId: macId, pid: session.pid)
         let current = birth?.effectiveMode ?? "supervised"
         let floor = SessionStart.modeRank(birth?.permissionMode)
         Picker("Permissions", selection: Binding(
@@ -204,12 +206,12 @@ struct SessionDetailScreen: View {
         Task {
             defer { settingMode = false }
             do {
-                let reply = try await NetworkFleetMirror.shared.sessionInput(
+                let reply = try await mirror.sessionInput(
                     pid: Int32(session.pid), request: .init(kind: .mode, text: mode))
                 if reply.outcome != "delivered" { modeResult = reply.detail ?? reply.outcome }
-                await model.refresh()
+                await model.refresh(macId: macId)
             } catch {
-                modeResult = "couldn't reach the Mac"
+                modeResult = "couldn't reach \(model.macName(macId) ?? "the Mac")"
             }
         }
     }
