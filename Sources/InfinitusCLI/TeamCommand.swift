@@ -47,8 +47,12 @@ private func emit<T: Encodable>(_ value: T) {
     if let data = try? enc.encode(value) { print(String(decoding: data, as: UTF8.self)) }
 }
 
+/// Every error path prints through here, so the mask lives here: git's
+/// stderr quotes the remote as configured, credential and all (#55).
+private func masked(_ message: String) -> String { TeamGit.masked(message) }
+
 private func fail(_ message: String, code: Int32 = 1) -> Int32 {
-    FileHandle.standardError.write(Data("error: \(message)\n".utf8))
+    FileHandle.standardError.write(Data("error: \(masked(message))\n".utf8))
     return code
 }
 
@@ -111,6 +115,10 @@ func runTeam(_ args: [String]) -> Int32 {
         guard let id else {
             throw NSError(domain: "team", code: 1, userInfo: [NSLocalizedDescriptionKey:
                 ids.isEmpty ? "no team on this machine (create or request one)" : "several teams: pass --team <id> (\(ids.joined(separator: ", ")))"])
+        }
+        // `--team` is interpolated into <base>/<id>/config.json.
+        guard TeamClient.isPathSegment(id) else {
+            throw NSError(domain: "team", code: 2, userInfo: [NSLocalizedDescriptionKey: "--team takes a team id (one path segment)"])
         }
         return try TeamClient.open(id: id, paths: paths, secrets: secrets)
     }
@@ -191,10 +199,15 @@ func runTeam(_ args: [String]) -> Int32 {
             emit(["path": stored])
         case "list":
             let c = try client(); _ = try c.fetch()
-            emit(try c.readable().map { entry -> ReadableEntry in
-                let (h, _) = try c.read(entry.path)
-                return ReadableEntry(path: entry.path, size: entry.size, kind: h.kind, from: h.from, at: h.at)
-            })
+            // Headers only: `read` decrypts a whole envelope (a transcript
+            // chunk is a megabyte) to print five fields. A blob whose
+            // header will not parse is counted, not fatal (#55).
+            struct Listing: Encodable { var entries: [ReadableEntry]; var skipped: Int }
+            let scan = try c.readableScan()
+            emit(Listing(entries: scan.headers.map {
+                ReadableEntry(path: $0.entry.path, size: $0.entry.size, kind: $0.header.kind,
+                              from: $0.header.from, at: $0.header.at)
+            }, skipped: scan.skipped))
         case "read":
             guard let path = positional.first else { return fail(teamUsage(), code: 2) }
             let c = try client(); _ = try c.fetch()

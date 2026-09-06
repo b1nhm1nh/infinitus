@@ -243,9 +243,12 @@ public final class TeamClient {
         }
     }
 
-    /// A kid names one file under `requests/`, so it is one path segment.
-    private static func isPathSegment(_ kid: String) -> Bool {
-        !kid.isEmpty && !kid.contains("/") && kid != "." && kid != ".."
+    /// A kid names one file under `requests/`, and a team id names one
+    /// directory under the team base: both are interpolated into paths,
+    /// so `.`, `..`, `/` and `\` are refused. `infinitusctl team --team
+    /// <id>` runs the same guard (#55).
+    public static func isPathSegment(_ id: String) -> Bool {
+        !id.isEmpty && !id.contains("/") && !id.contains("\\") && id != "." && id != ".."
     }
 
     public func approve(kid: String, now: Int = Int(Date().timeIntervalSince1970)) throws {
@@ -407,34 +410,52 @@ public final class TeamClient {
         try store.putAll(writes)
     }
 
+    /// `readableHeaders` plus how many stored files it could not read a
+    /// header from at all — a truncated or garbled blob. Envelopes that
+    /// parse but are not mine, sit at a path their kind does not match,
+    /// or come from a kid the roster does not know are NOT counted:
+    /// those are policy, not damage.
+    public struct ReadableScan {
+        public var headers: [(entry: StoreEntry, header: Envelope.Header)] = []
+        public var skipped = 0
+        public init() {}
+    }
+
     /// Envelopes under `m/` that name me as a reader, sit at a path whose
     /// shape matches their kind and sender, and come from someone who
     /// was in the roster when they were sealed. Reads headers only.
-    public func readableHeaders() throws -> [(entry: StoreEntry, header: Envelope.Header)] {
-        guard let roster = roster?.doc else { return [] }
+    public func readableScan() throws -> ReadableScan {
+        var scan = ReadableScan()
+        guard let roster = roster?.doc else { return scan }
         // Headers are remembered per (path, blob version) so a loop pass
         // reads only files that changed; the roster / kind / recipient
         // checks still run every time, since the roster moves.
         let cacheURL = paths.teamDir(config.id).appendingPathComponent("headers.json")
         var cache = HeaderCache.load(cacheURL)
         var kept: [String: HeaderCache.Entry] = [:]
-        var out: [(entry: StoreEntry, header: Envelope.Header)] = []
         for entry in try store.list("m/") + (try store.list("roster/aggregates/")) {
             let header: Envelope.Header
             if let cached = cache.entries[entry.path], cached.version == entry.version {
                 header = cached.header
             } else {
-                guard let parsed = try drainingPool({ try store.get(entry.path).flatMap { try? Envelope.header(of: $0) } }) else { continue }
+                guard let parsed = try drainingPool({ try store.get(entry.path).flatMap { try? Envelope.header(of: $0) } }) else {
+                    scan.skipped += 1
+                    continue
+                }
                 header = parsed
             }
             kept[entry.path] = HeaderCache.Entry(version: entry.version, header: header)
             guard (try? TeamKinds.check(header, at: entry.path)) != nil,
                   roster.keys(for: header.from, at: header.at) != nil,
                   header.to.contains(where: { $0.kid == identity.kid }) else { continue }
-            out.append((entry, header))
+            scan.headers.append((entry, header))
         }
         if kept != cache.entries { cache.entries = kept; try? cache.save(cacheURL) }
-        return out
+        return scan
+    }
+
+    public func readableHeaders() throws -> [(entry: StoreEntry, header: Envelope.Header)] {
+        try readableScan().headers
     }
 
     /// `<team dir>/headers.json`: envelope headers by store path and blob version.

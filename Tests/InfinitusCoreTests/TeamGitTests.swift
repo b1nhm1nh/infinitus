@@ -260,4 +260,16 @@ final class TeamGitTests: XCTestCase {
         XCTAssertNotEqual(cursor.heads["roster"], bogus.heads["roster"])
         XCTAssertEqual(try g.changes(since: cursor).0, [], "the fresh cursor works normally")
     }
+
+    /// #55: `GitError.failed` quotes git's stderr, which echoes the
+    /// remote as configured — and the remote a team code carries IS the
+    /// write credential.
+    func testCredentialedRemotesAreMasked() {
+        XCTAssertEqual(TeamGit.masked("fatal: unable to access 'https://infinitus:ghp_secret@github.com/o/r.git/'"),
+                       "fatal: unable to access 'https://•••@github.com/o/r.git/'")
+        XCTAssertEqual(TeamGit.masked("ssh://git:pw@host/r.git and https://u@h/x"),
+                       "ssh://•••@host/r.git and https://•••@h/x")
+        XCTAssertEqual(TeamGit.masked("no credential here"), "no credential here")
+        XCTAssertEqual(TeamGit.masked("file:///tmp/remote.git"), "file:///tmp/remote.git")
+    }
 }

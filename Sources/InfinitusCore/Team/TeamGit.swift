@@ -302,6 +302,16 @@ public final class TeamGit: TeamStore {
         return swept
     }
 
+    /// `https://user:token@host/repo.git` → `https://•••@host/repo.git`.
+    /// The userinfo itself may contain "/" (a base64-ish token), so only
+    /// "@", whitespace and quotes end the match — erring toward masking
+    /// too much rather than leaking a credential that has one.
+    public static func masked(_ text: String) -> String {
+        guard let regex = try? NSRegularExpression(pattern: "([a-zA-Z][a-zA-Z0-9+.-]*://)[^@\\s'\"]+@") else { return text }
+        return regex.stringByReplacingMatches(in: text, range: NSRange(text.startIndex..., in: text),
+                                              withTemplate: "$1•••@")
+    }
+
     /// The stderr reader's landing pad; `drain` joins the group before
     /// anyone reads it, so there is nothing to synchronise past that.
     private final class Buffer: @unchecked Sendable { var data = Data() }

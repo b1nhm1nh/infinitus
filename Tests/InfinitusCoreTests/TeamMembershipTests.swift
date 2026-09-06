@@ -295,4 +295,35 @@ final class TeamMembershipTests: XCTestCase {
         _ = try leader.fetch()
         XCTAssertEqual(try leader.readableHeaders().count, 0, "device B's file under the same kid must be gone too")
     }
+
+    /// #55: `team list` used to abort on the first envelope it could not
+    /// read. A garbled blob is counted and skipped, and nothing is
+    /// decrypted just to list it.
+    func testReadableScanSkipsUnreadableBlobsAndCountsThem() throws {
+        let (leader, member, remote) = try team()
+        let good = try member.publish(kind: TeamKinds.now, path: "now.json", plaintext: Data("{}".utf8),
+                                      audience: .leaders, now: 1_030)
+        // Anyone holding the store credential can write nonsense under a
+        // member's branch; here it is a second member's own path.
+        let raw = TeamGit(dir: scratch.appendingPathComponent("vandal"), remote: remote, token: nil, author: "v")
+        try raw.open()
+        try raw.put("m/\(member.identity.kid)/crashes.json", Data("not an envelope".utf8))
+
+        _ = try leader.fetch()
+        let scan = try leader.readableScan()
+        XCTAssertEqual(scan.headers.map(\.entry.path), [good])
+        XCTAssertEqual(scan.skipped, 1)
+        XCTAssertEqual(try leader.readableHeaders().map(\.entry.path), [good], "the old entry point is unchanged")
+    }
+
+    /// #55: `--team <id>` is interpolated into `<base>/<id>/config.json`.
+    func testPathSegmentsAreOneSegment() {
+        XCTAssertTrue(TeamClient.isPathSegment("6f0d4c2e-0000-4000-8000-000000000000"))
+        XCTAssertFalse(TeamClient.isPathSegment(""))
+        XCTAssertFalse(TeamClient.isPathSegment("."))
+        XCTAssertFalse(TeamClient.isPathSegment(".."))
+        XCTAssertFalse(TeamClient.isPathSegment("../other"))
+        XCTAssertFalse(TeamClient.isPathSegment("a/b"))
+        XCTAssertFalse(TeamClient.isPathSegment("a\\b"))
+    }
 }
