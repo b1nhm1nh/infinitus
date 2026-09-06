@@ -13,29 +13,46 @@ import Foundation
 /// ranking over every non-disabled account, active included, and prefer
 /// it — it only ever finds a candidate at least as soon as the engine's.
 public enum RecoveryMath {
-    /// Mirrors `_next_recovery` exactly, without the `row.number == active`
-    /// skip. ISO-8601 `resetsAt` strings compare lexicographically, same
-    /// as the engine.
-    public static func nextRecovery(accounts: [Account]) -> NextRecovery? {
-        var best: (key: String, number: Int)?
+    /// Nothing legitimate resets later than a weekly window; a reset
+    /// further out than this is a bad string, not a reviver (#226).
+    public static let plausibleHorizon: TimeInterval = 8 * 24 * 3600
+
+    /// When the account is back for good: its LAST maxed window's reset
+    /// (5h, 7d and scoped alike), as a parsed date and the ISO string it
+    /// came from. nil when nothing is maxed, when a maxed window carries
+    /// no parseable reset (unrankable, never "resets now"), or when the
+    /// reset is implausibly far out.
+    public static func revival(of account: Account, now: Date) -> (at: Date, iso: String)? {
+        guard let usage = account.usage else { return nil }
+        var windows: [UsageWindow] = []
+        if let w = usage.fiveHour { windows.append(w) }
+        if let w = usage.sevenDay { windows.append(w) }
+        windows += usage.scoped ?? []
+        let maxed = windows.filter { $0.pct >= 100 }
+        if maxed.isEmpty { return nil }
+        var last: (at: Date, iso: String)?
+        for window in maxed {
+            guard let iso = window.resetsAt, let at = WeeklyRoll.parse(iso) else { return nil }
+            if last == nil || at > last!.at { last = (at, iso) }
+        }
+        guard let last, last.at <= now.addingTimeInterval(plausibleHorizon) else { return nil }
+        return last
+    }
+
+    /// Mirrors `_next_recovery`, without the `row.number == active` skip
+    /// and ranking by parsed date rather than by string (#226: a raw
+    /// `resetsAt` compared lexicographically).
+    public static func nextRecovery(accounts: [Account], now: Date = Date()) -> NextRecovery? {
+        var best: (at: Date, iso: String, number: Int)?
         for account in accounts {
             if account.disabled == true { continue }
-            guard let usage = account.usage else { continue }
-            var windows: [UsageWindow] = []
-            if let w = usage.fiveHour { windows.append(w) }
-            if let w = usage.sevenDay { windows.append(w) }
-            windows += usage.scoped ?? []
-            let maxed = windows.filter { $0.pct >= 100 }
-            if maxed.isEmpty { continue }  // viable — not this advisory's territory
-            let resets = maxed.map { $0.resetsAt ?? "" }
-            if resets.contains("") { continue }  // a maxed window with no reset can't be ranked
-            let key = resets.max()!  // ISO-8601 sorts lexicographically
-            if best == nil || key < best!.key {
-                best = (key, account.number)
+            guard let revival = revival(of: account, now: now) else { continue }
+            if best == nil || revival.at < best!.at {
+                best = (revival.at, revival.iso, account.number)
             }
         }
         guard let best else { return nil }
-        return NextRecovery(number: best.number, at: best.key)
+        return NextRecovery(number: best.number, at: best.iso)
     }
 
     /// The value to actually show: the client's superset ranking when it
@@ -51,10 +68,10 @@ public enum RecoveryMath {
     /// account, or an active account that is itself at a limit, else
     /// there is nothing to wait for.
     public static func corrected(engine: NextRecovery?, accounts: [Account],
-                                 activeNumber: Int?) -> NextRecovery? {
+                                 activeNumber: Int?, now: Date = Date()) -> NextRecovery? {
         guard engine != nil else { return nil }
         if let active = accounts.first(where: { $0.number == activeNumber }),
            !AccountVitals.isDead(active.usage) { return nil }
-        return nextRecovery(accounts: accounts) ?? engine
+        return nextRecovery(accounts: accounts, now: now) ?? engine
     }
 }

@@ -8,11 +8,17 @@ publishes the matching section as the GitHub release body.
 ## Unreleased
 
 ### Phone
+- The all-limited Live Activity counts down to the real revival instead of 31 years out, and every surface picks the reviver by parsed reset date, ignoring implausible ones (#226).
 - Review changes says why there is nothing to review — checkpoints off on the Mac, a folder outside git, or no prompt checkpointed yet — instead of a caption nobody saw (#214).
 - A message Claude Code held instead of delivering shows in the chat as a marker, with where to review it (#213).
 
 ### Mac
+- Settings › Notifications sets the revive lead (default 10 min): how far ahead of an exhausted account's reset its row counts down live and the phone's reset alarm fires.
 - Phone messages and resume nudges reach sessions in every permission mode again: Claude Code 2.1.263 holds a peer message that claims a different permission class than the receiver's, so the app now asserts the session's own (#213).
+- "All accounts are exhausted" notifies once per outage and honors its toggle — the engine's ten-minute re-probes no longer repeat it.
+
+### Phone
+- A phone showing the revival countdown skips the duplicate all-dead alert, and a working activity starts silently.
 
 ## 0.4.4-alpha.1
 

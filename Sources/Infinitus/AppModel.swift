@@ -555,6 +555,10 @@ final class AppModel: ObservableObject {
     @Published var pushAwsLogin: Bool { didSet { defaults.set(pushAwsLogin, forKey: "push_aws_login") } }
     /// "<name> is back" (and "all accounts are back — reset early") pushes (2026-09-05).
     @Published var pushRevived: Bool { didSet { defaults.set(pushRevived, forKey: "push_revived") } }
+    /// Minutes before a reset that the row's countdown goes live and the
+    /// phone's reset alarm fires (#227); mirrored to the phone in FleetPrefs.
+    @Published var reviveLeadMinutes: Int { didSet { defaults.set(reviveLeadMinutes, forKey: "revive_lead_minutes") } }
+    var reviveLead: TimeInterval { TimeInterval(reviveLeadMinutes * 60) }
     /// Settings › Sync "This Mac's name" (#99); empty follows the computer name.
     @Published var machineNameOverride: String {
         didSet {
@@ -654,7 +658,7 @@ final class AppModel: ObservableObject {
     /// commands; no channels configured is a quiet no-op (try?). The
     /// away-push channels are cswap's.
     func push(_ msg: String) {
-        notify(msg)
+        notify(msg, phoneUnlessRevival: PushTriggers.isAllDeadMessage(msg))
         if let cswap {
             Task { _ = try? await cswap.run(["notify", "push", "-"], stdin: msg) }
         }
@@ -774,9 +778,12 @@ final class AppModel: ObservableObject {
     }
     static let hookRefreshSpacing: TimeInterval = 30
 
-    func notify(_ body: String) {
+    /// `phoneUnlessRevival`: a phone showing the all-dead countdown activity
+    /// (or about to get its start alert) already has this news — the Mac
+    /// banner still posts.
+    func notify(_ body: String, phoneUnlessRevival: Bool = false) {
         Notifier.post(title: "Infinitus", body: body)
-        liveActivityPusher.pushAlert(title: "Infinitus", body: body)
+        liveActivityPusher.pushAlert(title: "Infinitus", body: body, unlessRevival: phoneUnlessRevival)
     }
     private let awake = KeepAwake()
     /// Seeded with the AWS-login needs already pushed before the last
@@ -908,6 +915,7 @@ final class AppModel: ObservableObject {
         pushWaiting = defaults.object(forKey: "push_waiting") as? Bool ?? true
         pushAwsLogin = defaults.object(forKey: "push_aws_login") as? Bool ?? true
         pushRevived = defaults.object(forKey: "push_revived") as? Bool ?? true
+        reviveLeadMinutes = defaults.object(forKey: "revive_lead_minutes") as? Int ?? 10
         machineNameOverride = defaults.string(forKey: MachineName.overrideKey) ?? ""
         sessionHost = defaults.string(forKey: "session_host") ?? "auto"
         checkpointsEnabled = defaults.object(forKey: "checkpoints_enabled") as? Bool ?? true
@@ -1029,6 +1037,7 @@ final class AppModel: ObservableObject {
         pushWaiting = defaults.object(forKey: "push_waiting") as? Bool ?? true
         pushAwsLogin = defaults.object(forKey: "push_aws_login") as? Bool ?? true
         pushRevived = defaults.object(forKey: "push_revived") as? Bool ?? true
+        reviveLeadMinutes = defaults.object(forKey: "revive_lead_minutes") as? Int ?? 10
         machineNameOverride = defaults.string(forKey: MachineName.overrideKey) ?? ""
         sessionHost = defaults.string(forKey: "session_host") ?? "auto"
         checkpointsEnabled = defaults.object(forKey: "checkpoints_enabled") as? Bool ?? true
@@ -1815,8 +1824,8 @@ final class AppModel: ObservableObject {
                 notify(event.summary)
             case "account-unquarantined":
                 notify("account back in rotation")
-            case "all-exhausted":
-                notify("every account is at its limit")
+            // "all-exhausted" arrives on every engine re-probe (~10 min while
+            // dead): the latched PushTriggers message owns that notification.
             default:
                 break
             }
@@ -2198,7 +2207,8 @@ final class AppModel: ObservableObject {
                 popupLayout: popupLayout, burnStyle: burnStyle,
                 introStyle: introStyle, introTitle: introTitle,
                 introSpeed: introSpeed, customThemes: customThemes,
-                sortByHeadroom: sortByHeadroom, popupTextSize: popupTextSize)
+                sortByHeadroom: sortByHeadroom, popupTextSize: popupTextSize,
+                reviveLeadMinutes: reviveLeadMinutes)
             // Footer-chip state (#9 phase D2), captured here for the
             // same main-actor reason as the prefs above.
             let serviceStatus = ServiceStatusSummary(
