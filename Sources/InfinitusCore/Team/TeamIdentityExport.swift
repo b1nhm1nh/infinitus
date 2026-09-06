@@ -1,5 +1,8 @@
 import Foundation
 import Crypto
+#if canImport(MSVCRT)
+import MSVCRT
+#endif
 
 /// Spec §2.1: the identity secret sealed with a passphrase — PBKDF2-HMAC-
 /// SHA256 (600k rounds by default) → ChaChaPoly, the header (version,
@@ -62,9 +65,21 @@ extension TeamIdentityExport {
     /// (or follows a symlink at) an existing path: `O_EXCL` on a fresh
     /// descriptor, not write-then-chmod.
     public static func write(_ data: Data, to url: URL) throws {
+        #if os(Windows)
+        // The CRT spellings of the same flags: `_O_NOINHERIT` is the
+        // close-on-exec stand-in, and `_S_IREAD|_S_IWRITE` is 0600.
+        // `_sopen_s` because plain `_open` is variadic (unavailable).
+        var fd: Int32 = -1
+        let rc = _sopen_s(&fd, url.path,
+                          _O_WRONLY | _O_CREAT | _O_EXCL | _O_BINARY | _O_NOINHERIT,
+                          _SH_DENYNO, _S_IREAD | _S_IWRITE)
+        guard rc == 0, fd >= 0 else { throw errno == EEXIST ? WriteError.exists : WriteError.failed(errno) }
+        defer { _ = _close(fd) }
+        #else
         let fd = open(url.path, O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC, 0o600)
         guard fd >= 0 else { throw errno == EEXIST ? WriteError.exists : WriteError.failed(errno) }
         defer { close(fd) }
+        #endif
         try FileHandle(fileDescriptor: fd, closeOnDealloc: false).write(contentsOf: data)
     }
 }
