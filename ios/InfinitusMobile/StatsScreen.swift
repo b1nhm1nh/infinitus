@@ -17,7 +17,7 @@ struct StatsScreen: View {
             .pickerStyle(.segmented)
             .listRowBackground(Color.clear)
             if let s = model.stats?.summary(period) {
-                ForEach(Stats.Presentation.groups(s)) { group in
+                ForEach(Stats.Presentation.groups(s, theme: model.rowTheme)) { group in
                     Section(group.id) {
                         ForEach(group.tiles) { tile in
                             LabeledContent(tile.id) {
@@ -36,12 +36,12 @@ struct StatsScreen: View {
                 effortSection("By engine", Stats.Presentation.engineRows(s))
                 effortSection("By effort", Stats.Presentation.effortRows(s), footer: Stats.Presentation.activityFootnote)
                 if let records = model.stats?.tokenRecords {
-                    Section("Tokens/min records") {
-                        ForEach(Stats.Presentation.recordLines(records), id: \.self) { line in
+                    Section(Stats.Presentation.recordTitle(theme: model.rowTheme)) {
+                        ForEach(Stats.Presentation.recordLines(records, theme: model.rowTheme), id: \.self) { line in
                             Text(line).font(.caption).foregroundStyle(.secondary).monospacedDigit()
                         }
                         ForEach(Stats.Presentation.recordRows(records), id: \.label) { row in
-                            LabeledContent(row.label, value: Stats.Presentation.perMinute(row.count))
+                            LabeledContent(row.label, value: Stats.Presentation.perMinute(row.count, theme: model.rowTheme))
                         }
                     }
                 }
