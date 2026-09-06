@@ -47,7 +47,8 @@ enum TeamMirrorHandler {
             if code != nil { team.clearCode() }   // the pane's QR must not pop because the phone asked
             return json(TeamMirror.ActionReply(ok: code != nil, error: team.lastError, code: code))
         default:
-            return nil
+            // Nearby (spec §6.4) has its own file; nil from there is a real 404.
+            return await TeamMirrorNearby.handle(r, team: team)
         }
     }
 }
