@@ -1336,6 +1336,9 @@ struct SessionFeedScreen: View {
         case .limit:
             Label(item.text, systemImage: "clock.badge.exclamationmark")
                 .font(.caption).foregroundStyle(.red)
+        case .held:
+            Label(item.text, systemImage: "hand.raised")
+                .font(.caption).foregroundStyle(.orange)
         case .agent:
             // Sub-agent card, the way Claude Code's own UI lists them
             // (user 2026-09-03 via the phone: "show sub agents like
