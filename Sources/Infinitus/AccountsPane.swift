@@ -649,10 +649,16 @@ struct AccountsPane: View {
             }
             Button("Cancel", role: .cancel) { confirmRelogin = nil }
         } message: {
-            Text("Signing in again temporarily makes "
-                 + "\(confirmRelogin.map { accountLabel($0.account) } ?? "this account") "
-                 + "the active one; Infinitus switches back to "
-                 + "\(activeLabel(confirmRelogin?.fleet)) when it finishes.")
+            // The lapsed sign-in is usually the ACTIVE account's, and then
+            // "switches back to death2nd" would name the same account twice.
+            if confirmRelogin?.account.active == true {
+                Text("Infinitus keeps using this account when it finishes.")
+            } else {
+                Text("Signing in again temporarily makes "
+                     + "\(confirmRelogin.map { accountLabel($0.account) } ?? "this account") "
+                     + "the active one; Infinitus switches back to "
+                     + "\(activeLabel(confirmRelogin?.fleet)) when it finishes.")
+            }
         }
     }
 }
@@ -930,19 +936,24 @@ private struct FleetAccountsSection: View {
             chip("Active", .green)
         }
         if a.disabled ?? false {
-            chip("On Hold", .secondary)
-                .help("Rotation skips this account until you return it.")
+            // Primary type on the gray fill: secondary-on-secondary at
+            // .caption2 sits under the contrast floor.
+            chip("On Hold", .secondary, text: .primary)
+                .accessibilityLabel("On Hold. Rotation skips this account until you return it.")
         } else if a.usageStatus != "ok" {
-            chip(Self.statusWord(a.usageStatus), .orange)
-                .help(Self.statusHelp(a.usageStatus))
-                .accessibilityHint(Self.statusHelp(a.usageStatus))
+            // The sentence rides the LABEL, not a hint or a tooltip:
+            // `detail` combines these children, which drops their hints,
+            // and a tooltip never reaches VoiceOver at all.
+            let word = Self.statusWord(a.usageStatus)
+            chip(word, .orange)
+                .accessibilityLabel("\(word). \(Self.statusHelp(a.usageStatus))")
         }
     }
 
-    private func chip(_ text: String, _ color: Color) -> some View {
-        Text(text)
+    private func chip(_ label: String, _ color: Color, text: Color? = nil) -> some View {
+        Text(label)
             .font(.caption2)
-            .foregroundStyle(color)
+            .foregroundStyle(text ?? color)
             .padding(.horizontal, 5).padding(.vertical, 1)
             .background(Capsule().fill(color.opacity(0.18)))
     }
@@ -959,6 +970,8 @@ private struct FleetAccountsSection: View {
         case "keychain_unavailable": return "Keychain Locked"
         case "api_key": return "API Key"
         case "no_credentials": return "Not Signed In"
+        case "error": return "Unavailable"
+        case "usage_unavailable": return "Usage Unknown"
         default: return "Unavailable"
         }
     }
@@ -980,6 +993,12 @@ private struct FleetAccountsSection: View {
             return "This account signs in with an API key, so there is no plan quota to track."
         case "no_credentials":
             return "This slot has no stored sign-in yet."
+        case "error":
+            return "The engine can't reach this account right now. It retries on its own; "
+                 + "sign in again if it stays this way."
+        case "usage_unavailable":
+            return "The engine couldn't read this account's usage this pass. "
+                 + "It tries again on its own."
         default:
             return "The engine reported a state this version doesn't recognise. Updating the engine usually explains it."
         }
@@ -1104,10 +1123,7 @@ private struct RenameField: View {
     @State private var editing = false
     @FocusState private var focused: Bool
 
-    private var display: String {
-        let alias = account.alias ?? ""
-        return alias.isEmpty ? account.email : alias
-    }
+    private var display: String { accountLabel(account) }
 
     var body: some View {
         if editing {
@@ -1129,7 +1145,6 @@ private struct RenameField: View {
             .buttonStyle(.plain)
             .accessibilityLabel(display)
             .accessibilityHint("Renames this account. Clearing the name goes back to the email.")
-            .help("Click to rename \(display).")
         }
     }
 
