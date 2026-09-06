@@ -43,6 +43,7 @@ struct TeamMemberPane: View {
                                 Button("Transcript") {
                                     items = nil
                                     openSession = row
+                                    team.clearError()
                                     Task {
                                         let r = await team.transcript(kid: kid, session: row.id)
                                         if openSession?.id == row.id { items = r }
@@ -62,7 +63,7 @@ struct TeamMemberPane: View {
                 HStack { Text(row.name ?? row.project).font(.headline); Spacer(); Button("Close") { openSession = nil; items = nil } }.padding()
                 if let items {
                     if items.isEmpty {
-                        Spacer(); Text("Nothing to show").foregroundStyle(.secondary); Spacer()
+                        Spacer(); Text(team.lastError ?? "Nothing to show").foregroundStyle(team.lastError == nil ? Color.secondary : Color.orange); Spacer()
                     } else {
                         List(Array(items.enumerated()), id: \.offset) { _, item in
                             VStack(alignment: .leading, spacing: 2) {

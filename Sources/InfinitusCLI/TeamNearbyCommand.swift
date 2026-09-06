@@ -27,17 +27,6 @@ func teamNearbyUsage() -> String {
     """
 }
 
-struct NearbyPeerRow: Encodable {
-    var name: String
-    var host: String
-    var ipv4: String?
-    var port: UInt16
-    var kid: String?
-    var team: String?
-    var role: String?
-    var discoverable: Bool
-}
-
 #if os(macOS)
 private let nearbyPlatform = "macos"
 #elseif os(Linux)
@@ -85,39 +74,25 @@ func runTeamNearby(_ args: [String]) -> Int32? {
     do {
         switch sub {
         case "nearby":
-            emit(try browsePeers(seconds: seconds))
+            emit(try TeamNearby.Client.browse(seconds: seconds))
         case "request":
             guard let kid = options["nearby"], let name = options["name"] else { return fail(teamNearbyUsage(), code: 2) }
-            guard let peer = try browsePeers(seconds: seconds).first(where: { $0.kid == kid && $0.discoverable }) else {
+            guard let peer = try TeamNearby.Client.browse(seconds: seconds).first(where: { $0.kid == kid && $0.discoverable }) else {
                 return fail("no discoverable machine with kid \(kid) answered within \(Int(seconds))s")
             }
-            guard peer.role == "leader", let team = peer.team else { return fail("\(peer.name) leads no team") }
-            let host = peer.ipv4 ?? String(peer.host.dropLast(peer.host.hasSuffix(".") ? 1 : 0))
-            // The peer must be who its TXT says it is before anything is sent.
-            let (keyStatus, keyBody) = try http("GET", host: host, port: peer.port, path: TeamNearby.keyPath)
-            guard keyStatus == 200,
-                  let leaderKey = try? CanonicalJSON.decode(TeamNearby.KeyReply.self, from: keyBody),
-                  leaderKey.keys.kid == kid else {
-                return fail("\(peer.name) is not answering \(TeamNearby.keyPath) (\(keyStatus))")
-            }
-            let me = try TeamClient.identity(paths: paths, secrets: secrets)
             let devices = options["devices"]?.split(separator: ",").map(String.init) ?? []
-            let request = TeamRequest(keys: me.keys, name: name, devices: devices, platform: nearbyPlatform,
-                                      at: Int(Date().timeIntervalSince1970))
-            let signed = try Signed.make(request, by: me)
-            let body = try CanonicalJSON.encode(TeamNearby.Request(team: team, request: signed))
-            let (status, replyBody) = try http("POST", host: host, port: peer.port, path: TeamNearby.requestPath, body: body)
-            guard status == 200, let reply = try? CanonicalJSON.decode(TeamNearby.RequestReply.self, from: replyBody) else {
-                return fail("\(peer.name) refused the request (\(status))")
+            do {
+                let out = try TeamNearby.Client.request(to: peer, name: name, devices: devices, platform: nearbyPlatform,
+                                                        paths: paths, secrets: secrets,
+                                                        http: { m, h, p, path, body in try http(m, host: h, port: p, path: path, body: body) })
+                emit(["team": out.team, "leader": out.leader, "kid": out.kid, "stored": out.stored])
+            } catch TeamNearby.Client.ClientError.notALeader {
+                return fail("\(peer.name) leads no team")
+            } catch TeamNearby.Client.ClientError.keyMismatch(let s) {
+                return fail("\(peer.name) is not answering \(TeamNearby.keyPath) (\(s))")
+            } catch TeamNearby.Client.ClientError.refused(let s) {
+                return fail("\(peer.name) refused the request (\(s))")
             }
-            // Already holding the store credential (a code from before)?
-            // Then the branch too, so an offline leader still sees it.
-            var stored = reply.stored
-            if paths.teamIDs().contains(team) {
-                try TeamNearby.Store.writeToRequestsBranch(team: team, signed: signed, paths: paths, secrets: secrets)
-                stored = "branch"
-            }
-            emit(["team": team, "leader": kid, "kid": me.kid, "stored": stored])
         case "--discoverable":
             return runDiscoverable(name: options["name"], port: UInt16(options["port"] ?? "0") ?? 0,
                                    paths: paths, secrets: secrets)
@@ -128,23 +103,6 @@ func runTeamNearby(_ args: [String]) -> Int32? {
     } catch {
         return fail("\(error)")
     }
-}
-
-private func browsePeers(seconds: Double) throws -> [NearbyPeerRow] {
-    #if os(macOS) || os(Linux)
-    return try MDNS.browse(seconds: seconds).map { peer in
-        let record = NearbyRecord(txtStrings: peer.txt) ?? .hidden
-        return NearbyPeerRow(name: record.discoverable ? record.name : peer.instance,
-                             host: peer.host, ipv4: peer.ipv4, port: peer.port,
-                             kid: record.discoverable ? record.kid : nil,
-                             team: record.team,
-                             role: record.discoverable ? record.role : nil,
-                             discoverable: record.discoverable)
-    }
-    #else
-    throw NSError(domain: "team", code: 1,
-                  userInfo: [NSLocalizedDescriptionKey: "nearby discovery is not built for this platform yet"])
-    #endif
 }
 
 /// One blocking HTTP exchange with a peer; the CLI has no event loop to

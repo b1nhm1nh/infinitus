@@ -54,3 +54,17 @@ public enum TeamIdentityExport {
         }
     }
 }
+
+extension TeamIdentityExport {
+    public enum WriteError: Error, Equatable { case exists, failed(Int32) }
+
+    /// The export file lands 0600 from its first byte and never replaces
+    /// (or follows a symlink at) an existing path: `O_EXCL` on a fresh
+    /// descriptor, not write-then-chmod.
+    public static func write(_ data: Data, to url: URL) throws {
+        let fd = open(url.path, O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC, 0o600)
+        guard fd >= 0 else { throw errno == EEXIST ? WriteError.exists : WriteError.failed(errno) }
+        defer { close(fd) }
+        try FileHandle(fileDescriptor: fd, closeOnDealloc: false).write(contentsOf: data)
+    }
+}
