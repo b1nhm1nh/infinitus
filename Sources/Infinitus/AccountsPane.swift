@@ -690,6 +690,12 @@ private struct FleetAccountsSection: View {
     @Binding var confirmDelete: (fleet: FleetState, account: Account)?
     @Binding var confirmRelogin: (fleet: FleetState, account: Account)?
 
+    /// The aliases the last Randomize Names overwrote, and the one-shot
+    /// task that retires the offer 30 s later. A single `Task.sleep`,
+    /// not a timer: nothing ticks, so an open pane still idles at ~0%.
+    @State private var undoNames: [Int: String]?
+    @State private var undoTask: Task<Void, Never>?
+
     @ScaledMetric private var rowHeight: CGFloat = 30
 
     private var isCswap: Bool { fleet.engineID == CswapEngine.engineID }
@@ -729,13 +735,20 @@ private struct FleetAccountsSection: View {
             if let err = model.reorderError {
                 Text(err).font(.caption).foregroundStyle(.red)
             }
+            if undoNames != nil {
+                HStack {
+                    Text("Names randomized.").foregroundStyle(.secondary)
+                    Spacer()
+                    Button("Undo") { undoRandomize() }
+                }
+            }
         } header: {
             HStack {
                 Text("\(fleet.provider.displayName) \u{00B7} \(fleet.engine.displayName)")
                 Spacer()
                 if caps.contains(.rename), !fleet.accounts.isEmpty {
                     Menu {
-                        Button("Randomize Names") { fleet.randomizeNames() }
+                        Button("Randomize Names") { randomize() }
                     } label: {
                         Image(systemName: "ellipsis.circle")
                     }
@@ -778,6 +791,23 @@ private struct FleetAccountsSection: View {
         if canRelogin {
             Button("Sign In Again\u{2026}") { confirmRelogin = (fleet, a) }
         }
+    }
+
+    private func randomize() {
+        undoTask?.cancel()
+        undoNames = fleet.randomizeNames()
+        undoTask = Task {
+            try? await Task.sleep(for: .seconds(30))
+            guard !Task.isCancelled else { return }
+            undoNames = nil
+        }
+    }
+
+    private func undoRandomize() {
+        undoTask?.cancel()
+        undoTask = nil
+        if let previous = undoNames { fleet.restoreNames(previous) }
+        undoNames = nil
     }
 
     /// The non-interactive detail of a row — email, plan, status — as

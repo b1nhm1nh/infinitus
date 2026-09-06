@@ -226,11 +226,35 @@ final class FleetState: ObservableObject, Identifiable {
     }
 
     /// Every account gets a fresh name from the theme's pool, in one
-    /// pass (user 2026-09-04 "randomize account names").
-    func randomizeNames() {
+    /// pass (user 2026-09-04 "randomize account names"). Returns the
+    /// aliases it is about to overwrite — an empty string where an
+    /// account had none — so the pane can offer Undo instead of asking
+    /// first for something this cheap to reverse.
+    @discardableResult
+    func randomizeNames() -> [Int: String] {
+        let previous = Dictionary(uniqueKeysWithValues:
+            accounts.map { ($0.number, $0.alias ?? "") })
         let engine = engine, provider = provider
         let names = rowTheme.randomAccountNames(count: accounts.count)
         let pairs = Array(zip(accounts.map(\.number), names))
+        Task {
+            do {
+                for (number, name) in pairs {
+                    try await engine.rename(fleet: provider, number: number, name)
+                }
+                host.reorderError = nil
+            } catch { host.reorderError = EngineFailure.sentence(error) }
+            await host.refreshSnapshot()
+        }
+        return previous
+    }
+
+    /// Put the aliases back after a Randomize Names. An empty string
+    /// clears the alias, which is exactly what the engine's rename does
+    /// with one — so an account that had no name gets none back.
+    func restoreNames(_ previous: [Int: String]) {
+        let engine = engine, provider = provider
+        let pairs = previous.sorted { $0.key < $1.key }
         Task {
             do {
                 for (number, name) in pairs {
