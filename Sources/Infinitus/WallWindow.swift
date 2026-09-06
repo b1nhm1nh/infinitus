@@ -128,7 +128,7 @@ struct WallSection: View {
         ?? ""
 
     var body: some View {
-        Section("Fleet wall") {
+        Section {
             Picker("Display", selection: $choice) {
                 Text("Spare screen (auto)").tag("")
                 ForEach(NSScreen.screens.map(\.localizedName), id: \.self) {
@@ -142,10 +142,12 @@ struct WallSection: View {
                     UserDefaults.standard.set(v, forKey: "wall_display")
                 }
             }
-            Button("Enter full-screen fleet wall") { model.showWall?() }
-            Text("The popup, screen-sized — for the display that's just "
-                 + "there to look at. Esc leaves.")
-                .font(.caption).foregroundStyle(.secondary)
+            Button("Enter Full-Screen Fleet Wall") { model.showWall?() }
+        } header: {
+            Text("Fleet wall")
+        } footer: {
+            Text("The popup, screen-sized, for the display that's just "
+                 + "there to look at. Esc leaves it.")
         }
     }
 }
