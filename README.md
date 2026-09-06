@@ -130,7 +130,9 @@ One line per feature; the site and the CHANGELOG carry the detail.
 - **Reset and swap alarms on the phone** — local notifications ten minutes before an exhausted account's reset and when a swap is near.
 - **Crash reports, on-device** — both apps record their own crashes; any report can go into a session's chat for triage.
 - **Randomize names** — every account gets a fresh name from the theme's pool.
-- **Team (preview)** — `infinitusctl team` creates a team on any git remote and exchanges end-to-end encrypted files between members.
+- **Team (preview)** — a team on any git remote; members publish stats, sessions and chosen transcripts end-to-end encrypted to the people they pick, and leaders see who's on, who's blocked and what it costs per member, repo and model.
+- **Joining a team** — invite links and QR, team codes, `infinitus://join`, and same-network discovery; approve from the Mac; Linux members use `infinitusctl team` alone.
+- **Your team identity** — a local key behind Touch ID, a recovery key, a passphrase-sealed export.
 - **`infinitusctl`** — an agent-facing control CLI: status, fleets, sessions, send, switch, hold, rename, proxy, AWS logins, stats, perf; plus an agent-setup guide.
 
 ## Privacy

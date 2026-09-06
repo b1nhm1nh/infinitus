@@ -42,10 +42,12 @@ publishes the matching section as the GitHub release body.
 ### Team (preview)
 - Reading the team store remembers each file's header, so a refresh pass reads only new files and the app's memory stays flat.
 - A publish sends transcripts only from sessions active in the last two days (stats keep 30) and pushes in 200 MB batches, saving its place after each, so a huge history can't stall or crash it.
+- An invite link's request now proves the invite without carrying its secret, so a copied request can't ride someone else's invite; invited requests are approved automatically again.
+- `infinitusctl team-create --remote <url>` takes the URL as written.
 - `infinitusctl team create --as <name>` names you as the team's founder instead of "Leader".
 - Settings › Team: create or join a team, approve requests, see every member's latest publish, today's effort and blockers, and open their Stats and transcripts — the Mac fetches and publishes every 5 minutes.
 - Settings › Team: pick which audiences see each kind of your own data, and which project folders publish at all.
-- Invite links (QR, copy, share sheet, `infinitus://join/…`) approve the one request they were minted for by themselves once Settings › Team's auto-approve switch is on (off by default); team codes need a tap.
+- Invite links (QR, copy, share sheet, `infinitus://join/…`) approve the one request they were minted for by themselves once Settings › Team's auto-approve switch is on (on by default); team codes need a tap.
 - The Mac deletes its `now.json` from the team store on quit, so teammates stop seeing it "on".
 - `infinitusctl team-status|team-create|team-code|team-fetch|team-publish|team-approve|team-decline` drive the app's team over the control socket, and the phone's snapshot carries the same view.
 - Leaders see the team: per-member comparison for a period, leaderboards by spend, tokens, commits, PRs, lines, messages, tool calls, waiting time and sessions, who works in which repo, a blockers board, cost by member / model / repo, the hours heatmap and who's on now (`infinitusctl team members --period|insights`).

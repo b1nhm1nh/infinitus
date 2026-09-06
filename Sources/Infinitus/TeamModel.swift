@@ -31,11 +31,10 @@ final class TeamModel: ObservableObject {
     @Published private(set) var kid: String?
     /// From an `infinitus://join/…` link (Task 6): the pane's Join field prefills.
     @Published var pendingCode: String?
-    /// Leaders: approve requests carrying an invite nonce without a tap
-    /// (spec §6.2). OFF by default until the request binds the nonce to
-    /// the requester (#161): a request echoes the nonce in cleartext, so
-    /// anyone holding the store credential can copy a pending invitee's
-    /// nonce into their own request and be approved by the next pass.
+    /// Approve requests that prove one of this leader's invite nonces
+    /// (spec §6.2) without a tap. On by default; the proof is bound to
+    /// the requester's kid (#161), so a copied request cannot ride an
+    /// invite.
     @Published private(set) var autoApprove: Bool
     static let autoApproveKey = "team.autoApprove"
 
@@ -60,7 +59,7 @@ final class TeamModel: ObservableObject {
         self.paths = paths
         self.makeSecrets = makeSecrets
         self.defaults = defaults
-        autoApprove = defaults.bool(forKey: Self.autoApproveKey)
+        autoApprove = defaults.object(forKey: Self.autoApproveKey) as? Bool ?? true
     }
 
     func setAutoApprove(_ on: Bool) {
@@ -216,8 +215,8 @@ final class TeamModel: ObservableObject {
         let before = book.nonces
         book.prune(now: now)
         if book.nonces != before { try book.save(teamDir: dir) }
-        for request in try client.requests() where book.matches(request.doc, now: now) {
-            guard let nonce = request.doc.nonce else { continue }
+        for request in try client.requests() {
+            guard let nonce = book.matches(request.doc, now: now) else { continue }
             do { try client.approve(kid: request.doc.keys.kid, now: now) }
             catch is TeamClient.ClientError { continue }
             book.consume(nonce)

@@ -56,7 +56,9 @@ while i < args.count {
     let a = args[i]
     if a.hasPrefix("--") {
         let key = String(a.dropFirst(2))
-        let flagOnly = ["yes", "local", "remote", "status"]
+        // `--remote` is a bare flag for aws-login but carries a URL for
+        // team-create (the app's fallback to the second positional stays as a belt).
+        let flagOnly = command == "team-create" ? ["yes", "local", "status"] : ["yes", "local", "remote", "status"]
         if flagOnly.contains(key) || i + 1 >= args.count || args[i + 1].hasPrefix("--") {
             options[key] = "true"
         } else {

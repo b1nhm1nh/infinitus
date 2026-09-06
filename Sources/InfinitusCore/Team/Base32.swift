@@ -1,7 +1,8 @@
 import Foundation
 
 /// RFC 4648 base32, lowercase, unpadded — the alphabet a `kid` is written
-/// in (26 chars for 16 bytes). Encode only; nothing decodes a kid.
+/// in (26 chars for 16 bytes). `decode` below is the inverse, used by
+/// recovery keys.
 public enum Base32 {
     private static let alphabet = Array("abcdefghijklmnopqrstuvwxyz234567")
 
