@@ -74,6 +74,6 @@ final class TeamInvitesTests: XCTestCase {
         XCTAssertEqual(pending.doc.proof, TeamRequest.proof(nonce: nonce, kid: joiner.identity.kid))
         var book = TeamInvites(); book.add(nonce: nonce, expires: 700)
         XCTAssertEqual(book.matches(pending.doc, now: 103), nonce)
-        XCTAssertFalse(try CanonicalJSON.encode(pending.doc).contains(Data(nonce.utf8)), "nonce not in the stored request")
+        XCTAssertFalse(String(decoding: try CanonicalJSON.encode(pending.doc), as: UTF8.self).contains(nonce), "nonce not in the stored request")
     }
 }
