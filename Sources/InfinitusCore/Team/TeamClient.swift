@@ -106,6 +106,9 @@ public final class TeamClient {
         if let token { try secrets.write(tokenName(id), Data(token.utf8)) }
         let store = TeamGit(dir: paths.storeDir(id), remote: remote, token: token, author: me.kid)
         try store.open()
+        // Before anything of ours is written: the roster would otherwise
+        // land on top of a repository somebody else is using.
+        try store.requireEmptyRemote()
         let roster = TeamRoster(id: id, name: name, createdAt: now,
                                 leaders: [TeamRoster.Member(keys: me.keys, name: leaderName, since: now, founder: true)],
                                 rev: 1)

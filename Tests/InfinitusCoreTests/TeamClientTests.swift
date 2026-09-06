@@ -40,6 +40,33 @@ final class TeamClientTests: XCTestCase {
         XCTAssertEqual(secrets.read(TeamClient.identitySecretName)?.count, 32)
     }
 
+    /// Spec §6.1: "an empty private repo". Creating on a remote that
+    /// already holds something would push a roster into someone else's
+    /// history — and a member joining later would fetch a store nobody
+    /// meant to share.
+    func testCreateRefusesARemoteThatAlreadyHasContent() throws {
+        let remote = try makeRemote()
+        // Seed the bare repo through the store adapter itself: one commit
+        // on the `roster` branch is all "not empty" takes.
+        let seed = TeamGit(dir: scratch.appendingPathComponent("seed"), remote: remote, token: nil, author: "seed")
+        try seed.open()
+        try seed.put("roster/team.json", Data("{}".utf8))
+
+        let (paths, secrets) = machine("late")
+        XCTAssertThrowsError(try TeamClient.create(name: "Papaya", remote: remote, token: "t0ken",
+                                                   paths: paths, secrets: secrets, now: 1_000)) {
+            guard case TeamGit.GitError.notEmpty = $0 else { return XCTFail("expected notEmpty, got \($0)") }
+            XCTAssertEqual("\($0)", "That remote already has content — use an empty repository",
+                           "the pane and the CLI both print the interpolated error")
+        }
+        // The refusal runs `create`'s own cleanup: no dir, no token.
+        XCTAssertEqual(paths.teamIDs(), [])
+        let left = ((try? FileManager.default.contentsOfDirectory(atPath: paths.base.path)) ?? []).filter { $0 != "secrets" }
+        XCTAssertEqual(left, [], "no team directory survives a refused create")
+        let names = (try? FileManager.default.contentsOfDirectory(atPath: paths.secretsDir.path)) ?? []
+        XCTAssertEqual(names.filter { $0.hasPrefix("team.") }, [], "no store token is left behind either")
+    }
+
     func testIdentityIsCreatedOnceAndReloaded() throws {
         let (paths, secrets) = machine("a")
         let first = try TeamClient.identity(paths: paths, secrets: secrets)

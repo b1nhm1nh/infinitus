@@ -23,6 +23,9 @@ public final class TeamGit: TeamStore {
         /// No subprocesses on this platform (iOS): the phone talks to its
         /// Mac, which holds the mirror.
         case unavailable
+        /// Spec §6.1: a team is created on an EMPTY repository, and this
+        /// one already has refs.
+        case notEmpty
     }
 
     public let dir: URL
@@ -60,6 +63,17 @@ public final class TeamGit: TeamStore {
     public func sync() throws {
         heads = [:]
         _ = try run(["fetch", "-q", "--prune", "origin", "+refs/heads/*:refs/remotes/origin/*"])
+    }
+
+    /// Spec §6.1's "empty private repo", asked of the REMOTE. Not
+    /// `branches()` — that filters to the store's own branches (Task 4),
+    /// so a repo holding only `main` or a README would read as empty —
+    /// and not the local refs, which a fresh mirror has none of either
+    /// way.
+    public func requireEmptyRemote() throws {
+        guard opened else { throw GitError.notOpen }
+        let text = String(decoding: try run(["ls-remote", "origin"]), as: UTF8.self)
+        guard text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw GitError.notEmpty }
     }
 
     public func put(_ path: String, _ data: Data) throws { try putAll([path: data]) }
@@ -262,5 +276,23 @@ public final class TeamGit: TeamStore {
         }
         return data
         #endif
+    }
+}
+
+/// What the pane and the CLI print. Both interpolate the error
+/// (`"\(error)"`), and a bare enum would read "notEmpty" or
+/// "failed(command: …, status: 128, stderr: …)" at the user.
+extension TeamGit.GitError: CustomStringConvertible {
+    public var description: String {
+        switch self {
+        case .failed(let command, let status, let stderr):
+            let detail = stderr.trimmingCharacters(in: .whitespacesAndNewlines)
+            return "git \(command) failed (\(status))" + (detail.isEmpty ? "" : ": \(detail)")
+        case .notOpen: return "the team store is not open"
+        case .badPath(let path): return "\(path) is not a team store path"
+        case .raceLost: return "another writer pushed first"
+        case .unavailable: return "this platform runs no git (the phone hands team work to its Mac)"
+        case .notEmpty: return "That remote already has content — use an empty repository"
+        }
     }
 }
