@@ -15,6 +15,7 @@ publishes the matching section as the GitHub release body.
 - A message Claude Code held instead of delivering shows in the chat as a marker, with where to review it (#213).
 
 ### Mac
+- Team publishing reuses the Stats scan instead of scanning every transcript a second time, which had taken the app to 5.5 GB (#251).
 - The tokens/minute chip speaks the theme — mana/min, baud, knots — with its own icon, on the Mac, the phone, the widgets and both theme previews (#218).
 - Settings › Accounts backs up every cswap account to one file and restores from it, asking before it replaces anything (#229).
 - All accounts limited: the one that revives first floats to the top with a themed pulse and its own hh:mm:ss countdown inside the revive lead, on the popup, pop-out and the phone's rows.
