@@ -91,4 +91,10 @@ jobs:
         with:
           branch: swift-6.1-release
           tag: 6.1-RELEASE
-      - run: swift build --product infinitusctl
+      # zlib for CZlib: the toolchain has no <zlib.h>; vcpkg on the
+      # runner image does (#171, second wall after the Glibc imports).
+      - run: vcpkg install zlib:x64-windows
+      - run: >
+          swift build --product infinitusctl
+          -Xcc -I${env:VCPKG_INSTALLATION_ROOT}/installed/x64-windows/include
+          -Xlinker -L${env:VCPKG_INSTALLATION_ROOT}/installed/x64-windows/lib
