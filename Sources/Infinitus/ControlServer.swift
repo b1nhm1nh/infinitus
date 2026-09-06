@@ -234,9 +234,13 @@ final class ControlServer {
             let (sessionId, cwd) = (record.sessionId, record.cwd)
             switch r.command {
             case "checkpoints":
-                let list = try await Task.detached { try Checkpoints.list(cwd: cwd, sessionId: sessionId) }.value
+                let (list, inGit) = try await Task.detached {
+                    (try Checkpoints.list(cwd: cwd, sessionId: sessionId), Checkpoints.toplevel(cwd: cwd) != nil)
+                }.value
                 return ControlReply(ok: true, result: try .of(["sessionId": .string(sessionId), "cwd": .string(cwd),
-                                                               "checkpoints": try .of(list)] as [String: JSONValue]))
+                                                               "checkpoints": try .of(list),
+                                                               "enabled": .bool(model.checkpointsEnabled),
+                                                               "inGit": .bool(inGit)] as [String: JSONValue]))
             case "checkpoint-diff":
                 guard r.args.count >= 2, let n = Int(r.args[1]) else { throw Fail("usage: checkpoint-diff <pid|name> <n> [m]") }
                 let m = r.args.count > 2 ? Int(r.args[2]) : nil
