@@ -253,4 +253,46 @@ final class TeamClientTests: XCTestCase {
         // The identity is this machine's, not the team's: it stays.
         XCTAssertEqual(ms.read(TeamClient.identitySecretName)?.count, 32)
     }
+
+    /// A leader key signs whatever `team` string it likes into a code —
+    /// `TeamCode.decode` only checks the signature, not the id's shape.
+    /// `"secrets"` aliases `TeamPaths.secretsDir`, so a join refused by a
+    /// dead remote must not let the request's cleanup `defer` delete the
+    /// machine identity and every other team's store token living there.
+    func testJoinRejectsATeamIDThatAliasesTheSecretsDir() throws {
+        let forger = TeamIdentity.random()
+        let code = try TeamCode(team: "secrets", name: "Papaya", remote: "file:///nonexistent/nope.git",
+                                token: "t0ken", leader: forger.keys, expires: 2_000).encoded(by: forger)
+
+        let (mp, ms) = machine("joiner")
+        _ = try TeamClient.identity(paths: mp, secrets: ms) // seeds the identity secret under <base>/secrets
+        XCTAssertThrowsError(try TeamClient.request(code: code, name: "Bo", devices: [], platform: "linux",
+                                                    paths: mp, secrets: ms, now: 1_000)) {
+            XCTAssertEqual($0 as? TeamClient.ClientError, .badCode)
+        }
+        XCTAssertEqual(mp.teamIDs(), [])
+        XCTAssertEqual(ms.read(TeamClient.identitySecretName)?.count, 32, "the secrets dir must survive intact")
+    }
+
+    /// Same defect, the path-traversal vector: `TeamPaths.teamDir` is a
+    /// bare `appendingPathComponent`, so `".."` walks out of `<base>`.
+    func testJoinRejectsATraversingTeamID() throws {
+        let forger = TeamIdentity.random()
+        let code = try TeamCode(team: "../victim", name: "Papaya", remote: "file:///nonexistent/nope.git",
+                                token: "t0ken", leader: forger.keys, expires: 2_000).encoded(by: forger)
+        // scratch/joiner/../victim resolves to scratch/victim: a sentinel
+        // the refused-join `defer` would `removeItem` recursively if the
+        // guard above ever regressed.
+        let victim = scratch.appendingPathComponent("victim/sentinel")
+        try FileManager.default.createDirectory(at: victim.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data("x".utf8).write(to: victim)
+
+        let (mp, ms) = machine("joiner")
+        XCTAssertThrowsError(try TeamClient.request(code: code, name: "Bo", devices: [], platform: "linux",
+                                                    paths: mp, secrets: ms, now: 1_000)) {
+            XCTAssertEqual($0 as? TeamClient.ClientError, .badCode)
+        }
+        XCTAssertEqual(mp.teamIDs(), [])
+        XCTAssertTrue(FileManager.default.fileExists(atPath: victim.path), "the traversal target survives")
+    }
 }

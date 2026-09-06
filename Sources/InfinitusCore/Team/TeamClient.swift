@@ -124,6 +124,16 @@ public final class TeamClient {
                                paths: TeamPaths, secrets: TeamSecrets,
                                now: Int = Int(Date().timeIntervalSince1970)) throws -> TeamClient {
         let code = try TeamCode.decode(text, now: now)
+        // `code.team` is attacker-controlled (any leader key signs any
+        // `team` string into a code) and lands in `paths.teamDir`, which is
+        // a bare path join — no traversal or alias check. `create` only
+        // ever mints a lowercase UUID for this field, so requiring the same
+        // shape here rejects both a `../..` traversal and an alias like
+        // `"secrets"` (== `paths.secretsDir`) before the `defer` below can
+        // turn either into a recursive delete of the wrong directory.
+        guard let uuid = UUID(uuidString: code.team), uuid.uuidString.lowercased() == code.team else {
+            throw ClientError.badCode
+        }
         guard !paths.teamIDs().contains(code.team) else { throw ClientError.alreadyJoined }
         let me = try identity(paths: paths, secrets: secrets)
         var joined = false
