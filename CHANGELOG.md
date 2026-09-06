@@ -85,6 +85,7 @@ publishes the matching section as the GitHub release body.
 - The phone has a Team tab: roster, requests, invite links and team codes, a teammate's stats and sessions, their shared transcripts, and the leaders' team picture — approve, decline and join from the phone.
 - The phone's Team tab locks behind Face ID / Touch ID (Settings › Team); joining from the phone needs the lock on.
 - Every theme names the Team tab in its own words (Guild, Crew, Clan, Unit, Org).
+- Docs: a README Team guide, and systemd and Task Scheduler timers for Linux and Windows members (`packaging/linux`, `packaging/windows`).
 
 ## 0.4.3
 
