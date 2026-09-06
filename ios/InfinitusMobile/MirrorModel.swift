@@ -210,6 +210,7 @@ final class MirrorModel: ObservableObject, FleetModel {
         localIntroSpeed = defaults.object(forKey: "intro_speed") as? Double ?? 1.0
         macPopupView = defaults.object(forKey: "mac_popup_view") as? Bool ?? false
         reachableAgain = { Task { await OutboxDelivery.flush() } }
+        otherReachable = { id in Task { await OutboxDelivery.flush(macId: id) } }
     }
 
     /// Pairs with a Mac from a scanned QR or an `infinitus://pair?…` deep
