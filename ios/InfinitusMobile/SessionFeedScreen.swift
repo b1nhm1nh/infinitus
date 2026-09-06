@@ -39,6 +39,9 @@ struct SessionFeedScreen: View {
     @State private var awsLoginItem: AwsLogin.Item?
     /// Review this turn's changes (#166): the newest checkpoint vs now.
     @State private var reviewTarget: ReviewTarget?
+    /// Why Review changes had nothing to show (#214): an alert, not a
+    /// caption — the caption read as the button doing nothing.
+    @State private var reviewEmptyReason: String?
     @State private var lastRowVisible = true
     @Environment(\.scenePhase) private var scenePhase
     @StateObject private var screenshots = ScreenshotWatch()
@@ -215,6 +218,12 @@ struct SessionFeedScreen: View {
             .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: lastRowVisible)
         }
         .sheet(item: $awsLoginItem) { AwsLoginScreen(item: $0, mirror: mirror) }
+        .alert("Nothing to review yet", isPresented: Binding(
+            get: { reviewEmptyReason != nil }, set: { if !$0 { reviewEmptyReason = nil } })) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(reviewEmptyReason ?? "")
+        }
         .sheet(item: $reviewTarget) { target in
             // A sheet is presented from this node, not from the root:
             // hand it the mirror itself so a review from another Mac's
@@ -1117,7 +1126,7 @@ struct SessionFeedScreen: View {
             do {
                 let reply = try await mirror.checkpoints(pid: Int32(session.pid))
                 guard let last = reply.checkpoints.last else {
-                    actionResult = "No checkpoints yet — the plugin checkpoints a git folder at every prompt"
+                    reviewEmptyReason = reply.emptyReason
                     return
                 }
                 reviewTarget = ReviewTarget(checkpoint: last)

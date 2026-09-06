@@ -69,8 +69,30 @@ public enum Checkpoints {
         public let sessionId: String
         public let cwd: String
         public let checkpoints: [Checkpoint]
-        public init(sessionId: String, cwd: String, checkpoints: [Checkpoint]) {
+        /// Why an empty list is empty (#214): the Mac's Display toggle and
+        /// whether `cwd` is inside a repository. nil from a Mac older than
+        /// these fields.
+        public let enabled: Bool?
+        public let inGit: Bool?
+        public init(sessionId: String, cwd: String, checkpoints: [Checkpoint],
+                    enabled: Bool? = nil, inGit: Bool? = nil) {
             self.sessionId = sessionId; self.cwd = cwd; self.checkpoints = checkpoints
+            self.enabled = enabled; self.inGit = inGit
+        }
+
+        /// What to tell the user when `checkpoints` is empty — the phone's
+        /// Review button showed a caption nobody saw (user 2026-09-06: "I
+        /// press review changes it doesn't react"), so the reason is now
+        /// an alert, and it says which of the three preconditions is
+        /// missing.
+        public var emptyReason: String {
+            if enabled == false {
+                return "Checkpoints are off on the Mac — turn on Display › “Checkpoint the repository at every prompt” in Infinitus."
+            }
+            if inGit == false {
+                return "\((cwd as NSString).lastPathComponent) isn't inside a git repository, and checkpoints need one."
+            }
+            return "No checkpoints yet — the next prompt records one, once the Infinitus plugin's hook is installed in Claude Code."
         }
     }
     /// `POST …/checkpoints/<n>/restore`: `outcome` is "restored" or
