@@ -12,14 +12,13 @@ publishes the matching section as the GitHub release body.
 - The activity tables read the ask off your own message — "debug the crash" counts as debugging even when the tools only edited — and the plugin's UserPromptSubmit hook refreshes a session the moment a prompt goes in.
 
 ### Phone
-- Settings' theme chooser shows every theme as a live row — its gauges, spend line, status word and tab bar — and the Theme row carries its colours.
+- Settings' theme chooser shows every theme as a live row — its gauges, spend line, status word and tab bar — and the Theme row carries its colors.
 - Pace fire, content entrance and title flourish are picked from tiles that show the effect instead of a menu of words.
 - The pairing token is covered until you tap to reveal it.
 - Forgetting a paired Mac asks first and says what it costs.
 - Settings leads with the Mac connection: with nothing paired, scanning the Mac's QR code is the first thing on screen.
-- Every group in Settings explains itself in a footer, and the Mac's addresses are labelled and editable.
+- Every group in Settings explains itself in a footer, and the Mac's addresses are labeled and editable.
 - Updating the Mac from the phone shows its progress and offers Try Again with a plain reason when it fails.
-- The chat header scales with the phone's text size.
 - Parked sessions: with the Mac unreachable the phone keeps the last fleet and transcripts, queues one message per session and delivers it once the Mac is back (#168).
 - The phone pairs with more than one Mac: other Macs' fleets and sessions show under their name, and any of them can be made primary from Settings › Devices.
 - Other Macs' sessions open like the primary's: transcript, replies, approvals, checkpoints and queued messages go to the Mac the session lives on (#144).
