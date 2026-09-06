@@ -7,6 +7,11 @@ import Foundation
 public struct SessionFeedItem: Codable, Sendable, Equatable {
     public enum Kind: String, Codable, Sendable {
         case user, assistant, tool, question, permission, result, limit
+        /// A phone message or nudge Claude Code's peer inbox held instead
+        /// of delivering (#213: the permission-mode classes differed, or
+        /// the user's `crossSessionInbound` setting holds everything) —
+        /// otherwise the phone sees "delivered" and nothing happens.
+        case held
         /// A sub-agent this session spawned (the `Agent` tool) — its own
         /// transcript lives under `<session>/subagents/`, summarized here
         /// like Remote Control does (user 2026-09-03, from the phone).
@@ -405,6 +410,11 @@ public enum SessionFeedReader {
                 }
                 continue
             }
+            if type == "system", (entry["subtype"] as? String) == "informational",
+               let content = entry["content"] as? String, let text = heldText(content) {
+                append(SessionFeedItem(kind: .held, text: text, at: timestamp(entry)))
+                continue
+            }
             if type == "user" {
                 if let user = realUserText(entry) {
                     let images = imageIds(entry: entry, text: user.text)
@@ -565,6 +575,17 @@ public enum SessionFeedReader {
             return (data, source["media_type"] as? String ?? "image/png")
         }
         return nil
+    }
+
+    /// The feed line for Claude Code's "Held peer message — from
+    /// uds:/tmp/infinitus-<pid>.sock … — not delivered to Claude (N held).
+    /// <why>" warning (2.1.263+), for holds of OUR messages only: another
+    /// session's held mail is not the phone's business. The preview is
+    /// skipped — it shows the phone preface, never the user's words.
+    static func heldText(_ content: String) -> String? {
+        guard content.hasPrefix("Held peer message"), content.contains("/tmp/infinitus-") else { return nil }
+        return "Claude Code held this message from Infinitus instead of delivering it. "
+            + "Review it in the session's terminal, or set crossSessionInbound to accept."
     }
 
     /// A user prompt worth a bubble: plain text as is; a cross-session

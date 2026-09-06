@@ -11,6 +11,16 @@ final class SessionFeedTests: XCTestCase {
         XCTAssertEqual(round.map(\.kind), [.user, .other])
     }
 
+    func testHeldPeerMessageBecomesAMarker() {
+        let held = #"{"type":"system","subtype":"informational","level":"warning","timestamp":"2026-09-06T10:00:00.000Z","content":"Held peer message — from uds:/tmp/infinitus-123.sock (peer claims name: Infinitus app); preview: «Infinitus The user sent this from their phone» — not delivered to Claude (1 held). The sending session's permission mode class doesn't match this session's, so it wasn't delivered automatically."}"#
+        let other = #"{"type":"system","subtype":"informational","level":"warning","content":"Held peer message — from uds:/tmp/cc-socks/55.sock — not delivered to Claude (1 held). Your \"crossSessionInbound\" setting is \"hold\"."}"#
+        let noise = #"{"type":"system","subtype":"informational","level":"info","content":"Released 1 held cross-session message to Claude's queue."}"#
+        let items = SessionFeedReader.parse(lines: [held, other, noise], limit: 30)
+        XCTAssertEqual(items.map(\.kind), [.held])
+        XCTAssertTrue(items[0].text.hasPrefix("Claude Code held this message from Infinitus"))
+        XCTAssertNotNil(items[0].at)
+    }
+
     func testUserAssistantTextAndBashToolInOrder() {
         let lines = [
             #"{"type":"user","timestamp":"2026-09-01T10:00:00.000Z","message":{"content":"fix the build"}}"#,
