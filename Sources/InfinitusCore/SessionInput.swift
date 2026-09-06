@@ -23,11 +23,24 @@ public enum SessionInput {
         /// features to allow attachments"). Optional so an old client's
         /// JSON — no `attachments` key at all — still decodes.
         public let attachments: [Attachment]?
+        /// #168: a client-minted id so a retried delivery (the phone died
+        /// mid-flush, the reply was lost) is answered once — the Mac keeps
+        /// the last few per session. `queuedAt` marks a request that
+        /// waited in the phone's outbox; the Mac pushes an alert when it
+        /// lands. `sessionId` lets the Mac find the session again when
+        /// its pid changed under a reboot. All optional: old JSON decodes.
+        public let requestId: String?
+        public let queuedAt: Date?
+        public let sessionId: String?
 
-        public init(kind: Kind, text: String, attachments: [Attachment]? = nil) {
+        public init(kind: Kind, text: String, attachments: [Attachment]? = nil,
+                    requestId: String? = nil, queuedAt: Date? = nil, sessionId: String? = nil) {
             self.kind = kind
             self.text = text
             self.attachments = attachments
+            self.requestId = requestId
+            self.queuedAt = queuedAt
+            self.sessionId = sessionId
         }
     }
 
