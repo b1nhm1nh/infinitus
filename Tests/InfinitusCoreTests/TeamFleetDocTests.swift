@@ -49,7 +49,7 @@ final class TeamFleetDocTests: XCTestCase {
         XCTAssertThrowsError(try TeamKinds.check(h, at: "m/k/now.json")) {
             XCTAssertEqual($0 as? TeamKinds.KindError, .kindMismatch)
         }
-        XCTAssertFalse(TeamKinds.memberKinds.contains(TeamKinds.fleet), "not advertised until the publisher writes it")
+        XCTAssertEqual(TeamKinds.memberKinds.last, TeamKinds.fleet, "the share row, after the older kinds")
     }
 
     func entry(_ path: String, kind: String, from: String, at: Int) -> (entry: StoreEntry, header: Envelope.Header) {
