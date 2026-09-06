@@ -18,15 +18,15 @@ struct AnimationsDebugPane: View {
     var body: some View {
         Form {
             Section {
-                Button("Open playground") {
+                Button("Open Playground") {
                     Playground.show(usage: usage)
                 }
-                Text("A resizable window with the self-contained demos \u{2014} "
-                     + "burn styles side by side, the HP drop, refills \u{2014} "
-                     + "at a size you can actually see.")
-                    .font(.caption).foregroundStyle(.secondary)
+            } footer: {
+                Text("A resizable window with the self-contained demos — "
+                     + "burn styles side by side, the drop, refills — at a "
+                     + "size you can actually see.")
             }
-            Section("Launch intro") {
+            Section {
                 Picker("Content entrance", selection: $model.introStyle) {
                     Text("Slide from top").tag("top")
                     Text("Slide from bottom").tag("bottom")
@@ -50,15 +50,17 @@ struct AnimationsDebugPane: View {
                     }
                 }
                 HStack {
-                    Button("Replay intro") { model.replayIntro() }
-                    Button("Restart app") { model.relaunchApp() }
+                    Button("Replay Intro") { model.replayIntro() }
+                    Button("Restart App") { model.relaunchApp() }
                 }
-                Text("Open the popup, then Replay to audition; Restart "
-                     + "runs the real thing — controls slide in from "
-                     + "their sides, content enters per the picker, bars "
-                     + "fill up with the active-row flash, and the title "
-                     + "lands with the chosen flourish.")
-                    .font(.caption).foregroundStyle(.secondary)
+            } header: {
+                Text("Launch intro")
+            } footer: {
+                Text("Open the popup, then Replay to audition; Restart runs "
+                     + "the real thing — controls slide in from their sides, "
+                     + "content enters per the picker, bars fill up with the "
+                     + "active-row flash, and the title lands with the chosen "
+                     + "flourish.")
             }
             Section("Live popup (fires on the real rows)") {
                 Button("Flash the active row (switch celebration)") {

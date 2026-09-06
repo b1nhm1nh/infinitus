@@ -72,24 +72,28 @@ struct MachinePane: View {
     private var header: some View {
         Section {
             Toggle("Watch this Mac", isOn: $model.enabled)
-            Text("one process listing a minute; the temp directory every five")
-                .font(.caption).foregroundStyle(.secondary)
             Toggle("Notify about hooks (new, stuck, fanned out)", isOn: $model.notifyHooks)
             Toggle("Notify about the temp directory", isOn: $model.notifyTemp)
             HStack {
-                Button("Sample now") { Task { resultMessage = nil; await model.sample() } }
+                Button("Sample Now") { Task { resultMessage = nil; await model.sample() } }
                     .disabled(model.sampling)
                 if model.sampling { ProgressView().controlSize(.small) }
                 Spacer()
                 if let at = model.lastSampledAt {
-                    Text("sampled \(at.formatted(date: .omitted, time: .standard))")
+                    Text("Sampled \(at.formatted(date: .omitted, time: .standard))")
                         .font(.caption).foregroundStyle(.secondary).monospacedDigit()
                 }
             }
             if let resultMessage {
                 Text(resultMessage).font(.caption).foregroundStyle(.secondary)
             }
+        } header: {
+            Text("Watching")
+        } footer: {
+            Text("Watching costs one process listing a minute and one look "
+                 + "at the temp directory every five.")
         }
+        .settingsAnchor("Machine/Watching")
     }
 
     // MARK: summary
@@ -122,7 +126,7 @@ struct MachinePane: View {
                     if let n = s.tempEntries {
                         Text("\(n)")
                     } else {
-                        Text("listing timed out").foregroundStyle(.red)
+                        Text("Listing timed out").foregroundStyle(.red)
                     }
                 }
                 GridRow {
@@ -132,6 +136,7 @@ struct MachinePane: View {
             }
             .font(PopupFont.caption).monospacedDigit()
         }
+        .settingsAnchor("Machine/Summary")
     }
 
     // MARK: warnings
@@ -139,7 +144,7 @@ struct MachinePane: View {
     private func warningsSection(_ report: MachineReport) -> some View {
         Section("Warnings") {
             if report.warnings.isEmpty {
-                Text("nothing to flag").foregroundStyle(.secondary).font(PopupFont.caption)
+                Text("Nothing to flag").foregroundStyle(.secondary).font(PopupFont.caption)
             } else {
                 ForEach(Array(report.warnings.enumerated()), id: \.offset) { _, warning in
                     Text(warning).foregroundStyle(.orange).font(PopupFont.caption)
@@ -205,7 +210,7 @@ struct MachinePane: View {
         Section("Hooks") {
             let groups = hookGroups(report)
             if groups.isEmpty {
-                Text("no hook registrations").foregroundStyle(.secondary).font(PopupFont.caption)
+                Text("No hook registrations").foregroundStyle(.secondary).font(PopupFont.caption)
             } else {
                 ForEach(groups) { group in hookRow(group) }
             }
@@ -224,12 +229,12 @@ struct MachinePane: View {
                 }
                 Spacer()
                 if group.instances > 0 {
-                    Button("Kill instances…") { pendingHookKill = group }
+                    Button("Kill Instances…") { pendingHookKill = group }
                 }
                 if group.kind == .plugin {
-                    Text("managed by Claude Code").font(.caption2).foregroundStyle(.secondary)
+                    Text("Managed by Claude Code").font(.caption2).foregroundStyle(.secondary)
                 } else if model.parkedOwners.contains(group.owner) {
-                    Button("Restore") {
+                    Button("Restore Hooks") {
                         let owner = group.owner
                         Task { resultMessage = await model.restoreHook(owner: owner) }
                     }
@@ -247,6 +252,7 @@ struct MachinePane: View {
             .font(PopupFont.caption).foregroundStyle(.secondary).monospacedDigit()
         }
         .padding(.vertical, 2)
+        .accessibilityElement(children: .combine)
     }
 
     // MARK: runaways
@@ -254,7 +260,7 @@ struct MachinePane: View {
     private func runawaysSection(_ report: MachineReport) -> some View {
         Section("Runaways") {
             if report.runaways.isEmpty {
-                Text("nothing flagged").foregroundStyle(.secondary).font(PopupFont.caption)
+                Text("Nothing flagged").foregroundStyle(.secondary).font(PopupFont.caption)
             } else {
                 ForEach(report.runaways) { runaway in runawayRow(runaway, sessions: report.sessions) }
             }
@@ -282,6 +288,7 @@ struct MachinePane: View {
                 .lineLimit(1).truncationMode(.tail).help(runaway.command)
         }
         .padding(.vertical, 2)
+        .accessibilityElement(children: .combine)
     }
 
     // MARK: residue
@@ -315,9 +322,10 @@ struct MachinePane: View {
             if let sessions = report?.sessions, !sessions.isEmpty {
                 ForEach(sessions) { session in sessionRow(session) }
             } else {
-                Text("no sessions").foregroundStyle(.secondary).font(PopupFont.caption)
+                Text("No sessions").foregroundStyle(.secondary).font(PopupFont.caption)
             }
         }
+        .settingsAnchor("Machine/Sessions")
     }
 
     private func sessionRow(_ session: SessionHealth) -> some View {
@@ -331,5 +339,19 @@ struct MachinePane: View {
                 .foregroundStyle(.secondary).help(session.cwd)
         }
         .font(PopupFont.caption).monospacedDigit()
+        .accessibilityElement(children: .combine)
     }
+}
+
+extension MachinePane {
+    static let searchEntries: [SettingsSearchEntry] = [
+        SettingsSearchEntry(pane: "Machine", section: "Watching", label: "Watch this Mac",
+                            keywords: ["watch", "health", "monitor", "guardian"], anchor: "Machine/Watching"),
+        SettingsSearchEntry(pane: "Machine", section: "Watching", label: "Notify about hooks (new, stuck, fanned out)",
+                            keywords: ["hooks", "notify", "stuck", "runaway"], anchor: "Machine/Watching"),
+        SettingsSearchEntry(pane: "Machine", section: "Watching", label: "Notify about the temp directory",
+                            keywords: ["temp", "residue", "disk"], anchor: "Machine/Watching"),
+        SettingsSearchEntry(pane: "Machine", section: "Sessions", label: "Notify when a session is idle",
+                            keywords: ["idle", "sessions", "hours"], anchor: "Machine/Sessions"),
+    ]
 }
