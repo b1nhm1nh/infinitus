@@ -41,7 +41,17 @@ public struct MachineReport: Equatable, Sendable, Codable {
     }
 
     /// The warnings a sample earns, in the order the tab lists them.
-    public static func warnings(sample: MachineSample, hooks: [Hook], newcomers: [HookRegistration]) -> [String] {
+    /// New temp entries per hour that read as a bootstrap retrying: one
+    /// failed `pip install` leaves ~4 dirs, so 20/h is five attempts.
+    public static let retryLoopPerHour = 20.0
+
+    /// - tempGrowthPerHour: new temp entries per hour by owner since the
+    ///   previous listing (#115 item 6 — a hook whose install keeps dying
+    ///   leaves a pile that grows every session start).
+    /// - pipSpawner: the hook owner whose process tree holds a running
+    ///   pip, when one is known.
+    public static func warnings(sample: MachineSample, hooks: [Hook], newcomers: [HookRegistration],
+                                tempGrowthPerHour: [String: Double] = [:], pipSpawner: String? = nil) -> [String] {
         var out: [String] = []
         for hook in newcomers {
             out.append("new hook: \(hook.owner) on \(hook.event) (\(hook.source.label))")
@@ -59,6 +69,24 @@ public struct MachineReport: Equatable, Sendable, Codable {
         if sample.tempEntries == nil, sample.tempListSeconds > 0 { out.append("temp directory listing timed out") }
         else if let n = sample.tempEntries, n >= 10_000 { out.append("temp directory holds \(n) entries" + tempBreakdown(sample.tempByOwner)) }
         out += fanOut(hooks)
+        let pipGrowth = (tempGrowthPerHour["pip"] ?? 0) + (tempGrowthPerHour["python"] ?? 0)
+        if pipGrowth >= retryLoopPerHour {
+            let who = pipSpawner.map { "\($0)'s hook" } ?? "a hook"
+            out.append("\(who) keeps re-running pip install — \(Int(pipGrowth)) new temp dirs per hour")
+        }
+        return out
+    }
+
+    /// New entries per hour by owner between two listings.
+    public static func tempGrowthPerHour(previous: [String: Int]?, previousAt: Date?, current: [String: Int]?, now: Date) -> [String: Double] {
+        guard let previous, let previousAt, let current else { return [:] }
+        let hours = now.timeIntervalSince(previousAt) / 3600
+        guard hours > 0 else { return [:] }
+        var out: [String: Double] = [:]
+        for (owner, n) in current {
+            let delta = n - (previous[owner] ?? 0)
+            if delta > 0 { out[owner] = Double(delta) / hours }
+        }
         return out
     }
 
