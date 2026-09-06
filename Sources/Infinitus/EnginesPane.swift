@@ -362,8 +362,9 @@ struct NineRouterEnginePane: View {
             Button("Forget", role: .destructive) { model.saveNineRouter(baseURL: model.nineRouterBaseURL, password: "") }
             Button("Keep Password", role: .cancel) { }
         } message: {
-            Text("The password leaves the keychain and Infinitus restarts. This engine "
-                 + "can't reach the dashboard until you save a password again.")
+            Text("The password leaves the keychain and Infinitus restarts. If the dashboard "
+                 + "requires a login, this engine can't reach it until you save the "
+                 + "password again.")
         }
     }
 
