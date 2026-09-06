@@ -41,9 +41,10 @@ struct TeamMemberScreen: View {
                 Section { Text("No stats shared for this period.").foregroundStyle(.secondary) }
             }
             if let r = reply, !r.sessions.isEmpty {
+                let transcriptIds = Set(r.transcripts)
                 Section("Sessions") {
                     ForEach(r.sessions, id: \.id) { row in
-                        if r.transcripts.contains(row.id) {
+                        if transcriptIds.contains(row.id) {
                             NavigationLink { TeamTranscriptScreen(kid: kid, session: row) } label: { sessionRow(row) }
                         } else {
                             sessionRow(row)
@@ -60,8 +61,16 @@ struct TeamMemberScreen: View {
     }
 
     private func load() async {
-        do { reply = try await NetworkFleetMirror.shared.teamMember(kid: kid, period: period); error = nil }
-        catch { self.error = error.localizedDescription }
+        let want = period
+        error = nil
+        do {
+            let r = try await NetworkFleetMirror.shared.teamMember(kid: kid, period: want)
+            guard !Task.isCancelled, want == period else { return }
+            reply = r
+        } catch {
+            guard !Task.isCancelled else { return }
+            self.error = error.localizedDescription
+        }
     }
 
     private func sessionRow(_ row: TeamDocs.SessionRow) -> some View {
