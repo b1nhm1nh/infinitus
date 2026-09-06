@@ -503,18 +503,26 @@ final class TeamModel: ObservableObject {
         return true
     }
 
-    /// Wraps a user action: busy label, error capture, reload.
-    private func action(_ label: String, _ work: @escaping @Sendable (TeamPaths, TeamSecrets) throws -> Void) async {
-        guard enabled else { lastError = "team is disabled in this instance"; return }
+    /// Wraps a user action: busy label, error capture, reload. Returns
+    /// THIS call's error, nil when it worked — `lastError` may already
+    /// hold an older one when the call starts, and the reload afterwards
+    /// can put a different one there, so a caller answering one request
+    /// (the phone's `ActionReply`) must use the return value.
+    @discardableResult
+    private func action(_ label: String, _ work: @escaping @Sendable (TeamPaths, TeamSecrets) throws -> Void) async -> String? {
+        guard enabled else { lastError = "team is disabled in this instance"; return lastError }
         busy = label
         defer { busy = nil }
+        var failure: String?
         do {
             try await run(work)
             lastError = nil
         } catch {
-            lastError = Self.mask(error)
+            failure = Self.mask(error)
+            lastError = failure
         }
         await load().value
+        return failure
     }
 
     /// A teammate's session as chat items (decrypted now, off the main actor).
@@ -554,14 +562,16 @@ final class TeamModel: ObservableObject {
         lastLoop = Date()
     }
 
-    func join(code: String, name: String) async {
-        guard gated() else { return }
+    @discardableResult
+    func join(code: String, name: String) async -> String? {
+        guard gated() else { return lastError }
         let code = code.trimmingCharacters(in: .whitespacesAndNewlines)
         let device = Host.current().localizedName ?? "Mac"
-        await action("Requesting to join…") { paths, secrets in
+        let failure = await action("Requesting to join…") { paths, secrets in
             _ = try TeamClient.request(code: code, name: name, devices: [device], platform: "macos", paths: paths, secrets: secrets)
         }
         pendingCode = nil
+        return failure
     }
 
     /// A team code (spec §6.3): no nonce, `days` of validity.
@@ -594,16 +604,18 @@ final class TeamModel: ObservableObject {
         if let minted { code = minted }
     }
 
-    func approve(kid: String) async {
-        guard gated() else { return }
-        await action("Approving…") { paths, secrets in
+    @discardableResult
+    func approve(kid: String) async -> String? {
+        guard gated() else { return lastError }
+        return await action("Approving…") { paths, secrets in
             guard let client = try Self.openClient(paths, secrets) else { throw TeamClient.ClientError.notInTeam }
             _ = try client.fetch()
             try client.approve(kid: kid)
         }
     }
 
-    func decline(kid: String) async {
+    @discardableResult
+    func decline(kid: String) async -> String? {
         await action("Declining…") { paths, secrets in
             guard let client = try Self.openClient(paths, secrets) else { throw TeamClient.ClientError.notInTeam }
             _ = try client.fetch()

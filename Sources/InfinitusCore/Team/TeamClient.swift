@@ -90,6 +90,18 @@ public final class TeamClient {
                               now: Int = Int(Date().timeIntervalSince1970)) throws -> TeamClient {
         let me = try identity(paths: paths, secrets: secrets)
         let id = UUID().uuidString.lowercased()
+        var created = false
+        // A create that dies at `store.open()` (a URL that resolves to
+        // nothing, no network, a token the remote refuses) would otherwise
+        // leave `<base>/<id>/store/` behind: no config, so `teamIDs()`
+        // never lists it, and nothing ever cleans it up. The identity is
+        // this machine's and stays; the store token was this team's and goes.
+        defer {
+            if !created {
+                try? FileManager.default.removeItem(at: paths.teamDir(id))
+                secrets.delete(tokenName(id))
+            }
+        }
         let config = TeamConfig(id: id, name: name, remote: remote, kid: me.kid, joinedAt: now, leaderKid: me.kid)
         if let token { try secrets.write(tokenName(id), Data(token.utf8)) }
         let store = TeamGit(dir: paths.storeDir(id), remote: remote, token: token, author: me.kid)
@@ -101,6 +113,7 @@ public final class TeamClient {
         try store.put("roster/team.json", try CanonicalJSON.encode(signed))
         let client = TeamClient(config: config, identity: me, roster: signed, paths: paths, secrets: secrets, store: store)
         try client.persist()
+        created = true
         return client
     }
 
