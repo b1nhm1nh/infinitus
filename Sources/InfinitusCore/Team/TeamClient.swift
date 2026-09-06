@@ -318,11 +318,13 @@ public final class TeamClient {
         var writes: [String: Data?] = [:]
         var paths: [String] = []
         for item in items {
-            let storePath = "m/\(identity.kid)/\(item.path)"
-            try TeamKinds.check(kind: item.kind, from: identity.kid, at: storePath)
-            writes[storePath] = try Envelope.seal(item.plaintext, kind: item.kind, from: identity,
-                                                  to: roster.recipients(for: item.audience), at: now)
-            paths.append(storePath)
+            try drainingPool {
+                let storePath = "m/\(identity.kid)/\(item.path)"
+                try TeamKinds.check(kind: item.kind, from: identity.kid, at: storePath)
+                writes[storePath] = try Envelope.seal(item.plaintext, kind: item.kind, from: identity,
+                                                      to: roster.recipients(for: item.audience), at: now)
+                paths.append(storePath)
+            }
         }
         if !writes.isEmpty { try store.putAll(writes) }
         return paths
@@ -377,7 +379,7 @@ public final class TeamClient {
             if let cached = cache.entries[entry.path], cached.version == entry.version {
                 header = cached.header
             } else {
-                guard let data = try store.get(entry.path), let parsed = try? Envelope.header(of: data) else { continue }
+                guard let parsed = try drainingPool({ try store.get(entry.path).flatMap { try? Envelope.header(of: $0) } }) else { continue }
                 header = parsed
             }
             kept[entry.path] = HeaderCache.Entry(version: entry.version, header: header)

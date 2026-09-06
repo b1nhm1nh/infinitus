@@ -196,14 +196,9 @@ public final class TeamGit: TeamStore {
     @discardableResult
     private func run(_ args: [String], stdin: Data? = nil, env extra: [String: String] = [:],
                      useGitDir: Bool = true) throws -> Data {
-        // Thousands of NSTask/NSPipe objects and their blob buffers piled
-        // up autoreleased on the team queue until the whole pass returned
-        // (14 GB RSS on 2026-09-06); a pool per subprocess drains them.
-        #if canImport(ObjectiveC)
-        return try autoreleasepool { try runOnce(args, stdin: stdin, env: extra, useGitDir: useGitDir) }
-        #else
-        return try runOnce(args, stdin: stdin, env: extra, useGitDir: useGitDir)
-        #endif
+        // NSTask/NSPipe objects and their blob buffers are autoreleased;
+        // see DrainingPool.swift.
+        try drainingPool { try runOnce(args, stdin: stdin, env: extra, useGitDir: useGitDir) }
     }
 
     private func runOnce(_ args: [String], stdin: Data?, env extra: [String: String], useGitDir: Bool) throws -> Data {
