@@ -12,7 +12,9 @@ publishes the matching section as the GitHub release body.
 - The activity tables read the ask off your own message — "debug the crash" counts as debugging even when the tools only edited — and the plugin's UserPromptSubmit hook refreshes a session the moment a prompt goes in.
 
 ### Phone
+- Parked sessions: with the Mac unreachable the phone keeps the last fleet and transcripts, queues one message per session and delivers it once the Mac is back (#168).
 - The phone pairs with more than one Mac: other Macs' fleets and sessions show under their name, and any of them can be made primary from Settings › Devices.
+- Other Macs' sessions open like the primary's: transcript, replies, approvals, checkpoints and queued messages go to the Mac the session lives on (#144).
 - The Sessions list wears the theme: session names in the theme's accent, state words in their state color.
 - The share sheet's session picker lists waiting sessions first and names each one by session · repo.
 - The Game HUD bars' cool glow (usage behind pace) is a real glow now, scaled to the bar, instead of a tinted rim.
@@ -22,6 +24,7 @@ publishes the matching section as the GitHub release body.
 - Start a session picks its permissions: Supervised, Auto-accept edits, Auto or Full access, passed to Claude Code as its permission mode.
 - Start a session offers the Mac's saved profiles as chips; one tap fills folder, engine, permissions, model, system prompt and first prompt.
 - A session started from a profile or in a permission mode says so on its row ("Review · Full access"), on the phone and in the Mac popover.
+- Swipe or long-press an account to star it or pause/resume its rotation from the phone; the Mac popup offers the same on a right-click of the name.
 
 ### Mac
 - An AWS sign-in that lapses inside a sub-agent shows up on the parent session — key badge, Sign in row, push — and the continue nudge after signing in goes to the parent.
@@ -41,6 +44,12 @@ publishes the matching section as the GitHub release body.
 - Settings › Profiles saves named ways to start a session (folder, engine, permissions, model, appended system prompt, first prompt); `infinitusctl profiles` / `profile-set` / `profile-remove` manage the same list.
 - Every prompt checkpoints the repository as a hidden git ref (with the plugin; Display › toggle): `infinitusctl checkpoints <session>` lists them, `checkpoint-diff` compares two or one against the working tree, `checkpoint-restore --yes` puts the files back and keeps a backup checkpoint; the sessions popover's Checkpoints section shows a session's timeline with Restore; the phone shows the timeline (session detail › Checkpoints) with each checkpoint's diff and Restore.
 - A running session's permission mode can be widened from the phone (session detail › Permissions) or `infinitusctl session-mode <session> <mode>`; the plugin's PreToolUse hook answers from it and the row chip follows.
+- Review a turn's changes from the phone: the chat's Review button (or a checkpoint's diff) lists the hunks, a tap comments one, Approve / Request changes sends the review as the session's next message.
+- A profile can list tools its sessions run without asking (Settings › Profiles, `profile-set --allow "Edit, Bash git"`); the plugin's PreToolUse hook honours them from the session's first tool call.
+- Siri's and Shortcuts' Start a session take a profile name: its folder, engine, permissions, model and prompts apply.
+- Start a session from the Mac too: the sessions popover's Start a session takes a profile chip, folder, engine, permissions and a first prompt.
+- Fork a session: Past sessions (Mac popover, phone) and `infinitusctl resume-session --fork` continue a transcript under a new session id, the original untouched — live sessions included.
+- The Mac's Checkpoints section shows a checkpoint's diff against now (the stat inline, the patch a Copy away).
 
 ### Team (preview)
 - Share a kind with Nobody and it never leaves this Mac (`infinitusctl team share transcripts off`).

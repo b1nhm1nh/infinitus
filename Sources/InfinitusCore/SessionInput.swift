@@ -26,11 +26,24 @@ public enum SessionInput {
         /// features to allow attachments"). Optional so an old client's
         /// JSON — no `attachments` key at all — still decodes.
         public let attachments: [Attachment]?
+        /// #168: a client-minted id so a retried delivery (the phone died
+        /// mid-flush, the reply was lost) is answered once — the Mac keeps
+        /// the last few per session. `queuedAt` marks a request that
+        /// waited in the phone's outbox; the Mac pushes an alert when it
+        /// lands. `sessionId` lets the Mac find the session again when
+        /// its pid changed under a reboot. All optional: old JSON decodes.
+        public let requestId: String?
+        public let queuedAt: Date?
+        public let sessionId: String?
 
-        public init(kind: Kind, text: String, attachments: [Attachment]? = nil) {
+        public init(kind: Kind, text: String, attachments: [Attachment]? = nil,
+                    requestId: String? = nil, queuedAt: Date? = nil, sessionId: String? = nil) {
             self.kind = kind
             self.text = text
             self.attachments = attachments
+            self.requestId = requestId
+            self.queuedAt = queuedAt
+            self.sessionId = sessionId
         }
     }
 
@@ -88,12 +101,12 @@ public enum SessionInput {
 
 #if !os(iOS)
 extension SessionInput {
-    static let maxMessageLength = 4000
+    public static let maxMessageLength = 4000
 
     /// Non-empty, within the length cap, and free of control characters
     /// other than newline (a stray Tab/CR/ESC byte from a malformed
     /// client should never reach a real terminal).
-    static func isValidMessage(_ text: String) -> Bool {
+    public static func isValidMessage(_ text: String) -> Bool {
         guard !text.isEmpty, text.count <= maxMessageLength else { return false }
         for scalar in text.unicodeScalars where scalar != "\n" {
             if scalar.properties.generalCategory == .control { return false }

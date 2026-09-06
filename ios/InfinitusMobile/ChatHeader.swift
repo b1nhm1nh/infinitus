@@ -12,6 +12,9 @@ struct ChatHeaderData {
     var status: String
     var accountName: String?
     var plan: String?
+    /// The Mac this session lives on, when it isn't the primary (#144
+    /// phase 2).
+    var macName: String? = nil
     var chips: [WindowChip]
     /// The fleet's one-shot beats for this account (0 = never armed):
     /// the switch celebration, the death hit, the revival fanfare.
@@ -174,6 +177,10 @@ struct ChatHeaderView: View {
                                         .background(Color.primary.opacity(0.08), in: Capsule())
                                 }
                             }
+                            if let mac = data.macName {
+                                Text("·").foregroundStyle(.tertiary)
+                                Text(mac).lineLimit(1).foregroundStyle(.secondary)
+                            }
                         }
                         .font(.caption).foregroundStyle(.secondary)
                         if !data.chips.isEmpty {
@@ -243,6 +250,10 @@ struct ChatHeaderView: View {
                                         .padding(.horizontal, 5).padding(.vertical, 1)
                                         .background(Color.primary.opacity(0.08), in: Capsule())
                                 }
+                            }
+                            if let mac = data.macName {
+                                Text("·").foregroundStyle(.tertiary)
+                                Text(mac).lineLimit(1).foregroundStyle(.secondary)
                             }
                         }
                         .font(.caption).foregroundStyle(.secondary)
@@ -345,11 +356,17 @@ struct ChatHeaderView: View {
                         // 2026-09-05: "Dragon is a bar").
                         ForEach(data.chips) { chip in hudBar(chip) }
                         if let account = data.accountName {
-                            Text(account)
-                                .font(.system(size: 9, weight: .semibold))
-                                .foregroundStyle(ink.opacity(0.7))
-                                .lineLimit(1)
-                                .frame(maxWidth: .infinity, alignment: .trailing)
+                            HStack(spacing: 4) {
+                                Text(account)
+                                if let mac = data.macName {
+                                    Text("·").foregroundStyle(.tertiary)
+                                    Text(mac).lineLimit(1).foregroundStyle(.secondary)
+                                }
+                            }
+                            .font(.system(size: 9, weight: .semibold))
+                            .foregroundStyle(ink.opacity(0.7))
+                            .lineLimit(1)
+                            .frame(maxWidth: .infinity, alignment: .trailing)
                         }
                     }
                     .padding(.leading, portraitSize / 2 + 8)
