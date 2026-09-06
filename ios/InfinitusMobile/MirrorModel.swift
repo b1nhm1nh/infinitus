@@ -35,6 +35,13 @@ final class MirrorModel: ObservableObject, FleetModel {
     @Published private(set) var fleets: [MirrorFleetModel] = []
     private var fleetSinks: [String: AnyCancellable] = [:]
     @Published private(set) var error: String?
+    /// #168: the snapshot on screen came from the phone's disk cache
+    /// because no route reached the Mac. Connectivity, not age — the
+    /// 180 s staleness banner stays for "reachable but old".
+    @Published var parked = false
+    @Published var parkedSince: Date?
+    /// Runs on the parked → reachable edge (Task 7's outbox flush).
+    var reachableAgain: (() -> Void)?
 
     /// One OTHER paired Mac (#144 phase 1): read-only on the phone — only
     /// the primary drives chats, approvals, start-session, widgets and
@@ -251,6 +258,8 @@ final class MirrorModel: ObservableObject, FleetModel {
                 error = nil
                 fleets = []
                 fleetSinks = [:]
+                parked = false
+                parkedSince = nil
                 if usesLAN { transportStatus = await NetworkFleetMirror.shared.statusText }
                 refreshOthersDetached()
                 return
@@ -261,6 +270,11 @@ final class MirrorModel: ObservableObject, FleetModel {
                 return
             }
             self.snapshot = snapshot
+            let fromCache = usesLAN ? await NetworkFleetMirror.shared.lastServedFromCache : false
+            let wasParked = parked
+            parked = fromCache
+            parkedSince = fromCache ? snapshot.capturedAt : nil
+            if wasParked, !fromCache { reachableAgain?() }
             prefs = snapshot.prefs
             if usesLAN { transportStatus = await NetworkFleetMirror.shared.statusText }
             // The route that just answered is now the last-good one; the

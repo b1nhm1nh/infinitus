@@ -185,7 +185,12 @@ struct NativeFleetScreen: View {
                      : "\(snapshot.machineName) · as of "
                        + snapshot.capturedAt.formatted(date: .omitted, time: .shortened))
                     .font(.subheadline).foregroundStyle(.secondary)
-                if isStale(snapshot.capturedAt) {
+                if model.parked, let since = model.parkedSince {
+                    Label("parked — last seen \(since.formatted(.relative(presentation: .named))); messages you send wait for the Mac",
+                          systemImage: "moon.zzz")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                if !model.parked, isStale(snapshot.capturedAt) {
                     Label("as of \(snapshot.capturedAt.formatted(date: .omitted, time: .shortened)) — is the Mac awake?",
                           systemImage: "clock.badge.exclamationmark")
                         .font(.caption).foregroundStyle(.orange)
