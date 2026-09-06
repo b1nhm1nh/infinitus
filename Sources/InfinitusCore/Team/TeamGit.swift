@@ -308,12 +308,14 @@ public final class TeamGit: TeamStore {
         return env
     }
 
-    /// Stale `*.lock` files a killed git left behind (`index.lock`, a
-    /// ref's `.lock`): git refuses to write while one exists, so a crash
-    /// or a hard quit mid-push would wedge every later publish. Only
-    /// files older than `age` go — a lock a live child holds is younger.
-    /// Top level plus `refs/` only: `objects/` is thousands of files on
-    /// a real store and its locks are not ours to clear.
+    /// Stale `*.lock` files a killed git left behind (`packed-refs.lock`,
+    /// a ref's `.lock` under `refs/` — this adapter's own index lives
+    /// outside gitDir, fresh per push, so never `index.lock`): git
+    /// refuses to write while one exists, so a crash or a hard quit
+    /// mid-push would wedge every later publish. Only files older than
+    /// `age` go — a lock a live child holds is younger. Top level plus
+    /// `refs/` only: `objects/` is thousands of files on a real store
+    /// and its locks are not ours to clear.
     static func sweepLocks(in gitDir: URL, olderThan age: TimeInterval = 600, now: Date = Date()) -> [String] {
         let fm = FileManager.default
         var found: [URL] = []

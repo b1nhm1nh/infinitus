@@ -246,7 +246,6 @@ func runTeam(_ args: [String]) -> Int32 {
             // Spec §6.5: the store side, then forget the team locally
             // (dir + token). The identity stays unless --rotate-identity.
             let c = try client()
-            _ = try? c.fetch()
             try c.leave(rotateIdentity: flags.contains("rotate-identity"))
             secrets.delete(TeamClient.tokenName(c.config.id))
             try? FileManager.default.removeItem(at: paths.teamDir(c.config.id))
