@@ -261,6 +261,17 @@ final class MirrorModel: ObservableObject, FleetModel {
     }
 
     /// Settings › Devices, "Other Macs": drops a pairing for good.
+    /// Some paired Mac has answered at least once — enough for "+" and
+    /// Past sessions, which can target any of them (#215).
+    var anyMacAnswered: Bool { snapshot != nil || others.contains { $0.snapshot != nil } }
+
+    /// The Mac a new session or a past-sessions lookup should default
+    /// to: the primary, or — while it has never answered — the first
+    /// other Mac that has.
+    var defaultTargetMacId: String? {
+        snapshot == nil ? others.first { $0.snapshot != nil }?.id : nil
+    }
+
     func forgetOther(id: String) {
         // Its parked cache and queued messages go with it — nothing would
         // flush them once the pairing is gone (#144 phase 3).
@@ -386,7 +397,8 @@ final class MirrorModel: ObservableObject, FleetModel {
             AwsLoginAlerts.shared.sync(snapshot.awsLogins ?? [])
             if let fleet = fleets.first(where: { $0.provider == .claude }) ?? fleets.first {
                 FleetAlarmCenter.shared.sync(accounts: fleet.accounts, activeNumber: fleet.activeNumber,
-                                             macPushesAlerts: snapshot.pushesAlerts ?? false)
+                                             macPushesAlerts: snapshot.pushesAlerts ?? false,
+                                             lead: reviveLead)
             }
             LiveActivities.shared.sync(
                 fleet: fleets.first { $0.provider == .claude } ?? fleets.first,
@@ -460,8 +472,16 @@ final class MirrorModel: ObservableObject, FleetModel {
             for await (id, snapshot, status, parked) in group { collected[id] = (snapshot, status, parked) }
             return collected
         }
+        // A Mac forgotten while this round was in flight: its mirror may
+        // have re-saved the parked snapshot after `forgetOther` cleared
+        // it, so clear again and leave it out (#215).
+        let stillPaired = Set(MacPairing.load(defaults).map(\.id))
+        for pairing in pairings where !stillPaired.contains(pairing.id) {
+            NetworkFleetMirror.parkedCache(key: NetworkFleetMirror.parkedKey(token: pairing.token)).clear()
+            otherMirrors.removeValue(forKey: pairing.id)
+        }
         let existingByID = Dictionary(uniqueKeysWithValues: others.map { ($0.id, $0) })
-        others = pairings.map { pairing in
+        others = pairings.filter { stillPaired.contains($0.id) }.map { pairing in
             guard let (snapshot, status, parked) = fetched[pairing.id] else {
                 return OtherMac(pairing: pairing, status: "")
             }
@@ -623,6 +643,9 @@ final class MirrorModel: ObservableObject, FleetModel {
     /// Follow Mac's mirrored `sortByHeadroom`, else always-on. No local
     /// override exists for this pref.
     var sortByHeadroom: Bool { macPrefs?.sortByHeadroom ?? true }
+    /// Seconds before a reset that a row's countdown goes live and the
+    /// reset alarm fires — the Mac's knob, or its default when not mirrored.
+    var reviveLead: TimeInterval { TimeInterval((macPrefs?.reviveLeadMinutes ?? 10) * 60) }
 
     /// Custom skins ride in the snapshot — the phone has no themes.json.
     var availableThemes: [RowTheme] { RowTheme.builtins + (prefs?.customThemes ?? []) }

@@ -37,6 +37,28 @@ final class RecoveryMathTests: XCTestCase {
         XCTAssertEqual(result?.number, 6)
     }
 
+    // (g) #226: the reviver is ranked by parsed date, and a reset that no
+    // real window could have (epoch-shaped, decades out, garbage) makes
+    // the account unrankable rather than the soonest — the phone showed
+    // a 31-year countdown for the account whose string sorted first.
+    func testImplausibleResetIsUnrankable() throws {
+        let now = ISO8601DateFormatter().date(from: "2026-09-06T12:00:00Z")!
+        let real = try account(#"{"number": 1, \#(base), "active": false, "usageStatus": "ok", "usage": {"fiveHour": {"pct": 100, "resetsAt": "2026-09-06T13:00:00.254457+00:00"}}}"#)
+        let farOut = try account(#"{"number": 2, \#(base), "active": false, "usageStatus": "ok", "usage": {"fiveHour": {"pct": 100, "resetsAt": "2057-05-16T08:28:25Z"}}}"#)
+        let epoch = try account(#"{"number": 3, \#(base), "active": false, "usageStatus": "ok", "usage": {"scoped": [{"pct": 100, "resetsAt": "1788000000", "model": "Fable"}]}}"#)
+        XCTAssertEqual(RecoveryMath.nextRecovery(accounts: [farOut, epoch, real], now: now)?.number, 1)
+        XCTAssertEqual(RecoveryMath.nextRecovery(accounts: [farOut, epoch], now: now), nil)
+        XCTAssertNil(RecoveryMath.revival(of: farOut, now: now))
+        XCTAssertNil(RecoveryMath.revival(of: epoch, now: now))
+        // A scoped window counts, and the LAST maxed window is the revival.
+        let scopedLater = try account(#"{"number": 4, \#(base), "active": false, "usageStatus": "ok", "usage": {"fiveHour": {"pct": 100, "resetsAt": "2026-09-06T12:30:00Z"}, "scoped": [{"pct": 100, "resetsAt": "2026-09-08T11:00:00.324579+00:00", "model": "Fable"}]}}"#)
+        XCTAssertEqual(RecoveryMath.revival(of: scopedLater, now: now)?.iso, "2026-09-08T11:00:00.324579+00:00")
+        XCTAssertEqual(RecoveryMath.nextRecovery(accounts: [scopedLater, real], now: now)?.number, 1)
+        // Fallback to the engine's word still applies when nobody ranks.
+        let engineValue = NextRecovery(number: 2, at: "2057-05-16T08:28:25Z")
+        XCTAssertEqual(RecoveryMath.corrected(engine: engineValue, accounts: [farOut], activeNumber: nil, now: now)?.number, 2)
+    }
+
     // (d) corrected() must not invent an all-dead premise: nil engine
     // value stays nil even if every account looks dead client-side.
     func testCorrectedNilWhenEngineNil() throws {

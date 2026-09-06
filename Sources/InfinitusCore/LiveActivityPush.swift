@@ -92,17 +92,18 @@ public enum LiveActivityPush {
     }
 
     /// `event: start` (push-to-start): the activity's attributes plus
-    /// its first content, and the alert iOS shows as it appears.
+    /// its first content, and — when given — the alert iOS shows as it
+    /// appears; without one the activity lands silently.
     public static func startPayload<S: Encodable>(attributesType: String, machine: String, state: S,
-                                                  staleDate: Date?, alertTitle: String, alertBody: String,
-                                                  now: Date = Date()) -> Data {
+                                                  staleDate: Date?, alertTitle: String? = nil,
+                                                  alertBody: String? = nil, now: Date = Date()) -> Data {
         var aps: [String: Any] = [
             "timestamp": Int(now.timeIntervalSince1970), "event": "start",
             "content-state": json(state),
             "attributes-type": attributesType,
             "attributes": ["machine": machine],
-            "alert": ["title": alertTitle, "body": alertBody],
         ]
+        if let alertTitle, let alertBody { aps["alert"] = ["title": alertTitle, "body": alertBody] }
         if let staleDate { aps["stale-date"] = Int(staleDate.timeIntervalSince1970) }
         return data(["aps": aps])
     }
@@ -112,9 +113,15 @@ public enum LiveActivityPush {
         data(["aps": ["alert": ["title": title, "body": body], "sound": "default"]])
     }
 
+    /// ActivityKit decodes `content-state` with a default-strategy
+    /// JSONDecoder (WWDC23 10185: "always decoded using a JSONDecoder with
+    /// default decoding strategies … don't use any custom encoding
+    /// strategies"), so a Date is seconds since 2001-01-01, never since
+    /// 1970 — the latter put the revival countdown 31 years out (#226).
+    /// Only the `aps` keys (`timestamp`, `stale-date`, `dismissal-date`)
+    /// are Unix seconds.
     private static func json<S: Encodable>(_ state: S) -> Any {
         let encoder = JSONEncoder()
-        encoder.dateEncodingStrategy = .secondsSince1970
         guard let data = try? encoder.encode(state),
               let object = try? JSONSerialization.jsonObject(with: data) else { return [:] }
         return object
