@@ -187,7 +187,12 @@ struct SessionsScreen: View {
                     }
                 }
             } header: {
-                Text(other.pairing.name)
+                HStack(spacing: 6) {
+                    Text(other.pairing.name)
+                    if other.parked {
+                        Label("parked", systemImage: "moon.zzz").labelStyle(.titleAndIcon)
+                    }
+                }
             }
         }
     }
