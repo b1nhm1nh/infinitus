@@ -26,6 +26,10 @@ struct TeamScreen: View {
     @State private var joinName = UIDevice.current.name
     @State private var days = 7
     @State private var declining: TeamSnapshot.Request?
+    /// The Mac's Nearby, on demand: a scan is a 2 s mDNS browse over
+    /// there, so it never runs on a timer.
+    @State private var nearby: TeamMirror.NearbyReply?
+    @State private var scanning = false
 
     var body: some View {
         NavigationStack {
@@ -45,7 +49,10 @@ struct TeamScreen: View {
         // Joining, approving or leaving on either end changes what the
         // aggregates mean — reload them when the role moves.
         .onChange(of: model.team?.role) { _, _ in Task { await loadAggregates() } }
-        .task { await loadAggregates() }
+        .task {
+            await loadAggregates()
+            await loadNearby()
+        }
     }
 
     // MARK: locked
@@ -92,6 +99,8 @@ struct TeamScreen: View {
                 Text("Create a team on the Mac (Settings › Team).")
                     .font(.caption).foregroundStyle(.secondary)
             }
+            nearbyTeamsSection
+            invitationsSection
             statusSection
         }
     }
@@ -114,6 +123,7 @@ struct TeamScreen: View {
             if snap.role == "leader", !snap.requests.isEmpty {
                 requestsSection(snap)
             }
+            if snap.role == "leader" { nearbySection(snap) }
             Section("Members") {
                 ForEach(snap.members) { member in
                     NavigationLink {
@@ -137,6 +147,7 @@ struct TeamScreen: View {
         .refreshable {
             await model.refresh()
             await loadAggregates()
+            await loadNearby()
         }
         .confirmationDialog("Decline \(declining?.name ?? "this request")?",
                             isPresented: Binding(get: { declining != nil },
@@ -222,6 +233,125 @@ struct TeamScreen: View {
                 ShareLink(item: code) { Label("Share", systemImage: "square.and.arrow.up") }
             }
         }
+    }
+
+    // MARK: nearby (spec §6.4) — the Mac's LAN lists, through the mirror
+
+    private var nearbyPeers: [TeamNearby.Peer] { nearby?.peers ?? [] }
+    private var nearbyLeaders: [TeamNearby.Peer] { nearbyPeers.filter { $0.role == "leader" } }
+
+    private var nearbyTeamsSection: some View {
+        Section("Nearby teams") {
+            if scanning {
+                Text("Looking…").font(.caption).foregroundStyle(.secondary)
+            } else if nearbyLeaders.isEmpty {
+                Text("No discoverable Macs on this network.").font(.caption).foregroundStyle(.secondary)
+            }
+            ForEach(nearbyLeaders) { peer in
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(peer.name).bold()
+                    Text("leads a team · \(peer.host)").font(.caption).foregroundStyle(.secondary)
+                    Button("Request to join") {
+                        Task {
+                            _ = await act("Requesting…") {
+                                try await NetworkFleetMirror.shared.teamNearbyRequest(kid: peer.kid ?? "", name: joinName)
+                            }
+                            await loadNearby()
+                        }
+                    }
+                    .disabled(!lock.enabled || joinName.isEmpty || busy != nil)
+                }
+            }
+            Button("Scan") { Task { await scanNearby() } }.disabled(busy != nil || scanning)
+            Text("Discoverable Macs show their name, kid and team on this network — nothing secret.")
+                .font(.caption).foregroundStyle(.secondary)
+        }
+    }
+
+    @ViewBuilder private var invitationsSection: some View {
+        if let invites = nearby?.invites, !invites.isEmpty {
+            Section("Invitations") {
+                ForEach(invites) { invite in
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("\(invite.fromName) invites you to \(invite.teamName)").bold()
+                        HStack {
+                            Button("Accept") {
+                                Task {
+                                    let reply = await act("Accepting…") {
+                                        try await NetworkFleetMirror.shared.teamNearbyAccept(fromKid: invite.fromKid, name: joinName)
+                                    }
+                                    if reply?.ok == true { await model.refresh() }
+                                    await loadNearby()
+                                }
+                            }
+                            .disabled(!lock.enabled || joinName.isEmpty || busy != nil)
+                            Button("Ignore", role: .destructive) {
+                                Task {
+                                    _ = await act("Ignoring…") {
+                                        try await NetworkFleetMirror.shared.teamNearbyIgnore(fromKid: invite.fromKid)
+                                    }
+                                    await loadNearby()
+                                }
+                            }
+                            .disabled(busy != nil)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private func nearbySection(_ snap: TeamSnapshot) -> some View {
+        Section("Nearby") {
+            ForEach(nearby?.pending ?? []) { request in
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(request.name).bold()
+                    Text("asked over the network · \(request.platform) · \(relative(request.at))")
+                        .font(.caption).foregroundStyle(.secondary)
+                    Button("File for approval") {
+                        Task {
+                            _ = await act("Filing…") { try await NetworkFleetMirror.shared.teamNearbyPull(kid: request.kid) }
+                            await model.refresh()
+                            await loadNearby()
+                        }
+                    }
+                    .disabled(busy != nil)
+                }
+            }
+            ForEach(nearbyPeers) { peer in
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(peer.name).bold()
+                    Text("\(peer.role) · \(peer.team == snap.id ? "in this team" : "not in this team")")
+                        .font(.caption).foregroundStyle(.secondary)
+                    if peer.team != snap.id {
+                        Button("Invite") {
+                            Task {
+                                _ = await act("Inviting \(peer.name)…") {
+                                    try await NetworkFleetMirror.shared.teamNearbyInvite(kid: peer.kid ?? "")
+                                }
+                                await loadNearby()
+                            }
+                        }
+                        .disabled(!lock.enabled || busy != nil)
+                    }
+                }
+            }
+            if scanning { Text("Looking…").font(.caption).foregroundStyle(.secondary) }
+            Button("Scan") { Task { await scanNearby() } }.disabled(busy != nil || scanning)
+            Text("Invite a discoverable Mac, or file a request that reached this Mac over the network — either way they land in Requests.")
+                .font(.caption).foregroundStyle(.secondary)
+        }
+    }
+
+    private func loadNearby() async {
+        nearby = try? await NetworkFleetMirror.shared.teamNearby()
+    }
+
+    private func scanNearby() async {
+        scanning = true
+        defer { scanning = false }
+        do { nearby = try await NetworkFleetMirror.shared.teamNearbyScan() }
+        catch { self.error = error.localizedDescription }
     }
 
     /// The leaders' published picture for the chosen period — read from

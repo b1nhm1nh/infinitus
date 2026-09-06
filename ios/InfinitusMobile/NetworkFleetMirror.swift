@@ -509,6 +509,32 @@ actor NetworkFleetMirror: FleetMirror {
         try await postJSON(TeamMirror.codePath, body: TeamMirror.CodeRequest(days: days, invite: invite), timeout: 60)
     }
 
+    // Nearby (spec §6.4): the Mac's LAN lists and the actions on them.
+    func teamNearby() async throws -> TeamMirror.NearbyReply { try await teamGet(TeamMirror.nearbyPath) }
+    // The Mac browses mDNS for 2 s before it answers, so this waits like
+    // an action rather than like a read.
+    func teamNearbyScan() async throws -> TeamMirror.NearbyReply {
+        try await postJSON(TeamMirror.nearbyScanPath, body: TeamMirror.Empty(), timeout: 20)
+    }
+    // request / invite / accept do a git fetch + push on the Mac: 60 s,
+    // like join and approve. pull and ignore are cheaper but share the
+    // same serial queue behind them.
+    func teamNearbyRequest(kid: String, name: String) async throws -> TeamMirror.ActionReply {
+        try await postJSON(TeamMirror.nearbyRequestPath, body: TeamMirror.NearbyJoinRequest(kid: kid, name: name), timeout: 60)
+    }
+    func teamNearbyInvite(kid: String) async throws -> TeamMirror.ActionReply {
+        try await postJSON(TeamMirror.nearbyInvitePath, body: TeamMirror.KidRequest(kid: kid), timeout: 60)
+    }
+    func teamNearbyPull(kid: String) async throws -> TeamMirror.ActionReply {
+        try await postJSON(TeamMirror.nearbyPullPath, body: TeamMirror.KidRequest(kid: kid), timeout: 60)
+    }
+    func teamNearbyAccept(fromKid: String, name: String) async throws -> TeamMirror.ActionReply {
+        try await postJSON(TeamMirror.nearbyAcceptPath, body: TeamMirror.InviteAccept(fromKid: fromKid, name: name), timeout: 60)
+    }
+    func teamNearbyIgnore(fromKid: String) async throws -> TeamMirror.ActionReply {
+        try await postJSON(TeamMirror.nearbyIgnorePath, body: TeamMirror.KidRequest(kid: fromKid), timeout: 60)
+    }
+
     private func postJSON<B: Encodable, R: Decodable>(_ path: String, body: B,
                                                       timeout: TimeInterval = NetworkFleetMirror.inputTimeout) async throws -> R {
         let token = pairToken()
