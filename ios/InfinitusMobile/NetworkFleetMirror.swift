@@ -412,16 +412,16 @@ actor NetworkFleetMirror: FleetMirror {
 
     // MARK: team (spec §9 step 8) — `/mirror/team/*`, token-gated like everything else
 
-    private func teamGet<R: Decodable>(_ path: String) async throws -> R {
+    private func teamGet<R: Decodable>(_ path: String, timeout: TimeInterval = NetworkFleetMirror.candidateTimeout) async throws -> R {
         let token = pairToken()
         let data: Data
-        if let stored = try await fetchFromStored(path: path, token: token, timeout: Self.candidateTimeout) {
+        if let stored = try await fetchFromStored(path: path, token: token, timeout: timeout) {
             data = stored
         } else {
             startBrowsing()
             guard let discovered = await firstEndpoint() else { throw MirrorTransportError.timedOut }
             (data, _) = try await fetch(discovered, path: path, hostHeader: "infinitus",
-                                        useTLS: false, token: token, timeout: Self.candidateTimeout)
+                                        useTLS: false, token: token, timeout: timeout)
         }
         return try JSONDecoder().decode(R.self, from: data)
     }
@@ -430,11 +430,17 @@ actor NetworkFleetMirror: FleetMirror {
     func teamMember(kid: String, period: Stats.Period) async throws -> TeamMirror.MemberReply {
         try await teamGet(TeamMirror.memberPath + "?" + TeamMirror.memberQuery(kid: kid, period: period))
     }
+    // Queues behind the team's serial git queue (a sync pass mid-push holds
+    // this for as long as git does), so it gets a git-scale timeout like
+    // join/code rather than the input-echo default the other GETs use.
     func teamTranscript(kid: String, session: String) async throws -> [SessionFeedItem] {
-        try await teamGet(TeamMirror.transcriptPath + "?" + TeamMirror.transcriptQuery(kid: kid, session: session))
+        try await teamGet(TeamMirror.transcriptPath + "?" + TeamMirror.transcriptQuery(kid: kid, session: session),
+                          timeout: 30)
     }
-    func teamApprove(kid: String) async throws -> TeamMirror.ActionReply { try await postJSON(TeamMirror.approvePath, body: TeamMirror.KidRequest(kid: kid)) }
-    func teamDecline(kid: String) async throws -> TeamMirror.ActionReply { try await postJSON(TeamMirror.declinePath, body: TeamMirror.KidRequest(kid: kid)) }
+    // approve/decline do a git fetch + push (with a re-fetch/retry loop) on
+    // the Mac, same as join/code: 60 s, not the input timeout.
+    func teamApprove(kid: String) async throws -> TeamMirror.ActionReply { try await postJSON(TeamMirror.approvePath, body: TeamMirror.KidRequest(kid: kid), timeout: 60) }
+    func teamDecline(kid: String) async throws -> TeamMirror.ActionReply { try await postJSON(TeamMirror.declinePath, body: TeamMirror.KidRequest(kid: kid), timeout: 60) }
     func teamJoin(code: String, name: String) async throws -> TeamMirror.ActionReply {
         try await postJSON(TeamMirror.joinPath, body: TeamMirror.JoinRequest(code: code, name: name), timeout: 60)
     }

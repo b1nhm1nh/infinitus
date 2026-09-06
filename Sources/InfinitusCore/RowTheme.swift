@@ -364,7 +364,7 @@ public struct RowTheme: Codable, Equatable, Sendable, Identifiable {
                      "Sonnet": "daemon", "Haiku": "script"],
         planPrefix: "v", slotPrefix: "#", resetWord: "recompiling…", nextIcon: "⏭", activeIcon: "⌨️",
         sessionWords: ["busy": "Coding", "waiting": "Needs review", "idle": "Idle", "shell": "At the terminal"],
-        tabLabels: ["sessions": "Tickets", "fleet": "Team", "settings": "Preferences", "team": "Org"],
+        tabLabels: ["sessions": "Tickets", "fleet": "Team", "settings": "Preferences", "team": "Squad"],
         tabIcons: ["sessions": "sf:ticket", "fleet": "sf:person.3.fill", "settings": "sf:gearshape", "team": "sf:person.2.fill"],
         accountNames: ["Compiler", "Linker", "Debugger", "Kernel", "Daemon", "Pointer", "Mutex", "Segfault", "Bytecode", "Makefile", "Heap", "Stack", "Register", "Opcode", "Syscall", "Refactor"],
         loadingWords: ["loading": "Compiling…", "empty": "Empty log", "noSessions": "No builds running", "searching": "Pinging the Mac…", "composerReply": "Write the ticket…", "composerListening": "Taking dictation…"],
