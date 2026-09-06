@@ -143,7 +143,8 @@ public enum LiveActivityBuilder {
         guard fleet.nextCandidate == nil,
               let rec = RecoveryMath.corrected(engine: fleet.nextRecovery, accounts: fleet.accounts,
                                                activeNumber: fleet.activeNumber, now: now),
-              let at = WeeklyRoll.parse(rec.at), at > now else { return nil }
+              let at = WeeklyRoll.parse(rec.at), at > now,
+              at <= now.addingTimeInterval(RecoveryMath.plausibleHorizon) else { return nil }
         let glyph = { (s: String) in textGlyphs ? GlyphText.textPresentation(s) : s }
         let account = fleet.accounts.first { $0.number == rec.number }
         return RevivalActivityState(

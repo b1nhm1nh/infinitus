@@ -147,6 +147,12 @@ final class LiveActivityBuilderTests: XCTestCase {
         XCTAssertFalse(state.revived)
         XCTAssertNil(LiveActivityBuilder.revival(
             fleet: fleet(accounts: dead.accounts, next: 1, recovery: dead.nextRecovery, busy: 0), theme: plain))
+        // #226: the engine's own word is gated by the same horizon as the
+        // ranked accounts — a 2057 reset never reaches the lock screen.
+        let farOut = "2057-05-16T08:28:25Z"
+        XCTAssertNil(LiveActivityBuilder.revival(
+            fleet: fleet(accounts: [account(1, active: true, five: 100, seven: 40, alias: "loc", resets: farOut)],
+                         next: nil, recovery: NextRecovery(number: 1, at: farOut), busy: 0), theme: plain))
     }
 
     func testDiffersIgnoresSmallMoves() throws {
