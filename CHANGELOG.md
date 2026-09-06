@@ -8,6 +8,7 @@ publishes the matching section as the GitHub release body.
 ## Unreleased
 
 ### Phone
+- Face ID or the passcode can lock the whole app — on launch and on return from the background — not only the Team tab (#212).
 - The chat header follows Dynamic Type in all three styles; the Game HUD stops growing at the second accessibility size (#209).
 - Other Macs: their sessions and past sessions never reach the primary by mistake, and "+" and Past sessions open once any paired Mac has answered (#215).
 - The all-limited Live Activity counts down to the real revival instead of 31 years out, and every surface picks the reviver by parsed reset date, ignoring implausible ones (#226).
