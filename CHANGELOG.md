@@ -5,6 +5,11 @@ links, no internals or workflow detail; one feature note is one line,
 a single short sentence (user 2026-09-04). The release workflow
 publishes the matching section as the GitHub release body.
 
+## Unreleased
+
+### Mac
+- Phone messages and resume nudges reach sessions in every permission mode again: Claude Code 2.1.263 holds a peer message that claims a different permission class than the receiver's, so the app now asserts the session's own (#213).
+
 ## 0.4.4-alpha.1
 
 ### Stats
