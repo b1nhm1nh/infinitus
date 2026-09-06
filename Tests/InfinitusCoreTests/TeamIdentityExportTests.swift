@@ -43,4 +43,16 @@ final class TeamIdentityExportTests: XCTestCase {
             XCTAssertEqual($0 as? TeamIdentityExport.ExportError, .badSecret)
         }
     }
+
+    func testWriteCreatesExclusivelyWithOwnerOnlyPermissions() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("idexp-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let url = dir.appendingPathComponent("me.json")
+        try TeamIdentityExport.write(Data("x".utf8), to: url)
+        let perms = try FileManager.default.attributesOfItem(atPath: url.path)[.posixPermissions] as? Int
+        XCTAssertEqual(perms, 0o600)
+        XCTAssertThrowsError(try TeamIdentityExport.write(Data("y".utf8), to: url), "never overwrites (nor follows) an existing path")
+        XCTAssertEqual(try Data(contentsOf: url), Data("x".utf8))
+    }
 }

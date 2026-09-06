@@ -21,6 +21,7 @@ publishes the matching section as the GitHub release body.
 - The Sessions tab's clock button lists every session the Mac has ever run, newest first and searchable; swipe Resume reopens one in its folder and lands you in its chat.
 - Start a session picks its permissions: Supervised, Auto-accept edits, Auto or Full access, passed to Claude Code as its permission mode.
 - Start a session offers the Mac's saved profiles as chips; one tap fills folder, engine, permissions, model, system prompt and first prompt.
+- A session started from a profile or in a permission mode says so on its row ("Review · Full access"), on the phone and in the Mac popover.
 
 ### Mac
 - An AWS sign-in that lapses inside a sub-agent shows up on the parent session — key badge, Sign in row, push — and the continue nudge after signing in goes to the parent.
@@ -38,20 +39,28 @@ publishes the matching section as the GitHub release body.
 - Settings shows the Mac's and the phone's versions, can trigger the Mac's update, and says when a newer phone build is out.
 - Past sessions: the sessions popover lists the newest transcripts with a Resume button, and `infinitusctl past-sessions` / `resume-session <id>` (also MCP tools) do the same from a terminal or another session.
 - Settings › Profiles saves named ways to start a session (folder, engine, permissions, model, appended system prompt, first prompt); `infinitusctl profiles` / `profile-set` / `profile-remove` manage the same list.
+- Every prompt checkpoints the repository as a hidden git ref (with the plugin; Display › toggle): `infinitusctl checkpoints <session>` lists them, `checkpoint-diff` compares two or one against the working tree, `checkpoint-restore --yes` puts the files back and keeps a backup checkpoint; the sessions popover's Checkpoints section shows a session's timeline with Restore.
 
 ### Team (preview)
 - Reading the team store remembers each file's header, so a refresh pass reads only new files and the app's memory stays flat.
 - A publish sends transcripts only from sessions active in the last two days (stats keep 30) and pushes in 200 MB batches, saving its place after each, so a huge history can't stall or crash it.
+- An invite link's request now proves the invite without carrying its secret, so a copied request can't ride someone else's invite; invited requests are approved automatically again.
+- `infinitusctl team-create --remote <url>` takes the URL as written.
 - `infinitusctl team create --as <name>` names you as the team's founder instead of "Leader".
 - Settings › Team: create or join a team, approve requests, see every member's latest publish, today's effort and blockers, and open their Stats and transcripts — the Mac fetches and publishes every 5 minutes.
 - Settings › Team: pick which audiences see each kind of your own data, and which project folders publish at all.
-- Invite links (QR, copy, share sheet, `infinitus://join/…`) approve the one request they were minted for by themselves once Settings › Team's auto-approve switch is on (off by default); team codes need a tap.
+- Invite links (QR, copy, share sheet, `infinitus://join/…`) approve the one request they were minted for by themselves once Settings › Team's auto-approve switch is on (on by default); team codes need a tap.
 - The Mac deletes its `now.json` from the team store on quit, so teammates stop seeing it "on".
 - `infinitusctl team-status|team-create|team-code|team-fetch|team-publish|team-approve|team-decline` drive the app's team over the control socket, and the phone's snapshot carries the same view.
 - Leaders see the team: per-member comparison for a period, leaderboards by spend, tokens, commits, PRs, lines, messages, tool calls, waiting time and sessions, who works in which repo, a blockers board, cost by member / model / repo, the hours heatmap and who's on now (`infinitusctl team members --period|insights`).
 - Leaders publish the team picture to everyone (`team aggregates publish`), with per-member rows only when the roster's members-see-each-other policy is on, and `team policy` sets that and whether new requests are accepted.
 - `infinitusctl team identity export|import` seals your identity with a passphrase (PBKDF2 600k + ChaChaPoly, the same file on every platform), `identity recovery --show` prints the 8-group recovery key, and either restores the same kid on a new machine.
 - The site serves the passkey relying-party file for infinitus.run, and a release built with a provisioning profile carries the associated-domains entitlement the passkey identity needs.
+- Leaders get Insights in the Team pane: a member comparison, leaderboards by metric, repos, a blockers board, cost by member/model/repo and an hours heatmap; the team picture is published hourly for members.
+- Nearby in the Team pane: a Mac on the same network asks a discoverable leader to join, and leaders file network requests for approval.
+- Policy in the Team pane: close requests, or let members see each other's detail.
+- The recovery key (after Touch ID), a passphrase-sealed export and an import live in the Team pane; the export file is created owner-only from its first byte.
+- Quitting waits, briefly, for the team to be told you're gone, on every quit path.
 - The phone has a Team tab: roster, requests, invite links and team codes, a teammate's stats and sessions, their shared transcripts, and the leaders' team picture — approve, decline and join from the phone.
 - The phone's Team tab locks behind Face ID / Touch ID (Settings › Team); joining from the phone needs the lock on.
 - Every theme names the Team tab in its own words (Guild, Crew, Clan, Unit, Org).

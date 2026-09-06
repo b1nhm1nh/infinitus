@@ -272,7 +272,10 @@ func runTeam(_ args: [String]) -> Int32 {
             }
             switch what {
             case "show":
-                emit(["kid": try TeamClient.identity(paths: paths, secrets: secrets).kid])
+                guard let kid = secrets.read(TeamClient.identitySecretName).flatMap({ try? TeamIdentity(secret: $0) })?.kid else {
+                    return fail("no identity on this machine yet — it is created on the first create/request/export", code: 1)
+                }
+                emit(["kid": kid])
             case "recovery":
                 guard flags.contains("show") else { return fail("team identity recovery --show prints the key: keep it offline", code: 2) }
                 let me = try TeamClient.identity(paths: paths, secrets: secrets)
@@ -284,8 +287,11 @@ func runTeam(_ args: [String]) -> Int32 {
                 let file = try TeamIdentityExport.export(secret: me.secret, passphrase: passphrase)
                 if let out = options["out"] {
                     let url = URL(fileURLWithPath: out)
-                    try file.write(to: url)
-                    try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
+                    do {
+                        try TeamIdentityExport.write(file, to: url)
+                    } catch TeamIdentityExport.WriteError.exists {
+                        return fail("\(url.path) exists; pick another path", code: 2)
+                    }
                     emit(["kid": me.kid, "out": url.path])
                 } else {
                     print(String(decoding: file, as: UTF8.self))

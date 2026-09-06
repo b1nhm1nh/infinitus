@@ -137,6 +137,17 @@ final class AppModel: ObservableObject {
     /// The machine-health guardian (#115): Settings › Machine's model.
     let machineModel = MachineModel()
     let sessionProfiles = SessionProfilesModel()
+    /// What Infinitus started each live session as (#163/#165), by pid;
+    /// kept across launches, pruned to the roster on every export.
+    @Published private(set) var sessionBirths: [Int: SessionBirth] = SessionBirths.load(from: AppModel.birthsURL)
+    static let birthsURL = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        .appendingPathComponent("Infinitus/session-births.json")
+    func recordBirth(pid: Int, _ birth: SessionBirth) {
+        let alive = Set(ClaudeSessions.list(claudeDir: ClaudeSessions.configHome()).map { Int($0.pid) })
+        sessionBirths = SessionBirths.pruned(sessionBirths, alive: alive.union([pid]))
+        sessionBirths[pid] = birth
+        try? SessionBirths.save(sessionBirths, to: Self.birthsURL)
+    }
     /// "Allow for this session" rules from the phone (#79), per session id.
     let toolApprovals = ToolApprovals()
     @Published var lastError: String?
@@ -479,6 +490,9 @@ final class AppModel: ObservableObject {
     /// Where a session started from the phone opens (#91): "auto" (cmux
     /// when installed, else Terminal), "cmux", "terminal".
     @Published var sessionHost: String { didSet { defaults.set(sessionHost, forKey: "session_host") } }
+    /// Per-turn workspace checkpoints (#167): a hidden git ref per prompt,
+    /// recorded when the plugin's UserPromptSubmit hook fires.
+    @Published var checkpointsEnabled: Bool { didSet { defaults.set(checkpointsEnabled, forKey: "checkpoints_enabled") } }
     /// The status item in the theme's color with the theme's icon (#90),
     /// and its effects (switch/death/revival flash, the burn breath).
     @Published var menuBarThemed: Bool { didSet { defaults.set(menuBarThemed, forKey: "menubar_themed") } }
@@ -627,6 +641,10 @@ final class AppModel: ObservableObject {
             ClaudeSessions.list(claudeDir: ClaudeSessions.configHome())
                 .first { $0.sessionId == id }.map { Int($0.pid) }
         }
+        if event.name == "UserPromptSubmit", checkpointsEnabled, !isPlayground,
+           let sessionId = event.sessionId, let cwd = event.cwd {
+            recordCheckpoint(sessionId: sessionId, cwd: cwd, subject: event.prompt ?? "")
+        }
         if let line = event.pushLine, !isPlayground {
             logEvent("hook", icon: "bolt.horizontal", event.logLine)
             if let pid { pushTriggers.announceWaiting(pid: pid) }
@@ -650,6 +668,31 @@ final class AppModel: ObservableObject {
     }
     private var hookRefresh: Task<Void, Never>?
     private var lastHookRefresh = Date.distantPast
+
+    /// The snapshot runs git in the session's repository, off the main
+    /// thread; the first checkpoint of a session is logged, the rest are
+    /// quiet (one per prompt would drown the Activity pane). A failure
+    /// is logged once per session too.
+    private var checkpointed: Set<String> = []
+    private func recordCheckpoint(sessionId: String, cwd: String, subject: String) {
+        let first = !checkpointed.contains(sessionId)
+        checkpointed.insert(sessionId)
+        let repo = (cwd as NSString).lastPathComponent
+        Task.detached(priority: .utility) { [weak self] in
+            do {
+                guard let made = try Checkpoints.snapshot(cwd: cwd, sessionId: sessionId, subject: subject) else { return }
+                if first {
+                    await MainActor.run { self?.logEvent("other", icon: "clock.arrow.2.circlepath",
+                                                         "checkpointing \(repo) — \(made.subject)") }
+                }
+            } catch {
+                if first {
+                    await MainActor.run { self?.logEvent("other", icon: "exclamationmark.triangle",
+                                                         "checkpoint of \(repo) failed: \(error)") }
+                }
+            }
+        }
+    }
     static let hookRefreshSpacing: TimeInterval = 30
 
     func notify(_ body: String) {
@@ -788,6 +831,7 @@ final class AppModel: ObservableObject {
         pushRevived = defaults.object(forKey: "push_revived") as? Bool ?? true
         machineNameOverride = defaults.string(forKey: MachineName.overrideKey) ?? ""
         sessionHost = defaults.string(forKey: "session_host") ?? "auto"
+        checkpointsEnabled = defaults.object(forKey: "checkpoints_enabled") as? Bool ?? true
         menuBarThemed = defaults.object(forKey: "menubar_themed") as? Bool ?? true
         menuBarEffects = defaults.object(forKey: "menubar_effects") as? Bool ?? true
         if playground {
@@ -908,6 +952,7 @@ final class AppModel: ObservableObject {
         pushRevived = defaults.object(forKey: "push_revived") as? Bool ?? true
         machineNameOverride = defaults.string(forKey: MachineName.overrideKey) ?? ""
         sessionHost = defaults.string(forKey: "session_host") ?? "auto"
+        checkpointsEnabled = defaults.object(forKey: "checkpoints_enabled") as? Bool ?? true
         menuBarThemed = defaults.object(forKey: "menubar_themed") as? Bool ?? true
         menuBarEffects = defaults.object(forKey: "menubar_effects") as? Bool ?? true
     }
@@ -1068,6 +1113,9 @@ final class AppModel: ObservableObject {
             let verb = request.resume == nil ? "started" : "resumed"
             let born = request.profile.map { " (profile \($0))" } ?? ""
             Task { @MainActor in
+                if reply.outcome == "started", let pid = reply.pid, let birth = SessionBirth(request: request) {
+                    self?.recordBirth(pid: pid, birth)
+                }
                 self?.logMirrorInput(reply.outcome == "started" ? "🚀" : "⚠️",
                                      "phone \(verb) a session in \(label)\(born): \(reply.outcome)\(reply.host.map { " via \($0)" } ?? "")")
             }
@@ -1823,9 +1871,15 @@ final class AppModel: ObservableObject {
             // Unbundled dev runs are a bare executable — `open` on its
             // directory would just raise Finder.
             let exe = Bundle.main.executablePath ?? ""
+            // applicationShouldTerminate can hold quit up to
+            // TeamModel.quitBound (5s) for a team's now.json delete, so a
+            // fixed sleep can no longer be trusted to outlast this
+            // process — wait for the pid to actually exit instead.
+            let pid = ProcessInfo.processInfo.processIdentifier
+            let wait = "while /bin/kill -0 \(pid) 2>/dev/null; do sleep 0.1; done; "
             let cmd = bundle.hasSuffix(".app")
-                ? "sleep 0.8; /usr/bin/open \"\(bundle)\""
-                : "sleep 0.8; exec \"\(exe)\""
+                ? wait + "/usr/bin/open \"\(bundle)\""
+                : wait + "exec \"\(exe)\""
             p.arguments = ["-c", cmd]
             try? p.run()
             await MainActor.run { NSApplication.shared.terminate(nil) }
@@ -2041,7 +2095,8 @@ final class AppModel: ObservableObject {
                                             stats: stats,
                                             pushesAlerts: self.liveActivityPusher.configured,
                                             app: appInfo, team: teamSnapshot,
-                                            profiles: self.sessionProfiles.profiles)
+                                            profiles: self.sessionProfiles.profiles,
+                                            births: self.sessionBirths)
             }
         }
         // All-limited: count the limit-stopped sessions waiting to be
@@ -2192,10 +2247,8 @@ final class AppModel: ObservableObject {
         quickTunnel.stop()
         namedTunnel.stop()
         let supervisor = supervisor
-        let team = team
         Task {
             await supervisor?.stop()
-            await team.quit()   // spec §7: now.json goes on quit (bounded)
             await MainActor.run { NSApplication.shared.terminate(nil) }
         }
     }

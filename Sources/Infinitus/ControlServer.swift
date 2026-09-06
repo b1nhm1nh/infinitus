@@ -197,7 +197,9 @@ final class ControlServer {
             return ControlReply(ok: true, result: .array(model.sessionRows().map { row in
                 .object(["pid": .number(Double(row.pid)), "name": row.name.map { .string($0) } ?? .null,
                          "cwd": .string(row.cwd), "status": row.status.map { .string($0) } ?? .null,
-                         "kind": .string(row.kind)])
+                         "kind": .string(row.kind),
+                         "profile": model.sessionBirths[row.pid]?.profile.map { .string($0) } ?? .null,
+                         "permissionMode": model.sessionBirths[row.pid]?.permissionMode.map { .string($0) } ?? .null])
             }))
 
         case "profiles":
@@ -224,6 +226,30 @@ final class ControlServer {
             let existed = model.sessionProfiles.profiles.contains { SessionProfiles.same($0.name, name) }
             model.sessionProfiles.remove(name)
             return ControlReply(ok: true, result: .object(["removed": .bool(existed)]))
+        case "checkpoints", "checkpoint-diff", "checkpoint-restore":
+            guard let who = r.args.first, let pid = model.sessionPid(matching: who),
+                  let record = ClaudeSessions.list(claudeDir: ClaudeSessions.configHome()).first(where: { Int($0.pid) == pid })
+            else { throw Fail("no live session matches \(r.args.first ?? "?"); see `infinitusctl sessions`") }
+            let (sessionId, cwd) = (record.sessionId, record.cwd)
+            switch r.command {
+            case "checkpoints":
+                let list = try await Task.detached { try Checkpoints.list(cwd: cwd, sessionId: sessionId) }.value
+                return ControlReply(ok: true, result: try .of(["sessionId": .string(sessionId), "cwd": .string(cwd),
+                                                               "checkpoints": try .of(list)] as [String: JSONValue]))
+            case "checkpoint-diff":
+                guard r.args.count >= 2, let n = Int(r.args[1]) else { throw Fail("usage: checkpoint-diff <pid|name> <n> [m]") }
+                let m = r.args.count > 2 ? Int(r.args[2]) : nil
+                let diff = try await Task.detached { try Checkpoints.diff(cwd: cwd, sessionId: sessionId, from: n, to: m) }.value
+                return ControlReply(ok: true, result: try .of(diff))
+            default:
+                guard r.args.count >= 2, let n = Int(r.args[1]) else { throw Fail("usage: checkpoint-restore <pid|name> <n> --yes") }
+                guard r.options["yes"] != nil else { throw Fail("checkpoint-restore rewrites files in \(cwd); pass --yes") }
+                let (restored, backup) = try await Task.detached { try Checkpoints.restore(cwd: cwd, sessionId: sessionId, n: n) }.value
+                model.logEvent("other", icon: "clock.arrow.2.circlepath",
+                               "restored \((cwd as NSString).lastPathComponent) to checkpoint \(restored.subject)")
+                return ControlReply(ok: true, result: try .of(["restored": try .of(restored),
+                                                               "backup": try backup.map { try .of($0) } ?? .null] as [String: JSONValue]))
+            }
 
         case "past-sessions":
             let sessions = PastSessions.list(claudeDir: ClaudeSessions.configHome(),
@@ -244,6 +270,9 @@ final class ControlServer {
             }
             let reply = SessionLauncher.start(SessionStart.Request(cwd: past.cwd, resume: past.sessionId),
                                               preferredHost: model.sessionHost)
+            if reply.outcome == "started", let pid = reply.pid {
+                model.recordBirth(pid: pid, SessionBirth(resumedFrom: past.sessionId))
+            }
             return ControlReply(ok: reply.outcome == "started", result: try .of(reply),
                                 error: reply.outcome == "started" ? nil : "\(reply.outcome)\(reply.detail.map { ": " + $0 } ?? "")")
 
