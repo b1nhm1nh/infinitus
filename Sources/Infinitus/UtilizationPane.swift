@@ -135,20 +135,23 @@ struct UtilizationPane: View {
 
     var body: some View {
         Form {
-            HStack {
-                Picker("Range", selection: $model.rangeDays) {
-                    Text("24 hours").tag(1)
-                    Text("7 days").tag(7)
-                    Text("30 days").tag(30)
-                }
-                .frame(maxWidth: 200)
-                Spacer()
-                if model.loading {
-                    ProgressView().controlSize(.small)
-                } else {
-                    Button("Refresh") { model.refresh() }
+            Section {
+                HStack {
+                    Picker("Range", selection: $model.rangeDays) {
+                        Text("24 hours").tag(1)
+                        Text("7 days").tag(7)
+                        Text("30 days").tag(30)
+                    }
+                    .frame(maxWidth: 200)
+                    Spacer()
+                    if model.loading {
+                        ProgressView().controlSize(.small)
+                    } else {
+                        Button("Refresh") { model.refresh() }
+                    }
                 }
             }
+            .id("Utilization/Range")
             forecastSection
             fleetSection
             liveBattlePlanSection
@@ -236,24 +239,36 @@ struct UtilizationPane: View {
 
     private var liveTheme: RowTheme { live.theme }
 
+    /// Keys a window the way every other surface spells it — the theme's
+    /// session/weekly words for "5h"/"7d", the theme's scoped prefix plus
+    /// model name otherwise (AccountCells.swift, WallLayout.swift,
+    /// InfinitusTray.swift) — so the legend describes what the rows show
+    /// (review round 1, finding 1: the legend's third key never appeared
+    /// in the rows).
+    private func key(_ name: String) -> String {
+        name == "5h" || name == "7d"
+            ? ForecastWords.gaugeName(name, theme: liveTheme)
+            : liveTheme.scopedPrefix + liveTheme.modelName(name)
+    }
+
     @ViewBuilder private var forecastSection: some View {
         Section {
-            if !liveTheme.plain {
-                // The gauge keys are the theme's own words, and under a
-                // themed skin they are emoji — three glyphs per account
-                // with nothing saying what they mean (critique: "un-legended
-                // column keys"). One themed line fixes it for all thirteen.
-                HStack(spacing: 14) {
-                    Text("\(liveTheme.sessionLabel) session (5h)")
-                    Text("\(liveTheme.weeklyLabel) weekly (7d)")
-                    if !liveTheme.scopedPrefix.trimmingCharacters(in: .whitespaces).isEmpty {
-                        Text("\(liveTheme.scopedPrefix.trimmingCharacters(in: .whitespaces)) model limit")
-                    }
-                }
-                .font(.caption).foregroundStyle(.secondary)
-                .accessibilityElement(children: .combine)
-            }
             if let f = live.forecast, let lines = f.accounts, !lines.isEmpty {
+                if !liveTheme.plain {
+                    // The gauge keys are the theme's own words, and under a
+                    // themed skin they are emoji — three glyphs per account
+                    // with nothing saying what they mean (critique: "un-legended
+                    // column keys"). One themed line fixes it for all thirteen.
+                    HStack(spacing: 14) {
+                        Text(liveTheme.sessionLabel == "5h" ? "\(liveTheme.sessionLabel) session" : "\(liveTheme.sessionLabel) session (5h)")
+                        Text(liveTheme.weeklyLabel == "7d" ? "\(liveTheme.weeklyLabel) weekly" : "\(liveTheme.weeklyLabel) weekly (7d)")
+                        if !liveTheme.scopedPrefix.trimmingCharacters(in: .whitespaces).isEmpty {
+                            Text("\(liveTheme.scopedPrefix.trimmingCharacters(in: .whitespaces)) model limit")
+                        }
+                    }
+                    .font(.caption).foregroundStyle(.secondary)
+                    .accessibilityElement(children: .combine)
+                }
                 ForEach(lines, id: \.number) { line in
                     VStack(alignment: .leading, spacing: 3) {
                         HStack(spacing: 6) {
@@ -265,7 +280,7 @@ struct UtilizationPane: View {
                             }
                             Spacer()
                             if let at = line.bindsAt, let w = line.bindsWindow {
-                                Text("\(ForecastWords.gaugeName(w, theme: liveTheme)) binds first, \(ForecastClock.label(at))")
+                                Text("\(key(w)) binds first, \(ForecastClock.label(at))")
                                     .font(.caption).foregroundStyle(.orange)
                             } else {
                                 Text("No limit in sight").font(.caption).foregroundStyle(.secondary)
@@ -273,7 +288,8 @@ struct UtilizationPane: View {
                         }
                         ForEach(line.windows, id: \.name) { w in
                             HStack(spacing: 8) {
-                                Text(ForecastWords.gaugeName(w.name, theme: liveTheme))
+                                Text(key(w.name))
+                                    .lineLimit(1)
                                     .frame(width: 56, alignment: .leading)
                                 Text("\(Int(w.pct.rounded()))%").frame(width: 40, alignment: .trailing)
                                 Text(w.ratePctPerHour.map { ForecastWords.rate($0) } ?? "Pace unknown")
@@ -647,7 +663,7 @@ extension UtilizationPane {
                             keywords: ["forecast", "binds", "pace", "projection", "when"]),
         SettingsSearchEntry(pane: "Utilization", section: "Run rate", label: "Run rate",
                             keywords: ["tokens per minute", "run rate", "rate", "burn", "throughput"]),
-        SettingsSearchEntry(pane: "Utilization", section: "Forecast", label: "Range",
+        SettingsSearchEntry(pane: "Utilization", section: "Range", label: "Range",
                             keywords: ["range", "24 hours", "7 days", "30 days", "history"]),
     ]
 }

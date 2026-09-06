@@ -91,14 +91,14 @@ struct UsagePane: View {
                         Button("Refresh") { model.refresh() }
                     }
                 }
+                if let err = model.error {
+                    Text(err).font(.caption).foregroundStyle(.red)
+                        .accessibilityLabel("Error. \(err)")
+                }
             } footer: {
-                Text("Spend is estimated from your own transcripts at API "
-                     + "list prices — it is not a bill.")
+                Text("Choose how far back to look, then choose Refresh to rescan.")
             }
-            if let err = model.error {
-                Text(err).font(.caption).foregroundStyle(.red)
-                    .accessibilityLabel("Error. \(err)")
-            }
+            .id("Usage/Window")
             if let report = model.report {
                 if let daily = report.daily, daily.count > 1 {
                     Section("Daily estimated spend") {
@@ -235,8 +235,8 @@ extension UsageModel: UsageSource {}
 
 extension UsagePane {
     static let searchEntries: [SettingsSearchEntry] = [
-        SettingsSearchEntry(pane: "Usage", section: "Estimate", label: "Window",
-                            keywords: ["7 days", "14 days", "30 days", "window"], anchor: "Usage/Estimate"),
+        SettingsSearchEntry(pane: "Usage", section: "Window", label: "Window",
+                            keywords: ["7 days", "14 days", "30 days", "window"], anchor: "Usage/Window"),
         SettingsSearchEntry(pane: "Usage", section: "Estimate", label: "Estimated spend",
                             keywords: ["spend", "cost", "dollars", "estimate", "tokens"], anchor: "Usage/Estimate"),
     ]

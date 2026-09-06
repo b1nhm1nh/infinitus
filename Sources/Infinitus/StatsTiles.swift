@@ -46,11 +46,12 @@ struct StatsTiles: View {
 }
 
 /// Tiles laid out in rows that always fill the width. A LazyVGrid with
-/// a fixed column count left the 13th Throughput tile alone in a row of
-/// four with three empty cells beside it (critique, minor observations);
-/// 13 has a remainder of one at every plausible column count, so the fix
-/// is to let the last row's tiles share the leftover width instead of
-/// leaving holes.
+/// `.adaptive(minimum: 150)` left the 13th Throughput tile alone in a
+/// row of four with three empty cells beside it (critique, minor
+/// observations) — an adaptive grid leaves the trailing row's cells
+/// empty instead of sharing the width; 13 has a remainder of one at
+/// every plausible column count, so the fix is to let the last row's
+/// tiles share the leftover width instead of leaving holes.
 private struct TileRows<Content: View>: View {
     let tiles: [Stats.Presentation.Tile]
     @ViewBuilder let tile: (Stats.Presentation.Tile) -> Content
@@ -58,7 +59,11 @@ private struct TileRows<Content: View>: View {
     private static var minTile: CGFloat { 150 }
     private static var spacing: CGFloat { 10 }
 
-    @State private var width: CGFloat = 0
+    /// Seeded to the settings window's content width so the first frame
+    /// (before the background `GeometryReader` reports) is already the
+    /// right column count instead of one tile per row (review round 1,
+    /// finding 4).
+    @State private var width: CGFloat = 640
 
     private var columns: Int {
         max(1, Int((width + Self.spacing) / (Self.minTile + Self.spacing)))
