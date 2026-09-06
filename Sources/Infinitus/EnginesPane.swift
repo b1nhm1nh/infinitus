@@ -21,7 +21,7 @@ struct ClaudeEnginePane: View {
                     HStack {
                         stateText
                         Button(toggleTitle) {
-                            if stopping { confirmStop = true } else { model.toggleEngine() }
+                            if rotating { confirmStop = true } else { model.toggleEngine() }
                         }
                         .disabled(!togglable)
                     }
@@ -106,8 +106,8 @@ struct ClaudeEnginePane: View {
         .task { await settings.load() }
         .onAppear { if update.current == nil { Task { await update.check() } } }
         .confirmationDialog("Stop rotating Claude accounts?", isPresented: $confirmStop) {
-            Button("Stop", role: .destructive) { model.toggleEngine(); confirmStop = false }
-            Button("Keep Rotating", role: .cancel) { confirmStop = false }
+            Button("Stop", role: .destructive) { model.toggleEngine() }
+            Button("Keep Rotating", role: .cancel) { }
         } message: {
             Text("Sessions stall at their limits until you start it again. The account in "
                  + "use keeps working, and your accounts are untouched \u{2014} Start puts "
@@ -136,9 +136,10 @@ struct ClaudeEnginePane: View {
     }
 
     /// Stop opens the confirmation, so it wears the ellipsis; Start acts.
-    private var toggleTitle: String { stopping ? "Stop\u{2026}" : "Start" }
+    private var toggleTitle: String { rotating ? "Stop\u{2026}" : "Start" }
 
-    private var stopping: Bool {
+    /// Whether rotation is currently active, i.e. the button would stop it.
+    private var rotating: Bool {
         if case .running = model.cswapState { return true }
         if case .backingOff = model.cswapState { return true }
         return false
@@ -168,6 +169,7 @@ struct CLIProxyEnginePane: View {
     @State private var key = ""
     @State private var probe: String?
     @State private var probing = false
+    @State private var confirmForgetKey = false
 
     var body: some View {
         Form {
@@ -195,7 +197,7 @@ struct CLIProxyEnginePane: View {
                     }
                     .buttonStyle(.borderedProminent)
                     if model.cliproxyKeyPresent {
-                        Button("Forget Key") { model.saveCLIProxy(baseURL: model.cliproxyBaseURL, key: "") }
+                        Button("Forget Key\u{2026}", role: .destructive) { confirmForgetKey = true }
                     }
                 }
                 if let probe {
@@ -246,6 +248,13 @@ struct CLIProxyEnginePane: View {
         }
         .formStyle(.grouped)
         .onAppear { baseURL = model.cliproxyBaseURL }
+        .confirmationDialog("Forget the management key?", isPresented: $confirmForgetKey) {
+            Button("Forget", role: .destructive) { model.saveCLIProxy(baseURL: model.cliproxyBaseURL, key: "") }
+            Button("Keep Key", role: .cancel) { }
+        } message: {
+            Text("The key leaves the keychain and Infinitus restarts. This engine can't "
+                 + "reach the proxy until you save a key again.")
+        }
     }
 
     private func test() {
@@ -279,6 +288,7 @@ struct NineRouterEnginePane: View {
     @State private var password = ""
     @State private var probe: String?
     @State private var probing = false
+    @State private var confirmForgetPassword = false
 
     var body: some View {
         Form {
@@ -311,7 +321,7 @@ struct NineRouterEnginePane: View {
                     }
                     .buttonStyle(.borderedProminent)
                     if model.nineRouterPasswordPresent {
-                        Button("Forget Password") { model.saveNineRouter(baseURL: model.nineRouterBaseURL, password: "") }
+                        Button("Forget Password\u{2026}", role: .destructive) { confirmForgetPassword = true }
                     }
                 }
                 if let probe {
@@ -348,6 +358,13 @@ struct NineRouterEnginePane: View {
         }
         .formStyle(.grouped)
         .onAppear { baseURL = model.nineRouterBaseURL }
+        .confirmationDialog("Forget the dashboard password?", isPresented: $confirmForgetPassword) {
+            Button("Forget", role: .destructive) { model.saveNineRouter(baseURL: model.nineRouterBaseURL, password: "") }
+            Button("Keep Password", role: .cancel) { }
+        } message: {
+            Text("The password leaves the keychain and Infinitus restarts. This engine "
+                 + "can't reach the dashboard until you save a password again.")
+        }
     }
 
     private func test() {
