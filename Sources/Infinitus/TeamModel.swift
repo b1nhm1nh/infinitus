@@ -31,6 +31,22 @@ final class TeamModel: ObservableObject {
     @Published private(set) var kid: String?
     /// From an `infinitus://join/…` link (Task 6): the pane's Join field prefills.
     @Published var pendingCode: String?
+    /// `roster/team.json` as last loaded, signed; `nil` outside a team. Set in `load()`.
+    @Published private(set) var roster: Signed<TeamRoster>?
+    /// A 2 s LAN browse's discoverable results (spec §6.4), on demand only.
+    @Published private(set) var nearby: [TeamNearby.Peer] = []
+    /// Leaders: LAN requests parked under the team (never reached the requests branch).
+    @Published private(set) var pendingNearby: [Signed<TeamRequest>] = []
+    @Published private(set) var scanning = false
+    /// Nearby discoverability (spec §6.4): kept in `defaults` so
+    /// `infinitusctl team-discoverable` and MirrorServer's
+    /// `UserDefaults.didChangeNotification` observer see the same flag.
+    /// The initializer reads `.standard` directly (a property initializer
+    /// can't see `self.defaults`, which is `.standard` in the app anyway);
+    /// `didSet` writes through the injected `defaults`.
+    @Published var discoverable = UserDefaults.standard.bool(forKey: TeamNearby.discoverableDefaultsKey) {
+        didSet { defaults.set(discoverable, forKey: TeamNearby.discoverableDefaultsKey) }
+    }
     /// Leaders: approve requests carrying an invite nonce without a tap
     /// (spec §6.2). OFF by default until the request binds the nonce to
     /// the requester (#161): a request echoes the nonce in cleartext, so
@@ -70,6 +86,7 @@ final class TeamModel: ObservableObject {
 
     var inTeam: Bool { snapshot != nil }
     var isLeader: Bool { snapshot?.role == "leader" }
+    var policy: TeamRoster.Policy? { roster?.doc.policy }
 
     // MARK: background execution
 
@@ -103,6 +120,7 @@ final class TeamModel: ObservableObject {
     /// on failure. Strips any `scheme://user[:pass]@` fragment rather
     /// than assuming the whole message is a bare URL.
     private nonisolated static func mask(_ error: Error) -> String {
+        if (error as? TeamIdentityExport.ExportError) == .badPassphrase { return "wrong passphrase" }
         let message = "\(error)"
         // The userinfo itself may contain "/" (a base64-ish token), so
         // only "@", whitespace and quotes end the match — erring toward
@@ -131,18 +149,20 @@ final class TeamModel: ObservableObject {
         let fetch = lastFetchAt, publish = lastPublishAt, err = lastError
         return Task {
             do {
-                let result: (TeamSnapshot?, TeamReader?, TeamShares, TeamExclusions, String?) = try await run { paths, secrets in
+                let result: (TeamSnapshot?, TeamReader?, TeamShares, TeamExclusions, String?, Signed<TeamRoster>?, [Signed<TeamRequest>]) = try await run { paths, secrets in
                     // Non-creating: showing a kid must never mint (and, on
                     // a denied keychain read, clobber) an identity that
                     // exists but the process could not decrypt.
                     let kid = secrets.read(TeamClient.identitySecretName).flatMap { try? TeamIdentity(secret: $0) }?.kid
                     let exclusions = TeamExclusions.load(paths: paths)
-                    guard let client = try Self.openClient(paths, secrets) else { return (nil, nil, TeamShares(), exclusions, kid) }
+                    guard let client = try Self.openClient(paths, secrets) else { return (nil, nil, TeamShares(), exclusions, kid, nil, []) }
                     let (snap, reader) = try Self.snapshot(client, lastFetch: fetch, lastPublish: publish, lastError: err)
-                    return (snap, reader, TeamShares.load(teamDir: paths.teamDir(client.config.id)), exclusions, kid)
+                    let pendingNearby = client.isLeader ? TeamNearby.Store.pending(team: client.config.id, paths: paths) : []
+                    return (snap, reader, TeamShares.load(teamDir: paths.teamDir(client.config.id)), exclusions, kid, client.roster, pendingNearby)
                 }
                 withAnimation(.easeInOut(duration: 0.2)) {
                     snapshot = result.0; reader = result.1; shares = result.2; exclusions = result.3; kid = result.4
+                    roster = result.5; pendingNearby = result.6
                 }
             } catch {
                 lastError = Self.mask(error)
@@ -172,9 +192,10 @@ final class TeamModel: ObservableObject {
     @discardableResult
     private func loop(sources: TeamPublisher.Sources, publish: Bool) async -> Bool {
         let auto = autoApprove
+        let aggregatesDue = lastAggregatesAt.map { Int(Date().timeIntervalSince1970) - $0 >= Self.aggregatesInterval } ?? true
         do {
-            let (fetched, published, report) = try await run { paths, secrets in
-                guard let client = try Self.openClient(paths, secrets) else { return (nil as Int?, nil as Int?, nil as TeamPublisher.Report?) }
+            let (fetched, published, report, aggregated) = try await run { paths, secrets in
+                guard let client = try Self.openClient(paths, secrets) else { return (nil as Int?, nil as Int?, nil as TeamPublisher.Report?, false) }
                 _ = try client.fetch()
                 let fetched = Int(Date().timeIntervalSince1970)
                 if auto { try Self.autoApprove(client, paths: paths) }
@@ -186,11 +207,17 @@ final class TeamModel: ObservableObject {
                     report = try TeamPublisher(client: client, paths: paths).publish(sources: s)
                     published = Int(Date().timeIntervalSince1970)
                 }
-                return (fetched, published, report)
+                var aggregated = false
+                if aggregatesDue, client.isLeader {
+                    try Self.publishAggregates(client)
+                    aggregated = true
+                }
+                return (fetched, published, report, aggregated)
             }
             if let fetched { lastFetchAt = fetched }
             if let published { lastPublishAt = published }
             if let report { lastReport = report }
+            if aggregated { lastAggregatesAt = Int(Date().timeIntervalSince1970) }
             lastError = nil
             await load().value
             return true
@@ -250,6 +277,180 @@ final class TeamModel: ObservableObject {
             }
             DispatchQueue.global().asyncAfter(deadline: .now() + Self.quitBound, execute: finish)
         }
+    }
+
+    // MARK: insights (spec §8.3/§8.4)
+
+    struct Insights: Equatable {
+        var rows: [TeamInsights.MemberRow]
+        var repos: [TeamInsights.RepoRow]
+        var cost: TeamInsights.Cost
+        var blockers: [TeamInsights.Blocker]
+        var hours: [Int]
+        var onNow: [String]
+    }
+
+    /// Leader insights (spec §8.3) over the reader `load()` already
+    /// built — a few dictionary folds, fine on the main actor.
+    func insights(period: Stats.Period) -> Insights? {
+        guard let reader, isLeader else { return nil }
+        let rows = TeamInsights.comparison(reader, period: period)
+        let repos = TeamInsights.repos(reader, period: period)
+        return Insights(rows: rows, repos: repos, cost: TeamInsights.cost(rows, repos: repos),
+                        blockers: TeamInsights.blockers(reader), hours: TeamInsights.hours(rows),
+                        onNow: TeamInsights.whoIsOn(reader).map(\.name))
+    }
+
+    func sharedWithMe() -> [TeamInsights.ShareRow] {
+        guard let reader, let roster, let kid else { return [] }
+        return TeamInsights.sharedWithMe(reader, roster: roster.doc, me: kid)
+    }
+
+    // MARK: nearby (spec §6.4)
+
+    /// A 2 s mDNS browse on the team queue (spec §6.4). On demand only —
+    /// the section's Scan button and its first appearance — never a timer.
+    func scanNearby() async {
+        guard enabled, !scanning else { return }
+        scanning = true
+        defer { scanning = false }
+        do {
+            let me = kid
+            let peers = try await run { _, _ in try TeamNearby.Client.browse(seconds: 2) }
+            nearby = peers.filter { $0.discoverable && $0.kid != me }
+        } catch { lastError = Self.mask(error) }
+    }
+
+    func requestNearby(_ peer: TeamNearby.Peer, name: String) async {
+        guard gated() else { return }
+        let device = Host.current().localizedName ?? "Mac"
+        await action("Asking \(peer.name) to join…") { paths, secrets in
+            _ = try TeamNearby.Client.request(to: peer, name: name, devices: [device], platform: "macos",
+                                              paths: paths, secrets: secrets, http: Self.blockingHTTP)
+        }
+    }
+
+    /// One blocking exchange with a LAN peer, run on the team queue (the
+    /// same shape the CLI uses; a 10 s cap so a vanished peer can't hang
+    /// the queue).
+    private nonisolated static let blockingHTTP: TeamNearby.Client.HTTP = { method, host, port, path, body in
+        let bracketed = host.contains(":") ? "[\(host)]" : host
+        guard let url = URL(string: "http://\(bracketed):\(port)\(path)") else {
+            throw NSError(domain: "team", code: 1, userInfo: [NSLocalizedDescriptionKey: "bad peer address \(host):\(port)"])
+        }
+        var request = URLRequest(url: url)
+        request.httpMethod = method
+        request.httpBody = body
+        request.timeoutInterval = 10
+        if body != nil { request.setValue("application/json", forHTTPHeaderField: "Content-Type") }
+        let done = DispatchSemaphore(value: 0)
+        let box = OSAllocatedUnfairLock<(Int, Data, Error?)>(initialState: (0, Data(), nil))
+        URLSession.shared.dataTask(with: request) { data, response, error in
+            box.withLock { $0 = ((response as? HTTPURLResponse)?.statusCode ?? 0, data ?? Data(), error) }
+            done.signal()
+        }.resume()
+        done.wait()
+        let (status, data, failure) = box.withLock { $0 }
+        if let failure { throw failure }
+        return (status, data)
+    }
+
+    /// Leader: a LAN request that stayed pending (the joiner had no store
+    /// credential) is pushed into the requests branch so Approve works on
+    /// it like any other (spec §6.4).
+    func pullNearbyRequest(_ signed: Signed<TeamRequest>) async {
+        await action("Filing the request…") { paths, secrets in
+            guard let client = try Self.openClient(paths, secrets) else { throw TeamClient.ClientError.notInTeam }
+            try TeamNearby.Store.writeToRequestsBranch(team: client.config.id, signed: signed, paths: paths, secrets: secrets)
+            let pendingFile = TeamNearby.Store.pendingDir(team: client.config.id, paths: paths).appendingPathComponent("\(signed.doc.keys.kid).json")
+            try? FileManager.default.removeItem(at: pendingFile)
+        }
+    }
+
+    // MARK: policy + aggregates (spec §8.3)
+
+    func setPolicy(requests: String, membersSeeEachOther: Bool) async {
+        await action("Saving policy…") { paths, secrets in
+            guard let client = try Self.openClient(paths, secrets) else { throw TeamClient.ClientError.notInTeam }
+            _ = try client.fetch()
+            try client.setPolicy(TeamRoster.Policy(requests: requests, membersSeeEachOther: membersSeeEachOther))
+        }
+    }
+
+    private var lastAggregatesAt: Int?
+    static let aggregatesInterval = 3_600
+
+    /// Leaders publish `roster/aggregates/<period>.json` (spec §8.3) —
+    /// hourly from the loop, or now from the pane. All four periods in
+    /// one push.
+    private nonisolated static func publishAggregates(_ client: TeamClient) throws {
+        guard client.isLeader, let roster = client.roster?.doc else { return }
+        let reader = try TeamReader.load(client: client)
+        var docs: [String: Data] = [:]
+        for p in Stats.Period.allCases {
+            docs[p.rawValue] = try CanonicalJSON.encode(TeamInsights.aggregates(reader, roster: roster, period: p))
+        }
+        _ = try client.publishAggregates(docs)
+    }
+
+    func publishAggregatesNow() async {
+        await action("Publishing the team picture…") { paths, secrets in
+            guard let client = try Self.openClient(paths, secrets) else { throw TeamClient.ClientError.notInTeam }
+            _ = try client.fetch()
+            try Self.publishAggregates(client)
+        }
+        lastAggregatesAt = Int(Date().timeIntervalSince1970)
+    }
+
+    // MARK: identity (spec §2.1) — the secret is shown only as the recovery key, after Touch ID
+
+    func recoveryKey() async -> String? {
+        guard enabled else { return nil }
+        switch await BiometricLock.authenticate(reason: "show your team identity's recovery key") {
+        case .ok: break
+        case .cancelled: return nil
+        case .failed(let why): lastError = why; return nil
+        }
+        do {
+            return try await run { paths, secrets in RecoveryKey.encode(try TeamClient.identity(paths: paths, secrets: secrets).secret) }
+        } catch { lastError = Self.mask(error); return nil }
+    }
+
+    func exportIdentity(passphrase: String, to url: URL) async -> Bool {
+        guard enabled, passphrase.count >= 8 else { lastError = "the passphrase needs at least 8 characters"; return false }
+        var ok = false
+        await action("Exporting…") { paths, secrets in
+            let me = try TeamClient.identity(paths: paths, secrets: secrets)
+            try TeamIdentityExport.write(try TeamIdentityExport.export(secret: me.secret, passphrase: passphrase), to: url)
+            ok = true
+        }
+        return ok
+    }
+
+    /// Replacing the identity while in a team would orphan the membership
+    /// (the roster names the old kid) — refuse; Leave first.
+    private func importable() -> Bool {
+        if inTeam { lastError = "leave the team before replacing this Mac's identity"; return false }
+        return true
+    }
+
+    func importIdentity(recoveryKey text: String) async -> Bool {
+        guard enabled, importable() else { return false }
+        guard let secret = RecoveryKey.decode(text) else { lastError = "that is not a recovery key"; return false }
+        var ok = false
+        await action("Importing…") { _, secrets in try secrets.write(TeamClient.identitySecretName, secret); ok = true }
+        return ok
+    }
+
+    func importIdentity(file url: URL, passphrase: String) async -> Bool {
+        guard enabled, importable() else { return false }
+        var ok = false
+        await action("Importing…") { _, secrets in
+            let secret = try TeamIdentityExport.import(try Data(contentsOf: url), passphrase: passphrase)
+            try secrets.write(TeamClient.identitySecretName, secret)
+            ok = true
+        }
+        return ok
     }
 
     // MARK: user actions
