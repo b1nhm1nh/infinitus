@@ -245,6 +245,13 @@ final class MirrorModel: ObservableObject, FleetModel {
 
     /// Settings › Devices, "Other Macs": drops a pairing for good.
     func forgetOther(id: String) {
+        // Its parked cache and queued messages go with it — nothing would
+        // flush them once the pairing is gone (#144 phase 3).
+        if let token = other(id)?.pairing.token {
+            let key = NetworkFleetMirror.parkedKey(token: token)
+            NetworkFleetMirror.parkedCache(key: key).clear()
+            for item in OutboxDelivery.outbox.items(macKey: key) { OutboxDelivery.outbox.remove(id: item.id) }
+        }
         var list = MacPairing.load(defaults)
         list.removeAll { $0.id == id }
         MacPairing.save(list, defaults)
