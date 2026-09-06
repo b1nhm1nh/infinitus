@@ -10,9 +10,11 @@
 set -u
 command -v xcrun >/dev/null 2>&1 || exit 0
 xcrun simctl list devices booted 2>/dev/null | grep -q '(Booted)' || exit 0
-if pgrep -f 'xcodebuild|simctl (install|launch|boot)|xctest' >/dev/null 2>&1; then
-    exit 0
-fi
+# Process NAMES, not command lines: another agent's shell text mentioning
+# xcodebuild is not a build.
+for tool in xcodebuild simctl xctest; do
+    pgrep -x "$tool" >/dev/null 2>&1 && exit 0
+done
 # Detached: the hook must return at once; the shutdown itself takes seconds.
 (
     xcrun simctl shutdown all >/dev/null 2>&1
