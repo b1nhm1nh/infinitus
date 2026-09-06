@@ -29,7 +29,7 @@ publishes the matching section as the GitHub release body.
 ### Mac
 - Settings › Accounts leads with Add Account, shows Sign In Again only on the account that needs it, and renames an account by clicking its name.
 - Randomize Names can be undone for 30 seconds.
-- Regenerating the pairing token, stopping rotation, signing in again, and removing a push channel, a profile or a crash report all ask first.
+- Regenerating the pairing token, stopping rotation, signing in again, forgetting a stored key or token, and removing a push channel, a profile or a crash report all ask first.
 - Settings › Devices puts one QR code and one address up front, with the rest behind Other addresses.
 - Every icon button in Settings says what it does and to which account, and an engine error now reads as a sentence with a next step.
 - Machine: the pip retry-loop warning names the venv the install goes into (a detached plugin bootstrap has no hook tree to blame) and answers to the hooks mute.

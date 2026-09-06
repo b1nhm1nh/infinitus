@@ -40,6 +40,10 @@ struct SyncPane: View {
     /// The crash report whose Delete is being confirmed. Lives here, not
     /// on CrashReportsSection, so the dialog can sit on the Form.
     @State private var confirmCrashDelete: CrashReport?
+    /// Forgetting a keychain secret is hard to undo (the APNs .p8 downloads
+    /// from Apple once), so both Forget buttons ask first.
+    @State private var confirmForgetKey = false
+    @State private var confirmForgetToken = false
     private let reprobe = Timer.publish(every: 3, on: .main, in: .common).autoconnect()
 
     init(sync: SettingsSyncModel, app: AppModel) {
@@ -228,6 +232,24 @@ struct SyncPane: View {
                  + "crash it describes has already happened \u{2014} deleting it changes "
                  + "nothing else.")
         }
+        .confirmationDialog("Forget the push key?", isPresented: $confirmForgetKey) {
+            Button("Forget", role: .destructive) { pusher.storeKey(pem: "") }
+            Button("Keep Key", role: .cancel) { }
+        } message: {
+            Text("The key leaves the keychain and lock-screen activities stop updating "
+                 + "with the app closed. Apple hands out each key file once, so without "
+                 + "your own copy you'll need a new key to set push up again. Pairing "
+                 + "and everything else here are untouched.")
+        }
+        .confirmationDialog("Forget the tunnel token?", isPresented: $confirmForgetToken) {
+            Button("Forget", role: .destructive) { app.saveNamedTunnelToken("") }
+            Button("Keep Token", role: .cancel) { }
+        } message: {
+            Text("The token leaves the keychain. Unless Cloudflare's config file on this "
+                 + "Mac already routes this hostname, the tunnel stops now and phones reach "
+                 + "this Mac by its other routes only. Paste the token from the Cloudflare "
+                 + "dashboard again to bring it back \u{2014} the hostname stays saved.")
+        }
     }
 
     // MARK: - Walkthrough
@@ -253,7 +275,7 @@ struct SyncPane: View {
                 pusher.storeKey(pem: NSPasteboard.general.string(forType: .string) ?? "")
             }
             if pusher.keyStored {
-                Button("Forget Key") { pusher.storeKey(pem: "") }
+                Button("Forget Key\u{2026}", role: .destructive) { confirmForgetKey = true }
             }
             Text(pusher.keyStored ? "In the keychain" : "Not Set Up")
                 .font(.caption).foregroundStyle(.secondary)
@@ -332,7 +354,7 @@ struct SyncPane: View {
             .buttonStyle(.borderedProminent)
             .disabled(NamedTunnel.normalizeHostname(namedHost).isEmpty)
             if app.namedTunnelTokenPresent {
-                Button("Forget Token") { app.saveNamedTunnelToken("") }
+                Button("Forget Token\u{2026}", role: .destructive) { confirmForgetToken = true }
             }
         }
         if let status = named.status {
@@ -470,7 +492,7 @@ struct SyncPane: View {
                 + "Tailscale from the App Store and sign into the same tailnet. Infinitus shows "
                 + "the tailnet route by itself.",
                 "   - Cloudflare quick tunnel: `brew install cloudflared`, then in Infinitus "
-                + "Settings → Devices → Anywhere turn on the tunnel (random public URL that "
+                + "Settings → Devices → Tunnel turn on the tunnel (random public URL that "
                 + "changes every Infinitus start — a phone with no other route rescans after a "
                 + "restart; the token is the only lock).",
                 "   - Cloudflare named tunnel (stable hostname, the user's own domain on "
@@ -480,10 +502,10 @@ struct SyncPane: View {
                 + "`credentials-file: ~/.cloudflared/<id>.json`, and an ingress entry "
                 + "`hostname: <host>` → `service: http://localhost:\(MirrorTransport.defaultPort)` "
                 + "plus a final `service: http_status:404`. In Infinitus Settings → Devices → "
-                + "Anywhere enter <host> under \"your own Cloudflare tunnel\" and turn it on — no "
+                + "Tunnel enter <host> under \"your own Cloudflare tunnel\" and turn it on — no "
                 + "token needed; Infinitus runs `cloudflared tunnel run` itself.",
                 "4. Pair: on the phone, Settings → Mac connection → Scan QR, pointing at "
-                + "Infinitus Settings → Devices → Pair a phone (one QR carries every route). "
+                + "Infinitus Settings → Devices → Pairing (one QR carries every route). "
                 + "Or enter a route address and the pairing token by hand in the same screen.",
                 "", "## Verify",
                 "curl -s -o /dev/null -w '%{http_code}\\n' -H 'Authorization: Bearer <token>' "

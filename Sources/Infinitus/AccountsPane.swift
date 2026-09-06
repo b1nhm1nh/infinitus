@@ -168,7 +168,7 @@ private let addAccountFooter =
                     self.phase = .idle
                     onFinish(nil)
                 } else {
-                    let msg = (error as? EngineError)?.errorDescription ?? "\(error)"
+                    let msg = (error as? SignInFailure)?.sentence ?? EngineFailure.sentence(error)
                     self.phase = .failed(msg)
                     onFinish(msg)
                 }
@@ -198,9 +198,13 @@ private let addAccountFooter =
             .first { FileManager.default.isExecutableFile(atPath: $0) }
     }
 
+    /// A failure this window can explain itself; everything else goes
+    /// through EngineFailure.sentence.
+    private struct SignInFailure: Error { let sentence: String }
+
     private func launch(model: AppModel) throws {
         guard let claude = Self.claudePath() else {
-            throw CLIError(message: "claude CLI not found")
+            throw SignInFailure(sentence: "Infinitus can't find the Claude CLI on this Mac. Install it, then try again.")
         }
         // `open` shim first in the child's PATH: setup-token tries to
         // open the OAuth URL in the default browser itself — the shim
@@ -222,7 +226,7 @@ private let addAccountFooter =
         // regex capture then truncates (probed live 2026-08-31).
         var ws = winsize(ws_row: 40, ws_col: 500, ws_xpixel: 0, ws_ypixel: 0)
         guard openpty(&m, &s, nil, nil, &ws) == 0 else {
-            throw CLIError(message: "openpty failed")
+            throw SignInFailure(sentence: "Infinitus couldn't open a terminal for the sign-in. Try again.")
         }
         let slave = FileHandle(fileDescriptor: s, closeOnDealloc: false)
         let masterFH = FileHandle(fileDescriptor: m, closeOnDealloc: true)
@@ -312,7 +316,7 @@ private let addAccountFooter =
         Task {
             do {
                 guard let cli = model.cswap else {
-                    throw CLIError(message: "no engine")
+                    throw SignInFailure(sentence: "The engine isn't running. Start it under Engines, then try again.")
                 }
                 // The blessed pair: capture the fresh credential into
                 // its slot, then restore whoever was active before.
@@ -334,7 +338,7 @@ private let addAccountFooter =
                 }
                 self.phase = .done("captured")
             } catch {
-                self.phase = .failed("engine refused the account: \(error)")
+                self.phase = .failed((error as? SignInFailure)?.sentence ?? EngineFailure.sentence(error))
             }
             self.cleanup()
         }
@@ -790,6 +794,7 @@ private struct FleetAccountsSection: View {
         }
         if canRelogin {
             Button("Sign In Again\u{2026}") { confirmRelogin = (fleet, a) }
+                .disabled(flow.running)
         }
     }
 
