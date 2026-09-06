@@ -445,12 +445,17 @@ private struct ScreenshotSettings: View {
 }
 
 /// Both apps' versions, and the Mac's own update — one tap from the
-/// phone, brew doing the actual upgrade (#121).
+/// phone, Homebrew doing the actual upgrade (#121). What the section
+/// KNOWS is a row; what it EXPLAINS is the footer; a failure is a
+/// sentence with a next step, never the error's own words.
 private struct AboutSettings: View {
     @ObservedObject var model: MirrorModel
     @State private var confirming = false
     @State private var updating = false
-    @State private var result: String?
+    /// What the Mac reported back on a successful update.
+    @State private var outcome: String?
+    /// Set when the call failed; drives the Try Again row.
+    @State private var failed = false
 
     private var phoneVersion: String {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "?"
@@ -460,53 +465,83 @@ private struct AboutSettings: View {
     }
 
     var body: some View {
-        Section("About") {
+        Section {
             LabeledContent("This iPhone", value: "Infinitus \(phoneVersion) (\(phoneBuild))")
             if let snapshot = model.snapshot {
                 if let app = snapshot.app {
                     LabeledContent(snapshot.machineName,
-                                  value: "Infinitus \(app.version) · \(app.sha.prefix(7))")
-                    if app.updateChannel == "source" {
-                        Text("source build — update from the repo")
-                            .font(.caption).foregroundStyle(.secondary)
-                    } else if let updateVersion = app.updateVersion {
+                                   value: "Infinitus \(app.version) · \(app.sha.prefix(7))")
+                    if app.updateChannel != "source", let updateVersion = app.updateVersion {
                         LabeledContent("Mac update available: \(updateVersion)") {
-                            Button("Update the Mac") { confirming = true }
-                                .disabled(updating)
+                            if updating {
+                                ProgressView()
+                                    .accessibilityLabel("Updating the Mac")
+                            } else {
+                                Button("Update the Mac") { confirming = true }
+                            }
                         }
-                        .confirmationDialog("Update the Mac to \(updateVersion)? brew upgrades "
-                                             + "Infinitus and relaunches it.",
+                        .confirmationDialog("Update the Mac to \(updateVersion)?",
                                             isPresented: $confirming, titleVisibility: .visible) {
                             Button("Update") { update() }
-                        }
-                        if let result {
-                            Text(result).font(.caption).foregroundStyle(.secondary)
+                            Button("Cancel", role: .cancel) {}
+                        } message: {
+                            Text("Homebrew upgrades Infinitus on \(snapshot.machineName) and relaunches it.")
                         }
                     }
-                    if let phoneLatest = app.phoneLatest,
-                       let latest = PackageVersion(phoneLatest), let mine = PackageVersion(phoneVersion),
-                       mine < latest {
-                        Text("A newer Infinitus (\(phoneLatest)) is out — rebuild the phone app from the release.")
-                            .font(.caption).foregroundStyle(.secondary)
+                    if failed {
+                        Button("Try Again") { update() }
                     }
                 } else {
-                    LabeledContent(snapshot.machineName, value: "version not reported")
+                    LabeledContent(snapshot.machineName, value: "Version Not Reported")
                 }
             } else {
-                LabeledContent("Mac", value: "not connected")
+                LabeledContent("Mac", value: "Not Connected")
+            }
+        } header: {
+            Text("About")
+        } footer: {
+            // Nothing to explain, no footer — filler prose under a
+            // group is the caption row's sin in a different container.
+            if !footer.isEmpty { Text(footer) }
+        }
+    }
+
+    /// Everything this section EXPLAINS, in one footer: how the update
+    /// went, why a source build has no button, and when the phone app
+    /// itself is behind. Empty when there is nothing to say.
+    private var footer: String {
+        var lines: [String] = []
+        if failed {
+            lines.append("The Mac didn't take the update. Check that the Status line under Mac connection says it's reachable, then try again.")
+        } else if let outcome {
+            lines.append(outcome)
+        }
+        if let app = model.snapshot?.app {
+            if app.updateChannel == "source" {
+                lines.append("This Mac runs a build from the repository, so it updates from there rather than from here.")
+            }
+            if let phoneLatest = app.phoneLatest,
+               let latest = PackageVersion(phoneLatest), let mine = PackageVersion(phoneVersion),
+               mine < latest {
+                lines.append("Infinitus \(phoneLatest) is out for the phone — rebuild this app from that release.")
             }
         }
+        return lines.joined(separator: " ")
     }
 
     private func update() {
         updating = true
-        result = nil
+        outcome = nil
+        failed = false
         Task {
             do {
                 let reply = try await NetworkFleetMirror.shared.updateMac()
-                result = reply.detail ?? reply.outcome
+                outcome = reply.detail ?? reply.outcome
             } catch {
-                result = error.localizedDescription
+                // The error's own words are a debug string; the reader
+                // needs the problem and the next step (critique,
+                // heuristic 9). The Try Again row is that step.
+                failed = true
             }
             updating = false
         }
