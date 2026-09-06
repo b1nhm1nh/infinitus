@@ -577,6 +577,10 @@ struct AccountsPane: View {
     @ObservedObject var model: AppModel
     @ObservedObject private var flow = TokenFlow.shared
     @State private var confirmDelete: (fleet: FleetState, account: Account)?
+    /// Signing in again clobbers the ACTIVE credential for the duration
+    /// of the flow, so it asks first. Same shape as `confirmDelete`: the
+    /// state lives here, the dialog sits on the Form, the rows only set it.
+    @State private var confirmRelogin: (fleet: FleetState, account: Account)?
 
     /// An engine that is on but holds no credential yet (a fresh proxy)
     /// has no FleetState to list — it still gets a section with the
@@ -597,7 +601,8 @@ struct AccountsPane: View {
             // control shows only where the fleet's engine supports it.
             ForEach(model.fleets) { fleet in
                 FleetAccountsSection(fleet: fleet, model: model, flow: flow,
-                                     confirmDelete: $confirmDelete)
+                                     confirmDelete: $confirmDelete,
+                                     confirmRelogin: $confirmRelogin)
             }
             ForEach(fleetlessOAuthEngines) { engine in
                 Section {
@@ -635,7 +640,38 @@ struct AccountsPane: View {
                  + "stored credential. The Claude account itself is untouched "
                  + "\u{2014} you can add it back any time.")
         }
+        .confirmationDialog("Sign in again as \(confirmRelogin.map { accountLabel($0.account) } ?? "this account")?",
+                            isPresented: Binding(get: { confirmRelogin != nil },
+                                                 set: { if !$0 { confirmRelogin = nil } })) {
+            Button("Sign In Again") {
+                if let target = confirmRelogin { target.fleet.startRelogin(target.account) }
+                confirmRelogin = nil
+            }
+            Button("Cancel", role: .cancel) { confirmRelogin = nil }
+        } message: {
+            Text("Signing in again temporarily makes "
+                 + "\(confirmRelogin.map { accountLabel($0.account) } ?? "this account") "
+                 + "the active one; Infinitus switches back to "
+                 + "\(activeLabel(confirmRelogin?.fleet)) when it finishes.")
+        }
     }
+}
+
+/// What an account is called in a sentence: its name if it has one,
+/// otherwise its email. Every accessibility label and every dialog in
+/// this pane says the account this way, so the window never refers to
+/// one account by two different words. File scope because both
+/// `AccountsPane` (which owns the dialogs) and `FleetAccountsSection`
+/// (which owns the rows) need it.
+private func accountLabel(_ a: Account) -> String {
+    let alias = a.alias ?? ""
+    return alias.isEmpty ? a.email : alias
+}
+
+/// The account the sign-in flow will hand control back to.
+/// `@MainActor` because it reads a `FleetState`, which is.
+@MainActor private func activeLabel(_ fleet: FleetState?) -> String {
+    fleet?.accounts.first(where: \.active).map(accountLabel) ?? "the active account"
 }
 
 /// One fleet's rows in the Accounts tab. The row layout is shared by
@@ -646,6 +682,7 @@ private struct FleetAccountsSection: View {
     @ObservedObject var model: AppModel
     @ObservedObject var flow: TokenFlow
     @Binding var confirmDelete: (fleet: FleetState, account: Account)?
+    @Binding var confirmRelogin: (fleet: FleetState, account: Account)?
 
     @ScaledMetric private var rowHeight: CGFloat = 30
 
@@ -733,8 +770,32 @@ private struct FleetAccountsSection: View {
             Button("Re-roll Name") { fleet.randomizeName(a.number) }
         }
         if canRelogin {
-            Button("Sign In Again\u{2026}") { fleet.startRelogin(a) }
+            Button("Sign In Again\u{2026}") { confirmRelogin = (fleet, a) }
         }
+    }
+
+    /// The non-interactive detail of a row — email, plan, status — as
+    /// ONE accessibility element, so VoiceOver reads "death2nd@…, Max
+    /// 20x, Active" after the slot and the name instead of three
+    /// unlabelled fragments. The name and the action buttons stay
+    /// separate: combining them away would make them unreachable.
+    /// The email shows only when the name is not already the email.
+    @ViewBuilder private func detail(_ a: Account) -> some View {
+        HStack(spacing: 8) {
+            if let alias = a.alias, !alias.isEmpty {
+                Text(a.email).lineLimit(1)
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            if let plan = a.plan {
+                Text(plan)
+                    .font(.caption2)
+                    .padding(.horizontal, 5).padding(.vertical, 1)
+                    .background(Capsule().fill(Color.secondary.opacity(0.15)))
+                    .foregroundStyle(.secondary)
+            }
+            statusChip(a)
+        }
+        .accessibilityElement(children: .combine)
     }
 
     @ViewBuilder private func row(_ a: Account) -> some View {
@@ -742,24 +803,25 @@ private struct FleetAccountsSection: View {
             if caps.contains(.reorder) {
                 Image(systemName: "line.3.horizontal")
                     .foregroundStyle(.tertiary)
+                    .accessibilityHidden(true)
             }
             Text("\(a.number)").monospacedDigit()
                 .foregroundStyle(.secondary)
+                .accessibilityLabel("Slot \(a.number)")
             if caps.contains(.rename) {
                 RenameField(fleet: fleet, account: a)
+            } else {
+                Text(accountLabel(a)).lineLimit(1)
             }
-            Text(a.email).lineLimit(1)
-                .font(.caption).foregroundStyle(.secondary)
-            if let plan = a.plan {
-                Text(plan)
-                    .font(.caption2)
-                    .padding(.horizontal, 5).padding(.vertical, 1)
-                    .background(Capsule()
-                        .fill(Color.secondary.opacity(0.15)))
-                    .foregroundStyle(.secondary)
-            }
-            statusChip(a)
+            detail(a)
             Spacer()
+            // The recovery action appears on the row that needs it, and
+            // nowhere else — every row's context menu still has it.
+            if canRelogin, a.usageStatus == "relogin_required" {
+                Button("Sign In Again\u{2026}") { confirmRelogin = (fleet, a) }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(flow.running)
+            }
             if caps.contains(.prefer), let confirmed = a.preferred {
                 // Pick-first (#15) is the engine's knob: nil `preferred`
                 // means this engine build has none, so no star at all.
@@ -774,11 +836,10 @@ private struct FleetAccountsSection: View {
                 }
                 .buttonStyle(.borderless)
                 .disabled(flow.running || pending != nil)
-                .help(starred
-                      ? "Preferred: the engine lands on this account first when it switches"
-                      : (isCswap
-                         ? "Prefer this account: switches to it now, and auto-switch lands on it first when it qualifies (autoswitch.preferred)"
-                         : "Prefer this account: switches to it now, and the proxy drains it before unstarred ones (priority tier)"))
+                .accessibilityLabel(starred ? "Stop preferring \(accountLabel(a))"
+                                            : "Prefer \(accountLabel(a))")
+                .accessibilityHint(preferHint(starred: starred))
+                .help(preferHint(starred: starred))
             }
             if caps.contains(.switch), !a.active {
                 Button { fleet.switchTo(a.number) } label: {
@@ -786,28 +847,30 @@ private struct FleetAccountsSection: View {
                 }
                 .buttonStyle(.borderless)
                 .disabled(flow.running)
-                .help(isCswap ? "Switch to this account now"
-                              : "Make this the active credential (top priority tier)")
+                .accessibilityLabel("Switch to \(accountLabel(a))")
+                .accessibilityHint(switchHint)
+                .help(switchHint)
             }
             if caps.contains(.hold) {
                 // Rotation hold (todo 2026-09-01): the row stays listed,
                 // auto-rotation (or the proxy's routing) skips it.
+                let held = a.disabled ?? false
                 Button {
-                    fleet.setRotation(a.number, enabled: a.disabled ?? false)
+                    fleet.setRotation(a.number, enabled: held)
                 } label: {
-                    Image(systemName: (a.disabled ?? false)
-                          ? "play.circle" : "pause.circle")
+                    Image(systemName: held ? "play.circle" : "pause.circle")
                 }
                 .buttonStyle(.borderless)
                 .disabled(flow.running)
-                .help((a.disabled ?? false)
-                      ? "Return this account to rotation"
-                      : "Hold this account out of rotation "
-                        + "(it stays listed, rotation skips it)")
-            }
-            if canRelogin {
-                Button("Relogin") { fleet.startRelogin(a) }
-                    .disabled(flow.running)
+                .accessibilityLabel(held ? "Return \(accountLabel(a)) to rotation"
+                                         : "Hold \(accountLabel(a)) out of rotation")
+                .accessibilityHint(held
+                                   ? "Rotation starts using this account again."
+                                   : "The account stays listed; rotation skips it.")
+                .help(held
+                      ? "Return this account to rotation."
+                      : "Hold this account out of rotation \u{2014} it stays listed, "
+                        + "rotation skips it.")
             }
             if caps.contains(.remove) {
                 Button(role: .destructive) {
@@ -815,9 +878,27 @@ private struct FleetAccountsSection: View {
                 } label: { Image(systemName: "trash") }
                 .buttonStyle(.borderless)
                 .disabled(flow.running)
-                .help("Remove this account from \(fleet.engine.displayName)")
+                .accessibilityLabel("Remove \(accountLabel(a))")
+                .accessibilityHint("Asks first. \(fleet.engine.displayName) forgets its stored sign-in.")
+                .help("Remove \(accountLabel(a)) from \(fleet.engine.displayName).")
             }
         }
+    }
+
+    /// The star's tooltip — one sentence, no knob names. Each engine
+    /// spends the preference differently, so the wording follows it.
+    private func preferHint(starred: Bool) -> String {
+        if starred {
+            return "The engine lands on this account first when it switches."
+        }
+        return isCswap
+            ? "Switches to this account now, and the engine lands on it first from then on."
+            : "Switches to this account now, and the engine drains it before unstarred ones."
+    }
+
+    private var switchHint: String {
+        isCswap ? "Makes this the account Claude Code uses, right now."
+                : "Makes this the credential the engine serves first."
     }
 
     /// One line under the rows, one clause per control this fleet
@@ -841,23 +922,66 @@ private struct FleetAccountsSection: View {
 
     /// Active and health are separate facts, so both chips can show:
     /// the proxy's active credential with a stalled usage read is still
-    /// the active one.
+    /// the active one. Colours are semantic (green = fine, orange =
+    /// needs you), never a theme's — `RowTheme` has no vocabulary for
+    /// account health.
     @ViewBuilder private func statusChip(_ a: Account) -> some View {
         if a.active {
-            Text("active").font(.caption2).foregroundStyle(.green)
-                .padding(.horizontal, 5).padding(.vertical, 1)
-                .background(Capsule().fill(.green.opacity(0.18)))
+            chip("Active", .green)
         }
         if a.disabled ?? false {
-            Text("held").font(.caption2)
-                .padding(.horizontal, 5).padding(.vertical, 1)
-                .background(Capsule().fill(.gray.opacity(0.3)))
+            chip("On Hold", .secondary)
+                .help("Rotation skips this account until you return it.")
         } else if a.usageStatus != "ok" {
-            Text(a.usageStatus == "relogin_required"
-                 ? "re-login needed" : a.usageStatus.replacingOccurrences(of: "_", with: " "))
-                .font(.caption2).foregroundStyle(.orange)
-                .padding(.horizontal, 5).padding(.vertical, 1)
-                .background(Capsule().fill(.orange.opacity(0.18)))
+            chip(Self.statusWord(a.usageStatus), .orange)
+                .help(Self.statusHelp(a.usageStatus))
+                .accessibilityHint(Self.statusHelp(a.usageStatus))
+        }
+    }
+
+    private func chip(_ text: String, _ color: Color) -> some View {
+        Text(text)
+            .font(.caption2)
+            .foregroundStyle(color)
+            .padding(.horizontal, 5).padding(.vertical, 1)
+            .background(Capsule().fill(color.opacity(0.18)))
+    }
+
+    /// The chip's word. Every state the engine can report has one;
+    /// anything a newer engine invents reads "Unavailable" rather than
+    /// leaking `foreign_credential` into the window with its underscore
+    /// swapped for a space.
+    private static func statusWord(_ status: String) -> String {
+        switch status {
+        case "relogin_required": return "Sign-In Needed"
+        case "token_expired": return "Refreshing"
+        case "foreign_credential": return "Needs a Switch"
+        case "keychain_unavailable": return "Keychain Locked"
+        case "api_key": return "API Key"
+        case "no_credentials": return "Not Signed In"
+        default: return "Unavailable"
+        }
+    }
+
+    /// The sentence behind the chip. Deliberately not
+    /// `SentinelNotes.note(for:)`: those are the engine's own words,
+    /// down to the shell command to type.
+    private static func statusHelp(_ status: String) -> String {
+        switch status {
+        case "relogin_required":
+            return "The stored sign-in expired. Sign in again to bring this account back."
+        case "token_expired":
+            return "The sign-in is being refreshed; this clears itself."
+        case "foreign_credential":
+            return "The live credential belongs to another account \u{2014} switching to this one repairs it."
+        case "keychain_unavailable":
+            return "The keychain is locked or busy. Unlock it, then try again."
+        case "api_key":
+            return "This account signs in with an API key, so there is no plan quota to track."
+        case "no_credentials":
+            return "This slot has no stored sign-in yet."
+        default:
+            return "The engine reported a state this version doesn't recognise. Updating the engine usually explains it."
         }
     }
 }
@@ -966,27 +1090,55 @@ private struct CswapAddFlow: View {
     }
 }
 
-/// One account's editable display name. Local draft, committed on Enter or
-/// focus loss — never on every keystroke (each commit is a `cswap alias`
-/// subprocess + snapshot refresh).
+/// One account's display name: text until it is clicked, then a field —
+/// the pattern System Settings uses to rename a network. A plain-styled
+/// `Button` rather than a tap gesture, so it takes keyboard focus and
+/// VoiceOver reaches it. An account with no alias shows its EMAIL here,
+/// in primary type: an empty bordered box reads as missing data.
+/// The commit is on Enter or focus loss, never per keystroke — each one
+/// is an engine subprocess plus a snapshot refresh.
 private struct RenameField: View {
     @ObservedObject var fleet: FleetState
     let account: Account
     @State private var draft = ""
+    @State private var editing = false
     @FocusState private var focused: Bool
 
+    private var display: String {
+        let alias = account.alias ?? ""
+        return alias.isEmpty ? account.email : alias
+    }
+
     var body: some View {
-        TextField("Name", text: $draft)
-            .textFieldStyle(.roundedBorder)
-            .frame(width: 150)
-            .focused($focused)
-            .onAppear { draft = account.alias ?? "" }
-            .onChange(of: account.alias) { draft = account.alias ?? "" }
-            .onSubmit { commit() }
-            .onChange(of: focused) { if !focused { commit() } }
+        if editing {
+            TextField("Name", text: $draft)
+                .textFieldStyle(.roundedBorder)
+                .frame(width: 150)
+                .focused($focused)
+                .onAppear { focused = true }
+                .onSubmit { commit() }
+                .onChange(of: focused) { if !focused { commit() } }
+                .onExitCommand { editing = false }
+        } else {
+            Button {
+                draft = account.alias ?? ""
+                editing = true
+            } label: {
+                Text(display).lineLimit(1)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(display)
+            .accessibilityHint("Renames this account. Clearing the name goes back to the email.")
+            .help("Click to rename \(display).")
+        }
     }
 
     private func commit() {
+        // Escape sets `editing` false first, and Enter commits before the
+        // field loses focus: either way the focus-loss pass must not run a
+        // second rename (or undo the cancel).
+        guard editing else { return }
+        editing = false
         let trimmed = draft.trimmingCharacters(in: .whitespaces)
         guard trimmed != (account.alias ?? "") else { return }
         fleet.rename(account.number, to: trimmed)
