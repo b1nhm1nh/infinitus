@@ -7,6 +7,8 @@ import InfinitusUI
 /// (→ detail, one level deeper) stack cleanly on the same `NavigationPath`.
 struct SessionDetailRoute: Hashable {
     let session: SessionDetail
+    /// The session's Mac when it isn't the primary (#144 phase 2).
+    var macId: String? = nil
 }
 
 /// The Mac's session vocabulary in the user's words — one word system
@@ -88,6 +90,8 @@ struct SessionDetailScreen: View {
     @ObservedObject var model: MirrorModel
     @ObservedObject var progress: MobileSessionProgress
     let session: SessionDetail
+    /// `nil` is the primary Mac (#144 phase 2).
+    var macId: String? = nil
 
     @State private var settingMode = false
     @State private var modeResult: String?

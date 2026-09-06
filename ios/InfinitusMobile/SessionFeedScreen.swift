@@ -12,6 +12,8 @@ import InfinitusUI
 struct SessionFeedScreen: View {
     @ObservedObject var model: MirrorModel
     let session: SessionDetail
+    /// `nil` is the primary Mac (#144 phase 2).
+    var macId: String? = nil
 
     @State private var feed: SessionFeed?
     @State private var errorText: String?

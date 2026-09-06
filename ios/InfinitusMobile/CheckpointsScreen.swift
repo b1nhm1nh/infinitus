@@ -4,6 +4,7 @@ import InfinitusCore
 /// The session detail's Checkpoints row route.
 struct CheckpointsRoute: Hashable {
     let session: SessionDetail
+    var macId: String? = nil
 }
 
 /// A live session's checkpoint timeline (#167 phase 2), newest first —
@@ -13,6 +14,8 @@ struct CheckpointsRoute: Hashable {
 /// restore is itself undoable from this list).
 struct CheckpointsScreen: View {
     let session: SessionDetail
+    /// `nil` is the primary Mac (#144 phase 2).
+    var macId: String? = nil
     @State private var reply: Checkpoints.Reply?
     @State private var loading = false
     @State private var error: String?
