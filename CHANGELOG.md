@@ -15,6 +15,7 @@ publishes the matching section as the GitHub release body.
 - Parked sessions: with the Mac unreachable the phone keeps the last fleet and transcripts, queues one message per session and delivers it once the Mac is back (#168).
 - The phone pairs with more than one Mac: other Macs' fleets and sessions show under their name, and any of them can be made primary from Settings › Devices.
 - Other Macs' sessions open like the primary's: transcript, replies, approvals, checkpoints and queued messages go to the Mac the session lives on (#144).
+- Other Macs park too: their fleets, sessions and transcripts stay on the phone while they're away, and the "+" sheet and Past sessions can start a session on any paired Mac (#144).
 - The Sessions list wears the theme: session names in the theme's accent, state words in their state color.
 - The share sheet's session picker lists waiting sessions first and names each one by session · repo.
 - The Game HUD bars' cool glow (usage behind pace) is a real glow now, scaled to the bar, instead of a tinted rim.
@@ -53,6 +54,15 @@ publishes the matching section as the GitHub release body.
 - The Mac's Checkpoints section shows a checkpoint's diff against now (the stat inline, the patch a Copy away).
 
 ### Team (preview)
+- Team: a leader invites a discoverable Mac over the local network, and the invitee accepts from Invitations.
+- Team: the phone's Nearby — scan the network, ask a leader to join, invite a Mac, accept an invitation.
+- `infinitusctl team nearby invite`, `team invites`, `team accept` and `team ignore` do the same from a terminal.
+- Share a kind with Nobody and it never leaves this Mac (`infinitusctl team share transcripts off`).
+- Pick which recent sessions' transcripts are shared.
+- A publish shows its progress in Settings › Team, and quitting stops it after the current batch.
+- The plaintext copies of what you published are capped at 1 GB, oldest transcripts first.
+- A failed team create leaves no half-made team behind.
+- A git push with chatty progress output no longer hangs the publish.
 - Reading the team store remembers each file's header, so a refresh pass reads only new files and the app's memory stays flat.
 - A publish sends transcripts only from sessions active in the last two days (stats keep 30) and pushes in 200 MB batches, saving its place after each, so a huge history can't stall or crash it.
 - An invite link's request now proves the invite without carrying its secret, so a copied request can't ride someone else's invite; invited requests are approved automatically again.

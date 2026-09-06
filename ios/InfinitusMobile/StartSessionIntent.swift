@@ -53,6 +53,8 @@ struct StartSessionIntent: AppIntent {
         guard reply.outcome == "started" else { throw StartSessionError(message: reply.detail ?? reply.outcome) }
         if let pid = reply.pid {
             await MainActor.run {
+                // Shortcuts start on the primary; never inherit a stale other-Mac id.
+                MirrorModel.shared.requestedMacId = nil
                 MirrorModel.shared.requestedPid = pid
                 MirrorModel.shared.requestedTab = "sessions"
             }

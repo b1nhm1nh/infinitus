@@ -54,6 +54,10 @@ final class MirrorModel: ObservableObject, FleetModel {
         var snapshot: MirrorSnapshot?
         var fleets: [MirrorFleetModel] = []
         var status: String = ""
+        /// The snapshot came from that Mac's cache because no route
+        /// reached it this poll — `snapshot` stays non-nil while a Mac
+        /// is down, so presence alone never says "reachable".
+        var parked = false
         var id: String { pairing.id }
     }
     @Published private(set) var others: [OtherMac] = []
@@ -116,6 +120,23 @@ final class MirrorModel: ObservableObject, FleetModel {
 
     func macName(_ macId: String?) -> String? {
         macId.flatMap { other($0)?.pairing.name }
+    }
+
+    /// The Mac a session starts on (#144 phase 3): its profiles, its
+    /// folders, its name. `nil` is the primary.
+    func profiles(macId: String?) -> [SessionProfile] {
+        guard let macId else { return snapshot?.profiles ?? [] }
+        return other(macId)?.snapshot?.profiles ?? []
+    }
+
+    func recentCwds(macId: String?) -> [String] {
+        guard let macId else { return recentCwds }
+        return other(macId)?.snapshot?.recentCwds ?? []
+    }
+
+    func machineName(macId: String?) -> String {
+        guard let macId else { return snapshot?.machineName ?? "the Mac" }
+        return other(macId)?.pairing.name ?? "the Mac"
     }
 
     /// Pull-to-refresh and post-action refresh for a session's own Mac.
@@ -241,6 +262,13 @@ final class MirrorModel: ObservableObject, FleetModel {
 
     /// Settings › Devices, "Other Macs": drops a pairing for good.
     func forgetOther(id: String) {
+        // Its parked cache and queued messages go with it — nothing would
+        // flush them once the pairing is gone (#144 phase 3).
+        if let token = other(id)?.pairing.token {
+            let key = NetworkFleetMirror.parkedKey(token: token)
+            NetworkFleetMirror.parkedCache(key: key).clear()
+            for item in OutboxDelivery.outbox.items(macKey: key) { OutboxDelivery.outbox.remove(id: item.id) }
+        }
         var list = MacPairing.load(defaults)
         list.removeAll { $0.id == id }
         MacPairing.save(list, defaults)
@@ -421,20 +449,20 @@ final class MirrorModel: ObservableObject, FleetModel {
         // `for await` yields in COMPLETION order, not the pairings' own
         // order — collecting by id and remapping keeps the Fleet/
         // Sessions/Settings sections from reordering every poll.
-        let fetched = await withTaskGroup(of: (String, MirrorSnapshot?, String).self) { group in
+        let fetched = await withTaskGroup(of: (String, MirrorSnapshot?, String, Bool).self) { group in
             for (pairing, mirror) in mirrors {
                 group.addTask {
                     let snapshot = try? await mirror.latest()
-                    return (pairing.id, snapshot, await mirror.statusText)
+                    return (pairing.id, snapshot, await mirror.statusText, await mirror.lastServedFromCache)
                 }
             }
-            var collected: [String: (MirrorSnapshot?, String)] = [:]
-            for await (id, snapshot, status) in group { collected[id] = (snapshot, status) }
+            var collected: [String: (MirrorSnapshot?, String, Bool)] = [:]
+            for await (id, snapshot, status, parked) in group { collected[id] = (snapshot, status, parked) }
             return collected
         }
         let existingByID = Dictionary(uniqueKeysWithValues: others.map { ($0.id, $0) })
         others = pairings.map { pairing in
-            guard let (snapshot, status) = fetched[pairing.id] else {
+            guard let (snapshot, status, parked) = fetched[pairing.id] else {
                 return OtherMac(pairing: pairing, status: "")
             }
             // Show the Mac's own name the moment it answers, not a poll
@@ -444,15 +472,18 @@ final class MirrorModel: ObservableObject, FleetModel {
                 named.name = snapshot.machineName
                 renameOther(id: pairing.id, to: snapshot.machineName)
             }
-            var other = OtherMac(pairing: named, snapshot: snapshot, status: status)
+            var other = OtherMac(pairing: named, snapshot: snapshot, status: status, parked: parked)
             guard let snapshot, let engineFleets = Self.engineFleets(from: snapshot) else { return other }
             other.fleets = reconcileFleets(engineFleets, existing: existingByID[pairing.id]?.fleets ?? [],
                                            hostUsage: false).fleets
             return other
         }
         // Per-Mac reachable edge: newly answering ids fire once; a Mac
-        // still down stays out of the set and fires nothing.
-        let answered = Set(others.compactMap { $0.snapshot == nil ? nil : $0.id })
+        // still down stays out of the set and fires nothing. Keyed on
+        // `parked`, not snapshot presence: `latest()` hands back the
+        // cached snapshot while a Mac is down, so a Mac that slept and
+        // woke within one app run would otherwise never fire again.
+        let answered = Set(others.compactMap { $0.snapshot != nil && !$0.parked ? $0.id : nil })
         let newlyReachable = answered.subtracting(othersReachable)
         othersReachable = answered
         for id in newlyReachable { otherReachable?(id) }
@@ -576,6 +607,9 @@ final class MirrorModel: ObservableObject, FleetModel {
     /// A session just started from here (#91); the Sessions tab opens
     /// its chat once the snapshot lists it.
     @Published var requestedPid: Int?
+    /// The Mac `requestedPid` lives on (#144 phase 3); `nil` is the
+    /// primary. Set BEFORE `requestedPid` so its observer sees both.
+    @Published var requestedMacId: String?
     /// Folders sessions have run in on the Mac, newest first.
     var recentCwds: [String] { snapshot?.recentCwds ?? [] }
     func openForecast() { outlookShown = true }

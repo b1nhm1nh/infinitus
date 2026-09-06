@@ -24,7 +24,7 @@ func teamUsage() -> String {
       aggregates                          the leaders' published team picture
       aggregates publish [--period all|<p>]   (leaders) publish the team picture to the whole team
       policy [--requests code|off] [--members-see-each-other on|off]   (leaders) show or set the roster policy
-      share <kind> leaders|team|<kid>[,<kid>…]     audience for stats|now|sessions|transcripts|crashes (new envelopes; see reshare)
+      share <kind> off|leaders|team|<kid>[,<kid>…]  audience for stats|now|sessions|transcripts|crashes ("off" keeps it on this machine; new envelopes — see reshare)
       exclude <project-dir> [--off]                keep a Claude Code project private (local, never sent)
       identity [show]                    this machine's identity kid
       identity recovery --show           the recovery key (base32, 8 groups) — keep it offline

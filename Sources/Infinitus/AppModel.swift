@@ -2015,7 +2015,7 @@ final class AppModel: ObservableObject {
             // directory would just raise Finder.
             let exe = Bundle.main.executablePath ?? ""
             // applicationShouldTerminate can hold quit up to
-            // TeamModel.quitBound (5s) for a team's now.json delete, so a
+            // TeamModel.quitBound (20s) for a team's now.json delete, so a
             // fixed sleep can no longer be trusted to outlast this
             // process — wait for the pid to actually exit instead.
             let pid = ProcessInfo.processInfo.processIdentifier

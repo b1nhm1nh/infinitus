@@ -140,6 +140,7 @@ One line per feature; the site and the CHANGELOG carry the detail.
 - **Your team identity** — a local key behind Touch ID, a recovery key, a passphrase-sealed export.
 - **Parked** — the Mac asleep or away, the phone still shows the fleet and every transcript, and a message you send waits and goes out when it's back.
 - **Every Mac's chats** — a session under another paired Mac opens like any other; what you send goes to that Mac, and waits for it if it's away.
+- **Start on any Mac** — the "+" sheet and Past sessions pick which paired Mac runs the session; a Mac that's away keeps its sessions on the phone, marked parked.
 - **`infinitusctl`** — an agent-facing control CLI: status, fleets, sessions, send, switch, hold, rename, proxy, AWS logins, stats, perf; plus an agent-setup guide.
 
 ## Privacy

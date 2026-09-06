@@ -28,8 +28,8 @@ struct TeamPane: View {
             .formStyle(.grouped)
             .disabled(team.busy != nil)
             .overlay(alignment: .top) {
-                if let busy = team.busy {
-                    HStack { ProgressView().controlSize(.small); Text(busy) }
+                if let line = statusLine {
+                    HStack { ProgressView().controlSize(.small); Text(line) }
                         .font(.caption).padding(6).background(.thinMaterial, in: Capsule()).padding(.top, 6)
                 }
             }
@@ -117,6 +117,24 @@ struct TeamPane: View {
                     .font(.caption).foregroundStyle(.secondary)
             }
             .task { await team.scanNearby() }
+            if !team.invites.isEmpty {
+                Section("Invitations") {
+                    ForEach(team.invites) { invite in
+                        HStack {
+                            VStack(alignment: .leading) {
+                                Text("\(invite.fromName) invites you to \(invite.teamName)").bold()
+                                Text(invite.from.kid).font(.caption2.monospaced()).foregroundStyle(.tertiary)
+                            }
+                            Spacer()
+                            Button("Accept") { Task { await team.acceptInvite(invite, name: joinName) } }
+                                .disabled(!gateOpen || joinName.isEmpty)
+                            Button("Ignore") { Task { await team.ignoreInvite(invite) } }
+                        }
+                    }
+                    Text("The invitation stays sealed on this Mac until you accept; accepting joins straight away.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+            }
             Section("Identity") {
                 identityButtons
                 Text("A recovery key or an export file moves this Mac's identity to another Mac — import one before joining, not after.")
@@ -182,13 +200,24 @@ struct TeamPane: View {
                         }
                     }
                     ForEach(team.nearby) { peer in
-                        LabeledContent(peer.name) { Text("\(peer.role) · \(peer.team == snap.id ? "in this team" : "not in this team")").font(.caption).foregroundStyle(.secondary) }
+                        HStack {
+                            VStack(alignment: .leading) {
+                                Text(peer.name).bold()
+                                Text("\(peer.role) · \(peer.team == snap.id ? "in this team" : "not in this team")")
+                                    .font(.caption).foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            if peer.team == nil {
+                                Button("Invite") { Task { await team.inviteNearby(peer) } }.disabled(!gateOpen)
+                            }
+                        }
                     }
                     HStack {
                         Button(team.scanning ? "Scanning…" : "Scan") { Task { await team.scanNearby() } }.disabled(team.scanning)
                         Toggle("Discoverable", isOn: $team.discoverable).toggleStyle(.switch)
                     }
-                    Text("Members request to join from their Team pane; leader-initiated invites over the network come later.").font(.caption).foregroundStyle(.secondary)
+                    Text("Members can request to join from their Team pane, or you can invite a discoverable Mac; either way they appear in Requests once approved.")
+                        .font(.caption).foregroundStyle(.secondary)
                 }
                 .task { await team.scanNearby() }
             }
@@ -299,18 +328,42 @@ struct TeamPane: View {
                 Picker(kindTitle(kind), selection: Binding(
                     get: { audienceTag(team.shares.target(for: kind)) },
                     set: { tag in Task { await team.setShare(kind: kind, target: audience(from: tag, snap)) } })) {
+                    Text("Nobody").tag("off")
                     Text("Leaders").tag("leaders")
                     Text("Whole team").tag("team")
                     ForEach(snap.members.filter { !$0.isMe }) { m in Text("Only \(m.name)").tag("kid:\(m.kid)") }
                 }
             }
-            Text("Applies from the next publish. Changed your mind about history? Re-share re-wraps the last 30 days to today's audiences.")
+            if team.shares.target(for: TeamKinds.transcripts) != .off {
+                Picker("Which sessions", selection: Binding(
+                    get: { team.transcriptChoices.mode },
+                    set: { mode in Task { await team.setTranscriptMode(mode) } })) {
+                    Text("All recent sessions").tag(TeamTranscriptChoices.Mode.all)
+                    Text("Only the ones I pick").tag(TeamTranscriptChoices.Mode.chosen)
+                }
+                if team.transcriptChoices.mode == .chosen {
+                    if team.recentTranscripts.isEmpty {
+                        Text("No sessions in the transcript window yet — they appear after the next publish.")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                    ForEach(team.recentTranscripts) { session in
+                        Toggle(isOn: Binding(get: { team.transcriptChoices.chosen.contains(session.id) },
+                                             set: { on in Task { await team.setTranscript(session.id, shared: on) } })) {
+                            Text("\(session.project) · \(session.lastDay)")
+                        }
+                        .controlSize(.small)
+                    }
+                }
+            }
+            Text("Applies from the next publish. Re-share re-wraps the last 30 days of stats and sessions, and the transcripts still on this Mac (the local copies are capped at 1 GB).")
                 .font(.caption).foregroundStyle(.secondary)
             Button("Re-share last 30 days…") { reshareConfirm = true }
                 .confirmationDialog("Re-share the last 30 days?", isPresented: $reshareConfirm) {
                     Button("Re-share") { Task { await team.reshare(days: 30) } }
                     Button("Cancel", role: .cancel) {}
                 }
+            Text("Nobody keeps a kind on this Mac entirely. Live state off makes you look offline to the team; stats off leaves you out of the leaders' totals.")
+                .font(.caption).foregroundStyle(.secondary)
         }
     }
 
@@ -335,6 +388,20 @@ struct TeamPane: View {
 
     // MARK: helpers
 
+    /// The busy label plus how far the publisher is through this Mac's
+    /// transcript sources — "Publishing… pushing 3/12". The background
+    /// loop sets no busy label, so a big publish shows progress alone
+    /// (and never disables the form: `.disabled` stays on `busy`).
+    private var statusLine: String? {
+        let phase = team.progress.map { "\($0.phase == "push" ? "pushing" : "reading") \($0.done)/\($0.total)" }
+        switch (team.busy, phase) {
+        case let (busy?, phase?): return "\(busy) \(phase)"
+        case let (busy?, nil): return busy
+        case let (nil, phase?): return "Publishing… \(phase)"
+        case (nil, nil): return nil
+        }
+    }
+
     private func kindTitle(_ kind: String) -> String {
         switch kind {
         case TeamKinds.stats: "Stats"
@@ -352,6 +419,7 @@ struct TeamPane: View {
 
     private func audienceTag(_ t: TeamRoster.ShareTarget) -> String {
         switch t {
+        case .off: "off"
         case .leaders: "leaders"
         case .team: "team"
         case .members(let kids): kids.first.map { "kid:\($0)" } ?? "leaders"
@@ -359,6 +427,7 @@ struct TeamPane: View {
     }
 
     private func audience(from tag: String, _ snap: TeamSnapshot) -> TeamRoster.ShareTarget {
+        if tag == "off" { return .off }
         if tag == "team" { return .team }
         if tag.hasPrefix("kid:") { return .members([String(tag.dropFirst(4))]) }
         return .leaders

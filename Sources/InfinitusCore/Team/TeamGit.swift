@@ -201,6 +201,23 @@ public final class TeamGit: TeamStore {
         try drainingPool { try runOnce(args, stdin: stdin, env: extra, useGitDir: useGitDir) }
     }
 
+    /// The stderr reader's landing pad; `drain` joins the group before
+    /// anyone reads it, so there is nothing to synchronise past that.
+    private final class Buffer: @unchecked Sendable { var data = Data() }
+
+    /// stdout and stderr read at the SAME time. Sequentially, a child
+    /// that fills the other pipe's 64 KB buffer first never exits: `git
+    /// push` writes progress to stderr while we block on stdout, and the
+    /// publish hangs (2026-09-06). Same bytes, same order, no timeout.
+    static func drain(out: FileHandle, err: FileHandle) -> (out: Data, err: Data) {
+        let buffer = Buffer()
+        let group = DispatchGroup()
+        DispatchQueue.global(qos: .utility).async(group: group) { buffer.data = err.readDataToEndOfFile() }
+        let stdout = out.readDataToEndOfFile()
+        group.wait()
+        return (stdout, buffer.data)
+    }
+
     private func runOnce(_ args: [String], stdin: Data?, env extra: [String: String], useGitDir: Bool) throws -> Data {
         #if os(iOS) || os(tvOS) || os(watchOS) || os(visionOS)
         // Foundation has no Process here; InfinitusCore is linked into the
@@ -235,9 +252,9 @@ public final class TeamGit: TeamStore {
             p.standardInput = FileHandle.nullDevice
             try p.run()
         }
-        // Drain before waiting so a large blob can't deadlock on a full pipe.
-        let data = out.fileHandleForReading.readDataToEndOfFile()
-        let errData = err.fileHandleForReading.readDataToEndOfFile()
+        // Both pipes at once (see `drain`), then wait: either one filling
+        // up while we read the other would hang the publish.
+        let (data, errData) = Self.drain(out: out.fileHandleForReading, err: err.fileHandleForReading)
         p.waitUntilExit()
         guard p.terminationStatus == 0 else {
             throw GitError.failed(command: args.joined(separator: " "), status: p.terminationStatus,
