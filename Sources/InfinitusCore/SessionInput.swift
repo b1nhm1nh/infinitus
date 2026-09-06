@@ -186,8 +186,11 @@ extension SessionInput {
         ttyOfPid: (Int32) -> String? = ProcessFacts.tty(of:),
         ancestorsOf: (Int32) -> [Int32] = ProcessFacts.ancestors(of:),
         socketSend: (ClaudeSessionRecord, String) -> Bool = { record, text in
-            PeerSocket.send(socketPath: record.messagingSocketPath, text: text,
-                            pid: record.pid, claudeDir: ClaudeSessions.configHome())
+            let claudeDir = ClaudeSessions.configHome()
+            let transcript = Transcript.locate(cwd: record.cwd, sessionId: record.sessionId, claudeDir: claudeDir)
+            return PeerSocket.send(socketPath: record.messagingSocketPath, text: text,
+                                   pid: record.pid, claudeDir: claudeDir,
+                                   mode: Transcript.peerModeClass(at: transcript))
         },
         sleep: (TimeInterval) -> Void = { Thread.sleep(forTimeInterval: $0) }
     ) -> Reply {
