@@ -555,6 +555,10 @@ final class AppModel: ObservableObject {
     @Published var pushAwsLogin: Bool { didSet { defaults.set(pushAwsLogin, forKey: "push_aws_login") } }
     /// "<name> is back" (and "all accounts are back — reset early") pushes (2026-09-05).
     @Published var pushRevived: Bool { didSet { defaults.set(pushRevived, forKey: "push_revived") } }
+    /// Minutes before a reset that the row's countdown goes live and the
+    /// phone's reset alarm fires (#227); mirrored to the phone in FleetPrefs.
+    @Published var reviveLeadMinutes: Int { didSet { defaults.set(reviveLeadMinutes, forKey: "revive_lead_minutes") } }
+    var reviveLead: TimeInterval { TimeInterval(reviveLeadMinutes * 60) }
     /// Settings › Sync "This Mac's name" (#99); empty follows the computer name.
     @Published var machineNameOverride: String {
         didSet {
@@ -654,7 +658,7 @@ final class AppModel: ObservableObject {
     /// commands; no channels configured is a quiet no-op (try?). The
     /// away-push channels are cswap's.
     func push(_ msg: String) {
-        notify(msg)
+        notify(msg, phoneUnlessRevival: PushTriggers.isAllDeadMessage(msg))
         if let cswap {
             Task { _ = try? await cswap.run(["notify", "push", "-"], stdin: msg) }
         }
@@ -774,9 +778,12 @@ final class AppModel: ObservableObject {
     }
     static let hookRefreshSpacing: TimeInterval = 30
 
-    func notify(_ body: String) {
+    /// `phoneUnlessRevival`: a phone showing the all-dead countdown activity
+    /// (or about to get its start alert) already has this news — the Mac
+    /// banner still posts.
+    func notify(_ body: String, phoneUnlessRevival: Bool = false) {
         Notifier.post(title: "Infinitus", body: body)
-        liveActivityPusher.pushAlert(title: "Infinitus", body: body)
+        liveActivityPusher.pushAlert(title: "Infinitus", body: body, unlessRevival: phoneUnlessRevival)
     }
     private let awake = KeepAwake()
     /// Seeded with the AWS-login needs already pushed before the last
@@ -908,6 +915,7 @@ final class AppModel: ObservableObject {
         pushWaiting = defaults.object(forKey: "push_waiting") as? Bool ?? true
         pushAwsLogin = defaults.object(forKey: "push_aws_login") as? Bool ?? true
         pushRevived = defaults.object(forKey: "push_revived") as? Bool ?? true
+        reviveLeadMinutes = defaults.object(forKey: "revive_lead_minutes") as? Int ?? 10
         machineNameOverride = defaults.string(forKey: MachineName.overrideKey) ?? ""
         sessionHost = defaults.string(forKey: "session_host") ?? "auto"
         checkpointsEnabled = defaults.object(forKey: "checkpoints_enabled") as? Bool ?? true
@@ -1029,6 +1037,7 @@ final class AppModel: ObservableObject {
         pushWaiting = defaults.object(forKey: "push_waiting") as? Bool ?? true
         pushAwsLogin = defaults.object(forKey: "push_aws_login") as? Bool ?? true
         pushRevived = defaults.object(forKey: "push_revived") as? Bool ?? true
+        reviveLeadMinutes = defaults.object(forKey: "revive_lead_minutes") as? Int ?? 10
         machineNameOverride = defaults.string(forKey: MachineName.overrideKey) ?? ""
         sessionHost = defaults.string(forKey: "session_host") ?? "auto"
         checkpointsEnabled = defaults.object(forKey: "checkpoints_enabled") as? Bool ?? true
@@ -1570,6 +1579,13 @@ final class AppModel: ObservableObject {
             if let w = active?.usage?.sevenDay { windows.append(TeamDocs.Window(label: "7d", pct: Int(w.pct.rounded()))) }
             return TeamDocs.Fleet(engine: fleet.engineID, account: active.map { $0.alias ?? $0.email }, windows: windows)
         }
+        // Every account, for the member fleet view (#221); this Mac's one
+        // token rate rides the primary fleet.
+        let perMinute = sessionProgress.tokenRate?.perMinute ?? 0
+        let rate: Double? = perMinute > 0 ? Double(perMinute) : nil
+        s.fleetRows = lastFleets.enumerated().map { i, fleet in
+            TeamDocs.FleetDoc.row(fleet, tokensPerMinute: i == 0 ? rate : nil)
+        }
         s.blockers = awsLogins.map { "AWS login: \($0.profile)" }
             + lastFleets.filter { !$0.accounts.isEmpty && $0.activeNumber == nil && $0.nextCandidate == nil }
                 .map { "\($0.engineID): every account limited" }
@@ -1815,8 +1831,8 @@ final class AppModel: ObservableObject {
                 notify(event.summary)
             case "account-unquarantined":
                 notify("account back in rotation")
-            case "all-exhausted":
-                notify("every account is at its limit")
+            // "all-exhausted" arrives on every engine re-probe (~10 min while
+            // dead): the latched PushTriggers message owns that notification.
             default:
                 break
             }
@@ -2015,7 +2031,7 @@ final class AppModel: ObservableObject {
             // directory would just raise Finder.
             let exe = Bundle.main.executablePath ?? ""
             // applicationShouldTerminate can hold quit up to
-            // TeamModel.quitBound (5s) for a team's now.json delete, so a
+            // TeamModel.quitBound (20s) for a team's now.json delete, so a
             // fixed sleep can no longer be trusted to outlast this
             // process — wait for the pid to actually exit instead.
             let pid = ProcessInfo.processInfo.processIdentifier
@@ -2043,7 +2059,7 @@ final class AppModel: ObservableObject {
         // notifications — the same guard every other side effect here
         // uses) or a mock/e2e instance sharing this Mac's real process
         // table with the perf gate's launch-time samples.
-        if !isPlayground, !mockMode { Task { await machineModel.tick() } }
+        if !isPlayground, !mockMode, MachineModel.paneShown { Task { await machineModel.tick() } }
         let engines = registry.engines
         guard !engines.isEmpty else { return }
         var results: [(id: String, fleets: [EngineFleet]?, error: Error?)] = []
@@ -2198,7 +2214,8 @@ final class AppModel: ObservableObject {
                 popupLayout: popupLayout, burnStyle: burnStyle,
                 introStyle: introStyle, introTitle: introTitle,
                 introSpeed: introSpeed, customThemes: customThemes,
-                sortByHeadroom: sortByHeadroom, popupTextSize: popupTextSize)
+                sortByHeadroom: sortByHeadroom, popupTextSize: popupTextSize,
+                reviveLeadMinutes: reviveLeadMinutes)
             // Footer-chip state (#9 phase D2), captured here for the
             // same main-actor reason as the prefs above.
             let serviceStatus = ServiceStatusSummary(

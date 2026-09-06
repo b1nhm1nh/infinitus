@@ -186,8 +186,9 @@ private struct ThemeCard: View {
         }
     }
 
-    /// The widest row: credit gauge, the model alias and its gauge, and
-    /// the cash figure. `wrapped` puts the model half on its own line.
+    /// The widest row: credit gauge, the model alias and its gauge, the
+    /// cash figure and the themed token rate. `wrapped` puts the model
+    /// half on its own line.
     @ViewBuilder private func creditRow(wrapped: Bool) -> some View {
         let credit = HStack(spacing: 3) {
             Text(theme.creditLabel).font(.caption).bold()
@@ -200,6 +201,13 @@ private struct ThemeCard: View {
             GaugeBar(remaining: 26, color: ThemeColor.resolve(theme.scopedColor), animated: false)
             Text(verbatim: "\(theme.cashIcon)1,131")
                 .font(.caption).foregroundStyle(.yellow)
+            if let glyph = theme.rateGlyph {
+                Text(glyph).font(.caption)
+            } else {
+                Image(systemName: "bolt.horizontal.fill").font(.caption).foregroundStyle(.yellow)
+            }
+            Text(TokenRate(perMinute: 1200, peakPerMinute: 1200).label(theme: theme))
+                .font(.caption).foregroundStyle(.secondary).monospacedDigit()
         }
         if wrapped {
             credit.fixedSize()

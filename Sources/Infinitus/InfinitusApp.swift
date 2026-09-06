@@ -235,11 +235,15 @@ struct InfinitusApp: App {
         SettingsTab(title: "Stats", symbol: "chart.bar.xaxis", tint: .indigo,
                     keywords: ["stats", "metrics", "commits", "prs", "lines",
                                "messages", "sessions", "week", "month", "year"],
-                    view: AnyView(StatsPane(model: statsModel))),
-        SettingsTab(title: "Machine", symbol: "cpu", tint: .brown,
-                    keywords: ["machine", "health", "hooks", "runaway", "temp",
-                               "swap", "memory", "residue", "guardian"],
-                    view: AnyView(MachinePane(model: model.machineModel))),
+                    view: AnyView(StatsPane(model: statsModel, app: model))),
+    ]
+    + (MachineModel.paneShown
+       ? [SettingsTab(title: "Machine", symbol: "cpu", tint: .brown,
+                      keywords: ["machine", "health", "hooks", "runaway", "temp",
+                                 "swap", "memory", "residue", "guardian"],
+                      view: AnyView(MachinePane(model: model.machineModel)))]
+       : [])
+    + [
         SettingsTab(title: "Profiles", symbol: "person.text.rectangle", tint: .pink,
                     keywords: ["profile", "preset", "start", "session", "model",
                                "permission", "system prompt", "launch"],

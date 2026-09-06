@@ -11,19 +11,23 @@ public enum TeamChunker {
     public static let readCap = 64 << 20
     private static let newline = UInt8(ascii: "\n")
 
-    /// Chunks of the complete lines after byte `offset`, and the offset
-    /// just past the last line consumed. A line without its newline
-    /// waits for the next call; a line above `maxBytes` is its own chunk.
-    public static func chunks(of url: URL, from offset: Int, maxBytes: Int = maxChunkBytes,
-                              readCap: Int = readCap, redact: (String) -> String) throws -> (chunks: [Data], offset: Int) {
-        guard let handle = try? FileHandle(forReadingFrom: url) else { return ([], offset) }
+    /// Chunks of the complete lines after byte `offset`, handed to `sink`
+    /// one at a time and dropped, and the offset just past the last line
+    /// consumed. A line without its newline waits for the next call; a
+    /// line above `maxBytes` is its own chunk. Streaming (rather than
+    /// returning them all) is what keeps a publish holding ONE chunk
+    /// instead of a whole `readCap` slice of them.
+    @discardableResult
+    public static func stream(of url: URL, from offset: Int, maxBytes: Int = maxChunkBytes,
+                              readCap: Int = readCap, redact: (String) -> String,
+                              sink: (Data) throws -> Void) throws -> Int {
+        guard let handle = try? FileHandle(forReadingFrom: url) else { return offset }
         defer { try? handle.close() }
         try handle.seek(toOffset: UInt64(offset))
         guard let data = try handle.read(upToCount: readCap), let lastNewline = data.lastIndex(of: newline) else {
-            return ([], offset)
+            return offset
         }
         let complete = data[data.startIndex...lastNewline]
-        var chunks: [Data] = []
         var current = Data()
         var start = complete.startIndex
         while start < complete.endIndex {
@@ -33,13 +37,21 @@ public enum TeamChunker {
             var line = drainingPool { Data(redact(String(decoding: complete[start..<end], as: UTF8.self)).utf8) }
             line.append(newline)
             if !current.isEmpty, current.count + line.count > maxBytes {
-                chunks.append(current)
+                try sink(current)
                 current = Data()
             }
             current.append(line)
             start = end + 1
         }
-        if !current.isEmpty { chunks.append(current) }
-        return (chunks, offset + complete.count)
+        if !current.isEmpty { try sink(current) }
+        return offset + complete.count
+    }
+
+    /// `stream`, collected — the shape the tests and any one-shot caller want.
+    public static func chunks(of url: URL, from offset: Int, maxBytes: Int = maxChunkBytes,
+                              readCap: Int = readCap, redact: (String) -> String) throws -> (chunks: [Data], offset: Int) {
+        var out: [Data] = []
+        let end = try stream(of: url, from: offset, maxBytes: maxBytes, readCap: readCap, redact: redact) { out.append($0) }
+        return (out, end)
     }
 }

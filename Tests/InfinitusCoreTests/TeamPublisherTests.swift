@@ -285,4 +285,317 @@ final class TeamPublisherTests: XCTestCase {
             XCTAssertEqual($0 as? TeamClient.ClientError, .notInTeam)
         }
     }
+
+    /// Spec §7: a kind shared with Nobody is not chunked, not sealed, not
+    /// copied and not hinted at on the store.
+    func testAKindSharedWithNobodyNeverLeavesTheMac() throws {
+        let t = try team()
+        let projects = try writeProjects(scratch)
+        let teamDir = t.alicePaths.teamDir(t.alice.config.id)
+        let publisher = TeamPublisher(client: t.alice, paths: t.alicePaths)
+        _ = try publisher.publish(sources: sources(projects))   // one pass with everything on
+        let me = "m/\(t.alice.identity.kid)/"
+
+        var shares = TeamShares()
+        shares.byKind[TeamKinds.stats] = .team
+        shares.byKind[TeamKinds.transcripts] = .off
+        try shares.save(teamDir: teamDir)
+        // New lines that WOULD chunk if transcripts were still shared.
+        let s1 = projects.appendingPathComponent("-r-app/s1.jsonl")
+        let handle = try FileHandle(forWritingTo: s1)
+        try handle.seekToEnd()
+        try handle.write(contentsOf: Data(#"{"type":"assistant","timestamp":"2026-09-04T12:00:11.000Z","message":{"id":"a8","model":"claude-opus-5","usage":{"input_tokens":4,"output_tokens":1},"content":[{"type":"text","text":"nope"}]}}"#.utf8 + [UInt8(ascii: "\n")]))
+        try handle.close()
+
+        let report = try publisher.publish(sources: sources(projects))
+        XCTAssertEqual(report.transcriptChunks, 0)
+        XCTAssertFalse(report.published.contains { $0.contains("/transcripts/") })
+        XCTAssertFalse(FileManager.default.fileExists(atPath: publisher.copiesDir.appendingPathComponent("transcripts/s1/2.jsonl").path),
+                       "an off kind is not copied to published/ either")
+        // The cursor did not move: turning transcripts back on resumes where it stopped.
+        XCTAssertEqual(TeamPublishState.load(teamDir: teamDir).transcripts["s1"]?.seq, 1)
+
+        // The hint on now.json keeps the real audiences and drops the off one:
+        // an older client's decoder would throw on an unknown "off".
+        _ = try t.leader.fetch()
+        let now = try CanonicalJSON.decode(TeamDocs.Now.self, from: try t.leader.read(me + "now.json").1)
+        XCTAssertEqual(now.sharesTo["stats"], .team)
+        XCTAssertNil(now.sharesTo["transcripts"])
+        // Re-share does not resurrect it from the copies either.
+        XCTAssertFalse(try publisher.reshare(days: 10_000).published.contains { $0.contains("/transcripts/") })
+        // Defensive: nothing may seal to nobody.
+        XCTAssertThrowsError(try t.alice.publish(kind: TeamKinds.stats, path: "days/2026-09-04.json",
+                                                 plaintext: Data("{}".utf8), audience: .off)) {
+            XCTAssertEqual($0 as? TeamClient.ClientError, .audienceOff)
+        }
+    }
+
+    /// `now` off after a publish would leave this member looking "on"
+    /// forever, so the stale now.json is retired once.
+    func testNowSharedWithNobodyIsRetiredFromTheStore() throws {
+        let t = try team()
+        let projects = try writeProjects(scratch)
+        let teamDir = t.alicePaths.teamDir(t.alice.config.id)
+        let publisher = TeamPublisher(client: t.alice, paths: t.alicePaths)
+        _ = try publisher.publish(sources: sources(projects))
+        let me = "m/\(t.alice.identity.kid)/"
+        _ = try t.leader.fetch()
+        XCTAssertTrue(try t.leader.readable().map(\.path).contains(me + "now.json"))
+
+        var shares = TeamShares()
+        shares.byKind[TeamKinds.now] = .off
+        try shares.save(teamDir: teamDir)
+        _ = try publisher.publish(sources: sources(projects))
+        _ = try t.leader.fetch()
+        XCTAssertFalse(try t.leader.readable().map(\.path).contains(me + "now.json"))
+        // Idempotent: the second pass has nothing left to delete and must not throw.
+        XCTAssertNoThrow(try publisher.publish(sources: sources(projects)))
+    }
+
+    /// #221: the fleet doc travels to its audience, is written every
+    /// pass like now.json so `at` stays truthful, and is retired once
+    /// when the share row goes to Nobody.
+    func testFleetIsPublishedSkippedWhileUnchangedAndRetiredWhenOff() throws {
+        let t = try team()
+        let projects = try writeProjects(scratch)
+        let teamDir = t.alicePaths.teamDir(t.alice.config.id)
+        let publisher = TeamPublisher(client: t.alice, paths: t.alicePaths)
+        var s = sources(projects)
+        let row = TeamDocs.FleetDoc.FleetRow(engine: "opaque", active: "acct-1", next: nil, tokensPerMinute: 12, accounts: [
+            .init(label: "acct-1", tier: "Max", status: "ok", active: true, windows: [.init(label: "5h", pct: 40)], models: [])])
+        s.fleetRows = [row]
+        let me = "m/\(t.alice.identity.kid)/"
+        let first = try publisher.publish(sources: s, now: Date(timeIntervalSince1970: 1_000))
+        XCTAssertTrue(first.published.contains(me + "fleet.json"))
+        _ = try t.leader.fetch()
+        let doc = try CanonicalJSON.decode(TeamDocs.FleetDoc.self, from: try t.leader.read(me + "fleet.json").1)
+        XCTAssertEqual(doc.fleets, [row])
+        XCTAssertEqual(doc.at, 1_000)
+
+        let second = try publisher.publish(sources: s, now: Date(timeIntervalSince1970: 2_000))
+        XCTAssertTrue(second.published.contains(me + "fleet.json"), "state: republished every pass")
+        _ = try t.leader.fetch()
+        XCTAssertEqual(try CanonicalJSON.decode(TeamDocs.FleetDoc.self, from: try t.leader.read(me + "fleet.json").1).at, 2_000)
+
+        var shares = TeamShares()
+        shares.byKind[TeamKinds.fleet] = .off
+        try shares.save(teamDir: teamDir)
+        _ = try publisher.publish(sources: s)
+        _ = try t.leader.fetch()
+        XCTAssertFalse(try t.leader.readable().map(\.path).contains(me + "fleet.json"))
+        XCTAssertNoThrow(try publisher.publish(sources: s))
+    }
+
+    /// Spec §7: the member picks which sessions' transcripts travel; a
+    /// session's sub-agents ride its choice.
+    func testOnlyChosenSessionsAreChunkedAndThePickerListsTheRecentOnes() throws {
+        let t = try team()
+        let projects = try writeProjects(scratch)
+        let teamDir = t.alicePaths.teamDir(t.alice.config.id)
+        var choices = TeamTranscriptChoices()
+        choices.mode = .chosen
+        choices.chosen = ["s1"]
+        try choices.save(teamDir: teamDir)
+
+        var s = sources(projects)
+        let cacheURL = teamDir.appendingPathComponent("scan-cache.json")
+        s.cacheURL = cacheURL   // the picker reads what this publish writes
+        let report = try TeamPublisher(client: t.alice, paths: t.alicePaths).publish(sources: s)
+        let me = "m/\(t.alice.identity.kid)/"
+        XCTAssertEqual(Set(report.published.filter { $0.contains("/transcripts/") }),
+                       [me + "transcripts/s1/1.jsonl", me + "transcripts/s1/subagents/agent-a1/1.jsonl"])
+        XCTAssertEqual(report.transcriptChunks, 2, "s2 was not picked; s1's sub-agent rides s1's choice")
+        // The unchosen session still contributes its day and its row.
+        let index = try CanonicalJSON.decode(TeamDocs.SessionsIndex.self, from: try t.alice.read(me + "sessions/index.json").1)
+        XCTAssertEqual(index.sessions.map(\.id).sorted(), ["s1", "s2"])
+
+        // What the pane's picker offers, off the same cache.
+        let recent = TeamPublisher.recentTranscriptSessions(cacheURL: cacheURL, days: 10_000)
+        XCTAssertEqual(recent.map(\.id).sorted(), ["s1", "s2"])
+        let one = try XCTUnwrap(recent.first { $0.id == "s1" })
+        XCTAssertEqual(one.project, "app")
+        XCTAssertEqual(one.lastDay, "2026-09-04")
+        XCTAssertGreaterThan(one.bytes, 0)
+        // The day floor: nothing is recent long after the fixture's day.
+        XCTAssertEqual(TeamPublisher.recentTranscriptSessions(cacheURL: cacheURL, days: 1,
+                                                              now: Date(timeIntervalSince1970: 2_000_000_000)), [])
+        // An excluded project is not even offered.
+        var ex = TeamExclusions(); ex.set("/r/secret", excluded: true)
+        XCTAssertEqual(TeamPublisher.recentTranscriptSessions(cacheURL: cacheURL, days: 10_000, exclusions: ex).map(\.id), ["s1"])
+        // No cache yet (a team that never published): an empty list, not a crash.
+        XCTAssertEqual(TeamPublisher.recentTranscriptSessions(cacheURL: scratch.appendingPathComponent("nope.json"), days: 10_000), [])
+    }
+
+    /// `published/` is the only part of a team dir that grows without
+    /// bound (a month of transcripts was 9 GB): the oldest transcript
+    /// copies go, and only those.
+    func testPublishedCopiesArePrunedOldestTranscriptFirst() throws {
+        let t = try team()
+        let projects = try writeProjects(scratch)
+        let publisher = TeamPublisher(client: t.alice, paths: t.alicePaths)
+        var s = sources(projects)
+        _ = try publisher.publish(sources: s)
+        let copies = publisher.copiesDir
+        let s1 = copies.appendingPathComponent("transcripts/s1/1.jsonl")
+        let agent = copies.appendingPathComponent("transcripts/s1/subagents/agent-a1/1.jsonl")
+        let s2 = copies.appendingPathComponent("transcripts/s2/1.jsonl")
+        let day = copies.appendingPathComponent("days/2026-09-04.json")
+        for url in [s1, agent, s2, day] { XCTAssertTrue(FileManager.default.fileExists(atPath: url.path), url.path) }
+        for (url, at) in [(s1, 1_000.0), (agent, 2_000.0), (s2, 3_000.0)] {
+            try FileManager.default.setAttributes([.modificationDate: Date(timeIntervalSince1970: at)], ofItemAtPath: url.path)
+        }
+
+        s.copiesCapBytes = 1   // everything is over the cap
+        let report = try publisher.publish(sources: s)
+        XCTAssertEqual(report.prunedCopies, 3)
+        for url in [s1, agent, s2] { XCTAssertFalse(FileManager.default.fileExists(atPath: url.path), url.path) }
+        XCTAssertTrue(FileManager.default.fileExists(atPath: day.path), "stats copies stay — reshare needs them")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: copies.appendingPathComponent("sessions/index.json").path))
+        // A cap nothing exceeds prunes nothing, and the pass still reports it.
+        s.copiesCapBytes = 1 << 30
+        XCTAssertEqual(try publisher.publish(sources: s).prunedCopies, 0)
+    }
+
+    /// Progress is per SOURCE and per BATCH, never per chunk: a 9 GB
+    /// corpus is thousands of chunks and every main-actor hop is a CA
+    /// transaction (the pop-out must idle at ~0%).
+    func testProgressFiresPerSourceAndPerBatchOnly() throws {
+        let t = try team()
+        let projects = try writeProjects(scratch)
+        // `publish` is synchronous on this thread and so is the callback,
+        // but the closure is @Sendable: a captured `var` will not compile.
+        final class Box: @unchecked Sendable { var seen: [TeamPublisher.Progress] = [] }
+        let box = Box()
+        var s = sources(projects)
+        s.batchBytes = 1        // one push per source — the most callbacks this can make
+        s.onProgress = { box.seen.append($0) }
+        let report = try TeamPublisher(client: t.alice, paths: t.alicePaths).publish(sources: s)
+        XCTAssertEqual(report.transcriptChunks, 3)
+        XCTAssertFalse(report.stopped)
+        XCTAssertLessThanOrEqual(box.seen.count, 3 + 3 + 1, "3 sources + 3 batches + the opening call")
+        XCTAssertEqual(box.seen.first, TeamPublisher.Progress(phase: "scan", done: 0, total: 3))
+        XCTAssertEqual(box.seen.last?.done, 3)
+        XCTAssertEqual(Set(box.seen.map(\.phase)), ["scan", "push"])
+        XCTAssertEqual(box.seen.map(\.total), Array(repeating: 3, count: box.seen.count))
+        XCTAssertEqual(box.seen.map(\.done), box.seen.map(\.done).sorted(), "the counter only moves forward")
+    }
+
+    /// Quit asks the publisher to stop; what it had pushed stays pushed
+    /// and the cursor is saved, so the next pass resumes.
+    func testStopBetweenSourcesSavesTheCursorAndLeavesTheRestForNextTime() throws {
+        let t = try team()
+        let projects = try writeProjects(scratch)
+        let publisher = TeamPublisher(client: t.alice, paths: t.alicePaths)
+        final class Box: @unchecked Sendable { var chunked = 0 }
+        let box = Box()
+        var s = sources(projects)
+        s.batchBytes = 1
+        s.onProgress = { if $0.phase == "scan" { box.chunked = $0.done } }
+        s.shouldStop = { box.chunked >= 1 }      // stop once the first source is done
+        let report = try publisher.publish(sources: s)
+        XCTAssertTrue(report.stopped)
+        XCTAssertEqual(report.transcriptChunks, 1)
+        let me = "m/\(t.alice.identity.kid)/"
+        XCTAssertTrue(report.published.contains(me + "transcripts/s1/1.jsonl"))
+        XCTAssertFalse(report.published.contains { $0.contains("/s2/") })
+        let state = TeamPublishState.load(teamDir: t.alicePaths.teamDir(t.alice.config.id))
+        XCTAssertEqual(state.transcripts.count, 1)
+        XCTAssertEqual(state.transcripts["s1"]?.seq, 1)
+        XCTAssertGreaterThan(report.remainingBytes, 0, "the sources the stop never reached count whole")
+        _ = try t.leader.fetch()
+        XCTAssertEqual(try t.leader.readable().map(\.path).filter { $0.contains("/transcripts/") },
+                       [me + "transcripts/s1/1.jsonl"])
+        // No stop: the rest goes out, nothing is re-chunked.
+        var again = sources(projects)
+        again.batchBytes = 1
+        let second = try publisher.publish(sources: again)
+        XCTAssertFalse(second.stopped)
+        XCTAssertEqual(second.transcriptChunks, 2)
+    }
+
+    /// Spec §7 catch-up: a session bigger than one pass's read slice is
+    /// drained over several passes, and the report says how much is
+    /// still to go (the pane shows "catching up, N MB to go").
+    func testRemainingBytesCountsTheTailAndDrainsOverPasses() throws {
+        let t = try team()
+        let projects = try writeProjects(scratch)
+        let publisher = TeamPublisher(client: t.alice, paths: t.alicePaths)
+        var s = sources(projects)
+        // Above the longest fixture line (~200 B, or the chunker never
+        // advances) and below a whole file (~400 B).
+        s.readCapBytes = 256
+        let first = try publisher.publish(sources: s)
+        XCTAssertGreaterThan(first.transcriptChunks, 0)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: publisher.spoolDir.path),
+                       "the spool is cleared when the pass ends")
+
+        let state = TeamPublishState.load(teamDir: t.alicePaths.teamDir(t.alice.config.id))
+        var expected = 0
+        for (file, key) in [("-r-app/s1.jsonl", "s1"), ("-r-secret/s2.jsonl", "s2"),
+                            ("-r-app/s1/subagents/agent-a1.jsonl", "s1/subagents/agent-a1")] {
+            let attrs = try FileManager.default.attributesOfItem(atPath: projects.appendingPathComponent(file).path)
+            let size = try XCTUnwrap((attrs[.size] as? NSNumber)?.intValue)
+            expected += size - (state.transcripts[key]?.offset ?? 0)
+        }
+        XCTAssertGreaterThan(expected, 0, "one 256-byte slice cannot drain a two-line transcript")
+        XCTAssertEqual(first.remainingBytes, expected)
+
+        // Later passes drain it; nothing is re-chunked and it settles at 0.
+        var again = sources(projects)
+        again.readCapBytes = 256
+        var report = try publisher.publish(sources: again)
+        var passes = 1
+        while report.remainingBytes > 0, passes < 10 {
+            report = try publisher.publish(sources: again)
+            passes += 1
+        }
+        XCTAssertEqual(report.remainingBytes, 0, "the tail is published after \(passes) passes")
+        XCTAssertEqual(try publisher.publish(sources: again).transcriptChunks, 0, "and nothing is left to chunk")
+    }
+
+    /// The batch never sits in the heap: every staged item is sealed to
+    /// `<teamDir>/spool/<n>.bin` and git hashes the file itself.
+    func testEveryStagedItemIsSealedToTheSpoolAndPushedFromThere() throws {
+        let t = try team()
+        let projects = try writeProjects(scratch)
+        let publisher = TeamPublisher(client: t.alice, paths: t.alicePaths)
+        var s = sources(projects)
+        s.batchBytes = 1   // one push per source
+        // A leftover from a killed pass must not be pushed as if it were ours.
+        try FileManager.default.createDirectory(at: publisher.spoolDir, withIntermediateDirectories: true)
+        try Data("stale".utf8).write(to: publisher.spoolDir.appendingPathComponent("7.bin"))
+
+        let report = try publisher.publish(sources: s)
+        XCTAssertEqual(report.transcriptChunks, 3)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: publisher.spoolDir.path))
+        // The store has exactly what a pass has always had, byte for byte.
+        _ = try t.leader.fetch()
+        let me = "m/\(t.alice.identity.kid)/"
+        XCTAssertTrue(try t.leader.readable().map(\.path).contains(me + "transcripts/s1/1.jsonl"))
+        let chunk = try t.leader.read(me + "transcripts/s1/1.jsonl").1
+        XCTAssertTrue(String(decoding: chunk, as: UTF8.self).contains("[redacted-key]"))
+        XCTAssertEqual(try t.leader.read(me + "now.json").0.kind, TeamKinds.now)
+    }
+
+    /// The spool holds sealed envelopes about to reach a shared remote;
+    /// it is created 0700, not the umask default.
+    func testSpoolDirIsCreatedPrivate() throws {
+        let t = try team()
+        let projects = try writeProjects(scratch)
+        let publisher = TeamPublisher(client: t.alice, paths: t.alicePaths)
+        var s = sources(projects)
+        s.batchBytes = 1   // forces at least one push while the spool dir still exists
+        let spoolDir = publisher.spoolDir
+        final class Box: @unchecked Sendable { var checked = false }
+        let box = Box()
+        s.onProgress = { progress in
+            guard progress.phase == "push", !box.checked else { return }
+            box.checked = true
+            let attrs = try? FileManager.default.attributesOfItem(atPath: spoolDir.path)
+            let mode = (attrs?[.posixPermissions] as? NSNumber)?.intValue
+            XCTAssertEqual(mode, 0o700, "spool dir must be private")
+        }
+        _ = try publisher.publish(sources: s)
+        XCTAssertTrue(box.checked, "the push phase must fire while the spool dir exists")
+    }
 }

@@ -33,6 +33,18 @@ final class LiveActivityPushTests: XCTestCase {
     }
     #endif
 
+    // #226: ActivityKit decodes content-state with a default JSONDecoder,
+    // so a Date must travel as seconds since the 2001 reference date —
+    // Unix seconds landed 31 years out.
+    func testContentStateDatesAreReferenceDateSeconds() throws {
+        struct S: Encodable { let at: Date }
+        let at = Date(timeIntervalSinceReferenceDate: 812_000_000)
+        let update = try JSONSerialization.jsonObject(with: LiveActivityPush.updatePayload(
+            state: S(at: at), staleDate: nil)) as! [String: Any]
+        let state = (update["aps"] as! [String: Any])["content-state"] as! [String: Any]
+        XCTAssertEqual(state["at"] as? Double, 812_000_000)
+    }
+
     func testPayloadShapes() throws {
         struct S: Encodable { let a = 1 }
         let now = Date(timeIntervalSince1970: 100)
@@ -52,6 +64,11 @@ final class LiveActivityPushTests: XCTestCase {
         XCTAssertEqual(saps["attributes-type"] as? String, "WorkingActivity")
         XCTAssertEqual((saps["attributes"] as! [String: Any])["machine"] as? String, "Mac")
         XCTAssertEqual((saps["alert"] as! [String: Any])["title"] as? String, "t")
+        // No alert given: the activity lands silently.
+        let silent = try JSONSerialization.jsonObject(with: LiveActivityPush.startPayload(
+            attributesType: "WorkingActivity", machine: "Mac", state: S(), staleDate: nil,
+            now: now)) as! [String: Any]
+        XCTAssertNil((silent["aps"] as! [String: Any])["alert"])
 
         let end = try JSONSerialization.jsonObject(with: LiveActivityPush.endPayload(
             state: S(), dismissalDate: now, now: now)) as! [String: Any]
@@ -135,6 +152,12 @@ final class LiveActivityBuilderTests: XCTestCase {
         XCTAssertFalse(state.revived)
         XCTAssertNil(LiveActivityBuilder.revival(
             fleet: fleet(accounts: dead.accounts, next: 1, recovery: dead.nextRecovery, busy: 0), theme: plain))
+        // #226: the engine's own word is gated by the same horizon as the
+        // ranked accounts — a 2057 reset never reaches the lock screen.
+        let farOut = "2057-05-16T08:28:25Z"
+        XCTAssertNil(LiveActivityBuilder.revival(
+            fleet: fleet(accounts: [account(1, active: true, five: 100, seven: 40, alias: "loc", resets: farOut)],
+                         next: nil, recovery: NextRecovery(number: 1, at: farOut), busy: 0), theme: plain))
     }
 
     func testDiffersIgnoresSmallMoves() throws {

@@ -71,7 +71,7 @@ struct NextMarker<M: FleetModel>: View {
             // one to watch while everything is limited (todo 2026-09-01).
             Image(systemName: "arrowtriangle.right")
                 .font(PopupFont.caption2)
-                .foregroundStyle(.orange)
+                .foregroundStyle(ThemeColor.flash(theme))
                 .instantTip("All accounts are at a limit — this one "
                             + "recovers first\(Self.eta(recovery.at))")
         } else {
@@ -206,7 +206,8 @@ struct AccountCells<M: FleetModel, U: UsageSource> {
         return (w.pct >= 100 ? PopupGlyph.text(theme.revivePrefix) : "") + when
     }
 
-    /// Reset label that goes LIVE under ten minutes: a per-second m:ss
+    /// Reset label that goes LIVE inside the revive lead (ten minutes by
+    /// default): a per-second m:ss
     /// countdown, then a pulsing "resetting…" until the next snapshot
     /// replaces the data. No numericText roll here: on macOS 26 a
     /// per-second `.contentTransition(.numericText)` grows the CG glyph
@@ -215,7 +216,8 @@ struct AccountCells<M: FleetModel, U: UsageSource> {
     /// texts, which change once a minute at most.
     @ViewBuilder func resetLabelView(resetsAt: String?, staticText: String?) -> some View {
         if let date = WeeklyRoll.parse(resetsAt),
-           date.timeIntervalSinceNow < 600 {
+           date.timeIntervalSinceNow < model.reviveLead {
+            let isReviver = model.reviver?.number == account.number
             TimelineView(.periodic(from: .now, by: 1)) { ctx in
                 let left = date.timeIntervalSince(ctx.date)
                 if left <= 0 {
@@ -224,6 +226,13 @@ struct AccountCells<M: FleetModel, U: UsageSource> {
                         .font(PopupFont.caption).bold().foregroundStyle(.green)
                         .opacity(0.35 + 0.65 * abs(sin(
                             ctx.date.timeIntervalSinceReferenceDate * 2.5)))
+                } else if isReviver {
+                    // The reviver's row (#227) carries the full countdown in
+                    // the theme's flash colour — the same digits as the
+                    // floating panel and the Live Activity.
+                    Text(RecoveryCountdown.label(until: date, now: ctx.date))
+                        .font(PopupFont.caption).bold().monospacedDigit()
+                        .foregroundStyle(ThemeColor.flash(theme))
                 } else {
                     Text(String(format: "%d:%02d", Int(left) / 60, Int(left) % 60))
                         .font(PopupFont.caption).bold().monospacedDigit()

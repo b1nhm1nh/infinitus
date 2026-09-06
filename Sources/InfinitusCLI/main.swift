@@ -4,7 +4,8 @@ import InfinitusCore
 // `infinitus` — the agent-facing CLI (user 2026-09-03). Knows only the
 // control protocol: one JSON line to the running app's socket, one
 // back, printed verbatim. Exit codes: 0 ok · 1 command failed · 2 usage
-// · 3 app not running · 4 schema mismatch.
+// · 3 app not running, or this platform has no control socket · 4 schema
+// mismatch.
 
 let args = Array(CommandLine.arguments.dropFirst())
 
