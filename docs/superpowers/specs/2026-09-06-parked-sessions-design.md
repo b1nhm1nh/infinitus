@@ -27,8 +27,11 @@ hardest requirement and comes first.
   hangs off `refresh()` also runs there.
 - The Mac pushes plain alerts through `LiveActivityPusher.pushAlert` to
   `.alert` registrations (`AppModel.swift:656`).
-- `MirrorSnapshot.liveSessions?.sessions` rows carry `pid`, `sessionId`,
-  `cwd`; pids do not survive a Mac reboot, sessionIds do.
+- `MirrorSnapshot.liveSessions?.sessions` rows (`SessionDetail`) come from
+  the engine's `listJSON` and carry `pid`, `cwd`, `status`, `kind` — no
+  `sessionId`; the session tail (`SessionFeed.sessionId`) does. Pids do
+  not survive a Mac reboot, sessionIds do, and the Mac can map one to the
+  other (`ClaudeSessions.list` records carry both).
 - There is no iOS unit-test target; testable logic goes in InfinitusCore.
 
 ## Components
@@ -90,25 +93,28 @@ public struct OutboxItem: Codable, Sendable, Equatable {
   regenerated (the old one was never sent, or was sent and refused).
 - `replace(id:request:now:)` — the Edit path.
 - `remove(id:)`.
-- `flush(macKey:now:resolvePid:deliver:) async -> [FlushResult]` where
-  `resolvePid: (OutboxItem) -> Int32?` (caller looks the `sessionId` up in
-  the fresh snapshot, falls back to the stored pid when it is still
-  listed) and `deliver: (OutboxItem) async -> Delivery`,
-  `enum Delivery { case delivered, transport, refused(String) }`.
-  Per item, in order:
+- `flush(macKey:now:deliver:) async -> [FlushResult]` where
+  `deliver: (OutboxItem) async -> Delivery`,
+  `enum Delivery { case delivered, transport, refused(String), ended }`.
+  The Mac resolves a stale pid by the request's `sessionId` (see §3), so
+  the phone never has to. Per item, in order:
   1. skip `.ended` and `.refused` items (they wait for the user);
-  2. `resolvePid` → nil ⇒ state `.ended`, saved, result `.ended`;
-  3. state `.inFlight` saved to disk, then `deliver`;
-  4. `.delivered` ⇒ file removed; `.transport` ⇒ state `.queued`,
+  2. state `.inFlight` saved to disk, then `deliver`;
+  3. `.delivered` ⇒ file removed; `.transport` ⇒ state `.queued`,
      `attempts += 1`, stop flushing (the Mac is gone again);
-     `.refused(r)` ⇒ state `.refused(r)`, continue.
+     `.refused(r)` ⇒ state `.refused(r)`, continue; `.ended` ⇒ state
+     `.ended`, continue.
   A `.inFlight` item found at load time (phone died mid-send) is flushed
   again with the SAME `requestId` — the Mac's dedup makes that safe.
 
 ### 3. Wire and dedup
 
-- `SessionInput.Request` gains `requestId: String?` (UUID string) and
-  `queuedAt: Date?`; both optional so old JSON decodes. `init` keeps its
+- `SessionInput.Request` gains `requestId: String?` (UUID string),
+  `queuedAt: Date?` and `sessionId: String?`; all optional so old JSON
+  decodes. The Mac's input closure looks the pid up first and falls back
+  to a record with the same `sessionId` (the session survived a reboot
+  under a new pid); when neither matches it replies `rejected` with detail
+  `"session ended"` instead of today's 404. `init` keeps its
   defaults; the phone sets `requestId` on every send (queued or not — a
   plain send that times out and is retried by hand benefits too) and
   `queuedAt` only on outbox deliveries.
@@ -154,12 +160,12 @@ public struct OutboxItem: Codable, Sendable, Equatable {
   item) and **Discard**; `.refused(r)` shows r; `.ended` shows "That
   session has ended" with Discard (resume-and-deliver is phase 2, #164's
   resume route).
-- `OutboxDelivery` (ios): `flush(model:)` builds `resolvePid` from
-  `model.snapshot?.liveSessions?.sessions` (sessionId first, listed pid
-  second), `deliver` from `NetworkFleetMirror.shared.sessionInput` with
-  `queuedAt = item.updatedAt`, maps `URLError` → `.transport`,
-  `outcome ∈ {delivered, running, captured}` → `.delivered`, else
-  `.refused(detail)`. After a `.delivered` while the app is not active it
+- `OutboxDelivery` (ios): `flush()` builds `deliver` from
+  `NetworkFleetMirror.shared.sessionInput` with `queuedAt = item.updatedAt`
+  and the item's `sessionId`; a thrown transport error → `.transport`,
+  `outcome ∈ {delivered, running, captured}` → `.delivered`,
+  `rejected` + detail `"session ended"` → `.ended`, anything else →
+  `.refused(detail ?? outcome)`. After a `.delivered` while the app is not active it
   posts a local notification "Delivered to <session name>" (the Mac's
   push covers the closed-app case; the local one covers "reachable again
   while I'm on another screen").
