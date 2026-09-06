@@ -432,11 +432,12 @@ public struct TeamPublisher {
             // accounts the member stopped sharing.
             if state.hashes.removeValue(forKey: "fleet.json") != nil { try client.unpublish(path: "fleet.json") }
         } else if !sources.fleetRows.isEmpty {
-            // The digest leaves `at` out, so an unchanged fleet is skipped
-            // at every 5-min pass and only a real change is pushed.
+            // State, not history: written every pass like now.json, so
+            // `at` is a truthful "as of" and the headroom board's 15-min
+            // freshness rule reads it the way it reads `now`.
             try stage(TeamKinds.fleet, "fleet.json",
                       try CanonicalJSON.encode(TeamDocs.FleetDoc(at: at, fleets: sources.fleetRows)),
-                      digest: Self.hex(try CanonicalJSON.encode(sources.fleetRows)))
+                      always: true)
         }
         if !off(TeamKinds.crashes) {
             try stage(TeamKinds.crashes, "crashes.json",

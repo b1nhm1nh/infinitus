@@ -352,9 +352,9 @@ final class TeamPublisherTests: XCTestCase {
         XCTAssertNoThrow(try publisher.publish(sources: sources(projects)))
     }
 
-    /// #221: the fleet doc travels to its audience, is skipped while
-    /// unchanged (the digest leaves `at` out), and is retired once when
-    /// the share row goes to Nobody.
+    /// #221: the fleet doc travels to its audience, is written every
+    /// pass like now.json so `at` stays truthful, and is retired once
+    /// when the share row goes to Nobody.
     func testFleetIsPublishedSkippedWhileUnchangedAndRetiredWhenOff() throws {
         let t = try team()
         let projects = try writeProjects(scratch)
@@ -373,10 +373,9 @@ final class TeamPublisherTests: XCTestCase {
         XCTAssertEqual(doc.at, 1_000)
 
         let second = try publisher.publish(sources: s, now: Date(timeIntervalSince1970: 2_000))
-        XCTAssertFalse(second.published.contains(me + "fleet.json"), "unchanged fleet, later clock: skipped")
-        s.fleetRows[0].accounts[0].windows[0].pct = 41
-        let third = try publisher.publish(sources: s, now: Date(timeIntervalSince1970: 3_000))
-        XCTAssertTrue(third.published.contains(me + "fleet.json"))
+        XCTAssertTrue(second.published.contains(me + "fleet.json"), "state: republished every pass")
+        _ = try t.leader.fetch()
+        XCTAssertEqual(try CanonicalJSON.decode(TeamDocs.FleetDoc.self, from: try t.leader.read(me + "fleet.json").1).at, 2_000)
 
         var shares = TeamShares()
         shares.byKind[TeamKinds.fleet] = .off
