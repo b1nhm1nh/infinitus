@@ -9,6 +9,12 @@ import InfinitusCore
 /// snapshot. No timer: `refreshIfStale` rides AppModel's refresh tick
 /// (like StatsModel) and does a fetch + publish at most every 300 s.
 /// One team per Mac in the pane (several teams stay CLI-only, `--team`).
+/// The transcript picker's state, read in one pass on the team queue.
+private struct TranscriptPicker: Sendable, Equatable {
+    var choices = TeamTranscriptChoices()
+    var recent: [TeamPublisher.TranscriptSession] = []
+}
+
 @MainActor
 final class TeamModel: ObservableObject {
     static let paneTitle = "Team"
@@ -27,6 +33,11 @@ final class TeamModel: ObservableObject {
     @Published private(set) var lastReport: TeamPublisher.Report?
     @Published private(set) var shares = TeamShares()
     @Published private(set) var exclusions = TeamExclusions()
+    /// Spec §7: which sessions' transcripts travel. `recentTranscripts`
+    /// is filled only in `chosen` mode — the scan cache is tens of MB and
+    /// decoding it on every reload for a picker nobody opened is pure IO.
+    @Published private(set) var transcriptChoices = TeamTranscriptChoices()
+    @Published private(set) var recentTranscripts: [TeamPublisher.TranscriptSession] = []
     /// My identity's kid once read (creating it on first use, like the CLI).
     @Published private(set) var kid: String?
     /// From an `infinitus://join/…` link (Task 6): the pane's Join field prefills.
@@ -154,20 +165,28 @@ final class TeamModel: ObservableObject {
         let fetch = lastFetchAt, publish = lastPublishAt, err = lastError
         return Task {
             do {
-                let result: (TeamSnapshot?, TeamReader?, TeamShares, TeamExclusions, String?, Signed<TeamRoster>?, [Signed<TeamRequest>]) = try await run { paths, secrets in
+                let result: (TeamSnapshot?, TeamReader?, TeamShares, TeamExclusions, String?, Signed<TeamRoster>?, [Signed<TeamRequest>], TranscriptPicker) = try await run { paths, secrets in
                     // Non-creating: showing a kid must never mint (and, on
                     // a denied keychain read, clobber) an identity that
                     // exists but the process could not decrypt.
                     let kid = secrets.read(TeamClient.identitySecretName).flatMap { try? TeamIdentity(secret: $0) }?.kid
                     let exclusions = TeamExclusions.load(paths: paths)
-                    guard let client = try Self.openClient(paths, secrets) else { return (nil, nil, TeamShares(), exclusions, kid, nil, []) }
+                    guard let client = try Self.openClient(paths, secrets) else { return (nil, nil, TeamShares(), exclusions, kid, nil, [], TranscriptPicker()) }
+                    let dir = paths.teamDir(client.config.id)
                     let (snap, reader) = try Self.snapshot(client, lastFetch: fetch, lastPublish: publish, lastError: err)
                     let pendingNearby = client.isLeader ? TeamNearby.Store.pending(team: client.config.id, paths: paths) : []
-                    return (snap, reader, TeamShares.load(teamDir: paths.teamDir(client.config.id)), exclusions, kid, client.roster, pendingNearby)
+                    let choices = TeamTranscriptChoices.load(teamDir: dir)
+                    let picker = TranscriptPicker(choices: choices, recent: choices.mode == .chosen
+                        ? TeamPublisher.recentTranscriptSessions(cacheURL: dir.appendingPathComponent("scan-cache.json"),
+                                                                 days: TeamPublisher.Sources.defaultTranscriptDays,
+                                                                 exclusions: exclusions)
+                        : [])
+                    return (snap, reader, TeamShares.load(teamDir: dir), exclusions, kid, client.roster, pendingNearby, picker)
                 }
                 withAnimation(.easeInOut(duration: 0.2)) {
                     snapshot = result.0; reader = result.1; shares = result.2; exclusions = result.3; kid = result.4
                     roster = result.5; pendingNearby = result.6
+                    transcriptChoices = result.7.choices; recentTranscripts = result.7.recent
                 }
             } catch {
                 lastError = Self.mask(error)
@@ -603,6 +622,28 @@ final class TeamModel: ObservableObject {
             var shares = TeamShares.load(teamDir: dir)
             shares.byKind[kind] = target
             try shares.save(teamDir: dir)
+        }
+    }
+
+    /// Local setting (never sent): all recent sessions, or only the picked
+    /// ones. Applies to the next publish; already-published chunks stay.
+    func setTranscriptMode(_ mode: TeamTranscriptChoices.Mode) async {
+        await action("Saving…") { paths, _ in
+            guard let id = Self.teamID(paths) else { throw TeamClient.ClientError.notInTeam }
+            let dir = paths.teamDir(id)
+            var choices = TeamTranscriptChoices.load(teamDir: dir)
+            choices.mode = mode
+            try choices.save(teamDir: dir)
+        }
+    }
+
+    func setTranscript(_ id: String, shared: Bool) async {
+        await action("Saving…") { paths, _ in
+            guard let team = Self.teamID(paths) else { throw TeamClient.ClientError.notInTeam }
+            let dir = paths.teamDir(team)
+            var choices = TeamTranscriptChoices.load(teamDir: dir)
+            if shared { choices.chosen.insert(id) } else { choices.chosen.remove(id) }
+            try choices.save(teamDir: dir)
         }
     }
 

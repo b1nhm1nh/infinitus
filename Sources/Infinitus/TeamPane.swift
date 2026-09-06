@@ -305,6 +305,27 @@ struct TeamPane: View {
                     ForEach(snap.members.filter { !$0.isMe }) { m in Text("Only \(m.name)").tag("kid:\(m.kid)") }
                 }
             }
+            if team.shares.target(for: TeamKinds.transcripts) != .off {
+                Picker("Which sessions", selection: Binding(
+                    get: { team.transcriptChoices.mode },
+                    set: { mode in Task { await team.setTranscriptMode(mode) } })) {
+                    Text("All recent sessions").tag(TeamTranscriptChoices.Mode.all)
+                    Text("Only the ones I pick").tag(TeamTranscriptChoices.Mode.chosen)
+                }
+                if team.transcriptChoices.mode == .chosen {
+                    if team.recentTranscripts.isEmpty {
+                        Text("No sessions in the transcript window yet — they appear after the next publish.")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                    ForEach(team.recentTranscripts) { session in
+                        Toggle(isOn: Binding(get: { team.transcriptChoices.chosen.contains(session.id) },
+                                             set: { on in Task { await team.setTranscript(session.id, shared: on) } })) {
+                            Text("\(session.project) · \(session.lastDay)")
+                        }
+                        .controlSize(.small)
+                    }
+                }
+            }
             Text("Applies from the next publish. Changed your mind about history? Re-share re-wraps the last 30 days to today's audiences.")
                 .font(.caption).foregroundStyle(.secondary)
             Button("Re-share last 30 days…") { reshareConfirm = true }

@@ -351,4 +351,44 @@ final class TeamPublisherTests: XCTestCase {
         // Idempotent: the second pass has nothing left to delete and must not throw.
         XCTAssertNoThrow(try publisher.publish(sources: sources(projects)))
     }
+
+    /// Spec §7: the member picks which sessions' transcripts travel; a
+    /// session's sub-agents ride its choice.
+    func testOnlyChosenSessionsAreChunkedAndThePickerListsTheRecentOnes() throws {
+        let t = try team()
+        let projects = try writeProjects(scratch)
+        let teamDir = t.alicePaths.teamDir(t.alice.config.id)
+        var choices = TeamTranscriptChoices()
+        choices.mode = .chosen
+        choices.chosen = ["s1"]
+        try choices.save(teamDir: teamDir)
+
+        var s = sources(projects)
+        let cacheURL = teamDir.appendingPathComponent("scan-cache.json")
+        s.cacheURL = cacheURL   // the picker reads what this publish writes
+        let report = try TeamPublisher(client: t.alice, paths: t.alicePaths).publish(sources: s)
+        let me = "m/\(t.alice.identity.kid)/"
+        XCTAssertEqual(Set(report.published.filter { $0.contains("/transcripts/") }),
+                       [me + "transcripts/s1/1.jsonl", me + "transcripts/s1/subagents/agent-a1/1.jsonl"])
+        XCTAssertEqual(report.transcriptChunks, 2, "s2 was not picked; s1's sub-agent rides s1's choice")
+        // The unchosen session still contributes its day and its row.
+        let index = try CanonicalJSON.decode(TeamDocs.SessionsIndex.self, from: try t.alice.read(me + "sessions/index.json").1)
+        XCTAssertEqual(index.sessions.map(\.id).sorted(), ["s1", "s2"])
+
+        // What the pane's picker offers, off the same cache.
+        let recent = TeamPublisher.recentTranscriptSessions(cacheURL: cacheURL, days: 10_000)
+        XCTAssertEqual(recent.map(\.id).sorted(), ["s1", "s2"])
+        let one = try XCTUnwrap(recent.first { $0.id == "s1" })
+        XCTAssertEqual(one.project, "app")
+        XCTAssertEqual(one.lastDay, "2026-09-04")
+        XCTAssertGreaterThan(one.bytes, 0)
+        // The day floor: nothing is recent long after the fixture's day.
+        XCTAssertEqual(TeamPublisher.recentTranscriptSessions(cacheURL: cacheURL, days: 1,
+                                                              now: Date(timeIntervalSince1970: 2_000_000_000)), [])
+        // An excluded project is not even offered.
+        var ex = TeamExclusions(); ex.set("/r/secret", excluded: true)
+        XCTAssertEqual(TeamPublisher.recentTranscriptSessions(cacheURL: cacheURL, days: 10_000, exclusions: ex).map(\.id), ["s1"])
+        // No cache yet (a team that never published): an empty list, not a crash.
+        XCTAssertEqual(TeamPublisher.recentTranscriptSessions(cacheURL: scratch.appendingPathComponent("nope.json"), days: 10_000), [])
+    }
 }
