@@ -2,23 +2,31 @@ import XCTest
 @testable import InfinitusCore
 
 final class InputDedupTests: XCTestCase {
-    func testSecondSightIsFalse() {
+    func testReplayIsNilBeforeRemember() {
+        let dedup = InputDedup()
+        XCTAssertNil(dedup.replay(pid: 7, requestId: "a"))
+    }
+
+    func testReplayReturnsTheRememberedReply() {
         var dedup = InputDedup()
-        XCTAssertTrue(dedup.firstSight(pid: 7, requestId: "a"))
-        XCTAssertFalse(dedup.firstSight(pid: 7, requestId: "a"))
+        let reply = SessionInput.Reply(outcome: "delivered", detail: nil)
+        dedup.remember(pid: 7, requestId: "a", reply: reply)
+        XCTAssertEqual(dedup.replay(pid: 7, requestId: "a"), reply)
     }
 
     func testPidsAreIsolated() {
         var dedup = InputDedup()
-        XCTAssertTrue(dedup.firstSight(pid: 7, requestId: "a"))
-        XCTAssertTrue(dedup.firstSight(pid: 8, requestId: "a"))
+        dedup.remember(pid: 7, requestId: "a", reply: SessionInput.Reply(outcome: "delivered", detail: nil))
+        XCTAssertNil(dedup.replay(pid: 8, requestId: "a"))
     }
 
     func testRingEvictsTheOldest() {
         var dedup = InputDedup(capacity: 3)
-        for id in ["a", "b", "c"] { XCTAssertTrue(dedup.firstSight(pid: 1, requestId: id)) }
-        XCTAssertTrue(dedup.firstSight(pid: 1, requestId: "d"))   // evicts "a"
-        XCTAssertTrue(dedup.firstSight(pid: 1, requestId: "a"))   // forgotten
-        XCTAssertFalse(dedup.firstSight(pid: 1, requestId: "d"))
+        for id in ["a", "b", "c"] {
+            dedup.remember(pid: 1, requestId: id, reply: SessionInput.Reply(outcome: id, detail: nil))
+        }
+        dedup.remember(pid: 1, requestId: "d", reply: SessionInput.Reply(outcome: "d", detail: nil))   // evicts "a"
+        XCTAssertNil(dedup.replay(pid: 1, requestId: "a"))
+        XCTAssertEqual(dedup.replay(pid: 1, requestId: "d"), SessionInput.Reply(outcome: "d", detail: nil))
     }
 }

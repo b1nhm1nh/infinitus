@@ -32,6 +32,14 @@ final class OutboxTests: XCTestCase {
         XCTAssertEqual(box.items(macKey: "other-mac").count, 0)
     }
 
+    func testEnqueueKeepsAnIncomingRequestId() throws {
+        let box = Outbox(root: root)
+        let request = SessionInput.Request(kind: .message, text: "one", requestId: "already-sent")
+        let item = try box.enqueue(macKey: "m", pid: 4, sessionId: "s", sessionName: "repo",
+                                   request: request, now: t0)
+        XCTAssertEqual(item.request.requestId, "already-sent")
+    }
+
     func testReplaceAndRemove() throws {
         let box = Outbox(root: root)
         let item = try box.enqueue(macKey: "m", pid: 4, sessionId: "s", sessionName: "repo",

@@ -100,11 +100,16 @@ public final class Outbox: @unchecked Sendable {
             item.updatedAt = now
             item.state = .queued
         } else {
+            // Keep the incoming id: a hand-typed send that timed out on
+            // delivery may have already reached the Mac under this id, so
+            // queuing it fresh must not mint a new one, or the retry is a
+            // second, undeduped delivery (#168 fix pass).
             item = OutboxItem(id: UUID(), macKey: macKey, pid: pid, sessionId: sessionId,
                               sessionName: sessionName,
                               request: SessionInput.Request(kind: request.kind, text: request.text,
                                                             attachments: request.attachments,
-                                                            requestId: UUID().uuidString, sessionId: sessionId),
+                                                            requestId: request.requestId ?? UUID().uuidString,
+                                                            sessionId: sessionId),
                               createdAt: now, updatedAt: now, attempts: 0, state: .queued)
         }
         try save(item)

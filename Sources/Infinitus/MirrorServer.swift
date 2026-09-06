@@ -204,8 +204,10 @@ final class MirrorSessionInputBox: @unchecked Sendable {
     private let lock = NSLock()
     private var provider: (@Sendable (Int32, SessionInput.Request) -> SessionInput.Reply?)?
     /// #168: a request the phone's outbox sends twice (it died between
-    /// send and reply) is answered once; the repeat is "delivered" again
-    /// without touching the session.
+    /// send and reply, or the reply was lost) is answered once; the
+    /// repeat gets back the SAME reply the first send got — recording a
+    /// synthetic "delivered" instead would turn a lost noSurface/
+    /// noChannel reply into a false "Delivered" on the repeat.
     private var dedup = InputDedup()
 
     func set(_ new: @escaping @Sendable (Int32, SessionInput.Request) -> SessionInput.Reply?) {
@@ -214,11 +216,22 @@ final class MirrorSessionInputBox: @unchecked Sendable {
 
     func call(_ pid: Int32, _ request: SessionInput.Request) -> SessionInput.Reply? {
         lock.lock()
+        if let requestId = request.requestId, let replayed = dedup.replay(pid: pid, requestId: requestId) {
+            lock.unlock()
+            return replayed
+        }
         let current = provider
-        let fresh = request.requestId.map { dedup.firstSight(pid: pid, requestId: $0) } ?? true
         lock.unlock()
-        guard fresh else { return SessionInput.Reply(outcome: "delivered", detail: "duplicate") }
-        return current?(pid, request)
+        // The provider runs on the serial `mirrorInputQueue` (this is the
+        // only caller), so two identical requests never race the
+        // remember-after-the-fact below.
+        let reply = current?(pid, request)
+        if let requestId = request.requestId, let reply {
+            lock.lock()
+            dedup.remember(pid: pid, requestId: requestId, reply: reply)
+            lock.unlock()
+        }
+        return reply
     }
 }
 
