@@ -7,6 +7,10 @@ publishes the matching section as the GitHub release body.
 
 ## Unreleased
 
+### Phone
+- Review changes says why there is nothing to review — checkpoints off on the Mac, a folder outside git, or no prompt checkpointed yet — instead of a caption nobody saw (#214).
+- A message Claude Code held instead of delivering shows in the chat as a marker, with where to review it (#213).
+
 ### Mac
 - Phone messages and resume nudges reach sessions in every permission mode again: Claude Code 2.1.263 holds a peer message that claims a different permission class than the receiver's, so the app now asserts the session's own (#213).
 
