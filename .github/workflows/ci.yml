@@ -93,15 +93,15 @@ jobs:
           tag: 6.1-RELEASE
       # zlib for CZlib: the toolchain has no <zlib.h>; vcpkg on the
       # runner image does (#171, second wall after the Glibc imports).
-      # Paths go through the MSVC INCLUDE/LIB environment — clang and
-      # lld-link both read them — because pwsh rejects `-I${env:…}`
-      # tokens on the swift command line ("The command parameter was
-      # already specified"). vcpkg names the import library z.lib, which
-      # is what the modulemap's `link "z"` asks for.
+      # The paths are spelled out because pwsh splits a `-I${env:…}`
+      # token before swift sees it ("The command parameter was already
+      # specified"), and they ride the command line rather than the
+      # MSVC INCLUDE/LIB variables: once LIB is set, clang stops adding
+      # the VC and SDK lib dirs of its own (msvcrt.lib went missing).
+      # vcpkg names the import library z.lib, which the modulemap's
+      # `link "z"` asks for.
       - run: vcpkg install zlib:x64-windows
-      - run: |
-          $v = "$env:VCPKG_INSTALLATION_ROOT\installed\x64-windows"
-          Get-ChildItem "$v\lib", "$v\include" | Format-Table Name, Length
-          "INCLUDE=$env:INCLUDE;$v\include" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          "LIB=$env:LIB;$v\lib" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-      - run: swift build --product infinitusctl
+      - run: >
+          swift build --product infinitusctl
+          -Xcc -IC:/vcpkg/installed/x64-windows/include
+          -Xswiftc -LC:/vcpkg/installed/x64-windows/lib
