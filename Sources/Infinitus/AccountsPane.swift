@@ -735,7 +735,7 @@ private struct FleetAccountsSection: View {
             if let err = model.reorderError {
                 Text(err).font(.caption).foregroundStyle(.red)
             }
-            if undoNames != nil {
+            if undoNames != nil, model.reorderError == nil {
                 HStack {
                     Text("Names randomized.").foregroundStyle(.secondary)
                     Spacer()
@@ -795,6 +795,7 @@ private struct FleetAccountsSection: View {
 
     private func randomize() {
         undoTask?.cancel()
+        model.reorderError = nil
         undoNames = fleet.randomizeNames()
         undoTask = Task {
             try? await Task.sleep(for: .seconds(30))
