@@ -49,6 +49,11 @@ Grab `Infinitus-<version>.zip` from
 [releases](https://github.com/deathemperor/infinitus/releases), unzip,
 drop `Infinitus.app` into `/Applications`.
 
+The `infinitusctl` CLI ships inside the bundle at
+`Infinitus.app/Contents/MacOS/infinitusctl` — Homebrew links it onto
+your PATH; from a release, symlink it yourself
+(`ln -sf /Applications/Infinitus.app/Contents/MacOS/infinitusctl /usr/local/bin/infinitusctl`).
+
 ### Linux — engine CLI + Waybar module (Omarchy-ready)
 
 The menu bar app is macOS-native (AppKit), but its Swift core ports:
@@ -148,6 +153,87 @@ read Claude Code's own session records and transcripts, nothing of the
 engine's); usage-cost
 figures are estimates, never billing truth; push-notification secrets
 travel over stdin and render masked.
+
+## Team (preview)
+
+A team lives on a git remote you already have — GitHub, GitLab, a bare
+repo on a NAS. The store is untrusted: everything a member publishes is
+end-to-end encrypted to the readers that member picked, and the host
+sees file names and sizes only.
+
+### Create a team
+
+Settings › Team › Create, on the Mac. It wants an empty git remote and a
+way to push to it — a token with write access, best a fine-grained PAT
+scoped to that one repo, or an ssh URL this machine can already push.
+That token is embedded in every invite link and team code you hand out,
+so treat those like passwords: whoever holds one can write to the store
+until you rotate it.
+
+### Join
+
+An invite link, its QR, a team code or `infinitus://join/…` — from the
+Mac's Settings › Team or the phone's Team tab; on the Mac, Nearby also
+finds a discoverable leader on the same network. Turn on the Team lock
+first: creating, joining and approving stay disabled until biometric
+unlock is on. An invite link approves the one request it was minted for
+by itself while the pane's auto-approve switch is on (it is by default);
+a team code always waits for a leader's Approve.
+
+### Members on Linux and Windows
+
+`infinitusctl team` runs in-process — no app, no control socket — so the
+CLI alone is a full member. Build it from source:
+[`packaging/linux/`](packaging/linux/README.md) and
+[`packaging/windows/`](packaging/windows/README.md).
+
+Join with the team code on stdin (it carries the store credential, and
+argv is world-readable):
+
+```sh
+infinitusctl team request - --name "Your Name"   # paste the code, then Ctrl-D
+```
+
+Then run `infinitusctl team fetch` and `infinitusctl team publish` on a
+timer — a systemd user timer on Linux, a Scheduled Task on Windows, both
+in `packaging/`. Fetch first: it pulls the store, publish only pushes.
+
+```
+usage: infinitusctl team <subcommand> [args] [--option value]
+
+  create <name> --remote <url> [--token -] [--as <your name>]     create a team on an empty git remote (token from stdin)
+  code [--days N]                              team code for joiners (default 7 days)
+  request - --name <n> [--devices a,b]         ask to join; the code on stdin (argv only if it carries no credential)
+  status [--team <id>]                         this machine's team(s)
+  requests                                     pending join requests (leaders)
+  approve <kid> | decline <kid>                answer a request (leaders)
+  remove <kid> | promote <kid>                 roster edits (leaders; the founder cannot be removed)
+  fetch                                        pull the store and accept the roster
+  members [--period <p>]              every member's period totals (spend is an estimate), online, blockers, and what they share with you
+  member <kid> [--period day|week|month|year]  one member's Stats summary (default week)
+  insights [--period <p>]             leaderboards, repo coverage, blockers board, cost by member/model/repo, who's on, hours
+  aggregates                          the leaders' published team picture
+  aggregates publish [--period all|<p>]   (leaders) publish the team picture to the whole team
+  policy [--requests code|off] [--members-see-each-other on|off]   (leaders) show or set the roster policy
+  share <kind> leaders|team|<kid>[,<kid>…]     audience for stats|now|sessions|transcripts|crashes (new envelopes; see reshare)
+  exclude <project-dir> [--off]                keep a Claude Code project private (local, never sent)
+  identity [show]                    this machine's identity kid
+  identity recovery --show           the recovery key (base32, 8 groups) — keep it offline
+  identity export [--out <file>]     passphrase on stdin (≥ 8 chars); the sealed file to --out (0600) or stdout
+  identity import <file> | --recovery [--replace]   passphrase or recovery key on stdin
+  publish [--projects <dir>] [--days N]        publish stats, now, sessions, redacted transcripts, crashes (default 30 days)
+  reshare [--days N]                           re-wrap the last N days (default 30) to the current audiences
+  put --kind <k> --path <p> --file <f> [--audience leaders|team|<kid,kid>]   one opaque file (debugging)
+  list                                         envelopes addressed to me
+  read <path> [--out <file>]                   decrypt one envelope
+
+Narrowing an audience cannot recall ciphertext teammates already fetched.
+```
+
+`infinitusctl team share <kind> leaders|team|<kid>` picks who sees each
+kind (`stats`, `now`, `sessions`, `transcripts`, `crashes`);
+`infinitusctl team exclude <project-dir>` keeps a repository out of every
+publish. Leaving a team is a Mac action today — Settings › Team › Leave.
 
 ## Build from source
 
