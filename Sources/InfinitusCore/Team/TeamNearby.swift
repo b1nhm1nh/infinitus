@@ -75,8 +75,11 @@ public enum TeamNearby {
         public var id: String { from.kid }
         /// When the sender sealed it — read from the signed envelope
         /// header rather than a field of its own, so a THIRD PARTY can't
-        /// backdate an invitation without breaking the signature. The
-        /// sender itself may still set any `at` it likes.
+        /// backdate an invitation without breaking the signature. Display
+        /// only: the sender itself may still set any `at` it likes, so
+        /// eviction order and the 30-day prune key on the receiver's own
+        /// clock (the invite file's modification date, set by
+        /// `saveInvite`) instead — see `Store.savedAt`.
         public var at: Int { (try? Envelope.header(of: envelope).at) ?? 0 }
 
         public init(from: TeamKeys, fromName: String, teamName: String, envelope: Data) {
@@ -322,14 +325,27 @@ public enum TeamNearby {
         /// so `invites` drops it rather than keep showing it.
         static let maxInviteAge = 30 * 86_400
 
+        /// The receiver's own clock for a saved invite file: its
+        /// modification date, set by `saveInvite`'s write and untouched
+        /// by anything the sender claims. Both eviction order and the
+        /// 30-day prune key on this rather than the signed `Invite.at`
+        /// (remaining finding A) — a sender that back/forward-dates `at`
+        /// can neither dodge eviction as "not the oldest" nor survive the
+        /// prune by claiming to be freshly sent.
+        static func savedAt(_ file: URL) -> Int? {
+            guard let attrs = try? FileManager.default.attributesOfItem(atPath: file.path),
+                  let date = attrs[.modificationDate] as? Date else { return nil }
+            return Int(date.timeIntervalSince1970)
+        }
+
         /// `<base>/invites/<from kid>.json`, the invitation exactly as it
         /// arrived — the envelope stays SEALED here. One file per sender,
         /// so a peer can refresh its own invitation but not flood. At the
-        /// cap, a NEW sender evicts the oldest invitation (by its signed
-        /// `at`) rather than being refused — the cap protects disk, not a
-        /// queue position, so a stranger filling every slot with fresh
-        /// identities can no longer lock a genuine leader's invite out
-        /// permanently.
+        /// cap, a NEW sender evicts the oldest invitation (by the
+        /// receiver's own clock, `savedAt`) rather than being refused —
+        /// the cap protects disk, not a queue position, so a stranger
+        /// filling every slot with fresh identities can no longer lock a
+        /// genuine leader's invite out permanently.
         public static func saveInvite(_ invite: Invite, paths: TeamPaths) throws {
             let kid = invite.from.kid
             guard isPathSegment(kid) else { throw StoreError.badKid }
@@ -340,9 +356,11 @@ public enum TeamNearby {
                 .filter { $0.hasSuffix(".json") }
             if existing.count >= TeamNearby.inviteCap, !FileManager.default.fileExists(atPath: file.path) {
                 let oldest = existing.compactMap { name -> (name: String, at: Int)? in
-                    guard let data = try? Data(contentsOf: dir.appendingPathComponent(name)),
-                          let there = try? CanonicalJSON.decode(Invite.self, from: data) else { return nil }
-                    return (name, there.at)
+                    let path = dir.appendingPathComponent(name)
+                    guard let data = try? Data(contentsOf: path),
+                          (try? CanonicalJSON.decode(Invite.self, from: data)) != nil,
+                          let at = savedAt(path) else { return nil }
+                    return (name, at)
                 }.min { $0.at < $1.at }
                 if let oldest { try? FileManager.default.removeItem(at: dir.appendingPathComponent(oldest.name)) }
             }
@@ -352,17 +370,21 @@ public enum TeamNearby {
         /// Unreadable or misnamed files are skipped, like `pending`; one
         /// older than `maxInviteAge` is deleted here too, so an
         /// invitation nobody acted on eventually frees its slot instead
-        /// of sitting on the shelf forever.
+        /// of sitting on the shelf forever. Ages by `savedAt` (the
+        /// receiver's clock), not the signed `Invite.at` — a file whose
+        /// `savedAt` can't be read is kept rather than guessed at.
         public static func invites(paths: TeamPaths, now: Int = Int(Date().timeIntervalSince1970)) -> [Invite] {
             let dir = invitesDir(paths: paths)
             let names = ((try? FileManager.default.contentsOfDirectory(atPath: dir.path)) ?? []).sorted()
             return names.compactMap { name in
+                let path = dir.appendingPathComponent(name)
                 guard name.hasSuffix(".json"),
-                      let data = try? Data(contentsOf: dir.appendingPathComponent(name)),
+                      let data = try? Data(contentsOf: path),
                       let invite = try? CanonicalJSON.decode(Invite.self, from: data),
                       name == "\(invite.from.kid).json" else { return nil }
-                guard now - invite.at < maxInviteAge else {
-                    try? FileManager.default.removeItem(at: dir.appendingPathComponent(name))
+                guard let at = savedAt(path) else { return invite }
+                guard now - at < maxInviteAge else {
+                    try? FileManager.default.removeItem(at: path)
                     return nil
                 }
                 return invite
@@ -512,10 +534,14 @@ extension TeamNearby {
                   let reply = try? CanonicalJSON.decode(KeyReply.self, from: keyBody),
                   reply.keys.kid == peerKid else { throw ClientError.keyMismatch(keyStatus) }
             let teamDir = paths.teamDir(client.config.id)
-            let link = try TeamInvites.mint(client: client, teamDir: teamDir, days: days, now: now)
+            let (link, nonce) = try TeamInvites.mint(client: client, teamDir: teamDir, days: days, now: now)
             // `mint` already committed the nonce; anything from here on
             // that fails must drop it again, or a refused/unreachable
-            // peer leaves a dangling nonce nobody will ever redeem.
+            // peer leaves a dangling nonce nobody will ever redeem. The
+            // nonce comes straight back from `mint` rather than being
+            // re-derived by decoding `link` — a `days <= 0` (or any other
+            // future reason `decode` might refuse it) would otherwise
+            // leave the nonce dangling with no signal (remaining finding C).
             do {
                 let sealed = try Envelope.seal(Data(link.utf8), kind: "invite", from: client.identity,
                                                to: [reply.keys], at: now)
@@ -527,9 +553,7 @@ extension TeamNearby {
                     throw ClientError.refused(status)
                 }
             } catch {
-                if let nonce = try? TeamCode.decode(link, now: now).nonce {
-                    TeamInvites.drop(nonce: nonce, teamDir: teamDir)
-                }
+                TeamInvites.drop(nonce: nonce, teamDir: teamDir)
                 throw error
             }
             return InviteOutcome(team: client.config.id, teamName: client.config.name, to: peerKid, ok: true)

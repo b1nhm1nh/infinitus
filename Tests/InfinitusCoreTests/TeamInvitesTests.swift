@@ -90,15 +90,15 @@ final class TeamInvitesTests: XCTestCase {
         var stale = TeamInvites(); stale.add(nonce: "old", expires: 50)
         try stale.save(teamDir: dir)
 
-        let link = try TeamInvites.mint(client: client, teamDir: dir, days: 7, now: 100)
+        let (link, nonce) = try TeamInvites.mint(client: client, teamDir: dir, days: 7, now: 100)
         let code = try TeamCode.decode(link, now: 101)
-        let nonce = try XCTUnwrap(code.nonce)
+        XCTAssertEqual(code.nonce, nonce)
         XCTAssertEqual(code.team, client.config.id)
         XCTAssertEqual(code.expires, 100 + 7 * 86_400)
         XCTAssertEqual(TeamInvites.load(teamDir: dir).nonces, [nonce: 100 + 7 * 86_400])
         // A second mint keeps the first: two invites can be outstanding.
-        let second = try TeamInvites.mint(client: client, teamDir: dir, days: 1, now: 200)
-        let secondNonce = try XCTUnwrap(try TeamCode.decode(second, now: 201).nonce)
+        let (second, secondNonce) = try TeamInvites.mint(client: client, teamDir: dir, days: 1, now: 200)
+        XCTAssertEqual(try TeamCode.decode(second, now: 201).nonce, secondNonce)
         XCTAssertEqual(Set(TeamInvites.load(teamDir: dir).nonces.keys), [nonce, secondNonce])
     }
 
@@ -124,7 +124,7 @@ final class TeamInvitesTests: XCTestCase {
         let reopened = try TeamClient.open(id: client.config.id, paths: paths, secrets: secrets)
 
         let dir = paths.teamDir(reopened.config.id)
-        XCTAssertThrowsError(try TeamInvites.mint(client: reopened, teamDir: dir, days: 7, now: 100)) {
+        XCTAssertThrowsError(try TeamInvites.mint(client: reopened, teamDir: dir, days: 7, now: 100) as (link: String, nonce: String)) {
             XCTAssertEqual($0 as? TeamClient.ClientError, .requestsOff)
         }
         XCTAssertEqual(TeamInvites.load(teamDir: dir), TeamInvites())

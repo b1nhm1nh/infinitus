@@ -26,14 +26,22 @@ public struct TeamInvites: Codable, Equatable, Sendable {
     /// way past — the book is a leader's local file, and this is the only
     /// thing that writes it.
     public static func mint(client: TeamClient, teamDir: URL, days: Int,
-                            now: Int = Int(Date().timeIntervalSince1970)) throws -> String {
+                            now: Int = Int(Date().timeIntervalSince1970)) throws -> (link: String, nonce: String) {
         let nonce = newNonce()
         let link = try client.code(expiresIn: days * 86_400, nonce: nonce, now: now)
         var book = load(teamDir: teamDir)
         book.prune(now: now)
         book.add(nonce: nonce, expires: now + days * 86_400)
         try book.save(teamDir: teamDir)
-        return link
+        return (link, nonce)
+    }
+
+    /// Thin wrapper for callers that only want the link (`TeamModel.mintInvite`):
+    /// a caller that needs to roll the nonce back on failure should use the
+    /// tuple-returning overload above instead of re-deriving it from the link.
+    public static func mint(client: TeamClient, teamDir: URL, days: Int,
+                            now: Int = Int(Date().timeIntervalSince1970)) throws -> String {
+        try mint(client: client, teamDir: teamDir, days: days, now: now).link
     }
 
     /// Undoes a `mint` whose link never made it to the peer (a LAN invite

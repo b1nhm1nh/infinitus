@@ -363,24 +363,40 @@ final class TeamNearbyTests: XCTestCase {
 
     func testInvitesLiveBesideTheTeamsAndAreCapped() throws {
         let (jp, _) = machine("joiner")
+        let dir = TeamNearby.Store.invitesDir(paths: jp)
         func invite(_ from: TeamIdentity, team: String = "T", at: Int = 1) throws -> TeamNearby.Invite {
             TeamNearby.Invite(from: from.keys, fromName: "L", teamName: team,
                               envelope: try Envelope.seal(Data("x".utf8), kind: "invite", from: from, to: [], at: at))
+        }
+        func stamp(_ kid: String, _ mtime: Int) throws {
+            try FileManager.default.setAttributes([.modificationDate: Date(timeIntervalSince1970: TimeInterval(mtime))],
+                                                  ofItemAtPath: dir.appendingPathComponent("\(kid).json").path)
         }
         var oldest: TeamIdentity!
         for i in 0..<TeamNearby.inviteCap {
             let id = TeamIdentity.random()
             if i == 0 { oldest = id }
-            try TeamNearby.Store.saveInvite(try invite(id, at: 1_000 + i), paths: jp)
+            // The oldest file's signed `at` is a decoy far in the future —
+            // eviction must order by the file's own mtime (the receiver's
+            // clock), set explicitly below, not by this (remaining finding A).
+            let at = i == 0 ? 99_999_999 : 1
+            try TeamNearby.Store.saveInvite(try invite(id, at: at), paths: jp)
+            try stamp(id.kid, 1_000 + i)
         }
         XCTAssertEqual(TeamNearby.Store.invites(paths: jp, now: 6_000).count, TeamNearby.inviteCap)
         // The invites dir is beside the team dirs, never inside one, and is
         // not mistaken for a team (no config.json).
         XCTAssertEqual(TeamNearby.Store.invitesDir(paths: jp), jp.base.appendingPathComponent("invites"))
         XCTAssertEqual(jp.teamIDs(), [])
-        // Full: a new sender evicts the OLDEST invite by its signed `at`
-        // rather than being refused — a stranger who fills every slot
-        // can no longer lock a genuine leader's invite out forever.
+        // Sanity: `oldest`'s signed `at` really is the far-future decoy,
+        // not accidentally the smallest — if eviction still keyed on
+        // `at`, `oldest` would never be picked as the victim below.
+        XCTAssertEqual(TeamNearby.Store.invites(paths: jp, now: 6_000).first { $0.from.kid == oldest.kid }?.at, 99_999_999)
+        // Full: a new sender evicts the OLDEST invite by the receiver's
+        // own clock (mtime), not the sender-chosen `at`, rather than
+        // being refused — a stranger who fills every slot can no longer
+        // lock a genuine leader's invite out forever, and `oldest`'s
+        // far-future `at` gains it nothing: mtime says it's still oldest.
         let newcomer = TeamIdentity.random()
         XCTAssertNoThrow(try TeamNearby.Store.saveInvite(try invite(newcomer, at: 5_000), paths: jp))
         var after = TeamNearby.Store.invites(paths: jp, now: 6_000)
@@ -396,7 +412,6 @@ final class TeamNearbyTests: XCTestCase {
         XCTAssertEqual(after.count, TeamNearby.inviteCap)
         XCTAssertEqual(after.first(where: { $0.from.kid == first.from.kid })?.teamName, "T2")
         // A garbled or misnamed file is skipped, not fatal.
-        let dir = TeamNearby.Store.invitesDir(paths: jp)
         try Data("junk".utf8).write(to: dir.appendingPathComponent("zzz.json"))
         XCTAssertEqual(TeamNearby.Store.invites(paths: jp, now: 6_000).count, TeamNearby.inviteCap)
     }
@@ -406,14 +421,20 @@ final class TeamNearbyTests: XCTestCase {
     func testInvitesOlderThanThirtyDaysAreDroppedOnLoad() throws {
         let (jp, _) = machine("joiner")
         let stale = TeamIdentity.random()
+        // The signed `at` is a decoy far in the future — the prune must
+        // key on the file's own mtime (the receiver's clock), set
+        // explicitly below, or a sender that forward-dates `at` would
+        // dodge the prune forever (remaining finding A).
         let staleInvite = TeamNearby.Invite(from: stale.keys, fromName: "L", teamName: "T",
-                                            envelope: try Envelope.seal(Data("x".utf8), kind: "invite", from: stale, to: [], at: 1_000))
+                                            envelope: try Envelope.seal(Data("x".utf8), kind: "invite", from: stale, to: [], at: 99_999_999))
         try TeamNearby.Store.saveInvite(staleInvite, paths: jp)
+        let file = TeamNearby.Store.invitesDir(paths: jp).appendingPathComponent("\(stale.kid).json")
+        try FileManager.default.setAttributes([.modificationDate: Date(timeIntervalSince1970: 1_000)], ofItemAtPath: file.path)
         // Just under the line: still there.
         XCTAssertEqual(TeamNearby.Store.invites(paths: jp, now: 1_000 + 30 * 86_400 - 1).map(\.id), [stale.kid])
         // At/over the line: dropped, and the file itself is gone.
         XCTAssertEqual(TeamNearby.Store.invites(paths: jp, now: 1_000 + 30 * 86_400), [])
-        XCTAssertFalse(FileManager.default.fileExists(atPath: TeamNearby.Store.invitesDir(paths: jp).appendingPathComponent("\(stale.kid).json").path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: file.path))
     }
 
     func testLeaderInvitesAPeerAndTheOpenedLinkJoinsAndAutoApproves() throws {

@@ -107,13 +107,16 @@ func runTeamNearby(_ args: [String]) -> Int32? {
                 guard let target = positional.dropFirst().first, positional.count == 2 else {
                     return fail(teamNearbyUsage(), code: 2)
                 }
+                // Parsed and validated before the 2-3s mDNS browse below,
+                // so a typo'd `--days` fails fast rather than after the wait.
+                guard let days = Int(options["days"] ?? "7"), days >= 1 else {
+                    return fail(teamNearbyUsage(), code: 2)
+                }
                 guard let peer = try TeamNearby.Client.browse(seconds: seconds).first(where: {
                     $0.discoverable && ($0.kid == target || $0.name == target)
                 }) else {
                     return fail("no discoverable machine called \(target) answered within \(Int(seconds))s")
                 }
-                let days = Int(options["days"] ?? "7") ?? 7
-                guard days >= 1 else { return fail("--days must be at least 1") }
                 let machine = options["as"] ?? ProcessInfo.processInfo.hostName
                 do {
                     let out = try TeamNearby.Client.invite(to: peer, fromName: machine, days: days,
@@ -139,6 +142,7 @@ func runTeamNearby(_ args: [String]) -> Int32? {
             guard positional.isEmpty else { return fail(teamNearbyUsage(), code: 2) }
             emit(try TeamNearby.Client.browse(seconds: seconds))
         case "invites":
+            guard positional.isEmpty else { return fail(teamNearbyUsage(), code: 2) }
             emit(TeamNearby.Store.invites(paths: paths).map {
                 InviteRow(from: $0.fromName, kid: $0.from.kid, team: $0.teamName, at: $0.at)
             })
