@@ -62,6 +62,16 @@ public struct MachineReport: Equatable, Sendable, Codable {
         return out
     }
 
+    /// Which mute a pushed warning answers to (Settings › Machine: the
+    /// hook and temp-directory notifications can be silenced separately;
+    /// the pane keeps showing every warning).
+    public enum WarningKind: Equatable, Sendable { case hooks, temp, other }
+    public static func warningKind(_ warning: String) -> WarningKind {
+        if warning.hasPrefix("new hook:") || warning.contains(" instances (") || warning.contains(" commands on every ") { return .hooks }
+        if warning.hasPrefix("temp directory") { return .temp }
+        return .other
+    }
+
     /// " (pip 9600, python 12814, other 1500)" — owners with a share worth naming.
     public static func tempBreakdown(_ by: [String: Int]?) -> String {
         guard let by else { return "" }

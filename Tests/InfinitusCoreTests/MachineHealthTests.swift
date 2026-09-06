@@ -2,6 +2,15 @@ import XCTest
 @testable import InfinitusCore
 
 final class MachineHealthTests: XCTestCase {
+    func testWarningKindsMatchTheMutes() {
+        XCTAssertEqual(MachineReport.warningKind("new hook: semgrep on PostToolUse (plugin)"), .hooks)
+        XCTAssertEqual(MachineReport.warningKind("peon has 12 instances (oldest 53 min, 3 stuck)"), .hooks)
+        XCTAssertEqual(MachineReport.warningKind("semgrep runs 4 commands on every PreToolUse Bash call"), .hooks)
+        XCTAssertEqual(MachineReport.warningKind("temp directory holds 12000 entries (pip 9600)"), .temp)
+        XCTAssertEqual(MachineReport.warningKind("temp directory listing timed out"), .temp)
+        XCTAssertEqual(MachineReport.warningKind("swap 95% full"), .other)
+    }
+
     let ps = """
         1     0 Ss    25152 04-00:36:41   0.9 /sbin/launchd
      4120     1 S    812000    02:39:50   3.2 /Applications/Infinitus.app/Contents/MacOS/Infinitus
