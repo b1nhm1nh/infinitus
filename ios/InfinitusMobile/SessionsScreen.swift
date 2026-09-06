@@ -35,6 +35,9 @@ struct SessionsScreen: View {
                 }
                 .onChange(of: model.requestedPid) { _, _ in openRequestedPid() }
                 .onChange(of: model.snapshot?.capturedAt) { _, _ in openRequestedPid() }
+                // The pid of a session started on another Mac shows up in
+                // THAT Mac's snapshot, which never moves the primary's.
+                .onChange(of: model.others.map { $0.snapshot?.capturedAt }) { _, _ in openRequestedPid() }
                 .navigationDestination(for: SessionDetail.self) { session in
                     SessionFeedScreen(model: model, session: session)
                         .onAppear { openPid = session.pid }
@@ -197,12 +200,28 @@ struct SessionsScreen: View {
         }
     }
 
-    /// A session started from the + sheet: its chat opens the moment the
-    /// snapshot lists the pid.
+    /// A session started from the + sheet or Past sessions: its chat
+    /// opens the moment its Mac's snapshot lists the pid — on the
+    /// primary's route, or the other Mac's (#144 phase 3).
     private func openRequestedPid() {
-        guard let pid = model.requestedPid,
-              let session = fleetsWithSessions.flatMap({ $0.liveSessions?.sessions ?? [] })
-                  .first(where: { $0.pid == pid }) else { return }
+        guard let pid = model.requestedPid else { return }
+        if let macId = model.requestedMacId {
+            guard let other = model.other(macId) else {
+                // Forgotten while we waited — nothing to open.
+                model.requestedMacId = nil
+                model.requestedPid = nil
+                return
+            }
+            guard let session = other.fleets.flatMap({ $0.liveSessions?.sessions ?? [] })
+                .first(where: { $0.pid == pid }) else { return }
+            model.requestedMacId = nil
+            model.requestedPid = nil
+            path = NavigationPath()
+            path.append(OtherSessionRoute(macId: macId, session: session))
+            return
+        }
+        guard let session = fleetsWithSessions.flatMap({ $0.liveSessions?.sessions ?? [] })
+            .first(where: { $0.pid == pid }) else { return }
         model.requestedPid = nil
         path = NavigationPath()
         path.append(session)

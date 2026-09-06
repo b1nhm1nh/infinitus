@@ -122,6 +122,23 @@ final class MirrorModel: ObservableObject, FleetModel {
         macId.flatMap { other($0)?.pairing.name }
     }
 
+    /// The Mac a session starts on (#144 phase 3): its profiles, its
+    /// folders, its name. `nil` is the primary.
+    func profiles(macId: String?) -> [SessionProfile] {
+        guard let macId else { return snapshot?.profiles ?? [] }
+        return other(macId)?.snapshot?.profiles ?? []
+    }
+
+    func recentCwds(macId: String?) -> [String] {
+        guard let macId else { return recentCwds }
+        return other(macId)?.snapshot?.recentCwds ?? []
+    }
+
+    func machineName(macId: String?) -> String {
+        guard let macId else { return snapshot?.machineName ?? "the Mac" }
+        return other(macId)?.pairing.name ?? "the Mac"
+    }
+
     /// Pull-to-refresh and post-action refresh for a session's own Mac.
     func refresh(macId: String?) async {
         if macId == nil { await refresh() } else { await refreshOthers() }
@@ -590,6 +607,9 @@ final class MirrorModel: ObservableObject, FleetModel {
     /// A session just started from here (#91); the Sessions tab opens
     /// its chat once the snapshot lists it.
     @Published var requestedPid: Int?
+    /// The Mac `requestedPid` lives on (#144 phase 3); `nil` is the
+    /// primary. Set BEFORE `requestedPid` so its observer sees both.
+    @Published var requestedMacId: String?
     /// Folders sessions have run in on the Mac, newest first.
     var recentCwds: [String] { snapshot?.recentCwds ?? [] }
     func openForecast() { outlookShown = true }
