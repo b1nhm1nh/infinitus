@@ -27,6 +27,15 @@ publishes the matching section as the GitHub release body.
 - Swipe or long-press an account to star it or pause/resume its rotation from the phone; the Mac popup offers the same on a right-click of the name.
 
 ### Mac
+- Settings' sidebar is a real list: arrow keys, type-select, a focus ring and VoiceOver names, grouped into General, Accounts, Dashboards and Engines.
+- Settings search finds a setting by its own label, opens its pane and flashes the group it lives in; ⌘F jumps to the field.
+- The Settings window is called Settings and says which pane you're in.
+- Display is five named groups — Menu bar, Popup, Fleet wall, Sessions, Startup — each with a footer that says what the setting costs.
+- The popup's headroom sorting moved to Settings › Display, where the rest of the popup's appearance lives.
+- Theme cards show the whole theme instead of hiding half of it in a sideways scroller, and name two accounts the way that theme would.
+- Utilization says what its gauge glyphs mean, and its run-rate methodology moved under "How this is measured".
+- The Stats tiles fill their last row instead of stranding one tile beside three empty cells.
+- About has its own Software Update group, and says "Scripted (Notification Center unavailable)" instead of naming the tool it fell back to.
 - Machine: the pip retry-loop warning names the venv the install goes into (a detached plugin bootstrap has no hook tree to blame) and answers to the hooks mute.
 - An AWS sign-in that lapses inside a sub-agent shows up on the parent session — key badge, Sign in row, push — and the continue nudge after signing in goes to the parent.
 - Settings › Machine mutes the hook and temp-directory notifications separately; the pane keeps listing them.
