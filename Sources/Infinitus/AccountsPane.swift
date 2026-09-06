@@ -593,15 +593,25 @@ struct AccountsPane: View {
                                      confirmDelete: $confirmDelete)
             }
             ForEach(fleetlessOAuthEngines) { engine in
-                Section("Claude · \(engine.name)") {
-                    Text("No credentials yet.").foregroundStyle(.secondary)
+                Section {
+                    Text("No accounts yet \u{2014} add the first one below.")
+                        .foregroundStyle(.secondary)
                     OAuthAddRow(model: model, engineID: engine.id, provider: .claude)
+                } header: {
+                    Text("Claude \u{00B7} \(engine.name)")
+                } footer: {
+                    Text("Opens Claude's sign-in in a private in-app window \u{2014} your "
+                         + "browser session is never touched.")
+                        .font(.caption2).foregroundStyle(.secondary)
                 }
             }
             if model.fleets.isEmpty && fleetlessOAuthEngines.isEmpty {
-                Section("Accounts") {
-                    Text("No engine is on \u{2014} turn one on in the CLIProxyAPI tab.")
+                Section {
+                    Text("No engine is on. Turn one on in an engine's tab to add "
+                         + "your first account.")
                         .foregroundStyle(.secondary)
+                } header: {
+                    Text("Accounts")
                 }
             }
         }
@@ -631,36 +641,26 @@ private struct FleetAccountsSection: View {
     @ObservedObject var flow: TokenFlow
     @Binding var confirmDelete: (fleet: FleetState, account: Account)?
 
+    @ScaledMetric private var rowHeight: CGFloat = 30
+
     private var isCswap: Bool { fleet.engineID == CswapEngine.engineID }
     private var caps: EngineCapabilities { fleet.capabilities }
     private var canRelogin: Bool { isCswap || caps.contains(.addOAuth) }
 
     var body: some View {
-        Section("\(fleet.provider.displayName) \u{00B7} \(fleet.engine.displayName)") {
-            if caps.contains(.reorder) {
-                // Display-only (todo 2026-09-01): the popup shows headroom
-                // order with active + next on top; engine slot numbers
-                // stay put.
-                Toggle("Popup sorts rows by headroom (active and next first)",
-                       isOn: $model.sortByHeadroom)
-                    .help("Display only \u{2014} the popup lists the active "
-                          + "account, then the next candidate, then most "
-                          + "headroom first. Slot numbers don't move; "
-                          + "this list keeps the engine's order.")
-            }
-            Text(caption).font(.caption).foregroundStyle(.secondary)
+        Section {
             if fleet.accounts.isEmpty {
                 Text("No accounts yet \u{2014} add the first one below.")
                     .foregroundStyle(.secondary)
             }
+            // A bare ForEach in a grouped Form does not drag (probed on
+            // macOS 26: the same rows reorder inside a List and do not
+            // outside one), so the rows keep their List; the height it
+            // needs is a scaled metric rather than a hard-coded 30 pt.
             List {
                 ForEach(fleet.accounts, id: \.number) { a in
                     row(a).moveDisabled(!caps.contains(.reorder))
-                        .contextMenu {
-                            if caps.contains(.rename) {
-                                Button("Re-roll name") { fleet.randomizeName(a.number) }
-                            }
-                        }
+                        .contextMenu { rowMenu(a) }
                 }
                 .onMove { from, to in
                     guard caps.contains(.reorder) else { return }
@@ -669,21 +669,57 @@ private struct FleetAccountsSection: View {
                     fleet.reorder(order)
                 }
             }
-            .frame(minHeight: CGFloat(fleet.accounts.count) * 30 + 16)
+            .frame(minHeight: CGFloat(fleet.accounts.count) * rowHeight + 16)
             if let err = model.reorderError {
                 Text(err).font(.caption).foregroundStyle(.red)
             }
-            if caps.contains(.rename), !fleet.accounts.isEmpty {
-                Button("Randomize names") { fleet.randomizeNames() }
-                    .help("Every account gets a fresh name drawn from the "
-                          + "\(model.rowTheme.name) theme's pool; the Off theme "
-                          + "and themes without a pool draw from every built-in.")
+        } header: {
+            HStack {
+                Text("\(fleet.provider.displayName) \u{00B7} \(fleet.engine.displayName)")
+                Spacer()
+                if caps.contains(.rename), !fleet.accounts.isEmpty {
+                    Menu {
+                        Button("Randomize Names") { fleet.randomizeNames() }
+                    } label: {
+                        Image(systemName: "ellipsis.circle")
+                    }
+                    .menuStyle(.borderlessButton)
+                    .menuIndicator(.hidden)
+                    .fixedSize()
+                    .accessibilityLabel("More actions for \(fleet.engine.displayName)")
+                }
             }
-            if isCswap {
-                CswapAddFlow(model: model, flow: flow)
-            } else if caps.contains(.addOAuth) {
-                OAuthAddRow(model: model, engineID: fleet.engineID, provider: fleet.provider)
+        } footer: {
+            Text(footerText).font(.caption2).foregroundStyle(.secondary)
+        }
+        if isCswap || caps.contains(.addOAuth) {
+            // A group's primary action sits in its own trailing group, the
+            // way System Settings puts "Add Account…" under a Users list —
+            // so it can be the prominent button without shouting over the
+            // rows, and so it can carry its own one-clause footer.
+            Section {
+                if isCswap {
+                    CswapAddFlow(model: model, flow: flow)
+                } else {
+                    OAuthAddRow(model: model, engineID: fleet.engineID, provider: fleet.provider)
+                }
+            } footer: {
+                Text("Opens Claude's sign-in in a private in-app window \u{2014} your "
+                     + "browser session is never touched.")
+                    .font(.caption2).foregroundStyle(.secondary)
             }
+        }
+    }
+
+    /// The context menu every row carries: the name re-roll, and the
+    /// always-available sign-in (the prominent button on the row shows
+    /// only when the engine says the sign-in lapsed — Task 3).
+    @ViewBuilder private func rowMenu(_ a: Account) -> some View {
+        if caps.contains(.rename) {
+            Button("Re-roll Name") { fleet.randomizeName(a.number) }
+        }
+        if canRelogin {
+            Button("Sign In Again\u{2026}") { fleet.startRelogin(a) }
         }
     }
 
@@ -770,26 +806,21 @@ private struct FleetAccountsSection: View {
         }
     }
 
-    /// Same sentences in every section, each present only when the
-    /// fleet has the control it describes (user 2026-09-02: "make sure
-    /// 2 sections saying same things").
-    private var caption: String {
+    /// One line under the rows, one clause per control this fleet
+    /// actually has. Everything the old four-sentence paragraph
+    /// explained now lives where it is used: on the buttons, as
+    /// tooltips and accessibility hints (Task 3).
+    private var footerText: String {
         var parts: [String] = []
         if caps.contains(.reorder) {
-            parts.append("Drag rows to set the rotation order \u{2014} Rotate cycles through them.")
-        }
-        if caps.contains(.prefer) {
-            parts.append(fleet.accounts.contains { $0.preferred != nil }
-                ? "Star an account to have the engine land on it first when it switches."
-                : "Stars need a cswap with the autoswitch.preferred setting (claude-swap PR #312).")
-        }
-        if caps.contains(.switch) || caps.contains(.hold) {
-            parts.append("The arrow switches to that account; pause holds it "
-                         + "out of rotation (it stays listed).")
+            parts.append("Drag to set the rotation order.")
         }
         if caps.contains(.rename) {
-            parts.append("Type in the Name field to rename an account (shown "
-                         + "everywhere); clear it to go back to the email.")
+            parts.append("Click a name to rename it.")
+        }
+        if caps.contains(.prefer), !fleet.accounts.contains(where: { $0.preferred != nil }) {
+            parts.append("Starring needs the engine's preferred-account setting; "
+                         + "update the engine to use it.")
         }
         return parts.joined(separator: " ")
     }
@@ -827,9 +858,10 @@ private struct OAuthAddRow: View {
 
     var body: some View {
         HStack(spacing: 8) {
-            Button("Add account\u{2026}") {
+            Button("Add Account\u{2026}") {
                 model.addOAuthAccount(engineID: engineID, provider: provider)
             }
+            .buttonStyle(.borderedProminent)
             .disabled(model.addingFirstAccount || flow.running)
             if model.addingFirstAccount {
                 ProgressView().controlSize(.small)
@@ -837,10 +869,6 @@ private struct OAuthAddRow: View {
                     .font(.caption).foregroundStyle(.secondary)
             } else if let msg = model.firstAccountMessage {
                 Text(msg).font(.caption).foregroundStyle(.orange)
-            } else {
-                Text("Opens Claude's login in a private in-app window \u{2014} "
-                     + "your browser session is never touched.")
-                    .font(.caption).foregroundStyle(.secondary)
             }
         }
     }
@@ -864,16 +892,12 @@ private struct CswapAddFlow: View {
     @ViewBuilder private var phases: some View {
         switch flow.phase {
         case .idle:
-            HStack {
-                Button("Add account\u{2026}") { flow.start(model: model) }
-                Text("Opens Claude's login in a private in-app window \u{2014} "
-                     + "your browser session is never touched.")
-                    .font(.caption).foregroundStyle(.secondary)
-            }
+            Button("Add Account\u{2026}") { flow.start(model: model) }
+                .buttonStyle(.borderedProminent)
         case .launching:
             HStack(spacing: 8) {
                 ProgressView().controlSize(.small)
-                Text("Starting claude setup-token\u{2026}")
+                Text("Starting Claude's sign-in\u{2026}")
                 Button("Cancel") { flow.cancel() }
             }
         case .awaitingLogin:
@@ -887,8 +911,8 @@ private struct CswapAddFlow: View {
                      + "shows, paste it here.")
                     .font(.caption).foregroundStyle(.secondary)
                 HStack(spacing: 8) {
-                    Button("Reopen login window") { flow.reopenAuth() }
-                    TextField("Paste code", text: $flow.code)
+                    Button("Reopen Login Window") { flow.reopenAuth() }
+                    TextField("Paste the code", text: $flow.code)
                         .textFieldStyle(.roundedBorder)
                         .frame(width: 260)
                     Button("Submit") { flow.submitCode() }
@@ -911,7 +935,7 @@ private struct CswapAddFlow: View {
                     .foregroundStyle(.green)
                 Text("Account captured \u{2014} the engine holds its credential "
                      + "and your previous active account is restored.")
-                Button("Add another") { flow.start(model: model) }
+                Button("Add Another\u{2026}") { flow.start(model: model) }
                 Button("Done") { flow.phase = .idle }
             }
         case .failed(let msg):
@@ -920,7 +944,7 @@ private struct CswapAddFlow: View {
                     .foregroundStyle(.orange)
                     .lineLimit(4)
                 HStack {
-                    Button("Try again") { flow.start(model: model) }
+                    Button("Try Again\u{2026}") { flow.start(model: model) }
                     Button("Dismiss") { flow.phase = .idle }
                 }
             }
