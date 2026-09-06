@@ -8,6 +8,7 @@ publishes the matching section as the GitHub release body.
 ## Unreleased
 
 ### Phone
+- The chat header follows Dynamic Type in all three styles; the Game HUD stops growing at the second accessibility size (#209).
 - Other Macs: their sessions and past sessions never reach the primary by mistake, and "+" and Past sessions open once any paired Mac has answered (#215).
 - The all-limited Live Activity counts down to the real revival instead of 31 years out, and every surface picks the reviver by parsed reset date, ignoring implausible ones (#226).
 - Review changes says why there is nothing to review — checkpoints off on the Mac, a folder outside git, or no prompt checkpointed yet — instead of a caption nobody saw (#214).
