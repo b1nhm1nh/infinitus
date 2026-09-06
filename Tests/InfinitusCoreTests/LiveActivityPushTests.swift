@@ -52,6 +52,11 @@ final class LiveActivityPushTests: XCTestCase {
         XCTAssertEqual(saps["attributes-type"] as? String, "WorkingActivity")
         XCTAssertEqual((saps["attributes"] as! [String: Any])["machine"] as? String, "Mac")
         XCTAssertEqual((saps["alert"] as! [String: Any])["title"] as? String, "t")
+        // No alert given: the activity lands silently.
+        let silent = try JSONSerialization.jsonObject(with: LiveActivityPush.startPayload(
+            attributesType: "WorkingActivity", machine: "Mac", state: S(), staleDate: nil,
+            now: now)) as! [String: Any]
+        XCTAssertNil((silent["aps"] as! [String: Any])["alert"])
 
         let end = try JSONSerialization.jsonObject(with: LiveActivityPush.endPayload(
             state: S(), dismissalDate: now, now: now)) as! [String: Any]
