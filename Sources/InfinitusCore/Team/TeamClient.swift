@@ -46,6 +46,9 @@ public final class TeamClient {
         case lastLeader
         /// `policy.requests == "off"`: no new codes, no request list.
         case requestsOff
+        /// A caller asked to seal to the "Nobody" audience. `TeamPublisher`
+        /// skips those kinds before it gets here; this is the backstop.
+        case audienceOff
     }
 
     public static let identitySecretName = "identity"
@@ -318,6 +321,7 @@ public final class TeamClient {
         var writes: [String: Data?] = [:]
         var paths: [String] = []
         for item in items {
+            guard item.audience != .off else { throw ClientError.audienceOff }
             try drainingPool {
                 let storePath = "m/\(identity.kid)/\(item.path)"
                 try TeamKinds.check(kind: item.kind, from: identity.kid, at: storePath)

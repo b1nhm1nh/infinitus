@@ -285,4 +285,70 @@ final class TeamPublisherTests: XCTestCase {
             XCTAssertEqual($0 as? TeamClient.ClientError, .notInTeam)
         }
     }
+
+    /// Spec §7: a kind shared with Nobody is not chunked, not sealed, not
+    /// copied and not hinted at on the store.
+    func testAKindSharedWithNobodyNeverLeavesTheMac() throws {
+        let t = try team()
+        let projects = try writeProjects(scratch)
+        let teamDir = t.alicePaths.teamDir(t.alice.config.id)
+        let publisher = TeamPublisher(client: t.alice, paths: t.alicePaths)
+        _ = try publisher.publish(sources: sources(projects))   // one pass with everything on
+        let me = "m/\(t.alice.identity.kid)/"
+
+        var shares = TeamShares()
+        shares.byKind[TeamKinds.stats] = .team
+        shares.byKind[TeamKinds.transcripts] = .off
+        try shares.save(teamDir: teamDir)
+        // New lines that WOULD chunk if transcripts were still shared.
+        let s1 = projects.appendingPathComponent("-r-app/s1.jsonl")
+        let handle = try FileHandle(forWritingTo: s1)
+        try handle.seekToEnd()
+        try handle.write(contentsOf: Data(#"{"type":"assistant","timestamp":"2026-09-04T12:00:11.000Z","message":{"id":"a8","model":"claude-opus-5","usage":{"input_tokens":4,"output_tokens":1},"content":[{"type":"text","text":"nope"}]}}"#.utf8 + [UInt8(ascii: "\n")]))
+        try handle.close()
+
+        let report = try publisher.publish(sources: sources(projects))
+        XCTAssertEqual(report.transcriptChunks, 0)
+        XCTAssertFalse(report.published.contains { $0.contains("/transcripts/") })
+        XCTAssertFalse(FileManager.default.fileExists(atPath: publisher.copiesDir.appendingPathComponent("transcripts/s1/2.jsonl").path),
+                       "an off kind is not copied to published/ either")
+        // The cursor did not move: turning transcripts back on resumes where it stopped.
+        XCTAssertEqual(TeamPublishState.load(teamDir: teamDir).transcripts["s1"]?.seq, 1)
+
+        // The hint on now.json keeps the real audiences and drops the off one:
+        // an older client's decoder would throw on an unknown "off".
+        _ = try t.leader.fetch()
+        let now = try CanonicalJSON.decode(TeamDocs.Now.self, from: try t.leader.read(me + "now.json").1)
+        XCTAssertEqual(now.sharesTo["stats"], .team)
+        XCTAssertNil(now.sharesTo["transcripts"])
+        // Re-share does not resurrect it from the copies either.
+        XCTAssertFalse(try publisher.reshare(days: 10_000).published.contains { $0.contains("/transcripts/") })
+        // Defensive: nothing may seal to nobody.
+        XCTAssertThrowsError(try t.alice.publish(kind: TeamKinds.stats, path: "days/2026-09-04.json",
+                                                 plaintext: Data("{}".utf8), audience: .off)) {
+            XCTAssertEqual($0 as? TeamClient.ClientError, .audienceOff)
+        }
+    }
+
+    /// `now` off after a publish would leave this member looking "on"
+    /// forever, so the stale now.json is retired once.
+    func testNowSharedWithNobodyIsRetiredFromTheStore() throws {
+        let t = try team()
+        let projects = try writeProjects(scratch)
+        let teamDir = t.alicePaths.teamDir(t.alice.config.id)
+        let publisher = TeamPublisher(client: t.alice, paths: t.alicePaths)
+        _ = try publisher.publish(sources: sources(projects))
+        let me = "m/\(t.alice.identity.kid)/"
+        _ = try t.leader.fetch()
+        XCTAssertTrue(try t.leader.readable().map(\.path).contains(me + "now.json"))
+
+        var shares = TeamShares()
+        shares.byKind[TeamKinds.now] = .off
+        try shares.save(teamDir: teamDir)
+        _ = try publisher.publish(sources: sources(projects))
+        _ = try t.leader.fetch()
+        XCTAssertFalse(try t.leader.readable().map(\.path).contains(me + "now.json"))
+        // Idempotent: the second pass has nothing left to delete and must not throw.
+        XCTAssertNoThrow(try publisher.publish(sources: sources(projects)))
+    }
 }

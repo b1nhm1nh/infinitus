@@ -185,6 +185,13 @@ public struct TeamPublisher {
     public func publish(sources: Sources, now: Date = Date()) throws -> Report {
         guard client.isMember else { throw TeamClient.ClientError.notInTeam }
         let shares = TeamShares.load(teamDir: teamDir)
+        // A kind shared with nobody is skipped entirely: never staged,
+        // never chunked, never copied. `collect` only lists file URLs
+        // (the scan itself has to run for the kinds that ARE shared), so
+        // short-circuiting the staging is what keeps TeamChunker out of a
+        // 9 GB corpus when transcripts are off.
+        func off(_ kind: String) -> Bool { shares.target(for: kind) == .off }
+        let transcriptsOff = off(TeamKinds.transcripts)
         let exclusions = TeamExclusions.load(paths: paths)
         var state = TeamPublishState.load(teamDir: teamDir)
         let at = Int(now.timeIntervalSince1970)
@@ -221,28 +228,44 @@ public struct TeamPublisher {
         }
 
         let floor = calendar.date(byAdding: .day, value: -sources.historyDays, to: calendar.startOfDay(for: now)) ?? .distantPast
-        for (key, day) in collected.days.sorted(by: { $0.key < $1.key }) {
-            guard let date = Stats.date(fromDayKey: key, calendar: calendar), date >= floor else { continue }
-            let doc = TeamDocs.DayDoc(day: key, stats: day)
-            try stage(TeamKinds.stats, "days/\(key).json", try CanonicalJSON.encode(doc), digest: try Self.dayDigest(doc))
+        if !off(TeamKinds.stats) {
+            for (key, day) in collected.days.sorted(by: { $0.key < $1.key }) {
+                guard let date = Stats.date(fromDayKey: key, calendar: calendar), date >= floor else { continue }
+                let doc = TeamDocs.DayDoc(day: key, stats: day)
+                try stage(TeamKinds.stats, "days/\(key).json", try CanonicalJSON.encode(doc), digest: try Self.dayDigest(doc))
+            }
         }
-        try stage(TeamKinds.sessions, "sessions/index.json",
-                  try CanonicalJSON.encode(TeamDocs.SessionsIndex(at: at, sessions: collected.sessions, fleets: sources.fleets)),
-                  always: true)
+        if !off(TeamKinds.sessions) {
+            try stage(TeamKinds.sessions, "sessions/index.json",
+                      try CanonicalJSON.encode(TeamDocs.SessionsIndex(at: at, sessions: collected.sessions, fleets: sources.fleets)),
+                      always: true)
+        }
         let live = sources.liveSessions
             .filter { !exclusions.excludes(cwd: $0.cwd, projectDir: TeamExclusions.slug($0.cwd)) }
             .map { TeamDocs.LiveSession(id: $0.sessionId, project: URL(fileURLWithPath: $0.cwd).lastPathComponent,
                                         status: $0.status ?? "", name: $0.name) }
         let today = calendar.startOfDay(for: now)
         let crashesToday = sources.crashes.filter { $0.at >= today }.count
-        try stage(TeamKinds.now, "now.json",
-                  try CanonicalJSON.encode(TeamDocs.Now(at: at, sessions: live, fleets: sources.fleets, blockers: sources.blockers,
-                                                        crashesToday: crashesToday, sharesTo: shares.byKind)),
-                  always: true)
-        try stage(TeamKinds.crashes, "crashes.json",
-                  try CanonicalJSON.encode(TeamDocs.Crashes(crashes: sources.crashes.map(\.summary))))
+        if off(TeamKinds.now) {
+            // Turned off after a publish that sent one: a stale now.json
+            // would keep this member "on" for the team forever. Retire it
+            // once — the hash going away is what makes it once.
+            if state.hashes.removeValue(forKey: "now.json") != nil { try client.unpublish(path: "now.json") }
+        } else {
+            try stage(TeamKinds.now, "now.json",
+                      try CanonicalJSON.encode(TeamDocs.Now(at: at, sessions: live, fleets: sources.fleets, blockers: sources.blockers,
+                                                            crashesToday: crashesToday,
+                                                            // An older client's ShareTarget decoder throws on "off";
+                                                            // the hint carries only kinds that actually travel.
+                                                            sharesTo: shares.byKind.filter { $0.value != .off })),
+                      always: true)
+        }
+        if !off(TeamKinds.crashes) {
+            try stage(TeamKinds.crashes, "crashes.json",
+                      try CanonicalJSON.encode(TeamDocs.Crashes(crashes: sources.crashes.map(\.summary))))
+        }
 
-        for source in collected.transcripts {
+        for source in (transcriptsOff ? [] : collected.transcripts) {
             try drainingPool {
                 var cursor = state.transcripts[source.key] ?? TeamPublishState.Cursor()
                 let (chunks, offset) = try TeamChunker.chunks(of: source.url, from: cursor.offset, redact: redact)
@@ -290,6 +313,8 @@ public struct TeamPublisher {
             // Live state is never re-shared: the copy is stale, and it would
             // come back after `quit()` deleted it. The next publish rewraps it.
             if kind == TeamKinds.now { continue }
+            // A kind the member turned off is not re-wrapped from the copies either.
+            if shares.target(for: kind) == .off { continue }
             if kind == TeamKinds.stats {
                 let key = String(url.deletingPathExtension().lastPathComponent)
                 guard let date = Stats.date(fromDayKey: key, calendar: calendar), date >= floor else { continue }

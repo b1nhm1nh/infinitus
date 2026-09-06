@@ -299,6 +299,7 @@ struct TeamPane: View {
                 Picker(kindTitle(kind), selection: Binding(
                     get: { audienceTag(team.shares.target(for: kind)) },
                     set: { tag in Task { await team.setShare(kind: kind, target: audience(from: tag, snap)) } })) {
+                    Text("Nobody").tag("off")
                     Text("Leaders").tag("leaders")
                     Text("Whole team").tag("team")
                     ForEach(snap.members.filter { !$0.isMe }) { m in Text("Only \(m.name)").tag("kid:\(m.kid)") }
@@ -311,6 +312,8 @@ struct TeamPane: View {
                     Button("Re-share") { Task { await team.reshare(days: 30) } }
                     Button("Cancel", role: .cancel) {}
                 }
+            Text("Nobody keeps a kind on this Mac entirely. Live state off makes you look offline to the team; stats off leaves you out of the leaders' totals.")
+                .font(.caption).foregroundStyle(.secondary)
         }
     }
 
@@ -352,6 +355,7 @@ struct TeamPane: View {
 
     private func audienceTag(_ t: TeamRoster.ShareTarget) -> String {
         switch t {
+        case .off: "off"
         case .leaders: "leaders"
         case .team: "team"
         case .members(let kids): kids.first.map { "kid:\($0)" } ?? "leaders"
@@ -359,6 +363,7 @@ struct TeamPane: View {
     }
 
     private func audience(from tag: String, _ snap: TeamSnapshot) -> TeamRoster.ShareTarget {
+        if tag == "off" { return .off }
         if tag == "team" { return .team }
         if tag.hasPrefix("kid:") { return .members([String(tag.dropFirst(4))]) }
         return .leaders
