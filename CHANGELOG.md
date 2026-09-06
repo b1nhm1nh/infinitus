@@ -43,6 +43,11 @@ publishes the matching section as the GitHub release body.
 - Leaders publish the team picture to everyone (`team aggregates publish`), with per-member rows only when the roster's members-see-each-other policy is on, and `team policy` sets that and whether new requests are accepted.
 - `infinitusctl team identity export|import` seals your identity with a passphrase (PBKDF2 600k + ChaChaPoly, the same file on every platform), `identity recovery --show` prints the 8-group recovery key, and either restores the same kid on a new machine.
 - The site serves the passkey relying-party file for infinitus.run, and a release built with a provisioning profile carries the associated-domains entitlement the passkey identity needs.
+- Leaders get Insights in the Team pane: a member comparison, leaderboards by metric, repos, a blockers board, cost by member/model/repo and an hours heatmap; the team picture is published hourly for members.
+- Nearby in the Team pane: a Mac on the same network asks a discoverable leader to join, and leaders file network requests for approval.
+- Policy in the Team pane: close requests, or let members see each other's detail.
+- The recovery key (after Touch ID), a passphrase-sealed export and an import live in the Team pane; the export file is created owner-only from its first byte.
+- Quitting waits, briefly, for the team to be told you're gone, on every quit path.
 
 ## 0.4.3
 
