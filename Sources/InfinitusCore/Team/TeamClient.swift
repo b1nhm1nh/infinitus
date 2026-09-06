@@ -126,9 +126,21 @@ public final class TeamClient {
         let code = try TeamCode.decode(text, now: now)
         guard !paths.teamIDs().contains(code.team) else { throw ClientError.alreadyJoined }
         let me = try identity(paths: paths, secrets: secrets)
+        var joined = false
+        // The credential rides to git in memory and reaches the secrets
+        // store only once the first fetch proved the code points at a
+        // store we can actually read (#55: a rejected join used to leave
+        // `team.<id>.token` on disk with no config beside it). Same
+        // cleanup as `create`. AFTER the `alreadyJoined` guard on
+        // purpose: before it, this would delete a team we are already in.
+        defer {
+            if !joined {
+                try? FileManager.default.removeItem(at: paths.teamDir(code.team))
+                secrets.delete(tokenName(code.team))
+            }
+        }
         let config = TeamConfig(id: code.team, name: code.name, remote: code.remote, kid: me.kid,
                                 joinedAt: now, leaderKid: code.leader.kid)
-        if let token = code.token { try secrets.write(tokenName(code.team), Data(token.utf8)) }
         let store = TeamGit(dir: paths.storeDir(code.team), remote: code.remote, token: code.token, author: me.kid)
         try store.open()
         let client = TeamClient(config: config, identity: me, roster: nil, paths: paths, secrets: secrets, store: store)
@@ -136,9 +148,11 @@ public final class TeamClient {
         // points at someone else's store: any roster-acceptance failure on
         // this first fetch is the code's fault, not the store's.
         do { _ = try client.fetch() } catch is TeamRoster.RosterError { throw ClientError.badCode }
+        if let token = code.token { try secrets.write(tokenName(code.team), Data(token.utf8)) }
         let request = TeamRequest(keys: me.keys, name: name, devices: devices, platform: platform, at: now, proof: code.nonce.map { TeamRequest.proof(nonce: $0, kid: me.kid) })
         try store.put("requests/\(me.kid).json", try CanonicalJSON.encode(try Signed.make(request, by: me)))
         try client.persist()
+        joined = true
         return client
     }
 

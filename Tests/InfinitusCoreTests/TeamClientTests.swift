@@ -231,4 +231,26 @@ final class TeamClientTests: XCTestCase {
             XCTAssertEqual($0 as? TeamClient.ClientError, .unknownRequest)
         }
     }
+
+    /// #55: the code carries the store's write credential. A join the
+    /// store never accepted must leave none of it behind — nor a
+    /// config-less team dir.
+    func testARefusedJoinLeavesNoCredentialOnDisk() throws {
+        let remote = try makeRemote()
+        let (lp, ls) = machine("leader")
+        let leader = try TeamClient.create(name: "Papaya", remote: remote, token: "t0ken", paths: lp, secrets: ls, now: 1_000)
+        let code = try leader.code(expiresIn: 600, now: 1_000)
+        // The remote goes away between the code and the request.
+        try FileManager.default.removeItem(at: scratch.appendingPathComponent("remote.git"))
+
+        let (mp, ms) = machine("joiner")
+        XCTAssertThrowsError(try TeamClient.request(code: code, name: "Bo", devices: [], platform: "linux",
+                                                    paths: mp, secrets: ms, now: 1_010))
+        XCTAssertNil(ms.read(TeamClient.tokenName(leader.config.id)), "no store token survives a refused join")
+        XCTAssertEqual(mp.teamIDs(), [])
+        let left = ((try? FileManager.default.contentsOfDirectory(atPath: mp.base.path)) ?? []).filter { $0 != "secrets" }
+        XCTAssertEqual(left, [], "no half-made team dir either")
+        // The identity is this machine's, not the team's: it stays.
+        XCTAssertEqual(ms.read(TeamClient.identitySecretName)?.count, 32)
+    }
 }
