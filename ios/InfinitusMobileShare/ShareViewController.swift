@@ -141,7 +141,9 @@ final class ShareViewController: SLComposeServiceViewController {
             // "captured" are the Mac saying nothing was typed (a turn in
             // progress, a menu on screen) — the same words the app uses.
             guard reply.outcome == "delivered" else {
-                fail(Self.describe(reply.outcome, detail: reply.detail))
+                fail(reply.outcome == "rejected" && reply.detail == "session ended"
+                     ? "that session has ended"
+                     : Self.describe(reply.outcome, detail: reply.detail))
                 return
             }
             UserDefaults.standard.set(session.pid, forKey: Self.lastPidKey)

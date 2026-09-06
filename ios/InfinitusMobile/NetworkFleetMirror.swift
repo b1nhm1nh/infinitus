@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 import Network
 import UIKit
@@ -28,6 +29,65 @@ actor NetworkFleetMirror: FleetMirror {
     static let lastGoodKey = "mirror_last_good_endpoint"
     /// The single host's pairing token (#9 remote access).
     static let tokenKey = "mirror_pair_token"
+    /// #168: one host's identity for what the phone keeps on disk —
+    /// twelve hex of its pairing token's hash, so a token never lands in a
+    /// file name; "local" for a host with no token yet.
+    /// #168 keyed this on the ONE Mac; under the multi-host store every
+    /// host gets its own parked directory, so two machines never overwrite
+    /// each other's last snapshot.
+    nonisolated static func parkedKey(token: String) -> String {
+        let token = MirrorPairing.normalize(token)
+        guard !token.isEmpty else { return "local" }
+        let digest = SHA256.hash(data: Data(token.utf8))
+        return digest.prefix(6).map { String(format: "%02x", $0) }.joined()
+    }
+
+    /// The PRIMARY host's key — what `OutboxDelivery` files queued items
+    /// under. Host #0 is the primary; the legacy `tokenKey` is the
+    /// fallback for the moment before `MirrorHostStore`'s migration ran.
+    nonisolated static func parkedKey(defaults: UserDefaults = .standard) -> String {
+        let host = MirrorHostStore.load(defaults).first
+        let token = host?.token ?? (defaults.string(forKey: tokenKey) ?? "")
+        return parkedKey(token: token)
+    }
+
+    nonisolated static func parkedCache(key: String) -> ParkedCache {
+        let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+            ?? FileManager.default.temporaryDirectory
+        return ParkedCache(root: support.appendingPathComponent("parked").appendingPathComponent(key))
+    }
+
+    /// Whether each host's last fetch answered from its parked disk cache
+    /// because no route reached it — that host is "parked". Keyed by host
+    /// id: with two machines up, one asleep and one awake, only the asleep
+    /// one is parked.
+    private(set) var servedFromCache: [String: Bool] = [:]
+
+    /// The primary host's parked state — the app-wide banner `MirrorModel`
+    /// shows (#168 was single-Mac and had exactly this one flag).
+    var lastServedFromCache: Bool {
+        guard let primary = MirrorHostStore.load().first else { return false }
+        return servedFromCache[primary.id] ?? false
+    }
+
+    /// One `ParkedCache` per host, made on first use and held for the
+    /// actor's life: `ParkedCache` keeps an in-memory "last saved" marker,
+    /// so a fresh instance per fetch would re-write an unchanged snapshot
+    /// every poll. A host whose token was regenerated hashes to a new
+    /// directory, so stale data is never served as fresh (the old
+    /// directory is left on disk — harmless, and a rollback still finds it).
+    /// Memoised by the KEY, not the host id: a host whose token was
+    /// regenerated must move to its new directory on the next fetch, not
+    /// keep writing the old one's.
+    private var parkedCaches: [String: ParkedCache] = [:]
+    private func parked(_ host: MirrorHost) -> ParkedCache {
+        let key = Self.parkedKey(token: host.token)
+        if let found = parkedCaches[key] { return found }
+        let made = Self.parkedCache(key: key)
+        parkedCaches[key] = made
+        return made
+    }
+
     /// How the Mac's "Connected devices" list tells phones apart: a
     /// per-install id, minted once, plus the device's name.
     static let deviceIdKey = "mirror_device_id"
@@ -63,6 +123,13 @@ actor NetworkFleetMirror: FleetMirror {
     /// `host.normalizedToken`, and persists each host's last-good route
     /// through `MirrorHostStore.update` — the same per-Mac isolation,
     /// without a second store or a cached actor per machine.
+
+    /// (#168's `forgetCached()`/`recordLastGood()` went with that split:
+    /// "make primary" is a reorder of the host list now, not a pairing
+    /// swap under one actor, and each host's last-good route is written
+    /// straight to its own record. A forgotten host keeps its parked
+    /// directory on disk until the next pairing under the same token
+    /// reuses it — TODO(port-from-main): reap it from `removeHost`.)
 
     /// Migrates the old single-endpoint string into the list, once. The
     /// host migration (`MirrorHostStore`) runs after it, so the Mac's
@@ -145,12 +212,16 @@ actor NetworkFleetMirror: FleetMirror {
                                                 timeout: Self.candidateTimeout)
                 let snapshot = try MirrorHostStore.decodeSnapshot(data)
                 MirrorHostStore.update(host.id) { $0.lastGood = text }
+                try? parked(host).saveSnapshot(snapshot)
+                servedFromCache[host.id] = false
                 statuses[host.id] = "\(snapshot.machineName) at \(text)"
                 return (host, snapshot)
             } catch MirrorTransportError.http(401) {
                 // The host is right there and refusing us: that's a
                 // pairing problem, not a network one, and the fix is one
                 // field away.
+                // Not parked: the host answered.
+                servedFromCache[host.id] = false
                 statuses[host.id] = "pairing token required — scan the QR in the Mac's "
                     + "Devices settings"
                 return (host, nil)
@@ -178,6 +249,8 @@ actor NetworkFleetMirror: FleetMirror {
                                                 token: token, timeout: Self.candidateTimeout),
                let snapshot = try? MirrorHostStore.decodeSnapshot(data) {
                 MirrorHostStore.update(host.id) { $0.lastGood = fresh }
+                try? parked(host).saveSnapshot(snapshot)
+                servedFromCache[host.id] = false
                 statuses[host.id] = "\(snapshot.machineName) at \(fresh) (new tunnel address)"
                 var named = host
                 named.endpoints = swapped
@@ -190,7 +263,8 @@ actor NetworkFleetMirror: FleetMirror {
         // discovered endpoint is tried with THIS host's token, and a 401
         // only means the advertiser is someone else's host. (#144 phase 1
         // had to stop a non-primary Mac here — it couldn't tell which of
-        // several advertisers answered; per-host tokens are that test.)
+        // several advertisers answered; per-host tokens are that test, so
+        // main's "primary only" guard has nothing left to guard.)
         startBrowsing()
         var unauthorized = false
         for discovered in await allEndpoints() {
@@ -200,6 +274,8 @@ actor NetworkFleetMirror: FleetMirror {
                                                      useTLS: false, token: token,
                                                      timeout: Self.candidateTimeout)
                 let snapshot = try MirrorHostStore.decodeSnapshot(data)
+                try? parked(host).saveSnapshot(snapshot)
+                servedFromCache[host.id] = false
                 statuses[host.id] = "\(snapshot.machineName) at \(remote)"
                 return (host, snapshot)
             } catch MirrorTransportError.http(401) {
@@ -208,6 +284,20 @@ actor NetworkFleetMirror: FleetMirror {
                 failures.append("Wi-Fi discovery \(Self.failureWord(error))")
             }
         }
+        // #168: nothing reached this host. Its last snapshot on disk keeps
+        // the fleet and the transcripts readable — that IS "parked", and
+        // it's what survives a cold launch with the host asleep (the
+        // model's in-memory `snapshots` is empty then). A pure 401 is the
+        // exception: the host IS reachable and refusing us, so the fix is
+        // the pairing token, not a stale fleet dressed as a live one.
+        if !(unauthorized && failures.isEmpty), let snapshot = parked(host).loadSnapshot() {
+            servedFromCache[host.id] = true
+            statuses[host.id] = "offline — " + (failures.isEmpty
+                ? "no route answered"
+                : failures.joined(separator: " · "))
+            return (host, snapshot)
+        }
+        servedFromCache[host.id] = false
         statuses[host.id] = unauthorized && failures.isEmpty
             ? "pairing token required — scan the QR in the Mac's Devices settings"
             : (failures.isEmpty
@@ -290,11 +380,22 @@ actor NetworkFleetMirror: FleetMirror {
             let (data, _) = try await fetch(endpoint, path: path, hostHeader: manual.host,
                                             useTLS: manual.useTLS, token: host.normalizedToken,
                                             timeout: wait + 10)
-            return try Self.decodeFeed(data)
+            let feed = try Self.decodeFeed(data)
+            try? parked(host).saveTail(feed, pid: pid)
+            return feed
         }
         let data = try await fetchStoredThenDiscovered(host: host, path: path,
                                                        timeout: Self.candidateTimeout)
-        return try Self.decodeFeed(data)
+        let feed = try Self.decodeFeed(data)
+        try? parked(host).saveTail(feed, pid: pid)
+        return feed
+    }
+
+    /// #168: the last tail fetched for this session, from disk — read
+    /// while parked so a transcript stays scrollable with no route to
+    /// the host. Per host, since two machines can run the same pid.
+    func parkedTail(host: MirrorHost? = nil, pid: Int32) -> SessionFeed? {
+        parked(host ?? defaultHost()).loadTail(pid: pid)
     }
 
     /// A feed image's thumbnail (`SessionFeedItem.images`, 2026-09-04):
@@ -384,6 +485,13 @@ actor NetworkFleetMirror: FleetMirror {
     func sessionInput(host: MirrorHost? = nil, pid: Int32,
                       request: SessionInput.Request) async throws -> SessionInput.Reply {
         let host = host ?? defaultHost()
+        // #168: a retried delivery needs its own id for the host's dedup —
+        // give every hand-typed send one too, so a timeout-then-retry from
+        // the composer is never mistaken for the same request twice.
+        let request = request.requestId == nil
+            ? SessionInput.Request(kind: request.kind, text: request.text, attachments: request.attachments,
+                                   requestId: UUID().uuidString, queuedAt: request.queuedAt, sessionId: request.sessionId)
+            : request
         let timeout = (request.attachments?.isEmpty == false) ? Self.attachmentInputTimeout : Self.inputTimeout
         let path = MirrorTransport.sessionInputPath(pid: pid)
         let body = try JSONEncoder().encode(request)

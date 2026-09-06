@@ -93,7 +93,10 @@ struct FleetScreen: View {
             ThemedPlaceholder(theme: model.rowTheme, key: "searching", plainSymbol: "antenna.radiowaves.left.and.right",
                               description: "Pair with the Mac in Settings — its accounts show up as soon as it answers.")
         }
-        if let snapshot = model.snapshot, isStale(snapshot.capturedAt) {
+        if model.parked, let since = model.parkedSince {
+            ParkedBanner(since: since)
+        }
+        if let snapshot = model.snapshot, !model.parked, isStale(snapshot.capturedAt) {
             StalenessBanner(capturedAt: snapshot.capturedAt)
         }
     }
@@ -159,5 +162,16 @@ private struct StalenessBanner: View {
     var body: some View {
         Text("as of \(capturedAt.formatted(date: .omitted, time: .shortened)) — is the Mac awake?")
             .font(.caption).foregroundStyle(.orange)
+    }
+}
+
+private struct ParkedBanner: View {
+    let since: Date
+
+    var body: some View {
+        Label("parked — last seen \(since.formatted(.relative(presentation: .named))); messages you send wait for the Mac",
+              systemImage: "moon.zzz")
+            .font(.footnote)
+            .foregroundStyle(.secondary)
     }
 }

@@ -207,7 +207,7 @@ final class ControlServer {
 
         case "profile-set":
             guard let name = r.args.first?.trimmingCharacters(in: .whitespaces), !name.isEmpty else {
-                throw Fail("usage: profile-set <name> [--cwd f] [--engine e] [--mode m] [--model m] [--system s] [--prompt p]")
+                throw Fail("usage: profile-set <name> [--cwd f] [--engine e] [--mode m] [--model m] [--system s] [--prompt p] [--allow \"Edit, Bash git\"]")
             }
             if let engine = r.options["engine"], !["claude", "codex"].contains(engine) { throw Fail("engine must be claude or codex") }
             if let mode = r.options["mode"], !SessionStart.permissionModes.contains(where: { $0.mode == mode }) {
@@ -215,7 +215,8 @@ final class ControlServer {
             }
             let profile = SessionProfile(name: name, cwd: r.options["cwd"], engine: r.options["engine"],
                                          permissionMode: r.options["mode"], model: r.options["model"],
-                                         systemPrompt: r.options["system"], prompt: r.options["prompt"])
+                                         systemPrompt: r.options["system"], prompt: r.options["prompt"],
+                                         allowTools: r.options["allow"].flatMap(SessionProfiles.parseAllowList))
             model.sessionProfiles.set(profile)
             if let err = model.sessionProfiles.lastError { throw Fail(err) }
             let saved = model.sessionProfiles.profiles.first { SessionProfiles.same($0.name, name) }
@@ -258,20 +259,22 @@ final class ControlServer {
             return ControlReply(ok: true, result: try .of(PastSessions.Reply(sessions: sessions)))
 
         case "resume-session":
-            guard let id = r.args.first, !id.isEmpty else { throw Fail("usage: resume-session <sessionId>") }
+            guard let id = r.args.first, !id.isEmpty else { throw Fail("usage: resume-session <sessionId> [--fork]") }
             let claudeDir = ClaudeSessions.configHome()
+            let fork = r.options["fork"] != nil
             // A live session's transcript is another process's to write —
-            // talk to it instead of resuming it twice.
-            if let live = ClaudeSessions.list(claudeDir: claudeDir).first(where: { $0.sessionId == id }) {
-                throw Fail("session \(id) is live (pid \(live.pid)); use `infinitusctl send \(live.pid)`")
+            // talk to it instead of resuming it twice. A fork writes a new
+            // one, so a live session can be branched.
+            if !fork, let live = ClaudeSessions.list(claudeDir: claudeDir).first(where: { $0.sessionId == id }) {
+                throw Fail("session \(id) is live (pid \(live.pid)); use `infinitusctl send \(live.pid)`, or --fork to branch it")
             }
             guard let past = PastSessions.find(sessionId: id, claudeDir: claudeDir) else {
                 throw Fail("no past session \(id); see `infinitusctl past-sessions`")
             }
-            let reply = SessionLauncher.start(SessionStart.Request(cwd: past.cwd, resume: past.sessionId),
-                                              preferredHost: model.sessionHost)
-            if reply.outcome == "started", let pid = reply.pid {
-                model.recordBirth(pid: pid, SessionBirth(resumedFrom: past.sessionId))
+            let request = SessionStart.Request(cwd: past.cwd, resume: past.sessionId, fork: fork ? true : nil)
+            let reply = SessionLauncher.start(request, preferredHost: model.sessionHost)
+            if reply.outcome == "started", let pid = reply.pid, let birth = SessionBirth(request: request) {
+                model.recordBirth(pid: pid, birth)
             }
             return ControlReply(ok: reply.outcome == "started", result: try .of(reply),
                                 error: reply.outcome == "started" ? nil : "\(reply.outcome)\(reply.detail.map { ": " + $0 } ?? "")")

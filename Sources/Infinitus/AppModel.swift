@@ -143,13 +143,33 @@ final class AppModel: ObservableObject {
     static let birthsURL = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
         .appendingPathComponent("Infinitus/session-births.json")
     func recordBirth(pid: Int, _ birth: SessionBirth) {
-        let alive = Set(ClaudeSessions.list(claudeDir: ClaudeSessions.configHome()).map { Int($0.pid) })
+        let live = ClaudeSessions.list(claudeDir: ClaudeSessions.configHome())
+        let alive = Set(live.map { Int($0.pid) })
         sessionBirths = SessionBirths.pruned(sessionBirths, alive: alive.union([pid]))
-        sessionBirths[pid] = birth
+        // Pinned to the session id whenever the roster has it, so a
+        // reused pid after a reboot can never inherit a grant.
+        let id = live.first { Int($0.pid) == pid }?.sessionId
+        sessionBirths[pid] = id.map { birth.identified(as: $0) } ?? birth
+        // The profile's allow-list (#165) becomes the session's hook rules.
+        if let id { seedAllowList(birth, sessionId: id) }
         try? SessionBirths.save(sessionBirths, to: Self.birthsURL)
     }
     /// "Allow for this session" rules from the phone (#79), per session id.
     let toolApprovals = ToolApprovals()
+
+    private func profileAllowRules(_ birth: SessionBirth) -> [ToolApproval.Rule] {
+        guard let name = birth.profile else { return [] }
+        return sessionProfiles.profiles.first { SessionProfiles.same($0.name, name) }?.allowRules ?? []
+    }
+
+    /// A session born from a profile runs its allow-list without asking:
+    /// the same rules the phone's "Allow for this session" adds.
+    private func seedAllowList(_ birth: SessionBirth, sessionId: String) {
+        let rules = profileAllowRules(birth)
+        guard !rules.isEmpty, let name = birth.profile else { return }
+        for rule in rules { toolApprovals.add(rule, sessionId: sessionId) }
+        logEvent("hook", icon: "checkmark.shield", "profile \(name) allows \(rules.map(\.label).joined(separator: ", ")) in session \(sessionId.prefix(8))")
+    }
 
     /// Moves a running session's permission mode (#163 phase 2): the
     /// plugin's PreToolUse hook answers from it. The start mode is a
@@ -1188,8 +1208,9 @@ final class AppModel: ObservableObject {
         // no longer grants.
         let live = ClaudeSessions.list(claudeDir: ClaudeSessions.configHome())
         for (pid, birth) in sessionBirths {
-            guard let mode = birth.hookMode, let record = live.first(where: { Int($0.pid) == pid }) else { continue }
-            toolApprovals.setMode(mode, sessionId: record.sessionId)
+            guard let record = live.first(where: { Int($0.pid) == pid }), birth.sessionId == record.sessionId else { continue }
+            if let mode = birth.hookMode { toolApprovals.setMode(mode, sessionId: record.sessionId) }
+            for rule in profileAllowRules(birth) { toolApprovals.add(rule, sessionId: record.sessionId) }
         }
         mirrorServer.pastSessions.set { limit, search in
             PastSessions.Reply(sessions: PastSessions.list(claudeDir: ClaudeSessions.configHome(),
@@ -1354,10 +1375,14 @@ final class AppModel: ObservableObject {
         }
         mirrorServer.sessionInput.set { [weak self] pid, request in
             let claudeDir = ClaudeSessions.configHome()
-            guard let record = ClaudeSessions.list(claudeDir: claudeDir).first(where: { $0.pid == pid })
+            let records = ClaudeSessions.list(claudeDir: claudeDir)
+            // #168: a queued request may name a pid from before a reboot —
+            // the session lives on under a new one; its id does not change.
+            guard let record = records.first(where: { $0.pid == pid })
+                    ?? request.sessionId.flatMap({ id in records.first { $0.sessionId == id } })
             else {
                 Task { @MainActor in self?.logMirrorInput("⚠️", "phone input not delivered: unknown session") }
-                return nil
+                return SessionInput.Reply(outcome: "rejected", detail: "session ended")
             }
             // A mode change never reaches the terminal: it is the Mac's
             // own state, decided on the main actor (the births live
@@ -1390,6 +1415,12 @@ final class AppModel: ObservableObject {
                 } else {
                     let why = reply.detail.map { "\(reply.outcome) — \($0)" } ?? reply.outcome
                     self?.logMirrorInput("⚠️", "phone input not delivered: \(why)")
+                }
+                if request.queuedAt != nil, ["delivered", "running", "captured"].contains(reply.outcome) {
+                    // The phone queued this while the Mac was away; the
+                    // push reaches it even when the app is closed.
+                    self?.liveActivityPusher.pushAlert(title: "Delivered to \(label)",
+                                                       body: String(request.text.prefix(80)))
                 }
             }
             return reply

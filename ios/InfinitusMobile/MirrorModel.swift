@@ -48,6 +48,13 @@ final class MirrorModel: ObservableObject, FleetModel {
     @Published private(set) var fleets: [MirrorFleetModel] = []
     private var fleetSinks: [String: AnyCancellable] = [:]
     @Published private(set) var error: String?
+    /// #168: the snapshot on screen came from the phone's disk cache
+    /// because no route reached the Mac. Connectivity, not age — the
+    /// 180 s staleness banner stays for "reachable but old".
+    @Published var parked = false
+    @Published var parkedSince: Date?
+    /// Runs on the parked → reachable edge (Task 7's outbox flush).
+    var reachableAgain: (() -> Void)?
 
     /// One OTHER paired machine (#144 phase 1): read-only on the phone —
     /// only the primary drives approvals, widgets and Live Activities.
@@ -203,6 +210,7 @@ final class MirrorModel: ObservableObject, FleetModel {
         localIntroTitle = defaults.string(forKey: "intro_title") ?? "zoom"
         localIntroSpeed = defaults.object(forKey: "intro_speed") as? Double ?? 1.0
         macPopupView = defaults.object(forKey: "mac_popup_view") as? Bool ?? false
+        reachableAgain = { Task { await OutboxDelivery.flush() } }
     }
 
     /// Pairs with a machine from a scanned QR or an `infinitus://pair?…`
@@ -414,6 +422,19 @@ final class MirrorModel: ObservableObject, FleetModel {
         snapshot = primaryHostID.flatMap { snapshots[$0] }
         prefs = snapshot?.prefs
         error = decodeFailure
+        // #168: the primary answered from its parked disk cache — the
+        // banner says so, and the outbox flushes on the edge back to
+        // reachable. Only the primary drives the app-wide banner; a
+        // non-primary host's parked state shows in its own section.
+        let servedFromCache = await NetworkFleetMirror.shared.lastServedFromCache
+        let fromCache = snapshot != nil && servedFromCache
+        let wasParked = parked
+        parked = fromCache
+        parkedSince = fromCache ? snapshot?.capturedAt : nil
+        if wasParked, !fromCache { reachableAgain?() }
+        // The app launched with the primary reachable and may still hold
+        // outbox items from a previous, parked session.
+        if firstLoad, !fromCache { reachableAgain?() }
         // The route that just answered is now the primary host's
         // last-good one; the share extension (#64) reads the pairing
         // through the keychain.
@@ -447,6 +468,8 @@ final class MirrorModel: ObservableObject, FleetModel {
             fleets = []
             fleetSinks = [:]
             transportStatuses = [:]
+            parked = false
+            parkedSince = nil
             return
         }
         guard let hostFleets = fleets(in: snapshot) else {
@@ -469,6 +492,10 @@ final class MirrorModel: ObservableObject, FleetModel {
         self.snapshot = snapshot
         prefs = snapshot.prefs
         error = nil
+        // A fixture or the Documents copy is never "parked" — there is no
+        // route to be off.
+        parked = false
+        parkedSince = nil
         ShareSuggestions.sync(sessions: liveSessions?.sessions ?? [],
                               name: { sessionProgress.byPid[$0]?.name }, theme: rowTheme)
         AppIcons.follow(themeID: rowTheme.id)

@@ -12,6 +12,7 @@ publishes the matching section as the GitHub release body.
 - The activity tables read the ask off your own message — "debug the crash" counts as debugging even when the tools only edited — and the plugin's UserPromptSubmit hook refreshes a session the moment a prompt goes in.
 
 ### Phone
+- Parked sessions: with the Mac unreachable the phone keeps the last fleet and transcripts, queues one message per session and delivers it once the Mac is back (#168).
 - The phone pairs with more than one Mac: other Macs' fleets and sessions show under their name, and any of them can be made primary from Settings › Devices.
 - The Sessions list wears the theme: session names in the theme's accent, state words in their state color.
 - The share sheet's session picker lists waiting sessions first and names each one by session · repo.
@@ -42,6 +43,11 @@ publishes the matching section as the GitHub release body.
 - Every prompt checkpoints the repository as a hidden git ref (with the plugin; Display › toggle): `infinitusctl checkpoints <session>` lists them, `checkpoint-diff` compares two or one against the working tree, `checkpoint-restore --yes` puts the files back and keeps a backup checkpoint; the sessions popover's Checkpoints section shows a session's timeline with Restore; the phone shows the timeline (session detail › Checkpoints) with each checkpoint's diff and Restore.
 - A running session's permission mode can be widened from the phone (session detail › Permissions) or `infinitusctl session-mode <session> <mode>`; the plugin's PreToolUse hook answers from it and the row chip follows.
 - Review a turn's changes from the phone: the chat's Review button (or a checkpoint's diff) lists the hunks, a tap comments one, Approve / Request changes sends the review as the session's next message.
+- A profile can list tools its sessions run without asking (Settings › Profiles, `profile-set --allow "Edit, Bash git"`); the plugin's PreToolUse hook honours them from the session's first tool call.
+- Siri's and Shortcuts' Start a session take a profile name: its folder, engine, permissions, model and prompts apply.
+- Start a session from the Mac too: the sessions popover's Start a session takes a profile chip, folder, engine, permissions and a first prompt.
+- Fork a session: Past sessions (Mac popover, phone) and `infinitusctl resume-session --fork` continue a transcript under a new session id, the original untouched — live sessions included.
+- The Mac's Checkpoints section shows a checkpoint's diff against now (the stat inline, the patch a Copy away).
 
 ### Team (preview)
 - Reading the team store remembers each file's header, so a refresh pass reads only new files and the app's memory stays flat.
