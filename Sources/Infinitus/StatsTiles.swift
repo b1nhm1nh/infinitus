@@ -15,10 +15,7 @@ struct StatsTiles: View {
 
     private func group(_ g: Stats.Presentation.Group) -> some View {
         Section(g.id) {
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 10)], spacing: 10) {
-                ForEach(g.tiles) { tileView($0) }
-            }
-            .padding(.vertical, 4)
+            TileRows(tiles: g.tiles) { tileView($0) }
         }
     }
 
@@ -45,5 +42,57 @@ struct StatsTiles: View {
         .padding(10)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(RoundedRectangle(cornerRadius: 8).fill(Color(.controlBackgroundColor)))
+        .accessibilityElement(children: .combine)
+    }
+}
+
+/// Tiles laid out in rows that always fill the width. A LazyVGrid with
+/// `.adaptive(minimum: 150)` left the 13th Throughput tile alone in a
+/// row of four with three empty cells beside it (critique, minor
+/// observations) — an adaptive grid leaves the trailing row's cells
+/// empty instead of sharing the width; 13 has a remainder of one at
+/// every plausible column count, so the fix is to let the last row's
+/// tiles share the leftover width instead of leaving holes.
+private struct TileRows<Content: View>: View {
+    let tiles: [Stats.Presentation.Tile]
+    @ViewBuilder let tile: (Stats.Presentation.Tile) -> Content
+
+    private static var minTile: CGFloat { 150 }
+    private static var spacing: CGFloat { 10 }
+
+    /// Seeded to the settings window's content width so the first frame
+    /// (before the background `GeometryReader` reports) is already the
+    /// right column count instead of one tile per row (review round 1,
+    /// finding 4).
+    @State private var width: CGFloat = 640
+
+    private var columns: Int {
+        max(1, Int((width + Self.spacing) / (Self.minTile + Self.spacing)))
+    }
+
+    private var rows: [[Stats.Presentation.Tile]] {
+        stride(from: 0, to: tiles.count, by: columns).map {
+            Array(tiles[$0..<min($0 + columns, tiles.count)])
+        }
+    }
+
+    var body: some View {
+        VStack(spacing: Self.spacing) {
+            ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
+                HStack(spacing: Self.spacing) {
+                    ForEach(row) { t in
+                        tile(t).frame(maxWidth: .infinity)
+                    }
+                }
+            }
+        }
+        .padding(.vertical, 4)
+        .background(
+            GeometryReader { geo in
+                Color.clear
+                    .onAppear { width = geo.size.width }
+                    .onChange(of: geo.size.width) { _, w in width = w }
+            }
+        )
     }
 }

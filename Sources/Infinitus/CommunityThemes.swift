@@ -33,9 +33,11 @@ final class CommunityThemesModel: ObservableObject {
             let (data, _) = try await URLSession.shared.data(
                 from: Self.base.appendingPathComponent("index.json"))
             entries = try JSONDecoder().decode(Index.self, from: data).themes
-            if entries.isEmpty { status = "no community themes yet — add the first!" }
+            if entries.isEmpty {
+                status = "No community themes yet — yours could be the first."
+            }
         } catch {
-            status = "couldn't load the gallery: \(error.localizedDescription)"
+            status = "Couldn't reach the gallery. Check your connection and choose Refresh."
         }
     }
 
@@ -53,9 +55,9 @@ final class CommunityThemesModel: ObservableObject {
             customs.append(theme)
             try RowTheme.saveCustom(customs)
             model.reloadCustomThemes()
-            status = "installed \(theme.name)"
+            status = "Installed \(theme.name)."
         } catch {
-            status = "install failed: \(error.localizedDescription)"
+            status = "Couldn't install that theme. Choose Refresh and try again."
         }
     }
 }
@@ -97,10 +99,14 @@ struct CommunityThemesSection: View {
             HStack {
                 Button("Refresh") { Task { await gallery.refresh() } }
                     .disabled(gallery.busy)
-                Button("Share yours…") { openURL(CommunityThemesModel.contributeURL) }
-                Text("Open a PR adding a JSON file under themes/ — it shows up here.")
-                    .font(.caption).foregroundStyle(.secondary)
+                Button("Share Yours…") { openURL(CommunityThemesModel.contributeURL) }
             }
+            // Stays a caption Text rather than a Section footer: this is
+            // inside a DisclosureGroup, which has no footer slot.
+            Text("Themes here are copied into your own file when you install "
+                 + "one, so they keep working offline. Share yours by adding "
+                 + "it to the gallery on GitHub.")
+                .font(.caption).foregroundStyle(.secondary)
         }
         .task { if gallery.entries.isEmpty { await gallery.refresh() } }
     }
