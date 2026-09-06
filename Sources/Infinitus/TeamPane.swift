@@ -422,6 +422,7 @@ struct TeamPane: View {
         case TeamKinds.sessions: "Session index"
         case TeamKinds.transcripts: "Transcripts"
         case TeamKinds.crashes: "Crash summaries"
+        case TeamKinds.fleet: "Fleet"
         default: kind
         }
     }

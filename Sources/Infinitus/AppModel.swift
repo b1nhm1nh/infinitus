@@ -1579,6 +1579,13 @@ final class AppModel: ObservableObject {
             if let w = active?.usage?.sevenDay { windows.append(TeamDocs.Window(label: "7d", pct: Int(w.pct.rounded()))) }
             return TeamDocs.Fleet(engine: fleet.engineID, account: active.map { $0.alias ?? $0.email }, windows: windows)
         }
+        // Every account, for the member fleet view (#221); this Mac's one
+        // token rate rides the primary fleet.
+        let perMinute = sessionProgress.tokenRate?.perMinute ?? 0
+        let rate: Double? = perMinute > 0 ? Double(perMinute) : nil
+        s.fleetRows = lastFleets.enumerated().map { i, fleet in
+            TeamDocs.FleetDoc.row(fleet, tokensPerMinute: i == 0 ? rate : nil)
+        }
         s.blockers = awsLogins.map { "AWS login: \($0.profile)" }
             + lastFleets.filter { !$0.accounts.isEmpty && $0.activeNumber == nil && $0.nextCandidate == nil }
                 .map { "\($0.engineID): every account limited" }

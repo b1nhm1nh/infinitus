@@ -352,6 +352,40 @@ final class TeamPublisherTests: XCTestCase {
         XCTAssertNoThrow(try publisher.publish(sources: sources(projects)))
     }
 
+    /// #221: the fleet doc travels to its audience, is written every
+    /// pass like now.json so `at` stays truthful, and is retired once
+    /// when the share row goes to Nobody.
+    func testFleetIsPublishedSkippedWhileUnchangedAndRetiredWhenOff() throws {
+        let t = try team()
+        let projects = try writeProjects(scratch)
+        let teamDir = t.alicePaths.teamDir(t.alice.config.id)
+        let publisher = TeamPublisher(client: t.alice, paths: t.alicePaths)
+        var s = sources(projects)
+        let row = TeamDocs.FleetDoc.FleetRow(engine: "opaque", active: "acct-1", next: nil, tokensPerMinute: 12, accounts: [
+            .init(label: "acct-1", tier: "Max", status: "ok", active: true, windows: [.init(label: "5h", pct: 40)], models: [])])
+        s.fleetRows = [row]
+        let me = "m/\(t.alice.identity.kid)/"
+        let first = try publisher.publish(sources: s, now: Date(timeIntervalSince1970: 1_000))
+        XCTAssertTrue(first.published.contains(me + "fleet.json"))
+        _ = try t.leader.fetch()
+        let doc = try CanonicalJSON.decode(TeamDocs.FleetDoc.self, from: try t.leader.read(me + "fleet.json").1)
+        XCTAssertEqual(doc.fleets, [row])
+        XCTAssertEqual(doc.at, 1_000)
+
+        let second = try publisher.publish(sources: s, now: Date(timeIntervalSince1970: 2_000))
+        XCTAssertTrue(second.published.contains(me + "fleet.json"), "state: republished every pass")
+        _ = try t.leader.fetch()
+        XCTAssertEqual(try CanonicalJSON.decode(TeamDocs.FleetDoc.self, from: try t.leader.read(me + "fleet.json").1).at, 2_000)
+
+        var shares = TeamShares()
+        shares.byKind[TeamKinds.fleet] = .off
+        try shares.save(teamDir: teamDir)
+        _ = try publisher.publish(sources: s)
+        _ = try t.leader.fetch()
+        XCTAssertFalse(try t.leader.readable().map(\.path).contains(me + "fleet.json"))
+        XCTAssertNoThrow(try publisher.publish(sources: s))
+    }
+
     /// Spec §7: the member picks which sessions' transcripts travel; a
     /// session's sub-agents ride its choice.
     func testOnlyChosenSessionsAreChunkedAndThePickerListsTheRecentOnes() throws {

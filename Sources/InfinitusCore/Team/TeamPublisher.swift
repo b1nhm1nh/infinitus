@@ -162,6 +162,9 @@ public struct TeamPublisher {
         public var liveSessions: [ClaudeSessionRecord] = []
         public var crashes: [CrashReport] = []
         public var fleets: [TeamDocs.Fleet] = []
+        /// Every account of every fleet (`fleet.json`, #221); the CLI,
+        /// which has no fleet view, sends none and the file is left alone.
+        public var fleetRows: [TeamDocs.FleetDoc.FleetRow] = []
         public var blockers: [String] = []
         public var home: String
         public var includeImages = false
@@ -422,6 +425,18 @@ public struct TeamPublisher {
                                                             // An older client's ShareTarget decoder throws on "off";
                                                             // the hint carries only kinds that actually travel.
                                                             sharesTo: shares.byKind.filter { $0.value != .off })),
+                      always: true)
+        }
+        if off(TeamKinds.fleet) {
+            // Retired once, like now.json: a stale fleet would keep showing
+            // accounts the member stopped sharing.
+            if state.hashes.removeValue(forKey: "fleet.json") != nil { try client.unpublish(path: "fleet.json") }
+        } else if !sources.fleetRows.isEmpty {
+            // State, not history: written every pass like now.json, so
+            // `at` is a truthful "as of" and the headroom board's 15-min
+            // freshness rule reads it the way it reads `now`.
+            try stage(TeamKinds.fleet, "fleet.json",
+                      try CanonicalJSON.encode(TeamDocs.FleetDoc(at: at, fleets: sources.fleetRows)),
                       always: true)
         }
         if !off(TeamKinds.crashes) {

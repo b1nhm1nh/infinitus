@@ -11,12 +11,10 @@ public enum TeamKinds {
     public static let transcripts = "transcripts"
     public static let crashes = "crashes"
     public static let aggregates = "aggregates"
-    /// `m/<kid>/fleet.json` (#221). Not in `memberKinds` until the
-    /// publisher writes it: that list is the share picker and the
-    /// "shares …" sentence, and must not advertise what nothing sends.
+    /// `m/<kid>/fleet.json` — every account of every fleet (#221).
     public static let fleet = "fleet"
     /// The kinds a member publishes about itself (§7), in table order.
-    public static let memberKinds = [stats, now, sessions, transcripts, crashes]
+    public static let memberKinds = [stats, now, sessions, transcripts, crashes, fleet]
 
     public enum KindError: Error, Equatable { case badPath, kindMismatch, senderMismatch }
 
