@@ -39,6 +39,20 @@ public struct TeamPublisher {
         public init() {}
     }
 
+    /// How far a publish has got, for a UI that must not tick. Fired once
+    /// per transcript source chunked and once per batch pushed — never
+    /// per chunk: a 9 GB corpus is thousands of chunks and each hop to the
+    /// main actor commits a CA transaction. Sealing is not a phase of its
+    /// own: `TeamClient.publish` seals and pushes in one call.
+    public struct Progress: Equatable, Sendable {
+        /// "scan" — a source was chunked; "push" — a batch reached the remote.
+        public var phase: String
+        /// Transcript sources chunked so far, of `total` this pass will chunk.
+        public var done: Int
+        public var total: Int
+        public init(phase: String, done: Int, total: Int) { self.phase = phase; self.done = done; self.total = total }
+    }
+
     /// The same rule `StatsScanner.scan` walks with: `<project>/<sid>.jsonl`
     /// is a session, `<project>/<sid>/subagents/<agent>.jsonl` one of its
     /// sub-agents. For Codex files the "project dir" is a date; callers
@@ -167,6 +181,14 @@ public struct TeamPublisher {
         /// month of one Mac's transcripts was 9 GB. Above this the oldest
         /// transcript copies go; a later re-share covers what is left.
         public var copiesCapBytes = 1 << 30
+        /// Called on the publishing thread (never the main actor); the app
+        /// hops once per call.
+        public var onProgress: (@Sendable (TeamPublisher.Progress) -> Void)?
+        /// Checked once per transcript source, before chunking it: true
+        /// flushes what is staged, saves the cursor and returns the report
+        /// with `stopped`. A batch already inside `git push` still
+        /// finishes — the per-batch state save is what makes a kill safe.
+        public var shouldStop: (@Sendable () -> Bool)?
         public var calendar: Calendar = .current
         public init(projectsDir: URL, home: String) { self.projectsDir = projectsDir; self.home = home }
     }
@@ -178,6 +200,9 @@ public struct TeamPublisher {
         public var skipped = 0
         /// Plaintext copies deleted to stay under `Sources.copiesCapBytes`.
         public var prunedCopies = 0
+        /// True when `Sources.shouldStop` cut the pass short: what the
+        /// report lists went out, the cursor is saved, the rest waits.
+        public var stopped = false
         public init() {}
     }
 
@@ -291,6 +316,8 @@ public struct TeamPublisher {
                                      transcriptFloorDay: Stats.dayKey(transcriptFloor, calendar: calendar))
         let choices = TeamTranscriptChoices.load(teamDir: teamDir)
         let toChunk = transcriptsOff ? [] : collected.transcripts.filter { choices.includes($0.session) }
+        var chunked = 0
+        func note(_ phase: String) { sources.onProgress?(Progress(phase: phase, done: chunked, total: toChunk.count)) }
         let redact = TeamRedaction.redactor(options: TeamRedaction.Options(home: sources.home, includeImages: sources.includeImages))
         var items: [TeamClient.PublishItem] = []
         var pendingBytes = 0
@@ -304,6 +331,7 @@ public struct TeamPublisher {
             items.removeAll()
             pendingBytes = 0
             try state.save(teamDir: teamDir)
+            note("push")
         }
 
         // `digest` defaults to the canonical bytes; day files pass
@@ -355,7 +383,15 @@ public struct TeamPublisher {
                       try CanonicalJSON.encode(TeamDocs.Crashes(crashes: sources.crashes.map(\.summary))))
         }
 
+        note("scan")
         for source in toChunk {
+            if sources.shouldStop?() == true {
+                try flush()
+                try state.save(teamDir: teamDir)
+                report.stopped = true
+                report.prunedCopies = pruneCopies(cap: sources.copiesCapBytes)
+                return report
+            }
             try drainingPool {
                 var cursor = state.transcripts[source.key] ?? TeamPublishState.Cursor()
                 let (chunks, offset) = try TeamChunker.chunks(of: source.url, from: cursor.offset, redact: redact)
@@ -372,6 +408,8 @@ public struct TeamPublisher {
                 state.transcripts[source.key] = cursor
                 if pendingBytes >= sources.batchBytes { try flush() }
             }
+            chunked += 1
+            note("scan")
         }
 
         try flush()

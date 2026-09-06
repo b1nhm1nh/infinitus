@@ -31,6 +31,9 @@ final class TeamModel: ObservableObject {
     /// The most recent publish pass's report (loop or `publishNow`); what
     /// `team-publish` replies with.
     @Published private(set) var lastReport: TeamPublisher.Report?
+    /// The running publish's progress (spec §7), or nil when nothing is
+    /// publishing. Set once per source and once per batch, never per chunk.
+    @Published private(set) var progress: TeamPublisher.Progress?
     @Published private(set) var shares = TeamShares()
     @Published private(set) var exclusions = TeamExclusions()
     /// Spec §7: which sessions' transcripts travel. `recentTranscripts`
@@ -78,6 +81,8 @@ final class TeamModel: ObservableObject {
     private var loopRunning = false
     private var lastFetchAt: Int?
     private var lastPublishAt: Int?
+    /// Set by `quit()`, read by the publisher between transcript sources.
+    private let stopRequested = OSAllocatedUnfairLock(initialState: false)
 
     init(paths: TeamPaths, makeSecrets: @escaping @Sendable () -> TeamSecrets, defaults: UserDefaults) {
         self.paths = paths
@@ -217,6 +222,11 @@ final class TeamModel: ObservableObject {
     private func loop(sources: TeamPublisher.Sources, publish: Bool) async -> Bool {
         let auto = autoApprove
         let aggregatesDue = lastAggregatesAt.map { Int(Date().timeIntervalSince1970) - $0 >= Self.aggregatesInterval } ?? true
+        var sources = sources
+        let stop = stopRequested
+        sources.onProgress = { [weak self] p in Task { @MainActor in self?.progress = p } }
+        sources.shouldStop = { stop.withLock { $0 } }
+        defer { progress = nil }
         do {
             let (fetched, published, report, aggregated) = try await run { paths, secrets in
                 guard let client = try Self.openClient(paths, secrets) else { return (nil as Int?, nil as Int?, nil as TeamPublisher.Report?, false) }
@@ -283,10 +293,14 @@ final class TeamModel: ObservableObject {
     /// this Mac "on". Only when this run published (nothing else put a
     /// `now.json` there — deleting an absent path would push an empty
     /// commit). Bounded: the team queue is serial, so a loop pass mid-push
-    /// could hold this for as long as git does; termination waits at most
+    /// could hold this for as long as git does; the stop flag lets that
+    /// pass return between transcript sources, termination waits at most
     /// `quitBound` and the child dies with the app.
-    static let quitBound: TimeInterval = 5
+    static let quitBound: TimeInterval = 20
     func quit() async {
+        // Before the guard: a first-ever publish is still in flight when
+        // `lastPublishAt` is nil, and it must still see the flag.
+        stopRequested.withLock { $0 = true }
         guard enabled, inTeam, lastPublishAt != nil else { return }
         let paths = self.paths, makeSecrets = self.makeSecrets
         let fired = OSAllocatedUnfairLock(initialState: false)

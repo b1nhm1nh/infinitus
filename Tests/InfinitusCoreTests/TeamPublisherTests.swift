@@ -421,4 +421,60 @@ final class TeamPublisherTests: XCTestCase {
         s.copiesCapBytes = 1 << 30
         XCTAssertEqual(try publisher.publish(sources: s).prunedCopies, 0)
     }
+
+    /// Progress is per SOURCE and per BATCH, never per chunk: a 9 GB
+    /// corpus is thousands of chunks and every main-actor hop is a CA
+    /// transaction (the pop-out must idle at ~0%).
+    func testProgressFiresPerSourceAndPerBatchOnly() throws {
+        let t = try team()
+        let projects = try writeProjects(scratch)
+        // `publish` is synchronous on this thread and so is the callback,
+        // but the closure is @Sendable: a captured `var` will not compile.
+        final class Box: @unchecked Sendable { var seen: [TeamPublisher.Progress] = [] }
+        let box = Box()
+        var s = sources(projects)
+        s.batchBytes = 1        // one push per source — the most callbacks this can make
+        s.onProgress = { box.seen.append($0) }
+        let report = try TeamPublisher(client: t.alice, paths: t.alicePaths).publish(sources: s)
+        XCTAssertEqual(report.transcriptChunks, 3)
+        XCTAssertFalse(report.stopped)
+        XCTAssertLessThanOrEqual(box.seen.count, 3 + 3 + 1, "3 sources + 3 batches + the opening call")
+        XCTAssertEqual(box.seen.first, TeamPublisher.Progress(phase: "scan", done: 0, total: 3))
+        XCTAssertEqual(box.seen.last?.done, 3)
+        XCTAssertEqual(Set(box.seen.map(\.phase)), ["scan", "push"])
+        XCTAssertEqual(box.seen.map(\.total), Array(repeating: 3, count: box.seen.count))
+        XCTAssertEqual(box.seen.map(\.done), box.seen.map(\.done).sorted(), "the counter only moves forward")
+    }
+
+    /// Quit asks the publisher to stop; what it had pushed stays pushed
+    /// and the cursor is saved, so the next pass resumes.
+    func testStopBetweenSourcesSavesTheCursorAndLeavesTheRestForNextTime() throws {
+        let t = try team()
+        let projects = try writeProjects(scratch)
+        let publisher = TeamPublisher(client: t.alice, paths: t.alicePaths)
+        final class Box: @unchecked Sendable { var chunked = 0 }
+        let box = Box()
+        var s = sources(projects)
+        s.batchBytes = 1
+        s.onProgress = { if $0.phase == "scan" { box.chunked = $0.done } }
+        s.shouldStop = { box.chunked >= 1 }      // stop once the first source is done
+        let report = try publisher.publish(sources: s)
+        XCTAssertTrue(report.stopped)
+        XCTAssertEqual(report.transcriptChunks, 1)
+        let me = "m/\(t.alice.identity.kid)/"
+        XCTAssertTrue(report.published.contains(me + "transcripts/s1/1.jsonl"))
+        XCTAssertFalse(report.published.contains { $0.contains("/s2/") })
+        let state = TeamPublishState.load(teamDir: t.alicePaths.teamDir(t.alice.config.id))
+        XCTAssertEqual(state.transcripts.count, 1)
+        XCTAssertEqual(state.transcripts["s1"]?.seq, 1)
+        _ = try t.leader.fetch()
+        XCTAssertEqual(try t.leader.readable().map(\.path).filter { $0.contains("/transcripts/") },
+                       [me + "transcripts/s1/1.jsonl"])
+        // No stop: the rest goes out, nothing is re-chunked.
+        var again = sources(projects)
+        again.batchBytes = 1
+        let second = try publisher.publish(sources: again)
+        XCTAssertFalse(second.stopped)
+        XCTAssertEqual(second.transcriptChunks, 2)
+    }
 }

@@ -28,8 +28,8 @@ struct TeamPane: View {
             .formStyle(.grouped)
             .disabled(team.busy != nil)
             .overlay(alignment: .top) {
-                if let busy = team.busy {
-                    HStack { ProgressView().controlSize(.small); Text(busy) }
+                if let line = statusLine {
+                    HStack { ProgressView().controlSize(.small); Text(line) }
                         .font(.caption).padding(6).background(.thinMaterial, in: Capsule()).padding(.top, 6)
                 }
             }
@@ -358,6 +358,20 @@ struct TeamPane: View {
     }
 
     // MARK: helpers
+
+    /// The busy label plus how far the publisher is through this Mac's
+    /// transcript sources — "Publishing… pushing 3/12". The background
+    /// loop sets no busy label, so a big publish shows progress alone
+    /// (and never disables the form: `.disabled` stays on `busy`).
+    private var statusLine: String? {
+        let phase = team.progress.map { "\($0.phase == "push" ? "pushing" : "reading") \($0.done)/\($0.total)" }
+        switch (team.busy, phase) {
+        case let (busy?, phase?): return "\(busy) \(phase)"
+        case let (busy?, nil): return busy
+        case let (nil, phase?): return "Publishing… \(phase)"
+        case (nil, nil): return nil
+        }
+    }
 
     private func kindTitle(_ kind: String) -> String {
         switch kind {
