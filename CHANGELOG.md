@@ -23,6 +23,11 @@ publishes the matching section as the GitHub release body.
 - A message Claude Code held instead of delivering shows in the chat as a marker, with where to review it (#213).
 
 ### Mac
+- Settings › Accounts leads with Add Account, shows Sign In Again only on the account that needs it, and renames an account in its own field, Tab moving to the next.
+- Randomize Names can be undone for 30 seconds.
+- Regenerating the pairing token, stopping rotation, signing in again, forgetting a stored key or token, and removing a push channel, a profile or a crash report all ask first.
+- Settings › Devices puts one QR code and one address up front, with the rest behind Other addresses.
+- Every icon button in Settings says what it does and to which account, and an engine error now reads as a sentence with a next step.
 - Settings' sidebar is a real list: arrow keys, type-select, a focus ring and VoiceOver names, grouped into General, Accounts, Dashboards and Engines.
 - Settings search finds a setting by its own label, opens its pane and flashes the group it lives in; ⌘F jumps to the field.
 - The Settings window is called Settings and says which pane you're in.
