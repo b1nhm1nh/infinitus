@@ -131,6 +131,7 @@ One line per feature; the site and the CHANGELOG carry the detail.
 - **Crash reports, on-device** — both apps record their own crashes; any report can go into a session's chat for triage.
 - **Randomize names** — every account gets a fresh name from the theme's pool.
 - **Team (preview)** — `infinitusctl team` creates a team on any git remote and exchanges end-to-end encrypted files between members.
+- **Parked** — the Mac asleep or away, the phone still shows the fleet and every transcript, and a message you send waits and goes out when it's back.
 - **`infinitusctl`** — an agent-facing control CLI: status, fleets, sessions, send, switch, hold, rename, proxy, AWS logins, stats, perf; plus an agent-setup guide.
 
 ## Privacy
