@@ -40,7 +40,13 @@ public enum PeerSocket {
     /// socket exists (a one-way nudge needs no reply) — but the address must
     /// still parse or the sender renders as "an unidentified session".
     public static func ownAddress(pid: Int32 = getpid()) -> String {
-        let path = "/tmp/infinitus-\(pid).sock"
+        escapeAddress("/tmp/infinitus-\(pid).sock")
+    }
+
+    /// A path as a `uds:` peer address: everything outside `addressSafe`
+    /// percent-encoded, so the receiver's envelope parser accepts it.
+    /// (The Windows daemon addresses a named pipe the same way.)
+    public static func escapeAddress(_ path: String) -> String {
         let escaped = path.map { ch -> String in
             if addressSafe.contains(ch) { return String(ch) }
             return String(ch).utf8.map { String(format: "%%%02X", $0) }.joined()

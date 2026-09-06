@@ -2,6 +2,12 @@ import XCTest
 @testable import InfinitusCore
 
 final class TeamInvitesTests: XCTestCase {
+    func skipOffPOSIX() throws {
+        #if os(Windows)
+        try XCTSkipIf(true, "Team git shellouts / POSIX modes are not ported to Windows yet")
+        #endif
+    }
+
     func testNonceIsRandomBase32() {
         let a = TeamInvites.newNonce(), b = TeamInvites.newNonce()
         XCTAssertNotEqual(a, b)
@@ -51,6 +57,7 @@ final class TeamInvitesTests: XCTestCase {
     }
 
     func testCodeCarriesTheNonceAndAutoApprovalIsTheLeadersDecision() throws {
+        try skipOffPOSIX()
         let leader = TeamIdentity.random()
         let paths = TeamPaths(base: FileManager.default.temporaryDirectory.appendingPathComponent("inv-\(UUID().uuidString)"))
         defer { try? FileManager.default.removeItem(at: paths.base) }
@@ -78,6 +85,7 @@ final class TeamInvitesTests: XCTestCase {
     }
 
     func testMintAddsOneNonceToTheBookAndTheLinkCarriesIt() throws {
+        try skipOffPOSIX()
         let paths = TeamPaths(base: FileManager.default.temporaryDirectory.appendingPathComponent("mint-\(UUID().uuidString)"))
         defer { try? FileManager.default.removeItem(at: paths.base) }
         let secrets = FileSecrets(dir: paths.secretsDir)
@@ -106,6 +114,7 @@ final class TeamInvitesTests: XCTestCase {
     /// the book, so a leader who can't mint right now (closed requests)
     /// doesn't leave a dangling nonce nobody will ever redeem.
     func testMintLeavesTheBookUntouchedWhenTheClientRefuses() throws {
+        try skipOffPOSIX()
         let paths = TeamPaths(base: FileManager.default.temporaryDirectory.appendingPathComponent("mint-fail-\(UUID().uuidString)"))
         defer { try? FileManager.default.removeItem(at: paths.base) }
         let secrets = FileSecrets(dir: paths.secretsDir)

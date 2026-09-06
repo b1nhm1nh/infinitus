@@ -9,6 +9,14 @@ final class TeamMembershipTests: XCTestCase {
         try FileManager.default.createDirectory(at: scratch, withIntermediateDirectories: true)
     }
 
+    /// The Team store shells `/usr/bin/env git` and its residue rules
+    /// assert POSIX modes - neither exists on Windows yet (upstream).
+    func skipOffPOSIX() throws {
+        #if os(Windows)
+        try XCTSkipIf(true, "Team git shellouts / POSIX modes are not ported to Windows yet")
+        #endif
+    }
+
     override func tearDownWithError() throws { try? FileManager.default.removeItem(at: scratch) }
 
     func makeRemote(_ name: String = "remote.git") throws -> String {
@@ -125,6 +133,7 @@ final class TeamMembershipTests: XCTestCase {
     // MARK: roster edits over the store
 
     func testPromoteAndRemove() throws {
+        try skipOffPOSIX()
         let (leader, member, remote) = try team()
         // A second member, to be promoted.
         let (cp, cs) = machine("carol")
@@ -170,6 +179,7 @@ final class TeamMembershipTests: XCTestCase {
     /// readable; those sealed after are ignored, and once the member
     /// fetches the roster it cannot publish at all.
     func testRemovedMembersLaterEnvelopesAreIgnored() throws {
+        try skipOffPOSIX()
         let (leader, member, _) = try team()
         let before = try member.publish(kind: "stats", path: "days/2026-09-01.json", plaintext: Data("{\"schema\":1}".utf8),
                                         audience: .leaders, now: 1_030)
@@ -210,6 +220,7 @@ final class TeamMembershipTests: XCTestCase {
     /// replayed under another member's branch, or under a path whose
     /// shape names a different kind, is ignored.
     func testEnvelopesAreCheckedAgainstTheirPath() throws {
+        try skipOffPOSIX()
         let (leader, member, remote) = try team()
         let (cp, cs) = machine("carol")
         let carol = try TeamClient.request(code: try leader.code(expiresIn: 600, now: 1_030), name: "Carol", devices: [],
@@ -241,6 +252,7 @@ final class TeamMembershipTests: XCTestCase {
     }
 
     func testBatchedPublishIsOnePushAndUnpublishDeletes() throws {
+        try skipOffPOSIX()
         let (leader, member, _) = try team()
         let paths = try member.publish([
             TeamClient.PublishItem(kind: "now", path: "now.json", plaintext: Data("n".utf8), audience: .leaders),
@@ -258,6 +270,7 @@ final class TeamMembershipTests: XCTestCase {
     // MARK: plan 5 — founder name, leave
 
     func testCreateNamesTheFounder() throws {
+        try skipOffPOSIX()
         let remote = try makeRemote()
         let (lp, ls) = machine("leader")
         let leader = try TeamClient.create(name: "Papaya", remote: remote, token: nil, leaderName: "Ann", paths: lp, secrets: ls, now: 1_000)
@@ -266,6 +279,7 @@ final class TeamMembershipTests: XCTestCase {
     }
 
     func testLeaveDeletesOwnFilesAndLeavesANote() throws {
+        try skipOffPOSIX()
         let (leader, member, _) = try team()
         try member.publish(kind: TeamKinds.now, path: "now.json",
                            plaintext: try CanonicalJSON.encode(TeamDocs.Now(at: 1, sessions: [], fleets: [], blockers: [], crashesToday: 0, sharesTo: [:])),
@@ -280,6 +294,7 @@ final class TeamMembershipTests: XCTestCase {
     }
 
     func testLeaveSyncsFirstSoAnotherDeviceOfMineIsNotLeftBehind() throws {
+        try skipOffPOSIX()
         let remote = try makeRemote()
         let (lp, ls) = machine("leader"), (mp, ms) = machine("member")
         let leader = try TeamClient.create(name: "Papaya", remote: remote, token: nil, paths: lp, secrets: ls, now: 1_000)
