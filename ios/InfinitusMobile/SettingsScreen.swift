@@ -489,7 +489,14 @@ private struct AboutSettings: View {
                         }
                     }
                     if failed {
-                        Button("Try Again") { update() }
+                        if updating {
+                            LabeledContent("Try Again") {
+                                ProgressView()
+                                    .accessibilityLabel("Updating the Mac")
+                            }
+                        } else {
+                            Button("Try Again") { update() }
+                        }
                     }
                 } else {
                     LabeledContent(snapshot.machineName, value: "Version Not Reported")
@@ -503,6 +510,13 @@ private struct AboutSettings: View {
             // Nothing to explain, no footer — filler prose under a
             // group is the caption row's sin in a different container.
             if !footer.isEmpty { Text(footer) }
+        }
+        // A new app version means the update this section reported on
+        // is over — a stale success sentence or a stuck Try Again row
+        // would outlive the thing they describe.
+        .onChange(of: model.snapshot?.app?.version) { _, _ in
+            outcome = nil
+            failed = false
         }
     }
 
@@ -526,7 +540,7 @@ private struct AboutSettings: View {
                 lines.append("Infinitus \(phoneLatest) is out for the phone — rebuild this app from that release.")
             }
         }
-        return lines.joined(separator: " ")
+        return lines.joined(separator: "\n\n")
     }
 
     private func update() {
@@ -534,9 +548,20 @@ private struct AboutSettings: View {
         outcome = nil
         failed = false
         Task {
+            let machine = model.snapshot?.machineName ?? "the Mac"
             do {
                 let reply = try await NetworkFleetMirror.shared.updateMac()
-                outcome = reply.detail ?? reply.outcome
+                // `reply.detail` is the Mac's own developer prose, not
+                // house copy — map the machine-readable outcome to a
+                // sentence ourselves instead of printing it.
+                switch reply.outcome {
+                case "started":
+                    outcome = "\(machine) is installing the update and relaunches when it's done."
+                case "upToDate":
+                    outcome = "\(machine) is already up to date."
+                default:
+                    failed = true
+                }
             } catch {
                 // The error's own words are a debug string; the reader
                 // needs the problem and the next step (critique,
