@@ -43,6 +43,7 @@ struct TeamMemberPane: View {
                                 Button("Transcript") {
                                     items = nil
                                     openSession = row
+                                    team.clearError()
                                     Task {
                                         let r = await team.transcript(kid: kid, session: row.id)
                                         if openSession?.id == row.id { items = r }

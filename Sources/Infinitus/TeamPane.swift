@@ -130,9 +130,9 @@ struct TeamPane: View {
     @ViewBuilder private var identityButtons: some View {
         if team.kid != nil {
             Button("Show recovery key…") { showRecovery = true }
-            Button("Export identity…") { showExport = true }
+            Button("Export identity…") { team.clearError(); showExport = true }
         }
-        Button("Import identity…") { showImport = true }
+        Button("Import identity…") { team.clearError(); showImport = true }
     }
 
     // MARK: in a team

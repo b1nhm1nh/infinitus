@@ -32,11 +32,15 @@ struct TeamExportSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var passphrase = ""
     @State private var again = ""
+    @State private var error: String?
     var body: some View {
         Form {
             SecureField("Passphrase (8+ characters)", text: $passphrase)
             SecureField("Again", text: $again)
             Text("The file holds your identity secret sealed with this passphrase (PBKDF2 600k + ChaChaPoly). Without the passphrase it is noise.").font(.caption).foregroundStyle(.secondary)
+            if let err = error ?? team.lastError {
+                Text(err).font(.caption).foregroundStyle(.orange)
+            }
             HStack {
                 Spacer()
                 Button("Cancel") { dismiss() }
@@ -45,6 +49,12 @@ struct TeamExportSheet: View {
                     panel.nameFieldStringValue = "infinitus-identity.json"
                     panel.canCreateDirectories = true
                     guard panel.runModal() == .OK, let url = panel.url else { return }
+                    guard !FileManager.default.fileExists(atPath: url.path) else {
+                        error = "that file exists; pick another name — the export never overwrites"
+                        return
+                    }
+                    error = nil
+                    team.clearError()
                     Task { if await team.exportIdentity(passphrase: passphrase, to: url) { dismiss() } }
                 }
                 .keyboardShortcut(.defaultAction)
@@ -64,17 +74,21 @@ struct TeamImportSheet: View {
         Form {
             Section("From a recovery key") {
                 TextField("xxxxxxx-xxxxxxx-…", text: $recovery).font(.body.monospaced())
-                Button("Import key") { Task { if await team.importIdentity(recoveryKey: recovery) { dismiss() } } }.disabled(recovery.isEmpty)
+                Button("Import key") { team.clearError(); Task { if await team.importIdentity(recoveryKey: recovery) { dismiss() } } }.disabled(recovery.isEmpty)
             }
             Section("From an export file") {
                 SecureField("Passphrase", text: $passphrase)
                 Button("Choose file…") {
                     let panel = NSOpenPanel(); panel.allowedContentTypes = [.json]; panel.allowsMultipleSelection = false
                     guard panel.runModal() == .OK, let url = panel.url else { return }
+                    team.clearError()
                     Task { if await team.importIdentity(file: url, passphrase: passphrase) { dismiss() } }
                 }.disabled(passphrase.isEmpty)
             }
             Text("Replaces this Mac's identity. Teams that approved the old kid must re-approve; leave any team first.").font(.caption).foregroundStyle(.orange)
+            if let err = team.lastError {
+                Text(err).font(.caption.bold()).foregroundStyle(.orange)
+            }
             HStack { Spacer(); Button("Cancel") { dismiss() } }
         }
         .padding().frame(width: 460)
