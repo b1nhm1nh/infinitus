@@ -984,7 +984,9 @@ struct SessionFeedScreen: View {
                     pid: Int32(session.pid), request: .init(kind: .resume, text: ""))
                 continueResult = reply.outcome == "delivered"
                     ? "asked to continue" + (reply.channel == "socket" ? "" : " (typed into the terminal)")
-                    : reply.detail.map { "\(Self.describe(reply.outcome)) — \($0)" } ?? Self.describe(reply.outcome)
+                    : (reply.outcome == "rejected" && reply.detail == "session ended")
+                        ? "that session has ended"
+                        : reply.detail.map { "\(Self.describe(reply.outcome)) — \($0)" } ?? Self.describe(reply.outcome)
             } catch MirrorTransportError.http(let status) where status == 400 {
                 // An older Mac doesn't know the `resume` kind.
                 continueResult = "update Infinitus on the Mac to continue sessions from the phone"
