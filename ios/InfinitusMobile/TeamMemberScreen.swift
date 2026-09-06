@@ -1,5 +1,6 @@
 import SwiftUI
 import InfinitusCore
+import InfinitusUI
 
 /// One teammate on the phone (spec §9): period picker, the same stat
 /// tiles StatsScreen draws (via Stats.Presentation — the layout is
@@ -12,6 +13,9 @@ struct TeamMemberScreen: View {
     @State private var period: Stats.Period = .week
     @State private var reply: TeamMirror.MemberReply?
     @State private var error: String?
+
+    /// The member's fleets ride the mirror snapshot (#221): no RPC.
+    private var member: TeamSnapshot.Member? { model.team?.members.first { $0.kid == kid } }
 
     var body: some View {
         Form {
@@ -40,6 +44,7 @@ struct TeamMemberScreen: View {
             } else if reply != nil {
                 Section { Text("No stats shared for this period.").foregroundStyle(.secondary) }
             }
+            if let fleet = member?.fleet { fleetSection(fleet) }
             if let r = reply, !r.sessions.isEmpty {
                 let transcriptIds = Set(r.transcripts)
                 Section("Sessions") {
@@ -71,6 +76,100 @@ struct TeamMemberScreen: View {
             guard !Task.isCancelled else { return }
             self.error = error.localizedDescription
         }
+    }
+
+    // MARK: fleet (#221)
+
+    /// Read-only: every account of every fleet as last published, in
+    /// the theme's window colours. Static bars — nothing animates.
+    private func fleetSection(_ doc: TeamDocs.FleetDoc) -> some View {
+        Section {
+            ForEach(Array(doc.fleets.enumerated()), id: \.offset) { _, f in
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(spacing: 6) {
+                        Text(f.engine).bold()
+                        if let a = f.active { Text("· \(a)") }
+                        if let n = f.next { Text("→ \(n)").foregroundStyle(.secondary) }
+                        Spacer()
+                        if let rate = f.tokensPerMinute {
+                            Text("⚡ \(compact(rate))/min").monospacedDigit().foregroundStyle(.secondary)
+                        }
+                    }
+                    .font(.caption)
+                    if let at = f.lastSwitchAt {
+                        Text("switched \(relative(at))").font(.caption2).foregroundStyle(.secondary)
+                    }
+                }
+                ForEach(Array(f.accounts.enumerated()), id: \.offset) { _, a in accountRow(a) }
+            }
+        } header: {
+            Text("Fleet")
+        } footer: {
+            Text("As of \(relative(doc.at)) · seen \(relative(member?.lastPublished))")
+        }
+    }
+
+    private func accountRow(_ a: TeamDocs.FleetDoc.AccountRow) -> some View {
+        let theme = model.rowTheme
+        return VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 6) {
+                Text(a.label).fontWeight(a.active ? .bold : .regular)
+                if let tier = a.tier { Text(tier).font(.caption).foregroundStyle(.secondary) }
+                if a.status != TeamDocs.FleetDoc.ok {
+                    Text(statusWord(a.status)).font(.caption2)
+                        .padding(.horizontal, 5).padding(.vertical, 1)
+                        .background(statusColor(a.status).opacity(0.15), in: Capsule())
+                        .foregroundStyle(statusColor(a.status))
+                }
+                Spacer()
+            }
+            ForEach(Array(a.windows.enumerated()), id: \.offset) { _, w in
+                HStack(spacing: 6) {
+                    Text(w.label == "5h" ? theme.sessionLabel : theme.weeklyLabel)
+                        .font(.caption2).foregroundStyle(.secondary).frame(width: 28, alignment: .leading)
+                    GaugeBar(remaining: Double(max(0, 100 - w.pct)),
+                             color: ThemeColor.resolve(w.label == "5h" ? theme.sessionColor : theme.weeklyColor),
+                             animated: false)
+                        .frame(height: 8)
+                    Text("\(max(0, 100 - w.pct))%").font(.caption2).monospacedDigit()
+                        .foregroundStyle(w.pct >= 100 ? Color.red : Color.primary)
+                        .frame(width: 36, alignment: .trailing)
+                }
+            }
+            if !a.models.isEmpty {
+                Text(a.models.map { "\(theme.plain ? $0.label : theme.modelName($0.label)) \(max(0, 100 - $0.pct))%" }
+                        .joined(separator: " · "))
+                    .font(.caption2).foregroundStyle(.secondary).monospacedDigit()
+            }
+        }
+    }
+
+    private func statusWord(_ s: String) -> String {
+        switch s {
+        case TeamDocs.FleetDoc.limited: "limited"
+        case TeamDocs.FleetDoc.dead: "dead"
+        case TeamDocs.FleetDoc.expiredLogin: "re-login"
+        case TeamDocs.FleetDoc.held: "held"
+        default: s
+        }
+    }
+
+    private func statusColor(_ s: String) -> Color {
+        switch s {
+        case TeamDocs.FleetDoc.dead: .red
+        case TeamDocs.FleetDoc.limited, TeamDocs.FleetDoc.expiredLogin: .orange
+        default: .secondary
+        }
+    }
+
+    private func compact(_ n: Double) -> String {
+        n >= 1000 ? String(format: "%.1fk", n / 1000) : String(Int(n.rounded()))
+    }
+
+    private func relative(_ at: Int?) -> String {
+        guard let at else { return "never" }
+        let f = RelativeDateTimeFormatter(); f.unitsStyle = .short
+        return f.localizedString(for: Date(timeIntervalSince1970: TimeInterval(at)), relativeTo: Date())
     }
 
     private func sessionRow(_ row: TeamDocs.SessionRow) -> some View {

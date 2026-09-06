@@ -123,9 +123,14 @@ struct FleetScreen: View {
         ForEach(model.others) { other in
             if !other.fleets.isEmpty {
                 VStack(alignment: .leading, spacing: 8) {
-                    Text(other.pairing.name)
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(.secondary)
+                    HStack(spacing: 6) {
+                        Text(other.pairing.name)
+                        if other.parked {
+                            Label("parked", systemImage: "moon.zzz")
+                        }
+                    }
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.secondary)
                     FleetStack(fleets: other.fleets)
                 }
             }

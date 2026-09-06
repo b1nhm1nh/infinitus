@@ -124,10 +124,12 @@ final class TeamReaderTests: XCTestCase {
 
         // publish (two members, same day) → fetch → read
         var s = TeamPublisher.Sources(projectsDir: try writeProjects(scratch, name: "alice"), home: "/Users/alice")
-        s.historyDays = 10_000
+        // The fixture is stamped 2026-09-04; both windows are widened so
+        // the test does not go red the day the transcript floor passes it.
+        s.historyDays = 10_000; s.transcriptDays = 10_000
         _ = try TeamPublisher(client: alice, paths: ap).publish(sources: s)
         var sb = TeamPublisher.Sources(projectsDir: try writeProjects(scratch, name: "bob"), home: "/home/bob")
-        sb.historyDays = 10_000
+        sb.historyDays = 10_000; sb.transcriptDays = 10_000
         _ = try TeamPublisher(client: bob, paths: bp).publish(sources: sb)
         _ = try leader.fetch()
         let reader = try TeamReader.load(client: leader)
@@ -137,8 +139,10 @@ final class TeamReaderTests: XCTestCase {
         XCTAssertEqual(reader.members[alice.identity.kid]?.sessions.map(\.project), ["app"])
         let items = try reader.transcript(kid: alice.identity.kid, session: "s1", client: leader)
         XCTAssertEqual(items.map(\.kind), [.user, .result])
-        XCTAssertEqual(items[0].text, "use [redacted-key] please")
-        XCTAssertEqual(items[1].text, "sure")
+        // Optional lookups: a regression fails here instead of trapping
+        // the whole test process on `items[0]`.
+        XCTAssertEqual(items.first?.text, "use [redacted-key] please")
+        XCTAssertEqual(items.dropFirst().first?.text, "sure")
         XCTAssertEqual(try reader.transcript(kid: alice.identity.kid, session: "nope", client: leader), [])
 
         // Members see nothing of each other by default (leaders audience).

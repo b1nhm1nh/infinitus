@@ -37,8 +37,10 @@ public struct ResumeCoordinator {
     public var ttyOfPid: (Int32) -> String? = ProcessFacts.tty(of:)
     public var ancestorsOf: (Int32) -> [Int32] = ProcessFacts.ancestors(of:)
     public var socketSend: (StoppedSession, String) -> Bool = { s, text in
-        PeerSocket.send(socketPath: s.socketPath, text: text, pid: s.pid,
-                        claudeDir: ClaudeSessions.configHome())
+        let claudeDir = ClaudeSessions.configHome()
+        let transcript = Transcript.locate(cwd: s.cwd, sessionId: s.sessionId, claudeDir: claudeDir)
+        return PeerSocket.send(socketPath: s.socketPath, text: text, pid: s.pid, claudeDir: claudeDir,
+                               mode: Transcript.peerModeClass(at: transcript))
     }
     public var verdict: (StoppedSession) -> Transcript.Verdict
     public var sleep: (TimeInterval) -> Void = { Thread.sleep(forTimeInterval: $0) }

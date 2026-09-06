@@ -238,6 +238,17 @@ until revival_visible; do
     i=$((i + 1)); [ "$i" -lt 10 ] || fail "revival panel not shown during all-dead"
     sleep 1
 done
+# The reviver band (#227) is a CA breath on the pop-out: once the panel
+# is up and the re-sort has settled, the all-dead state must idle like
+# any other — a per-frame regression shows up here, not only in the
+# long idle gate at the end.
+sleep 4
+RA="$("$CTL" perf | json "d['cpuSeconds']")"
+sleep 6
+RB="$("$CTL" perf | json "d['cpuSeconds']")"
+RPCT="$(python3 -c "print(round(($RB-$RA)/6*100,1))")"
+echo "all-dead CPU with the reviver band: ${RPCT}%"
+python3 -c "import sys; sys.exit(0 if $RPCT <= $IDLE_BUDGET_PCT else 1)" || fail "all-dead CPU ${RPCT}% over budget ${IDLE_BUDGET_PCT}%"
 "$INFINITUS_CSWAP" simulate off >/dev/null
 "$CTL" refresh | expect "d[0].get('nextCandidate') is not None" || fail "fleet didn't recover after simulate off"
 sleep 1
@@ -342,6 +353,17 @@ KID="$(INFINITUS_TEAM_DIR="$CLI_TEAM" "$CTL" team status | json "d['kid']")"
 INFINITUS_TEAM_DIR="$CLI_TEAM" "$CTL" team fetch >/dev/null || fail "cli team fetch"
 INFINITUS_TEAM_DIR="$CLI_TEAM" "$CTL" team publish --projects "$SOCKDIR/fixture/projects" \
     | expect "d['transcriptChunks']>=1" || fail "cli team publish"
+# "Nobody" (spec §7): the appended line WOULD chunk — the point of the
+# assertion is that it does not while transcripts are off. Do not drop it.
+INFINITUS_TEAM_DIR="$CLI_TEAM" "$CTL" team share transcripts off \
+    | expect "d['byKind']['transcripts']=='off'" || fail "team share transcripts off"
+printf '%s\n' \
+    "{\"type\":\"assistant\",\"timestamp\":\"$NOW\",\"message\":{\"id\":\"e2e-2\",\"model\":\"claude-opus-5\",\"usage\":{\"input_tokens\":3,\"output_tokens\":1},\"content\":[{\"type\":\"text\",\"text\":\"more\"}]}}" \
+    >> "$SOCKDIR/fixture/projects/-tmp-e2e/e2e1.jsonl"
+INFINITUS_TEAM_DIR="$CLI_TEAM" "$CTL" team publish --projects "$SOCKDIR/fixture/projects" \
+    | expect "d['transcriptChunks']==0" || fail "transcripts off must publish no chunks"
+INFINITUS_TEAM_DIR="$CLI_TEAM" "$CTL" team share transcripts leaders \
+    | expect "d['byKind']['transcripts']=='leaders'" || fail "restore the transcripts audience"
 "$CTL" team-fetch | expect "any(m['name']=='Bo' and 'stats' in m['kinds'] and 'transcripts' in m['kinds'] for m in d['members'])" || fail "the member's files are not readable"
 "$CTL" team-publish | expect "'published' in d" || fail "team-publish"
 "$CTL" team-status | expect "d.get('lastPublish') is not None and d.get('lastError') is None" || fail "loop state after publish"

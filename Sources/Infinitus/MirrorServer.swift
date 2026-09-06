@@ -291,12 +291,15 @@ final class MirrorTeamBox: @unchecked Sendable {
 
     /// Where a LAN request lands: pending under the team, then the
     /// requests branch — a git push, so callers run it off the network
-    /// queue.
+    /// queue. An invitation (spec §6.4) is only a file write: it stays
+    /// sealed until the Team pane's Accept opens it.
     var endpoint: TeamNearby.Endpoint {
-        TeamNearby.Endpoint(local: current) { request in
+        TeamNearby.Endpoint(local: current, store: { request in
             let paths = TeamPaths.standard()
             return try TeamNearby.Store.save(request, paths: paths, secrets: FileSecrets(dir: paths.secretsDir))
-        }
+        }, storeInvite: { invite in
+            try TeamNearby.Store.saveInvite(invite, paths: TeamPaths.standard())
+        })
     }
 }
 
