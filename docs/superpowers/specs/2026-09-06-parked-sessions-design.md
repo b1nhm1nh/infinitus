@@ -188,7 +188,7 @@ InfinitusCore (`swift test`):
   `requestId`; replace; flush order and state machine — `inFlight` is on
   disk before `deliver` runs (deliver closure reads the file), delivered
   removes, transport stops the pass and keeps the rest queued, refused
-  continues, `resolvePid` nil ends the item; a leftover `inFlight` item
+  continues, `.ended` ends the item; a leftover `inFlight` item
   flushes again with the same id.
 - `InputDedupTests`: second sight false, 65th id evicts the first, pids
   isolated.
