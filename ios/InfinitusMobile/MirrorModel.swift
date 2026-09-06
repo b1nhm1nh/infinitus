@@ -145,6 +145,7 @@ final class MirrorModel: ObservableObject, FleetModel {
         localIntroTitle = defaults.string(forKey: "intro_title") ?? "zoom"
         localIntroSpeed = defaults.object(forKey: "intro_speed") as? Double ?? 1.0
         macPopupView = defaults.object(forKey: "mac_popup_view") as? Bool ?? false
+        reachableAgain = { Task { await OutboxDelivery.flush() } }
     }
 
     /// Pairs with a Mac from a scanned QR or an `infinitus://pair?…` deep
@@ -285,6 +286,9 @@ final class MirrorModel: ObservableObject, FleetModel {
             AppIcons.follow(themeID: rowTheme.id)
             sessionProgress.apply(snapshot.progressByPid ?? [:], tokenRate: snapshot.tokenRate)
             let firstLoad = reconcile(engineFleets)
+            // The app launched with the Mac reachable and may still hold
+            // outbox items from a previous, unparked session.
+            if firstLoad, !fromCache { reachableAgain?() }
             error = nil
             AwsLoginAlerts.shared.sync(snapshot.awsLogins ?? [])
             if let fleet = fleets.first(where: { $0.provider == .claude }) ?? fleets.first {

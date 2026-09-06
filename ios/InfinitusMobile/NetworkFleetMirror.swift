@@ -95,8 +95,9 @@ actor NetworkFleetMirror: FleetMirror {
     private let onLastGood: (@Sendable (String) -> Void)?
     /// #168: disk cache for the primary Mac. `ParkedCache` keeps an
     /// in-memory "last saved" marker, so this actor holds ONE instance;
-    /// other Macs stay read-only in phase 1 (`nil`).
-    private let parked: ParkedCache?
+    /// other Macs stay read-only in phase 1 (`nil`). `var` so
+    /// `forgetCached()` can re-resolve it against a new pairing token.
+    private var parked: ParkedCache?
 
     init() {
         storage = .defaults
@@ -125,6 +126,9 @@ actor NetworkFleetMirror: FleetMirror {
     func forgetCached() {
         cached = nil
         parked?.clear()
+        // The primary just changed underneath this instance — `parkedKey()`
+        // now hashes a different token, so the cache must move with it.
+        parked = Self.parkedCache
         lastServedFromCache = false
         statusText = "looking for a Mac on this Wi-Fi…"
     }
@@ -437,6 +441,13 @@ actor NetworkFleetMirror: FleetMirror {
     static let attachmentInputTimeout: TimeInterval = 60
 
     func sessionInput(pid: Int32, request: SessionInput.Request) async throws -> SessionInput.Reply {
+        // #168: a retried delivery needs its own id for the Mac's dedup —
+        // give every hand-typed send one too, so a timeout-then-retry from
+        // the composer is never mistaken for the same request twice.
+        let request = request.requestId == nil
+            ? SessionInput.Request(kind: request.kind, text: request.text, attachments: request.attachments,
+                                   requestId: UUID().uuidString, queuedAt: request.queuedAt, sessionId: request.sessionId)
+            : request
         let timeout = (request.attachments?.isEmpty == false) ? Self.attachmentInputTimeout : Self.inputTimeout
         let token = pairToken()
         let path = MirrorTransport.sessionInputPath(pid: pid)

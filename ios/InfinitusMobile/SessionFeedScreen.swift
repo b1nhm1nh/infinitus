@@ -48,6 +48,9 @@ struct SessionFeedScreen: View {
     /// (user 2026-09-04 "sending … not responsive": the draft cleared and
     /// nothing else moved until the session read its inbox).
     @State private var pendingSent: [PendingSent] = []
+    /// #168: this session's queued outbox item, if a send couldn't reach
+    /// the Mac and is waiting for it to come back.
+    @State private var queued: OutboxItem?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     // MARK: pending prompt (critique 2026-09-04 P0: a permission was one
     // unguarded tap on a prominent button that auto-scroll could move)
@@ -85,6 +88,7 @@ struct SessionFeedScreen: View {
         let text: String
         let images: [UIImage]
         let files: [String]
+        var queued = false
         let at = Date()
     }
 
@@ -225,12 +229,29 @@ struct SessionFeedScreen: View {
             VStack(spacing: 0) {
                 if let item = pendingPrompt { promptCard(item) }
                 if !screenshots.found.isEmpty { screenshotOffer }
+                if let item = queued {
+                    QueuedCard(item: item, onEdit: {
+                        draft = item.request.text
+                        attachments = (item.request.attachments ?? []).map {
+                            PendingAttachment(name: $0.name, mime: $0.mime, data: $0.data,
+                                             thumbnail: $0.mime.hasPrefix("image/") ? UIImage(data: $0.data) : nil)
+                        }
+                        OutboxDelivery.outbox.remove(id: item.id)
+                        pendingSent.removeAll(where: \.queued)
+                        reloadQueued()
+                    }, onDiscard: {
+                        OutboxDelivery.outbox.remove(id: item.id)
+                        pendingSent.removeAll(where: \.queued)
+                        reloadQueued()
+                    })
+                }
                 composer
             }
         }
         .onAppear {
             screenshots.check()
             takeStagedCapture()
+            reloadQueued()
             // Dev seam like `INFINITUS_FEED_PID`: a headless simulator
             // capture can't tap the camera button.
             if ProcessInfo.processInfo.environment["INFINITUS_STAGE_CAPTURE"] != nil {
@@ -276,6 +297,9 @@ struct SessionFeedScreen: View {
                 let before = feed?.stamp
                 let ok = await load(longPoll: before != nil)
                 if Task.isCancelled { return }
+                // A background flush (the outbox is a separate actor)
+                // can clear this session's queued item between polls.
+                reloadQueued()
                 let changed = before != nil && feed?.stamp != before
                 let floor: TimeInterval = !ok ? 3 : changed ? 0.5 : 2
                 let elapsed = Date().timeIntervalSince(started)
@@ -323,8 +347,12 @@ struct SessionFeedScreen: View {
                         .font(.caption).foregroundStyle(.secondary)
                         .lineLimit(1).truncationMode(.middle)
                 }
-                Text("Sent · shows here once the session reads it")
-                    .font(.caption2).foregroundStyle(.secondary)
+                if pending.queued {
+                    Text("queued").font(.caption2).foregroundStyle(.secondary)
+                } else {
+                    Text("Sent · shows here once the session reads it")
+                        .font(.caption2).foregroundStyle(.secondary)
+                }
             }
             .padding(10)
             .background(Color.accentColor.opacity(0.10), in: RoundedRectangle(cornerRadius: 14))
@@ -347,6 +375,13 @@ struct SessionFeedScreen: View {
                 return pending.text.isEmpty || item.text.contains(pending.text)
             }
         }
+    }
+
+    /// This session's outbox item, if any — re-read after every send and
+    /// on appear, since the outbox lives on disk and a flush can clear it
+    /// from under this screen.
+    private func reloadQueued() {
+        queued = OutboxDelivery.outbox.items(macKey: OutboxDelivery.macKey).first { $0.pid == Int32(session.pid) }
     }
 
     /// The account behind this session: the summary's account and the
@@ -502,6 +537,11 @@ struct SessionFeedScreen: View {
             return true
         } catch {
             if Task.isCancelled { return false }
+            if feed == nil, let parked = await NetworkFleetMirror.shared.parkedTail(pid: Int32(session.pid)) {
+                feed = parked
+                errorText = "parked — showing the last transcript"
+                return false
+            }
             errorText = feed == nil ? "couldn't reach the Mac: \(error.localizedDescription)"
                 : "offline — showing the last feed"
             return false
@@ -1000,7 +1040,23 @@ struct SessionFeedScreen: View {
                         ?? Self.describe(reply.outcome)
                 }
             } onFailure: {
-                messageResult = "couldn't reach the Mac"
+                let request = SessionInput.Request(kind: .message, text: text,
+                                                   attachments: picked.isEmpty ? nil : picked,
+                                                   sessionId: feed?.sessionId)
+                if (try? OutboxDelivery.outbox.enqueue(
+                        macKey: OutboxDelivery.macKey, pid: Int32(session.pid), sessionId: feed?.sessionId,
+                        sessionName: feed?.name ?? repoName(session.cwd), request: request)) != nil {
+                    pendingSent.append(PendingSent(text: text, images: attachments.compactMap(\.thumbnail),
+                                                   files: attachments.filter { $0.thumbnail == nil }.map(\.name),
+                                                   queued: true))
+                    draft = ""; attachments = []; messageResult = nil
+                    dictatedOriginal = nil
+                    dictatedLocale = nil
+                    dictationNote = nil
+                    reloadQueued()
+                } else {
+                    messageResult = "couldn't reach the Mac"
+                }
             } finished: {
                 sendingMessage = false
             }
@@ -1272,5 +1328,39 @@ struct SessionFeedScreen: View {
 
     private func repoName(_ path: String) -> String {
         (path as NSString).lastPathComponent
+    }
+}
+
+/// #168: the message a `sendMessage` couldn't reach the Mac with, waiting
+/// on disk for `OutboxDelivery.flush()` — edit it back into the composer,
+/// or give up on it.
+private struct QueuedCard: View {
+    let item: OutboxItem
+    let onEdit: () -> Void
+    let onDiscard: () -> Void
+
+    private var status: String {
+        switch item.state {
+        case .queued, .inFlight:
+            let tries = item.attempts >= 3 ? " · \(item.attempts) tries" : ""
+            return "queued for when the Mac is back · \(item.updatedAt.formatted(.relative(presentation: .named)))\(tries)"
+        case .refused(let why): return "the Mac refused it — \(why)"
+        case .ended: return "that session has ended"
+        }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Label(status, systemImage: "tray.and.arrow.up").font(.caption).foregroundStyle(.secondary)
+            Text(item.request.text).font(.subheadline).lineLimit(3)
+            HStack {
+                if case .ended = item.state {} else { Button("Edit", action: onEdit) }
+                Button("Discard", role: .destructive, action: onDiscard)
+            }
+            .font(.caption)
+        }
+        .padding(10)
+        .background(Color.secondary.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
+        .padding(.horizontal)
     }
 }
