@@ -25,6 +25,12 @@ struct SettingsForm: View {
     /// the endpoint list rather than replacing it (#9 pair once, every
     /// route).
     @State private var newEndpoint = ""
+    /// The Form's own edit mode. EditButton toggles the whole
+    /// NavigationStack's, so the Addresses header has to keep showing
+    /// it while editing is on: deleting the last address would
+    /// otherwise hide the Done button and leave every row in the Form
+    /// unresponsive with no way back out.
+    @Environment(\.editMode) private var editMode
     @State private var paired = false
     /// The other Mac a "Make primary" tap is confirming (#144 phase 1).
     @State private var promoting: MirrorModel.OtherMac?
@@ -38,7 +44,10 @@ struct SettingsForm: View {
             // screen is a theme picker").
             connectionSection
             addressesSection
-            if isPaired { otherMacsSection }
+            // A token cleared out of the field below must not hide the
+            // Macs it can't forget: the other Macs are stored on their
+            // own, so the group stays as long as one of them is there.
+            if isPaired || !model.others.isEmpty { otherMacsSection }
             appearanceSection
             if !model.followMac {
                 themeSection
@@ -154,7 +163,7 @@ struct SettingsForm: View {
             HStack {
                 Text("Addresses")
                 Spacer()
-                if !model.manualEndpoints.isEmpty {
+                if !model.manualEndpoints.isEmpty || editMode?.wrappedValue.isEditing == true {
                     EditButton()
                         .font(.footnote.weight(.semibold))
                         .textCase(nil)
