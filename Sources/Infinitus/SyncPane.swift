@@ -37,6 +37,9 @@ struct SyncPane: View {
     /// Regenerating un-pairs every phone, so it asks (the alert itself
     /// lands with the crash-report pass; the button sets this).
     @State private var confirmRegenerate = false
+    /// The crash report whose Delete is being confirmed. Lives here, not
+    /// on CrashReportsSection, so the dialog can sit on the Form.
+    @State private var confirmCrashDelete: CrashReport?
     private let reprobe = Timer.publish(every: 3, on: .main, in: .common).autoconnect()
 
     init(sync: SettingsSyncModel, app: AppModel) {
@@ -158,7 +161,7 @@ struct SyncPane: View {
                 .onAppear { probeTailscale(); namedHost = app.mirrorNamedTunnelHost }
                 .onReceive(reprobe) { _ in probeTailscale() }
             }
-            CrashReportsSection(app: app)
+            CrashReportsSection(app: app, confirmDelete: $confirmCrashDelete)
             Section {
                 liveActivityRows
             } header: {
@@ -203,6 +206,28 @@ struct SyncPane: View {
             }
         }
         .formStyle(.grouped)
+        .alert("Regenerate the pairing token?", isPresented: $confirmRegenerate) {
+            Button("Regenerate", role: .destructive) { app.regeneratePairToken() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Every phone paired with this Mac stops working until it scans the new "
+                 + "code. Nothing else changes \u{2014} this Mac keeps serving, and one "
+                 + "scan pairs a phone again.")
+        }
+        .confirmationDialog("Delete this crash report?",
+                            isPresented: Binding(get: { confirmCrashDelete != nil },
+                                                 set: { if !$0 { confirmCrashDelete = nil } }),
+                            presenting: confirmCrashDelete) { report in
+            Button("Delete", role: .destructive) {
+                app.removeCrash(report.id)
+                confirmCrashDelete = nil
+            }
+            Button("Cancel", role: .cancel) { confirmCrashDelete = nil }
+        } message: { report in
+            Text("The report from \(crashWhen(report)) is gone from this Mac for good. The "
+                 + "crash it describes has already happened \u{2014} deleting it changes "
+                 + "nothing else.")
+        }
     }
 
     // MARK: - Walkthrough
@@ -558,14 +583,20 @@ struct SyncPane: View {
     }
 }
 
+/// How a crash report is named in a sentence: the moment it happened.
+private func crashWhen(_ report: CrashReport) -> String {
+    report.at.formatted(date: .abbreviated, time: .shortened)
+}
+
 /// Crashes of the phone app (MetricKit, over the mirror) and of this
 /// Mac app (its own diagnostic reports): built-in, nothing leaves the
 /// machine. Each can go into a session's chat for triage.
 private struct CrashReportsSection: View {
     @ObservedObject var app: AppModel
+    @Binding var confirmDelete: CrashReport?
 
     var body: some View {
-        Section("Crash reports") {
+        Section {
             if app.crashReports.isEmpty {
                 Text("None. The phone reports its own crashes here on its next launch; "
                      + "this Mac's land here after a relaunch.")
@@ -580,7 +611,7 @@ private struct CrashReportsSection: View {
                     }
                     Spacer()
                     let sessions = app.liveSessions?.sessions ?? []
-                    Menu("Send to session") {
+                    Menu("Send to Session") {
                         if sessions.isEmpty { Text("No live sessions") }
                         ForEach(sessions, id: \.pid) { s in
                             Button("\(app.sessionProgress.byPid[s.pid]?.name ?? URL(fileURLWithPath: s.cwd).lastPathComponent) · \(s.status)") {
@@ -594,11 +625,22 @@ private struct CrashReportsSection: View {
                         NSPasteboard.general.setString(report.transcript, forType: .string)
                     } label: { Image(systemName: "doc.on.doc") }
                     .buttonStyle(.borderless)
-                    .help("Copy the report")
-                    Button(role: .destructive) { app.removeCrash(report.id) } label: { Image(systemName: "trash") }
+                    .accessibilityLabel("Copy the report from \(crashWhen(report))")
+                    .help("Copy the report.")
+                    Button(role: .destructive) { confirmDelete = report } label: {
+                        Image(systemName: "trash")
+                    }
                     .buttonStyle(.borderless)
+                    .accessibilityLabel("Delete the report from \(crashWhen(report))")
+                    .help("Delete this report from this Mac.")
                 }
             }
+        } header: {
+            Text("Crash reports")
+        } footer: {
+            Text("Nothing leaves this Mac. Send one into a live session to have it looked "
+                 + "at, or copy it to read yourself.")
+                .font(.caption2).foregroundStyle(.secondary)
         }
     }
 }
