@@ -555,6 +555,10 @@ final class AppModel: ObservableObject {
     @Published var pushAwsLogin: Bool { didSet { defaults.set(pushAwsLogin, forKey: "push_aws_login") } }
     /// "<name> is back" (and "all accounts are back — reset early") pushes (2026-09-05).
     @Published var pushRevived: Bool { didSet { defaults.set(pushRevived, forKey: "push_revived") } }
+    /// Minutes before a reset that the row's countdown goes live and the
+    /// phone's reset alarm fires (#227); mirrored to the phone in FleetPrefs.
+    @Published var reviveLeadMinutes: Int { didSet { defaults.set(reviveLeadMinutes, forKey: "revive_lead_minutes") } }
+    var reviveLead: TimeInterval { TimeInterval(reviveLeadMinutes * 60) }
     /// Settings › Sync "This Mac's name" (#99); empty follows the computer name.
     @Published var machineNameOverride: String {
         didSet {
@@ -911,6 +915,7 @@ final class AppModel: ObservableObject {
         pushWaiting = defaults.object(forKey: "push_waiting") as? Bool ?? true
         pushAwsLogin = defaults.object(forKey: "push_aws_login") as? Bool ?? true
         pushRevived = defaults.object(forKey: "push_revived") as? Bool ?? true
+        reviveLeadMinutes = defaults.object(forKey: "revive_lead_minutes") as? Int ?? 10
         machineNameOverride = defaults.string(forKey: MachineName.overrideKey) ?? ""
         sessionHost = defaults.string(forKey: "session_host") ?? "auto"
         checkpointsEnabled = defaults.object(forKey: "checkpoints_enabled") as? Bool ?? true
@@ -1032,6 +1037,7 @@ final class AppModel: ObservableObject {
         pushWaiting = defaults.object(forKey: "push_waiting") as? Bool ?? true
         pushAwsLogin = defaults.object(forKey: "push_aws_login") as? Bool ?? true
         pushRevived = defaults.object(forKey: "push_revived") as? Bool ?? true
+        reviveLeadMinutes = defaults.object(forKey: "revive_lead_minutes") as? Int ?? 10
         machineNameOverride = defaults.string(forKey: MachineName.overrideKey) ?? ""
         sessionHost = defaults.string(forKey: "session_host") ?? "auto"
         checkpointsEnabled = defaults.object(forKey: "checkpoints_enabled") as? Bool ?? true
@@ -2201,7 +2207,8 @@ final class AppModel: ObservableObject {
                 popupLayout: popupLayout, burnStyle: burnStyle,
                 introStyle: introStyle, introTitle: introTitle,
                 introSpeed: introSpeed, customThemes: customThemes,
-                sortByHeadroom: sortByHeadroom, popupTextSize: popupTextSize)
+                sortByHeadroom: sortByHeadroom, popupTextSize: popupTextSize,
+                reviveLeadMinutes: reviveLeadMinutes)
             // Footer-chip state (#9 phase D2), captured here for the
             // same main-actor reason as the prefs above.
             let serviceStatus = ServiceStatusSummary(
