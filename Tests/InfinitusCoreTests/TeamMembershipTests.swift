@@ -70,7 +70,10 @@ final class TeamMembershipTests: XCTestCase {
                                 leaders: [TeamRoster.Member(keys: l.keys, name: "L", since: 1, founder: true)],
                                 removed: [TeamRoster.Removed(kid: gone.kid, at: 500, keys: gone.keys)], rev: 2)
         XCTAssertEqual(roster.keys(for: gone.kid, at: 499), gone.keys)
-        XCTAssertNil(roster.keys(for: gone.kid, at: 500))
+        // Spec §3/§10: rejected only when sealed AFTER the removal. The
+        // removal instant itself is still theirs — a member removed at
+        // 500 was a member at 500.
+        XCTAssertEqual(roster.keys(for: gone.kid, at: 500), gone.keys)
         XCTAssertNil(roster.keys(for: gone.kid, at: 501))
         XCTAssertEqual(roster.keys(for: l.kid, at: 999_999), l.keys)
         XCTAssertNil(roster.keys(for: "stranger", at: 0))
@@ -174,6 +177,22 @@ final class TeamMembershipTests: XCTestCase {
         XCTAssertThrowsError(try member.publish(kind: "now", path: "now.json", plaintext: Data(), audience: .leaders)) {
             XCTAssertEqual($0 as? TeamClient.ClientError, .notInTeam)
         }
+    }
+
+    /// #55: the boundary itself. Two envelopes one second apart around
+    /// the removal — the earlier one (sealed AT the removal instant)
+    /// stays readable, the later one does not.
+    func testTheEnvelopeSealedAtTheRemovalInstantIsStillReadable() throws {
+        let (leader, member, _) = try team()
+        let at = try member.publish(kind: TeamKinds.stats, path: "days/2026-09-01.json",
+                                    plaintext: Data("{\"schema\":1}".utf8), audience: .leaders, now: 1_040)
+        let after = try member.publish(kind: TeamKinds.stats, path: "days/2026-09-02.json",
+                                       plaintext: Data("{\"schema\":1}".utf8), audience: .leaders, now: 1_041)
+        _ = try leader.fetch()
+        try leader.remove(kid: member.identity.kid, now: 1_040)
+        XCTAssertEqual(try leader.readable().map(\.path), [at])
+        XCTAssertEqual(try leader.read(at).1, Data("{\"schema\":1}".utf8))
+        XCTAssertThrowsError(try leader.read(after)) { XCTAssertEqual($0 as? Envelope.EnvelopeError, .unknownSender) }
     }
 
     /// #55 (b): the path is outside the signature, so a valid envelope

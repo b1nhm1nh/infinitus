@@ -280,8 +280,9 @@ public final class TeamClient {
     }
 
     /// Spec §6.5: the kid moves to `removed` with its keys and the
-    /// removal instant; envelopes it sealed before `now` stay readable,
-    /// later ones are ignored, and its next `fetch` ends its membership.
+    /// removal instant; envelopes it sealed at or before `now` stay
+    /// readable, later ones are ignored, and its next `fetch` ends its
+    /// membership.
     public func remove(kid: String, now: Int = Int(Date().timeIntervalSince1970)) throws {
         try editRoster { current in
             guard let keys = current.keys(for: kid) else { throw ClientError.unknownMember }
