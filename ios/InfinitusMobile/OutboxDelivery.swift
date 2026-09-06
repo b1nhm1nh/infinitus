@@ -29,9 +29,11 @@ enum OutboxDelivery {
         guard canRun else { return }
         defer { Task { @MainActor in flushing = false } }
 
-        // Names by id, captured before the flush — a delivered item's
-        // file is gone by the time `results` comes back.
-        let names = Dictionary(uniqueKeysWithValues: outbox.items(macKey: macKey).map { ($0.id, $0.sessionName) })
+        // Names and text by id, captured before the flush — a delivered
+        // item's file is gone by the time `results` comes back.
+        let items = outbox.items(macKey: macKey)
+        let names = Dictionary(uniqueKeysWithValues: items.map { ($0.id, $0.sessionName) })
+        let texts = Dictionary(uniqueKeysWithValues: items.map { ($0.id, $0.request.text) })
         let results = await outbox.flush(macKey: macKey, deliver: deliver)
         let delivered = results.filter { $0.delivery == .delivered }
         guard !delivered.isEmpty else { return }
@@ -39,8 +41,8 @@ enum OutboxDelivery {
         if !active {
             for result in delivered {
                 let content = UNMutableNotificationContent()
-                content.title = "Delivered"
-                content.body = names[result.id].map { "Delivered to \($0)" } ?? "Your queued message reached the session."
+                content.title = names[result.id].map { "Delivered to \($0)" } ?? "Delivered"
+                content.body = texts[result.id].map { String($0.prefix(80)) } ?? "Your queued message reached the session."
                 try? await UNUserNotificationCenter.current().add(
                     UNNotificationRequest(identifier: "outbox-\(result.id.uuidString)", content: content, trigger: nil))
             }

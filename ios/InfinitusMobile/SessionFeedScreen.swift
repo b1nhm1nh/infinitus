@@ -1019,9 +1019,15 @@ struct SessionFeedScreen: View {
         let picked = attachments.map {
             SessionInput.Attachment(name: $0.name, mime: $0.mime, data: $0.data)
         }
+        // One id for both the live send and, on a transport failure, the
+        // outbox item — a delivery that reached the Mac but timed out on
+        // the reply must not be queued under a NEW id and delivered twice
+        // (#168 fix pass).
+        let request = SessionInput.Request(kind: .message, text: text,
+                                           attachments: picked.isEmpty ? nil : picked,
+                                           requestId: UUID().uuidString, sessionId: feed?.sessionId)
         Task {
-            await send(.init(kind: .message, text: text,
-                             attachments: picked.isEmpty ? nil : picked)) { reply in
+            await send(request) { reply in
                 if reply.outcome == "delivered" {
                     pendingSent.append(PendingSent(
                         text: text, images: attachments.compactMap(\.thumbnail),
@@ -1036,8 +1042,10 @@ struct SessionFeedScreen: View {
                     // The Mac says why ("attachment too large", "unsupported
                     // attachment type"…) — show it, a bare "wasn't valid"
                     // sent the user guessing (2026-09-03).
-                    messageResult = reply.detail.map { "\(Self.describe(reply.outcome)) — \($0)" }
-                        ?? Self.describe(reply.outcome)
+                    messageResult = reply.outcome == "rejected" && reply.detail == "session ended"
+                        ? "that session has ended"
+                        : reply.detail.map { "\(Self.describe(reply.outcome)) — \($0)" }
+                            ?? Self.describe(reply.outcome)
                 }
             } onFailure: { error in
                 // An HTTP error is the Mac answering (a wrong pairing
@@ -1049,9 +1057,6 @@ struct SessionFeedScreen: View {
                         : "the Mac refused it (HTTP \(code))"
                     return
                 }
-                let request = SessionInput.Request(kind: .message, text: text,
-                                                   attachments: picked.isEmpty ? nil : picked,
-                                                   sessionId: feed?.sessionId)
                 if (try? OutboxDelivery.outbox.enqueue(
                         macKey: OutboxDelivery.macKey, pid: Int32(session.pid), sessionId: feed?.sessionId,
                         sessionName: feed?.name ?? repoName(session.cwd), request: request)) != nil {
@@ -1080,7 +1085,9 @@ struct SessionFeedScreen: View {
         Task {
             await send(request) { reply in
                 if reply.outcome == "delivered" { deliveredTick += 1; selectedOption = nil }
-                actionResult = reply.outcome == "delivered" ? nil : Self.describe(reply.outcome)
+                actionResult = reply.outcome == "delivered" ? nil
+                    : reply.outcome == "rejected" && reply.detail == "session ended"
+                        ? "that session has ended" : Self.describe(reply.outcome)
             } onFailure: { _ in
                 actionResult = "couldn't reach the Mac"
             } finished: {

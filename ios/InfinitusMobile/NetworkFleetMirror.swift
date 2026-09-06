@@ -362,11 +362,13 @@ actor NetworkFleetMirror: FleetMirror {
             let (data, _) = try await fetch(endpoint, path: path, hostHeader: manual.host,
                                             useTLS: manual.useTLS, token: token,
                                             timeout: wait + 10)
-            return try Self.decodeFeed(data)
+            let feed = try Self.decodeFeed(data)
+            try? parked?.saveTail(feed, pid: pid)
+            return feed
         }
         if let data = try await fetchFromStored(path: path, token: token, timeout: Self.candidateTimeout) {
             let feed = try Self.decodeFeed(data)
-            if since == nil { try? parked?.saveTail(feed, pid: pid) }
+            try? parked?.saveTail(feed, pid: pid)
             return feed
         }
         startBrowsing()
@@ -374,7 +376,7 @@ actor NetworkFleetMirror: FleetMirror {
         let (data, _) = try await fetch(discovered, path: path, hostHeader: "infinitus",
                                         useTLS: false, token: token, timeout: Self.candidateTimeout)
         let feed = try Self.decodeFeed(data)
-        if since == nil { try? parked?.saveTail(feed, pid: pid) }
+        try? parked?.saveTail(feed, pid: pid)
         return feed
     }
 
