@@ -42,6 +42,9 @@ struct TeamPane: View {
             } message: {
                 Text("They stop reading anything published after now and see \"Removed\" on their next fetch. What they already fetched stays theirs.")
             }
+            .sheet(isPresented: $showRecovery) { TeamRecoveryKeySheet(team: team) }
+            .sheet(isPresented: $showExport) { TeamExportSheet(team: team) }
+            .sheet(isPresented: $showImport) { TeamImportSheet(team: team) }
         }
     }
 
@@ -53,6 +56,9 @@ struct TeamPane: View {
     @State private var token = ""
     @State private var joinCode = ""
     @State private var joinName = NSFullUserName()
+    @State private var showRecovery = false
+    @State private var showExport = false
+    @State private var showImport = false
 
     private var gateOpen: Bool { if case .allowed = team.gate() { return true } else { return false } }
 
@@ -92,7 +98,41 @@ struct TeamPane: View {
                     LabeledContent("Your identity") { Text(kid).font(.caption.monospaced()).textSelection(.enabled) }
                 }
             }
+            Section("Nearby teams") {
+                if team.nearby.isEmpty {
+                    Text(team.scanning ? "Looking…" : "No discoverable Macs on this network.").font(.caption).foregroundStyle(.secondary)
+                }
+                ForEach(team.nearby.filter { $0.role == "leader" }) { peer in
+                    HStack {
+                        VStack(alignment: .leading) { Text(peer.name).bold(); Text("leads a team · \(peer.host)").font(.caption).foregroundStyle(.secondary) }
+                        Spacer()
+                        Button("Request to join") { Task { await team.requestNearby(peer, name: joinName) } }.disabled(!gateOpen || joinName.isEmpty)
+                    }
+                }
+                HStack {
+                    Button(team.scanning ? "Scanning…" : "Scan") { Task { await team.scanNearby() } }.disabled(team.scanning)
+                    Toggle("Discoverable", isOn: $team.discoverable).toggleStyle(.switch)
+                }
+                Text("Discoverable Macs show their name, kid and team on this network (nothing secret). Leaders see your request in Requests.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            .task { await team.scanNearby() }
+            Section("Identity") {
+                identityButtons
+                Text("A recovery key or an export file moves this Mac's identity to another Mac — import one before joining, not after.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
         }
+    }
+
+    /// Spec §2.1: recovery and export need an identity to exist; import
+    /// replaces whatever is there.
+    @ViewBuilder private var identityButtons: some View {
+        if team.kid != nil {
+            Button("Show recovery key…") { showRecovery = true }
+            Button("Export identity…") { team.clearError(); showExport = true }
+        }
+        Button("Import identity…") { team.clearError(); showImport = true }
     }
 
     // MARK: in a team
@@ -132,11 +172,33 @@ struct TeamPane: View {
                     }
                 }
             }
+            if snap.role == "leader" {
+                Section("Nearby") {
+                    ForEach(team.pendingNearby, id: \.doc.keys.kid) { r in
+                        HStack {
+                            VStack(alignment: .leading) { Text(r.doc.name).bold(); Text("asked over the network · \(r.doc.platform) · \(relative(r.doc.at))").font(.caption).foregroundStyle(.secondary) }
+                            Spacer()
+                            Button("File for approval") { Task { await team.pullNearbyRequest(r) } }
+                        }
+                    }
+                    ForEach(team.nearby) { peer in
+                        LabeledContent(peer.name) { Text("\(peer.role) · \(peer.team == snap.id ? "in this team" : "not in this team")").font(.caption).foregroundStyle(.secondary) }
+                    }
+                    HStack {
+                        Button(team.scanning ? "Scanning…" : "Scan") { Task { await team.scanNearby() } }.disabled(team.scanning)
+                        Toggle("Discoverable", isOn: $team.discoverable).toggleStyle(.switch)
+                    }
+                    Text("Members request to join from their Team pane; leader-initiated invites over the network come later.").font(.caption).foregroundStyle(.secondary)
+                }
+                .task { await team.scanNearby() }
+            }
             Section("Members") {
                 ForEach(snap.members) { m in memberRow(m, leader: snap.role == "leader") }
                 if snap.members.isEmpty { Text("No roster yet.").foregroundStyle(.secondary) }
             }
+            if snap.role == "leader" { TeamInsightsSection(team: team) } else { TeamMembersViewSection(team: team) }
             if snap.role == "leader" { inviteSection }
+            if snap.role == "leader", let policy = team.policy { policySection(policy) }
             sharingSection(snap)
             exclusionsSection
             Section("Privacy") {
@@ -145,6 +207,7 @@ struct TeamPane: View {
                 if let kid = team.kid {
                     LabeledContent("Your identity") { Text(kid).font(.caption.monospaced()).textSelection(.enabled) }
                 }
+                identityButtons
                 Button("Leave team…", role: .destructive) { leaveConfirm = true }
                     .confirmationDialog("Leave \(snap.name)?", isPresented: $leaveConfirm) {
                         Button("Leave", role: .destructive) { Task { await team.leave() } }
@@ -195,8 +258,8 @@ struct TeamPane: View {
                     Text("1 day").tag(1); Text("7 days").tag(7); Text("30 days").tag(30); Text("1 year").tag(365)
                 }
                 .frame(maxWidth: 200)
-                Button("Invite link") { Task { await team.mintInvite(days: codeDays) } }
-                Button("Team code") { Task { await team.mintCode(days: codeDays) } }
+                Button("Invite link (approved automatically)") { Task { await team.mintInvite(days: codeDays) } }
+                Button("Team code (needs Approve)") { Task { await team.mintCode(days: codeDays) } }
             }
             Text("An invite link approves the one request it was minted for by itself when the switch below is on; a team code always needs your Approve. Both carry the store credential, so anyone holding one can write to the store until you rotate it — share as widely as you'd share the repo.")
                 .font(.caption).foregroundStyle(.secondary)
@@ -216,6 +279,17 @@ struct TeamPane: View {
                     }
                 }
             }
+        }
+    }
+
+    private func policySection(_ policy: TeamRoster.Policy) -> some View {
+        Section("Policy") {
+            Picker("Requests", selection: Binding(get: { policy.requests }, set: { new in Task { await team.setPolicy(requests: new, membersSeeEachOther: policy.membersSeeEachOther) } })) {
+                Text("By code or invite").tag("code")
+                Text("Closed").tag("off")
+            }
+            Toggle("Members see each other's detail", isOn: Binding(get: { policy.membersSeeEachOther }, set: { new in Task { await team.setPolicy(requests: policy.requests, membersSeeEachOther: new) } }))
+            Text("Closed: no new codes, and the network endpoint refuses requests. Members see each other: leaders re-publish member detail to the team.").font(.caption).foregroundStyle(.secondary)
         }
     }
 

@@ -1865,9 +1865,15 @@ final class AppModel: ObservableObject {
             // Unbundled dev runs are a bare executable — `open` on its
             // directory would just raise Finder.
             let exe = Bundle.main.executablePath ?? ""
+            // applicationShouldTerminate can hold quit up to
+            // TeamModel.quitBound (5s) for a team's now.json delete, so a
+            // fixed sleep can no longer be trusted to outlast this
+            // process — wait for the pid to actually exit instead.
+            let pid = ProcessInfo.processInfo.processIdentifier
+            let wait = "while /bin/kill -0 \(pid) 2>/dev/null; do sleep 0.1; done; "
             let cmd = bundle.hasSuffix(".app")
-                ? "sleep 0.8; /usr/bin/open \"\(bundle)\""
-                : "sleep 0.8; exec \"\(exe)\""
+                ? wait + "/usr/bin/open \"\(bundle)\""
+                : wait + "exec \"\(exe)\""
             p.arguments = ["-c", cmd]
             try? p.run()
             await MainActor.run { NSApplication.shared.terminate(nil) }
@@ -2235,10 +2241,8 @@ final class AppModel: ObservableObject {
         quickTunnel.stop()
         namedTunnel.stop()
         let supervisor = supervisor
-        let team = team
         Task {
             await supervisor?.stop()
-            await team.quit()   // spec §7: now.json goes on quit (bounded)
             await MainActor.run { NSApplication.shared.terminate(nil) }
         }
     }
