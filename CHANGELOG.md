@@ -61,6 +61,9 @@ publishes the matching section as the GitHub release body.
 - Policy in the Team pane: close requests, or let members see each other's detail.
 - The recovery key (after Touch ID), a passphrase-sealed export and an import live in the Team pane; the export file is created owner-only from its first byte.
 - Quitting waits, briefly, for the team to be told you're gone, on every quit path.
+- The phone has a Team tab: roster, requests, invite links and team codes, a teammate's stats and sessions, their shared transcripts, and the leaders' team picture — approve, decline and join from the phone.
+- The phone's Team tab locks behind Face ID / Touch ID (Settings › Team); joining from the phone needs the lock on.
+- Every theme names the Team tab in its own words (Guild, Crew, Clan, Unit, Org).
 
 ## 0.4.3
 

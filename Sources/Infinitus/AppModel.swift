@@ -1154,6 +1154,12 @@ final class AppModel: ObservableObject {
                     return Checkpoints.RestoreReply(outcome: "failed", detail: "\(error)")
                 }
             }))
+        // The phone's Team tab (spec §9 step 8) — every call lands on the
+        // main actor, where TeamModel lives.
+        mirrorServer.teamMirror.set { [weak self] request in
+            guard let team = await MainActor.run(body: { self?.team }) else { return nil }
+            return await TeamMirrorHandler.reply(request, team: team)
+        }
         team.gate = { [weak self] in TeamGate.check(lockEnabled: self?.lock.enabled) }
         team.sources = { [weak self] in self?.teamSources() ?? TeamPublisher.Sources(projectsDir: URL(fileURLWithPath: "/nonexistent"), home: NSHomeDirectory()) }
         team.load()
