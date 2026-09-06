@@ -724,7 +724,7 @@ private struct FleetAccountsSection: View {
                 // needs is a scaled metric rather than a hard-coded 30 pt.
                 List {
                     ForEach(fleet.accounts, id: \.number) { a in
-                        if caps.contains(.rename) || canRelogin {
+                        if canRelogin {
                             row(a).moveDisabled(!caps.contains(.reorder))
                                 .contextMenu { rowMenu(a) }
                         } else {
@@ -798,9 +798,6 @@ private struct FleetAccountsSection: View {
     /// always-available sign-in (the prominent button on the row shows
     /// only when the engine says the sign-in lapsed — Task 3).
     @ViewBuilder private func rowMenu(_ a: Account) -> some View {
-        if caps.contains(.rename) {
-            Button("Re-roll Name") { fleet.randomizeName(a.number) }
-        }
         if canRelogin {
             Button("Sign In Again\u{2026}") { confirmRelogin = (fleet, a) }
                 .disabled(flow.running)
@@ -979,7 +976,7 @@ private struct FleetAccountsSection: View {
             parts.append("Drag to set the rotation order.")
         }
         if caps.contains(.rename) {
-            parts.append("Click a name to rename it.")
+            parts.append("Type in a name field to rename; Tab moves to the next account.")
         }
         if caps.contains(.prefer), !fleet.accounts.contains(where: { $0.preferred != nil }) {
             parts.append("Starring needs the engine's preferred-account setting; "
