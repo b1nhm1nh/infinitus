@@ -353,11 +353,11 @@ struct SyncPane: View {
                     ? "Same Wi-Fi works already; a remote route is up too."
                     : "Same Wi-Fi needs nothing. From anywhere: Tailscale "
                       + "on both devices, your own Cloudflare tunnel (stable "
-                      + "hostname), or a quick tunnel (see Anywhere).",
+                      + "hostname), or a quick tunnel (see Tunnel below).",
                  done: !routes.isEmpty),
             Step(id: 4, title: "Scan the QR from the phone",
                  detail: "On the phone: Settings → Mac connection → Scan QR, "
-                       + "pointing at Pair a phone below — one QR carries "
+                       + "pointing at Pairing below — one QR carries "
                        + "every route.",
                  done: server.lastServed != nil),
         ]
@@ -531,7 +531,6 @@ struct SyncPane: View {
                 Button { copy(route.endpoint) } label: { Image(systemName: "doc.on.doc") }
                     .buttonStyle(.borderless)
                     .accessibilityLabel("Copy the \(route.title) address")
-                    .accessibilityHint("Copy the \(route.title) address.")
                     .help("Copy the \(route.title) address.")
             }
         }
