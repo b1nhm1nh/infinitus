@@ -214,10 +214,13 @@ struct SessionFeedScreen: View {
             }
             .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: lastRowVisible)
         }
-        .environment(\.sessionMirror, mirror)
-        .sheet(item: $awsLoginItem) { AwsLoginScreen(item: $0) }
+        .sheet(item: $awsLoginItem) { AwsLoginScreen(item: $0, mirror: mirror) }
         .sheet(item: $reviewTarget) { target in
+            // A sheet is presented from this node, not from the root:
+            // hand it the mirror itself so a review from another Mac's
+            // chat goes to that Mac.
             NavigationStack { CheckpointDiffScreen(pid: Int32(session.pid), checkpoint: target.checkpoint) }
+                .environment(\.sessionMirror, mirror)
         }
         .background(SwipeBackAnywhere().frame(width: 0, height: 0))
         // Pinned above the transcript, not in it: the feed opens scrolled
@@ -331,6 +334,10 @@ struct SessionFeedScreen: View {
                 screenshots.check()
             }
         }
+        // Outermost on purpose: an environment write flows only into the
+        // view it modifies, so every inset, sheet and thumbnail above
+        // sits inside it (#144 phase 2).
+        .environment(\.sessionMirror, mirror)
     }
 
     private func scrollToNewest(_ proxy: ScrollViewProxy, _ id: some Hashable) {
