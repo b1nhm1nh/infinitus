@@ -1327,10 +1327,14 @@ final class AppModel: ObservableObject {
         }
         mirrorServer.sessionInput.set { [weak self] pid, request in
             let claudeDir = ClaudeSessions.configHome()
-            guard let record = ClaudeSessions.list(claudeDir: claudeDir).first(where: { $0.pid == pid })
+            let records = ClaudeSessions.list(claudeDir: claudeDir)
+            // #168: a queued request may name a pid from before a reboot —
+            // the session lives on under a new one; its id does not change.
+            guard let record = records.first(where: { $0.pid == pid })
+                    ?? request.sessionId.flatMap({ id in records.first { $0.sessionId == id } })
             else {
                 Task { @MainActor in self?.logMirrorInput("⚠️", "phone input not delivered: unknown session") }
-                return nil
+                return SessionInput.Reply(outcome: "rejected", detail: "session ended")
             }
             // A mode change never reaches the terminal: it is the Mac's
             // own state, decided on the main actor (the births live
@@ -1363,6 +1367,12 @@ final class AppModel: ObservableObject {
                 } else {
                     let why = reply.detail.map { "\(reply.outcome) — \($0)" } ?? reply.outcome
                     self?.logMirrorInput("⚠️", "phone input not delivered: \(why)")
+                }
+                if request.queuedAt != nil, ["delivered", "running", "captured"].contains(reply.outcome) {
+                    // The phone queued this while the Mac was away; the
+                    // push reaches it even when the app is closed.
+                    self?.liveActivityPusher.pushAlert(title: "Delivered to \(label)",
+                                                       body: String(request.text.prefix(80)))
                 }
             }
             return reply

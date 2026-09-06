@@ -12,6 +12,7 @@ publishes the matching section as the GitHub release body.
 - The activity tables read the ask off your own message — "debug the crash" counts as debugging even when the tools only edited — and the plugin's UserPromptSubmit hook refreshes a session the moment a prompt goes in.
 
 ### Phone
+- Parked sessions: with the Mac unreachable the phone keeps the last fleet and transcripts, queues one message per session and delivers it once the Mac is back (#168).
 - The phone pairs with more than one Mac: other Macs' fleets and sessions show under their name, and any of them can be made primary from Settings › Devices.
 - The Sessions list wears the theme: session names in the theme's accent, state words in their state color.
 - The share sheet's session picker lists waiting sessions first and names each one by session · repo.
