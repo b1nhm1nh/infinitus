@@ -14,6 +14,7 @@ publishes the matching section as the GitHub release body.
 ### Phone
 - Parked sessions: with the Mac unreachable the phone keeps the last fleet and transcripts, queues one message per session and delivers it once the Mac is back (#168).
 - The phone pairs with more than one Mac: other Macs' fleets and sessions show under their name, and any of them can be made primary from Settings › Devices.
+- Other Macs' sessions open like the primary's: transcript, replies, approvals, checkpoints and queued messages go to the Mac the session lives on (#144).
 - The Sessions list wears the theme: session names in the theme's accent, state words in their state color.
 - The share sheet's session picker lists waiting sessions first and names each one by session · repo.
 - The Game HUD bars' cool glow (usage behind pace) is a real glow now, scaled to the bar, instead of a tinted rim.

@@ -31,8 +31,13 @@ final class AwsLoginFlow: ObservableObject {
     @Published var passkeyWall = false
     private var poll: Task<Void, Never>?
 
-    init(item: AwsLogin.Item) {
+    /// The Mac that owns the session — its own mirror when the session
+    /// lives on another paired Mac (#144 phase 2).
+    private let mirror: NetworkFleetMirror
+
+    init(item: AwsLogin.Item, mirror: NetworkFleetMirror = .shared) {
         self.item = item
+        self.mirror = mirror
         self.state = item.state
         if let s = item.state, s.phase != .done, s.phase != .failed { startPolling() }
     }
@@ -81,15 +86,15 @@ final class AwsLoginFlow: ObservableObject {
     }
 
     private func post(_ request: AwsLogin.StartRequest) async {
-        do { apply(try await NetworkFleetMirror.shared.awsLoginStart(request)) }
+        do { apply(try await mirror.awsLoginStart(request)) }
         catch { self.error = "Mac didn't answer: \(error.localizedDescription)" }
     }
     private func post(_ request: AwsLogin.CallbackRequest) async {
-        do { apply(try await NetworkFleetMirror.shared.awsLoginCallback(request)) }
+        do { apply(try await mirror.awsLoginCallback(request)) }
         catch { self.error = "Mac didn't answer: \(error.localizedDescription)" }
     }
     private func post(_ request: AwsLogin.CodeRequest) async {
-        do { apply(try await NetworkFleetMirror.shared.awsLoginCode(request)) }
+        do { apply(try await mirror.awsLoginCode(request)) }
         catch { self.error = "Mac didn't answer: \(error.localizedDescription)" }
     }
 
@@ -107,7 +112,7 @@ final class AwsLoginFlow: ObservableObject {
             while !Task.isCancelled {
                 try? await Task.sleep(nanoseconds: 2_000_000_000)
                 guard let self, !self.finished else { return }
-                if let reply = try? await NetworkFleetMirror.shared.awsLoginStart(
+                if let reply = try? await mirror.awsLoginStart(
                     AwsLogin.StartRequest(profile: self.profile, pid: self.item.pid)) {
                     self.apply(reply)
                 }
@@ -124,8 +129,8 @@ struct AwsLoginScreen: View {
     /// The last value copied — its row shows a check until another is.
     @State private var copied: String?
 
-    init(item: AwsLogin.Item) {
-        _flow = StateObject(wrappedValue: AwsLoginFlow(item: item))
+    init(item: AwsLogin.Item, mirror: NetworkFleetMirror = .shared) {
+        _flow = StateObject(wrappedValue: AwsLoginFlow(item: item, mirror: mirror))
     }
 
     var body: some View {

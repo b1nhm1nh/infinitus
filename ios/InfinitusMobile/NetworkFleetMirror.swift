@@ -33,7 +33,14 @@ actor NetworkFleetMirror: FleetMirror {
     /// twelve hex of the pairing token's hash, so a token never lands in a
     /// file name; "local" before the first pairing.
     nonisolated static func parkedKey(defaults: UserDefaults = .standard) -> String {
-        let token = MirrorPairing.normalize(defaults.string(forKey: tokenKey) ?? "")
+        parkedKey(token: defaults.string(forKey: tokenKey) ?? "")
+    }
+
+    /// #144 phase 2: the same key for any Mac's token — the outbox files
+    /// one queue per Mac under it. Normalized exactly as `pairToken()`
+    /// normalizes the primary's, so both spellings of one token agree.
+    nonisolated static func parkedKey(token raw: String) -> String {
+        let token = MirrorPairing.normalize(raw)
         guard !token.isEmpty else { return "local" }
         let digest = SHA256.hash(data: Data(token.utf8))
         return digest.prefix(6).map { String(format: "%02x", $0) }.joined()

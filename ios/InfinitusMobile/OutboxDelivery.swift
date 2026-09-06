@@ -6,6 +6,8 @@ import UserNotifications
 /// #168: the phone side of the outbox — where it lives on disk, how an
 /// item is sent, and the notification when one lands while the app is
 /// not on screen (the Mac pushes its own when the app is closed).
+/// #144 phase 2: one queue per Mac, keyed by that Mac's token hash, each
+/// flushed through its own mirror on its own reachable edge.
 enum OutboxDelivery {
     static let outbox: Outbox = {
         let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
@@ -13,28 +15,37 @@ enum OutboxDelivery {
         return Outbox(root: support.appendingPathComponent("outbox"))
     }()
 
+    /// The primary Mac's key.
     static var macKey: String { NetworkFleetMirror.parkedKey() }
 
-    /// `reachableAgain` and the first-successful-load trigger can fire
-    /// within moments of each other — single-flight so a second call
-    /// doesn't re-send an item the first call already marked in flight.
-    @MainActor private static var flushing = false
+    /// The key a session's queue files under: the primary's, or the
+    /// hash of its own Mac's token.
+    @MainActor static func macKey(for macId: String?, model: MirrorModel) -> String {
+        guard let macId, let pairing = model.other(macId)?.pairing else { return macKey }
+        return NetworkFleetMirror.parkedKey(token: pairing.token)
+    }
 
-    static func flush() async {
-        let canRun = await MainActor.run { () -> Bool in
-            guard !flushing else { return false }
-            flushing = true
-            return true
-        }
+    /// `reachableAgain` and the first-successful-load trigger can fire
+    /// within moments of each other — single-flight PER KEY so a second
+    /// call doesn't re-send an item the first call already marked in
+    /// flight, while two Macs' flushes may run side by side.
+    @MainActor private static var flushing: Set<String> = []
+
+    static func flush() async { await flush(macId: nil) }
+
+    static func flush(macId: String?) async {
+        let model = MirrorModel.shared
+        let (key, mirror) = await MainActor.run { (macKey(for: macId, model: model), model.mirror(for: macId)) }
+        let canRun = await MainActor.run { flushing.insert(key).inserted }
         guard canRun else { return }
-        defer { Task { @MainActor in flushing = false } }
+        defer { Task { @MainActor in flushing.remove(key) } }
 
         // Names and text by id, captured before the flush — a delivered
         // item's file is gone by the time `results` comes back.
-        let items = outbox.items(macKey: macKey)
+        let items = outbox.items(macKey: key)
         let names = Dictionary(uniqueKeysWithValues: items.map { ($0.id, $0.sessionName) })
         let texts = Dictionary(uniqueKeysWithValues: items.map { ($0.id, $0.request.text) })
-        let results = await outbox.flush(macKey: macKey, deliver: deliver)
+        let results = await outbox.flush(macKey: key) { item in await deliver(item, through: mirror) }
         let delivered = results.filter { $0.delivery == .delivered }
         guard !delivered.isEmpty else { return }
         let active = await MainActor.run { UIApplication.shared.applicationState == .active }
@@ -49,9 +60,9 @@ enum OutboxDelivery {
         }
     }
 
-    static func deliver(_ item: OutboxItem) async -> Outbox.Delivery {
+    static func deliver(_ item: OutboxItem, through mirror: NetworkFleetMirror) async -> Outbox.Delivery {
         do {
-            let reply = try await NetworkFleetMirror.shared.sessionInput(pid: item.pid, request: item.request)
+            let reply = try await mirror.sessionInput(pid: item.pid, request: item.request)
             switch reply.outcome {
             case "delivered", "running", "captured": return .delivered
             case "rejected" where reply.detail == "session ended": return .ended

@@ -45,10 +45,16 @@ struct SessionsScreen: View {
                 // title") — a distinct route so it stacks one level past
                 // the feed rather than replacing it.
                 .navigationDestination(for: SessionDetailRoute.self) { route in
-                    SessionDetailScreen(model: model, progress: progress, session: route.session)
+                    SessionDetailScreen(model: model, progress: progress, session: route.session, macId: route.macId)
                 }
                 .navigationDestination(for: CheckpointsRoute.self) { route in
-                    CheckpointsScreen(session: route.session)
+                    CheckpointsScreen(session: route.session, macId: route.macId)
+                }
+                // Another Mac's session (#144 phase 2): its own feed, its
+                // own Mac. Sits beside the primary's destination so both
+                // can stack.
+                .navigationDestination(for: OtherSessionRoute.self) { route in
+                    SessionFeedScreen(model: model, session: route.session, macId: route.macId)
                 }
         }
         // A shake staged a capture for a session: open its feed (which
@@ -176,12 +182,12 @@ struct SessionsScreen: View {
             let sessions = waitingFirst(other.fleets.flatMap { $0.liveSessions?.sessions ?? [] })
             Section {
                 ForEach(sessions, id: \.pid) { session in
-                    row(session).foregroundStyle(.secondary)
+                    NavigationLink(value: OtherSessionRoute(macId: other.id, session: session)) {
+                        row(session, macId: other.id)
+                    }
                 }
             } header: {
                 Text(other.pairing.name)
-            } footer: {
-                Text("Make this Mac primary in Settings › Devices to open its chats.")
             }
         }
     }
@@ -215,7 +221,7 @@ struct SessionsScreen: View {
         }
     }
 
-    private func row(_ session: SessionDetail) -> some View {
+    private func row(_ session: SessionDetail, macId: String? = nil) -> some View {
         HStack(alignment: .top, spacing: 10) {
             Circle()
                 .fill(color(for: session.status))
@@ -225,7 +231,7 @@ struct SessionsScreen: View {
                 HStack {
                     // "Infinitus · limitless": the session's name and its
                     // repo (user 2026-09-03 "show repo too").
-                    if model.awsLogin(for: session.pid) != nil {
+                    if model.awsLogin(macId: macId, pid: session.pid) != nil {
                         Image(systemName: "key.fill").foregroundStyle(.orange)
                             .accessibilityLabel("needs AWS login")
                     }
@@ -233,7 +239,7 @@ struct SessionsScreen: View {
                     // (user 2026-09-05: "sessions list to honor colors
                     // too"): the name in the theme's accent, the state
                     // word in its state color. Off keeps the stock list.
-                    Text(title(session))
+                    Text(title(session, macId: macId))
                         .font(.headline).lineLimit(1)
                         .foregroundStyle(model.rowTheme.plain ? Color.primary : ThemeColor.flash(model.rowTheme))
                     Spacer(minLength: 8)
@@ -248,10 +254,10 @@ struct SessionsScreen: View {
                     .font(.caption).foregroundStyle(.secondary)
                     .lineLimit(1).truncationMode(.head)
                 // Metadata line: branch · model · kind · output tokens.
-                Text(metadata(session))
+                Text(metadata(session, macId: macId))
                     .font(.caption2).foregroundStyle(.tertiary).monospacedDigit()
                     .lineLimit(1).truncationMode(.middle)
-                if let p = progress.byPid[session.pid], p.hasProgressSignal {
+                if let p = model.progress(macId: macId, pid: session.pid), p.hasProgressSignal {
                     SessionProgressLine(progress: p)
                 }
             }
@@ -307,9 +313,9 @@ struct SessionsScreen: View {
         }
     }
 
-    private func title(_ session: SessionDetail) -> String {
+    private func title(_ session: SessionDetail, macId: String? = nil) -> String {
         let repo = repoName(session.cwd)
-        let p = progress.byPid[session.pid]
+        let p = model.progress(macId: macId, pid: session.pid)
         let name = SessionNaming.displayName(name: p?.name, autoName: p?.autoName, cwd: session.cwd)
         guard name != repo else { return repo }
         return "\(name) · \(repo)"
@@ -323,11 +329,11 @@ struct SessionsScreen: View {
         (path as NSString).abbreviatingWithTildeInPath
     }
 
-    private func metadata(_ session: SessionDetail) -> String {
-        let p = progress.byPid[session.pid]
+    private func metadata(_ session: SessionDetail, macId: String? = nil) -> String {
+        let p = model.progress(macId: macId, pid: session.pid)
         var parts: [String] = []
         // Born from a profile / in a permission mode (#163/#165) leads.
-        if let chip = model.snapshot?.births?[session.pid]?.chip { parts.append(chip) }
+        if let chip = model.birth(macId: macId, pid: session.pid)?.chip { parts.append(chip) }
         if let branch = p?.gitBranch { parts.append("⎇ \(branch)") }
         if let model = p?.model { parts.append(shortModel(model)) }
         if session.kind != "interactive", !session.kind.isEmpty { parts.append(SessionWords.kind(session.kind)) }

@@ -8,6 +8,7 @@ import InfinitusCore
 struct FeedThumbnail: View {
     let pid: Int32
     let id: String
+    @Environment(\.sessionMirror) private var mirror
     @State private var image: UIImage?
     @State private var failed = false
     @State private var showFull = false
@@ -54,10 +55,10 @@ struct FeedThumbnail: View {
     }
 
     private func load() async {
-        let key = "\(pid)/\(id)" as NSString
+        let key = "\(ObjectIdentifier(mirror).hashValue)/\(pid)/\(id)" as NSString
         if let hit = Self.cache.object(forKey: key) { image = hit; return }
         do {
-            let data = try await NetworkFleetMirror.shared.sessionImage(pid: pid, id: id)
+            let data = try await mirror.sessionImage(pid: pid, id: id)
             guard let decoded = UIImage(data: data) else { failed = true; return }
             Self.cache.setObject(decoded, forKey: key)
             image = decoded

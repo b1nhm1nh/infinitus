@@ -4,6 +4,7 @@ import InfinitusCore
 /// The session detail's Checkpoints row route.
 struct CheckpointsRoute: Hashable {
     let session: SessionDetail
+    var macId: String? = nil
 }
 
 /// A live session's checkpoint timeline (#167 phase 2), newest first —
@@ -13,6 +14,10 @@ struct CheckpointsRoute: Hashable {
 /// restore is itself undoable from this list).
 struct CheckpointsScreen: View {
     let session: SessionDetail
+    /// `nil` is the primary Mac (#144 phase 2).
+    var macId: String? = nil
+    @ObservedObject var model = MirrorModel.shared
+    private var mirror: NetworkFleetMirror { model.mirror(for: macId) }
     @State private var reply: Checkpoints.Reply?
     @State private var loading = false
     @State private var error: String?
@@ -57,6 +62,7 @@ struct CheckpointsScreen: View {
         .listStyle(.insetGrouped)
         .navigationTitle("Checkpoints")
         .navigationBarTitleDisplayMode(.inline)
+        .environment(\.sessionMirror, mirror)
         .overlay {
             if loading && reply == nil {
                 ProgressView()
@@ -94,7 +100,7 @@ struct CheckpointsScreen: View {
         loading = true
         defer { loading = false }
         do {
-            reply = try await NetworkFleetMirror.shared.checkpoints(pid: pid)
+            reply = try await mirror.checkpoints(pid: pid)
             error = nil
         } catch {
             self.error = error.localizedDescription
@@ -107,7 +113,7 @@ struct CheckpointsScreen: View {
         Task {
             defer { restoring = nil }
             do {
-                let outcome = try await NetworkFleetMirror.shared.restoreCheckpoint(pid: pid, n: checkpoint.n)
+                let outcome = try await mirror.restoreCheckpoint(pid: pid, n: checkpoint.n)
                 if outcome.outcome == "restored" {
                     result = "Restored to \(checkpoint.subject)"
                         + (outcome.backup.map { " — the state before is checkpoint #\($0)" } ?? "")
@@ -136,6 +142,7 @@ struct CheckpointDiffScreen: View {
     let pid: Int32
     let checkpoint: Checkpoint
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.sessionMirror) private var mirror
     @State private var diff: Checkpoints.Diff?
     @State private var files: [PatchReview.File] = []
     @State private var error: String?
@@ -193,7 +200,7 @@ struct CheckpointDiffScreen: View {
         }
         .task {
             do {
-                let fresh = try await NetworkFleetMirror.shared.checkpointDiff(pid: pid, n: checkpoint.n)
+                let fresh = try await mirror.checkpointDiff(pid: pid, n: checkpoint.n)
                 diff = fresh
                 files = PatchReview.parse(fresh.patch)
             } catch { self.error = error.localizedDescription }
@@ -259,7 +266,7 @@ struct CheckpointDiffScreen: View {
         Task {
             defer { sending = false }
             do {
-                let reply = try await NetworkFleetMirror.shared.sessionInput(pid: pid, request: .init(kind: .message, text: text))
+                let reply = try await mirror.sessionInput(pid: pid, request: .init(kind: .message, text: text))
                 if reply.outcome == "delivered" {
                     dismiss()
                 } else {
