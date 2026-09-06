@@ -52,6 +52,15 @@ publishes the matching section as the GitHub release body.
 - The Mac's Checkpoints section shows a checkpoint's diff against now (the stat inline, the patch a Copy away).
 
 ### Team (preview)
+- A removed teammate's files stay readable up to the moment they were removed, and only later ones are ignored.
+- Creating a team refuses a remote that already has content.
+- A join the store refuses leaves no credential on this Mac.
+- A publish that lost a push race is told apart from one that lost the network.
+- The team store ignores an inherited git environment, and clears stale git locks a killed publish left behind.
+- The team store reads only its own branches, and a rebuilt mirror re-lists instead of failing.
+- `infinitusctl team` masks credentials in its errors, lists envelopes without decrypting them, and checks `--team`.
+- A publish seals its batch to disk instead of holding it in memory, and Settings › Team says how much of a big catch-up is left.
+- `infinitusctl team leave [--rotate-identity]` leaves a team and can mint a fresh identity on the way out.
 - Share a kind with Nobody and it never leaves this Mac (`infinitusctl team share transcripts off`).
 - Pick which recent sessions' transcripts are shared.
 - A publish shows its progress in Settings › Team, and quitting stops it after the current batch.
