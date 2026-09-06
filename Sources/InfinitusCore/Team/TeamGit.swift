@@ -28,6 +28,14 @@ public final class TeamGit: TeamStore {
         case notEmpty
     }
 
+    /// A blob's bytes: in memory, or a file git reads itself — a sealed
+    /// spool chunk (see `TeamPublisher`), so a batch never passes
+    /// through our heap.
+    public enum Blob {
+        case data(Data)
+        case file(URL)
+    }
+
     public let dir: URL
     public let remote: String
     private let token: String?
@@ -93,11 +101,19 @@ public final class TeamGit: TeamStore {
     /// winner's tip — for an object computed from what was read (the
     /// roster) that would silently discard the other writer's change.
     public func putAll(_ writes: [String: Data?], retryOnRace: Bool) throws {
+        // `mapValues` keeps nil-valued keys (a staged delete); a
+        // subscript-assign of nil would drop them (see `TeamClient.leave`).
+        try putAll(blobs: writes.mapValues { $0.map(Blob.data) }, retryOnRace: retryOnRace)
+    }
+
+    /// The same, for blobs already on disk. `nil` deletes — build the
+    /// dictionary with `updateValue(nil, forKey:)`, never `d[k] = nil`.
+    public func putAll(blobs writes: [String: Blob?], retryOnRace: Bool = true) throws {
         guard opened else { throw GitError.notOpen }
-        var byBranch: [String: [(String, Data?)]] = [:]
-        for (path, data) in writes {
+        var byBranch: [String: [(String, Blob?)]] = [:]
+        for (path, blob) in writes {
             guard let (branch, rest) = StorePath.branch(of: path) else { throw GitError.badPath(path) }
-            byBranch[branch, default: []].append((rest, data))
+            byBranch[branch, default: []].append((rest, blob))
         }
         heads = [:]
         defer { heads = [:] }
@@ -203,17 +219,22 @@ public final class TeamGit: TeamStore {
         }
     }
 
-    private func commitAndPush(branch: String, items: [(String, Data?)]) throws {
+    private func commitAndPush(branch: String, items: [(String, Blob?)]) throws {
         let parent = try head(of: branch)
         let index = dir.appendingPathComponent("index-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: index) }
         let env = [ "GIT_INDEX_FILE": index.path ]
         if let parent { _ = try run(["read-tree", parent], env: env) }
-        for (rest, data) in items {
-            if let data {
-                let blob = String(decoding: try run(["hash-object", "-w", "--stdin"], stdin: data), as: UTF8.self)
-                    .trimmingCharacters(in: .whitespacesAndNewlines)
-                _ = try run(["update-index", "--add", "--cacheinfo", "100644,\(blob),\(rest)"], env: env)
+        for (rest, blob) in items {
+            if let blob {
+                let sha: String
+                switch blob {
+                case .data(let data):
+                    sha = try hashObject(stdin: data)
+                case .file(let url):
+                    sha = try hashObject(file: url)
+                }
+                _ = try run(["update-index", "--add", "--cacheinfo", "100644,\(sha),\(rest)"], env: env)
             } else {
                 // Removal without a work tree: a zero-mode, null-sha entry
                 // through --index-info drops the path from the private index.
@@ -231,6 +252,19 @@ public final class TeamGit: TeamStore {
         ]), as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
         _ = try run(["push", "-q", "origin", "\(commit):refs/heads/\(branch)"])
         _ = try run(["update-ref", "refs/remotes/origin/\(branch)", commit])
+    }
+
+    private func hashObject(stdin data: Data) throws -> String {
+        String(decoding: try run(["hash-object", "-w", "--stdin"], stdin: data), as: UTF8.self)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// `--no-filters`: a path (unlike `--stdin`) is subject to the
+    /// attributes and EOL machinery, and ciphertext must reach the object
+    /// database byte for byte.
+    private func hashObject(file url: URL) throws -> String {
+        String(decoding: try run(["hash-object", "-w", "--no-filters", "--", url.path]), as: UTF8.self)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     /// Runs git synchronously. Callers are the CLI (blocking is fine) and

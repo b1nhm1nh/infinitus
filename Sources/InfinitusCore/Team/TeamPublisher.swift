@@ -176,6 +176,10 @@ public struct TeamPublisher {
         /// Sealed bytes pushed per commit; the cursor state is saved after
         /// each, so a killed publish resumes instead of starting over.
         public var batchBytes = 200 << 20
+        /// Bytes of a transcript read per pass (`TeamChunker.readCap`).
+        /// Injected so a test can drive the catch-up path without a
+        /// 64 MB fixture.
+        public var readCapBytes = TeamChunker.readCap
         /// Plaintext copies under `published/` (what `reshare` re-wraps)
         /// are the one part of a team dir that grows without bound — a
         /// month of one Mac's transcripts was 9 GB. Above this the oldest
@@ -203,6 +207,11 @@ public struct TeamPublisher {
         /// True when `Sources.shouldStop` cut the pass short: what the
         /// report lists went out, the cursor is saved, the rest waits.
         public var stopped = false
+        /// Bytes of the chosen transcripts this pass did not reach: what
+        /// sits past `Sources.readCapBytes` in a big session, plus whole
+        /// sources a `shouldStop` cut off. The pane says "catching up,
+        /// N MB to go"; the next pass drains it.
+        public var remainingBytes = 0
         public init() {}
     }
 
@@ -215,6 +224,12 @@ public struct TeamPublisher {
     /// Plaintext copies of what was published (spec §7 "re-share history
     /// re-wraps the local plaintext copies"); grows with the transcripts.
     public var copiesDir: URL { teamDir.appendingPathComponent("published") }
+
+    /// Sealed chunks of the batch being built (spec §7). Each is written
+    /// here, pushed from here and deleted after its push, so the heap
+    /// holds one chunk instead of a 200 MB batch. Cleared at the start
+    /// and the end of every pass.
+    public var spoolDir: URL { teamDir.appendingPathComponent("spool") }
 
     static func hex(_ data: Data) -> String {
         let digits = Array("0123456789abcdef")
@@ -319,16 +334,31 @@ public struct TeamPublisher {
         var chunked = 0
         func note(_ phase: String) { sources.onProgress?(Progress(phase: phase, done: chunked, total: toChunk.count)) }
         let redact = TeamRedaction.redactor(options: TeamRedaction.Options(home: sources.home, includeImages: sources.includeImages))
-        var items: [TeamClient.PublishItem] = []
+        var sealed: [TeamClient.SealedItem] = []
+        var spooled = 0
         var pendingBytes = 0
         var report = Report()
+        // A pass killed mid-batch leaves spool files behind; they are
+        // re-sealed from the plaintext next time, so every pass starts
+        // from an empty spool and clears it on the way out.
+        try? FileManager.default.removeItem(at: spoolDir)
+        defer { try? FileManager.default.removeItem(at: spoolDir) }
+
+        /// Seals one item into the spool. The plaintext is the caller's
+        /// last reference to those bytes.
+        func spool(_ item: TeamClient.PublishItem) throws {
+            spooled += 1
+            sealed.append(try client.seal(item, to: spoolDir.appendingPathComponent("\(spooled).bin"), now: at))
+            pendingBytes += item.plaintext.count
+        }
 
         // One commit per `batchBytes` of plaintext, state saved behind it:
         // a publish killed mid-way picks up at the last saved cursor.
         func flush() throws {
-            guard !items.isEmpty else { return }
-            report.published += try client.publish(items, now: at)
-            items.removeAll()
+            guard !sealed.isEmpty else { return }
+            report.published += try client.publish(sealed: sealed)
+            for item in sealed { try? FileManager.default.removeItem(at: item.file) }
+            sealed.removeAll()
             pendingBytes = 0
             try state.save(teamDir: teamDir)
             note("push")
@@ -340,9 +370,23 @@ public struct TeamPublisher {
             let digest = digest ?? Self.hex(plaintext)
             if !always, state.hashes[path] == digest { report.skipped += 1; return }
             try writeCopy(path, plaintext)
-            items.append(TeamClient.PublishItem(kind: kind, path: path, plaintext: plaintext, audience: shares.target(for: kind)))
-            pendingBytes += plaintext.count
+            try spool(TeamClient.PublishItem(kind: kind, path: path, plaintext: plaintext, audience: shares.target(for: kind)))
             state.hashes[path] = digest
+        }
+
+        /// What is left after this pass: every chosen source's size minus
+        /// the offset its cursor reached (a line still missing its
+        /// newline counts until it is complete). Sources a stop never
+        /// reached count whole.
+        func remaining() -> Int {
+            var total = 0
+            for source in toChunk {
+                // `attributesOfItem`, not `resourceValues`: Core's tests run on Linux.
+                let size = (try? FileManager.default.attributesOfItem(atPath: source.url.path))
+                    .flatMap { ($0[.size] as? NSNumber)?.intValue } ?? 0
+                total += max(0, size - (state.transcripts[source.key]?.offset ?? 0))
+            }
+            return total
         }
 
         let floor = calendar.date(byAdding: .day, value: -sources.historyDays, to: calendar.startOfDay(for: now)) ?? .distantPast
@@ -389,23 +433,27 @@ public struct TeamPublisher {
                 try flush()
                 try state.save(teamDir: teamDir)
                 report.stopped = true
+                report.remainingBytes = remaining()
                 report.prunedCopies = pruneCopies(cap: sources.copiesCapBytes)
                 return report
             }
             try drainingPool {
-                var cursor = state.transcripts[source.key] ?? TeamPublishState.Cursor()
-                let (chunks, offset) = try TeamChunker.chunks(of: source.url, from: cursor.offset, redact: redact)
-                for chunk in chunks {
-                    cursor.seq += 1
-                    let path = source.chunkPath(seq: cursor.seq)
+                let cursor = state.transcripts[source.key] ?? TeamPublishState.Cursor()
+                // `seq` on its own: mutating `cursor` inside the sink while
+                // assigning to it outside would overlap access to it.
+                var seq = cursor.seq
+                let offset = try TeamChunker.stream(of: source.url, from: cursor.offset,
+                                                    readCap: sources.readCapBytes, redact: redact) { chunk in
+                    seq += 1
+                    let path = source.chunkPath(seq: seq)
                     try writeCopy(path, chunk)
-                    items.append(TeamClient.PublishItem(kind: TeamKinds.transcripts, path: path, plaintext: chunk,
-                                                        audience: shares.target(for: TeamKinds.transcripts)))
+                    try spool(TeamClient.PublishItem(kind: TeamKinds.transcripts, path: path, plaintext: chunk,
+                                                     audience: shares.target(for: TeamKinds.transcripts)))
                     report.transcriptChunks += 1
-                    pendingBytes += chunk.count
                 }
-                cursor.offset = offset
-                state.transcripts[source.key] = cursor
+                state.transcripts[source.key] = TeamPublishState.Cursor(seq: seq, offset: offset)
+                // Between sources, never inside one: the cursor a flush
+                // saves must cover every chunk that flush pushed.
                 if pendingBytes >= sources.batchBytes { try flush() }
             }
             chunked += 1
@@ -414,6 +462,7 @@ public struct TeamPublisher {
 
         try flush()
         try state.save(teamDir: teamDir)
+        report.remainingBytes = remaining()
         report.prunedCopies = pruneCopies(cap: sources.copiesCapBytes)
         return report
     }

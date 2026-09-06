@@ -385,6 +385,54 @@ public final class TeamClient {
         try publish([PublishItem(kind: kind, path: path, plaintext: plaintext, audience: audience)], now: now)[0]
     }
 
+    /// One item sealed on disk, and where it goes in the store.
+    public struct SealedItem: Equatable {
+        /// Member-relative, exactly as `PublishItem.path`.
+        public var path: String
+        /// The envelope's bytes, already sealed.
+        public var file: URL
+        public init(path: String, file: URL) { self.path = path; self.file = file }
+    }
+
+    /// Seals one item to its audience and writes the envelope to `file`
+    /// instead of returning it: a publish keeps its batch on disk, not in
+    /// the heap (one 2026-09-06 pass held ~1 GB of sealed items and the
+    /// app died). Pair with `publish(sealed:)`.
+    public func seal(_ item: PublishItem, to file: URL, now: Int = Int(Date().timeIntervalSince1970)) throws -> SealedItem {
+        guard let roster = roster?.doc, isMember else { throw ClientError.notInTeam }
+        guard item.audience != .off else { throw ClientError.audienceOff }
+        try TeamKinds.check(kind: item.kind, from: identity.kid, at: "m/\(identity.kid)/\(item.path)")
+        try drainingPool {
+            let sealed = try Envelope.seal(item.plaintext, kind: item.kind, from: identity,
+                                           to: roster.recipients(for: item.audience), at: now)
+            try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try sealed.write(to: file, options: .atomic)
+        }
+        return SealedItem(path: item.path, file: file)
+    }
+
+    /// Pushes envelopes already sealed on disk as ONE commit; git reads
+    /// each file itself. Returns the store paths in item order.
+    @discardableResult
+    public func publish(sealed items: [SealedItem]) throws -> [String] {
+        guard isMember else { throw ClientError.notInTeam }
+        var writes: [String: TeamGit.Blob?] = [:]
+        var paths: [String] = []
+        for item in items {
+            let storePath = "m/\(identity.kid)/\(item.path)"
+            // The kind was checked when the bytes were sealed; the path's
+            // shape and its owner are checked again here, because what is
+            // pushed is whatever is on disk now.
+            guard let expected = TeamKinds.expected(at: storePath), expected.from == identity.kid else {
+                throw TeamKinds.KindError.badPath
+            }
+            writes.updateValue(.file(item.file), forKey: storePath)
+            paths.append(storePath)
+        }
+        if !writes.isEmpty { try store.putAll(blobs: writes) }
+        return paths
+    }
+
     /// Deletes `m/<my kid>/<path>` (spec §7: `now.json` goes on quit).
     public func unpublish(path: String) throws {
         guard isMember else { throw ClientError.notInTeam }

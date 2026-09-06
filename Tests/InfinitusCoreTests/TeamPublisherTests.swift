@@ -467,6 +467,7 @@ final class TeamPublisherTests: XCTestCase {
         let state = TeamPublishState.load(teamDir: t.alicePaths.teamDir(t.alice.config.id))
         XCTAssertEqual(state.transcripts.count, 1)
         XCTAssertEqual(state.transcripts["s1"]?.seq, 1)
+        XCTAssertGreaterThan(report.remainingBytes, 0, "the sources the stop never reached count whole")
         _ = try t.leader.fetch()
         XCTAssertEqual(try t.leader.readable().map(\.path).filter { $0.contains("/transcripts/") },
                        [me + "transcripts/s1/1.jsonl"])
@@ -476,5 +477,69 @@ final class TeamPublisherTests: XCTestCase {
         let second = try publisher.publish(sources: again)
         XCTAssertFalse(second.stopped)
         XCTAssertEqual(second.transcriptChunks, 2)
+    }
+
+    /// Spec §7 catch-up: a session bigger than one pass's read slice is
+    /// drained over several passes, and the report says how much is
+    /// still to go (the pane shows "catching up, N MB to go").
+    func testRemainingBytesCountsTheTailAndDrainsOverPasses() throws {
+        let t = try team()
+        let projects = try writeProjects(scratch)
+        let publisher = TeamPublisher(client: t.alice, paths: t.alicePaths)
+        var s = sources(projects)
+        // Above the longest fixture line (~200 B, or the chunker never
+        // advances) and below a whole file (~400 B).
+        s.readCapBytes = 256
+        let first = try publisher.publish(sources: s)
+        XCTAssertGreaterThan(first.transcriptChunks, 0)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: publisher.spoolDir.path),
+                       "the spool is cleared when the pass ends")
+
+        let state = TeamPublishState.load(teamDir: t.alicePaths.teamDir(t.alice.config.id))
+        var expected = 0
+        for (file, key) in [("-r-app/s1.jsonl", "s1"), ("-r-secret/s2.jsonl", "s2"),
+                            ("-r-app/s1/subagents/agent-a1.jsonl", "s1/subagents/agent-a1")] {
+            let attrs = try FileManager.default.attributesOfItem(atPath: projects.appendingPathComponent(file).path)
+            let size = try XCTUnwrap((attrs[.size] as? NSNumber)?.intValue)
+            expected += size - (state.transcripts[key]?.offset ?? 0)
+        }
+        XCTAssertGreaterThan(expected, 0, "one 256-byte slice cannot drain a two-line transcript")
+        XCTAssertEqual(first.remainingBytes, expected)
+
+        // Later passes drain it; nothing is re-chunked and it settles at 0.
+        var again = sources(projects)
+        again.readCapBytes = 256
+        var report = try publisher.publish(sources: again)
+        var passes = 1
+        while report.remainingBytes > 0, passes < 10 {
+            report = try publisher.publish(sources: again)
+            passes += 1
+        }
+        XCTAssertEqual(report.remainingBytes, 0, "the tail is published after \(passes) passes")
+        XCTAssertEqual(try publisher.publish(sources: again).transcriptChunks, 0, "and nothing is left to chunk")
+    }
+
+    /// The batch never sits in the heap: every staged item is sealed to
+    /// `<teamDir>/spool/<n>.bin` and git hashes the file itself.
+    func testEveryStagedItemIsSealedToTheSpoolAndPushedFromThere() throws {
+        let t = try team()
+        let projects = try writeProjects(scratch)
+        let publisher = TeamPublisher(client: t.alice, paths: t.alicePaths)
+        var s = sources(projects)
+        s.batchBytes = 1   // one push per source
+        // A leftover from a killed pass must not be pushed as if it were ours.
+        try FileManager.default.createDirectory(at: publisher.spoolDir, withIntermediateDirectories: true)
+        try Data("stale".utf8).write(to: publisher.spoolDir.appendingPathComponent("7.bin"))
+
+        let report = try publisher.publish(sources: s)
+        XCTAssertEqual(report.transcriptChunks, 3)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: publisher.spoolDir.path))
+        // The store has exactly what a pass has always had, byte for byte.
+        _ = try t.leader.fetch()
+        let me = "m/\(t.alice.identity.kid)/"
+        XCTAssertTrue(try t.leader.readable().map(\.path).contains(me + "transcripts/s1/1.jsonl"))
+        let chunk = try t.leader.read(me + "transcripts/s1/1.jsonl").1
+        XCTAssertTrue(String(decoding: chunk, as: UTF8.self).contains("[redacted-key]"))
+        XCTAssertEqual(try t.leader.read(me + "now.json").0.kind, TeamKinds.now)
     }
 }
