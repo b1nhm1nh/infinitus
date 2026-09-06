@@ -342,6 +342,8 @@ public struct TeamPublisher {
         // re-sealed from the plaintext next time, so every pass starts
         // from an empty spool and clears it on the way out.
         try? FileManager.default.removeItem(at: spoolDir)
+        try FileManager.default.createDirectory(at: spoolDir, withIntermediateDirectories: true,
+                                                attributes: [.posixPermissions: 0o700])
         defer { try? FileManager.default.removeItem(at: spoolDir) }
 
         /// Seals one item into the spool. The plaintext is the caller's

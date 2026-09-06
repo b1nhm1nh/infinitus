@@ -542,4 +542,26 @@ final class TeamPublisherTests: XCTestCase {
         XCTAssertTrue(String(decoding: chunk, as: UTF8.self).contains("[redacted-key]"))
         XCTAssertEqual(try t.leader.read(me + "now.json").0.kind, TeamKinds.now)
     }
+
+    /// The spool holds sealed envelopes about to reach a shared remote;
+    /// it is created 0700, not the umask default.
+    func testSpoolDirIsCreatedPrivate() throws {
+        let t = try team()
+        let projects = try writeProjects(scratch)
+        let publisher = TeamPublisher(client: t.alice, paths: t.alicePaths)
+        var s = sources(projects)
+        s.batchBytes = 1   // forces at least one push while the spool dir still exists
+        let spoolDir = publisher.spoolDir
+        final class Box: @unchecked Sendable { var checked = false }
+        let box = Box()
+        s.onProgress = { progress in
+            guard progress.phase == "push", !box.checked else { return }
+            box.checked = true
+            let attrs = try? FileManager.default.attributesOfItem(atPath: spoolDir.path)
+            let mode = (attrs?[.posixPermissions] as? NSNumber)?.intValue
+            XCTAssertEqual(mode, 0o700, "spool dir must be private")
+        }
+        _ = try publisher.publish(sources: s)
+        XCTAssertTrue(box.checked, "the push phase must fire while the spool dir exists")
+    }
 }
