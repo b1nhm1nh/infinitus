@@ -70,11 +70,13 @@ struct DisplayPane: View {
                  + "whichever limit is further from empty, session or "
                  + "weekly, as a countdown (↺2h14m) or a clock time "
                  + "(↺20:29). Following the theme draws the loop in the "
-                 + "theme's colour with the theme's icon beside it; off "
-                 + "keeps the plain loop, and the animations need it on. "
-                 + "Hiding the icon lasts until quit: it always comes back "
-                 + "on the next launch, so the app can never strand itself "
-                 + "with no way in.")
+                 + "theme's color with the theme's icon beside it; off "
+                 + "keeps the plain loop. Animate switches and burn glows "
+                 + "the icon when an account switches and breathes an "
+                 + "ember while the active one burns ahead of pace; it "
+                 + "needs the theme on. Hiding the icon lasts until quit: "
+                 + "it always comes back on the next launch, so the app "
+                 + "can never strand itself with no way in.")
         }
         .id("Display/Menu bar")
     }
@@ -84,7 +86,7 @@ struct DisplayPane: View {
     @ViewBuilder private var popupSection: some View {
         Section {
             VStack(alignment: .leading, spacing: 6) {
-                Text("Layout")
+                Text("Layout").accessibilityHidden(true)
                 HStack(spacing: 12) {
                     PickTile(title: "Wide rows",
                              selected: model.popupLayout == "wide",
@@ -124,7 +126,7 @@ struct DisplayPane: View {
             .accessibilityElement(children: .contain)
             .accessibilityLabel("Layout")
             VStack(alignment: .leading, spacing: 6) {
-                Text("Size")
+                Text("Size").accessibilityHidden(true)
                 HStack(spacing: 12) {
                     sizeTile("Default", "default", 11)
                     sizeTile("Large", "large", 13)
