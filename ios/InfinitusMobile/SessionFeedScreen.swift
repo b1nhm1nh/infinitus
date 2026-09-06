@@ -1370,6 +1370,9 @@ struct SessionFeedScreen: View {
             }
             .padding(10)
             .background(Color.accentColor.opacity(0.08), in: RoundedRectangle(cornerRadius: 12))
+        case .other:
+            // A newer Mac's item kind: the text still reads.
+            Text(item.text).font(.caption).foregroundStyle(.secondary)
         }
     }
 

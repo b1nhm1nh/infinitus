@@ -8,6 +8,7 @@ publishes the matching section as the GitHub release body.
 ## Unreleased
 
 ### Phone
+- The all-limited Live Activity counts down to the real revival instead of 31 years out, and every surface picks the reviver by parsed reset date, ignoring implausible ones (#226).
 - Review changes says why there is nothing to review — checkpoints off on the Mac, a folder outside git, or no prompt checkpointed yet — instead of a caption nobody saw (#214).
 - A message Claude Code held instead of delivering shows in the chat as a marker, with where to review it (#213).
 
