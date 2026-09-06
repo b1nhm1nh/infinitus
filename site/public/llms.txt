@@ -19,7 +19,8 @@
 - Usage history and utilization estimates (usage-cost figures are estimates, never billing truth).
 - 15 themes (Off, RPG, Cyber, MGS, Sci-fi, Cosmo, Ocean, Earth, Gothic, Hades, Movie, Musical, Agent, SWE, West) each renaming the windows and bringing its own intro, death and revival effects.
 - Playground window to audition themes and effects with a mock fleet.
-- Team (preview): a team on any git remote; members publish stats, sessions and chosen transcripts end-to-end encrypted to chosen readers (the host sees names and sizes only); leaders get comparison, blockers, cost and hours insights; join by invite link, team code or same-network discovery; `infinitusctl team` on Linux.
+- Team (preview): a team lives on any git remote you already have — a leader creates it from Settings › Team on an empty repo with a push token (a fine-grained PAT scoped to that repo, or an ssh URL); that token rides inside every invite link and team code, so those are shared like passwords.
+- Team (preview), joining and sharing: join by invite link, QR, team code, `infinitus://join` or same-network discovery, from the Mac or the phone's Team tab (both behind a biometric lock); Linux and Windows members need only `infinitusctl team` (`request`, `fetch`, `publish` on a timer — `packaging/linux`, `packaging/windows`). Everything a member publishes — stats, sessions, chosen transcripts — is end-to-end encrypted to the readers that member picked; the git host sees file names and sizes only. Leaders get comparison, blockers, cost and hours insights.
 
 ## Platforms
 
