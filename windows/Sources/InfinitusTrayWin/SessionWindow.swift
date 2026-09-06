@@ -453,6 +453,8 @@ public enum SessionWindow {
             case .agent:
                 let name = item.toolName ?? "agent"
                 label = "agent (\(name))"
+            case .held: label = "held"
+            case .other: label = "other"
             }
 
             // Normalise newlines to \r\n for Win32 EDIT control
