@@ -98,7 +98,30 @@ struct ChatHeaderData {
 /// HUD (Settings › Appearance › Chat header). The middle is the route
 /// into the session's details when `route` is set; without one (the
 /// previews) the header is inert, buttons included.
+///
+/// Every font is a text style and the HUD's metrics are scaled, so the
+/// header follows Dynamic Type (#209); the HUD stops at the second
+/// accessibility size, where the unit frame still reads as one. The
+/// clamp sits here, above the body, because `@ScaledMetric` reads the
+/// environment of the view that declares it.
 struct ChatHeaderView: View {
+    let style: String
+    let theme: RowTheme
+    let data: ChatHeaderData
+    var route: SessionDetailRoute? = nil
+    var onBack: (() -> Void)? = nil
+
+    var body: some View {
+        let header = ChatHeaderBody(style: style, theme: theme, data: data, route: route, onBack: onBack)
+        if style == "hud" {
+            header.dynamicTypeSize(...DynamicTypeSize.accessibility2)
+        } else {
+            header
+        }
+    }
+}
+
+private struct ChatHeaderBody: View {
     let style: String
     let theme: RowTheme
     let data: ChatHeaderData
@@ -106,6 +129,11 @@ struct ChatHeaderView: View {
     var onBack: (() -> Void)? = nil
     /// The Fleet card's gate: no flashes, pulses or fire under Reduce Motion.
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// The medallion, the bar height and the tier disc, relative to the
+    /// text they sit beside.
+    @ScaledMetric(relativeTo: .body) private var portraitSize: CGFloat = 58
+    @ScaledMetric(relativeTo: .caption2) private var barHeight: CGFloat = 14
+    @ScaledMetric(relativeTo: .caption2) private var tierDisc: CGFloat = 22
 
     var body: some View {
         switch style {
@@ -316,8 +344,8 @@ struct ChatHeaderView: View {
     private var plate: Color { theme.plain ? Color.primary.opacity(0.08) : Color.black.opacity(0.62) }
     private var ink: Color { theme.plain ? Color.primary : Color.white }
     private var hudCorner: CGFloat { 8 }
-    private var portraitSize: CGFloat { 58 }
-    private var nameFont: Font { .system(size: 14, weight: .heavy, design: .rounded) }
+    private var nameFont: Font { .system(.subheadline, design: .rounded, weight: .heavy) }
+    private var hudCaption: Font { .system(.caption2, design: .rounded, weight: .heavy) }
 
     private func dividers(_ chip: ChatHeaderData.WindowChip) -> [Double] {
         chip.session ? (1..<5).map { Double($0) * 20 } : (1..<7).map { Double($0) * 100 / 7 }
@@ -348,7 +376,7 @@ struct ChatHeaderView: View {
                             }
                             Spacer(minLength: 4)
                             Text(statusWord)
-                                .font(.system(size: 10, weight: .bold))
+                                .font(.caption2.weight(.bold))
                                 .foregroundStyle(statusColor)
                                 .lineLimit(1)
                         }
@@ -363,7 +391,7 @@ struct ChatHeaderView: View {
                                     Text(mac).lineLimit(1).foregroundStyle(.secondary)
                                 }
                             }
-                            .font(.system(size: 9, weight: .semibold))
+                            .font(.caption2.weight(.semibold))
                             .foregroundStyle(ink.opacity(0.7))
                             .lineLimit(1)
                             .frame(maxWidth: .infinity, alignment: .trailing)
@@ -412,10 +440,10 @@ struct ChatHeaderView: View {
             Circle().inset(by: 4.5).strokeBorder(Color.black.opacity(theme.plain ? 0.15 : 0.55), lineWidth: 1.5)
             if glyph.isEmpty {
                 Text(String(data.name.prefix(1)).uppercased())
-                    .font(.system(size: 24, weight: .heavy, design: .rounded))
+                    .font(.system(.title2, design: .rounded, weight: .heavy))
                     .foregroundStyle(statusColor)
             } else {
-                Text(glyph).font(.system(size: 27))
+                Text(glyph).font(.title)
             }
         }
         .frame(width: portraitSize, height: portraitSize)
@@ -425,9 +453,9 @@ struct ChatHeaderView: View {
                 let tier = theme.planLabel(plan, compact: true)
                     .replacingOccurrences(of: theme.planPrefix, with: "")
                 Text(tier)
-                    .font(.system(size: 9, weight: .heavy, design: .rounded)).monospacedDigit().lineLimit(1)
+                    .font(hudCaption).monospacedDigit().lineLimit(1)
                     .foregroundStyle(theme.plain ? Color.primary : ring)
-                    .frame(minWidth: 22, minHeight: 22)
+                    .frame(minWidth: tierDisc, minHeight: tierDisc)
                     .padding(.horizontal, 2)
                     .background(theme.plain ? Color(.systemBackground) : Color.black.opacity(0.88), in: Capsule())
                     .overlay(Capsule().stroke(ring, lineWidth: 1.5))
@@ -445,6 +473,12 @@ struct ChatHeaderView: View {
     /// glyph at the left, what's left at the right, a glossy fill in the
     /// window's color — so every effect the Fleet card's bars play plays
     /// here too (#72: "keep bar effects and animation").
+    private func hudSkin(_ chip: ChatHeaderData.WindowChip, width: Double) -> GaugeHUD {
+        var skin = GaugeHUD(glyph: chip.glyph, ink: ink, ring: ring, plain: theme.plain, width: width)
+        skin.font = hudCaption
+        return skin
+    }
+
     private func hudBar(_ chip: ChatHeaderData.WindowChip) -> some View {
         GeometryReader { geo in
             GaugeBar(remaining: GaugeMath.remaining(usedPct: chip.window.pct),
@@ -456,10 +490,9 @@ struct ChatHeaderView: View {
                      burnHeat: heat(chip), chill: chill(chip),
                      dropAnchor: .center,
                      lucky: chip.lucky,
-                     hud: GaugeHUD(glyph: chip.glyph, ink: ink, ring: ring,
-                                   plain: theme.plain, width: geo.size.width))
+                     hud: hudSkin(chip, width: geo.size.width))
         }
-        .frame(height: 14)
+        .frame(height: barHeight)
         .glowOnChange(of: chip.window.pct, color: ThemeColor.flash(theme))
     }
 }

@@ -5,16 +5,18 @@ import InfinitusCore
 /// reply is JSON; nil is a 404. Actions run the same gated TeamModel
 /// methods the pane uses, so the biometric gate and error masking apply
 /// unchanged — a failure comes back as `ActionReply(ok: false, error:)`
-/// from `lastError`, never as a raw git message.
+/// carrying the error of the call that just ran, never as a raw git message.
 @MainActor
 enum TeamMirrorHandler {
     static func reply(_ r: MirrorTransport.Request, team: TeamModel) async -> Data? {
         let encoder = JSONEncoder()
         func json<T: Encodable>(_ v: T) -> Data? { try? encoder.encode(v) }
-        func action(_ body: () async -> Void) async -> Data? {
+        func action(_ body: () async -> String?) async -> Data? {
             team.clearError()
-            await body()
-            return json(TeamMirror.ActionReply(ok: team.lastError == nil, error: team.lastError))
+            // The call's OWN error: `team.lastError` can hold an older
+            // failure, or a reload's, and the phone would show that instead.
+            let failure = await body()
+            return json(TeamMirror.ActionReply(ok: failure == nil, error: failure))
         }
         switch (r.method, r.path) {
         case ("GET", TeamMirror.aggregatesPath):
@@ -47,7 +49,8 @@ enum TeamMirrorHandler {
             if code != nil { team.clearCode() }   // the pane's QR must not pop because the phone asked
             return json(TeamMirror.ActionReply(ok: code != nil, error: team.lastError, code: code))
         default:
-            return nil
+            // Nearby (spec §6.4) has its own file; nil from there is a real 404.
+            return await TeamMirrorNearby.handle(r, team: team)
         }
     }
 }

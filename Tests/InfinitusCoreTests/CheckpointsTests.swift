@@ -117,6 +117,21 @@ final class CheckpointsTests: XCTestCase {
         XCTAssertEqual(read("src/a.txt"), "a\n")   // the main checkout was never touched
     }
 
+    func testReplyEmptyReasonNamesTheMissingPrecondition() throws {
+        // A Mac older than the fields decodes with them nil and gets the
+        // generic reason.
+        let legacy = try JSONDecoder().decode(
+            Checkpoints.Reply.self, from: Data(#"{"sessionId":"s","cwd":"/w/app","checkpoints":[]}"#.utf8))
+        XCTAssertNil(legacy.enabled)
+        XCTAssertTrue(legacy.emptyReason.hasPrefix("No checkpoints yet"))
+        XCTAssertTrue(Checkpoints.Reply(sessionId: "s", cwd: "/w/app", checkpoints: [], enabled: false, inGit: true)
+                        .emptyReason.hasPrefix("Checkpoints are off on the Mac"))
+        XCTAssertEqual(Checkpoints.Reply(sessionId: "s", cwd: "/w/app", checkpoints: [], enabled: true, inGit: false)
+                        .emptyReason, "app isn't inside a git repository, and checkpoints need one.")
+        XCTAssertTrue(Checkpoints.Reply(sessionId: "s", cwd: "/w/app", checkpoints: [], enabled: true, inGit: true)
+                        .emptyReason.hasPrefix("No checkpoints yet"))
+    }
+
     func testOutsideARepositoryIsNil() throws {
         let plain = FileManager.default.temporaryDirectory.appendingPathComponent("infinitus-plain-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: plain, withIntermediateDirectories: true)

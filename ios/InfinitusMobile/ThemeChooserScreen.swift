@@ -74,6 +74,7 @@ struct ThemePreviewRow: View {
                       remaining: 38, dividers: (1..<7).map { Double($0) * 100 / 7 })
                 Spacer(minLength: 0)
             }
+            rateLine
             spendLine
             tabBar
             if let names = nameLine {
@@ -91,6 +92,29 @@ struct ThemePreviewRow: View {
         .accessibilityLabel(voiceOverLabel)
         .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
     }
+
+    /// The tokens/minute chip in the theme's own icon and unit (#218):
+    /// "🔮 1.2k mana/min" under RPG, the plain bolt and "tokens/min"
+    /// where the theme names neither.
+    private var rateLine: some View {
+        HStack(spacing: 4) {
+            if let glyph = theme.rateGlyph {
+                Text(PopupGlyph.text(glyph))
+            } else {
+                Image(systemName: "bolt.horizontal.fill").foregroundStyle(.yellow)
+            }
+            Text(Self.sampleRate.label(theme: theme))
+                .foregroundStyle(.secondary)
+                .monospacedDigit()
+            Spacer(minLength: 0)
+        }
+        .font(.caption)
+        .lineLimit(1)
+        .minimumScaleFactor(0.75)
+    }
+
+    /// One rate for every row, so the previews differ only by theme.
+    private static let sampleRate = TokenRate(perMinute: 1200, peakPerMinute: 1200)
 
     /// The credit and model cells the fleet rows draw, in miniature.
     private var spendLine: some View {
@@ -153,6 +177,7 @@ struct ThemePreviewRow: View {
                      "Gauges \(theme.sessionLabel) and \(theme.weeklyLabel)",
                      "A working session is “\(theme.sessionWord("busy"))”",
                      "Tabs " + Self.tabs.map(theme.tabLabel).joined(separator: ", ")]
+        if theme.rateUnit != nil { parts.append("Rate " + Self.sampleRate.label(theme: theme)) }
         if let names = nameLine { parts.append(names) }
         return parts.joined(separator: ". ")
     }

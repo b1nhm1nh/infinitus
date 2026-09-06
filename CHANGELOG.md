@@ -5,11 +5,7 @@ links, no internals or workflow detail; one feature note is one line,
 a single short sentence (user 2026-09-04). The release workflow
 publishes the matching section as the GitHub release body.
 
-## 0.4.4 (unreleased)
-
-### Stats
-- Stats show processed tokens, cached vs uncached input, cache writes and the estimated cache savings, per model and engine.
-- The activity tables read the ask off your own message — "debug the crash" counts as debugging even when the tools only edited — and the plugin's UserPromptSubmit hook refreshes a session the moment a prompt goes in.
+## Unreleased
 
 ### Phone
 - Settings' theme chooser shows every theme as a live row — its gauges, spend line, status word and tab bar — and the Theme row carries its colors.
@@ -19,9 +15,46 @@ publishes the matching section as the GitHub release body.
 - Settings leads with the Mac connection: with nothing paired, scanning the Mac's QR code is the first thing on screen.
 - Every group in Settings explains itself in a footer, and the Mac's addresses are labeled and editable.
 - Updating the Mac from the phone shows its progress and offers Try Again with a plain reason when it fails.
+- The chat header follows Dynamic Type in all three styles; the Game HUD stops growing at the second accessibility size (#209).
+- Other Macs: their sessions and past sessions never reach the primary by mistake, and "+" and Past sessions open once any paired Mac has answered (#215).
+- The all-limited Live Activity counts down to the real revival instead of 31 years out, and every surface picks the reviver by parsed reset date, ignoring implausible ones (#226).
+- Review changes says why there is nothing to review — checkpoints off on the Mac, a folder outside git, or no prompt checkpointed yet — instead of a caption nobody saw (#214).
+- A message Claude Code held instead of delivering shows in the chat as a marker, with where to review it (#213).
+
+### Mac
+- The tokens/minute chip speaks the theme — mana/min, baud, knots — with its own icon, on the Mac, the phone, the widgets and both theme previews (#218).
+- Settings › Accounts backs up every cswap account to one file and restores from it, asking before it replaces anything (#229).
+- All accounts limited: the one that revives first floats to the top with a themed pulse and its own hh:mm:ss countdown inside the revive lead, on the popup, pop-out and the phone's rows.
+- Settings › Notifications sets the revive lead (default 10 min): how far ahead of an exhausted account's reset its row counts down live and the phone's reset alarm fires.
+- Phone messages and resume nudges reach sessions in every permission mode again: Claude Code 2.1.263 holds a peer message that claims a different permission class than the receiver's, so the app now asserts the session's own (#213).
+- "All accounts are exhausted" notifies once per outage and honors its toggle — the engine's ten-minute re-probes no longer repeat it.
+
+### Phone
+- A phone showing the revival countdown skips the duplicate all-dead alert, and a working activity starts silently.
+
+### Team (preview)
+- A teammate's fleet — every account with tier, state and headroom — shows in their detail on the Mac and the phone, with a Fleet share row (default: leaders) and a headroom board for leaders (#221).
+- A removed teammate's files stay readable up to the moment they were removed, and only later ones are ignored.
+- Creating a team refuses a remote that already has content.
+- A join the store refuses leaves no credential on this Mac.
+- A publish that lost a push race is told apart from one that lost the network.
+- The team store ignores an inherited git environment, and clears stale git locks a killed publish left behind.
+- The team store reads only its own branches, and a rebuilt mirror re-lists instead of failing.
+- `infinitusctl team` masks credentials in its errors, lists envelopes without decrypting them, and checks `--team`.
+- A publish seals its batch to disk instead of holding it in memory, and Settings › Team says how much of a big catch-up is left.
+- `infinitusctl team leave [--rotate-identity]` leaves a team and can mint a fresh identity on the way out.
+
+## 0.4.4-alpha.1
+
+### Stats
+- Stats show processed tokens, cached vs uncached input, cache writes and the estimated cache savings, per model and engine.
+- The activity tables read the ask off your own message — "debug the crash" counts as debugging even when the tools only edited — and the plugin's UserPromptSubmit hook refreshes a session the moment a prompt goes in.
+
+### Phone
 - Parked sessions: with the Mac unreachable the phone keeps the last fleet and transcripts, queues one message per session and delivers it once the Mac is back (#168).
 - The phone pairs with more than one Mac: other Macs' fleets and sessions show under their name, and any of them can be made primary from Settings › Devices.
 - Other Macs' sessions open like the primary's: transcript, replies, approvals, checkpoints and queued messages go to the Mac the session lives on (#144).
+- Other Macs park too: their fleets, sessions and transcripts stay on the phone while they're away, and the "+" sheet and Past sessions can start a session on any paired Mac (#144).
 - The Sessions list wears the theme: session names in the theme's accent, state words in their state color.
 - The share sheet's session picker lists waiting sessions first and names each one by session · repo.
 - The Game HUD bars' cool glow (usage behind pace) is a real glow now, scaled to the bar, instead of a tinted rim.
@@ -31,14 +64,13 @@ publishes the matching section as the GitHub release body.
 - Start a session picks its permissions: Supervised, Auto-accept edits, Auto or Full access, passed to Claude Code as its permission mode.
 - Start a session offers the Mac's saved profiles as chips; one tap fills folder, engine, permissions, model, system prompt and first prompt.
 - A session started from a profile or in a permission mode says so on its row ("Review · Full access"), on the phone and in the Mac popover.
-- Swipe or long-press an account to star it or pause/resume its rotation from the phone; the Mac popup offers the same on a right-click of the name.
+- Swipe or long-press an account to star it or pause/resume its rotation from the phone; on the Mac, right-click the name in the popup for the same, and a paused row shows a play button to resume.
 
 ### Mac
-- Machine: the pip retry-loop warning names the venv the install goes into (a detached plugin bootstrap has no hook tree to blame) and answers to the hooks mute.
+- Infinitus is alpha software from this release on: the version reads 0.4.4-alpha.1 in About, `infinitusctl status` and the phone's Settings.
 - An AWS sign-in that lapses inside a sub-agent shows up on the parent session — key badge, Sign in row, push — and the continue nudge after signing in goes to the parent.
-- Settings › Machine mutes the hook and temp-directory notifications separately; the pane keeps listing them.
-- Right-click an account row → Re-roll name gives that one account a fresh themed name nobody in the fleet wears; `infinitusctl randomize-names <fleet> <n>` does the same.
-- Settings › Machine watches what many sessions do to this Mac — load, swap, stuck hooks, runaway processes, residue — with confirmed kill, reclaim and hook-disable actions and notifications for new hook registrations and idle sessions.
+- A dice button on each Settings › Accounts row re-rolls that one account's name to a fresh themed one nobody in the fleet wears; `infinitusctl randomize-names <fleet> <n>` does the same.
+- Tab and Shift-Tab move between the account name fields in Settings › Accounts, and a click lands the caret at once.
 - Sessions whose sub-agents hit a limit get a nudge that the swapped-in account has headroom, so they stop waiting for the reset.
 - When a revival countdown ends the Mac asks the engine again right away (three tries a minute apart) instead of waiting for the next poll.
 - "<account> is back" notifications, with "reset early" when Anthropic reset before the advertised time and "all accounts are back" when the whole fleet returns (Settings › Notifications).
@@ -60,6 +92,15 @@ publishes the matching section as the GitHub release body.
 - The Mac's Checkpoints section shows a checkpoint's diff against now (the stat inline, the patch a Copy away).
 
 ### Team (preview)
+- Team: a leader invites a discoverable Mac over the local network, and the invitee accepts from Invitations.
+- Team: the phone's Nearby — scan the network, ask a leader to join, invite a Mac, accept an invitation.
+- `infinitusctl team nearby invite`, `team invites`, `team accept` and `team ignore` do the same from a terminal.
+- Share a kind with Nobody and it never leaves this Mac (`infinitusctl team share transcripts off`).
+- Pick which recent sessions' transcripts are shared.
+- A publish shows its progress in Settings › Team, and quitting stops it after the current batch.
+- The plaintext copies of what you published are capped at 1 GB, oldest transcripts first.
+- A failed team create leaves no half-made team behind.
+- A git push with chatty progress output no longer hangs the publish.
 - Reading the team store remembers each file's header, so a refresh pass reads only new files and the app's memory stays flat.
 - A publish sends transcripts only from sessions active in the last two days (stats keep 30) and pushes in 200 MB batches, saving its place after each, so a huge history can't stall or crash it.
 - An invite link's request now proves the invite without carrying its secret, so a copied request can't ride someone else's invite; invited requests are approved automatically again.
@@ -82,6 +123,7 @@ publishes the matching section as the GitHub release body.
 - The phone has a Team tab: roster, requests, invite links and team codes, a teammate's stats and sessions, their shared transcripts, and the leaders' team picture — approve, decline and join from the phone.
 - The phone's Team tab locks behind Face ID / Touch ID (Settings › Team); joining from the phone needs the lock on.
 - Every theme names the Team tab in its own words (Guild, Crew, Clan, Unit, Org).
+- Docs: a README Team guide, and systemd and Task Scheduler timers for Linux and Windows members (`packaging/linux`, `packaging/windows`).
 
 ## 0.4.3
 

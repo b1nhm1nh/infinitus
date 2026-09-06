@@ -6,12 +6,21 @@ import Foundation
 public struct TeamRoster: Codable, Equatable, Sendable {
     /// Where a member's files of one kind go (spec §1 audiences).
     public enum ShareTarget: Codable, Equatable, Sendable {
+        /// Nobody: the kind stays on this Mac — nothing is chunked,
+        /// sealed, copied to `published/` or re-shared, and `now.json`'s
+        /// `sharesTo` hint does not mention it. Offered for every member
+        /// kind, with consequences worth saying out loud: `now` off makes
+        /// this member look offline to the whole team (there is no live
+        /// state to read), and `stats` off drops them out of every leader
+        /// aggregate and leaderboard.
+        case off
         case leaders, team, members([String])
 
         public init(from decoder: Decoder) throws {
             let c = try decoder.singleValueContainer()
             if let kids = try? c.decode([String].self) { self = .members(kids); return }
             switch try c.decode(String.self) {
+            case "off": self = .off
             case "leaders": self = .leaders
             case "team": self = .team
             case let other: throw DecodingError.dataCorruptedError(in: c, debugDescription: "share target \(other)")
@@ -21,6 +30,7 @@ public struct TeamRoster: Codable, Equatable, Sendable {
         public func encode(to encoder: Encoder) throws {
             var c = encoder.singleValueContainer()
             switch self {
+            case .off: try c.encode("off")
             case .leaders: try c.encode("leaders")
             case .team: try c.encode("team")
             case .members(let kids): try c.encode(kids)
@@ -48,9 +58,10 @@ public struct TeamRoster: Codable, Equatable, Sendable {
     public struct Removed: Codable, Equatable, Sendable {
         public var kid: String
         public var at: Int
-        /// The keys the member had, kept so envelopes sealed BEFORE `at`
-        /// still verify (spec §3: only what is published after removal is
-        /// rejected). Nil in rosters written before this field existed.
+        /// The keys the member had, kept so envelopes sealed AT OR
+        /// BEFORE `at` still verify (spec §3: only what is published
+        /// after removal is rejected). Nil in rosters written before
+        /// this field existed.
         public var keys: TeamKeys?
         public init(kid: String, at: Int, keys: TeamKeys? = nil) { self.kid = kid; self.at = at; self.keys = keys }
     }
@@ -91,10 +102,14 @@ public struct TeamRoster: Codable, Equatable, Sendable {
     }
 
     /// The keys `kid` had at `at`: a current member's, or a removed
-    /// member's for an envelope sealed before the removal.
+    /// member's for an envelope sealed at or before the removal instant.
+    /// Spec §3 rejects an envelope only when the sender was removed
+    /// AFTER its `at`, and §10 promises only that a removed member
+    /// cannot read what is published after removal — the same boundary,
+    /// read from the other side.
     public func keys(for kid: String, at: Int) -> TeamKeys? {
         if let current = keys(for: kid) { return current }
-        guard let gone = removed.first(where: { $0.kid == kid }), at < gone.at else { return nil }
+        guard let gone = removed.first(where: { $0.kid == kid }), at <= gone.at else { return nil }
         return gone.keys
     }
 
@@ -108,6 +123,7 @@ public struct TeamRoster: Codable, Equatable, Sendable {
     /// The sender is added by `Envelope.seal`.
     public func recipients(for target: ShareTarget) -> [TeamKeys] {
         switch target {
+        case .off: return []
         case .leaders: return leaders.map(\.keys)
         case .team: return everyone.map(\.keys)
         case .members(let kids): return everyone.filter { kids.contains($0.keys.kid) }.map(\.keys)

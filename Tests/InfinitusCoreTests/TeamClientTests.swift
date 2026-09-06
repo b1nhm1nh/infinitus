@@ -26,6 +26,47 @@ final class TeamClientTests: XCTestCase {
         return (paths, FileSecrets(dir: paths.secretsDir))
     }
 
+    /// A create that dies on the remote used to leave `<base>/<id>/store/`
+    /// behind — a config-less directory `teamIDs()` ignores but the user's
+    /// disk keeps (one was still on the 2026-09-06 machine).
+    func testAFailedCreateLeavesNoHalfMadeTeamBehind() throws {
+        let (paths, secrets) = machine("solo")
+        XCTAssertThrowsError(try TeamClient.create(name: "Papaya", remote: "file:///nonexistent/nope.git", token: "t0ken",
+                                                   paths: paths, secrets: secrets, now: 1_000))
+        XCTAssertEqual(paths.teamIDs(), [])
+        let left = ((try? FileManager.default.contentsOfDirectory(atPath: paths.base.path)) ?? []).filter { $0 != "secrets" }
+        XCTAssertEqual(left, [], "no team directory survives a failed create")
+        // The identity is this machine's, not the team's: it stays.
+        XCTAssertEqual(secrets.read(TeamClient.identitySecretName)?.count, 32)
+    }
+
+    /// Spec §6.1: "an empty private repo". Creating on a remote that
+    /// already holds something would push a roster into someone else's
+    /// history — and a member joining later would fetch a store nobody
+    /// meant to share.
+    func testCreateRefusesARemoteThatAlreadyHasContent() throws {
+        let remote = try makeRemote()
+        // Seed the bare repo through the store adapter itself: one commit
+        // on the `roster` branch is all "not empty" takes.
+        let seed = TeamGit(dir: scratch.appendingPathComponent("seed"), remote: remote, token: nil, author: "seed")
+        try seed.open()
+        try seed.put("roster/team.json", Data("{}".utf8))
+
+        let (paths, secrets) = machine("late")
+        XCTAssertThrowsError(try TeamClient.create(name: "Papaya", remote: remote, token: "t0ken",
+                                                   paths: paths, secrets: secrets, now: 1_000)) {
+            guard case TeamGit.GitError.notEmpty = $0 else { return XCTFail("expected notEmpty, got \($0)") }
+            XCTAssertEqual("\($0)", "That remote already has content — use an empty repository",
+                           "the pane and the CLI both print the interpolated error")
+        }
+        // The refusal runs `create`'s own cleanup: no dir, no token.
+        XCTAssertEqual(paths.teamIDs(), [])
+        let left = ((try? FileManager.default.contentsOfDirectory(atPath: paths.base.path)) ?? []).filter { $0 != "secrets" }
+        XCTAssertEqual(left, [], "no team directory survives a refused create")
+        let names = (try? FileManager.default.contentsOfDirectory(atPath: paths.secretsDir.path)) ?? []
+        XCTAssertEqual(names.filter { $0.hasPrefix("team.") }, [], "no store token is left behind either")
+    }
+
     func testIdentityIsCreatedOnceAndReloaded() throws {
         let (paths, secrets) = machine("a")
         let first = try TeamClient.identity(paths: paths, secrets: secrets)
@@ -189,5 +230,69 @@ final class TeamClientTests: XCTestCase {
         XCTAssertThrowsError(try leader.decline(kid: "nobody")) {
             XCTAssertEqual($0 as? TeamClient.ClientError, .unknownRequest)
         }
+    }
+
+    /// #55: the code carries the store's write credential. A join the
+    /// store never accepted must leave none of it behind — nor a
+    /// config-less team dir.
+    func testARefusedJoinLeavesNoCredentialOnDisk() throws {
+        let remote = try makeRemote()
+        let (lp, ls) = machine("leader")
+        let leader = try TeamClient.create(name: "Papaya", remote: remote, token: "t0ken", paths: lp, secrets: ls, now: 1_000)
+        let code = try leader.code(expiresIn: 600, now: 1_000)
+        // The remote goes away between the code and the request.
+        try FileManager.default.removeItem(at: scratch.appendingPathComponent("remote.git"))
+
+        let (mp, ms) = machine("joiner")
+        XCTAssertThrowsError(try TeamClient.request(code: code, name: "Bo", devices: [], platform: "linux",
+                                                    paths: mp, secrets: ms, now: 1_010))
+        XCTAssertNil(ms.read(TeamClient.tokenName(leader.config.id)), "no store token survives a refused join")
+        XCTAssertEqual(mp.teamIDs(), [])
+        let left = ((try? FileManager.default.contentsOfDirectory(atPath: mp.base.path)) ?? []).filter { $0 != "secrets" }
+        XCTAssertEqual(left, [], "no half-made team dir either")
+        // The identity is this machine's, not the team's: it stays.
+        XCTAssertEqual(ms.read(TeamClient.identitySecretName)?.count, 32)
+    }
+
+    /// A leader key signs whatever `team` string it likes into a code —
+    /// `TeamCode.decode` only checks the signature, not the id's shape.
+    /// `"secrets"` aliases `TeamPaths.secretsDir`, so a join refused by a
+    /// dead remote must not let the request's cleanup `defer` delete the
+    /// machine identity and every other team's store token living there.
+    func testJoinRejectsATeamIDThatAliasesTheSecretsDir() throws {
+        let forger = TeamIdentity.random()
+        let code = try TeamCode(team: "secrets", name: "Papaya", remote: "file:///nonexistent/nope.git",
+                                token: "t0ken", leader: forger.keys, expires: 2_000).encoded(by: forger)
+
+        let (mp, ms) = machine("joiner")
+        _ = try TeamClient.identity(paths: mp, secrets: ms) // seeds the identity secret under <base>/secrets
+        XCTAssertThrowsError(try TeamClient.request(code: code, name: "Bo", devices: [], platform: "linux",
+                                                    paths: mp, secrets: ms, now: 1_000)) {
+            XCTAssertEqual($0 as? TeamClient.ClientError, .badCode)
+        }
+        XCTAssertEqual(mp.teamIDs(), [])
+        XCTAssertEqual(ms.read(TeamClient.identitySecretName)?.count, 32, "the secrets dir must survive intact")
+    }
+
+    /// Same defect, the path-traversal vector: `TeamPaths.teamDir` is a
+    /// bare `appendingPathComponent`, so `".."` walks out of `<base>`.
+    func testJoinRejectsATraversingTeamID() throws {
+        let forger = TeamIdentity.random()
+        let code = try TeamCode(team: "../victim", name: "Papaya", remote: "file:///nonexistent/nope.git",
+                                token: "t0ken", leader: forger.keys, expires: 2_000).encoded(by: forger)
+        // scratch/joiner/../victim resolves to scratch/victim: a sentinel
+        // the refused-join `defer` would `removeItem` recursively if the
+        // guard above ever regressed.
+        let victim = scratch.appendingPathComponent("victim/sentinel")
+        try FileManager.default.createDirectory(at: victim.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data("x".utf8).write(to: victim)
+
+        let (mp, ms) = machine("joiner")
+        XCTAssertThrowsError(try TeamClient.request(code: code, name: "Bo", devices: [], platform: "linux",
+                                                    paths: mp, secrets: ms, now: 1_000)) {
+            XCTAssertEqual($0 as? TeamClient.ClientError, .badCode)
+        }
+        XCTAssertEqual(mp.teamIDs(), [])
+        XCTAssertTrue(FileManager.default.fileExists(atPath: victim.path), "the traversal target survives")
     }
 }

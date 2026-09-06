@@ -228,7 +228,7 @@ struct SettingsForm: View {
         } header: {
             Text("Other Macs")
         } footer: {
-            Text("Scan another Mac's QR code to add it. Only the primary Mac gets chats, approvals, widgets and Live Activities in this version.")
+            Text("Scan another Mac's QR code to add it. Widgets and Live Activities follow the primary Mac.")
         }
     }
 
@@ -356,6 +356,9 @@ struct SettingsForm: View {
     private func otherCaption(_ other: MirrorModel.OtherMac) -> String {
         guard other.snapshot != nil else {
             return other.status.isEmpty ? "Looking for this Mac…" : other.status
+        }
+        if other.parked, let seen = other.snapshot?.capturedAt {
+            return "Parked — last seen \(seen.formatted(.relative(presentation: .named)))"
         }
         let sessions = other.fleets.reduce(0) { $0 + ($1.liveSessions?.total ?? 0) }
         return "\(other.fleets.count) fleet\(other.fleets.count == 1 ? "" : "s") · "

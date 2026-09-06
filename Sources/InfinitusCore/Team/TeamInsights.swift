@@ -160,6 +160,43 @@ public enum TeamInsights {
         return out
     }
 
+    // MARK: headroom
+
+    /// One fleet of one fresh member on the leader's headroom board
+    /// (#221): the active account's lowest headroom, and how many other
+    /// accounts could take over.
+    public struct Headroom: Equatable, Sendable {
+        public var kid: String
+        public var name: String
+        public var engine: String
+        public var active: String?
+        /// 100 − the active account's highest window pct; nil without one.
+        public var headroom: Int?
+        /// Accounts that are `ok` and not active.
+        public var spare: Int
+        public var dead: Int
+    }
+
+    /// Every fresh member's fleets, the one nearest running dry first. A
+    /// `fleet.json` older than `onlineWindow` is skipped like a stale `now`.
+    public static func headroom(_ reader: TeamReader, now: Date = Date()) -> [Headroom] {
+        var out: [Headroom] = []
+        for m in reader.members.values {
+            guard let f = m.fleet, Int(now.timeIntervalSince1970) - f.at <= onlineWindow else { continue }
+            for fleet in f.fleets {
+                let active = fleet.accounts.first { $0.active }
+                let used = active.map { ($0.windows + $0.models).map(\.pct).max() ?? 0 }
+                out.append(Headroom(kid: m.kid, name: m.name, engine: fleet.engine, active: fleet.active,
+                                    headroom: used.map { max(0, 100 - $0) },
+                                    spare: fleet.accounts.filter { !$0.active && $0.status == TeamDocs.FleetDoc.ok }.count,
+                                    dead: fleet.accounts.filter { $0.status == TeamDocs.FleetDoc.dead }.count))
+            }
+        }
+        return out.sorted { x, y in
+            (x.headroom ?? 101, x.name, x.kid, x.engine) < (y.headroom ?? 101, y.name, y.kid, y.engine)
+        }
+    }
+
     // MARK: cost, hours
 
     public struct Cost: Equatable, Sendable {

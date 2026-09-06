@@ -634,6 +634,10 @@ private struct FleetAccountsSection: View {
     private var isCswap: Bool { fleet.engineID == CswapEngine.engineID }
     private var caps: EngineCapabilities { fleet.capabilities }
     private var canRelogin: Bool { isCswap || caps.contains(.addOAuth) }
+    /// The rows' name fields by slot number, so Tab in one can hand
+    /// first-responder to the next row's field directly (user 2026-09-06:
+    /// "press tab -> go to rename next account").
+    @StateObject private var renameFields = RenameFields()
 
     var body: some View {
         Section("\(fleet.provider.displayName) \u{00B7} \(fleet.engine.displayName)") {
@@ -656,11 +660,6 @@ private struct FleetAccountsSection: View {
             List {
                 ForEach(fleet.accounts, id: \.number) { a in
                     row(a).moveDisabled(!caps.contains(.reorder))
-                        .contextMenu {
-                            if caps.contains(.rename) {
-                                Button("Re-roll name") { fleet.randomizeName(a.number) }
-                            }
-                        }
                 }
                 .onMove { from, to in
                     guard caps.contains(.reorder) else { return }
@@ -684,7 +683,18 @@ private struct FleetAccountsSection: View {
             } else if caps.contains(.addOAuth) {
                 OAuthAddRow(model: model, engineID: fleet.engineID, provider: fleet.provider)
             }
+            if caps.contains(.backup) {
+                BackupRow(fleet: fleet)
+            }
         }
+    }
+
+    /// The slot numbers before and after `a` in this list's order — Tab
+    /// and Shift-Tab targets for its name field.
+    private func neighbours(of a: Account) -> (previous: Int?, next: Int?) {
+        let numbers = fleet.accounts.map(\.number)
+        guard let i = numbers.firstIndex(of: a.number) else { return (nil, nil) }
+        return (i > 0 ? numbers[i - 1] : nil, i + 1 < numbers.count ? numbers[i + 1] : nil)
     }
 
     @ViewBuilder private func row(_ a: Account) -> some View {
@@ -696,7 +706,14 @@ private struct FleetAccountsSection: View {
             Text("\(a.number)").monospacedDigit()
                 .foregroundStyle(.secondary)
             if caps.contains(.rename) {
-                RenameField(fleet: fleet, account: a)
+                RenameField(fleet: fleet, account: a, registry: renameFields,
+                            neighbours: neighbours(of: a))
+                    .frame(width: 150)
+                Button { fleet.randomizeName(a.number) } label: {
+                    Image(systemName: "dice")
+                }
+                .buttonStyle(.borderless)
+                .help("Re-roll name: a fresh themed name nobody in the fleet wears")
             }
             Text(a.email).lineLimit(1)
                 .font(.caption).foregroundStyle(.secondary)
@@ -928,29 +945,183 @@ private struct CswapAddFlow: View {
     }
 }
 
-/// One account's editable display name. Local draft, committed on Enter or
-/// focus loss — never on every keystroke (each commit is a `cswap alias`
-/// subprocess + snapshot refresh).
-private struct RenameField: View {
+/// The name fields of one fleet's list, by slot number (see RenameField).
+final class RenameFields: ObservableObject {
+    var fields: [Int: NSTextField] = [:]
+}
+
+/// A text field that takes first responder on the mouse-down itself.
+/// Inside a List row (an NSTableView row underneath, draggable for the
+/// reorder handle) the table arbitrates the click first — row select or
+/// drag? — and only hands it to the field on mouse-up, which is why a
+/// click into a name lagged while Tab was instant (user 2026-09-06).
+private final class ClickToEditField: NSTextField {
+    override func mouseDown(with event: NSEvent) {
+        if currentEditor() == nil { window?.makeFirstResponder(self) }
+        super.mouseDown(with: event)
+    }
+}
+
+/// One account's editable display name: an AppKit field, because Tab
+/// must hop to the NEXT account's field and SwiftUI's TextField lets the
+/// field editor swallow Tab before any key handler sees it. Committed on
+/// Enter, Tab or focus loss — never on every keystroke (each commit is a
+/// `cswap alias` subprocess + snapshot refresh).
+private struct RenameField: NSViewRepresentable {
     @ObservedObject var fleet: FleetState
     let account: Account
-    @State private var draft = ""
-    @FocusState private var focused: Bool
+    let registry: RenameFields
+    let neighbours: (previous: Int?, next: Int?)
 
-    var body: some View {
-        TextField("Name", text: $draft)
-            .textFieldStyle(.roundedBorder)
-            .frame(width: 150)
-            .focused($focused)
-            .onAppear { draft = account.alias ?? "" }
-            .onChange(of: account.alias) { draft = account.alias ?? "" }
-            .onSubmit { commit() }
-            .onChange(of: focused) { if !focused { commit() } }
+    func makeNSView(context: Context) -> NSTextField {
+        let field = ClickToEditField(string: account.alias ?? "")
+        field.placeholderString = "Name"
+        field.bezelStyle = .roundedBezel
+        field.delegate = context.coordinator
+        field.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        return field
     }
 
-    private func commit() {
-        let trimmed = draft.trimmingCharacters(in: .whitespaces)
-        guard trimmed != (account.alias ?? "") else { return }
-        fleet.rename(account.number, to: trimmed)
+    func updateNSView(_ field: NSTextField, context: Context) {
+        context.coordinator.parent = self
+        registry.fields[account.number] = field
+        // Never clobber what the user is typing: the engine's alias only
+        // lands while the field isn't being edited.
+        if field.currentEditor() == nil, field.stringValue != (account.alias ?? "") {
+            field.stringValue = account.alias ?? ""
+        }
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator(parent: self) }
+
+    final class Coordinator: NSObject, NSTextFieldDelegate {
+        var parent: RenameField
+        init(parent: RenameField) { self.parent = parent }
+
+        func controlTextDidEndEditing(_ notification: Notification) {
+            guard let field = notification.object as? NSTextField else { return }
+            let trimmed = field.stringValue.trimmingCharacters(in: .whitespaces)
+            guard trimmed != (parent.account.alias ?? "") else { return }
+            parent.fleet.rename(parent.account.number, to: trimmed)
+        }
+
+        func control(_ control: NSControl, textView: NSTextView, doCommandBy selector: Selector) -> Bool {
+            let target: Int?
+            if selector == #selector(NSResponder.insertTab(_:)) { target = parent.neighbours.next }
+            else if selector == #selector(NSResponder.insertBacktab(_:)) { target = parent.neighbours.previous }
+            else { return false }
+            guard let target, let next = parent.registry.fields[target] else { return false }
+            // Resigning first responder ends this field's editing (the
+            // commit above), then the next row's field takes over.
+            control.window?.makeFirstResponder(next)
+            return true
+        }
+    }
+}
+
+/// Backup and restore for an engine that can hand its accounts over
+/// (`.backup`; cswap `export` / `import`). Absent that capability the
+/// row never appears — the proxy holds keys it will not reveal.
+///
+/// Two things make this unlike the other rows in this pane:
+///
+///  - **An export is a credential file.** It carries each account's
+///    `claudeAiOauth` block in PLAINTEXT (`encrypted: false` in cswap's
+///    own header, verified 2026-09-04), so the warning is permanent UI,
+///    not a one-time alert someone can dismiss and forget.
+///  - **A forced import is destructive and has no dry-run.** Plain
+///    import is additive and repairs slots whose refresh token has died,
+///    which is the common case and safe; replacing live accounts is the
+///    rare one and gets a confirmation naming what it will overwrite.
+private struct BackupRow: View {
+    @ObservedObject var fleet: FleetState
+    @State private var full = false
+    @State private var confirmRestore: URL?
+    @State private var result: String?
+    @State private var failed = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Button("Back up accounts\u{2026}") { runExportPanel() }
+                    .disabled(fleet.accounts.isEmpty)
+                Button("Restore\u{2026}") { runImportPanel() }
+            }
+            Toggle("Include the full ~/.claude.json", isOn: $full)
+                .help("Off: each account's OAuth credential only. On: the "
+                      + "whole ~/.claude.json, which carries editor and "
+                      + "project state as well.")
+            Text("The backup file contains ACCOUNT CREDENTIALS in plain text \u{2014} "
+                 + "treat it like a private key. Keep it out of git and off shared "
+                 + "drives, and delete it once you have restored what you needed.")
+                .font(.caption).foregroundStyle(.secondary)
+            if fleet.accounts.isEmpty {
+                Text("Nothing to back up yet.").font(.caption).foregroundStyle(.secondary)
+            }
+            if let result {
+                Text(result).font(.caption)
+                    .foregroundStyle(failed ? .red : .secondary)
+            }
+        }
+        .alert("Replace existing accounts?", isPresented: Binding(
+            get: { confirmRestore != nil },
+            set: { if !$0 { confirmRestore = nil } })) {
+            Button("Replace", role: .destructive) {
+                if let url = confirmRestore { restore(url, force: true) }
+                confirmRestore = nil
+            }
+            Button("Cancel", role: .cancel) { confirmRestore = nil }
+        } message: {
+            Text("This backup holds accounts that already exist here. Replacing "
+                 + "them overwrites \(fleet.accounts.count) stored credential(s) "
+                 + "with the file's, and cannot be undone \u{2014} anything added "
+                 + "since the backup is lost.\n\nBack up first if you want a way "
+                 + "back.")
+        }
+    }
+
+    private func runExportPanel() {
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [.json]
+        panel.nameFieldStringValue = "infinitus-accounts.json"
+        panel.message = "This file will contain account credentials in plain text."
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        fleet.exportAccounts(to: url, full: full) { error in
+            failed = error != nil
+            result = error.map { "Backup failed: \($0)" }
+                ?? "Backed up to \(url.lastPathComponent) \u{2014} treat it like a private key."
+        }
+    }
+
+    private func runImportPanel() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.json]
+        panel.allowsMultipleSelection = false
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        // Try the SAFE import first. It adds accounts and repairs
+        // dead-token slots without touching live ones, so most restores
+        // never need the destructive path or its confirmation. Only if
+        // the engine refuses for wanting --force do we ask.
+        fleet.importAccounts(from: url, force: false) { error in
+            guard let error else {
+                failed = false
+                result = "Restored from \(url.lastPathComponent)."
+                return
+            }
+            if CswapCLI.importNeedsForce(error) {
+                confirmRestore = url
+                return
+            }
+            failed = true
+            result = "Restore failed: \(error)"
+        }
+    }
+
+    private func restore(_ url: URL, force: Bool) {
+        fleet.importAccounts(from: url, force: force) { error in
+            failed = error != nil
+            result = error.map { "Restore failed: \($0)" }
+                ?? "Restored from \(url.lastPathComponent), replacing existing accounts."
+        }
     }
 }

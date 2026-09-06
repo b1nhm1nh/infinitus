@@ -62,9 +62,17 @@ extension TeamIdentityExport {
     /// (or follows a symlink at) an existing path: `O_EXCL` on a fresh
     /// descriptor, not write-then-chmod.
     public static func write(_ data: Data, to url: URL) throws {
+        #if os(Windows)
+        // No O_CLOEXEC or POSIX modes on Windows (#203); Foundation's
+        // `.withoutOverwriting` is the same never-replace guarantee.
+        do { try data.write(to: url, options: .withoutOverwriting) }
+        catch let error as CocoaError where error.code == .fileWriteFileExists { throw WriteError.exists }
+        catch { throw WriteError.failed(-1) }
+        #else
         let fd = open(url.path, O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC, 0o600)
         guard fd >= 0 else { throw errno == EEXIST ? WriteError.exists : WriteError.failed(errno) }
         defer { close(fd) }
         try FileHandle(fileDescriptor: fd, closeOnDealloc: false).write(contentsOf: data)
+        #endif
     }
 }

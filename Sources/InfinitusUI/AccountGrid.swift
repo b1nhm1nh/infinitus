@@ -64,22 +64,25 @@ struct AccountGrid<M: FleetModel, U: UsageSource>: View {
                     // site would touch 13 call sites for the same union.
                     .anchorPreference(key: DeadRowBounds.self,
                                       value: .bounds) { [account.number: [$0]] }
-                    Button(action: {
-                        // disabled rows stay clickable, like rumps; the
-                        // popup-level alert asks before committing
-                        if !account.active, model.capabilities.contains(.switch) { model.pendingSwitch = account.number }
-                    }, label: { cells.nameLabel })
-                    .buttonStyle(.plain)
-                    .contextMenu { AccountRowMenu(model: model, account: account) }
-                    .fontWeight(account.active ? .bold : .regular)
-                    .foregroundStyle((account.disabled ?? false) || cells.showAsDead
-                                     ? AnyShapeStyle(.secondary)
-                                     : account.active
-                                     ? AnyShapeStyle(Color.accentColor)
-                                     : AnyShapeStyle(.primary))
-                    .help(cells.dead ? "Out of at least one limit — unusable until it resets"
-                                     : "Switch to this account")
-                    .lineLimit(1)
+                    HStack(spacing: 4) {
+                        Button(action: {
+                            // disabled rows stay clickable, like rumps; the
+                            // popup-level alert asks before committing
+                            if !account.active, model.capabilities.contains(.switch) { model.pendingSwitch = account.number }
+                        }, label: { cells.nameLabel })
+                        .buttonStyle(.plain)
+                        .contextMenu { AccountRowMenu(model: model, account: account) }
+                        .fontWeight(account.active ? .bold : .regular)
+                        .foregroundStyle((account.disabled ?? false) || cells.showAsDead
+                                         ? AnyShapeStyle(.secondary)
+                                         : account.active
+                                         ? AnyShapeStyle(Color.accentColor)
+                                         : AnyShapeStyle(.primary))
+                        .help(cells.dead ? "Out of at least one limit — unusable until it resets"
+                                         : "Switch to this account")
+                        .lineLimit(1)
+                        AccountResumeButton(model: model, account: account)
+                    }
                     // The one deliberately flexible column: emails truncate,
                     // usage numbers and reset times never do.
                     .frame(minWidth: 110, maxWidth: 230, alignment: .leading)
@@ -243,6 +246,11 @@ struct AccountGrid<M: FleetModel, U: UsageSource>: View {
         .overlayPreferenceValue(DeadRowBounds.self) { dict in
             criticalOverlay(dict, numbers: criticalNumbers)
         }
+        // The reviver (#227): while every account is limited, the row
+        // that comes back first breathes in the theme's flash colour.
+        .overlayPreferenceValue(DeadRowBounds.self) { dict in
+            reviverOverlay(dict, number: model.reviver?.number)
+        }
         // Death beats: a red band over each row whose account just went
         // dead (the slot cell reported its bounds; full grid width).
         .overlayPreferenceValue(DeadRowBounds.self) { dict in
@@ -328,6 +336,7 @@ struct AccountStack<M: FleetModel, U: UsageSource>: View {
             .foregroundStyle((account.disabled ?? false) || cells.dead
                              ? .secondary : .primary)
             .lineLimit(1)
+            AccountResumeButton(model: model, account: account)
             Spacer(minLength: 8)
             if cells.showAsDead {
                 cells.deadCell
@@ -351,6 +360,12 @@ struct AccountStack<M: FleetModel, U: UsageSource>: View {
             if account.active {
                 RoundedRectangle(cornerRadius: 4)
                     .fill(Color.accentColor.opacity(0.26 * model.fillScale))
+                    .padding(.horizontal, -4)
+            }
+        }
+        .overlay {
+            if model.reviver?.number == account.number {
+                CriticalPulse(cornerRadius: 4, color: ThemeColor.flashCG(model.rowTheme), period: 1.4)
                     .padding(.horizontal, -4)
             }
         }
@@ -405,6 +420,7 @@ struct AccountStack<M: FleetModel, U: UsageSource>: View {
                             .foregroundStyle((account.disabled ?? false) || cells.dead
                                              ? .secondary : .primary)
                             .lineLimit(1)
+                        AccountResumeButton(model: model, account: account)
                         if let plan = cells.planText {
                             Text(plan).font(PopupFont.caption).foregroundStyle(.secondary)
                                 .instantTip("Subscription: \(account.plan ?? "?")")
@@ -469,6 +485,11 @@ struct AccountStack<M: FleetModel, U: UsageSource>: View {
                             .fill(Color.primary.opacity(0.07 * model.fillScale))
                             .overlay(RoundedRectangle(cornerRadius: 8)
                                 .strokeBorder(Color.primary.opacity(0.12)))
+                    }
+                }
+                .overlay {
+                    if model.reviver?.number == account.number {
+                        CriticalPulse(cornerRadius: 8, color: ThemeColor.flashCG(model.rowTheme), period: 1.4)
                     }
                 }
                 .switchFlash(account.active ? model.switchFlashTick : 0,
@@ -536,6 +557,20 @@ extension AccountGrid {
     /// `numbers` is computed by the caller, outside the GeometryReader:
     /// inside it, the headroom sort ran again on every geometry update
     /// (each pulse frame).
+    @ViewBuilder
+    func reviverOverlay(_ dict: [Int: [Anchor<CGRect>]], number: Int?) -> some View {
+        if let number {
+            GeometryReader { geo in
+                if let a = dict[number]?.first {
+                    let r = geo[a]
+                    CriticalPulse(cornerRadius: 4, color: ThemeColor.flashCG(model.rowTheme), period: 1.4)
+                        .frame(width: geo.size.width, height: r.height + 8)
+                        .offset(y: r.minY - 4)
+                }
+            }
+        }
+    }
+
     func criticalOverlay(_ dict: [Int: [Anchor<CGRect>]], numbers: [Int]) -> some View {
         GeometryReader { geo in
             ForEach(numbers, id: \.self) { n in
@@ -582,9 +617,12 @@ extension View {
 
 /// Right-click on an account's name: star it (the engine lands on it
 /// first, and switches to it now) or pause/resume its rotation — the
-/// Settings › Accounts buttons without leaving the popup. Each item
-/// shows only when the engine has the knob (nil `preferred` = no
-/// pick-first setting in this build).
+/// Settings › Accounts buttons without leaving the popup. #201 put both
+/// on the row as buttons; that read as clutter (user 2026-09-06:
+/// "pause/resume, star on UI looks clunky -> make it right click action
+/// except for paused account -> press to resume"), so the row keeps only
+/// `AccountResumeButton`. Each item shows only when the engine has the
+/// knob (nil `preferred` = no pick-first setting in this build).
 struct AccountRowMenu<M: FleetModel>: View {
     let model: M
     let account: Account
@@ -604,6 +642,28 @@ struct AccountRowMenu<M: FleetModel>: View {
             } label: {
                 Label(paused ? "Resume" : "Pause", systemImage: paused ? "play.circle" : "pause.circle")
             }
+        }
+    }
+}
+
+/// The one row-level control that survives: a paused account shows a
+/// play button, one press puts it back into rotation. Starred state
+/// needs no button — the name label already leads with ★.
+struct AccountResumeButton<M: FleetModel>: View {
+    let model: M
+    let account: Account
+
+    var body: some View {
+        if model.capabilities.contains(.hold), account.disabled == true {
+            Button {
+                model.setRotation(account.number, enabled: true)
+            } label: {
+                Image(systemName: "play.circle")
+                    .font(PopupFont.caption)
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+            .instantTip("Resume — back into rotation")
         }
     }
 }

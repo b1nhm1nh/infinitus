@@ -21,6 +21,7 @@ struct TeamInsightsSection: View {
                 leaderboard(ins)
                 repos(ins)
                 blockers(ins)
+                headroom(ins)
                 cost(ins)
                 hours(ins)
                 picture
@@ -93,6 +94,34 @@ struct TeamInsightsSection: View {
                 Text("⚠︎ \(b.name): \(b.text)").font(.caption).foregroundStyle(.orange)
             }
             if ins.blockers.isEmpty { Text("None").foregroundStyle(.secondary) }
+        }
+    }
+
+    // MARK: headroom
+
+    /// Who is about to run dry and who has accounts to spare (#221):
+    /// every fresh member's fleets, nearest dry first. Shows only what a
+    /// member shares — nothing here until a fleet is published.
+    private func headroom(_ ins: TeamModel.Insights) -> some View {
+        Section("Headroom") {
+            ForEach(Array(ins.headroom.enumerated()), id: \.offset) { _, h in
+                HStack(spacing: 6) {
+                    Text(h.name).bold()
+                    Text(h.engine).foregroundStyle(.secondary)
+                    if let a = h.active { Text("· \(a)").foregroundStyle(.secondary) }
+                    Spacer()
+                    if let left = h.headroom {
+                        Text("\(left)% left").monospacedDigit()
+                            .foregroundStyle(left <= 10 ? Color.red : left <= 25 ? Color.orange : Color.primary)
+                    } else {
+                        Text("no windows").foregroundStyle(.secondary)
+                    }
+                    Text("· \(h.spare) spare").foregroundStyle(.secondary).monospacedDigit()
+                    if h.dead > 0 { Text("· \(h.dead) dead").foregroundStyle(.red).monospacedDigit() }
+                }
+                .font(.caption)
+            }
+            if ins.headroom.isEmpty { Text("No fleets shared").foregroundStyle(.secondary) }
         }
     }
 

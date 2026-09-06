@@ -15,6 +15,7 @@ public struct TeamReader {
         public var now: TeamDocs.Now?
         public var sessions: [TeamDocs.SessionRow] = []
         public var crashes: [String] = []
+        public var fleet: TeamDocs.FleetDoc?
         /// `TeamPublisher.TranscriptSource.key` → chunk store paths in seq order.
         public var transcripts: [String: [String]] = [:]
         public var lastPublished: Int?
@@ -63,6 +64,8 @@ public struct TeamReader {
                 if let doc = decode(TeamDocs.SessionsIndex.self, entry.path), doc.schema == 1 { member.sessions = doc.sessions }
             case TeamKinds.crashes:
                 if let doc = decode(TeamDocs.Crashes.self, entry.path), doc.schema == 1 { member.crashes = doc.crashes }
+            case TeamKinds.fleet:
+                if let doc = decode(TeamDocs.FleetDoc.self, entry.path), doc.schema == 1 { member.fleet = doc }
             case TeamKinds.transcripts:
                 // m/<kid>/transcripts/<key…>/<seq>.jsonl
                 let parts = entry.path.split(separator: "/").map(String.init)

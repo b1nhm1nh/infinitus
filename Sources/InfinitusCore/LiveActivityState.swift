@@ -45,10 +45,15 @@ public struct WorkingActivityState: Codable, Hashable, Sendable {
     public var tokenFraction: Double
     public var accent: String
     public var plain: Bool
+    /// The theme's tokens/minute icon and unit (#218); nil keeps the
+    /// bolt and "tok/min". Optional so older payloads still decode.
+    public var rateIcon: String? = nil
+    public var rateLabel: String? = nil
 
     public init(active: String, icon: String?, slot: String, plan: String?, cash: String?,
                 windows: [ActivityWindow], binding: Int?, busy: Int, total: Int, waiting: Int,
-                next: String?, tokensPerMinute: Int?, tokenFraction: Double, accent: String, plain: Bool) {
+                next: String?, tokensPerMinute: Int?, tokenFraction: Double, accent: String, plain: Bool,
+                rateIcon: String? = nil, rateLabel: String? = nil) {
         self.active = active
         self.icon = icon
         self.slot = slot
@@ -64,6 +69,8 @@ public struct WorkingActivityState: Codable, Hashable, Sendable {
         self.tokenFraction = tokenFraction
         self.accent = accent
         self.plain = plain
+        self.rateIcon = rateIcon
+        self.rateLabel = rateLabel
     }
 }
 
@@ -133,7 +140,9 @@ public enum LiveActivityBuilder {
             tokensPerMinute: tokenRate.flatMap { $0.perMinute > 0 ? $0.perMinute : nil },
             tokenFraction: tokenRate?.fraction ?? 0,
             accent: theme.flashColor,
-            plain: theme.plain)
+            plain: theme.plain,
+            rateIcon: theme.rateGlyph.map(glyph),
+            rateLabel: theme.rateUnit)
     }
 
     /// #1's state, or nil when the fleet isn't all-dead (the activity ends
@@ -142,8 +151,9 @@ public enum LiveActivityBuilder {
                                now: Date = Date()) -> RevivalActivityState? {
         guard fleet.nextCandidate == nil,
               let rec = RecoveryMath.corrected(engine: fleet.nextRecovery, accounts: fleet.accounts,
-                                               activeNumber: fleet.activeNumber),
-              let at = WeeklyRoll.parse(rec.at), at > now else { return nil }
+                                               activeNumber: fleet.activeNumber, now: now),
+              let at = WeeklyRoll.parse(rec.at), at > now,
+              at <= now.addingTimeInterval(RecoveryMath.plausibleHorizon) else { return nil }
         let glyph = { (s: String) in textGlyphs ? GlyphText.textPresentation(s) : s }
         let account = fleet.accounts.first { $0.number == rec.number }
         return RevivalActivityState(
@@ -218,11 +228,10 @@ public enum LiveActivityBuilder {
         formatter.dateStyle = .none
         formatter.timeStyle = .short
         let rows: [(Date, String)] = fleet.accounts.compactMap { account in
-            guard account.number != number, let usage = account.usage else { return nil }
-            let resets = [usage.fiveHour, usage.sevenDay].compactMap { $0 }
-                .filter { $0.pct >= 100 }
-                .compactMap { WeeklyRoll.parse($0.resetsAt) }
-            guard let at = resets.max(), at > now else { return nil }
+            // The same pick as the headline's, so every surface agrees
+            // on who revives when (#226).
+            guard account.number != number, account.disabled != true,
+                  let at = RecoveryMath.revival(of: account, now: now)?.at, at > now else { return nil }
             let clock = Calendar.current.isDate(at, inSameDayAs: now)
                 ? formatter.string(from: at)
                 : at.formatted(.dateTime.month(.abbreviated).day())

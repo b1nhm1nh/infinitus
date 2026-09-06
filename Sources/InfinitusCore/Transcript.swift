@@ -94,22 +94,55 @@ public enum Transcript {
         return type == "system" && (entry["subtype"] as? String) == "api_error"
     }
 
-    /// The last entry that decides whether work has stopped. Reads only
-    /// the tail; partial first/last lines are skipped, never an error.
-    public static func lastTurnEntry(at url: URL) -> [String: Any]? {
-        guard let handle = try? FileHandle(forReadingFrom: url) else { return nil }
+    /// The transcript's last `tailBytes`, newest line first; partial
+    /// first/last lines are skipped by the callers, never an error.
+    static func tailLines(at url: URL) -> [Data.SubSequence] {
+        guard let handle = try? FileHandle(forReadingFrom: url) else { return [] }
         defer { try? handle.close() }
-        guard let size = try? handle.seekToEnd() else { return nil }
+        guard let size = try? handle.seekToEnd() else { return [] }
         let start = size > UInt64(tailBytes) ? size - UInt64(tailBytes) : 0
         guard (try? handle.seek(toOffset: start)) != nil,
-              let blob = try? handle.readToEnd() else { return nil }
-        for line in blob.split(separator: UInt8(ascii: "\n")).reversed() {
+              let blob = try? handle.readToEnd() else { return [] }
+        return blob.split(separator: UInt8(ascii: "\n")).reversed()
+    }
+
+    /// The last entry that decides whether work has stopped. Reads only
+    /// the tail.
+    public static func lastTurnEntry(at url: URL) -> [String: Any]? {
+        for line in tailLines(at: url) {
             guard line.first == UInt8(ascii: "{"),
                   let entry = try? JSONSerialization.jsonObject(with: Data(line)) as? [String: Any]
             else { continue }
             if decidesTheTurn(entry) { return entry }
         }
         return nil
+    }
+
+    /// The session's permission-mode class as Claude Code's peer inbox
+    /// (2.1.263+) computes it for the gate that holds mismatched peer
+    /// messages (#213): `"bypass"` for bypassPermissions, or for plan mode
+    /// when bypass was available (the tail shows an earlier
+    /// bypassPermissions turn); `"prompting"` for every other mode; nil
+    /// when no user entry in the tail records a mode. Every user entry —
+    /// prompts, tool results, peer messages — carries the mode at write
+    /// time, so the newest one is the freshest word.
+    public static func peerModeClass(at url: URL) -> String? {
+        var newest: String?
+        for line in tailLines(at: url) {
+            guard line.first == UInt8(ascii: "{"),
+                  let entry = try? JSONSerialization.jsonObject(with: Data(line)) as? [String: Any],
+                  (entry["type"] as? String) == "user",
+                  let mode = entry["permissionMode"] as? String
+            else { continue }
+            if newest == nil {
+                newest = mode
+                if mode != "plan" { break }
+            } else if mode == "bypassPermissions" {
+                return "bypass"
+            }
+        }
+        guard let newest else { return nil }
+        return newest == "bypassPermissions" ? "bypass" : "prompting"
     }
 
     /// The terminal plan-limit turn: a synthetic assistant message with
