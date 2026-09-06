@@ -8,6 +8,7 @@ publishes the matching section as the GitHub release body.
 ## Unreleased
 
 ### Mac
+- Phone messages and resume nudges reach sessions in every permission mode again: Claude Code 2.1.263 holds a peer message that claims a different permission class than the receiver's, so the app now asserts the session's own (#213).
 - "All accounts are exhausted" notifies once per outage and honors its toggle — the engine's ten-minute re-probes no longer repeat it.
 
 ### Phone

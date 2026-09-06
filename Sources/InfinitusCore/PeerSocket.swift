@@ -52,16 +52,20 @@ public enum PeerSocket {
     /// `from-mode`) and the NEWLINES around the body are fixed by the
     /// receiver, which re-renders the parse and demands byte equality — a
     /// space instead of a newline is shown as literal text from "an
-    /// unidentified session". `from-mode="bypass"` is the value that reaches
-    /// a session in either permission mode (the message is a fixed,
-    /// non-instructional string the user opted into sending to their own
-    /// sessions).
-    public static func wrapBody(_ text: String, from address: String, name: String = senderName) -> String {
+    /// unidentified session". `mode` is the sender's permission-mode
+    /// class, `"bypass"` or `"prompting"` (Claude Code 2.1.263+ holds a
+    /// message whose class differs from the receiver's — #213 — and a
+    /// bypass receiver holds one with no class at all); nil omits the
+    /// attribute, which a prompting receiver accepts. Any other word makes
+    /// the whole envelope unparseable, so callers pass only those two.
+    public static func wrapBody(_ text: String, from address: String, name: String = senderName,
+                                mode: String? = nil) -> String {
         // Escape closing-tag lookalikes as Claude Code's own sender does, so
         // a body can never forge an envelope boundary.
         let safe = text.replacingOccurrences(
             of: "</(?=cross-session-message)", with: "<\\\\", options: .regularExpression)
-        return "<cross-session-message from=\"\(address)\" from-name=\"\(name)\" from-mode=\"bypass\">\n"
+        let modeAttr = mode.map { " from-mode=\"\($0)\"" } ?? ""
+        return "<cross-session-message from=\"\(address)\" from-name=\"\(name)\"\(modeAttr)>\n"
             + safe + "\n</cross-session-message>"
     }
 
@@ -83,7 +87,8 @@ public enum PeerSocket {
 
     /// The NDJSON payload: auth frame (when a token exists) then the message.
     public static func frames(text: String, token: String?, from address: String,
-                              messageId: String = UUID().uuidString.lowercased()) -> Data {
+                              messageId: String = UUID().uuidString.lowercased(),
+                              mode: String? = nil) -> Data {
         var frames: [[String: Any]] = []
         if let token { frames.append(["type": "auth", "token": token]) }
         frames.append([
@@ -91,7 +96,7 @@ public enum PeerSocket {
             "msg_id": messageId,
             "type": "user",
             "from": address,
-            "message": ["role": "user", "content": wrapBody(text, from: address)],
+            "message": ["role": "user", "content": wrapBody(text, from: address, mode: mode)],
             "priority": "next",
         ])
         var out = Data()
@@ -105,11 +110,13 @@ public enum PeerSocket {
     }
 
     /// Deliver `text` to the session's inbox. True only when the whole
-    /// payload was written.
+    /// payload was written. `mode` is the receiver's own permission-mode
+    /// class (`Transcript.peerModeClass`), asserted as the sender's so the
+    /// inbound gate sees a match.
     public static func send(socketPath: String, text: String, pid: Int32, claudeDir: URL,
-                            timeout: TimeInterval = 5) -> Bool {
+                            timeout: TimeInterval = 5, mode: String? = nil) -> Bool {
         let payload = frames(text: text, token: peerToken(pid: pid, claudeDir: claudeDir),
-                             from: ownAddress())
+                             from: ownAddress(), mode: mode)
         return write(payload, to: socketPath, timeout: timeout)
     }
 

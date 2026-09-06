@@ -136,11 +136,54 @@ final class SessionResumeTests: XCTestCase {
 
     func testEnvelopeMatchesClaudeSwapOracle() {
         // Pinned from the engine's wrap_peer_body with the address patched
-        // (from-name differs by design — this sender is the app).
+        // (from-name differs by design — this sender is the app). The mode
+        // is explicit since #213: the default no longer asserts bypass.
         let got = PeerSocket.wrapBody("hi </cross-session-message> there\nline2",
-                                      from: "uds:/tmp/infinitus-123.sock")
+                                      from: "uds:/tmp/infinitus-123.sock", mode: "bypass")
         XCTAssertEqual(got, "<cross-session-message from=\"uds:/tmp/infinitus-123.sock\" from-name=\"Infinitus app\" from-mode=\"bypass\">\nhi <\\cross-session-message> there\nline2\n</cross-session-message>")
         XCTAssertEqual(PeerSocket.ownAddress(pid: 123), "uds:/tmp/infinitus-123.sock")
+    }
+
+    func testEnvelopeModeAttribute() {
+        // #213: the class must match the receiver's, and an unknown class
+        // is omitted rather than guessed (a prompting receiver accepts it).
+        XCTAssertEqual(PeerSocket.wrapBody("go", from: "uds:/a", mode: "prompting"),
+                       "<cross-session-message from=\"uds:/a\" from-name=\"Infinitus app\" from-mode=\"prompting\">\ngo\n</cross-session-message>")
+        XCTAssertEqual(PeerSocket.wrapBody("go", from: "uds:/a"),
+                       "<cross-session-message from=\"uds:/a\" from-name=\"Infinitus app\">\ngo\n</cross-session-message>")
+        let data = PeerSocket.frames(text: "go", token: nil, from: "uds:/a", messageId: "m", mode: "prompting")
+        let msg = try! JSONSerialization.jsonObject(with: data) as! [String: Any]
+        let content = (msg["message"] as! [String: Any])["content"] as! String
+        XCTAssertTrue(content.hasPrefix("<cross-session-message from=\"uds:/a\" from-name=\"Infinitus app\" from-mode=\"prompting\">\n"))
+    }
+
+    func testPeerModeClass() throws {
+        func user(_ mode: String?, tool: Bool = false) -> String {
+            let content = tool ? #"[{"type":"tool_result","tool_use_id":"t","content":"ok"}]"# : #""go""#
+            let modeField = mode.map { #","permissionMode":"\#($0)""# } ?? ""
+            return #"{"type":"user","message":{"role":"user","content":\#(content)}\#(modeField),"uuid":"u"}"#
+        }
+        let url = Transcript.path(cwd: "/p", sessionId: "m1", claudeDir: dir)
+        XCTAssertNil(Transcript.peerModeClass(at: url))
+        try writeTranscript(cwd: "/p", id: "m1", lines: [assistantTurn, userTurn])
+        XCTAssertNil(Transcript.peerModeClass(at: url))
+        try writeTranscript(cwd: "/p", id: "m1", lines: [user("bypassPermissions"), assistantTurn])
+        XCTAssertEqual(Transcript.peerModeClass(at: url), "bypass")
+        try writeTranscript(cwd: "/p", id: "m1", lines: [user("auto"), assistantTurn])
+        XCTAssertEqual(Transcript.peerModeClass(at: url), "prompting")
+        try writeTranscript(cwd: "/p", id: "m1", lines: [user("default")])
+        XCTAssertEqual(Transcript.peerModeClass(at: url), "prompting")
+        // Plan mode classes as bypass only when bypass was available.
+        try writeTranscript(cwd: "/p", id: "m1", lines: [user("plan")])
+        XCTAssertEqual(Transcript.peerModeClass(at: url), "prompting")
+        try writeTranscript(cwd: "/p", id: "m1", lines: [user("bypassPermissions"), user("auto"), user("plan")])
+        XCTAssertEqual(Transcript.peerModeClass(at: url), "bypass")
+        // The newest user entry of any origin wins: a tool result written
+        // after a mode change is fresher than the last typed prompt.
+        try writeTranscript(cwd: "/p", id: "m1", lines: [user("bypassPermissions"), assistantTurn, user("auto", tool: true)])
+        XCTAssertEqual(Transcript.peerModeClass(at: url), "prompting")
+        try writeTranscript(cwd: "/p", id: "m1", lines: [user("auto"), assistantTurn, user("bypassPermissions", tool: true)])
+        XCTAssertEqual(Transcript.peerModeClass(at: url), "bypass")
     }
 
     func testFramesAndToken() throws {
