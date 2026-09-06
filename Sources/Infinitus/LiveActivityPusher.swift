@@ -119,11 +119,11 @@ final class LiveActivityPusher: ObservableObject {
                                                               tokenRate: tokenRate),
                       lastWorking[registration.slot] == nil else { continue }
                 lastWorking[registration.slot] = state
+                // Silent: the activity appearing is the news, and work
+                // starts many times a day.
                 send(LiveActivityPush.startPayload(
                         attributesType: LiveActivityPush.workingAttributesType, machine: machine, state: state,
-                        staleDate: Date().addingTimeInterval(LiveActivityBuilder.workingStale),
-                        alertTitle: "\(state.busy) working on \(machine)",
-                        alertBody: "\(state.active) · \(state.total) sessions"),
+                        staleDate: Date().addingTimeInterval(LiveActivityBuilder.workingStale)),
                      to: registration, what: "start working")
             case .revivalStart:
                 guard !hasLive(.revival, device: registration.deviceId),
@@ -195,11 +195,19 @@ final class LiveActivityPusher: ObservableObject {
 
     /// The app's own notifications, mirrored to every phone that
     /// registered an alert token (issue #3). No phone → nothing sent.
-    func pushAlert(title: String, body: String) {
+    /// `unlessRevival`: a phone whose countdown activity is live (or
+    /// registered to start, with its own alert) skips this one.
+    func pushAlert(title: String, body: String, unlessRevival: Bool = false) {
         guard configured else { return }
         for registration in registrations.values where registration.kind == .alert {
+            if unlessRevival, showsRevival(device: registration.deviceId) { continue }
             send(LiveActivityPush.alertPayload(title: title, body: body), to: registration, what: "alert")
         }
+    }
+
+    private func showsRevival(device: String) -> Bool {
+        hasLive(.revival, device: device)
+            || registrations["\(device)/\(ActivityPushRegistration.Kind.revivalStart.rawValue)"] != nil
     }
 
     // MARK: APNs

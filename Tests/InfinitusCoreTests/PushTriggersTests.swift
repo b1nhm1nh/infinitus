@@ -264,13 +264,41 @@ final class PushTriggersTests: XCTestCase {
     func testAllDeadFiresOnceAndRearmsAfterRecovery() {
         var t = PushTriggers()
         let dead = [acct(1, dead: true), acct(2, dead: true)]
+        let mixed = [acct(1, dead: false, pct: 10), acct(2, dead: true)]
+        XCTAssertEqual(t.tick(busy: nil, total: nil, accounts: mixed, flags: all), [])
         XCTAssertEqual(t.tick(busy: nil, total: nil, accounts: dead, flags: all),
                        ["all 2 accounts exhausted — nothing left to switch to"])
         XCTAssertEqual(t.tick(busy: nil, total: nil, accounts: dead, flags: all), [])
-        _ = t.tick(busy: nil, total: nil,
-                   accounts: [acct(1, dead: false, pct: 10), acct(2, dead: true)],
+        _ = t.tick(busy: nil, total: nil, accounts: mixed, flags: all)
+        XCTAssertEqual(t.tick(busy: nil, total: nil, accounts: dead, flags: all).count, 1)
+        XCTAssertTrue(PushTriggers.isAllDeadMessage("all 2 accounts exhausted — nothing left to switch to"))
+        XCTAssertFalse(PushTriggers.isAllDeadMessage("a1 is back"))
+    }
+
+    func testAllDeadAtLaunchIsSeededSilently() {
+        var t = PushTriggers()
+        let dead = [acct(1, dead: true), acct(2, dead: true)]
+        // Empty first looks (usage not loaded yet) don't seed; the first
+        // look with accounts does, and says nothing even when all dead.
+        XCTAssertEqual(t.tick(busy: nil, total: nil, accounts: [], flags: all), [])
+        XCTAssertEqual(t.tick(busy: nil, total: nil, accounts: dead, flags: all), [])
+        XCTAssertEqual(t.tick(busy: nil, total: nil, accounts: dead, flags: all), [])
+        _ = t.tick(busy: nil, total: nil, accounts: [acct(1, dead: false, pct: 10), acct(2, dead: true)],
                    flags: all)
         XCTAssertEqual(t.tick(busy: nil, total: nil, accounts: dead, flags: all).count, 1)
+    }
+
+    func testEmptyOrPartialRosterDoesNotRearmAllDead() {
+        var t = PushTriggers()
+        let dead = [acct(1, dead: true), acct(2, dead: true)]
+        _ = t.tick(busy: nil, total: nil, accounts: [acct(1, dead: false, pct: 10)], flags: all)
+        XCTAssertEqual(t.tick(busy: nil, total: nil, accounts: dead, flags: all).count, 1)
+        // An engine re-probe blanks usage: the roster thins or empties
+        // for a tick, then comes back all dead — no repeat.
+        XCTAssertEqual(t.tick(busy: nil, total: nil, accounts: [], flags: all), [])
+        XCTAssertEqual(t.tick(busy: nil, total: nil, accounts: dead, flags: all), [])
+        XCTAssertEqual(t.tick(busy: nil, total: nil, accounts: [acct(2, dead: true)], flags: all), [])
+        XCTAssertEqual(t.tick(busy: nil, total: nil, accounts: dead, flags: all), [])
     }
 
     func testNoAccountsIsNeverAllDead() {
@@ -304,6 +332,7 @@ final class PushTriggersTests: XCTestCase {
 
     func testDisabledFlagSuppressesTheMessageButAdvancesState() {
         var t = PushTriggers()
+        _ = t.tick(busy: nil, total: nil, accounts: [acct(1, dead: false, pct: 10)], flags: all)
         let off = PushTriggers.Flags(sessionsDone: false, allDead: true, lastAlive: true)
         _ = t.tick(busy: 3, total: 5, accounts: [], flags: off)
         _ = t.tick(busy: 0, total: 5, accounts: [], flags: off)
