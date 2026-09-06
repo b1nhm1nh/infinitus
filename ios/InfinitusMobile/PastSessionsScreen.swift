@@ -17,6 +17,8 @@ struct PastSessionsScreen: View {
     @State private var loading = false
     @State private var error: String?
     @State private var resuming: String?
+    /// Which paired Mac's history (#144 phase 3); `nil` is the primary.
+    @State private var macId: String?
 
     private static let age: RelativeDateTimeFormatter = {
         let f = RelativeDateTimeFormatter()
@@ -37,6 +39,27 @@ struct PastSessionsScreen: View {
         .navigationTitle("Past sessions")
         .navigationBarTitleDisplayMode(.inline)
         .searchable(text: $search, prompt: "Repo, folder or first message")
+        .toolbar {
+            if !model.others.isEmpty {
+                ToolbarItem(placement: .primaryAction) {
+                    Menu {
+                        Picker("Mac", selection: $macId) {
+                            Text(model.machineName(macId: nil)).tag(String?.none)
+                            ForEach(model.others) { other in
+                                Text(other.pairing.name).tag(String?.some(other.id))
+                            }
+                        }
+                    } label: {
+                        Label(model.machineName(macId: macId), systemImage: "desktopcomputer")
+                            .labelStyle(.titleAndIcon)
+                    }
+                }
+            }
+        }
+        .onChange(of: macId) { _, _ in
+            sessions = []
+            Task { await load() }
+        }
         .onSubmit(of: .search) { Task { await load() } }
         .overlay {
             if loading && sessions.isEmpty {
@@ -106,7 +129,7 @@ struct PastSessionsScreen: View {
         defer { loading = false }
         do {
             let query = search.trimmingCharacters(in: .whitespaces)
-            let reply = try await NetworkFleetMirror.shared.pastSessions(
+            let reply = try await model.mirror(for: macId).pastSessions(
                 limit: query.isEmpty ? 50 : 200, search: query.isEmpty ? nil : query)
             sessions = reply.sessions
             error = nil
@@ -124,14 +147,17 @@ struct PastSessionsScreen: View {
         Task {
             defer { resuming = nil }
             do {
-                let reply = try await NetworkFleetMirror.shared.startSession(request)
+                let reply = try await model.mirror(for: macId).startSession(request)
                 guard reply.outcome == "started" else {
                     error = reply.detail ?? reply.outcome
                     return
                 }
-                if let pid = reply.pid { model.requestedPid = pid }
+                if let pid = reply.pid {
+                    model.requestedMacId = macId
+                    model.requestedPid = pid
+                }
                 dismiss()
-                await model.refresh()
+                await model.refresh(macId: macId)
             } catch {
                 self.error = error.localizedDescription
             }
