@@ -109,6 +109,22 @@ final class MirrorSessionStartBox: @unchecked Sendable {
     }
 }
 
+/// Answers `GET /sessions/past` (#164): the newest past sessions, live
+/// ones flagged, for the phone's Past list and its Resume.
+final class MirrorPastSessionsBox: @unchecked Sendable {
+    private let lock = NSLock()
+    private var handler: (@Sendable (Int, String?) -> PastSessions.Reply)?
+
+    func set(_ new: @escaping @Sendable (Int, String?) -> PastSessions.Reply) {
+        lock.lock(); handler = new; lock.unlock()
+    }
+
+    func call(limit: Int, search: String?) -> PastSessions.Reply? {
+        lock.lock(); let current = handler; lock.unlock()
+        return current?(limit, search)
+    }
+}
+
 /// Answers `POST /app/update` (#121). Async, unlike `MirrorSessionStartBox`:
 /// deciding needs live @MainActor state (`AppModel.appUpdateVersion`,
 /// `BrewUpdater`), same reason `MirrorAwsLoginBox`'s handlers are async.
@@ -288,6 +304,8 @@ final class MirrorServer: ObservableObject {
     private var defaultsObserver: NSObjectProtocol?
     /// Answers `POST /sessions/start` (#91); set by AppModel once at start.
     let sessionStart = MirrorSessionStartBox()
+    /// Answers `GET /sessions/past` (#164); set by AppModel once at start.
+    let pastSessions = MirrorPastSessionsBox()
     /// Answers `POST /app/update` (#121); set by AppModel once at start.
     let appUpdate = MirrorAppUpdateBox()
     /// Event-log sink (icon, text), set by AppModel.
@@ -388,6 +406,7 @@ final class MirrorServer: ObservableObject {
         let token = self.token
         let sessionFeed = self.sessionFeed
         let sessionStart = self.sessionStart
+        let pastSessions = self.pastSessions
         let appUpdate = self.appUpdate
         let sessionInput = self.sessionInput
         let sessionImage = self.sessionImage
@@ -406,7 +425,7 @@ final class MirrorServer: ObservableObject {
         }
         listener.newConnectionHandler = { [queue] connection in
             Self.serve(connection, payload: payload, token: token, sessionFeed: sessionFeed,
-                       sessionInput: sessionInput, sessionImage: sessionImage, activityTokens: activityTokens, crashes: crashes, sessionStart: sessionStart,
+                       sessionInput: sessionInput, sessionImage: sessionImage, activityTokens: activityTokens, crashes: crashes, sessionStart: sessionStart, pastSessions: pastSessions,
                        team: team, appUpdate: appUpdate, awsLogin: awsLogin, teamMirror: teamMirror, queue: queue, onServed: served)
         }
         listener.stateUpdateHandler = { [weak self] state in
@@ -484,7 +503,7 @@ final class MirrorServer: ObservableObject {
                                           sessionFeed: MirrorSessionFeedBox,
                                           sessionInput: MirrorSessionInputBox,
                                             sessionImage: MirrorSessionImageBox,
-                                          activityTokens: MirrorActivityTokenBox, crashes: MirrorCrashBox, sessionStart: MirrorSessionStartBox,
+                                          activityTokens: MirrorActivityTokenBox, crashes: MirrorCrashBox, sessionStart: MirrorSessionStartBox, pastSessions: MirrorPastSessionsBox,
                                           team: MirrorTeamBox, appUpdate: MirrorAppUpdateBox,
                                           awsLogin: MirrorAwsLoginBox,
                                           teamMirror: MirrorTeamMirrorBox,
@@ -493,7 +512,7 @@ final class MirrorServer: ObservableObject {
         connection.start(queue: queue)
         receive(connection, buffer: Data(), payload: payload, token: token,
                sessionFeed: sessionFeed, sessionInput: sessionInput, sessionImage: sessionImage,
-               activityTokens: activityTokens, crashes: crashes, sessionStart: sessionStart,
+               activityTokens: activityTokens, crashes: crashes, sessionStart: sessionStart, pastSessions: pastSessions,
                team: team, appUpdate: appUpdate, awsLogin: awsLogin, teamMirror: teamMirror, onServed: onServed)
     }
 
@@ -504,7 +523,7 @@ final class MirrorServer: ObservableObject {
                                             sessionFeed: MirrorSessionFeedBox,
                                             sessionInput: MirrorSessionInputBox,
                                             sessionImage: MirrorSessionImageBox,
-                                            activityTokens: MirrorActivityTokenBox, crashes: MirrorCrashBox, sessionStart: MirrorSessionStartBox,
+                                            activityTokens: MirrorActivityTokenBox, crashes: MirrorCrashBox, sessionStart: MirrorSessionStartBox, pastSessions: MirrorPastSessionsBox,
                                             team: MirrorTeamBox, appUpdate: MirrorAppUpdateBox,
                                             awsLogin: MirrorAwsLoginBox,
                                             teamMirror: MirrorTeamMirrorBox,
@@ -574,6 +593,23 @@ final class MirrorServer: ObservableObject {
                     DispatchQueue.global(qos: .utility).async {
                         let data = sessionFeed.call(pid, limit, since: since, wait: wait)
                         let response = data.map(MirrorTransport.snapshotResponse)
+                            ?? MirrorTransport.notFoundResponse()
+                        onServed(request)
+                        connection.send(content: response,
+                                        completion: .contentProcessed { _ in connection.cancel() })
+                    }
+                    return
+                } else if request.method == "GET", request.path == PastSessions.path {
+                    let limit = request.query(PastSessions.limitQueryName).flatMap(Int.init) ?? 50
+                    let search = request.query(PastSessions.searchQueryName)
+                    // Lists a directory tree and reads up to `limit`
+                    // transcript heads: off this queue.
+                    DispatchQueue.global(qos: .utility).async {
+                        let encoder = JSONEncoder()
+                        encoder.dateEncodingStrategy = .iso8601
+                        let response = pastSessions.call(limit: limit, search: search)
+                            .flatMap { try? encoder.encode($0) }
+                            .map(MirrorTransport.jsonResponse)
                             ?? MirrorTransport.notFoundResponse()
                         onServed(request)
                         connection.send(content: response,
@@ -725,7 +761,7 @@ final class MirrorServer: ObservableObject {
             }
             receive(connection, buffer: buffer, payload: payload, token: token,
                    sessionFeed: sessionFeed, sessionInput: sessionInput, sessionImage: sessionImage,
-                   activityTokens: activityTokens, crashes: crashes, sessionStart: sessionStart,
+                   activityTokens: activityTokens, crashes: crashes, sessionStart: sessionStart, pastSessions: pastSessions,
                    team: team, appUpdate: appUpdate, awsLogin: awsLogin, teamMirror: teamMirror, onServed: onServed)
         }
     }

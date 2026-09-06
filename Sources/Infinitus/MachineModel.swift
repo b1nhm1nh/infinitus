@@ -19,6 +19,15 @@ final class MachineModel: ObservableObject {
     @Published var enabled: Bool {
         didSet { UserDefaults.standard.set(enabled, forKey: "machine_guardian") }
     }
+    /// Per-kind mutes for the pushed warnings (user 2026-09-06: "stop the
+    /// hook and tmp dir notifications"): the guardian keeps sampling and
+    /// the pane keeps listing them; only the notification is skipped.
+    @Published var notifyHooks: Bool {
+        didSet { UserDefaults.standard.set(notifyHooks, forKey: "machine_notify_hooks") }
+    }
+    @Published var notifyTemp: Bool {
+        didSet { UserDefaults.standard.set(notifyTemp, forKey: "machine_notify_temp") }
+    }
 
     /// AppModel owns this model; reaching back for session names,
     /// last-activity and the push/log channels must never cycle.
@@ -30,6 +39,7 @@ final class MachineModel: ObservableObject {
 
     private var lastTempCountAt: Date?
     private var lastTempCount: Int?
+    private var lastTempByOwner: [String: Int]?
     private var lastTempListSeconds: Double = 0
     private var lastSizesAt: Date?
     private var lastSizes: (transcripts: Int, pluginCache: Int, mem: Int) = (0, 0, 0)
@@ -47,6 +57,8 @@ final class MachineModel: ObservableObject {
         announcedIdle = Set(UserDefaults.standard.array(forKey: Self.announcedIdleKey) as? [Int] ?? [])
         idleHours = UserDefaults.standard.object(forKey: "machine_idle_hours") as? Double ?? 12
         enabled = UserDefaults.standard.object(forKey: "machine_guardian") as? Bool ?? true
+        notifyHooks = UserDefaults.standard.object(forKey: "machine_notify_hooks") as? Bool ?? true
+        notifyTemp = UserDefaults.standard.object(forKey: "machine_notify_temp") as? Bool ?? true
     }
 
     /// Called once per `AppModel.refreshSnapshot()` pass; samples at
@@ -68,14 +80,16 @@ final class MachineModel: ObservableObject {
         let countTemp = lastTempCountAt.map { Date().timeIntervalSince($0) >= 300 } ?? true
         let doSizes = lastSizesAt.map { Date().timeIntervalSince($0) >= 3600 } ?? true
         let previousTempCount = lastTempCount
+        let previousTempByOwner = lastTempByOwner
+        let previousTempAt = lastTempCountAt
         let previousTempListSeconds = lastTempListSeconds
         let previousSizes = lastSizes
         // Session names/last-activity live on the main actor
         // (SessionProgressModel); read them here, pass the dictionary in.
         let byPid = host?.sessionProgress.byPid ?? [:]
 
-        let (report, fingerprint, tempCount, sizes, parked, rows) = await Task.detached(priority: .utility) {
-            () -> (MachineReport, Set<String>, Int?, (Int, Int, Int), [String], [ProcessRow]) in
+        let (report, fingerprint, tempCount, sizes, parked, rows, pipSpawner) = await Task.detached(priority: .utility) {
+            () -> (MachineReport, Set<String>, Int?, (Int, Int, Int), [String], [ProcessRow], String?) in
             let records = ClaudeSessions.list(claudeDir: claudeDir)
             let sessionPids = Set(records.map { Int($0.pid) })
             let cwds = Array(Set(records.map(\.cwd)))
@@ -125,7 +139,8 @@ final class MachineModel: ObservableObject {
             let report = MachineReport(sample: sample, hooks: hooks, runaways: runaways,
                                        residue: residue, sessions: sessions, warnings: [])
             let parked = Self.readParkedOwners()
-            return (report, Set(hookRegs.map(\.id)), tempCount, sizes, parked, rows)
+            let pipSpawner = HookInventory.spawner(of: "pip install", rows: rows, registrations: hookRegs)
+            return (report, Set(hookRegs.map(\.id)), tempCount, sizes, parked, rows, pipSpawner)
         }.value
         lastRows = rows
 
@@ -134,7 +149,11 @@ final class MachineModel: ObservableObject {
         // listing still counts as this cycle's attempt — `tempCount` is
         // non-nil even when throttled (it carries the previous value
         // forward), so gating on it would count once and never retry.
+        var tempGrowth: [String: Double] = [:]
         if countTemp {
+            tempGrowth = MachineReport.tempGrowthPerHour(previous: previousTempByOwner, previousAt: previousTempAt,
+                                                         current: report.sample.tempByOwner, now: Date())
+            if report.sample.tempByOwner != nil { lastTempByOwner = report.sample.tempByOwner }
             lastTempCount = tempCount
             lastTempCountAt = Date()
             lastTempListSeconds = report.sample.tempListSeconds
@@ -155,7 +174,8 @@ final class MachineModel: ObservableObject {
         UserDefaults.standard.set(Array(remembered), forKey: Self.fingerprintKey)
 
         var finalReport = report
-        finalReport.warnings = MachineReport.warnings(sample: report.sample, hooks: report.hooks, newcomers: newcomers)
+        finalReport.warnings = MachineReport.warnings(sample: report.sample, hooks: report.hooks, newcomers: newcomers,
+                                                      tempGrowthPerHour: tempGrowth, pipSpawner: pipSpawner)
         self.report = finalReport
 
         // Every warning currently true gets pushed once; dropping out of
@@ -163,7 +183,7 @@ final class MachineModel: ObservableObject {
         // identity is the text minus its digits — "oldest 53 min" ticks
         // every sample and must not re-notify.
         let currentWarnings = Set(finalReport.warnings.map(Self.warningKey))
-        for warning in finalReport.warnings where !pushedWarnings.contains(Self.warningKey(warning)) {
+        for warning in finalReport.warnings where !pushedWarnings.contains(Self.warningKey(warning)) && notifies(warning) {
             host?.push(warning)
         }
         pushedWarnings = currentWarnings
@@ -182,6 +202,14 @@ final class MachineModel: ObservableObject {
     enum ReclaimKind: String, CaseIterable, Sendable { case sockets, sessionEnvs, temps }
 
     static func warningKey(_ warning: String) -> String { warning.filter { !$0.isNumber } }
+
+    private func notifies(_ warning: String) -> Bool {
+        switch MachineReport.warningKind(warning) {
+        case .hooks: return notifyHooks
+        case .temp: return notifyTemp
+        case .other: return true
+        }
+    }
 
     /// Only a pid the last report flagged, and only while `ps` still
     /// shows the flagged command there (pids get reused).

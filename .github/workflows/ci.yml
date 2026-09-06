@@ -80,7 +80,10 @@ jobs:
   # (docs/superpowers/specs/2026-09-05-team-design.md §9). The job runs
   # to show when that changes; failures don't block a merge.
   windows:
-    runs-on: windows-latest
+    # windows-latest moved to Visual Studio 18, whose STL refuses the
+    # swift-6.1 toolchain's clang (STL1000 "expected Clang 20 or newer",
+    # #155) before any of our code compiles; 2022 still carries VS 17.
+    runs-on: windows-2022
     continue-on-error: true
     steps:
       - uses: actions/checkout@v4
@@ -88,4 +91,17 @@ jobs:
         with:
           branch: swift-6.1-release
           tag: 6.1-RELEASE
-      - run: swift build --product infinitusctl
+      # zlib for CZlib: the toolchain has no <zlib.h>; vcpkg on the
+      # runner image does (#171, second wall after the Glibc imports).
+      # The paths are spelled out because pwsh splits a `-I${env:…}`
+      # token before swift sees it ("The command parameter was already
+      # specified"), and they ride the command line rather than the
+      # MSVC INCLUDE/LIB variables: once LIB is set, clang stops adding
+      # the VC and SDK lib dirs of its own (msvcrt.lib went missing).
+      # vcpkg names the import library z.lib, which the modulemap's
+      # `link "z"` asks for.
+      - run: vcpkg install zlib:x64-windows
+      - run: >
+          swift build --product infinitusctl
+          -Xcc -IC:/vcpkg/installed/x64-windows/include
+          -Xswiftc -LC:/vcpkg/installed/x64-windows/lib

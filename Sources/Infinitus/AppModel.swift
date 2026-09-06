@@ -136,6 +136,7 @@ final class AppModel: ObservableObject {
     let sessionProgress = SessionProgressModel()
     /// The machine-health guardian (#115): Settings › Machine's model.
     let machineModel = MachineModel()
+    let sessionProfiles = SessionProfilesModel()
     /// "Allow for this session" rules from the phone (#79), per session id.
     let toolApprovals = ToolApprovals()
     @Published var lastError: String?
@@ -1064,12 +1065,17 @@ final class AppModel: ObservableObject {
         mirrorServer.sessionStart.set { [weak self] request in
             let reply = SessionLauncher.start(request, preferredHost: host)
             let label = (request.cwd as NSString).lastPathComponent
+            let verb = request.resume == nil ? "started" : "resumed"
+            let born = request.profile.map { " (profile \($0))" } ?? ""
             Task { @MainActor in
                 self?.logMirrorInput(reply.outcome == "started" ? "🚀" : "⚠️",
-                                     "phone started a session in \(label): \(reply.outcome)\(reply.host.map { " via \($0)" } ?? "")")
+                                     "phone \(verb) a session in \(label)\(born): \(reply.outcome)\(reply.host.map { " via \($0)" } ?? "")")
             }
             return reply
         }
+        mirrorServer.pastSessions.set { limit, search in
+            PastSessions.Reply(sessions: PastSessions.list(claudeDir: ClaudeSessions.configHome(),
+                                                           limit: limit, search: search))
         // The phone's Team tab (spec §9 step 8) — every call lands on the
         // main actor, where TeamModel lives.
         mirrorServer.teamMirror.set { [weak self] request in
@@ -2033,7 +2039,8 @@ final class AppModel: ObservableObject {
                                             awsLogins: awsLogins, progress: progress,
                                             stats: stats,
                                             pushesAlerts: self.liveActivityPusher.configured,
-                                            app: appInfo, team: teamSnapshot)
+                                            app: appInfo, team: teamSnapshot,
+                                            profiles: self.sessionProfiles.profiles)
             }
         }
         // All-limited: count the limit-stopped sessions waiting to be

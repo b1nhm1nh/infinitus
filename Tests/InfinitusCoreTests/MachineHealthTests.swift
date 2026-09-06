@@ -2,6 +2,15 @@ import XCTest
 @testable import InfinitusCore
 
 final class MachineHealthTests: XCTestCase {
+    func testWarningKindsMatchTheMutes() {
+        XCTAssertEqual(MachineReport.warningKind("new hook: semgrep on PostToolUse (plugin)"), .hooks)
+        XCTAssertEqual(MachineReport.warningKind("peon has 12 instances (oldest 53 min, 3 stuck)"), .hooks)
+        XCTAssertEqual(MachineReport.warningKind("semgrep runs 4 commands on every PreToolUse Bash call"), .hooks)
+        XCTAssertEqual(MachineReport.warningKind("temp directory holds 12000 entries (pip 9600)"), .temp)
+        XCTAssertEqual(MachineReport.warningKind("temp directory listing timed out"), .temp)
+        XCTAssertEqual(MachineReport.warningKind("swap 95% full"), .other)
+    }
+
     let ps = """
         1     0 Ss    25152 04-00:36:41   0.9 /sbin/launchd
      4120     1 S    812000    02:39:50   3.2 /Applications/Infinitus.app/Contents/MacOS/Infinitus
@@ -47,6 +56,23 @@ final class MachineHealthTests: XCTestCase {
         let hooks = [a, b].map { MachineReport.Hook(registration: $0, spawnsPerHour: 300, live: live) }
         let warnings = MachineReport.warnings(sample: MachineSample(), hooks: hooks, newcomers: [])
         XCTAssertEqual(warnings.filter { $0.hasPrefix("peon-ping has") }.count, 1)
+    }
+
+    func testRetryLoopWarningFromTempGrowthAndPipSpawner() {
+        let then = Date(timeIntervalSince1970: 1000), now = then.addingTimeInterval(1800)
+        let growth = MachineReport.tempGrowthPerHour(previous: ["pip": 100, "other": 5], previousAt: then,
+                                                     current: ["pip": 130, "python": 10, "other": 5], now: now)
+        XCTAssertEqual(growth["pip"], 60); XCTAssertEqual(growth["python"], 20); XCTAssertNil(growth["other"])
+        let warnings = MachineReport.warnings(sample: MachineSample(), hooks: [], newcomers: [],
+                                              tempGrowthPerHour: growth, pipSpawner: "security-guidance")
+        XCTAssertTrue(warnings.contains("security-guidance's hook keeps re-running pip install — 80 new temp dirs per hour"))
+        XCTAssertTrue(MachineReport.warnings(sample: MachineSample(), hooks: [], newcomers: [], tempGrowthPerHour: ["pip": 8]).isEmpty)
+        let rows = [
+            ProcessRow(pid: 10, ppid: 1, stat: "S", rssKB: 1, elapsedSeconds: 5, cpu: 0, command: "python3 /Users/me/.claude/plugins/cache/m/security-guidance/1/hooks/ensure_agent_sdk.py"),
+            ProcessRow(pid: 11, ppid: 10, stat: "S", rssKB: 1, elapsedSeconds: 4, cpu: 0, command: "/venv/bin/python -m pip install --no-cache-dir sdk"),
+        ]
+        let reg = HookRegistration(event: "SessionStart", matcher: nil, command: "python3 /Users/me/.claude/plugins/cache/m/security-guidance/1/hooks/ensure_agent_sdk.py", timeout: 180, source: .plugin("security-guidance"))
+        XCTAssertEqual(HookInventory.spawner(of: "pip install", rows: rows, registrations: [reg]), "security-guidance")
     }
 
     func testScriptPathSkipsInterpretersAndExpandsHome() {

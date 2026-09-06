@@ -46,7 +46,12 @@ public struct TeamPublisher {
     /// (Stats v2 `+`), one row per session (sub-agents summed in), and
     /// the Claude Code transcript files to chunk. Codex files are
     /// chunked by nobody — only their days and session row travel.
-    public static func collect(entries: [String: StatsScanner.FileEntry], exclusions: TeamExclusions) -> Collected {
+    /// `transcriptFloorDay` (a `Stats.dayKey`): a Claude file with no day
+    /// on or after it is folded into days and sessions but not chunked.
+    /// Day keys, not `lastAt`: sub-agent files carry days but no session
+    /// times, and ISO day keys compare as strings.
+    public static func collect(entries: [String: StatsScanner.FileEntry], exclusions: TeamExclusions,
+                               transcriptFloorDay: String? = nil) -> Collected {
         var out = Collected()
         var rows: [String: TeamDocs.SessionRow] = [:]
         for (path, entry) in entries.sorted(by: { $0.key < $1.key }) {
@@ -76,7 +81,8 @@ public struct TeamPublisher {
             }
             if identity.agent != nil { row.subagents += 1 }
             rows[identity.session] = row
-            if claude { out.transcripts.append(TranscriptSource(session: identity.session, agent: identity.agent, url: URL(fileURLWithPath: path))) }
+            let recent = transcriptFloorDay.map { (entry.days.keys.max() ?? "") >= $0 } ?? true
+            if claude, recent { out.transcripts.append(TranscriptSource(session: identity.session, agent: identity.agent, url: URL(fileURLWithPath: path))) }
         }
         for key in out.days.keys { out.days[key]!.finalizePeak() }
         out.sessions = rows.values.sorted { $0.startedAt == $1.startedAt ? $0.id < $1.id : $0.startedAt > $1.startedAt }
@@ -102,6 +108,14 @@ public struct TeamPublisher {
         public var includeImages = false
         /// Days of `days/` files published and files scanned (`maxAge`).
         public var historyDays = 30
+        /// Transcripts are chunked only from sessions active within this
+        /// many days — stats keep `historyDays`. A month of one Mac's
+        /// transcripts was 9 GB (2026-09-06): every chunk sealed in memory
+        /// and pushed as one commit, past GitHub's 2 GB push cap.
+        public var transcriptDays = 2
+        /// Sealed bytes pushed per commit; the cursor state is saved after
+        /// each, so a killed publish resumes instead of starting over.
+        public var batchBytes = 200 << 20
         public var calendar: Calendar = .current
         public init(projectsDir: URL, home: String) { self.projectsDir = projectsDir; self.home = home }
     }
@@ -177,10 +191,23 @@ public struct TeamPublisher {
         let calendar = sources.calendar
         let scan = StatsScanner.scan(projectsDir: sources.projectsDir, codexDir: sources.codexDir, cacheURL: sources.cacheURL,
                                      calendar: calendar, maxAge: Double(sources.historyDays) * 86_400, now: now)
-        let collected = Self.collect(entries: scan.entries, exclusions: exclusions)
+        let transcriptFloor = calendar.date(byAdding: .day, value: -sources.transcriptDays, to: calendar.startOfDay(for: now)) ?? .distantPast
+        let collected = Self.collect(entries: scan.entries, exclusions: exclusions,
+                                     transcriptFloorDay: Stats.dayKey(transcriptFloor, calendar: calendar))
         let redact = TeamRedaction.redactor(options: TeamRedaction.Options(home: sources.home, includeImages: sources.includeImages))
         var items: [TeamClient.PublishItem] = []
+        var pendingBytes = 0
         var report = Report()
+
+        // One commit per `batchBytes` of plaintext, state saved behind it:
+        // a publish killed mid-way picks up at the last saved cursor.
+        func flush() throws {
+            guard !items.isEmpty else { return }
+            report.published += try client.publish(items, now: at)
+            items.removeAll()
+            pendingBytes = 0
+            try state.save(teamDir: teamDir)
+        }
 
         // `digest` defaults to the canonical bytes; day files pass
         // `dayDigest` because their bytes are not stable across processes.
@@ -189,6 +216,7 @@ public struct TeamPublisher {
             if !always, state.hashes[path] == digest { report.skipped += 1; return }
             try writeCopy(path, plaintext)
             items.append(TeamClient.PublishItem(kind: kind, path: path, plaintext: plaintext, audience: shares.target(for: kind)))
+            pendingBytes += plaintext.count
             state.hashes[path] = digest
         }
 
@@ -215,21 +243,25 @@ public struct TeamPublisher {
                   try CanonicalJSON.encode(TeamDocs.Crashes(crashes: sources.crashes.map(\.summary))))
 
         for source in collected.transcripts {
-            var cursor = state.transcripts[source.key] ?? TeamPublishState.Cursor()
-            let (chunks, offset) = try TeamChunker.chunks(of: source.url, from: cursor.offset, redact: redact)
-            for chunk in chunks {
-                cursor.seq += 1
-                let path = source.chunkPath(seq: cursor.seq)
-                try writeCopy(path, chunk)
-                items.append(TeamClient.PublishItem(kind: TeamKinds.transcripts, path: path, plaintext: chunk,
-                                                    audience: shares.target(for: TeamKinds.transcripts)))
-                report.transcriptChunks += 1
+            try drainingPool {
+                var cursor = state.transcripts[source.key] ?? TeamPublishState.Cursor()
+                let (chunks, offset) = try TeamChunker.chunks(of: source.url, from: cursor.offset, redact: redact)
+                for chunk in chunks {
+                    cursor.seq += 1
+                    let path = source.chunkPath(seq: cursor.seq)
+                    try writeCopy(path, chunk)
+                    items.append(TeamClient.PublishItem(kind: TeamKinds.transcripts, path: path, plaintext: chunk,
+                                                        audience: shares.target(for: TeamKinds.transcripts)))
+                    report.transcriptChunks += 1
+                    pendingBytes += chunk.count
+                }
+                cursor.offset = offset
+                state.transcripts[source.key] = cursor
+                if pendingBytes >= sources.batchBytes { try flush() }
             }
-            cursor.offset = offset
-            state.transcripts[source.key] = cursor
         }
 
-        report.published = try client.publish(items, now: at)
+        try flush()
         try state.save(teamDir: teamDir)
         return report
     }

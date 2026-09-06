@@ -68,6 +68,7 @@ final class TeamPublisherTests: XCTestCase {
     func sources(_ projects: URL) -> TeamPublisher.Sources {
         var s = TeamPublisher.Sources(projectsDir: projects, home: "/Users/alice")
         s.historyDays = 10_000   // the fixture's dates stay in the window whenever this runs
+        s.transcriptDays = 10_000
         s.liveSessions = [ClaudeSessionRecord(pid: 1, sessionId: "s1", cwd: "/r/app", status: "busy"),
                           ClaudeSessionRecord(pid: 2, sessionId: "s2", cwd: "/r/secret", status: "idle")]
         s.crashes = [CrashReport(platform: "mac", device: "Mac", appVersion: "1", osVersion: "26", at: Date(), kind: "crash", reason: "SIGSEGV")]
@@ -152,6 +153,69 @@ final class TeamPublisherTests: XCTestCase {
         try publisher.quit()
         _ = try t.leader.fetch()
         XCTAssertFalse(try t.leader.readable().map(\.path).contains(me + "now.json"))
+    }
+
+    func commits(_ remote: URL) throws -> Int {
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+        p.arguments = ["git", "-C", remote.path, "rev-list", "--count", "--all"]
+        let out = Pipe(); p.standardOutput = out
+        try p.run(); p.waitUntilExit()
+        return Int(String(decoding: out.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)) ?? -1
+    }
+
+    func testTranscriptWindowIsNarrowerThanTheStatsWindow() throws {
+        let t = try team()
+        let projects = try writeProjects(scratch)
+        var s = sources(projects)
+        s.transcriptDays = 1
+        // Ten days after the fixture's 2026-09-04 lines: the day still travels, no chunk does.
+        let later = Date(timeIntervalSince1970: 1_789_000_000)
+        let report = try TeamPublisher(client: t.alice, paths: t.alicePaths).publish(sources: s, now: later)
+        let me = "m/\(t.alice.identity.kid)/"
+        XCTAssertEqual(report.transcriptChunks, 0)
+        XCTAssertTrue(report.published.contains(me + "days/2026-09-04.json"))
+        XCTAssertFalse(report.published.contains { $0.contains("/transcripts/") })
+        // Same session index either way: the row is not the transcript.
+        let index = try CanonicalJSON.decode(TeamDocs.SessionsIndex.self, from: try t.alice.read(me + "sessions/index.json").1)
+        XCTAssertEqual(index.sessions.map(\.id), ["s1", "s2"])
+    }
+
+    func testBatchesPushSeparatelyAndSaveStateBetweenThem() throws {
+        let t = try team()
+        let projects = try writeProjects(scratch)
+        var s = sources(projects)
+        s.batchBytes = 1   // every transcript source flushes on its own
+        let remote = scratch.appendingPathComponent("remote.git")
+        let before = try commits(remote)
+        let report = try TeamPublisher(client: t.alice, paths: t.alicePaths).publish(sources: s)
+        XCTAssertEqual(report.transcriptChunks, 3)   // s1, its sub-agent, s2
+        // Three transcript batches (the whole-object files ride the first) → three commits, not one.
+        XCTAssertEqual(try commits(remote) - before, 3)
+        XCTAssertEqual(Set(report.published).count, report.published.count)
+        XCTAssertEqual(TeamPublishState.load(teamDir: t.alicePaths.teamDir(t.alice.config.id)).transcripts.count, 3)
+    }
+
+    func testHeaderScanRemembersHeadersByBlobVersion() throws {
+        let t = try team()
+        let me = "m/\(t.alice.identity.kid)/"
+        try t.alice.publish(kind: "now", path: "now.json", plaintext: Data("{}".utf8), audience: .leaders, now: 5_000)
+        _ = try t.leader.fetch()
+        let first = try XCTUnwrap(try t.leader.readableHeaders().first { $0.entry.path == me + "now.json" })
+        XCTAssertEqual(first.header.at, 5_000)
+        // The leader's cache holds that header under the blob's version…
+        let cacheURL = t.leader.teamDirForTests.appendingPathComponent("headers.json")
+        var cache = try JSONDecoder().decode(TeamClient.HeaderCache.self, from: try Data(contentsOf: cacheURL))
+        XCTAssertEqual(cache.entries[me + "now.json"]?.version, first.entry.version)
+        // …and a second scan answers from it (a doctored `at` proves no blob was read).
+        cache.entries[me + "now.json"]!.header.at = 5_001
+        try cache.save(cacheURL)
+        XCTAssertEqual(try t.leader.readableHeaders().first { $0.entry.path == me + "now.json" }?.header.at, 5_001)
+        // A republish (new blob version) is read fresh and replaces the cached header.
+        try t.alice.publish(kind: "now", path: "now.json", plaintext: Data("{ }".utf8), audience: .leaders, now: 6_000)
+        _ = try t.leader.fetch()
+        XCTAssertEqual(try t.leader.readableHeaders().first { $0.entry.path == me + "now.json" }?.header.at, 6_000)
+        XCTAssertEqual(TeamClient.HeaderCache.load(cacheURL).entries[me + "now.json"]?.header.at, 6_000)
     }
 
     func testReshareRewrapsHistoryToTheCurrentAudienceAfterPromotion() throws {

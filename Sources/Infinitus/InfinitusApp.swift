@@ -230,6 +230,10 @@ struct InfinitusApp: App {
                     keywords: ["machine", "health", "hooks", "runaway", "temp",
                                "swap", "memory", "residue", "guardian"],
                     view: AnyView(MachinePane(model: model.machineModel))),
+        SettingsTab(title: "Profiles", symbol: "person.text.rectangle", tint: .pink,
+                    keywords: ["profile", "preset", "start", "session", "model",
+                               "permission", "system prompt", "launch"],
+                    view: AnyView(ProfilesPane(profiles: model.sessionProfiles))),
         SettingsTab(title: "Activity", symbol: "clock.arrow.circlepath", tint: .teal,
                     keywords: ["history", "switches", "log", "events"],
                     view: AnyView(ActivityPane(model: model))),
@@ -768,7 +772,7 @@ struct MenuContent: View {
                 .contentShape(Rectangle())
                 .onTapGesture { model.sessionsShown.toggle() }
                 .popover(isPresented: $model.sessionsShown, arrowEdge: .trailing) {
-                    SessionListCard(live: live, progress: model.sessionProgress)
+                    MacSessionsPopover(model: model, live: live)
                 }
                 .instantTip(SessionSummary.tooltip(live))
         }
@@ -912,7 +916,7 @@ struct MenuContent: View {
             .contentShape(Rectangle())
             .onTapGesture { model.sessionsShown.toggle() }
             .popover(isPresented: $model.sessionsShown, arrowEdge: .bottom) {
-                SessionListCard(live: live, progress: model.sessionProgress)
+                MacSessionsPopover(model: model, live: live)
             }
             .instantTip(SessionSummary.tooltip(live), edge: .above)
         }
