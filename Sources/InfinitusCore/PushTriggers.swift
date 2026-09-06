@@ -63,6 +63,10 @@ public struct PushTriggers: Sendable {
     private var sawBusy = false
     private var quietTicks = 0
     private var allDeadAnnounced = false
+    /// The first look with accounts seeds silently: a fleet already dead
+    /// at launch is on screen (and the phone's countdown activity), and
+    /// the app relaunches often enough that announcing it again is noise.
+    private var seededAllDead = false
     private var warnedLastAlive: Int?
     private var announcedWaiting: Set<Int> = []
     private var seededWaiting = false
@@ -89,6 +93,12 @@ public struct PushTriggers: Sendable {
 
     public mutating func announceWaiting(pid: Int, now: Date = Date()) {
         hookAnnounced[pid] = now
+    }
+
+    static let allDeadTail = "nothing left to switch to"
+    /// The all-dead message, for callers that route it differently.
+    public static func isAllDeadMessage(_ message: String) -> Bool {
+        message.hasSuffix(allDeadTail)
     }
 
     public static func worstPlanPct(_ usage: Usage?) -> Double? {
@@ -166,13 +176,17 @@ public struct PushTriggers: Sendable {
         if !accounts.isEmpty, accounts.allSatisfy(\.dead) {
             if !allDeadAnnounced {
                 allDeadAnnounced = true
-                if flags.allDead {
-                    out.append("all \(accounts.count) accounts exhausted — nothing left to switch to")
+                if flags.allDead, seededAllDead {
+                    out.append("all \(accounts.count) accounts exhausted — \(Self.allDeadTail)")
                 }
             }
-        } else {
+        } else if accounts.contains(where: { !$0.dead }) {
+            // Only an account seen alive re-arms: an empty or partial
+            // roster (usage blanked by an engine re-probe) must not turn
+            // the next dead look into a repeat.
             allDeadAnnounced = false
         }
+        if !accounts.isEmpty { seededAllDead = true }
 
         let alive = accounts.filter { !$0.dead }
         if alive.count == 1, let last = alive.first,
