@@ -49,6 +49,23 @@ final class MachineHealthTests: XCTestCase {
         XCTAssertEqual(warnings.filter { $0.hasPrefix("peon-ping has") }.count, 1)
     }
 
+    func testRetryLoopWarningFromTempGrowthAndPipSpawner() {
+        let then = Date(timeIntervalSince1970: 1000), now = then.addingTimeInterval(1800)
+        let growth = MachineReport.tempGrowthPerHour(previous: ["pip": 100, "other": 5], previousAt: then,
+                                                     current: ["pip": 130, "python": 10, "other": 5], now: now)
+        XCTAssertEqual(growth["pip"], 60); XCTAssertEqual(growth["python"], 20); XCTAssertNil(growth["other"])
+        let warnings = MachineReport.warnings(sample: MachineSample(), hooks: [], newcomers: [],
+                                              tempGrowthPerHour: growth, pipSpawner: "security-guidance")
+        XCTAssertTrue(warnings.contains("security-guidance's hook keeps re-running pip install — 80 new temp dirs per hour"))
+        XCTAssertTrue(MachineReport.warnings(sample: MachineSample(), hooks: [], newcomers: [], tempGrowthPerHour: ["pip": 8]).isEmpty)
+        let rows = [
+            ProcessRow(pid: 10, ppid: 1, stat: "S", rssKB: 1, elapsedSeconds: 5, cpu: 0, command: "python3 /Users/me/.claude/plugins/cache/m/security-guidance/1/hooks/ensure_agent_sdk.py"),
+            ProcessRow(pid: 11, ppid: 10, stat: "S", rssKB: 1, elapsedSeconds: 4, cpu: 0, command: "/venv/bin/python -m pip install --no-cache-dir sdk"),
+        ]
+        let reg = HookRegistration(event: "SessionStart", matcher: nil, command: "python3 /Users/me/.claude/plugins/cache/m/security-guidance/1/hooks/ensure_agent_sdk.py", timeout: 180, source: .plugin("security-guidance"))
+        XCTAssertEqual(HookInventory.spawner(of: "pip install", rows: rows, registrations: [reg]), "security-guidance")
+    }
+
     func testScriptPathSkipsInterpretersAndExpandsHome() {
         XCTAssertEqual(HookInventory.scriptPath(in: "/bin/bash /Users/me/.claude/hooks/x.sh", home: "/Users/me"), "/Users/me/.claude/hooks/x.sh")
         XCTAssertEqual(HookInventory.scriptPath(in: "python3 ~/.claude/hooks/y.py --fast", home: "/Users/me"), "/Users/me/.claude/hooks/y.py")

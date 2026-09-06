@@ -54,6 +54,7 @@ publishes the matching section as the GitHub release body.
 - Tokens/min records: every day's peak minute, the all-time best and the days it fell, a 30-day sparkline and a week-over-week trend, on the Mac and the phone — one full rescan on first refresh.
 
 ### Fixes
+- Machine flags a hook whose install keeps dying and retrying — the temp directory growing by pip leftovers every hour, named by the hook that owns the running pip.
 - A refresh that carries no usage for an account no longer counts as a revival or a death, so the "is back — reset early" and "hit a limit" pair from one missing sample is gone.
 - Machine names who filled the temp directory (pip, Python tempfile, mktemp) and flags a tool that registers several commands on one event, which spawn on every call.
 - A resume nudge after an account switch waits until the new account has held for 30 s and been polled alive since, and its retries stop when the engine switches again, so a flapping engine no longer burns three nudges in a minute.
