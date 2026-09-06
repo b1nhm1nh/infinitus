@@ -11,8 +11,8 @@ final class TeamNearbyTests: XCTestCase {
 
     override func tearDownWithError() throws { try? FileManager.default.removeItem(at: scratch) }
 
-    func makeRemote() throws -> String {
-        let bare = scratch.appendingPathComponent("remote.git")
+    func makeRemote(_ name: String = "remote.git") throws -> String {
+        let bare = scratch.appendingPathComponent(name)
         let p = Process()
         p.executableURL = URL(fileURLWithPath: "/usr/bin/env")
         p.arguments = ["git", "init", "--bare", "-q", bare.path]
@@ -341,7 +341,8 @@ final class TeamNearbyTests: XCTestCase {
         // Attack 1: a stranger mints a valid code for THEIR OWN team,
         // seals it as themselves (the envelope's signature ties `from`
         // to them), and labels the body with the victim's team name.
-        let attackerRemote = try makeRemote()
+        // Its own repository: `create` refuses a remote with content.
+        let attackerRemote = try makeRemote("attacker.git")
         let (atp, ats) = machine("attacker")
         let attacker = try TeamClient.create(name: "Evil", remote: attackerRemote, token: nil, paths: atp, secrets: ats, now: 1_000)
         let attackerLink = try attacker.code(expiresIn: 7 * 86_400, nonce: TeamInvites.newNonce(), now: 1_000)
