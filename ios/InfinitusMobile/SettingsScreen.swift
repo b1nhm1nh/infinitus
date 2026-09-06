@@ -215,18 +215,32 @@ struct SettingsForm: View {
 
     private var themeSection: some View {
         Section {
-            Picker("Theme", selection: $model.localThemeID) {
-                ForEach(model.availableThemes) { theme in
-                    Text(theme.name).tag(theme.id)
+            NavigationLink {
+                ThemeChooserScreen(selection: $model.localThemeID,
+                                   themes: model.availableThemes)
+            } label: {
+                LabeledContent("Theme") {
+                    HStack(spacing: 8) {
+                        ThemeSwatch(theme: localTheme)
+                        Text(localTheme.name)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                    }
                 }
             }
-            .pickerStyle(.navigationLink)
             Toggle("Compact rows", isOn: $model.localCompactRows)
         } header: {
             Text("Theme")
         } footer: {
             Text("A theme renames the tabs, the gauges, the status words and the fleet's own names, and gives them its colours. Compact rows put one account on a line.")
         }
+    }
+
+    /// The theme this PHONE is set to. `model.rowTheme` answers with the
+    /// Mac's while Follow Mac is on; this section only shows with it off,
+    /// but the row must never read from the Mac's choice.
+    private var localTheme: RowTheme {
+        model.availableThemes.first { $0.id == model.localThemeID } ?? .off
     }
 
     private var motionSection: some View {
@@ -328,44 +342,6 @@ struct SettingsScreen: View {
         }
     }
 }
-
-/// What a themed row will look like: the shared gauge with the theme's
-/// own window labels and colors — the same components the fleet rows
-/// draw, at a glance, while picking.
-struct ThemePreviewRow: View {
-    let theme: RowTheme
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("Preview").font(.caption).foregroundStyle(.secondary)
-            HStack(spacing: 12) {
-                gauge(label: theme.sessionLabel, color: theme.sessionColor,
-                      remaining: 62, dividers: (1..<5).map { Double($0) * 20 })
-                gauge(label: theme.weeklyLabel, color: theme.weeklyColor,
-                      remaining: 38, dividers: (1..<7).map { Double($0) * 100 / 7 })
-            }
-        }
-        .padding(.vertical, 2)
-    }
-
-    @ViewBuilder
-    private func gauge(label: String, color: String, remaining: Double,
-                       dividers: [Double]) -> some View {
-        HStack(spacing: 3) {
-            Text(PopupGlyph.text(label))
-                .font(PopupFont.caption).bold()
-                .foregroundStyle(ThemeColor.resolve(color))
-            if theme.plain {
-                Text("\(Int(100 - remaining))%")
-                    .font(PopupFont.caption).monospacedDigit()
-            } else {
-                GaugeBar(remaining: remaining, color: ThemeColor.resolve(color),
-                         dividers: dividers, animated: false)
-            }
-        }
-    }
-}
-
 
 /// Dictation language and what happens to a non-English take (user
 /// 2026-09-04: "can it accept Vietnamese? … build them configurable").
