@@ -23,15 +23,19 @@ public struct TeamSnapshot: Codable, Equatable, Sendable {
         public var todayUSD: Double
         public var todayMessages: Int
         public var todayCommits: Int
+        /// The member's fleets as last published (#221); additive, so an
+        /// older phone decodes the row without it.
+        public var fleet: TeamDocs.FleetDoc?
         public var id: String { kid }
 
         public init(kid: String, name: String, role: String, isMe: Bool, founder: Bool = false,
                     lastPublished: Int? = nil, kinds: [String] = [], sessionsNow: Int = 0, blockers: [String] = [],
-                    crashes: Int = 0, todayUSD: Double = 0, todayMessages: Int = 0, todayCommits: Int = 0) {
+                    crashes: Int = 0, todayUSD: Double = 0, todayMessages: Int = 0, todayCommits: Int = 0,
+                    fleet: TeamDocs.FleetDoc? = nil) {
             self.kid = kid; self.name = name; self.role = role; self.isMe = isMe; self.founder = founder
             self.lastPublished = lastPublished; self.kinds = kinds; self.sessionsNow = sessionsNow
             self.blockers = blockers; self.crashes = crashes; self.todayUSD = todayUSD
-            self.todayMessages = todayMessages; self.todayCommits = todayCommits
+            self.todayMessages = todayMessages; self.todayCommits = todayCommits; self.fleet = fleet
         }
     }
 
@@ -72,6 +76,7 @@ public struct TeamSnapshot: Codable, Equatable, Sendable {
                 out.sessionsNow = r.now?.sessions.count ?? 0
                 out.blockers = r.now?.blockers ?? []
                 out.crashes = r.crashes.count
+                out.fleet = r.fleet
                 if let day = r.days[today] {
                     out.todayUSD = day.usd
                     out.todayMessages = day.messages

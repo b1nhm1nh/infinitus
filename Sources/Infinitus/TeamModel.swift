@@ -330,6 +330,7 @@ final class TeamModel: ObservableObject {
         var repos: [TeamInsights.RepoRow]
         var cost: TeamInsights.Cost
         var blockers: [TeamInsights.Blocker]
+        var headroom: [TeamInsights.Headroom]
         var hours: [Int]
         var onNow: [String]
     }
@@ -341,7 +342,8 @@ final class TeamModel: ObservableObject {
         let rows = TeamInsights.comparison(reader, period: period)
         let repos = TeamInsights.repos(reader, period: period)
         return Insights(rows: rows, repos: repos, cost: TeamInsights.cost(rows, repos: repos),
-                        blockers: TeamInsights.blockers(reader), hours: TeamInsights.hours(rows),
+                        blockers: TeamInsights.blockers(reader), headroom: TeamInsights.headroom(reader),
+                        hours: TeamInsights.hours(rows),
                         onNow: TeamInsights.whoIsOn(reader).map(\.name))
     }
 
