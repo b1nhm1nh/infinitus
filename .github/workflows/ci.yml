@@ -96,15 +96,12 @@ jobs:
       # Paths go through the MSVC INCLUDE/LIB environment — clang and
       # lld-link both read them — because pwsh rejects `-I${env:…}`
       # tokens on the swift command line ("The command parameter was
-      # already specified"). The modulemap's `link "z"` asks for z.lib,
-      # vcpkg ships zlib.lib: alias it rather than fork the modulemap.
+      # already specified"). vcpkg names the import library z.lib, which
+      # is what the modulemap's `link "z"` asks for.
       - run: vcpkg install zlib:x64-windows
       - run: |
           $v = "$env:VCPKG_INSTALLATION_ROOT\installed\x64-windows"
           Get-ChildItem "$v\lib", "$v\include" | Format-Table Name, Length
-          $lib = Get-ChildItem "$v\lib" -Filter "z*.lib" | Select-Object -First 1
-          if (-not $lib) { throw "no zlib import library under $v\lib" }
-          Copy-Item $lib.FullName "$v\lib\z.lib"
           "INCLUDE=$env:INCLUDE;$v\include" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           "LIB=$env:LIB;$v\lib" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
       - run: swift build --product infinitusctl
