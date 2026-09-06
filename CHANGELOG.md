@@ -27,6 +27,11 @@ publishes the matching section as the GitHub release body.
 - Swipe or long-press an account to star it or pause/resume its rotation from the phone; the Mac popup offers the same on a right-click of the name.
 
 ### Mac
+- Settings › Accounts leads with Add Account, shows Sign In Again only on the account that needs it, and renames an account by clicking its name.
+- Randomize Names can be undone for 30 seconds.
+- Regenerating the pairing token, stopping rotation, signing in again, and removing a push channel, a profile or a crash report all ask first.
+- Settings › Devices puts one QR code and one address up front, with the rest behind Other addresses.
+- Every icon button in Settings says what it does and to which account, and an engine error now reads as a sentence with a next step.
 - Machine: the pip retry-loop warning names the venv the install goes into (a detached plugin bootstrap has no hook tree to blame) and answers to the hooks mute.
 - An AWS sign-in that lapses inside a sub-agent shows up on the parent session — key badge, Sign in row, push — and the continue nudge after signing in goes to the parent.
 - Settings › Machine mutes the hook and temp-directory notifications separately; the pane keeps listing them.
