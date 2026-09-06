@@ -76,4 +76,29 @@ final class TeamInvitesTests: XCTestCase {
         XCTAssertEqual(book.matches(pending.doc, now: 103), nonce)
         XCTAssertFalse(String(decoding: try CanonicalJSON.encode(pending.doc), as: UTF8.self).contains(nonce), "nonce not in the stored request")
     }
+
+    func testMintAddsOneNonceToTheBookAndTheLinkCarriesIt() throws {
+        let paths = TeamPaths(base: FileManager.default.temporaryDirectory.appendingPathComponent("mint-\(UUID().uuidString)"))
+        defer { try? FileManager.default.removeItem(at: paths.base) }
+        let secrets = FileSecrets(dir: paths.secretsDir)
+        let bare = paths.base.appendingPathComponent("remote.git")
+        let p = Process(); p.executableURL = URL(fileURLWithPath: "/usr/bin/env"); p.arguments = ["git", "init", "--bare", "-q", bare.path]
+        try p.run(); p.waitUntilExit()
+        let client = try TeamClient.create(name: "T", remote: "file://" + bare.path, token: nil, paths: paths, secrets: secrets, now: 100)
+        let dir = paths.teamDir(client.config.id)
+        // A nonce that expired before this mint is pruned by the same call.
+        var stale = TeamInvites(); stale.add(nonce: "old", expires: 50)
+        try stale.save(teamDir: dir)
+
+        let link = try TeamInvites.mint(client: client, teamDir: dir, days: 7, now: 100)
+        let code = try TeamCode.decode(link, now: 101)
+        let nonce = try XCTUnwrap(code.nonce)
+        XCTAssertEqual(code.team, client.config.id)
+        XCTAssertEqual(code.expires, 100 + 7 * 86_400)
+        XCTAssertEqual(TeamInvites.load(teamDir: dir).nonces, [nonce: 100 + 7 * 86_400])
+        // A second mint keeps the first: two invites can be outstanding.
+        let second = try TeamInvites.mint(client: client, teamDir: dir, days: 1, now: 200)
+        let secondNonce = try XCTUnwrap(try TeamCode.decode(second, now: 201).nonce)
+        XCTAssertEqual(Set(TeamInvites.load(teamDir: dir).nonces.keys), [nonce, secondNonce])
+    }
 }

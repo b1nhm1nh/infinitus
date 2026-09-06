@@ -543,20 +543,14 @@ final class TeamModel: ObservableObject {
     }
 
     /// An invite link (spec §6.2): a code with a one-time nonce this
-    /// leader remembers and auto-approves.
+    /// leader remembers and auto-approves. `TeamInvites.mint` is the same
+    /// call a LAN invite makes (spec §6.4), so both write one book.
     func mintInvite(days: Int) async {
         var minted: String?
         await action("Making an invite…") { paths, secrets in
             guard let client = try Self.openClient(paths, secrets) else { throw TeamClient.ClientError.notInTeam }
             _ = try client.fetch()
-            let nonce = TeamInvites.newNonce()
-            let expires = Int(Date().timeIntervalSince1970) + days * 86_400
-            let dir = paths.teamDir(client.config.id)
-            var book = TeamInvites.load(teamDir: dir)
-            book.prune(now: Int(Date().timeIntervalSince1970))
-            book.add(nonce: nonce, expires: expires)
-            try book.save(teamDir: dir)
-            minted = try client.code(expiresIn: days * 86_400, nonce: nonce)
+            minted = try TeamInvites.mint(client: client, teamDir: paths.teamDir(client.config.id), days: days)
         }
         if let minted { code = minted }
     }
