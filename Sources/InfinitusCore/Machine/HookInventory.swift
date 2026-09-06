@@ -161,6 +161,18 @@ public enum HookInventory {
         public init() {}
     }
 
+    /// The owner of the hook whose instance tree holds a process whose
+    /// command contains `needle` (e.g. "pip install"), if any.
+    public static func spawner(of needle: String, rows: [ProcessRow], registrations: [HookRegistration]) -> String? {
+        let hits = Set(rows.filter { $0.command.contains(needle) }.map(\.pid))
+        guard !hits.isEmpty else { return nil }
+        for reg in registrations {
+            let (instances, helpers) = instanceRows(of: reg, rows: rows)
+            if (instances + helpers).contains(where: { hits.contains($0.pid) }) { return reg.owner }
+        }
+        return nil
+    }
+
     public static func live(of registration: HookRegistration, rows: [ProcessRow]) -> Live {
         var live = Live()
         let (instances, helpers) = instanceRows(of: registration, rows: rows)

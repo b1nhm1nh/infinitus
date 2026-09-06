@@ -20,6 +20,7 @@ publishes the matching section as the GitHub release body.
 - Allow… on a permission card offers "Allow for this session": the Mac remembers the tool (Bash by command verb) and the plugin's PreToolUse hook skips that prompt for the rest of the session.
 
 ### Mac
+- An AWS sign-in that lapses inside a sub-agent shows up on the parent session — key badge, Sign in row, push — and the continue nudge after signing in goes to the parent.
 - Settings › Machine mutes the hook and temp-directory notifications separately; the pane keeps listing them.
 - Right-click an account row → Re-roll name gives that one account a fresh themed name nobody in the fleet wears; `infinitusctl randomize-names <fleet> <n>` does the same.
 - Settings › Machine watches what many sessions do to this Mac — load, swap, stuck hooks, runaway processes, residue — with confirmed kill, reclaim and hook-disable actions and notifications for new hook registrations and idle sessions.
@@ -32,6 +33,7 @@ publishes the matching section as the GitHub release body.
 - The Game HUD chat header's bars play the Fleet card's effects: pace fire, the cool halo, HP drops, Lucky 7s, the switch, death and revival flashes.
 - The phone raises its own alarms, no push service needed: an exhausted account's limit lifting in 10 minutes, and the account the fleet just swapped to; off in Settings › Notifications.
 - Settings shows the Mac's and the phone's versions, can trigger the Mac's update, and says when a newer phone build is out.
+- `infinitusctl past-sessions` lists every Claude Code session this Mac has run, newest first, and `resume-session <id>` reopens one in its folder.
 
 ### Team (preview)
 - A publish sends transcripts only from sessions active in the last two days (stats keep 30) and pushes in 200 MB batches, saving its place after each, so a huge history can't stall or crash it.
@@ -54,6 +56,7 @@ publishes the matching section as the GitHub release body.
 - Tokens/min records: every day's peak minute, the all-time best and the days it fell, a 30-day sparkline and a week-over-week trend, on the Mac and the phone — one full rescan on first refresh.
 
 ### Fixes
+- Machine flags a hook whose install keeps dying and retrying — the temp directory growing by pip leftovers every hour, named by the hook that owns the running pip.
 - A refresh that carries no usage for an account no longer counts as a revival or a death, so the "is back — reset early" and "hit a limit" pair from one missing sample is gone.
 - Machine names who filled the temp directory (pip, Python tempfile, mktemp) and flags a tool that registers several commands on one event, which spawn on every call.
 - A resume nudge after an account switch waits until the new account has held for 30 s and been polled alive since, and its retries stop when the engine switches again, so a flapping engine no longer burns three nudges in a minute.

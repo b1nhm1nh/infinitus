@@ -39,6 +39,7 @@ final class MachineModel: ObservableObject {
 
     private var lastTempCountAt: Date?
     private var lastTempCount: Int?
+    private var lastTempByOwner: [String: Int]?
     private var lastTempListSeconds: Double = 0
     private var lastSizesAt: Date?
     private var lastSizes: (transcripts: Int, pluginCache: Int, mem: Int) = (0, 0, 0)
@@ -79,14 +80,16 @@ final class MachineModel: ObservableObject {
         let countTemp = lastTempCountAt.map { Date().timeIntervalSince($0) >= 300 } ?? true
         let doSizes = lastSizesAt.map { Date().timeIntervalSince($0) >= 3600 } ?? true
         let previousTempCount = lastTempCount
+        let previousTempByOwner = lastTempByOwner
+        let previousTempAt = lastTempCountAt
         let previousTempListSeconds = lastTempListSeconds
         let previousSizes = lastSizes
         // Session names/last-activity live on the main actor
         // (SessionProgressModel); read them here, pass the dictionary in.
         let byPid = host?.sessionProgress.byPid ?? [:]
 
-        let (report, fingerprint, tempCount, sizes, parked, rows) = await Task.detached(priority: .utility) {
-            () -> (MachineReport, Set<String>, Int?, (Int, Int, Int), [String], [ProcessRow]) in
+        let (report, fingerprint, tempCount, sizes, parked, rows, pipSpawner) = await Task.detached(priority: .utility) {
+            () -> (MachineReport, Set<String>, Int?, (Int, Int, Int), [String], [ProcessRow], String?) in
             let records = ClaudeSessions.list(claudeDir: claudeDir)
             let sessionPids = Set(records.map { Int($0.pid) })
             let cwds = Array(Set(records.map(\.cwd)))
@@ -136,7 +139,8 @@ final class MachineModel: ObservableObject {
             let report = MachineReport(sample: sample, hooks: hooks, runaways: runaways,
                                        residue: residue, sessions: sessions, warnings: [])
             let parked = Self.readParkedOwners()
-            return (report, Set(hookRegs.map(\.id)), tempCount, sizes, parked, rows)
+            let pipSpawner = HookInventory.spawner(of: "pip install", rows: rows, registrations: hookRegs)
+            return (report, Set(hookRegs.map(\.id)), tempCount, sizes, parked, rows, pipSpawner)
         }.value
         lastRows = rows
 
@@ -145,7 +149,11 @@ final class MachineModel: ObservableObject {
         // listing still counts as this cycle's attempt — `tempCount` is
         // non-nil even when throttled (it carries the previous value
         // forward), so gating on it would count once and never retry.
+        var tempGrowth: [String: Double] = [:]
         if countTemp {
+            tempGrowth = MachineReport.tempGrowthPerHour(previous: previousTempByOwner, previousAt: previousTempAt,
+                                                         current: report.sample.tempByOwner, now: Date())
+            if report.sample.tempByOwner != nil { lastTempByOwner = report.sample.tempByOwner }
             lastTempCount = tempCount
             lastTempCountAt = Date()
             lastTempListSeconds = report.sample.tempListSeconds
@@ -166,7 +174,8 @@ final class MachineModel: ObservableObject {
         UserDefaults.standard.set(Array(remembered), forKey: Self.fingerprintKey)
 
         var finalReport = report
-        finalReport.warnings = MachineReport.warnings(sample: report.sample, hooks: report.hooks, newcomers: newcomers)
+        finalReport.warnings = MachineReport.warnings(sample: report.sample, hooks: report.hooks, newcomers: newcomers,
+                                                      tempGrowthPerHour: tempGrowth, pipSpawner: pipSpawner)
         self.report = finalReport
 
         // Every warning currently true gets pushed once; dropping out of
