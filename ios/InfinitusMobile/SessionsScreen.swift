@@ -23,10 +23,10 @@ struct SessionsScreen: View {
                     ToolbarItemGroup(placement: .primaryAction) {
                         Button { path.append(PastSessionsRoute()) } label: { Image(systemName: "clock.arrow.circlepath") }
                             .accessibilityLabel("Past sessions")
-                            .disabled(model.snapshot == nil)
+                            .disabled(!model.anyMacAnswered)
                         Button { startSheet = true } label: { Image(systemName: "plus") }
                             .accessibilityLabel("Start a session")
-                            .disabled(model.snapshot == nil)
+                            .disabled(!model.anyMacAnswered)
                     }
                 }
                 .sheet(isPresented: $startSheet) { StartSessionSheet(model: model) }
