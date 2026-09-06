@@ -391,4 +391,34 @@ final class TeamPublisherTests: XCTestCase {
         // No cache yet (a team that never published): an empty list, not a crash.
         XCTAssertEqual(TeamPublisher.recentTranscriptSessions(cacheURL: scratch.appendingPathComponent("nope.json"), days: 10_000), [])
     }
+
+    /// `published/` is the only part of a team dir that grows without
+    /// bound (a month of transcripts was 9 GB): the oldest transcript
+    /// copies go, and only those.
+    func testPublishedCopiesArePrunedOldestTranscriptFirst() throws {
+        let t = try team()
+        let projects = try writeProjects(scratch)
+        let publisher = TeamPublisher(client: t.alice, paths: t.alicePaths)
+        var s = sources(projects)
+        _ = try publisher.publish(sources: s)
+        let copies = publisher.copiesDir
+        let s1 = copies.appendingPathComponent("transcripts/s1/1.jsonl")
+        let agent = copies.appendingPathComponent("transcripts/s1/subagents/agent-a1/1.jsonl")
+        let s2 = copies.appendingPathComponent("transcripts/s2/1.jsonl")
+        let day = copies.appendingPathComponent("days/2026-09-04.json")
+        for url in [s1, agent, s2, day] { XCTAssertTrue(FileManager.default.fileExists(atPath: url.path), url.path) }
+        for (url, at) in [(s1, 1_000.0), (agent, 2_000.0), (s2, 3_000.0)] {
+            try FileManager.default.setAttributes([.modificationDate: Date(timeIntervalSince1970: at)], ofItemAtPath: url.path)
+        }
+
+        s.copiesCapBytes = 1   // everything is over the cap
+        let report = try publisher.publish(sources: s)
+        XCTAssertEqual(report.prunedCopies, 3)
+        for url in [s1, agent, s2] { XCTAssertFalse(FileManager.default.fileExists(atPath: url.path), url.path) }
+        XCTAssertTrue(FileManager.default.fileExists(atPath: day.path), "stats copies stay — reshare needs them")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: copies.appendingPathComponent("sessions/index.json").path))
+        // A cap nothing exceeds prunes nothing, and the pass still reports it.
+        s.copiesCapBytes = 1 << 30
+        XCTAssertEqual(try publisher.publish(sources: s).prunedCopies, 0)
+    }
 }

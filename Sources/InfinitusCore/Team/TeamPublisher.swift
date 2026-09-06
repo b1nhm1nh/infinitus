@@ -162,6 +162,11 @@ public struct TeamPublisher {
         /// Sealed bytes pushed per commit; the cursor state is saved after
         /// each, so a killed publish resumes instead of starting over.
         public var batchBytes = 200 << 20
+        /// Plaintext copies under `published/` (what `reshare` re-wraps)
+        /// are the one part of a team dir that grows without bound — a
+        /// month of one Mac's transcripts was 9 GB. Above this the oldest
+        /// transcript copies go; a later re-share covers what is left.
+        public var copiesCapBytes = 1 << 30
         public var calendar: Calendar = .current
         public init(projectsDir: URL, home: String) { self.projectsDir = projectsDir; self.home = home }
     }
@@ -171,6 +176,8 @@ public struct TeamPublisher {
         public var transcriptChunks = 0
         /// Whole-object files whose content had not changed.
         public var skipped = 0
+        /// Plaintext copies deleted to stay under `Sources.copiesCapBytes`.
+        public var prunedCopies = 0
         public init() {}
     }
 
@@ -222,6 +229,41 @@ public struct TeamPublisher {
         let url = copiesDir.appendingPathComponent(path)
         try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         try data.write(to: url, options: .atomic)
+    }
+
+    /// Trims `published/` back under `cap`, oldest first, TRANSCRIPT
+    /// copies only: the day, session, now and crash copies are kilobytes
+    /// and `reshare` needs every one of them. Returns how many went.
+    @discardableResult
+    func pruneCopies(cap: Int) -> Int {
+        let fm = FileManager.default
+        guard let subpaths = try? fm.subpathsOfDirectory(atPath: copiesDir.path) else { return 0 }
+        var total = 0
+        var candidates: [(url: URL, size: Int, at: Date)] = []
+        for path in subpaths {
+            let url = copiesDir.appendingPathComponent(path)
+            // `attributesOfItem`, not `resourceValues(forKeys: [.fileSizeKey…])`:
+            // InfinitusCore's tests run on Linux too, and corelibs-foundation
+            // implements only a subset of the URL resource keys.
+            guard let attrs = try? fm.attributesOfItem(atPath: url.path),
+                  (attrs[.type] as? FileAttributeType) == .typeRegular else { continue }
+            let size = (attrs[.size] as? NSNumber)?.intValue ?? 0
+            total += size
+            if path.hasPrefix("transcripts/") {
+                candidates.append((url, size, (attrs[.modificationDate] as? Date) ?? .distantPast))
+            }
+        }
+        guard total > cap else { return 0 }
+        var pruned = 0
+        // Over the finite candidate list, not `while total > cap`: a cap
+        // below what the non-transcript copies weigh must still terminate.
+        for file in candidates.sorted(by: { $0.at == $1.at ? $0.url.path < $1.url.path : $0.at < $1.at }) {
+            guard total > cap else { break }
+            guard (try? fm.removeItem(at: file.url)) != nil else { continue }
+            total -= file.size
+            pruned += 1
+        }
+        return pruned
     }
 
     /// One push (spec §7 cadence is the caller's): days that changed in
@@ -334,6 +376,7 @@ public struct TeamPublisher {
 
         try flush()
         try state.save(teamDir: teamDir)
+        report.prunedCopies = pruneCopies(cap: sources.copiesCapBytes)
         return report
     }
 

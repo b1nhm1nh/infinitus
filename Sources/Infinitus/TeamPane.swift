@@ -326,7 +326,7 @@ struct TeamPane: View {
                     }
                 }
             }
-            Text("Applies from the next publish. Changed your mind about history? Re-share re-wraps the last 30 days to today's audiences.")
+            Text("Applies from the next publish. Re-share re-wraps the last 30 days of stats and sessions, and the transcripts still on this Mac (the local copies are capped at 1 GB).")
                 .font(.caption).foregroundStyle(.secondary)
             Button("Re-share last 30 days…") { reshareConfirm = true }
                 .confirmationDialog("Re-share the last 30 days?", isPresented: $reshareConfirm) {
