@@ -3,7 +3,8 @@ import InfinitusCore
 
 /// Settings › Lock (spec §2.2): the biometric unlock switch and its
 /// re-lock choice. Off by default. Style follows DisplayPane: a grouped
-/// Form of Toggles and Pickers with caption help.
+/// Form whose section header names the group and whose footer explains
+/// what turning it on costs.
 struct LockPane: View {
     @ObservedObject var lock: LockModel
     /// Team names, set when turning off needs a warning first.
@@ -19,30 +20,35 @@ struct LockPane: View {
 
     var body: some View {
         Form {
-            Toggle("Unlock with \(BiometricLock.methodName)",
-                   isOn: Binding(get: { lock.enabled }, set: toggle))
-                .disabled(busy)
-                .help("The pop-out and Settings show a locked state until you "
-                      + "unlock. Biometrics fall back to your password, as the "
-                      + "system does.")
-            Picker("Re-lock", selection: Binding(get: { lock.relock }, set: { lock.relock = $0 })) {
-                ForEach(LockPolicy.Relock.allCases, id: \.self) {
-                    Text(Self.relockLabels[$0] ?? $0.label).tag($0)
+            Section {
+                Toggle("Unlock with \(BiometricLock.methodName)",
+                       isOn: Binding(get: { lock.enabled }, set: toggle))
+                    .disabled(busy)
+                Picker("Re-lock", selection: Binding(get: { lock.relock }, set: { lock.relock = $0 })) {
+                    ForEach(LockPolicy.Relock.allCases, id: \.self) {
+                        Text(Self.relockLabels[$0] ?? $0.label).tag($0)
+                    }
                 }
+                .disabled(!lock.enabled)
+                if lock.enabled {
+                    Button("Lock Now") { lock.lockNow() }
+                }
+                if let err = lock.lastError {
+                    Text(err).font(.caption).foregroundStyle(.orange)
+                        .accessibilityLabel("Error. \(err)")
+                }
+            } header: {
+                Text("Unlocking")
+            } footer: {
+                Text("The pop-out and this window show a locked state until "
+                     + "you unlock; biometrics fall back to your password, as "
+                     + "the system does. A timed re-lock settles on your next "
+                     + "interaction or when the Mac wakes — nothing ticks "
+                     + "while the Mac is idle. Teams need this on: creating a "
+                     + "team, accepting an invite and requesting to join stay "
+                     + "unavailable until it is.")
             }
-            .disabled(!lock.enabled)
-            .help("A timed re-lock is settled on your next interaction or "
-                  + "when the Mac wakes — nothing ticks while idle.")
-            if lock.enabled {
-                Button("Lock now") { lock.lockNow() }
-            }
-            Text("Teams need this on: Create team, Accept invite and Request "
-                 + "to join stay disabled until it is. Turning it off while in "
-                 + "a team is allowed; the app never leaves a team by itself.")
-                .font(.caption).foregroundStyle(.secondary)
-            if let err = lock.lastError {
-                Text(err).font(.caption).foregroundStyle(.orange)
-            }
+            .id("Lock/Unlocking")
         }
         .formStyle(.grouped)
         .confirmationDialog("Turn off biometric unlock?",
@@ -69,4 +75,15 @@ struct LockPane: View {
             if teams.isEmpty { lock.turnOff() } else { offWarning = teams }
         }
     }
+}
+
+extension LockPane {
+    static let searchEntries: [SettingsSearchEntry] = [
+        SettingsSearchEntry(pane: LockModel.paneTitle, section: "Unlocking",
+                            label: "Unlock with \(BiometricLock.methodName)",
+                            keywords: ["biometric", "touch id", "face id", "password", "unlock", "privacy"],
+                            anchor: "Lock/Unlocking"),
+        SettingsSearchEntry(pane: LockModel.paneTitle, section: "Unlocking", label: "Re-lock",
+                            keywords: ["re-lock", "relock", "timeout", "sleep"], anchor: "Lock/Unlocking"),
+    ]
 }

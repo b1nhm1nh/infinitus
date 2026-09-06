@@ -8,10 +8,15 @@ struct ActivityPane: View {
 
     var body: some View {
         Form {
-            Section("Switch history") {
+            Section {
                 SwitchHistoryView(cli: model.cswap, names: accountNames)
+            } header: {
+                Text("Switch history")
+            } footer: {
+                Text("Every account change Infinitus made, newest first.")
             }
-            Section("Engine events") {
+            .id("Activity/Switch history")
+            Section {
                 if model.eventLog.isEmpty {
                     Text("No events yet this session").foregroundStyle(.secondary)
                 } else {
@@ -26,9 +31,16 @@ struct ActivityPane: View {
                                 .font(.caption).monospacedDigit()
                                 .foregroundStyle(.secondary)
                         }
+                        .accessibilityElement(children: .combine)
                     }
                 }
+            } header: {
+                Text("Engine events")
+            } footer: {
+                Text("The last thirty events since this launch; the list "
+                     + "starts fresh each time Infinitus opens.")
             }
+            .id("Activity/Engine events")
         }
         .formStyle(.grouped)
     }
@@ -39,4 +51,13 @@ struct ActivityPane: View {
             (a.number, a.alias ?? String(a.email.split(separator: "@").first ?? "?"))
         })
     }
+}
+
+extension ActivityPane {
+    static let searchEntries: [SettingsSearchEntry] = [
+        SettingsSearchEntry(pane: "Activity", section: "Switch history", label: "Switch history",
+                            keywords: ["switches", "history", "log"], anchor: "Activity/Switch history"),
+        SettingsSearchEntry(pane: "Activity", section: "Engine events", label: "Engine events",
+                            keywords: ["events", "log", "engine"], anchor: "Activity/Engine events"),
+    ]
 }

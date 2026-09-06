@@ -139,11 +139,10 @@ final class UpdateModel: ObservableObject {
     }
 }
 
-/// The app's own release channel. Like CodexBar (Sparkle off for brew
-/// installs — "those installs should be updated via brew"), the app never
-/// self-replaces: a Homebrew install checks what `brew upgrade` WOULD
-/// install (the tap's cask file) and hands off to brew; a source or zip
-/// install just gets the GitHub release check.
+/// The app's own release channel. The app never self-replaces: a Homebrew
+/// install checks what `brew upgrade` WOULD install (the tap's cask file)
+/// and hands off to brew; a source or zip install just gets the GitHub
+/// release check.
 @MainActor
 final class AppReleaseModel: ObservableObject {
     @Published var latest: String? { didSet { onLatest?(latest) } }
@@ -348,9 +347,9 @@ final class BrewUpdater: ObservableObject {
     }
 }
 
-/// About + updates, CodexBar-style: hero card (icon, version, build,
-/// tagline), an Updates group, full-row link rows with leading icons and a
-/// trailing arrow, and a license footer.
+/// About + updates: hero card (icon, version, build, tagline), a Software
+/// Update group, full-row link rows with leading icons and a trailing
+/// arrow, and a license footer.
 struct AboutPane: View {
     @ObservedObject var appRelease: AppReleaseModel
     /// Shared with the phone's `/app/update` route (#121) so the two
@@ -398,7 +397,7 @@ struct AboutPane: View {
                 .padding(.vertical, 10)
             }
 
-            Section("Updates") {
+            Section {
                 LabeledContent {
                     HStack {
                         if appRelease.updateAvailable, BrewUpdater.channel == .stable {
@@ -406,59 +405,65 @@ struct AboutPane: View {
                                 .disabled(brew.running)
                                 .buttonStyle(.borderedProminent)
                         } else if BrewUpdater.channel == .nightly {
-                            Button("Reinstall latest nightly") { brew.upgrade() }
+                            Button("Reinstall the Latest Nightly") { brew.upgrade() }
                                 .disabled(brew.running)
                         }
-                        Button(appRelease.status == nil ? "Check for Updates…" : "Recheck") {
+                        Button(appRelease.status == nil ? "Check for Updates…" : "Check Again") {
                             Task { await appRelease.check() }
                         }
                     }
                 } label: {
-                    Text("Infinitus.app \(appVersion) · \(brew.channelLabel)")
+                    Text("Infinitus \(appVersion) · \(brew.channelLabel)")
                     if let s = brew.status ?? appRelease.status {
                         Text(s).font(.caption)
                             .foregroundStyle(appRelease.updateAvailable ? Color.orange : .secondary)
                     }
                 }
-                Picker("Update channel", selection: $updateChannel) {
+                Picker("Channel", selection: $updateChannel) {
                     Text("Stable").tag("stable")
                     Text("Nightly").tag("nightly")
                 }
                 .pickerStyle(.segmented)
                 .onChange(of: updateChannel) { Task { await appRelease.check() } }
                 if BrewUpdater.channel == .stable, updateChannel == "nightly" {
-                    Button("Switch the install to the nightly track") {
+                    Button("Switch the Install to Nightly") {
                         brew.move(toNightly: true)
                     }
                     .disabled(brew.running)
                 } else if BrewUpdater.channel == .nightly, updateChannel == "stable" {
-                    Button("Switch the install back to stable") {
+                    Button("Switch the Install Back to Stable") {
                         brew.move(toNightly: false)
                     }
                     .disabled(brew.running)
                 }
-                Text("Homebrew installs update through brew — the app never "
-                     + "replaces itself (CodexBar does the same). Source builds "
-                     + "and zip installs only get the release check.")
-                    .font(.caption).foregroundStyle(.secondary)
+            } header: {
+                Text("Software Update")
+            } footer: {
+                Text("A Homebrew install updates through Homebrew — Infinitus "
+                     + "never replaces itself. Builds from source and zip "
+                     + "installs get the release check only.")
             }
+            .id("About/Software Update")
 
-            Section("Notifications") {
+            Section {
                 LabeledContent("Delivery") {
                     Text(Notifier.lastAuthError == nil
-                         ? "Notification Center" : "osascript fallback")
+                         ? "Notification Center"
+                         : "Scripted (Notification Center unavailable)")
                 }
-                if let why = Notifier.lastAuthError {
-                    Text(why).font(.caption).foregroundStyle(.secondary)
-                    Text("Notification Center refuses builds signed with a "
-                         + "bare Apple Development certificate (no provisioning "
-                         + "profile). Alerts still arrive via osascript. For "
-                         + "native banners the app needs a Developer ID "
-                         + "signature, or one Xcode run with automatic signing "
-                         + "to mint a Mac provisioning profile.")
-                        .font(.caption).foregroundStyle(.secondary)
-                }
+            } header: {
+                Text("Notifications")
+            } footer: {
+                Text(Notifier.lastAuthError == nil
+                     ? "Alerts arrive as system notifications, so Notification "
+                       + "Center's own settings decide how they look."
+                     : "Notification Center turned this build down, so alerts "
+                       + "are delivered as scripted pop-ups instead — they "
+                       + "still arrive. A Developer ID signature, or one Xcode "
+                       + "run with automatic signing, restores system "
+                       + "notifications.")
             }
+            .id("About/Notifications")
 
             Section("Links") {
                 linkRow("chevron.left.forwardslash.chevron.right", "GitHub",
@@ -467,6 +472,7 @@ struct AboutPane: View {
                 linkRow("shippingbox", "Project — Infinitus",
                         "https://github.com/deathemperor/infinitus")
             }
+            .id("About/Links")
 
             Section {
                 Text("Infinitus by deathemperor · MIT License")
@@ -549,5 +555,21 @@ struct AboutPane: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .accessibilityAddTraits(.isLink)
+        .accessibilityHint("Opens in your browser.")
     }
+}
+
+extension AboutPane {
+    static let searchEntries: [SettingsSearchEntry] = [
+        SettingsSearchEntry(pane: "About", section: "Software Update", label: "Channel",
+                            keywords: ["update", "channel", "stable", "nightly", "homebrew", "upgrade"],
+                            anchor: "About/Software Update"),
+        SettingsSearchEntry(pane: "About", section: "Notifications", label: "Delivery",
+                            keywords: ["notification", "delivery", "banner", "alerts"],
+                            anchor: "About/Notifications"),
+        SettingsSearchEntry(pane: "About", section: "Links", label: "Links",
+                            keywords: ["github", "website", "project", "license", "version"],
+                            anchor: "About/Links"),
+    ]
 }
