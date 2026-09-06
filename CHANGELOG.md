@@ -8,20 +8,64 @@ publishes the matching section as the GitHub release body.
 ## 0.4.4 (unreleased)
 
 ### Stats
+- Stats show processed tokens, cached vs uncached input, cache writes and the estimated cache savings, per model and engine.
 - The activity tables read the ask off your own message — "debug the crash" counts as debugging even when the tools only edited — and the plugin's UserPromptSubmit hook refreshes a session the moment a prompt goes in.
 
 ### Phone
+- The phone pairs with more than one Mac: other Macs' fleets and sessions show under their name, and any of them can be made primary from Settings › Devices.
+- The Sessions list wears the theme: session names in the theme's accent, state words in their state color.
+- The share sheet's session picker lists waiting sessions first and names each one by session · repo.
+- The Game HUD bars' cool glow (usage behind pace) is a real glow now, scaled to the bar, instead of a tinted rim.
+- The chat composer's placeholder speaks the theme's language too ("Send word…" in the Wild West, "Codec open…" while dictating in Metal Gear).
 - Allow… on a permission card offers "Allow for this session": the Mac remembers the tool (Bash by command verb) and the plugin's PreToolUse hook skips that prompt for the rest of the session.
+- The Sessions tab's clock button lists every session the Mac has ever run, newest first and searchable; swipe Resume reopens one in its folder and lands you in its chat.
+- Start a session picks its permissions: Supervised, Auto-accept edits, Auto or Full access, passed to Claude Code as its permission mode.
+- Start a session offers the Mac's saved profiles as chips; one tap fills folder, engine, permissions, model, system prompt and first prompt.
+- A session started from a profile or in a permission mode says so on its row ("Review · Full access"), on the phone and in the Mac popover.
 
 ### Mac
+- An AWS sign-in that lapses inside a sub-agent shows up on the parent session — key badge, Sign in row, push — and the continue nudge after signing in goes to the parent.
+- Settings › Machine mutes the hook and temp-directory notifications separately; the pane keeps listing them.
+- Right-click an account row → Re-roll name gives that one account a fresh themed name nobody in the fleet wears; `infinitusctl randomize-names <fleet> <n>` does the same.
+- Settings › Machine watches what many sessions do to this Mac — load, swap, stuck hooks, runaway processes, residue — with confirmed kill, reclaim and hook-disable actions and notifications for new hook registrations and idle sessions.
+- Sessions whose sub-agents hit a limit get a nudge that the swapped-in account has headroom, so they stop waiting for the reset.
 - When a revival countdown ends the Mac asks the engine again right away (three tries a minute apart) instead of waiting for the next poll.
 - "<account> is back" notifications, with "reset early" when Anthropic reset before the advertised time and "all accounts are back" when the whole fleet returns (Settings › Notifications).
 - `/infinitus:handoff <session>` passes the current task and its context to another live session through the plugin.
 - Live Activity pushes drop a phone token from before the bundle id move instead of failing on it every minute.
 - "Needs AWS login" banners no longer repeat after a relaunch, and every banner's headline is now its subtitle.
-
-### Phone
+- The Game HUD chat header's bars play the Fleet card's effects: pace fire, the cool halo, HP drops, Lucky 7s, the switch, death and revival flashes.
 - The phone raises its own alarms, no push service needed: an exhausted account's limit lifting in 10 minutes, and the account the fleet just swapped to; off in Settings › Notifications.
+- Settings shows the Mac's and the phone's versions, can trigger the Mac's update, and says when a newer phone build is out.
+- Past sessions: the sessions popover lists the newest transcripts with a Resume button, and `infinitusctl past-sessions` / `resume-session <id>` (also MCP tools) do the same from a terminal or another session.
+- Settings › Profiles saves named ways to start a session (folder, engine, permissions, model, appended system prompt, first prompt); `infinitusctl profiles` / `profile-set` / `profile-remove` manage the same list.
+- Every prompt checkpoints the repository as a hidden git ref (with the plugin; Display › toggle): `infinitusctl checkpoints <session>` lists them, `checkpoint-diff` compares two or one against the working tree, `checkpoint-restore --yes` puts the files back and keeps a backup checkpoint; the sessions popover's Checkpoints section shows a session's timeline with Restore; the phone shows the timeline (session detail › Checkpoints) with each checkpoint's diff and Restore.
+- A running session's permission mode can be widened from the phone (session detail › Permissions) or `infinitusctl session-mode <session> <mode>`; the plugin's PreToolUse hook answers from it and the row chip follows.
+- Review a turn's changes from the phone: the chat's Review button (or a checkpoint's diff) lists the hunks, a tap comments one, Approve / Request changes sends the review as the session's next message.
+
+### Team (preview)
+- Reading the team store remembers each file's header, so a refresh pass reads only new files and the app's memory stays flat.
+- A publish sends transcripts only from sessions active in the last two days (stats keep 30) and pushes in 200 MB batches, saving its place after each, so a huge history can't stall or crash it.
+- An invite link's request now proves the invite without carrying its secret, so a copied request can't ride someone else's invite; invited requests are approved automatically again.
+- `infinitusctl team-create --remote <url>` takes the URL as written.
+- `infinitusctl team create --as <name>` names you as the team's founder instead of "Leader".
+- Settings › Team: create or join a team, approve requests, see every member's latest publish, today's effort and blockers, and open their Stats and transcripts — the Mac fetches and publishes every 5 minutes.
+- Settings › Team: pick which audiences see each kind of your own data, and which project folders publish at all.
+- Invite links (QR, copy, share sheet, `infinitus://join/…`) approve the one request they were minted for by themselves once Settings › Team's auto-approve switch is on (on by default); team codes need a tap.
+- The Mac deletes its `now.json` from the team store on quit, so teammates stop seeing it "on".
+- `infinitusctl team-status|team-create|team-code|team-fetch|team-publish|team-approve|team-decline` drive the app's team over the control socket, and the phone's snapshot carries the same view.
+- Leaders see the team: per-member comparison for a period, leaderboards by spend, tokens, commits, PRs, lines, messages, tool calls, waiting time and sessions, who works in which repo, a blockers board, cost by member / model / repo, the hours heatmap and who's on now (`infinitusctl team members --period|insights`).
+- Leaders publish the team picture to everyone (`team aggregates publish`), with per-member rows only when the roster's members-see-each-other policy is on, and `team policy` sets that and whether new requests are accepted.
+- `infinitusctl team identity export|import` seals your identity with a passphrase (PBKDF2 600k + ChaChaPoly, the same file on every platform), `identity recovery --show` prints the 8-group recovery key, and either restores the same kid on a new machine.
+- The site serves the passkey relying-party file for infinitus.run, and a release built with a provisioning profile carries the associated-domains entitlement the passkey identity needs.
+- Leaders get Insights in the Team pane: a member comparison, leaderboards by metric, repos, a blockers board, cost by member/model/repo and an hours heatmap; the team picture is published hourly for members.
+- Nearby in the Team pane: a Mac on the same network asks a discoverable leader to join, and leaders file network requests for approval.
+- Policy in the Team pane: close requests, or let members see each other's detail.
+- The recovery key (after Touch ID), a passphrase-sealed export and an import live in the Team pane; the export file is created owner-only from its first byte.
+- Quitting waits, briefly, for the team to be told you're gone, on every quit path.
+- The phone has a Team tab: roster, requests, invite links and team codes, a teammate's stats and sessions, their shared transcripts, and the leaders' team picture — approve, decline and join from the phone.
+- The phone's Team tab locks behind Face ID / Touch ID (Settings › Team); joining from the phone needs the lock on.
+- Every theme names the Team tab in its own words (Guild, Crew, Clan, Unit, Org).
 
 ## 0.4.3
 
@@ -31,6 +75,15 @@ publishes the matching section as the GitHub release body.
 - Tokens/min records: every day's peak minute, the all-time best and the days it fell, a 30-day sparkline and a week-over-week trend, on the Mac and the phone — one full rescan on first refresh.
 
 ### Fixes
+- Machine flags a hook whose install keeps dying and retrying — the temp directory growing by pip leftovers every hour, named by the hook that owns the running pip.
+- A refresh that carries no usage for an account no longer counts as a revival or a death, so the "is back — reset early" and "hit a limit" pair from one missing sample is gone.
+- Machine names who filled the temp directory (pip, Python tempfile, mktemp) and flags a tool that registers several commands on one event, which spawn on every call.
+- A resume nudge after an account switch waits until the new account has held for 30 s and been polled alive since, and its retries stop when the engine switches again, so a flapping engine no longer burns three nudges in a minute.
+- The idle-session note is sent once per session, app relaunches included.
+- `infinitusctl status` and the phone show the Mac build's real git sha instead of "dev".
+- Machine › Reclaim also clears abandoned pip and Python tempfile directories older than an hour, and finds open files without walking the temp directory (which is what hangs on a loaded Mac).
+- Settings › Machine warns once per hook owner, names the owner of a shell-conditional hook, and can kill a hook's live instances (`infinitusctl machine-hook kill <owner> --yes`).
+- Stats scan parses transcripts 4.6× faster (byte-level line scanning, no regex on tool results) and decodes the cache once per backfill instead of every pass.
 - Tokens/min records: the day's minute buckets survive the stats cache, so the peak is the day's real busiest minute, not the last scan's.
 - Stats count workflow sub-agent transcripts (`subagents/workflows/…`), which were invisible to tokens, cost and peaks.
 - AWS logins survive a Mac relaunch, and a need that failed just before a launch still reaches the phone.
@@ -88,6 +141,9 @@ publishes the matching section as the GitHub release body.
 
 ### Team (preview)
 - `infinitusctl team` creates a team on any git remote and exchanges end-to-end encrypted files between members (create, code, request, approve, publish, read).
+- Nearby: a discoverable Mac or Linux box shows up to teammates on the same network, and `infinitusctl team request --nearby <kid>` sends a join request straight to a leader — no code to paste.
+- Settings › Lock puts the pop-out and Settings behind Touch ID (password fallback), re-locking at once, after 5 min, after 1 h or on sleep; teams need it on.
+- Members publish their stats, live state, session index, redacted transcripts and crash summaries to the audiences they pick, with per-project exclusions (`infinitusctl team share|exclude|publish|members|member`).
 
 ## 0.4.2
 

@@ -121,7 +121,9 @@ public enum PeerSocket {
 
     static func write(_ payload: Data, to socketPath: String, timeout: TimeInterval) -> Bool {
         #if os(Windows)
-        return false   // no AF_UNIX here; the daemon writes `frames` to the named pipe instead
+        // Claude Code's peer inbox is a unix socket; there is no Windows
+        // build of it to talk to yet (#171). The caller falls back.
+        return false
         #else
         let fd = socket(AF_UNIX, sysSockStream, 0)
         guard fd >= 0 else { return false }

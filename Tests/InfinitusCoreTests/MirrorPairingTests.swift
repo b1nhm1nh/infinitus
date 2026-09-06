@@ -101,6 +101,57 @@ final class MirrorPairingTests: XCTestCase {
         XCTAssertNil(MirrorPairing.lanAddress(in: ["100.90.1.2", "fe80::1"]))
     }
 
+    // MARK: - Several Macs per phone (#144 phase 1)
+
+    func testReplacesPrimaryWhenNoneYet() {
+        XCTAssertTrue(MirrorPairing.Others.replacesPrimary(
+            scannedToken: "ABCD2345", primaryToken: "", primaryEndpoints: []))
+    }
+
+    func testReplacesPrimaryWhenTokenMatches() {
+        XCTAssertTrue(MirrorPairing.Others.replacesPrimary(
+            scannedToken: "abcd-2345", primaryToken: "ABCD2345", primaryEndpoints: ["http://a"]))
+    }
+
+    func testReplacesPrimaryWithoutTokenOrOnSharedEndpoint() {
+        // Endpoints typed by hand but no token yet: the scan completes the pairing.
+        XCTAssertTrue(MirrorPairing.Others.replacesPrimary(
+            scannedToken: "ABCD2345", primaryToken: "", primaryEndpoints: ["http://a"]))
+        // The primary Mac regenerated its token: same endpoint, new token — still the primary.
+        XCTAssertTrue(MirrorPairing.Others.replacesPrimary(
+            scannedToken: "WXYZ7777", primaryToken: "ABCD2345", primaryEndpoints: ["http://a", "http://b"],
+            scannedEndpoints: ["http://b"]))
+    }
+
+    func testDoesNotReplacePrimaryForAnotherMac() {
+        XCTAssertFalse(MirrorPairing.Others.replacesPrimary(
+            scannedToken: "WXYZ7777", primaryToken: "ABCD2345", primaryEndpoints: ["http://a"]))
+    }
+
+    func testUpsertAddsThenReplacesByNormalizedToken() {
+        let first = MirrorPairing.MacPairing(id: "ABCD2345", name: "Study", endpoints: ["http://a"], token: "ABCD2345")
+        var list = MirrorPairing.Others.upsert(first, into: [])
+        XCTAssertEqual(list.map(\.id), ["ABCD2345"])
+        let updated = MirrorPairing.MacPairing(id: "ABCD2345", name: "Study", endpoints: ["http://b"], token: "ABCD2345")
+        list = MirrorPairing.Others.upsert(updated, into: list)
+        XCTAssertEqual(list.count, 1)
+        XCTAssertEqual(list.first?.endpoints, ["http://b"])
+    }
+
+    func testSwapPrimaryMovesFieldsBothWays() {
+        let oldPrimary = MirrorPairing.Pairing(endpoints: ["http://study"], token: "OLDTOKEN")
+        let chosen = MirrorPairing.MacPairing(id: "NEWTOKEN", name: "Garage", endpoints: ["http://garage"], token: "NEWTOKEN")
+        let others = [chosen, MirrorPairing.MacPairing(id: "OTHER", name: "Bedroom", endpoints: ["http://bedroom"], token: "OTHER")]
+        let result = MirrorPairing.Others.swapPrimary(
+            oldPrimary: oldPrimary, oldPrimaryName: "Study", chosen: chosen, others: others)
+        XCTAssertEqual(result.primary.endpoints, ["http://garage"])
+        XCTAssertEqual(result.primary.token, "NEWTOKEN")
+        XCTAssertEqual(result.others.map(\.id).sorted(), ["OLDTOKEN", "OTHER"])
+        let demoted = result.others.first { $0.id == "OLDTOKEN" }
+        XCTAssertEqual(demoted?.name, "Study")
+        XCTAssertEqual(demoted?.endpoints, ["http://study"])
+    }
+
     func testQuickTunnelURLOutOfCloudflaredNoise() {
         let line = "2026-09-02T10:00:00Z INF |  https://calm-fox-1234.trycloudflare.com  |"
         XCTAssertEqual(MirrorPairing.quickTunnelURL(in: line),

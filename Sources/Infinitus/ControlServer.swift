@@ -160,6 +160,12 @@ final class ControlServer {
         init(_ m: String) { errorDescription = m }
     }
 
+    /// The snapshot after a team action, or the action's error.
+    private func teamReply() throws -> ControlReply {
+        if let err = model.team.lastError { throw Fail(err) }
+        return ControlReply(ok: true, result: try model.team.snapshot.map { try JSONValue.of($0) } ?? .null)
+    }
+
     private func dispatch(_ r: ControlRequest) async throws -> ControlReply {
         switch r.command {
         case "manifest":
@@ -191,8 +197,84 @@ final class ControlServer {
             return ControlReply(ok: true, result: .array(model.sessionRows().map { row in
                 .object(["pid": .number(Double(row.pid)), "name": row.name.map { .string($0) } ?? .null,
                          "cwd": .string(row.cwd), "status": row.status.map { .string($0) } ?? .null,
-                         "kind": .string(row.kind)])
+                         "kind": .string(row.kind),
+                         "profile": model.sessionBirths[row.pid]?.profile.map { .string($0) } ?? .null,
+                         "permissionMode": model.sessionBirths[row.pid]?.effectiveMode.map { .string($0) } ?? .null])
             }))
+
+        case "profiles":
+            return ControlReply(ok: true, result: try .of(["profiles": model.sessionProfiles.profiles]))
+
+        case "profile-set":
+            guard let name = r.args.first?.trimmingCharacters(in: .whitespaces), !name.isEmpty else {
+                throw Fail("usage: profile-set <name> [--cwd f] [--engine e] [--mode m] [--model m] [--system s] [--prompt p]")
+            }
+            if let engine = r.options["engine"], !["claude", "codex"].contains(engine) { throw Fail("engine must be claude or codex") }
+            if let mode = r.options["mode"], !SessionStart.permissionModes.contains(where: { $0.mode == mode }) {
+                throw Fail("mode must be one of " + SessionStart.permissionModes.map(\.mode).joined(separator: ", "))
+            }
+            let profile = SessionProfile(name: name, cwd: r.options["cwd"], engine: r.options["engine"],
+                                         permissionMode: r.options["mode"], model: r.options["model"],
+                                         systemPrompt: r.options["system"], prompt: r.options["prompt"])
+            model.sessionProfiles.set(profile)
+            if let err = model.sessionProfiles.lastError { throw Fail(err) }
+            let saved = model.sessionProfiles.profiles.first { SessionProfiles.same($0.name, name) }
+            return ControlReply(ok: true, result: try .of(["profile": saved]))
+
+        case "profile-remove":
+            guard let name = r.args.first, !name.isEmpty else { throw Fail("usage: profile-remove <name>") }
+            let existed = model.sessionProfiles.profiles.contains { SessionProfiles.same($0.name, name) }
+            model.sessionProfiles.remove(name)
+            return ControlReply(ok: true, result: .object(["removed": .bool(existed)]))
+        case "checkpoints", "checkpoint-diff", "checkpoint-restore":
+            guard let who = r.args.first, let pid = model.sessionPid(matching: who),
+                  let record = ClaudeSessions.list(claudeDir: ClaudeSessions.configHome()).first(where: { Int($0.pid) == pid })
+            else { throw Fail("no live session matches \(r.args.first ?? "?"); see `infinitusctl sessions`") }
+            let (sessionId, cwd) = (record.sessionId, record.cwd)
+            switch r.command {
+            case "checkpoints":
+                let list = try await Task.detached { try Checkpoints.list(cwd: cwd, sessionId: sessionId) }.value
+                return ControlReply(ok: true, result: try .of(["sessionId": .string(sessionId), "cwd": .string(cwd),
+                                                               "checkpoints": try .of(list)] as [String: JSONValue]))
+            case "checkpoint-diff":
+                guard r.args.count >= 2, let n = Int(r.args[1]) else { throw Fail("usage: checkpoint-diff <pid|name> <n> [m]") }
+                let m = r.args.count > 2 ? Int(r.args[2]) : nil
+                let diff = try await Task.detached { try Checkpoints.diff(cwd: cwd, sessionId: sessionId, from: n, to: m) }.value
+                return ControlReply(ok: true, result: try .of(diff))
+            default:
+                guard r.args.count >= 2, let n = Int(r.args[1]) else { throw Fail("usage: checkpoint-restore <pid|name> <n> --yes") }
+                guard r.options["yes"] != nil else { throw Fail("checkpoint-restore rewrites files in \(cwd); pass --yes") }
+                let (restored, backup) = try await Task.detached { try Checkpoints.restore(cwd: cwd, sessionId: sessionId, n: n) }.value
+                model.logEvent("other", icon: "clock.arrow.2.circlepath",
+                               "restored \((cwd as NSString).lastPathComponent) to checkpoint \(restored.subject)")
+                return ControlReply(ok: true, result: try .of(["restored": try .of(restored),
+                                                               "backup": try backup.map { try .of($0) } ?? .null] as [String: JSONValue]))
+            }
+
+        case "past-sessions":
+            let sessions = PastSessions.list(claudeDir: ClaudeSessions.configHome(),
+                                             limit: r.options["limit"].flatMap(Int.init) ?? 50,
+                                             search: r.options["search"])
+            return ControlReply(ok: true, result: try .of(PastSessions.Reply(sessions: sessions)))
+
+        case "resume-session":
+            guard let id = r.args.first, !id.isEmpty else { throw Fail("usage: resume-session <sessionId>") }
+            let claudeDir = ClaudeSessions.configHome()
+            // A live session's transcript is another process's to write —
+            // talk to it instead of resuming it twice.
+            if let live = ClaudeSessions.list(claudeDir: claudeDir).first(where: { $0.sessionId == id }) {
+                throw Fail("session \(id) is live (pid \(live.pid)); use `infinitusctl send \(live.pid)`")
+            }
+            guard let past = PastSessions.find(sessionId: id, claudeDir: claudeDir) else {
+                throw Fail("no past session \(id); see `infinitusctl past-sessions`")
+            }
+            let reply = SessionLauncher.start(SessionStart.Request(cwd: past.cwd, resume: past.sessionId),
+                                              preferredHost: model.sessionHost)
+            if reply.outcome == "started", let pid = reply.pid {
+                model.recordBirth(pid: pid, SessionBirth(resumedFrom: past.sessionId))
+            }
+            return ControlReply(ok: reply.outcome == "started", result: try .of(reply),
+                                error: reply.outcome == "started" ? nil : "\(reply.outcome)\(reply.detail.map { ": " + $0 } ?? "")")
 
         case "send":
             guard let text = r.secret, !text.isEmpty else { throw Fail("send: the message is expected on stdin") }
@@ -204,14 +286,58 @@ final class ControlServer {
             return ControlReply(ok: reply.outcome == "delivered", result: try .of(reply),
                                 error: reply.outcome == "delivered" ? nil : "\(reply.outcome)\(reply.detail.map { ": " + $0 } ?? "")")
 
+        case "machine":
+            if let report = model.machineModel.report {
+                return ControlReply(ok: true, result: try .of(report))
+            }
+            Task { await model.machineModel.sample() }
+            return ControlReply(ok: true, result: .object(["sampling": .bool(true)]))
+
+        case "machine-kill":
+            guard let pidText = r.args.first, let pid = Int(pidText), pid > 1 else {
+                throw Fail("usage: machine-kill <pid> --yes")
+            }
+            guard r.options["yes"] != nil else { throw Fail("machine-kill signals a process; pass --yes") }
+            let result = await model.machineModel.killRunaway(pid: pid)
+            return ControlReply(ok: true, result: .object(["result": .string(result)]))
+
+        case "machine-reclaim":
+            guard r.options["yes"] != nil else { throw Fail("machine-reclaim removes files; pass --yes") }
+            let result = await model.machineModel.reclaim()
+            return ControlReply(ok: true, result: .object(["result": .string(result)]))
+
+        case "machine-hook":
+            guard r.args.count >= 2, ["disable", "restore", "kill"].contains(r.args[0]) else {
+                throw Fail("usage: machine-hook disable|restore|kill <owner> --yes")
+            }
+            guard r.options["yes"] != nil else { throw Fail("machine-hook edits settings.json or signals processes; pass --yes") }
+            let owner = r.args[1]
+            let result: String
+            switch r.args[0] {
+            case "disable": result = await model.machineModel.disableHook(owner: owner)
+            case "kill": result = await model.machineModel.killHookInstances(owner: owner)
+            default: result = await model.machineModel.restoreHook(owner: owner)
+            }
+            return ControlReply(ok: true, result: .object(["result": .string(result)]))
+
         case "approve":
             guard let payload = r.secret, let event = HookEvent.parse(payload), event.name == "PreToolUse",
                   let sessionId = event.sessionId, let tool = event.toolName else {
                 throw Fail("approve: a PreToolUse hook payload is expected on stdin")
             }
-            let allowed = model.toolApprovals.allows(sessionId: sessionId, tool: tool, command: event.toolCommand)
-            if allowed { model.logEvent("hook", icon: "checkmark.shield", "allowed \(tool) from the phone's session rule") }
-            return ControlReply(ok: true, result: .object(["decision": .string(allowed ? "allow" : "ask")]))
+            let reason = model.toolApprovals.reason(sessionId: sessionId, tool: tool, command: event.toolCommand)
+            if let reason { model.logEvent("hook", icon: "checkmark.shield", "allowed \(tool) from \(reason)") }
+            return ControlReply(ok: true, result: .object(["decision": .string(reason != nil ? "allow" : "ask")]))
+
+        case "session-mode":
+            guard r.args.count >= 2 else { throw Fail("usage: session-mode <pid|name> <\(SessionStart.hookModes.map(\.mode).joined(separator: "|"))>") }
+            guard let pid = model.sessionPid(matching: r.args[0]),
+                  let record = ClaudeSessions.list(claudeDir: ClaudeSessions.configHome()).first(where: { Int($0.pid) == pid })
+            else { throw Fail("no live session matches \(r.args[0]); see `infinitusctl sessions`") }
+            let reply = model.setSessionMode(r.args[1], pid: pid, record: record)
+            guard reply.outcome == "delivered" else { throw Fail(reply.detail ?? reply.outcome) }
+            return ControlReply(ok: true, result: .object(["mode": model.sessionBirths[pid]?.effectiveMode.map { .string($0) } ?? .null,
+                                                          "label": .string(reply.detail ?? "Supervised")]))
 
         case "event":
             guard let payload = r.secret, let event = HookEvent.parse(payload) else {
@@ -247,11 +373,22 @@ final class ControlServer {
 
         case "randomize-names":
             guard let key = r.args.first, let fleet = model.fleets.first(where: { $0.id == key }) else {
-                throw Fail("usage: randomize-names <fleet>")
+                throw Fail("usage: randomize-names <fleet> [n]")
             }
             guard fleet.capabilities.contains(.rename) else { throw Fail("\(fleet.id) does not support rename") }
-            let names = model.rowTheme.randomAccountNames(count: fleet.accounts.count)
-            for (account, name) in zip(fleet.accounts, names) {
+            var targets = fleet.accounts
+            var taken = Set<String>()
+            if r.args.count > 1 {
+                // One account re-rolls alone (#145): it skips every name the
+                // fleet wears, its own included, so the roll visibly lands.
+                guard let n = Int(r.args[1]), let one = fleet.accounts.first(where: { $0.number == n }) else {
+                    throw Fail("no account #\(r.args[1]) in \(fleet.id)")
+                }
+                targets = [one]
+                taken = Set(fleet.accounts.compactMap(\.alias).filter { !$0.isEmpty })
+            }
+            let names = model.rowTheme.randomAccountNames(count: targets.count, avoiding: taken)
+            for (account, name) in zip(targets, names) {
                 try await fleet.engine.rename(fleet: fleet.provider, number: account.number, name)
             }
             await model.refreshSnapshot()
@@ -429,6 +566,51 @@ final class ControlServer {
                 "uptimeSeconds": .number(Date().timeIntervalSince(launchedAt)),
             ]))
 
+        case "lock-status":
+            let policy = model.lock.policy
+            return ControlReply(ok: true, result: .object([
+                "enabled": .bool(policy.enabled),
+                "locked": .bool(policy.locked),
+                "relock": .string(policy.relock.label),
+            ]))
+
+        case "team-status":
+            return ControlReply(ok: true, result: try model.team.snapshot.map { try JSONValue.of($0) } ?? .null)
+
+        case "team-create":
+            // infinitusctl's arg parser treats `--remote` as a bare flag (it
+            // has no way to know team-create wants a value), so the URL
+            // lands as the second positional instead of options["remote"].
+            // Fall back to that positional when the option came back as the
+            // flag sentinel (review round 1, C1).
+            let remote = r.options["remote"].flatMap { $0 == "true" ? nil : $0 } ?? r.args.dropFirst().first
+            guard let name = r.args.first, !name.isEmpty, let remote, !remote.isEmpty else {
+                throw Fail("usage: team-create <name> --remote <url> [--as <your name>]")
+            }
+            await model.team.create(name: name, remote: remote, token: nil, leaderName: r.options["as"] ?? "Leader")
+            return try teamReply()
+
+        case "team-code":
+            let days = min(max(r.options["days"].flatMap(Int.init) ?? 7, 1), 3650)
+            if r.options["invite"] != nil { await model.team.mintInvite(days: days) } else { await model.team.mintCode(days: days) }
+            if let err = model.team.lastError { throw Fail(err) }
+            guard let code = model.team.code else { throw Fail("no code") }
+            return ControlReply(ok: true, result: .object(["code": .string(code)]))
+
+        case "team-fetch":
+            await model.team.fetchNow()
+            return try teamReply()
+
+        case "team-publish":
+            await model.team.publishNow()
+            if let err = model.team.lastError { throw Fail(err) }
+            return ControlReply(ok: true, result: try JSONValue.of(model.team.lastReport ?? TeamPublisher.Report()))
+
+        case "team-approve", "team-decline":
+            guard let kid = r.args.first, !kid.isEmpty else { throw Fail("usage: \(r.command) <kid>") }
+            if r.command == "team-approve" { await model.team.approve(kid: kid) } else { await model.team.decline(kid: kid) }
+            return try teamReply()
+
         case "show":
             guard let controller = AppDelegate.shared?.statusHolder?.controller else {
                 throw Fail("no status item yet")
@@ -493,6 +675,12 @@ final class ControlServer {
             await model.refreshSnapshot()
             return ControlReply(ok: true, result: .object(["routingStrategy": .string(strategy)]))
 
+        case "team-discoverable":
+            guard let arg = r.args.first, ["on", "off"].contains(arg) else { throw Fail("usage: team-discoverable on|off") }
+            // MirrorServer watches this default and re-advertises (Nearby, spec §6.4).
+            UserDefaults.standard.set(arg == "on", forKey: TeamNearby.discoverableDefaultsKey)
+            return ControlReply(ok: true, result: .object(["discoverable": .bool(arg == "on")]))
+
         default:
             return .failure("\(r.command) is in the manifest but not implemented")
         }
@@ -551,7 +739,7 @@ final class ControlServer {
         let info = Bundle.main.infoDictionary ?? [:]
         return Status(
             version: info["CFBundleShortVersionString"] as? String ?? "dev",
-            sha: info["InfinitusGitSHA"] as? String ?? "dev",
+            sha: info["InfinitusGitSHA"] as? String ?? info["CFBundleVersion"] as? String ?? "dev",
             engines: [
                 "cswap": EngineStatus(enabled: model.cswapEnabled, registered: model.cswapRegistered,
                                       keyPresent: nil),

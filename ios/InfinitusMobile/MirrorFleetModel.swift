@@ -18,6 +18,12 @@ final class MirrorFleetModel: ObservableObject, Identifiable {
     let engineID: String
     let provider: Provider
     unowned let host: MirrorModel
+    /// False for a fleet that must show no cash cells at all (#144 phase
+    /// 1's read-only other-Mac sections). The stronger half of that rule
+    /// is structural under multi-host: `loadIfNeeded` reads THIS host's
+    /// own snapshot, so no fleet can borrow another machine's estimate
+    /// under a coincidentally-matching account number.
+    let hostUsage: Bool
 
     @Published private(set) var accounts: [Account] = []
     @Published private(set) var activeNumber: Int?
@@ -33,7 +39,8 @@ final class MirrorFleetModel: ObservableObject, Identifiable {
     @Published private(set) var report: UsageReport?
     private var usageCapturedAt: Date?
 
-    init(hostID: String, engineID: String, provider: Provider, host: MirrorModel) {
+    init(hostID: String, engineID: String, provider: Provider, host: MirrorModel,
+         hostUsage: Bool = true) {
         // EngineRegistry's key, prefixed with the host: an engine may
         // yield one fleet per provider, and two machines both run cswap.
         self.id = "\(hostID)/\(engineID)/\(provider.rawValue)"
@@ -41,6 +48,7 @@ final class MirrorFleetModel: ObservableObject, Identifiable {
         self.engineID = engineID
         self.provider = provider
         self.host = host
+        self.hostUsage = hostUsage
     }
 
     /// The paired record this fleet belongs to — the merged sessions
@@ -187,8 +195,12 @@ extension MirrorFleetModel: UsageSource {
     /// report ever rides the mirror (`MirrorSnapshot.usageJSON`), so
     /// every other engine's fleet simply keeps empty cells.
     func loadIfNeeded() {
-        guard engineID == Self.cswapEngineID else { return }
-        guard let snapshot = host.snapshot, snapshot.capturedAt != usageCapturedAt,
+        guard hostUsage, engineID == Self.cswapEngineID else { return }
+        // THIS host's snapshot (04-phone), never the facade's primary —
+        // a second machine's cswap fleet reads its own `usageJSON` or
+        // none at all (#144 phase 1's rule, made structural).
+        guard let snapshot = host.snapshots[hostID],
+              snapshot.capturedAt != usageCapturedAt,
               let data = snapshot.usageJSON else { return }
         usageCapturedAt = snapshot.capturedAt
         report = try? JSONDecoder().decode(UsageReport.self, from: data)

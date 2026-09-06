@@ -417,6 +417,10 @@
       <div class="card"><h3><span class="dot">●</span>Session progress</h3>
         <p>Zero-token transcript parsing shows what every agent is doing:
         current task, todo progress, quiet time, retry trouble.</p></div>
+      <div class="card"><h3><span class="dot">●</span>Revival probes</h3>
+        <p>When a countdown ends the Mac asks the engine again at once,
+        and "account is back" tells you — flagged when Anthropic reset
+        early, and once for the whole fleet when everyone returns.</p></div>
       <div class="card"><h3><span class="dot">●</span>Resume guards</h3>
         <p>Evidence-gated nudges: only after a real switch or a fresh
         capacity verdict, never into a busy session, with cooldowns.</p></div>
@@ -471,6 +475,14 @@
         <p>The phone opens on what's waiting for you; unnamed sessions
         get a Haiku title that follows the work; one Continue button
         for a session a limit or a crash stopped.</p></div>
+      <div class="card"><h3><span class="dot">●</span>Start a session from the phone</h3>
+        <p>A repository, the engine, a first prompt: the Mac opens a cmux
+        workspace or a Terminal window and the chat follows. "Start a
+        session in Infinitus" works from Siri.</p></div>
+      <div class="card"><h3><span class="dot">●</span>Allow for this session</h3>
+        <p>The permission card can allow a tool for the rest of the
+        session — Bash by command verb, so allowing git never allows rm.
+        With the plugin, that prompt never comes back.</p></div>
       <div class="card"><h3><span class="dot">●</span>Claude Code plugin</h3>
         <p><code>infinitusctl plugin install</code> adds hooks that tell
         the Mac the moment a session needs you or ends a turn — the phone
@@ -496,9 +508,14 @@
       <div class="card"><h3><span class="dot">●</span>Usage history</h3>
         <p>Per-account utilization over time with waste estimates —
         see the capacity your fleet left on the table. iCloud sync.</p></div>
-      <div class="card"><h3><span class="dot">●</span>Team fleets</h3>
-        <p>Share your fleet read-only with teammates via iCloud — limits,
-        headroom, and waste across the whole team.</p></div>
+      <div class="card"><h3><span class="dot">●</span>Team (preview)</h3>
+        <p>A team on any git remote you already have — GitHub, GitLab, a
+        bare repo on a NAS. Members publish stats, sessions and chosen
+        transcripts end-to-end encrypted to the people they pick; the
+        host sees file names and sizes. Leaders get insights: who's on,
+        who's blocked, cost per member, repo and model. Invite links, team
+        codes, same-network discovery; Linux joins with
+        <code>infinitusctl team</code>.</p></div>
       <div class="card"><h3><span class="dot">●</span>Stats</h3>
         <p>Commits, lines, PRs, messages, sessions, tool calls, switches,
         limits and cost, by day, week, month or year — with the trend

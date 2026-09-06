@@ -38,6 +38,9 @@ final class AppModel: ObservableObject {
 
     var accounts: [Account] { primary?.accounts ?? [] }
     var activeNumber: Int? { primary?.activeNumber }
+    /// When the current active account became active — ResumeGate holds
+    /// post-switch nudges until it has held for a while (#136).
+    private var activeSince: Date?
     var nextCandidate: Int? { primary?.nextCandidate }
     /// Limit-stopped sessions waiting to resume; non-nil only while
     /// every account is at a limit (rides the all-limited banner).
@@ -131,8 +134,43 @@ final class AppModel: ObservableObject {
     let resume = ResumeService()
     /// Sessions popover's mini progress rows (SessionProgressModel.swift).
     let sessionProgress = SessionProgressModel()
+    /// The machine-health guardian (#115): Settings › Machine's model.
+    let machineModel = MachineModel()
+    let sessionProfiles = SessionProfilesModel()
+    /// What Infinitus started each live session as (#163/#165), by pid;
+    /// kept across launches, pruned to the roster on every export.
+    @Published private(set) var sessionBirths: [Int: SessionBirth] = SessionBirths.load(from: AppModel.birthsURL)
+    static let birthsURL = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        .appendingPathComponent("Infinitus/session-births.json")
+    func recordBirth(pid: Int, _ birth: SessionBirth) {
+        let alive = Set(ClaudeSessions.list(claudeDir: ClaudeSessions.configHome()).map { Int($0.pid) })
+        sessionBirths = SessionBirths.pruned(sessionBirths, alive: alive.union([pid]))
+        sessionBirths[pid] = birth
+        try? SessionBirths.save(sessionBirths, to: Self.birthsURL)
+    }
     /// "Allow for this session" rules from the phone (#79), per session id.
     let toolApprovals = ToolApprovals()
+
+    /// Moves a running session's permission mode (#163 phase 2): the
+    /// plugin's PreToolUse hook answers from it. The start mode is a
+    /// floor — Claude Code itself already lets those tools through, so
+    /// narrowing from here would only pretend.
+    func setSessionMode(_ text: String, pid: Int, record: ClaudeSessionRecord) -> SessionInput.Reply {
+        let mode = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let choice = SessionStart.hookModes.first(where: { $0.mode == mode }) else {
+            return SessionInput.Reply(outcome: "rejected", detail: "mode must be one of \(SessionStart.hookModes.map(\.mode).joined(separator: ", "))")
+        }
+        let birth = sessionBirths[pid] ?? SessionBirth()
+        let target: String? = choice.mode == "supervised" ? nil : choice.mode
+        if SessionStart.modeRank(target) < SessionStart.modeRank(birth.permissionMode) {
+            let started = birth.modeLabelForStart ?? "supervised"
+            return SessionInput.Reply(outcome: "rejected", detail: "the session started as \(started); a start mode cannot be narrowed from here")
+        }
+        toolApprovals.setMode(target, sessionId: record.sessionId)
+        recordBirth(pid: pid, birth.moved(to: target))
+        logEvent("hook", icon: "checkmark.shield", "session \(pid) moved to \(choice.label)")
+        return SessionInput.Reply(outcome: "delivered", channel: "mac", detail: choice.label)
+    }
     @Published var lastError: String?
     /// #7 layer 2: the reset battle plan for the current sprint, recomputed
     /// every snapshot; nil when there is nothing to plan. Manual mode: the
@@ -207,6 +245,12 @@ final class AppModel: ObservableObject {
     /// A newer Infinitus release than this build (About → Updates does
     /// the check; the popup chip just points there).
     @Published var appUpdateVersion: String?
+    /// Whatever About's release check last found, newer or not (#121) —
+    /// the phone mirrors this to know when a newer PHONE build is out.
+    @Published var appReleaseLatest: String?
+    /// The one BrewUpdater instance the About pane's button and the
+    /// phone's `POST /app/update` route both drive; set by InfinitusApp.
+    var brewUpdater: BrewUpdater?
     private let launchExecutableDate = AppModel.executableDate()
     private var supervisor: CswapSupervisor?
     private var refreshTask: Task<Void, Never>?
@@ -481,6 +525,9 @@ final class AppModel: ObservableObject {
     /// Where a session started from the phone opens (#91): "auto" (cmux
     /// when installed, else Terminal), "cmux", "terminal".
     @Published var sessionHost: String { didSet { defaults.set(sessionHost, forKey: "session_host") } }
+    /// Per-turn workspace checkpoints (#167): a hidden git ref per prompt,
+    /// recorded when the plugin's UserPromptSubmit hook fires.
+    @Published var checkpointsEnabled: Bool { didSet { defaults.set(checkpointsEnabled, forKey: "checkpoints_enabled") } }
     /// The status item in the theme's color with the theme's icon (#90),
     /// and its effects (switch/death/revival flash, the burn breath).
     @Published var menuBarThemed: Bool { didSet { defaults.set(menuBarThemed, forKey: "menubar_themed") } }
@@ -541,6 +588,16 @@ final class AppModel: ObservableObject {
     let mirrorServer = MirrorServer()
     /// Agent CLI socket (ControlServer.swift); the real model only.
     private(set) lazy var controlServer = ControlServer(model: self)
+    /// The biometric lock (LockModel.swift); the surfaces and the Lock pane read it.
+    private(set) lazy var lock = LockModel(defaults: defaults)
+    /// Settings › Team (spec §9). Secrets in the keychain, or files when
+    /// INFINITUS_TEAM_DIR redirects the team dir (e2e, a second instance).
+    private(set) lazy var team: TeamModel = {
+        let paths = TeamPaths.standard()
+        let model = TeamModel(paths: paths, makeSecrets: TeamSecretsFactory.make(paths: paths), defaults: defaults)
+        model.enabled = !isPlayground && (!mockMode || ProcessInfo.processInfo.environment["INFINITUS_TEAM_DIR"] != nil)
+        return model
+    }()
     let quickTunnel = QuickTunnel()
     let namedTunnel = NamedTunnel()
     /// Live Activity pushes to the phone (APNs), LiveActivityPusher.swift.
@@ -619,6 +676,10 @@ final class AppModel: ObservableObject {
             ClaudeSessions.list(claudeDir: ClaudeSessions.configHome())
                 .first { $0.sessionId == id }.map { Int($0.pid) }
         }
+        if event.name == "UserPromptSubmit", checkpointsEnabled, !isPlayground,
+           let sessionId = event.sessionId, let cwd = event.cwd {
+            recordCheckpoint(sessionId: sessionId, cwd: cwd, subject: event.prompt ?? "")
+        }
         if let line = event.pushLine, !isPlayground {
             logEvent("hook", icon: "bolt.horizontal", event.logLine)
             if let pid { pushTriggers.announceWaiting(pid: pid) }
@@ -642,6 +703,31 @@ final class AppModel: ObservableObject {
     }
     private var hookRefresh: Task<Void, Never>?
     private var lastHookRefresh = Date.distantPast
+
+    /// The snapshot runs git in the session's repository, off the main
+    /// thread; the first checkpoint of a session is logged, the rest are
+    /// quiet (one per prompt would drown the Activity pane). A failure
+    /// is logged once per session too.
+    private var checkpointed: Set<String> = []
+    private func recordCheckpoint(sessionId: String, cwd: String, subject: String) {
+        let first = !checkpointed.contains(sessionId)
+        checkpointed.insert(sessionId)
+        let repo = (cwd as NSString).lastPathComponent
+        Task.detached(priority: .utility) { [weak self] in
+            do {
+                guard let made = try Checkpoints.snapshot(cwd: cwd, sessionId: sessionId, subject: subject) else { return }
+                if first {
+                    await MainActor.run { self?.logEvent("other", icon: "clock.arrow.2.circlepath",
+                                                         "checkpointing \(repo) — \(made.subject)") }
+                }
+            } catch {
+                if first {
+                    await MainActor.run { self?.logEvent("other", icon: "exclamationmark.triangle",
+                                                         "checkpoint of \(repo) failed: \(error)") }
+                }
+            }
+        }
+    }
     static let hookRefreshSpacing: TimeInterval = 30
 
     func notify(_ body: String) {
@@ -799,6 +885,7 @@ final class AppModel: ObservableObject {
         pushRevived = defaults.object(forKey: "push_revived") as? Bool ?? true
         machineNameOverride = defaults.string(forKey: MachineName.overrideKey) ?? ""
         sessionHost = defaults.string(forKey: "session_host") ?? "auto"
+        checkpointsEnabled = defaults.object(forKey: "checkpoints_enabled") as? Bool ?? true
         menuBarThemed = defaults.object(forKey: "menubar_themed") as? Bool ?? true
         menuBarEffects = defaults.object(forKey: "menubar_effects") as? Bool ?? true
         if playground {
@@ -874,6 +961,7 @@ final class AppModel: ObservableObject {
             namer.enabled = sessionAutoNames
             sessionProgress.namer = namer
         }
+        machineModel.host = self
     }
 
     /// App-side cache of our own subprocess output (never an engine
@@ -925,6 +1013,7 @@ final class AppModel: ObservableObject {
         pushRevived = defaults.object(forKey: "push_revived") as? Bool ?? true
         machineNameOverride = defaults.string(forKey: MachineName.overrideKey) ?? ""
         sessionHost = defaults.string(forKey: "session_host") ?? "auto"
+        checkpointsEnabled = defaults.object(forKey: "checkpoints_enabled") as? Bool ?? true
         menuBarThemed = defaults.object(forKey: "menubar_themed") as? Bool ?? true
         menuBarEffects = defaults.object(forKey: "menubar_effects") as? Bool ?? true
     }
@@ -1057,6 +1146,9 @@ final class AppModel: ObservableObject {
         resume.log = { [weak self] icon, text in
             self?.logEvent("nudge", icon: icon, text)
         }
+        resume.push = { [weak self] text in
+            self?.push(text)
+        }
         mirrorServer.log = { [weak self] icon, text in
             self?.logEvent("other", icon: icon, text)
         }
@@ -1071,16 +1163,76 @@ final class AppModel: ObservableObject {
         mirrorServer.crashes.set { [weak self] report in
             Task { @MainActor in self?.ingestCrash(report, announce: true) }
         }
+        mirrorServer.appUpdate.set { [weak self] in
+            guard let self else { return AppUpdate.Reply(outcome: "unavailable", detail: nil) }
+            return await self.triggerAppUpdate()
+        }
         let host = sessionHost
         mirrorServer.sessionStart.set { [weak self] request in
             let reply = SessionLauncher.start(request, preferredHost: host)
             let label = (request.cwd as NSString).lastPathComponent
+            let verb = request.resume == nil ? "started" : "resumed"
+            let born = request.profile.map { " (profile \($0))" } ?? ""
             Task { @MainActor in
+                if reply.outcome == "started", let pid = reply.pid, let birth = SessionBirth(request: request) {
+                    self?.recordBirth(pid: pid, birth)
+                }
                 self?.logMirrorInput(reply.outcome == "started" ? "🚀" : "⚠️",
-                                     "phone started a session in \(label): \(reply.outcome)\(reply.host.map { " via \($0)" } ?? "")")
+                                     "phone \(verb) a session in \(label)\(born): \(reply.outcome)\(reply.host.map { " via \($0)" } ?? "")")
             }
             return reply
         }
+        // A session's hook mode (#163 phase 2) is remembered in its birth
+        // across a relaunch, but the hook answers from ToolApprovals'
+        // memory — reseed it, or the chip would promise a mode the hook
+        // no longer grants.
+        let live = ClaudeSessions.list(claudeDir: ClaudeSessions.configHome())
+        for (pid, birth) in sessionBirths {
+            guard let mode = birth.hookMode, let record = live.first(where: { Int($0.pid) == pid }) else { continue }
+            toolApprovals.setMode(mode, sessionId: record.sessionId)
+        }
+        mirrorServer.pastSessions.set { limit, search in
+            PastSessions.Reply(sessions: PastSessions.list(claudeDir: ClaudeSessions.configHome(),
+                                                           limit: limit, search: search))
+        }
+        // The phone's checkpoint routes (#167 phase 2) act on the live
+        // session's record — the same lookup `infinitusctl checkpoints`
+        // makes; an unknown pid is a 404.
+        let session: @Sendable (Int32) -> ClaudeSessionRecord? = { pid in
+            ClaudeSessions.list(claudeDir: ClaudeSessions.configHome()).first { $0.pid == pid }
+        }
+        mirrorServer.checkpoints.set(.init(
+            list: { pid in
+                guard let record = session(pid) else { return nil }
+                let list = (try? Checkpoints.list(cwd: record.cwd, sessionId: record.sessionId)) ?? []
+                return Checkpoints.Reply(sessionId: record.sessionId, cwd: record.cwd, checkpoints: list)
+            },
+            diff: { pid, n, m in
+                guard let record = session(pid) else { return nil }
+                return try? Checkpoints.diff(cwd: record.cwd, sessionId: record.sessionId, from: n, to: m)
+            },
+            restore: { [weak self] pid, n in
+                guard let record = session(pid) else { return nil }
+                do {
+                    let (restored, backup) = try Checkpoints.restore(cwd: record.cwd, sessionId: record.sessionId, n: n)
+                    Task { @MainActor in
+                        self?.logEvent("other", icon: "clock.arrow.2.circlepath",
+                                       "phone restored \((record.cwd as NSString).lastPathComponent) to checkpoint \(restored.subject)")
+                    }
+                    return Checkpoints.RestoreReply(outcome: "restored", backup: backup?.n)
+                } catch {
+                    return Checkpoints.RestoreReply(outcome: "failed", detail: "\(error)")
+                }
+            }))
+        // The phone's Team tab (spec §9 step 8) — every call lands on the
+        // main actor, where TeamModel lives.
+        mirrorServer.teamMirror.set { [weak self] request in
+            guard let team = await MainActor.run(body: { self?.team }) else { return nil }
+            return await TeamMirrorHandler.reply(request, team: team)
+        }
+        team.gate = { [weak self] in TeamGate.check(lockEnabled: self?.lock.enabled) }
+        team.sources = { [weak self] in self?.teamSources() ?? TeamPublisher.Sources(projectsDir: URL(fileURLWithPath: "/nonexistent"), home: NSHomeDirectory()) }
+        team.load()
         crashReports = crashStore.list()
         scanMacCrashReports()
         quickTunnel.onURL = { [weak self] url in self?.publishRendezvous(url) }
@@ -1114,6 +1266,22 @@ final class AppModel: ObservableObject {
                 try? await Task.sleep(nanoseconds: UInt64(seconds) * 1_000_000_000)
             }
         }
+    }
+
+    /// `POST /app/update` (#121): the phone's own trigger for this Mac's
+    /// update, reusing the same BrewUpdater the About pane's button
+    /// drives so the two never run two upgrades at once.
+    private func triggerAppUpdate() -> AppUpdate.Reply {
+        guard BrewUpdater.channel != .source else {
+            return AppUpdate.Reply(outcome: "unavailable",
+                                   detail: "this Mac runs a source build — rebuild from the repo")
+        }
+        guard appUpdateVersion != nil else {
+            return AppUpdate.Reply(outcome: "upToDate", detail: nil)
+        }
+        brewUpdater?.upgrade()
+        return AppUpdate.Reply(outcome: "started",
+                               detail: "brew is upgrading Infinitus; the Mac relaunches when it's done")
     }
 
     /// Starts or stops the phone companion's LAN listener (#9). Never in
@@ -1190,6 +1358,17 @@ final class AppModel: ObservableObject {
             else {
                 Task { @MainActor in self?.logMirrorInput("⚠️", "phone input not delivered: unknown session") }
                 return nil
+            }
+            // A mode change never reaches the terminal: it is the Mac's
+            // own state, decided on the main actor (the births live
+            // there). This queue never blocks main, so a hop is safe.
+            if request.kind == .mode {
+                return DispatchQueue.main.sync {
+                    MainActor.assumeIsolated {
+                        self?.setSessionMode(request.text, pid: Int(pid), record: record)
+                            ?? SessionInput.Reply(outcome: "rejected", detail: "app is shutting down")
+                    }
+                }
             }
             // "Allow for this session": remember the rule for the plugin's
             // PreToolUse hook, then answer the prompt on screen with Yes.
@@ -1340,6 +1519,36 @@ final class AppModel: ObservableObject {
     func removeCrash(_ id: String) {
         crashStore.remove(id)
         crashReports = crashStore.list()
+    }
+
+    /// What this Mac publishes to its team (spec §7): Claude Code's own
+    /// files, this Mac's live sessions and crash reports, each engine's
+    /// active account with its window percentages, and the blockers
+    /// the pop-out shows (lapsed AWS logins, an all-limited fleet).
+    /// INFINITUS_TEAM_PROJECTS swaps the projects dir for a fixture
+    /// (the e2e gate) and skips the Codex scan.
+    func teamSources() -> TeamPublisher.Sources {
+        let claudeDir = ClaudeSessions.configHome()
+        var s = TeamPublisher.Sources(projectsDir: claudeDir.appendingPathComponent("projects"), home: NSHomeDirectory())
+        s.codexDir = StatsScanner.defaultCodexDir()
+        if let fixture = ProcessInfo.processInfo.environment["INFINITUS_TEAM_PROJECTS"], !fixture.isEmpty {
+            s.projectsDir = URL(fileURLWithPath: fixture)
+            s.codexDir = nil
+        }
+        s.liveSessions = ClaudeSessions.list(claudeDir: claudeDir)
+        s.crashes = crashStore.list()
+        let lastFleets = fleets.compactMap(\.lastFleet)
+        s.fleets = lastFleets.map { fleet in
+            let active = fleet.accounts.first { $0.number == fleet.activeNumber }
+            var windows: [TeamDocs.Window] = []
+            if let w = active?.usage?.fiveHour { windows.append(TeamDocs.Window(label: "5h", pct: Int(w.pct.rounded()))) }
+            if let w = active?.usage?.sevenDay { windows.append(TeamDocs.Window(label: "7d", pct: Int(w.pct.rounded()))) }
+            return TeamDocs.Fleet(engine: fleet.engineID, account: active.map { $0.alias ?? $0.email }, windows: windows)
+        }
+        s.blockers = awsLogins.map { "AWS login: \($0.profile)" }
+            + lastFleets.filter { !$0.accounts.isEmpty && $0.activeNumber == nil && $0.nextCandidate == nil }
+                .map { "\($0.engineID): every account limited" }
+        return s
     }
 
     /// This Mac's own crashes: `~/Library/Logs/DiagnosticReports/
@@ -1780,9 +1989,15 @@ final class AppModel: ObservableObject {
             // Unbundled dev runs are a bare executable — `open` on its
             // directory would just raise Finder.
             let exe = Bundle.main.executablePath ?? ""
+            // applicationShouldTerminate can hold quit up to
+            // TeamModel.quitBound (5s) for a team's now.json delete, so a
+            // fixed sleep can no longer be trusted to outlast this
+            // process — wait for the pid to actually exit instead.
+            let pid = ProcessInfo.processInfo.processIdentifier
+            let wait = "while /bin/kill -0 \(pid) 2>/dev/null; do sleep 0.1; done; "
             let cmd = bundle.hasSuffix(".app")
-                ? "sleep 0.8; /usr/bin/open \"\(bundle)\""
-                : "sleep 0.8; exec \"\(exe)\""
+                ? wait + "/usr/bin/open \"\(bundle)\""
+                : wait + "exec \"\(exe)\""
             p.arguments = ["-c", cmd]
             try? p.run()
             await MainActor.run { NSApplication.shared.terminate(nil) }
@@ -1827,6 +2042,14 @@ final class AppModel: ObservableObject {
 
     func refreshSnapshot() async {
         refreshRouting()
+        // Fire-and-forget: the machine sample (ps, hook scan, occasional
+        // tree-size walk) must never stall the fleet poll this pass
+        // exists for. `sampling` guards overlap; never in the
+        // playground (writes real UserDefaults keys, pushes real
+        // notifications — the same guard every other side effect here
+        // uses) or a mock/e2e instance sharing this Mac's real process
+        // table with the perf gate's launch-time samples.
+        if !isPlayground, !mockMode { Task { await machineModel.tick() } }
         let engines = registry.engines
         guard !engines.isEmpty else { return }
         var results: [(id: String, fleets: [EngineFleet]?, error: Error?)] = []
@@ -2000,7 +2223,18 @@ final class AppModel: ObservableObject {
                                         tokenRate: sessionProgress.tokenRate)
             }
             statsModel.refreshIfStale()
+            team.refreshIfStale() // inside the !mockMode guard above: the automatic loop is real-instance-only; a mock instance still answers team-* control commands directly
             let stats = statsModel.bundle
+            let teamSnapshot = team.snapshot
+            // This Mac's own version, mirrored for the phone's Settings
+            // (#121) — same keys ControlServer.status reads.
+            let info = Bundle.main.infoDictionary ?? [:]
+            let appInfo = AppInfo(
+                version: info["CFBundleShortVersionString"] as? String ?? "dev",
+                sha: info["InfinitusGitSHA"] as? String ?? info["CFBundleVersion"] as? String ?? "dev",
+                updateVersion: appUpdateVersion,
+                updateChannel: BrewUpdater.channel.rawValue,
+                phoneLatest: appReleaseLatest)
             Task.detached(priority: .utility) { [mirrorExporter] in
                 await mirrorExporter.record(listJSON: raw, prefs: prefs,
                                             serviceStatus: serviceStatus,
@@ -2008,7 +2242,10 @@ final class AppModel: ObservableObject {
                                             forecast: forecast, plan: plan,
                                             awsLogins: awsLogins, progress: progress,
                                             stats: stats,
-                                            pushesAlerts: self.liveActivityPusher.configured)
+                                            pushesAlerts: self.liveActivityPusher.configured,
+                                            app: appInfo, team: teamSnapshot,
+                                            profiles: self.sessionProfiles.profiles,
+                                            births: self.sessionBirths)
             }
         }
         // All-limited: count the limit-stopped sessions waiting to be
@@ -2075,11 +2312,15 @@ final class AppModel: ObservableObject {
         // sessions. Detached, single-flight — never awaited here.
         if !isPlayground {
             let active = list.accounts.first { $0.number == list.activeAccountNumber }
+            if previous != list.activeAccountNumber { activeSince = Date() }
             resume.tick(switched: previous != nil && previous != list.activeAccountNumber,
                         activeAlive: active.map { !AccountVitals.isDead($0.usage) } ?? false,
                         activeNumber: list.activeAccountNumber,
                         activeFetchedAt: active?.usageFetchedAt
-                            .flatMap(UsageHistory.parseISO))
+                            .flatMap(UsageHistory.parseISO),
+                        activeName: active.map { $0.alias ?? String($0.email.prefix(while: { $0 != "@" })) },
+                        activePct: active.flatMap { PushTriggers.worstPlanPct($0.usage) }.map { Int($0) },
+                        activeSince: activeSince)
         }
         // Same display-feed vantage as the switch diff above: these
         // triggers fire even while the supervised engine is parked.

@@ -55,6 +55,15 @@ actor NetworkFleetMirror: FleetMirror {
     private var browser: NWBrowser?
     private var endpoints: [NWEndpoint] = []
 
+    /// #144 phase 1 shipped one actor INSTANCE per other paired Mac (a
+    /// `Storage.pairing(MacPairing)` case with its own endpoints, token
+    /// and `onLastGood` write-back). Under the multi-host store that
+    /// distinction is a `MirrorHost` record: this one actor fetches from
+    /// every host in `latestAll`, authenticates each with
+    /// `host.normalizedToken`, and persists each host's last-good route
+    /// through `MirrorHostStore.update` — the same per-Mac isolation,
+    /// without a second store or a cached actor per machine.
+
     /// Migrates the old single-endpoint string into the list, once. The
     /// host migration (`MirrorHostStore`) runs after it, so the Mac's
     /// route list is whole when it becomes host #0's.
@@ -73,6 +82,12 @@ actor NetworkFleetMirror: FleetMirror {
         migrateManualEndpointIfNeeded(defaults)
         return (defaults.array(forKey: manualKey) as? [String]) ?? []
     }
+
+    /// The host every un-hosted call falls back to — host #0, the Mac,
+    /// exactly the pre-multi-host behaviour. (`MirrorHost.candidateEndpoints`
+    /// is the per-host last-good-first ordering the old instance-wide
+    /// `candidateEndpoints()` used to compute.)
+    private func defaultHost() -> MirrorHost { MirrorHostStore.load().first ?? MirrorHost() }
 
     /// FleetMirror conformance — the single-snapshot face `ChainFleetMirror`
     /// and MobileUsage read: the first host that answered.
@@ -114,6 +129,9 @@ actor NetworkFleetMirror: FleetMirror {
     /// 401 usually just means "that's the other host's port".
     private func latest(host: MirrorHost) async -> (MirrorHost, MirrorSnapshot?) {
         let token = host.normalizedToken
+        // One short clause per route that failed, so the Settings line
+        // says WHICH way in is dead — "offline" alone sent the user
+        // rescanning when only the tunnel had changed.
         var failures: [String] = []
         for text in host.candidateEndpoints {
             guard let manual = MirrorTransport.parseEndpoint(text) else { continue }
@@ -143,7 +161,10 @@ actor NetworkFleetMirror: FleetMirror {
         // Every saved route is dead. If one of them was a quick-tunnel
         // URL, this host may simply have restarted onto a new one and
         // published it to the rendezvous (MirrorRendezvous) — swap it in
-        // and try once more before giving up.
+        // and try once more before giving up. #144 phase 1 had to skip
+        // this for a non-primary Mac (the swap wrote the shared
+        // `manualKey`, which was the primary's list); the swap writes
+        // THIS host's own record now, so every host gets it.
         if let stale = host.endpoints.first(where: MirrorRendezvous.isEphemeral),
            let fresh = await rendezvousLookup(token: token), fresh != stale,
            let manual = MirrorTransport.parseEndpoint(fresh) {
@@ -167,7 +188,9 @@ actor NetworkFleetMirror: FleetMirror {
         // No stored endpoint answered (or none is stored) — Bonjour is
         // the last resort, and only worth trying while on the LAN. Every
         // discovered endpoint is tried with THIS host's token, and a 401
-        // only means the advertiser is someone else's host.
+        // only means the advertiser is someone else's host. (#144 phase 1
+        // had to stop a non-primary Mac here — it couldn't tell which of
+        // several advertisers answered; per-host tokens are that test.)
         startBrowsing()
         var unauthorized = false
         for discovered in await allEndpoints() {
@@ -193,6 +216,53 @@ actor NetworkFleetMirror: FleetMirror {
         return (host, nil)
     }
 
+    /// A host's past sessions (#164): `GET /sessions/past?limit=&q=`,
+    /// same stored-endpoint → discovery path as the plain feed fetch.
+    func pastSessions(host: MirrorHost? = nil, limit: Int = 50,
+                      search: String? = nil) async throws -> PastSessions.Reply {
+        var path = PastSessions.path + "?\(PastSessions.limitQueryName)=\(limit)"
+        if let search, !search.isEmpty {
+            let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-_."))
+            path += "&\(PastSessions.searchQueryName)="
+                + (search.addingPercentEncoding(withAllowedCharacters: allowed) ?? search)
+        }
+        return try await getJSON(host: host, path, dates: true)
+    }
+
+    /// A session's checkpoint timeline (#167 phase 2): `GET /sessions/<pid>/checkpoints`.
+    func checkpoints(host: MirrorHost? = nil, pid: Int32) async throws -> Checkpoints.Reply {
+        try await getJSON(host: host, MirrorTransport.sessionCheckpointsPath(pid: pid), dates: true)
+    }
+
+    /// One checkpoint against another (`to`) or the working tree now.
+    func checkpointDiff(host: MirrorHost? = nil, pid: Int32, n: Int,
+                        to: Int? = nil) async throws -> Checkpoints.Diff {
+        var path = MirrorTransport.sessionCheckpointPath(pid: pid, n: n, action: .diff)
+        if let to { path += "?\(MirrorTransport.checkpointToQueryName)=\(to)" }
+        return try await getJSON(host: host, path)
+    }
+
+    /// Rewrites the session's folder to checkpoint `n` on the host (the
+    /// state before is checkpointed first, so this is undoable there).
+    func restoreCheckpoint(host: MirrorHost? = nil, pid: Int32,
+                           n: Int) async throws -> Checkpoints.RestoreReply {
+        try await postJSON(MirrorTransport.sessionCheckpointPath(pid: pid, n: n, action: .restore),
+                           host: host, body: [String: String](),
+                           timeout: Self.attachmentInputTimeout)
+    }
+
+    /// A plain GET decoded as JSON: one host's stored routes first,
+    /// discovery as the fallback — the `pastSessions` path, generalised.
+    private func getJSON<R: Decodable>(host: MirrorHost? = nil, _ path: String,
+                                       dates: Bool = false) async throws -> R {
+        let host = host ?? defaultHost()
+        let data = try await fetchStoredThenDiscovered(host: host, path: path,
+                                                       timeout: Self.candidateTimeout)
+        let decoder = JSONDecoder()
+        if dates { decoder.dateDecodingStrategy = .iso8601 }
+        return try decoder.decode(R.self, from: data)
+    }
+
     /// The session feed (#17 layer 1). `since`/`wait` make it a
     /// long-poll: the host holds the reply until the transcript changes
     /// or `wait` seconds pass. A long-poll goes to the route that last
@@ -203,7 +273,7 @@ actor NetworkFleetMirror: FleetMirror {
     /// that means host #0, the Mac, exactly the old behaviour.
     func sessionTail(host: MirrorHost? = nil, pid: Int32, limit: Int,
                      since: String? = nil, wait: TimeInterval = 0) async throws -> SessionFeed {
-        let host = host ?? MirrorHostStore.load().first ?? MirrorHost()
+        let host = host ?? defaultHost()
         var path = MirrorTransport.sessionTailPath(pid: pid) + "?n=\(limit)"
         if let since, wait > 0 {
             let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-_."))
@@ -228,9 +298,10 @@ actor NetworkFleetMirror: FleetMirror {
     }
 
     /// A feed image's thumbnail (`SessionFeedItem.images`, 2026-09-04):
-    /// the bytes, since AsyncImage can't carry the pairing token.
+    /// the bytes, since AsyncImage can't carry the pairing token. Same
+    /// stored-endpoint → discovery path as the plain feed fetch.
     func sessionImage(host: MirrorHost? = nil, pid: Int32, id: String) async throws -> Data {
-        let host = host ?? MirrorHostStore.load().first ?? MirrorHost()
+        let host = host ?? defaultHost()
         return try await fetchStoredThenDiscovered(
             host: host, path: MirrorTransport.sessionImagePath(pid: pid, id: id),
             timeout: Self.candidateTimeout)
@@ -312,7 +383,7 @@ actor NetworkFleetMirror: FleetMirror {
 
     func sessionInput(host: MirrorHost? = nil, pid: Int32,
                       request: SessionInput.Request) async throws -> SessionInput.Reply {
-        let host = host ?? MirrorHostStore.load().first ?? MirrorHost()
+        let host = host ?? defaultHost()
         let timeout = (request.attachments?.isEmpty == false) ? Self.attachmentInputTimeout : Self.inputTimeout
         let path = MirrorTransport.sessionInputPath(pid: pid)
         let body = try JSONEncoder().encode(request)
@@ -348,6 +419,13 @@ actor NetworkFleetMirror: FleetMirror {
         try await postJSON(SessionStart.path, host: host, body: request,
                            timeout: Self.attachmentInputTimeout)
     }
+
+    /// Triggers a host's own update (#121) — the reply comes back as
+    /// soon as it has decided/kicked off `brew upgrade`, not once it's
+    /// done.
+    func updateMac(host: MirrorHost? = nil) async throws -> AppUpdate.Reply {
+        try await postJSON(MirrorTransport.appUpdatePath, host: host, body: [String: String]())
+    }
     func awsLoginCallback(host: MirrorHost? = nil,
                           _ request: AwsLogin.CallbackRequest) async throws -> AwsLogin.Reply {
         try await postJSON(AwsLogin.callbackPath, host: host, body: request)
@@ -357,11 +435,44 @@ actor NetworkFleetMirror: FleetMirror {
         try await postJSON(AwsLogin.codePath, host: host, body: request)
     }
 
+    // MARK: team (spec §9 step 8) — `/mirror/team/*`, token-gated like
+    // everything else. The team lives on the Mac, so these default to
+    // host #0 like every other un-hosted call.
+
+    private func teamGet<R: Decodable>(_ path: String, host: MirrorHost? = nil,
+                                       timeout: TimeInterval = NetworkFleetMirror.candidateTimeout) async throws -> R {
+        let host = host ?? defaultHost()
+        let data = try await fetchStoredThenDiscovered(host: host, path: path, timeout: timeout)
+        return try JSONDecoder().decode(R.self, from: data)
+    }
+
+    func teamAggregates() async throws -> [String: TeamDocs.Aggregates] { try await teamGet(TeamMirror.aggregatesPath) }
+    func teamMember(kid: String, period: Stats.Period) async throws -> TeamMirror.MemberReply {
+        try await teamGet(TeamMirror.memberPath + "?" + TeamMirror.memberQuery(kid: kid, period: period))
+    }
+    // Queues behind the team's serial git queue (a sync pass mid-push holds
+    // this for as long as git does), so it gets a git-scale timeout like
+    // join/code rather than the input-echo default the other GETs use.
+    func teamTranscript(kid: String, session: String) async throws -> [SessionFeedItem] {
+        try await teamGet(TeamMirror.transcriptPath + "?" + TeamMirror.transcriptQuery(kid: kid, session: session),
+                          timeout: 30)
+    }
+    // approve/decline do a git fetch + push (with a re-fetch/retry loop) on
+    // the Mac, same as join/code: 60 s, not the input timeout.
+    func teamApprove(kid: String) async throws -> TeamMirror.ActionReply { try await postJSON(TeamMirror.approvePath, body: TeamMirror.KidRequest(kid: kid), timeout: 60) }
+    func teamDecline(kid: String) async throws -> TeamMirror.ActionReply { try await postJSON(TeamMirror.declinePath, body: TeamMirror.KidRequest(kid: kid), timeout: 60) }
+    func teamJoin(code: String, name: String) async throws -> TeamMirror.ActionReply {
+        try await postJSON(TeamMirror.joinPath, body: TeamMirror.JoinRequest(code: code, name: name), timeout: 60)
+    }
+    func teamCode(days: Int, invite: Bool) async throws -> TeamMirror.ActionReply {
+        try await postJSON(TeamMirror.codePath, body: TeamMirror.CodeRequest(days: days, invite: invite), timeout: 60)
+    }
+
     private func postJSON<B: Encodable, R: Decodable>(
         _ path: String, host: MirrorHost? = nil, body: B,
         timeout: TimeInterval = NetworkFleetMirror.inputTimeout
     ) async throws -> R {
-        let host = host ?? MirrorHostStore.load().first ?? MirrorHost()
+        let host = host ?? defaultHost()
         let payload = try JSONEncoder().encode(body)
         let data: Data
         if let text = host.candidateEndpoints.first, let manual = MirrorTransport.parseEndpoint(text) {
@@ -380,20 +491,22 @@ actor NetworkFleetMirror: FleetMirror {
 
     /// A crash/hang report to the Mac (`POST /crashes`). Best effort:
     /// false when no Mac answered — the spool retries at the next launch.
+    /// Host #0's route: a crash spool belongs to the machine this phone
+    /// is paired to first, not to whichever host happens to answer.
     func postCrash(_ report: CrashReport) async -> Bool {
-        let token = MirrorPairing.normalize(
-            UserDefaults.standard.string(forKey: Self.tokenKey) ?? "")
+        let host = defaultHost()
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
         guard let body = try? encoder.encode(report),
-              let text = candidateEndpoints().first,
+              let text = host.candidateEndpoints.first,
               let manual = MirrorTransport.parseEndpoint(text) else { return false }
         let endpoint = NWEndpoint.hostPort(
             host: NWEndpoint.Host(manual.host),
             port: NWEndpoint.Port(rawValue: manual.port) ?? .any)
         do {
             _ = try await fetch(endpoint, path: MirrorTransport.crashesPath, hostHeader: manual.host,
-                                useTLS: manual.useTLS, token: token, timeout: Self.attachmentInputTimeout,
+                                useTLS: manual.useTLS, token: host.normalizedToken,
+                                timeout: Self.attachmentInputTimeout,
                                 method: "POST", body: body)
             return true
         } catch {
@@ -408,7 +521,7 @@ actor NetworkFleetMirror: FleetMirror {
     /// APNs pusher, so LiveActivities never names a host here.
     func registerActivityToken(_ registration: ActivityPushRegistration,
                                host: MirrorHost? = nil) async -> Bool {
-        let host = host ?? MirrorHostStore.load().first ?? MirrorHost()
+        let host = host ?? defaultHost()
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
         guard let body = try? encoder.encode(registration),
@@ -453,6 +566,10 @@ actor NetworkFleetMirror: FleetMirror {
     // MARK: - Discovery
 
     private func startBrowsing() {
+        // #144 phase 1 skipped Bonjour for a non-primary Mac — it could
+        // not tell which of several advertisers answered. Every
+        // discovered endpoint is now tried with the asking host's OWN
+        // token, and that 401 IS the test, so the browse runs for all.
         guard browser == nil else { return }
         let params = NWParameters()
         params.includePeerToPeer = false

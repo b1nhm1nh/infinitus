@@ -93,14 +93,19 @@ public enum StatsCodex {
                 let model = entry.state.codexModel
                 let effort = entry.state.codexEffort.isEmpty ? "unset" : entry.state.codexEffort
                 var cost = 0.0
+                var savings = 0.0
                 if let p = StaticPriceTable.price(model: model) {
                     cost = (Double(input) * p.input + Double(output) * p.output + Double(cached) * p.cacheRead) / 1_000_000
+                    savings = Double(cached) * max(0, p.input - p.cacheRead) / 1_000_000
                 }
                 day.inputTokens += input
                 day.outputTokens += output
                 if output > 0 { day.minuteTokens[Stats.minuteOfDay(t, calendar: calendar), default: 0] += output }
                 day.usd += cost
-                day.charge(model: model, engine: entry.engine, effort: effort, input: input, output: output, usd: cost)
+                day.cacheReadTokens += cached
+                day.cacheSavingsUSD += savings
+                day.charge(model: model, engine: entry.engine, effort: effort, input: input, output: output, usd: cost,
+                           cacheRead: cached, savings: savings)
                 if entry.state.stretch != nil {
                     entry.state.stretch!.model = model
                     entry.state.stretch!.effort = effort

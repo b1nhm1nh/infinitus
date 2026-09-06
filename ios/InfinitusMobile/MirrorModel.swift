@@ -42,10 +42,50 @@ final class MirrorModel: ObservableObject, FleetModel {
     /// (2026-09-04); `nil` for snapshots captured before this field
     /// existed, or before the Mac's first scan finished.
     var stats: Stats.Bundle? { snapshot?.stats }
+    /// The Mac's team (Settings › Team), for the phone's Team tab (plan 8).
+    var team: TeamSnapshot? { snapshot?.team }
     /// One engine's fleet per element, in the Mac's popup order.
     @Published private(set) var fleets: [MirrorFleetModel] = []
     private var fleetSinks: [String: AnyCancellable] = [:]
     @Published private(set) var error: String?
+
+    /// One OTHER paired machine (#144 phase 1): read-only on the phone —
+    /// only the primary drives approvals, widgets and Live Activities.
+    /// `pairing` is the persisted identity; the rest is this refresh's
+    /// live state.
+    struct OtherMac: Identifiable {
+        let pairing: MacPairing
+        var snapshot: MirrorSnapshot?
+        var fleets: [MirrorFleetModel] = []
+        var status: String = ""
+        var id: String { pairing.id }
+    }
+
+    /// Every host past #0, in stored order. #144 phase 1 kept these in
+    /// their own `mirror_other_macs` list, refreshed by a cached
+    /// `NetworkFleetMirror(pairing:)` each; under the multi-host store
+    /// they are simply the rest of `hosts`, fetched in the SAME
+    /// `latestAll` fan-out (concurrent, so a dead one costs its own 3 s
+    /// and never delays the primary) with their labels and last-good
+    /// routes persisted per record. So this is a projection, not state.
+    var others: [OtherMac] {
+        hosts.dropFirst().map { host in
+            OtherMac(pairing: MacPairing(id: host.id, name: otherName(host),
+                                         endpoints: host.endpoints, token: host.token,
+                                         lastGood: host.lastGood),
+                     snapshot: snapshots[host.id],
+                     fleets: fleets.filter { $0.hostID == host.id },
+                     status: transportStatuses[host.id] ?? "")
+        }
+    }
+
+    /// What an other machine is called: its own label, else the name its
+    /// snapshot reported, else a generic one.
+    private func otherName(_ host: MirrorHost) -> String {
+        if !host.label.isEmpty { return host.label }
+        if let name = snapshots[host.id]?.machineName, !name.isEmpty { return name }
+        return host.emoji == "🪟" ? "Windows" : "Mac"
+    }
     /// The Mac's display prefs (#9 phase C1: "Follow Mac"); `nil` for
     /// snapshots captured before this field existed.
     @Published private(set) var prefs: FleetPrefs?
@@ -170,10 +210,29 @@ final class MirrorModel: ObservableObject, FleetModel {
     /// is the same machine — every route the QR carries replaces that
     /// host's list (#9 pair once, every route) — any other token is a
     /// NEW host appended to the list, so a scan never unpairs the Mac.
+    /// One nuance from #144 phase 1: a QR that SHARES an endpoint with a
+    /// paired host is that same machine after `regeneratePairToken`, so
+    /// its record takes the new token rather than a duplicate host
+    /// appearing beside it.
     /// Returns the paired host, or nil for anything that isn't one of our pair URLs.
     @discardableResult
     func applyPairing(_ text: String) -> MirrorHost? {
         guard let pairing = MirrorPairing.parsePairURL(text) else { return nil }
+        let scanned = MirrorPairing.normalize(pairing.token)
+        // A rescan of a host whose token was regenerated: same routes,
+        // new token. `upsert` matches on the token alone and would file
+        // it as a second machine.
+        if let rotated = MirrorHostStore.load(defaults).first(where: {
+            $0.normalizedToken != scanned && !Set($0.endpoints).isDisjoint(with: pairing.endpoints)
+        }) {
+            MirrorHostStore.update(rotated.id, defaults) {
+                $0.endpoints = pairing.endpoints
+                $0.token = scanned
+            }
+            hosts = MirrorHostStore.load(defaults)
+            Task { await refresh() }
+            return hosts.first { $0.id == rotated.id } ?? rotated
+        }
         let paired = MirrorHostStore.upsert(endpoints: pairing.endpoints,
                                             token: pairing.token, defaults)
         if usesLAN {
@@ -183,6 +242,34 @@ final class MirrorModel: ObservableObject, FleetModel {
         }
         Task { await refresh() }
         return paired
+    }
+
+    /// Settings › Hosts: drops a host for good — #144 phase 1's "Forget",
+    /// which is `removeHost` under the multi-host store (the record IS
+    /// the pairing, so dropping it revokes the token with it).
+    func forgetOther(id: String) { removeHost(id: id) }
+
+    /// Settings › Hosts, "Make primary": the chosen host moves to slot #0,
+    /// so the facade (forecast, plan, footer chips, Live Activities, the
+    /// share extension's pairing) follows it. #144 phase 1 had to SWAP
+    /// two pairings' fields for this because only one Mac could be stored;
+    /// with a record per machine it is a reorder, and nothing is demoted
+    /// out of the list.
+    func makePrimary(id: String) {
+        guard usesLAN else { return }
+        var stored = MirrorHostStore.load(defaults)
+        guard let index = stored.firstIndex(where: { $0.id == id }), index != 0 else { return }
+        let chosen = stored.remove(at: index)
+        stored.insert(chosen, at: 0)
+        MirrorHostStore.save(stored, defaults)
+        hosts = stored
+        // The old primary's snapshot must not linger under the new one if
+        // it fails to answer right away.
+        snapshot = nil
+        // The share extension (#64) follows the primary, and its keychain
+        // pairing has to move with it.
+        ShareBridge.publish(host: chosen, defaults)
+        Task { await refresh() }
     }
 
     /// Adds an endpoint typed into Settings, de-duplicated — the field
@@ -255,6 +342,11 @@ final class MirrorModel: ObservableObject, FleetModel {
         try? JSONDecoder().decode(AccountList.self, from: data)
     }
 
+    /// #144 phase 1 refreshed other Macs in a DETACHED second round
+    /// (`refreshOthersDetached`) so an asleep one couldn't delay the
+    /// primary. `refreshHosts` fans every host out concurrently in one
+    /// round instead — nobody waits on anybody — so the second round is
+    /// gone rather than dropped.
     func refresh() async {
         do {
             if usesLAN {
@@ -394,7 +486,9 @@ final class MirrorModel: ObservableObject, FleetModel {
     }
 
     /// One host's snapshot → its fleets, in popup order (`nil` when an
-    /// older Mac's `listJSON` doesn't decode).
+    /// older Mac's `listJSON` doesn't decode). Every host — primary or
+    /// not — comes through this one rule (#144 phase 1's
+    /// `engineFleets(from:)`, which existed for exactly that reason).
     private func fleets(in snapshot: MirrorSnapshot) -> [EngineFleet]? {
         if let snapshotFleets = snapshot.fleets {
             // Newer Mac: one EngineFleet per engine, already in popup
@@ -419,7 +513,15 @@ final class MirrorModel: ObservableObject, FleetModel {
     /// its first snapshot — `refresh` uses that to decide whether to
     /// replay the intro, exactly as `AppModel.refreshSnapshot` does off
     /// `primary`.
+    ///
+    /// `hostUsage` was #144 phase 1's guard against a non-primary fleet
+    /// borrowing the primary's `usageJSON` under a coincidentally-matching
+    /// account number. Every fleet reads its OWN host's snapshot now
+    /// (`MirrorFleetModel.loadIfNeeded`), so that can no longer happen and
+    /// a second machine may show its own estimate; the flag stays on the
+    /// initializer for a fleet that must render no cash cells at all.
     private func reconcile(_ perHost: [(hostID: String, fleets: [EngineFleet])]) -> Bool {
+        let previousIDs = Set(fleets.map(\.id))
         var existing = Dictionary(uniqueKeysWithValues: fleets.map { ($0.id, $0) })
         var changesByID: [String: MirrorFleetModel.Change] = [:]
         var newFleets: [MirrorFleetModel] = []
@@ -443,7 +545,8 @@ final class MirrorModel: ObservableObject, FleetModel {
                 newFleets.append(fleet)
             }
         }
-        for goneID in existing.keys { fleetSinks.removeValue(forKey: goneID) }
+        let newIDs = Set(newFleets.map(\.id))
+        for goneID in previousIDs.subtracting(newIDs) { fleetSinks.removeValue(forKey: goneID) }
         fleets = newFleets
         let primaryID = pickPrimary(newFleets)?.id
         return primaryID.flatMap { changesByID[$0] }?.firstLoad ?? false

@@ -55,6 +55,19 @@ public struct MirrorSnapshot: Codable, Sendable {
     /// phone that registered an alert token then skips its own local
     /// "swapped to" banner, so the swap arrives once.
     public let pushesAlerts: Bool?
+    /// This Mac's own version and update state (#121), so the phone's
+    /// Settings can show both apps' versions and trigger the Mac's
+    /// update. Additive optional — an old Mac's snapshot decodes nil.
+    public let app: AppInfo?
+    /// The Mac's team (Settings › Team) for the phone's Team tab (plan 8).
+    /// Additive optional — a Mac without a team, or an older Mac, sends nil.
+    public let team: TeamSnapshot?
+    /// The Mac's saved session profiles (#165) — the phone's Start a
+    /// session chips. Additive optional.
+    public let profiles: [SessionProfile]?
+    /// How Infinitus started each live session, by pid (#163/#165):
+    /// profile, permission mode, resumed-from. Additive optional.
+    public let births: [Int: SessionBirth]?
 
     public init(capturedAt: Date, machineName: String, listJSON: Data,
                 sessions: [SessionPanelRow], prefs: FleetPrefs? = nil,
@@ -68,7 +81,9 @@ public struct MirrorSnapshot: Codable, Sendable {
                 plan: WindowPlanner.Plan? = nil,
                 awsLogins: [AwsLogin.Item]? = nil,
                 stats: Stats.Bundle? = nil,
-                recentCwds: [String]? = nil, pushesAlerts: Bool? = nil) {
+                recentCwds: [String]? = nil, pushesAlerts: Bool? = nil,
+                app: AppInfo? = nil, team: TeamSnapshot? = nil, profiles: [SessionProfile]? = nil,
+                births: [Int: SessionBirth]? = nil) {
         self.capturedAt = capturedAt
         self.machineName = machineName
         self.listJSON = listJSON
@@ -86,6 +101,36 @@ public struct MirrorSnapshot: Codable, Sendable {
         self.stats = stats
         self.recentCwds = recentCwds
         self.pushesAlerts = pushesAlerts
+        self.app = app
+        self.team = team
+        self.profiles = profiles
+        self.births = births
+    }
+}
+
+/// This Mac's own version, mirrored so the phone's Settings can show it
+/// next to the phone's own build and offer the Mac's update (#121).
+public struct AppInfo: Codable, Sendable, Equatable {
+    public let version: String
+    public let sha: String
+    /// The newer version About found, when there is one — the phone's
+    /// "Update the Mac" row shows only when this is non-nil.
+    public let updateVersion: String?
+    /// "source" | "stable" | "nightly" — a source build has no update
+    /// path, so the phone shows a note instead of a button.
+    public let updateChannel: String
+    /// The newest release About's check has found so far, regardless of
+    /// whether it beats this Mac's own build — the phone compares it
+    /// against ITS OWN version to know when a newer phone build is out.
+    public let phoneLatest: String?
+
+    public init(version: String, sha: String, updateVersion: String?,
+                updateChannel: String, phoneLatest: String?) {
+        self.version = version
+        self.sha = sha
+        self.updateVersion = updateVersion
+        self.updateChannel = updateChannel
+        self.phoneLatest = phoneLatest
     }
 }
 

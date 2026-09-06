@@ -1,7 +1,7 @@
 import SwiftUI
 import InfinitusUI
 
-/// The app shell (#9 native shell): three tabs on a phone — Sessions is
+/// The app shell (#9 native shell): four tabs on a phone — Sessions is
 /// home (user 2026-09-04: the phone is opened for what's waiting; the
 /// fleet is the detail) — or, for anyone who wants the 1:1 rendering
 /// back, the Mac popup itself ("Show as Mac popup", Settings, default
@@ -70,6 +70,11 @@ struct RootView: View {
             NativeFleetScreen(model: model, usage: usage)
                 .tabItem { tabLabel("fleet") }
                 .tag("fleet")
+            TeamScreen(model: model)
+                .tabItem { tabLabel("team") }
+                .tag("team")
+                // A leader's pending join requests — nobody else has any.
+                .badge(model.team?.role == "leader" ? (model.team?.requests.count ?? 0) : 0)
             NavigationStack {
                 SettingsForm(model: model)
                     .navigationTitle(model.rowTheme.tabLabel("settings"))

@@ -204,7 +204,11 @@ public enum StatsScanner {
         let isSubagent = entry.subagent
         let date = Date(timeIntervalSince1970: t)
         let key = Stats.dayKey(date, calendar: calendar)
-        var day = entry.days[key] ?? Stats.Day()
+        // Take the day OUT of the dictionary while it is worked on: a copy
+        // left behind would make every mutation below copy the Day's
+        // dictionaries (Swift copy-on-write), ~250 µs per entry. Written
+        // back at the end.
+        var day = entry.days.removeValue(forKey: key) ?? Stats.Day()
         // A subagent transcript is the parent session's own work under
         // another name — it doesn't add a session, an hour-of-day entry,
         // or its own session-length bucket; only the token/cost/tool
@@ -258,20 +262,26 @@ public enum StatsScanner {
                     let cacheRead = usage["cache_read_input_tokens"] as? Int ?? 0
                     let cacheWrite = usage["cache_creation_input_tokens"] as? Int ?? 0
                     var cost = 0.0
+                    var savings = 0.0
                     if let p = StaticPriceTable.price(model: model) {
                         cost = (Double(input) * p.input + Double(output) * p.output
                             + Double(cacheRead) * p.cacheRead + Double(cacheWrite) * p.cacheWrite) / 1_000_000
+                        savings = Double(cacheRead) * max(0, p.input - p.cacheRead) / 1_000_000
                     }
                     day.inputTokens += input
                     day.outputTokens += output
                     day.usd += cost
+                    day.cacheReadTokens += cacheRead
+                    day.cacheWriteTokens += cacheWrite
+                    day.cacheSavingsUSD += savings
                     if output > 0 { day.minuteTokens[Stats.minuteOfDay(t, calendar: calendar), default: 0] += output }
                     // Per model / engine / effort, per entry — exact, and
                     // the only route a sub-agent file's spend takes into
                     // v2. An empty model name has nothing to key under;
                     // the day totals above still count it.
                     day.charge(model: model, engine: entry.engine, effort: effort,
-                               input: input, output: output, usd: cost)
+                               input: input, output: output, usd: cost,
+                               cacheRead: cacheRead, cacheWrite: cacheWrite, savings: savings)
                     if entry.state.stretch != nil {
                         entry.state.stretch!.model = model
                         entry.state.stretch!.effort = effort
@@ -339,16 +349,21 @@ public enum StatsScanner {
         /// call, before this call's budget spent any of it — the
         /// denominator for a "scanned X of Y" readout.
         public var bytesTotal = 0
+        /// Every file the scan folded, keyed by path — cwd, engine, the
+        /// per-day tallies and the session span — so a caller can fold
+        /// its own subset (the team publisher drops excluded projects).
+        public var entries: [String: FileEntry] = [:]
     }
 
     struct Cache: Codable {
-        /// 8 (2026-09-05): the Day decoder finally keeps the minute
-        /// buckets and workflow sub-agent transcripts are walked, so
-        /// every file is re-read once; 7 added per-minute output tokens
-        /// for the tokens/min record book (#89); 6 was `byEngine`/
-        /// `byEffort` and the Codex source; 5 was Stats v2's
-        /// activities/models.
-        var version = 8
+        /// 9 (2026-09-06): cache reads/writes and cache savings (#139)
+        /// need every file re-read once to backfill them; 8 (2026-09-05)
+        /// the Day decoder finally keeps the minute buckets and workflow
+        /// sub-agent transcripts are walked, so every file is re-read
+        /// once; 7 added per-minute output tokens for the tokens/min
+        /// record book (#89); 6 was `byEngine`/`byEffort` and the Codex
+        /// source; 5 was Stats v2's activities/models.
+        var version = 9
         var files: [String: FileEntry] = [:]
     }
 
@@ -360,6 +375,21 @@ public enum StatsScanner {
             ?? URL(fileURLWithPath: home).appendingPathComponent(".codex")
         return root.appendingPathComponent("sessions")
     }
+
+    /// One caller's decoded cache, carried between the passes of a
+    /// chunked backfill so each pass doesn't decode and re-encode the
+    /// whole corpus's JSON (15 MB, ~2.7 s per pass, 150 passes for a
+    /// rebuild — 2026-09-05). Disk gets a checkpoint every
+    /// `checkpointInterval` and the final state when the pass finishes
+    /// the corpus; an interrupted backfill loses at most that interval.
+    public final class CacheHandle {
+        var cache: Cache?
+        /// Starts "now": the first checkpoint follows a full interval, so
+        /// a one-pass refresh writes once, at the end.
+        var lastWrite = Date()
+        public init() {}
+    }
+    public static let checkpointInterval: TimeInterval = 30
 
     public static func defaultCacheURL() -> URL {
         FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
@@ -407,10 +437,22 @@ public enum StatsScanner {
     /// caller uses the default.
     public static func scan(projectsDir: URL, codexDir: URL? = nil, cacheURL: URL?, calendar: Calendar = .current,
                             maxAge: TimeInterval = 400 * 86_400, now: Date = Date(),
-                            byteBudget: Int? = nil, windowBytes: Int = StatsScanner.windowBytes) -> Result {
-        var cache = cacheURL.flatMap { try? Data(contentsOf: $0) }
+                            byteBudget: Int? = nil, windowBytes: Int = StatsScanner.windowBytes,
+                            handle: CacheHandle? = nil) -> Result {
+        var cache = handle?.cache
+            ?? cacheURL.flatMap { try? Data(contentsOf: $0) }
             .flatMap { try? JSONDecoder().decode(Cache.self, from: $0) } ?? Cache()
         if cache.version != Cache().version { cache = Cache() }
+        // Without a handle the checkpoint cadence is the old one (every
+        // 200 files touched); with one it is wall-clock, tracked there.
+        func checkpointDue(_ filesTouched: Int) -> Bool {
+            guard let handle else { return filesTouched % 200 == 0 }
+            return Date().timeIntervalSince(handle.lastWrite) >= checkpointInterval
+        }
+        func write(_ c: Cache, to url: URL) {
+            writeCache(c, to: url, fm: fm)
+            handle?.lastWrite = Date()
+        }
         let fm = FileManager.default
 
         // `subagent`: true for `<project>/<session-id>/subagents/*.jsonl`
@@ -532,7 +574,7 @@ public enum StatsScanner {
                 }
                 if entry.offset >= c.size { entry.size = c.size }   // caught up — only now does size==entry.size latch
                 filesTouched += 1
-                if let cacheURL, filesTouched % 200 == 0 {
+                if let cacheURL, checkpointDue(filesTouched) {
                     var checkpoint = live
                     checkpoint[c.url.path] = entry
                     for other in candidates[(i + 1)...] where cache.files[other.url.path] != nil {
@@ -540,7 +582,7 @@ public enum StatsScanner {
                     }
                     var cp = cache
                     cp.files = checkpoint
-                    writeCache(cp, to: cacheURL, fm: fm)
+                    write(cp, to: cacheURL)
                 }
             }
             live[c.url.path] = entry
@@ -561,42 +603,49 @@ public enum StatsScanner {
         for key in result.days.keys { result.days[key]!.finalizePeak() }
         let unchanged = filesTouched == 0 && live.count == cache.files.count
         cache.files = live
-        if let cacheURL, !unchanged { writeCache(cache, to: cacheURL, fm: fm) }
+        handle?.cache = cache
+        // A held cache reaches disk when the corpus is caught up or a
+        // checkpoint is due; otherwise the next pass carries it.
+        let due = handle == nil || result.remaining == 0 || checkpointDue(1)
+        if let cacheURL, !unchanged, due { write(cache, to: cacheURL) }
+        result.entries = live
         return result
     }
 
-    private static let userMarker = Data("\"type\":\"user\"".utf8)
-    private static let assistantMarker = Data("\"type\":\"assistant\"".utf8)
-    private static let toolResultMarker = Data("\"tool_result\"".utf8)
-    private static let timestampRegex = try! NSRegularExpression(pattern: "\"timestamp\":\"([^\"]+)\"")
-    private static let isErrorTrueMarker = "\"is_error\":true"
-    private static let toolDenialKindMarker = "\"toolDenialKind\""
+    private static let userMarker = ByteScan.Needle("\"type\":\"user\"")
+    private static let assistantMarker = ByteScan.Needle("\"type\":\"assistant\"")
+    private static let toolResultMarker = ByteScan.Needle("\"tool_result\"")
+    private static let timestampKey = ByteScan.Needle("\"timestamp\":\"")
+    private static let isErrorTrueMarker = ByteScan.Needle("\"is_error\":true")
+    private static let toolDenialKindMarker = ByteScan.Needle("\"toolDenialKind\"")
 
-    /// Avoids `JSONSerialization` on a big tool_result line (a giant
-    /// command output can run hundreds of KB): a `"timestamp"` regex plus
-    /// substring counts of `"is_error":true`/`"toolDenialKind"` feed a
-    /// small synthesized object into the same `ingest`, so counting stays
-    /// in one place. Returns nil (fall back to the real parse) if the
-    /// timestamp can't be found.
     static func fastParseToolResult(_ line: Data) -> [String: Any]? {
-        let s = String(decoding: line, as: UTF8.self)
+        line.withUnsafeBytes { fastParseToolResult($0) }
+    }
+
+    /// A tool-result entry needs three facts — its timestamp, how many
+    /// of its blocks errored, whether it was a denial — and the line can
+    /// be megabytes of tool output. Byte searches only: no String, no
+    /// regex (NSRegularExpression over 2 MB lines was the hot spot).
+    static func fastParseToolResult(_ line: UnsafeRawBufferPointer) -> [String: Any]? {
         // The LAST match, not the first: the entry's own timestamp field
         // follows `message` in the JSON, and a tool result's content can
         // itself contain an embedded `"timestamp":"…"` (e.g. echoed API
         // output) that would otherwise be picked up instead.
-        guard let match = timestampRegex.matches(in: s, range: NSRange(s.startIndex..., in: s)).last,
-              let range = Range(match.range(at: 1), in: s) else { return nil }
-        let errorCount = s.components(separatedBy: isErrorTrueMarker).count - 1
-        var obj: [String: Any] = ["type": "user", "timestamp": String(s[range])]
-        if s.contains(toolDenialKindMarker) { obj["toolDenialKind"] = true }
+        guard let key = ByteScan.lastIndex(of: timestampKey, in: line) else { return nil }
+        let valueStart = key + timestampKey.count
+        guard valueStart < line.count,
+              let quote = ByteScan.firstIndex(of: UInt8(ascii: "\""), in: line, from: valueStart),
+              quote > valueStart else { return nil }
+        let stamp = String(decoding: UnsafeRawBufferPointer(rebasing: line[valueStart..<quote]), as: UTF8.self)
+        var obj: [String: Any] = ["type": "user", "timestamp": stamp]
+        if ByteScan.contains(toolDenialKindMarker, in: line) { obj["toolDenialKind"] = true }
+        let errorCount = ByteScan.count(isErrorTrueMarker, in: line)
         let blocks = (0..<errorCount).map { _ in ["type": "tool_result", "is_error": true] as [String: Any] }
         obj["message"] = ["content": blocks]
         return obj
     }
 
-    /// One read window's worth of bytes: 8 MB. `parse` never holds more
-    /// than this (doubled only when a single line exceeds it) in memory
-    /// at once, however large the file is.
     public static let windowBytes = 8 * 1024 * 1024
 
     /// Reads at most one bounded window starting at `entry.offset`,
@@ -631,31 +680,132 @@ public enum StatsScanner {
         guard let lastNewline = data.lastIndex(of: newline) else { return 0 }
         let complete = data[data.startIndex...lastNewline]
         let codex = entry.engine == Stats.Engine.codex.rawValue
-        var lineStart = complete.startIndex
-        while lineStart < complete.endIndex {
-            let lineEnd = complete[lineStart...].firstIndex(of: newline) ?? complete.endIndex
-            let line = complete[lineStart..<lineEnd]
-            lineStart = lineEnd + 1
-            if codex {
-                if StatsCodex.worthParsing(line), let obj = try? JSONSerialization.jsonObject(with: line) as? [String: Any] {
-                    StatsCodex.ingest(obj, sessionID: sessionID, into: &entry, calendar: calendar)
+        // One pass over the raw bytes: lines split by memchr, the type
+        // pre-filter a first-byte/memcmp search. `Data.range(of:)` on a
+        // slice per line ran the whole corpus at ~15 MB/s (2026-09-05).
+        complete.withUnsafeBytes { (buf: UnsafeRawBufferPointer) in
+            guard let base = buf.baseAddress else { return }
+            var lineStart = 0
+            while lineStart < buf.count {
+                let lineEnd: Int
+                if let hit = memchr(base + lineStart, Int32(newline), buf.count - lineStart) {
+                    lineEnd = UnsafeRawPointer(hit) - base
+                } else {
+                    lineEnd = buf.count
                 }
-                continue
+                let line = UnsafeRawBufferPointer(rebasing: buf[lineStart..<lineEnd])
+                lineStart = lineEnd + 1
+                if codex {
+                    let bytes = Data(bytes: line.baseAddress!, count: line.count)
+                    if StatsCodex.worthParsing(bytes), let obj = try? JSONSerialization.jsonObject(with: bytes) as? [String: Any] {
+                        StatsCodex.ingest(obj, sessionID: sessionID, into: &entry, calendar: calendar)
+                    }
+                    continue
+                }
+                // Cheap pre-filter: only user/assistant entries matter.
+                let isUser = ByteScan.contains(userMarker, in: line)
+                guard isUser || ByteScan.contains(assistantMarker, in: line) else { continue }
+                var obj: [String: Any]?
+                if isUser, ByteScan.contains(toolResultMarker, in: line) {
+                    obj = fastParseToolResult(line)
+                }
+                if obj == nil {
+                    obj = try? JSONSerialization.jsonObject(with: Data(bytes: line.baseAddress!, count: line.count)) as? [String: Any]
+                }
+                guard let obj else { continue }
+                ingest(obj, sessionID: sessionID, into: &entry, calendar: calendar)
             }
-            // Cheap pre-filter: only user/assistant entries matter.
-            let isUser = line.range(of: userMarker) != nil
-            guard isUser || line.range(of: assistantMarker) != nil else { continue }
-            var obj: [String: Any]?
-            if isUser, line.range(of: toolResultMarker) != nil {
-                obj = fastParseToolResult(line)
-            }
-            if obj == nil {
-                obj = try? JSONSerialization.jsonObject(with: line) as? [String: Any]
-            }
-            guard let obj else { continue }
-            ingest(obj, sessionID: sessionID, into: &entry, calendar: calendar)
         }
         entry.offset += complete.count
         return complete.count
+    }
+}
+
+
+/// Needle searches over raw transcript bytes: memchr to the needle's
+/// first byte, memcmp for the rest. Foundation carries memchr/memcmp on
+/// every platform InfinitusCore builds for.
+enum ByteScan {
+    /// A search pattern with its memchr anchor chosen once.
+    struct Needle {
+        let bytes: [UInt8]
+        let anchor: Int
+        init(_ s: String) {
+            bytes = Array(s.utf8)
+            anchor = ByteScan.anchor(bytes)
+        }
+        var count: Int { bytes.count }
+    }
+
+    static func firstIndex(of byte: UInt8, in buf: UnsafeRawBufferPointer, from: Int = 0) -> Int? {
+        guard from < buf.count, let base = buf.baseAddress,
+              let hit = memchr(base + from, Int32(byte), buf.count - from) else { return nil }
+        return UnsafeRawPointer(hit) - base
+    }
+
+    /// First occurrence at or after `from`; nil when absent. memchr
+    /// runs on the needle's rarest byte (a quote or a colon hits every
+    /// few bytes of JSON; a `y` or `p` hits every few hundred), then
+    /// memcmp confirms the whole needle around it.
+    static func firstIndex(of needle: Needle, in buf: UnsafeRawBufferPointer, from: Int = 0) -> Int? {
+        let n = needle.count
+        guard n > 0, n <= buf.count, let base = buf.baseAddress else { return nil }
+        return needle.bytes.withUnsafeBufferPointer { nb -> Int? in
+            let k = needle.anchor
+            let want = Int32(nb[k])
+            let lastStart = buf.count - n
+            var at = max(from, 0) + k
+            let end = lastStart + k
+            while at <= end, let hit = memchr(base + at, want, end - at + 1) {
+                let i = UnsafeRawPointer(hit) - base - k
+                if memcmp(base + i, nb.baseAddress!, n) == 0 { return i }
+                at = i + k + 1
+            }
+            return nil
+        }
+    }
+
+    /// Rarest-first order of bytes as transcripts use them; anything
+    /// else (quotes, braces, digits, colons) is common.
+    private static let rarity: [UInt8: Int] = {
+        var r: [UInt8: Int] = [:]
+        for (i, c) in "qzjxkvwybgpfmhdulcnrostaei".utf8.enumerated() { r[c] = i }
+        return r
+    }()
+
+    /// Index of the needle byte to memchr for.
+    static func anchor(_ needle: [UInt8]) -> Int {
+        var best = 0
+        var bestRank = Int.max
+        for (i, b) in needle.enumerated() {
+            let rank = rarity[b] ?? 100
+            if rank < bestRank { bestRank = rank; best = i }
+        }
+        return best
+    }
+
+    static func contains(_ needle: Needle, in buf: UnsafeRawBufferPointer) -> Bool {
+        firstIndex(of: needle, in: buf) != nil
+    }
+
+    static func lastIndex(of needle: Needle, in buf: UnsafeRawBufferPointer) -> Int? {
+        var last: Int?
+        var from = 0
+        while let i = firstIndex(of: needle, in: buf, from: from) {
+            last = i
+            from = i + 1
+        }
+        return last
+    }
+
+    /// Non-overlapping occurrences (what `components(separatedBy:).count - 1` gave).
+    static func count(_ needle: Needle, in buf: UnsafeRawBufferPointer) -> Int {
+        var n = 0
+        var from = 0
+        while let i = firstIndex(of: needle, in: buf, from: from) {
+            n += 1
+            from = i + needle.count
+        }
+        return n
     }
 }

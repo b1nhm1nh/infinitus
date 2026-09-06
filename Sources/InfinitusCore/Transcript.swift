@@ -155,6 +155,79 @@ public enum Transcript {
         return out
     }
 
+    /// A session whose OWN transcript is not a limit stop, but a sub-agent
+    /// it spawned hit one — the parent reads the limit off the sub-agent's
+    /// result and waits, so its own transcript never ends in a stop and
+    /// `findStopped` never sees it (#117).
+    public struct SubagentLimit: Sendable, Equatable {
+        /// The PARENT session (sessionId/pid/cwd/socket/peerProtocol/name);
+        /// `message` is the sub-agent's limit text, `stopUuid` the
+        /// sub-agent entry's uuid, `stoppedAt` its timestamp.
+        public let session: StoppedSession
+        /// File name of the agent transcript, for logs.
+        public let agentFile: String
+    }
+
+    /// Every `agent-*.jsonl` under a session's `subagents/` dir, plus one
+    /// level deeper for workflow runs (`subagents/workflows/<run>/`) —
+    /// fixed depths, not a recursive walk (matches StatsScanner).
+    static func agentFiles(under subagentsDir: URL) -> [URL] {
+        let fm = FileManager.default
+        func agents(in dir: URL) -> [URL] {
+            (try? fm.contentsOfDirectory(atPath: dir.path))?
+                .filter { $0.hasPrefix("agent-") && $0.hasSuffix(".jsonl") }
+                .map { dir.appendingPathComponent($0) } ?? []
+        }
+        var files = agents(in: subagentsDir)
+        let workflowsDir = subagentsDir.appendingPathComponent("workflows")
+        for run in (try? fm.contentsOfDirectory(atPath: workflowsDir.path)) ?? [] {
+            files += agents(in: workflowsDir.appendingPathComponent(run))
+        }
+        return files
+    }
+
+    /// Live sessions whose own transcript is NOT a limit stop but at least
+    /// one sub-agent transcript ends in one within `window`. Per session,
+    /// only the newest sub-agent stop is returned; stops older than
+    /// `window` are ignored (a limit from yesterday must not fire).
+    public static func findSubagentLimits(sessions: [ClaudeSessionRecord], claudeDir: URL,
+                                          now: Date = Date(), window: TimeInterval = 30 * 60) -> [SubagentLimit] {
+        var out: [SubagentLimit] = []
+        for session in sessions where !session.sessionId.isEmpty {
+            let transcript = locate(cwd: session.cwd, sessionId: session.sessionId, claudeDir: claudeDir)
+            if isLimitStop(lastTurnEntry(at: transcript)) { continue }   // the existing nudge owns it
+            let subagentsDir = transcript.deletingPathExtension().appendingPathComponent("subagents")
+            var newestEntry: [String: Any]?
+            var newestFile = ""
+            var newestStoppedAt: Date?
+            for file in agentFiles(under: subagentsDir) {
+                // A limit stop is the file's last write, so a file untouched
+                // longer than `window` cannot hold a fresh one — skip the
+                // tail-read (some sessions accumulate hundreds of these,
+                // and reading every one blew the phone's 3s budget once
+                // already; see SessionFeed.attachAgents).
+                if let mtime = (try? file.resourceValues(forKeys: [.contentModificationDateKey]))
+                    .flatMap(\.contentModificationDate),
+                   now.timeIntervalSince(mtime) > window { continue }
+                guard let entry = lastTurnEntry(at: file), isLimitStop(entry) else { continue }
+                let stoppedAt = (entry["timestamp"] as? String).flatMap(UsageHistory.parseISO)
+                guard let stoppedAt, now.timeIntervalSince(stoppedAt) <= window else { continue }
+                if newestStoppedAt == nil || stoppedAt > newestStoppedAt! {
+                    newestEntry = entry
+                    newestFile = file.lastPathComponent
+                    newestStoppedAt = stoppedAt
+                }
+            }
+            guard let newestEntry else { continue }
+            out.append(SubagentLimit(session: StoppedSession(
+                sessionId: session.sessionId, pid: session.pid, cwd: session.cwd,
+                socketPath: session.messagingSocketPath, peerProtocol: session.peerProtocol,
+                message: limitText(newestEntry), stopUuid: newestEntry["uuid"] as? String ?? "",
+                stoppedAt: newestStoppedAt, name: session.name), agentFile: newestFile))
+        }
+        return out
+    }
+
     /// What the transcript says about a nudge already delivered.
     public enum Verdict: Equatable, Sendable {
         /// Original stop unchanged (not picked up yet, or HELD for review —
@@ -193,6 +266,11 @@ public enum ResumeGate {
     public static let cooldown: TimeInterval = 600
     /// How long before a stop a usage poll still counts as fresh.
     public static let freshBeforeStop: TimeInterval = 60
+    /// How long the active account must have been active before a
+    /// post-switch nudge: the engine can ping-pong between a dead account
+    /// and a live one for a minute while the usage API lags (#136: five
+    /// switches in 52 s, every nudge landed on the dead one).
+    public static let stableSeconds: TimeInterval = 30
 
     /// - stoppedAt: when the limit stop landed (nil = unknown).
     /// - firstSeenActive: the active account number when THIS stop was
@@ -201,19 +279,28 @@ public enum ResumeGate {
     /// - activeFetchedAt: when the engine last fetched the active
     ///   account's usage (the "alive" verdict is only as fresh as this).
     /// - lastNudge: when this SESSION was last nudged, any stop entry.
+    /// - activeSince: when the current active account became active
+    ///   (nil = unknown; the switched path then trusts the switch).
     public static func allows(stoppedAt: Date?,
                               firstSeenActive: Int?,
                               currentActive: Int?,
                               activeFetchedAt: Date?,
                               lastNudge: Date?,
+                              activeSince: Date? = nil,
                               now: Date = Date()) -> Bool {
         if let lastNudge, now.timeIntervalSince(lastNudge) < cooldown {
             return false
         }
         // A switch since the stop was first seen: the session rides new
-        // credentials — nudge regardless of usage-poll freshness.
+        // credentials — nudge regardless of how old the poll BEFORE the
+        // switch was, but only once the account has held for
+        // `stableSeconds` and a poll taken since the switch says alive
+        // (the caller only ticks when the active account is alive).
         if let firstSeenActive, let currentActive,
            firstSeenActive != currentActive {
+            guard let activeSince else { return true }
+            guard now.timeIntervalSince(activeSince) >= stableSeconds,
+                  let activeFetchedAt, activeFetchedAt >= activeSince else { return false }
             return true
         }
         // Same account: the alive verdict must postdate the stop, or it

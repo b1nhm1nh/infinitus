@@ -64,6 +64,7 @@ struct FleetScreen: View {
             InfinitusHeader(model: model)
             mirrorState
             accountArea
+            otherMacsArea
             AllDeadBanner(model: model)
             sessionsCard
             Divider()
@@ -105,8 +106,13 @@ struct FleetScreen: View {
     /// are hidden from the Fleet tab (04-phone.md).
     @ViewBuilder private var accountArea: some View {
         Group {
+            // Host #0's fleets only — `otherMacsArea` below heads every
+            // other machine's with its name (#144 phase 1), and
+            // `model.fleets` merges them all.
+            let primaryID = model.hosts.first?.id
             let visibleFleets = model.fleets.filter { fleet in
-                !(fleet.engineID.hasPrefix("claude-code-") && fleet.accounts.isEmpty)
+                fleet.hostID == primaryID
+                    && !(fleet.engineID.hasPrefix("claude-code-") && fleet.accounts.isEmpty)
             }
             if visibleFleets.allSatisfy({ $0.accounts.isEmpty }) {
                 EmptyView()
@@ -117,12 +123,28 @@ struct FleetScreen: View {
         .introContent(model)
     }
 
+    /// Every OTHER paired Mac (#144 phase 1), read-only: the phone drives
+    /// no engine even for the primary, so `FleetStack`'s rows are already
+    /// a no-op tap here — the only addition is the Mac's name.
+    @ViewBuilder private var otherMacsArea: some View {
+        ForEach(model.others) { other in
+            if !other.fleets.isEmpty {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(other.pairing.name)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                    FleetStack(fleets: other.fleets)
+                }
+            }
+        }
+    }
+
     /// The mac pops this card over the brain chip; the phone has no
     /// hover and a popover on a phone is a sheet, so it rides inline
     /// whenever the Mac has sessions at all.
     @ViewBuilder private var sessionsCard: some View {
         if let live = model.liveSessions, live.total > 0 {
-            SessionListCard(live: live, progress: model.sessionProgress)
+            SessionListCard(live: live, progress: model.sessionProgress, births: model.snapshot?.births ?? [:])
         }
     }
 

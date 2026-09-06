@@ -23,13 +23,19 @@ struct SessionsScreen: View {
                     SessionFeedScreen(model: model, hostSession: hostSession)
                 }
                 .toolbar {
-                    ToolbarItem(placement: .primaryAction) {
+                    ToolbarItemGroup(placement: .primaryAction) {
+                        Button { path.append(PastSessionsRoute()) } label: { Image(systemName: "clock.arrow.circlepath") }
+                            .accessibilityLabel("Past sessions")
+                            .disabled(model.snapshot == nil)
                         Button { startSheet = true } label: { Image(systemName: "plus") }
                             .accessibilityLabel("Start a session")
                             .disabled(model.hosts.isEmpty)
                     }
                 }
                 .sheet(isPresented: $startSheet) { StartSessionSheet(model: model) }
+                .navigationDestination(for: PastSessionsRoute.self) { _ in
+                    PastSessionsScreen(model: model)
+                }
                 .onChange(of: model.requestedPid) { _, _ in openRequestedPid() }
                 .onChange(of: model.snapshot?.capturedAt) { _, _ in openRequestedPid() }
                 .navigationDestination(for: SessionDetail.self) { session in
@@ -43,6 +49,9 @@ struct SessionsScreen: View {
                 // the feed rather than replacing it.
                 .navigationDestination(for: SessionDetailRoute.self) { route in
                     SessionDetailScreen(model: model, progress: progress, hostSession: route.hostSession)
+                }
+                .navigationDestination(for: CheckpointsRoute.self) { route in
+                    CheckpointsScreen(session: route.session)
                 }
         }
         // A shake staged a capture for a session: open its feed (which
@@ -113,43 +122,19 @@ struct SessionsScreen: View {
         return groups
     }
 
+    // #144 phase 1 listed other Macs in their own trailing sections with
+    // plain (untappable) rows and a "make this Mac primary to open its
+    // chats" footer. `hostSessionSections` already emits one section per
+    // paired machine, and every session screen routes by `HostSession`,
+    // so a second machine's chats open where its rows are.
+
     @ViewBuilder private var content: some View {
         if !hostSessionSections.isEmpty {
             List {
-                if !model.awsLogins.isEmpty {
-                    // Up top, whatever the session's place in the list
-                    // (user 2026-09-03 "not seeing session with aws
-                    // login button"): one row per login the Mac reports,
-                    // pid-less ones included.
-                    Section("Needs AWS login") {
-                        ForEach(model.awsLogins) { item in
-                            Button { awsLoginItem = item } label: {
-                                HStack(spacing: 10) {
-                                    Image(systemName: "key.fill").foregroundStyle(.orange)
-                                    VStack(alignment: .leading, spacing: 2) {
-                                        Text(item.sessionLabel ?? "Profile \(item.profile)").font(.headline)
-                                        Text("profile \(item.profile) · \(awsPhase(item))")
-                                            .font(.caption).foregroundStyle(.secondary)
-                                    }
-                                    Spacer()
-                                    Text("Sign in").font(.subheadline.bold()).foregroundStyle(.orange)
-                                }
-                            }
-                            .buttonStyle(.plain)
-                        }
-                    }
-                }
-                ForEach(hostSessionSections) { group in
-                    Section {
-                        // Sessions waiting on you first — they're what
-                        // the phone is opened for.
-                        ForEach(group.sessions) { hs in
-                            NavigationLink(value: hs) { row(hs) }
-                        }
-                    } header: {
-                        sectionHeader(group: group)
-                    }
-                }
+                // Split into builders — one expression with every section
+                // is more than CI's compiler type-checks in time.
+                awsLoginSection
+                hostSections
             }
             .listStyle(.insetGrouped)
             .sheet(item: $awsLoginItem) { AwsLoginScreen(item: $0) }
@@ -181,6 +166,49 @@ struct SessionsScreen: View {
     }
 
     @State private var awsLoginItem: AwsLogin.Item?
+
+    /// The List body is split into builders — one expression with every
+    /// section is more than CI's compiler type-checks in time.
+    @ViewBuilder private var awsLoginSection: some View {
+        if !model.awsLogins.isEmpty {
+            // Up top, whatever the session's place in the list
+            // (user 2026-09-03 "not seeing session with aws
+            // login button"): one row per login the Mac reports,
+            // pid-less ones included.
+            Section("Needs AWS login") {
+                ForEach(model.awsLogins) { item in
+                    Button { awsLoginItem = item } label: {
+                        HStack(spacing: 10) {
+                            Image(systemName: "key.fill").foregroundStyle(.orange)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(item.sessionLabel ?? "Profile \(item.profile)").font(.headline)
+                                Text("profile \(item.profile) · \(awsPhase(item))")
+                                    .font(.caption).foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            Text("Sign in").font(.subheadline.bold()).foregroundStyle(.orange)
+                        }
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+    }
+
+    /// One section per paired machine, in stored order.
+    private var hostSections: some View {
+        ForEach(hostSessionSections) { group in
+            Section {
+                // Sessions waiting on you first — they're what the phone
+                // is opened for (`hostSessionSections` sorts them).
+                ForEach(group.sessions) { hs in
+                    NavigationLink(value: hs) { row(hs) }
+                }
+            } header: {
+                sectionHeader(group: group)
+            }
+        }
+    }
 
     /// A session started from the + sheet: its chat opens the moment the
     /// snapshot lists the pid.
@@ -225,11 +253,17 @@ struct SessionsScreen: View {
                         Image(systemName: "key.fill").foregroundStyle(.orange)
                             .accessibilityLabel("needs AWS login")
                     }
+                    // The row wears the theme like the chat header does
+                    // (user 2026-09-05: "sessions list to honor colors
+                    // too"): the name in the theme's accent, the state
+                    // word in its state color. Off keeps the stock list.
                     Text(title(hs))
                         .font(.headline).lineLimit(1)
+                        .foregroundStyle(model.rowTheme.plain ? Color.primary : ThemeColor.flash(model.rowTheme))
                     Spacer(minLength: 8)
                     Text(SessionWords.status(session.status, theme: model.rowTheme))
-                        .font(.caption).foregroundStyle(.secondary)
+                        .font(.caption)
+                        .foregroundStyle(model.rowTheme.plain ? Color.secondary : color(for: session.status))
                     Text(SessionWords.age(since: session.startedAt))
                         .font(.caption).monospacedDigit()
                         .foregroundStyle(.tertiary)
@@ -320,6 +354,8 @@ struct SessionsScreen: View {
         let session = hs.session
         let p = progressForKey(hs)
         var parts: [String] = []
+        // Born from a profile / in a permission mode (#163/#165) leads.
+        if let chip = model.snapshot?.births?[session.pid]?.chip { parts.append(chip) }
         if let branch = p?.gitBranch { parts.append("⎇ \(branch)") }
         if let model = p?.model { parts.append(shortModel(model)) }
         if session.kind != "interactive", !session.kind.isEmpty { parts.append(SessionWords.kind(session.kind)) }

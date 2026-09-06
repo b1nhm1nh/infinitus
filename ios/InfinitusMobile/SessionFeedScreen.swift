@@ -44,6 +44,8 @@ struct SessionFeedScreen: View {
     @State private var previewing: PendingAttachment?
     @State private var attachmentError: String?
     @State private var awsLoginItem: AwsLogin.Item?
+    /// Review this turn's changes (#166): the newest checkpoint vs now.
+    @State private var reviewTarget: ReviewTarget?
     @State private var lastRowVisible = true
     @Environment(\.scenePhase) private var scenePhase
     @StateObject private var screenshots = ScreenshotWatch()
@@ -216,6 +218,9 @@ struct SessionFeedScreen: View {
             .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: lastRowVisible)
         }
         .sheet(item: $awsLoginItem) { AwsLoginScreen(item: $0) }
+        .sheet(item: $reviewTarget) { target in
+            NavigationStack { CheckpointDiffScreen(pid: Int32(session.pid), checkpoint: target.checkpoint) }
+        }
         .background(SwipeBackAnywhere().frame(width: 0, height: 0))
         // Pinned above the transcript, not in it: the feed opens scrolled
         // to the newest message, so a card at the top was out of reach
@@ -376,11 +381,23 @@ struct SessionFeedScreen: View {
     /// account behind it and every window on it.
     private var headerData: ChatHeaderData {
         let pair = headerAccount
-        return ChatHeaderData(name: feed?.name ?? repoName(session.cwd),
-                              status: feed?.status ?? session.status,
-                              accountName: pair.map { ChatHeaderData.accountName($0.account) },
-                              plan: pair?.account.plan,
-                              chips: pair.map { ChatHeaderData.chips($0.account, theme: model.rowTheme) } ?? [])
+        var data = ChatHeaderData(name: feed?.name ?? repoName(session.cwd),
+                                  status: feed?.status ?? session.status,
+                                  accountName: pair.map { ChatHeaderData.accountName($0.account) },
+                                  plan: pair?.account.plan,
+                                  chips: pair.map { ChatHeaderData.chips($0.account, theme: model.rowTheme,
+                                                                         burnStyle: $0.fleet.burnStyle) } ?? [])
+        // The Fleet card's beats for this account (the fleet's ticks
+        // reach here through MirrorModel's objectWillChange relay); the
+        // switch celebration only when this account is the one switched to.
+        if let (account, fleet) = pair {
+            data.switchTick = account.active ? fleet.switchFlashTick : 0
+            data.deathTick = fleet.deathTicks[account.number] ?? 0
+            data.reviveTick = fleet.reviveTicks[account.number] ?? 0
+            data.critical = AccountRowVitals.isCritical(account)
+            data.lucky = AccountRowVitals.isLucky(account, theme: fleet.rowTheme)
+        }
+        return data
     }
 
     /// Reachability, where it's seen: a banner up top, not a caption at
@@ -528,6 +545,17 @@ struct SessionFeedScreen: View {
 
     // MARK: - Layer 2: sending in
 
+    /// "Reply…" / "Listening…" in the theme's words (#124): a theme that
+
+    /// renames every tab and state should not leave the composer plain.
+
+    private var composerPlaceholder: String {
+
+        model.rowTheme.loadingWord(dictation.listening ? "composerListening" : "composerReply")
+
+    }
+
+
     private var composer: some View {
         let canMsg = feed?.canMessage ?? true
         return VStack(spacing: 4) {
@@ -587,6 +615,13 @@ struct SessionFeedScreen: View {
                     .frame(maxWidth: .infinity)
             } else {
                 HStack(spacing: 8) {
+                    // This turn's diff with hunk comments (#166): the newest
+                    // checkpoint is the state at the last prompt.
+                    Button { openReview() } label: {
+                        Image(systemName: "text.badge.checkmark").font(.title2)
+                            .frame(width: 44, height: 44)
+                    }
+                    .accessibilityLabel("Review changes")
                     // One button for everything attachable (user 2026-09-05:
                     // "Combine the 3 items into one"): the capture of this
                     // screen first, then the library, camera, files, paste.
@@ -625,7 +660,7 @@ struct SessionFeedScreen: View {
                     .disabled(sendingMessage || attachments.count >= SessionInput.maxAttachments)
                     ZStack(alignment: .topLeading) {
                         if draft.isEmpty {
-                            Text(dictation.listening ? "Listening…" : "Reply…")
+                            Text(composerPlaceholder)
                                 .font(.body)
                                 .foregroundStyle(.secondary)
                                 .padding(.leading, 5)
@@ -633,7 +668,7 @@ struct SessionFeedScreen: View {
                                 .allowsHitTesting(false)
                         }
                         PasteableTextView(text: $draft, isFocused: $composerFocused,
-                                          placeholder: dictation.listening ? "Listening…" : "Reply…") { image in
+                                          placeholder: composerPlaceholder) { image in
                             addImage(image, prefix: "pasted")
                         }
                     }
@@ -1028,6 +1063,23 @@ struct SessionFeedScreen: View {
     }
 
     private func sendKey(_ key: String) { sendInput(.init(kind: .key, text: key)) }
+
+    private func openReview() {
+        actionResult = nil
+        Task {
+            do {
+                let reply = try await NetworkFleetMirror.shared.checkpoints(
+                    host: host, pid: Int32(session.pid))
+                guard let last = reply.checkpoints.last else {
+                    actionResult = "No checkpoints yet — the plugin checkpoints a git folder at every prompt"
+                    return
+                }
+                reviewTarget = ReviewTarget(checkpoint: last)
+            } catch {
+                actionResult = "couldn't reach \(host.label.isEmpty ? "the host" : host.label)"
+            }
+        }
+    }
 
     private func sendInput(_ request: SessionInput.Request) {
         actionSending = true

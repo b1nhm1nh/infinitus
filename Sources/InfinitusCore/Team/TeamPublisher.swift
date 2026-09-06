@@ -1,0 +1,311 @@
+import Foundation
+import Crypto
+
+/// Spec §7: turns this machine's Claude Code files into the member's
+/// documents and publishes them through `TeamClient`. `collect` is the
+/// pure half (Task 4); publishing, chunking state and re-share follow
+/// (Task 6).
+public struct TeamPublisher {
+    /// One transcript file to chunk: the session's own, or one of its
+    /// sub-agents'.
+    public struct TranscriptSource: Equatable {
+        public var session: String
+        public var agent: String?
+        public var url: URL
+        public init(session: String, agent: String?, url: URL) { self.session = session; self.agent = agent; self.url = url }
+
+        /// `<session>` or `<session>/subagents/<agent>` — the cursor key
+        /// and the store directory (spec §4.3, `TeamKinds`).
+        public var key: String { agent.map { "\(session)/subagents/\($0)" } ?? session }
+        public func chunkPath(seq: Int) -> String { "transcripts/\(key)/\(seq).jsonl" }
+    }
+
+    public struct Collected: Equatable {
+        public var days: [String: Stats.Day] = [:]
+        public var sessions: [TeamDocs.SessionRow] = []
+        public var transcripts: [TranscriptSource] = []
+        public init() {}
+    }
+
+    /// The same rule `StatsScanner.scan` walks with: `<project>/<sid>.jsonl`
+    /// is a session, `<project>/<sid>/subagents/<agent>.jsonl` one of its
+    /// sub-agents. For Codex files the "project dir" is a date; callers
+    /// ignore it there.
+    public static func transcriptIdentity(_ path: String) -> (session: String, agent: String?, projectDir: String) {
+        let url = URL(fileURLWithPath: path)
+        let parent = url.deletingLastPathComponent()
+        if parent.lastPathComponent == "subagents" {
+            let sessionDir = parent.deletingLastPathComponent()
+            return (sessionDir.lastPathComponent, url.deletingPathExtension().lastPathComponent,
+                    sessionDir.deletingLastPathComponent().lastPathComponent)
+        }
+        return (url.deletingPathExtension().lastPathComponent, nil, parent.lastPathComponent)
+    }
+
+    /// Folds the scan's per-file entries minus excluded projects: days
+    /// (Stats v2 `+`), one row per session (sub-agents summed in), and
+    /// the Claude Code transcript files to chunk. Codex files are
+    /// chunked by nobody — only their days and session row travel.
+    /// `transcriptFloorDay` (a `Stats.dayKey`): a Claude file with no day
+    /// on or after it is folded into days and sessions but not chunked.
+    /// Day keys, not `lastAt`: sub-agent files carry days but no session
+    /// times, and ISO day keys compare as strings.
+    public static func collect(entries: [String: StatsScanner.FileEntry], exclusions: TeamExclusions,
+                               transcriptFloorDay: String? = nil) -> Collected {
+        var out = Collected()
+        var rows: [String: TeamDocs.SessionRow] = [:]
+        for (path, entry) in entries.sorted(by: { $0.key < $1.key }) {
+            let identity = transcriptIdentity(path)
+            let claude = entry.engine == Stats.Engine.claude.rawValue
+            if exclusions.excludes(cwd: entry.cwd, projectDir: claude ? identity.projectDir : nil) { continue }
+            let days = entry.daysWithOpenStretch()
+            for (key, day) in days { out.days[key] = (out.days[key] ?? Stats.Day()) + day }
+
+            let project = entry.cwd.map { URL(fileURLWithPath: $0).lastPathComponent }
+            var row = rows[identity.session]
+                ?? TeamDocs.SessionRow(id: identity.session, project: project ?? String(identity.projectDir.split(separator: "-").last ?? ""), engine: entry.engine)
+            // A sub-agent file seen first carries no cwd; the session's own file names the project.
+            if let project, identity.agent == nil { row.project = project }
+            for t in entry.state.firstAt.values {
+                row.startedAt = row.startedAt == 0 ? Int(t) : min(row.startedAt, Int(t))
+            }
+            for t in entry.state.lastAt.values { row.endedAt = max(row.endedAt, Int(t)) }
+            for day in days.values {
+                row.waitingMinutes += Int(day.waitingSeconds / 60)
+                row.usd += day.usd
+                for (label, tally) in day.activities {
+                    let minutes = Int(tally.seconds / 60)
+                    row.activities[label, default: 0] += minutes
+                    row.busyMinutes += minutes
+                }
+            }
+            if identity.agent != nil { row.subagents += 1 }
+            rows[identity.session] = row
+            let recent = transcriptFloorDay.map { (entry.days.keys.max() ?? "") >= $0 } ?? true
+            if claude, recent { out.transcripts.append(TranscriptSource(session: identity.session, agent: identity.agent, url: URL(fileURLWithPath: path))) }
+        }
+        for key in out.days.keys { out.days[key]!.finalizePeak() }
+        out.sessions = rows.values.sorted { $0.startedAt == $1.startedAt ? $0.id < $1.id : $0.startedAt > $1.startedAt }
+        return out
+    }
+
+    // MARK: publishing
+
+    /// Everything a publish reads, injected so tests and the CLI point
+    /// at any directory. `fleets`/`blockers` come from the app's fleet
+    /// view (plan 5); the CLI sends none.
+    public struct Sources {
+        public var projectsDir: URL
+        public var codexDir: URL?
+        /// A scan cache of the publisher's OWN (never the app's, which
+        /// the app writes concurrently).
+        public var cacheURL: URL?
+        public var liveSessions: [ClaudeSessionRecord] = []
+        public var crashes: [CrashReport] = []
+        public var fleets: [TeamDocs.Fleet] = []
+        public var blockers: [String] = []
+        public var home: String
+        public var includeImages = false
+        /// Days of `days/` files published and files scanned (`maxAge`).
+        public var historyDays = 30
+        /// Transcripts are chunked only from sessions active within this
+        /// many days — stats keep `historyDays`. A month of one Mac's
+        /// transcripts was 9 GB (2026-09-06): every chunk sealed in memory
+        /// and pushed as one commit, past GitHub's 2 GB push cap.
+        public var transcriptDays = 2
+        /// Sealed bytes pushed per commit; the cursor state is saved after
+        /// each, so a killed publish resumes instead of starting over.
+        public var batchBytes = 200 << 20
+        public var calendar: Calendar = .current
+        public init(projectsDir: URL, home: String) { self.projectsDir = projectsDir; self.home = home }
+    }
+
+    public struct Report: Equatable, Encodable {
+        public var published: [String] = []
+        public var transcriptChunks = 0
+        /// Whole-object files whose content had not changed.
+        public var skipped = 0
+        public init() {}
+    }
+
+    public let client: TeamClient
+    public let paths: TeamPaths
+
+    public init(client: TeamClient, paths: TeamPaths) { self.client = client; self.paths = paths }
+
+    public var teamDir: URL { paths.teamDir(client.config.id) }
+    /// Plaintext copies of what was published (spec §7 "re-share history
+    /// re-wraps the local plaintext copies"); grows with the transcripts.
+    public var copiesDir: URL { teamDir.appendingPathComponent("published") }
+
+    static func hex(_ data: Data) -> String {
+        let digits = Array("0123456789abcdef")
+        var out = ""
+        for byte in Crypto.SHA256.hash(data: data) {
+            out.append(digits[Int(byte >> 4)]); out.append(digits[Int(byte & 0x0f)])
+        }
+        return out
+    }
+
+    /// `Stats.Day` carries two `Set<String>`s whose JSON order follows
+    /// Swift's per-process hash seed, so the canonical bytes of an
+    /// unchanged day differ between CLI runs; `peakMinute` follows the
+    /// same seed on a tie (`finalizePeak` keeps the first maximum met).
+    /// The change check hashes this copy instead: the sets emptied,
+    /// their members alongside as sorted arrays; `peakMinute` blanked —
+    /// it is derived from `minuteTokens`, which stays (a key-sorted
+    /// object). Nothing dropped, so a change confined to them still
+    /// republishes.
+    struct DayDigest: Encodable {
+        var doc: TeamDocs.DayDoc
+        var sessions: [String]
+        var repos: [String]
+    }
+
+    static func dayDigestBytes(_ doc: TeamDocs.DayDoc) throws -> Data {
+        var copy = doc
+        copy.stats.sessions = []
+        copy.stats.repos = []
+        copy.stats.peakMinute = nil
+        return try CanonicalJSON.encode(DayDigest(doc: copy, sessions: doc.stats.sessions.sorted(), repos: doc.stats.repos.sorted()))
+    }
+
+    static func dayDigest(_ doc: TeamDocs.DayDoc) throws -> String { hex(try dayDigestBytes(doc)) }
+
+    private func writeCopy(_ path: String, _ data: Data) throws {
+        let url = copiesDir.appendingPathComponent(path)
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try data.write(to: url, options: .atomic)
+    }
+
+    /// One push (spec §7 cadence is the caller's): days that changed in
+    /// the window, the session index and `now.json` every time, the
+    /// crash list on change, every new transcript chunk. State advances
+    /// only after the push succeeded.
+    public func publish(sources: Sources, now: Date = Date()) throws -> Report {
+        guard client.isMember else { throw TeamClient.ClientError.notInTeam }
+        let shares = TeamShares.load(teamDir: teamDir)
+        let exclusions = TeamExclusions.load(paths: paths)
+        var state = TeamPublishState.load(teamDir: teamDir)
+        let at = Int(now.timeIntervalSince1970)
+        let calendar = sources.calendar
+        let scan = StatsScanner.scan(projectsDir: sources.projectsDir, codexDir: sources.codexDir, cacheURL: sources.cacheURL,
+                                     calendar: calendar, maxAge: Double(sources.historyDays) * 86_400, now: now)
+        let transcriptFloor = calendar.date(byAdding: .day, value: -sources.transcriptDays, to: calendar.startOfDay(for: now)) ?? .distantPast
+        let collected = Self.collect(entries: scan.entries, exclusions: exclusions,
+                                     transcriptFloorDay: Stats.dayKey(transcriptFloor, calendar: calendar))
+        let redact = TeamRedaction.redactor(options: TeamRedaction.Options(home: sources.home, includeImages: sources.includeImages))
+        var items: [TeamClient.PublishItem] = []
+        var pendingBytes = 0
+        var report = Report()
+
+        // One commit per `batchBytes` of plaintext, state saved behind it:
+        // a publish killed mid-way picks up at the last saved cursor.
+        func flush() throws {
+            guard !items.isEmpty else { return }
+            report.published += try client.publish(items, now: at)
+            items.removeAll()
+            pendingBytes = 0
+            try state.save(teamDir: teamDir)
+        }
+
+        // `digest` defaults to the canonical bytes; day files pass
+        // `dayDigest` because their bytes are not stable across processes.
+        func stage(_ kind: String, _ path: String, _ plaintext: Data, digest: String? = nil, always: Bool = false) throws {
+            let digest = digest ?? Self.hex(plaintext)
+            if !always, state.hashes[path] == digest { report.skipped += 1; return }
+            try writeCopy(path, plaintext)
+            items.append(TeamClient.PublishItem(kind: kind, path: path, plaintext: plaintext, audience: shares.target(for: kind)))
+            pendingBytes += plaintext.count
+            state.hashes[path] = digest
+        }
+
+        let floor = calendar.date(byAdding: .day, value: -sources.historyDays, to: calendar.startOfDay(for: now)) ?? .distantPast
+        for (key, day) in collected.days.sorted(by: { $0.key < $1.key }) {
+            guard let date = Stats.date(fromDayKey: key, calendar: calendar), date >= floor else { continue }
+            let doc = TeamDocs.DayDoc(day: key, stats: day)
+            try stage(TeamKinds.stats, "days/\(key).json", try CanonicalJSON.encode(doc), digest: try Self.dayDigest(doc))
+        }
+        try stage(TeamKinds.sessions, "sessions/index.json",
+                  try CanonicalJSON.encode(TeamDocs.SessionsIndex(at: at, sessions: collected.sessions, fleets: sources.fleets)),
+                  always: true)
+        let live = sources.liveSessions
+            .filter { !exclusions.excludes(cwd: $0.cwd, projectDir: TeamExclusions.slug($0.cwd)) }
+            .map { TeamDocs.LiveSession(id: $0.sessionId, project: URL(fileURLWithPath: $0.cwd).lastPathComponent,
+                                        status: $0.status ?? "", name: $0.name) }
+        let today = calendar.startOfDay(for: now)
+        let crashesToday = sources.crashes.filter { $0.at >= today }.count
+        try stage(TeamKinds.now, "now.json",
+                  try CanonicalJSON.encode(TeamDocs.Now(at: at, sessions: live, fleets: sources.fleets, blockers: sources.blockers,
+                                                        crashesToday: crashesToday, sharesTo: shares.byKind)),
+                  always: true)
+        try stage(TeamKinds.crashes, "crashes.json",
+                  try CanonicalJSON.encode(TeamDocs.Crashes(crashes: sources.crashes.map(\.summary))))
+
+        for source in collected.transcripts {
+            try drainingPool {
+                var cursor = state.transcripts[source.key] ?? TeamPublishState.Cursor()
+                let (chunks, offset) = try TeamChunker.chunks(of: source.url, from: cursor.offset, redact: redact)
+                for chunk in chunks {
+                    cursor.seq += 1
+                    let path = source.chunkPath(seq: cursor.seq)
+                    try writeCopy(path, chunk)
+                    items.append(TeamClient.PublishItem(kind: TeamKinds.transcripts, path: path, plaintext: chunk,
+                                                        audience: shares.target(for: TeamKinds.transcripts)))
+                    report.transcriptChunks += 1
+                    pendingBytes += chunk.count
+                }
+                cursor.offset = offset
+                state.transcripts[source.key] = cursor
+                if pendingBytes >= sources.batchBytes { try flush() }
+            }
+        }
+
+        try flush()
+        try state.save(teamDir: teamDir)
+        return report
+    }
+
+    /// Spec §6.5 / §7: re-wraps the local plaintext copies of the last
+    /// `days` days to the CURRENT audiences and republishes them — after
+    /// a promotion, or an audience change the member wants applied to
+    /// history. Day files go by their date, everything else by the
+    /// copy's modification time.
+    public func reshare(days: Int, now: Date = Date(), calendar: Calendar = .current) throws -> Report {
+        guard client.isMember else { throw TeamClient.ClientError.notInTeam }
+        let shares = TeamShares.load(teamDir: teamDir)
+        let floor = calendar.date(byAdding: .day, value: -days, to: calendar.startOfDay(for: now)) ?? .distantPast
+        var items: [TeamClient.PublishItem] = []
+        let fm = FileManager.default
+        // `subpathsOfDirectory` returns paths already relative to
+        // `copiesDir` — `FileManager.enumerator(at:)` hands back resolved
+        // URLs (macOS's temp dir is a `/var` -> `/private/var` symlink),
+        // so counting `copiesDir`'s own `pathComponents` against them
+        // drops the wrong prefix and every path fails `TeamKinds.expected`.
+        guard let subpaths = try? fm.subpathsOfDirectory(atPath: copiesDir.path) else { return Report() }
+        for path in subpaths {
+            let url = copiesDir.appendingPathComponent(path)
+            guard (try? url.resourceValues(forKeys: [.isRegularFileKey]))?.isRegularFile == true else { continue }
+            guard let kind = TeamKinds.expected(at: "m/\(client.identity.kid)/\(path)")?.kind else { continue }
+            // Live state is never re-shared: the copy is stale, and it would
+            // come back after `quit()` deleted it. The next publish rewraps it.
+            if kind == TeamKinds.now { continue }
+            if kind == TeamKinds.stats {
+                let key = String(url.deletingPathExtension().lastPathComponent)
+                guard let date = Stats.date(fromDayKey: key, calendar: calendar), date >= floor else { continue }
+            } else {
+                let mtime = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? .distantPast
+                guard mtime >= floor else { continue }
+            }
+            items.append(TeamClient.PublishItem(kind: kind, path: path, plaintext: try Data(contentsOf: url),
+                                                audience: shares.target(for: kind)))
+        }
+        items.sort { $0.path < $1.path }
+        var report = Report()
+        report.published = try client.publish(items, now: Int(now.timeIntervalSince1970))
+        return report
+    }
+
+    /// Spec §7: `now.json` is deleted on quit.
+    public func quit() throws { try client.unpublish(path: "now.json") }
+}

@@ -189,6 +189,43 @@ public enum TokenRateScanner {
     nonisolated(unsafe) private static let plain = ISO8601DateFormatter()
 
     public static func parseStamp(_ s: String) -> Double? {
-        (fractional.date(from: s) ?? plain.date(from: s))?.timeIntervalSince1970
+        if let t = fastStamp(s) { return t }
+        return (fractional.date(from: s) ?? plain.date(from: s))?.timeIntervalSince1970
+    }
+
+    /// `2026-09-05T04:02:47Z` / `…47.463Z` without a formatter (which
+    /// cost ~10 µs per entry across millions of transcript lines). Any
+    /// other shape — an offset, a missing Z — falls back to the
+    /// formatters above, which is also what validates a real date.
+    static func fastStamp(_ s: String) -> Double? {
+        var u = Array(s.utf8)
+        guard u.count >= 20, u.last == UInt8(ascii: "Z"), u[4] == UInt8(ascii: "-"), u[7] == UInt8(ascii: "-"),
+              u[10] == UInt8(ascii: "T"), u[13] == UInt8(ascii: ":"), u[16] == UInt8(ascii: ":") else { return nil }
+        u.removeLast()
+        func digits(_ r: Range<Int>) -> Int? {
+            var v = 0
+            for i in r {
+                let d = Int(u[i]) - 48
+                guard (0...9).contains(d) else { return nil }
+                v = v * 10 + d
+            }
+            return v
+        }
+        guard let y = digits(0..<4), let m = digits(5..<7), let d = digits(8..<10),
+              let hh = digits(11..<13), let mm = digits(14..<16), let ss = digits(17..<19),
+              (1...12).contains(m), (1...31).contains(d), hh < 24, mm < 60, ss < 60 else { return nil }
+        var frac = 0.0
+        if u.count > 19 {
+            guard u[19] == UInt8(ascii: "."), u.count > 20, u.count <= 29, let f = digits(20..<u.count) else { return nil }
+            frac = Double(f) / pow(10, Double(u.count - 20))
+        }
+        // Days since 1970-01-01 for a proleptic Gregorian civil date.
+        let yy = m <= 2 ? y - 1 : y
+        let era = (yy >= 0 ? yy : yy - 399) / 400
+        let yoe = yy - era * 400
+        let doy = (153 * (m + (m > 2 ? -3 : 9)) + 2) / 5 + d - 1
+        let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy
+        let days = era * 146_097 + doe - 719_468
+        return Double(days * 86_400 + hh * 3600 + mm * 60 + ss) + frac
     }
 }

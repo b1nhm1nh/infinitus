@@ -15,10 +15,15 @@ struct SettingsForm: View {
     @AppStorage(FleetAlarmCenter.enabledKey) private var fleetAlarms = true
 
     @ObservedObject var model: MirrorModel
+    /// The Team tab's biometric lock (spec §2.2), so the toggle's label
+    /// can name whatever this phone actually has.
+    @ObservedObject private var lock = MobileLock.shared
     /// The QR scanner (#9 remote access) is a sheet, not a screen: it
     /// exists for the ten seconds it takes to pair.
     @State private var scanning = false
     @State private var paired = false
+    /// The other Mac a "Make primary" tap is confirming (#144 phase 1).
+    @State private var promoting: MirrorModel.OtherMac?
 
     var body: some View {
         Form {
@@ -77,7 +82,11 @@ struct SettingsForm: View {
                 }
             }
             // Multi-host pairing (04-phone, W14): each machine is its
-            // own record with label, emoji, endpoints and token.
+            // own record with label, emoji, endpoints and token. #144
+            // phase 1's separate "Mac connection" + "Other Macs" pair of
+            // sections is this ONE list — host #0 is the primary, and
+            // every row is forgettable (swipe) and promotable (long
+            // press) rather than only the non-primary ones.
             hostsSection
             DictationSettings()
             ScreenshotSettings()
@@ -100,6 +109,12 @@ struct SettingsForm: View {
                      + "nothing on the Mac.")
                     .font(.caption).foregroundStyle(.secondary)
             }
+            Section("Team") {
+                Toggle("Lock the Team tab with \(lock.methodName)", isOn: $lock.enabled)
+                Text("Joining a team from the phone needs the lock on (the Mac has the same rule).")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            AboutSettings(model: model)
         }
         .onChange(of: fleetAlarms) { _, on in
             if !on { FleetAlarmCenter.shared.clearPending() }
@@ -121,6 +136,30 @@ struct SettingsForm: View {
             Text("Paired with \(pairedHostName). Its accounts and sessions show up as soon as it answers.")
         }
         .sensoryFeedback(.success, trigger: paired)
+        .confirmationDialog("Make primary",
+                            isPresented: Binding(get: { promoting != nil }, set: { if !$0 { promoting = nil } }),
+                            presenting: promoting) { other in
+            Button("Make primary") { model.makePrimary(id: other.id) }
+            Button("Cancel", role: .cancel) {}
+        } message: { other in
+            Text("Make \(other.pairing.name) the primary host? Widgets, Live Activities and the share sheet follow it.")
+        }
+    }
+
+    /// A host row's second line (#144 phase 1's caption): what it's
+    /// showing once it has answered, else the transport's own status
+    /// line while it hasn't.
+    private func hostCaption(_ host: MirrorHost) -> String {
+        let status = model.transportStatuses[host.id]
+            ?? (model.hosts.count <= 1 ? model.transportStatus : nil)
+            ?? ""
+        guard model.snapshots[host.id] != nil else {
+            return status.isEmpty ? "looking for this host…" : status
+        }
+        let hostFleets = model.fleets.filter { $0.hostID == host.id }
+        let sessions = hostFleets.reduce(0) { $0 + ($1.liveSessions?.total ?? 0) }
+        return "\(hostFleets.count) fleet\(hostFleets.count == 1 ? "" : "s") · "
+            + "\(sessions) session\(sessions == 1 ? "" : "s")"
     }
 
     @State private var addingManual = false
@@ -151,6 +190,14 @@ struct SettingsForm: View {
                     } label: {
                         hostRow(host)
                     }
+                    // #144 phase 1's "Make primary": host #0 is the one
+                    // the facade, widgets and the share extension follow,
+                    // so promoting is moving a record to the front.
+                    .contextMenu {
+                        if host.id != model.hosts.first?.id {
+                            Button("Make primary") { promoting = other(for: host) }
+                        }
+                    }
                 }
                 .onDelete { model.removeHost(at: $0) }
             }
@@ -158,23 +205,36 @@ struct SettingsForm: View {
             Text("Hosts")
         } footer: {
             Text("Infinitus can mirror multiple Macs and Windows boxes side by side. "
-                 + "Scanning a QR code sets up that machine; tap a host to edit its routes.")
+                 + "Scanning a QR code sets up that machine; tap a host to edit its routes. "
+                 + "The first host is the primary — widgets, Live Activities and the "
+                 + "share sheet follow it; long-press another to promote it.")
         }
+    }
+
+    /// The `OtherMac` view of one host, for the promote dialog (#144
+    /// phase 1's confirmation, which names the machine).
+    private func other(for host: MirrorHost) -> MirrorModel.OtherMac? {
+        model.others.first { $0.id == host.id }
     }
 
     private func hostRow(_ host: MirrorHost) -> some View {
         let snapshot = model.snapshots[host.id]
         let name = host.label.isEmpty ? (snapshot?.machineName ?? "Host") : host.label
         let emoji = host.emoji.isEmpty ? MirrorHost.defaultEmoji(for: snapshot ?? MirrorSnapshot(capturedAt: Date(), machineName: name, listJSON: Data(), sessions: [])) : host.emoji
-        let status = model.transportStatuses[host.id]
-            ?? (model.hosts.count <= 1 ? model.transportStatus : nil)
-            ?? ""
+        let caption = hostCaption(host)
         return HStack(spacing: 10) {
             Text(emoji).font(.title3)
             VStack(alignment: .leading, spacing: 2) {
-                Text(name).font(.body)
-                if !status.isEmpty {
-                    Text(status).font(.caption).foregroundStyle(.secondary)
+                HStack(spacing: 6) {
+                    Text(name).font(.body)
+                    if host.id == model.hosts.first?.id, model.hosts.count > 1 {
+                        Text("primary").font(.caption2)
+                            .padding(.horizontal, 6).padding(.vertical, 1)
+                            .background(Color.accentColor.opacity(0.18), in: Capsule())
+                    }
+                }
+                if !caption.isEmpty {
+                    Text(caption).font(.caption).foregroundStyle(.secondary)
                 }
             }
         }
@@ -492,6 +552,75 @@ private struct ScreenshotSettings: View {
                  + "for one-tap sending. Needs full Photos access. Without it: the camera button in a "
                  + "chat's header sends that screen, and a shake on any screen captures it and asks "
                  + "which session to send it to.")
+        }
+    }
+}
+
+/// Both apps' versions, and the Mac's own update — one tap from the
+/// phone, brew doing the actual upgrade (#121).
+private struct AboutSettings: View {
+    @ObservedObject var model: MirrorModel
+    @State private var confirming = false
+    @State private var updating = false
+    @State private var result: String?
+
+    private var phoneVersion: String {
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "?"
+    }
+    private var phoneBuild: String {
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "?"
+    }
+
+    var body: some View {
+        Section("About") {
+            LabeledContent("This iPhone", value: "Infinitus \(phoneVersion) (\(phoneBuild))")
+            if let snapshot = model.snapshot {
+                if let app = snapshot.app {
+                    LabeledContent(snapshot.machineName,
+                                  value: "Infinitus \(app.version) · \(app.sha.prefix(7))")
+                    if app.updateChannel == "source" {
+                        Text("source build — update from the repo")
+                            .font(.caption).foregroundStyle(.secondary)
+                    } else if let updateVersion = app.updateVersion {
+                        LabeledContent("Mac update available: \(updateVersion)") {
+                            Button("Update the Mac") { confirming = true }
+                                .disabled(updating)
+                        }
+                        .confirmationDialog("Update the Mac to \(updateVersion)? brew upgrades "
+                                             + "Infinitus and relaunches it.",
+                                            isPresented: $confirming, titleVisibility: .visible) {
+                            Button("Update") { update() }
+                        }
+                        if let result {
+                            Text(result).font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
+                    if let phoneLatest = app.phoneLatest,
+                       let latest = PackageVersion(phoneLatest), let mine = PackageVersion(phoneVersion),
+                       mine < latest {
+                        Text("A newer Infinitus (\(phoneLatest)) is out — rebuild the phone app from the release.")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                } else {
+                    LabeledContent(snapshot.machineName, value: "version not reported")
+                }
+            } else {
+                LabeledContent("Mac", value: "not connected")
+            }
+        }
+    }
+
+    private func update() {
+        updating = true
+        result = nil
+        Task {
+            do {
+                let reply = try await NetworkFleetMirror.shared.updateMac()
+                result = reply.detail ?? reply.outcome
+            } catch {
+                result = error.localizedDescription
+            }
+            updating = false
         }
     }
 }

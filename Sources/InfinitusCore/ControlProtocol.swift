@@ -72,7 +72,14 @@ public struct ControlReply: Codable, Sendable {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         schemaVersion = try c.decode(Int.self, forKey: .schemaVersion)
         ok = try c.decode(Bool.self, forKey: .ok)
-        result = try c.decodeIfPresent(JSONValue.self, forKey: .result)
+        // A `null` result is a value (team-status with no team answers
+        // `null`), distinct from no result at all: decodeIfPresent folds
+        // both into nil and the CLI would print nothing.
+        if c.contains(.result) {
+            result = try c.decodeNil(forKey: .result) ? .null : try c.decode(JSONValue.self, forKey: .result)
+        } else {
+            result = nil
+        }
         error = try c.decodeIfPresent(String.self, forKey: .error)
         restarting = try c.decodeIfPresent(Bool.self, forKey: .restarting) ?? false
     }
@@ -153,8 +160,8 @@ public struct ControlCommand: Codable, Sendable, Equatable {
         ControlCommand(name: "crashes", args: [], effect: .read,
                        summary: "Crash reports of the phone app (MetricKit, over the mirror) and this Mac app, newest first, without the raw diagnostic.",
                        replyShape: "{crashes: [{id, platform, device, at, kind, reason, frames}]}"),
-        ControlCommand(name: "randomize-names", args: ["<fleet>"], effect: .write, requires: "rename",
-                       summary: "Give every account in the fleet a fresh name from the current theme's pool (every built-in's when the theme has none).",
+        ControlCommand(name: "randomize-names", args: ["<fleet>", "[n]"], effect: .write, requires: "rename",
+                       summary: "Give every account in the fleet — or only account n, skipping the names the fleet already wears — a fresh name from the current theme's pool (every built-in's when the theme has none).",
                        replyShape: "{fleet, names}"),
         ControlCommand(name: "rename", args: ["<fleet>", "<n>", "<alias>"], effect: .write, requires: "rename",
                        summary: "Set (empty string clears) the alias every frontend shows.",
@@ -203,6 +210,28 @@ public struct ControlCommand: Codable, Sendable, Equatable {
         ControlCommand(name: "perf", effect: .read,
                        summary: "Process cost: CPU seconds so far, RSS + live heap bytes, thread count — sample twice for an idle % and a heap growth rate (perf gate).",
                        replyShape: "{cpuSeconds, rssBytes, heapBytes, threads, uptimeSeconds}"),
+        ControlCommand(name: "lock-status", effect: .read,
+                       summary: "Biometric lock (Settings › Lock): whether the setting is on, whether the pop-out and Settings are locked right now, and the re-lock choice. Off by default.",
+                       replyShape: "{enabled, locked, relock: immediately|5 min|1 h|on sleep}"),
+        ControlCommand(name: "team-status", effect: .read,
+                       summary: "Settings › Team: the team this Mac is in — members with what they last published, today's effort and blockers, pending requests, the loop's last fetch/publish — or null when there is none.",
+                       replyShape: "{id, name, remote (masked), kid, role: leader|member|pending, rev, members: [{kid, name, role, isMe, founder, lastPublished, kinds, sessionsNow, blockers, crashes, todayUSD, todayMessages, todayCommits}], requests: [{kid, name, platform, devices, at}], lastFetch, lastPublish, lastError} | null"),
+        ControlCommand(name: "team-create", args: ["<name>"], options: ["--remote <url>", "--as <your name>"], effect: .write,
+                       summary: "Create a team on an empty git remote (no credential over the socket: use a file:// or ssh remote, or the pane). Needs the biometric lock on (INFINITUS_LOCK_GATE=open in CI).",
+                       replyShape: "team-status"),
+        ControlCommand(name: "team-code", options: ["--days <n>", "--invite"], effect: .write,
+                       summary: "Mint a team code (leaders): `infinitus://join/…`, valid --days (default 7); --invite adds a one-time nonce the app auto-approves when Settings › Team's switch is on (off by default). Carries the store credential when one is set.",
+                       replyShape: "{code}"),
+        ControlCommand(name: "team-fetch", effect: .write,
+                       summary: "Pull the store now (roster, members' files, requests) and rebuild the snapshot.",
+                       replyShape: "team-status"),
+        ControlCommand(name: "team-publish", effect: .write,
+                       summary: "Publish this Mac's data now (what the 5-minute loop does), then rebuild the snapshot.",
+                       replyShape: "{published: [path], transcriptChunks, skipped}"),
+        ControlCommand(name: "team-approve", args: ["<kid>"], effect: .write,
+                       summary: "Approve a join request (leaders).", replyShape: "team-status"),
+        ControlCommand(name: "team-decline", args: ["<kid>"], effect: .write,
+                       summary: "Decline a join request (leaders).", replyShape: "team-status"),
         ControlCommand(name: "show", args: ["popout|settings|wall"], effect: .write,
                        summary: "Open a window: the pinned pop-out, Settings, or the wall (toggle).",
                        replyShape: "{shown}"),
@@ -224,6 +253,9 @@ public struct ControlCommand: Codable, Sendable, Equatable {
                        effect: .write,
                        summary: "PUT the proxy's routing strategy.",
                        replyShape: "{routingStrategy}"),
+        ControlCommand(name: "team-discoverable", args: ["on|off"], effect: .write,
+                       summary: "Advertise this Mac to teams on the LAN (TXT d=1, /team/key and /team/request), or hide it.",
+                       replyShape: "{discoverable}"),
         ControlCommand(name: "event", effect: .write,
                        summary: "A Claude Code hook payload on stdin (the plugin's Notification/Stop hooks): a prompt is pushed the moment it appears, then the fleet refreshes.",
                        replyShape: "{pid?}"),
@@ -233,9 +265,51 @@ public struct ControlCommand: Codable, Sendable, Equatable {
         ControlCommand(name: "sessions", effect: .read,
                        summary: "The live Claude Code sessions: pid, name, folder, status.",
                        replyShape: "[{pid, name?, cwd, status?, kind}]"),
+        ControlCommand(name: "profiles", effect: .read,
+                       summary: "The saved session profiles (Settings › Profiles): name, folder, engine, permission mode, model, system prompt, first prompt.",
+                       replyShape: "{profiles: [{name, cwd?, engine?, permissionMode?, model?, systemPrompt?, prompt?}]}"),
+        ControlCommand(name: "profile-set", args: ["<name>"],
+                       options: ["--cwd <folder>", "--engine claude|codex", "--mode acceptEdits|auto|bypassPermissions",
+                                 "--model <model>", "--system <appended system prompt>", "--prompt <first prompt>"],
+                       effect: .write,
+                       summary: "Creates or replaces a session profile with exactly the fields given (an omitted field is cleared).",
+                       replyShape: "{profile}"),
+        ControlCommand(name: "profile-remove", args: ["<name>"], effect: .write,
+                       summary: "Deletes a session profile.",
+                       replyShape: "{removed}"),
+        ControlCommand(name: "checkpoints", args: ["<pid|name>"], effect: .read,
+                       summary: "The session's per-prompt workspace checkpoints (hidden git refs), oldest first.",
+                       replyShape: "{sessionId, cwd, checkpoints: [{n, sha, at, subject}]}"),
+        ControlCommand(name: "checkpoint-diff", args: ["<pid|name>", "<n>", "[m]"], effect: .read,
+                       summary: "Checkpoint n against checkpoint m, or against the working tree now (untracked files included): a --stat and the patch (capped at 200 KB).",
+                       replyShape: "{from, to?, stat, patch, truncated}"),
+        ControlCommand(name: "checkpoint-restore", args: ["<pid|name>", "<n>"], options: ["--yes"], effect: .destructive,
+                       summary: "Puts the repository's files back to checkpoint n (the current state is checkpointed first, so it is undoable). Needs --yes.",
+                       replyShape: "{restored: {n, sha, at, subject}, backup?: {n, sha, at, subject}}"),
+        ControlCommand(name: "past-sessions", options: ["--limit <n, default 50>", "--search <text>"], effect: .read,
+                       summary: "Every Claude Code session this Mac has run, newest first (default 50): id, folder, opening prompt, last activity, whether it is live. --search filters that newest set by repo, folder or prompt.",
+                       replyShape: "{sessions: [{sessionId, cwd, repo, firstMessage, lastActivityAt, bytes, live}]}"),
+        ControlCommand(name: "resume-session", args: ["<sessionId>"], effect: .write,
+                       summary: "Opens a new terminal in the folder that past session ran in and resumes it there (claude --resume), like the phone's Start session.",
+                       replyShape: "{outcome, detail?, host?, pid?}"),
+        ControlCommand(name: "session-mode", args: ["<pid|name>", "<supervised|acceptEdits|bypassPermissions>"], effect: .write,
+                       summary: "Moves a running session's permission mode for the plugin's PreToolUse hook: Auto-accept edits allows the editing tools, Full access every tool, supervised clears it. A mode set at start is a floor — it cannot be narrowed from here.",
+                       replyShape: "{mode?, label}"),
         ControlCommand(name: "send", args: ["<pid|name>"], effect: .write,
                        summary: "Text on stdin goes to that session as if typed into its prompt (peer socket first, then its terminal).",
                        replyShape: "{outcome, channel?, detail?}"),
+        ControlCommand(name: "machine", effect: .read,
+                       summary: "The machine-health guardian's last sample (#115): load, swap, processes, hooks with live instances, runaway processes, residue counts, session health, warnings. Triggers a sample when none has run yet.",
+                       replyShape: "MachineReport | {sampling:true}"),
+        ControlCommand(name: "machine-kill", args: ["<pid>"], options: ["--yes"], effect: .destructive,
+                       summary: "SIGTERM a runaway the last `machine` report flagged (its own process group when it has one, never a session's), SIGKILL after 3 s if it's still alive. Refused without --yes.",
+                       replyShape: "{result}"),
+        ControlCommand(name: "machine-reclaim", options: ["--yes"], effect: .destructive,
+                       summary: "Remove stale cc-socks, stale session-env dirs, and temp files older than an hour that no process holds open. Refused without --yes.",
+                       replyShape: "{result}"),
+        ControlCommand(name: "machine-hook", args: ["disable|restore|kill", "<owner>"], options: ["--yes"], effect: .destructive,
+                       summary: "disable: move a tool's hook registrations out of ~/.claude/settings.json (a timestamped backup is written beside it); restore: put them back; kill: SIGTERM every live instance of its hooks and their helpers from the last `machine` sample (never a session's own pid), SIGKILL the survivors after 3 s. Refused without --yes.",
+                       replyShape: "{result}"),
     ]
 
     public static func named(_ name: String) -> ControlCommand? {

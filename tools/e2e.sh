@@ -42,6 +42,15 @@ SOCKDIR="/tmp/infinitus-e2e-$$"; mkdir -p "$SOCKDIR"
 export INFINITUS_CONTROL_SOCKET="$SOCKDIR/control.sock"
 export INFINITUS_CSWAP="$PWD/tools/demo-cswap"
 export INFINITUS_DEMO_STATE="$SOCKDIR/demo-state.json"   # not $TMPDIR: the bundled app in mock mode shares that one
+# The team gate (spec §2.2) needs the biometric lock on; CI cannot answer
+# a Touch ID prompt, so the gate is opened for this run (TeamGate.swift).
+export INFINITUS_LOCK_GATE=open
+# Spec §11 e2e: the app is a team leader on a bare repo in $SOCKDIR with
+# its own team dir (file secrets, no keychain), and publishes a fixture
+# projects dir instead of this Mac's real transcripts.
+export INFINITUS_PROFILES="$SOCKDIR/profiles.json"   # #165: never the real list
+export INFINITUS_TEAM_DIR="$SOCKDIR/team-app"
+export INFINITUS_TEAM_PROJECTS="$SOCKDIR/fixture/projects"
 LOG="$(mktemp -t infinitus-e2e)"
 DOMAIN=Infinitus   # the unbundled debug binary's defaults domain
 
@@ -166,6 +175,7 @@ echo "app up after ${i}s"
 
 # --- functional ---------------------------------------------------------
 "$CTL" manifest | json "len(d['commands'])" | grep -qE '^[1-9][0-9]*$' || fail "manifest empty"
+"$CTL" lock-status | expect "d['enabled'] is False and d['locked'] is False and d['relock']=='1 h'" || fail "biometric lock must default to off, unlocked, re-lock 1 h"
 "$CTL" status | json "d['engines']['cswap']['registered']" | grep -q True || fail "cswap not registered"
 sleep 4   # first demo snapshot
 N="$("$CTL" fleets | json "sum(len(f['accounts']) for f in d)")"
@@ -195,7 +205,13 @@ REV="$(python3 -c "print(' '.join(reversed('$ORDER'.split())))")"
 "$CTL" switch cswap/claude 1 | expect "d['fleet']['activeNumber']==1" || fail "switch back to 1"
 # Every account gets a distinct themed name in one command.
 "$CTL" randomize-names cswap/claude | expect "len(set(a.get('alias') for a in d['fleet']['accounts']))==len(d['fleet']['accounts']) and len(d['names'])==len(d['fleet']['accounts'])" || fail "randomize-names didn't give every account its own name"
-echo "round-trips: ok (switch, rotate, hold, unhold, rename, prefer, reorder, randomize-names)"
+# One account re-rolls alone (#145): one name, worn by that account, still distinct from every other.
+"$CTL" randomize-names cswap/claude 2 | expect "len(d['names'])==1 and [a for a in d['fleet']['accounts'] if a['number']==2][0].get('alias')==d['names'][0] and len(set(a.get('alias') for a in d['fleet']['accounts']))==len(d['fleet']['accounts'])" || fail "randomize-names <n> didn't re-roll account 2 alone"
+"$CTL" profile-set e2e-review --cwd /tmp --mode acceptEdits --model opus | expect "d['profile']['name']=='e2e-review' and d['profile']['permissionMode']=='acceptEdits' and d['profile']['model']=='opus'" || fail "profile-set didn't save the fields"
+"$CTL" profiles | expect "[p['name'] for p in d['profiles']]==['e2e-review']" || fail "profiles didn't list the saved profile"
+"$CTL" profile-remove e2e-review | expect "d['removed'] is True" || fail "profile-remove didn't remove"
+"$CTL" past-sessions --limit 3 | expect "isinstance(d['sessions'], list) and len(d['sessions'])<=3" || fail "past-sessions didn't list"
+echo "round-trips: ok (switch, rotate, hold, unhold, rename, prefer, reorder, randomize-names, past-sessions, profiles)"
 "$CTL" plan | expect "'plan' in d and (d['plan'] is None or 'steps' in d['plan'])" || fail "plan verb"
 "$CTL" ignite cswap/claude 2 | expect "'fleet' in d" || fail "ignite verb"
 "$CTL" aws-logins | expect "'logins' in d and isinstance(d['logins'], list)" || fail "aws-logins verb"
@@ -306,6 +322,35 @@ done
 "$CTL" aws-logins | expect "'bound to account 1 but you signed in to 2' in next(l['state']['message'] for l in d['logins'] if l['profile']=='e2e-rebind')" || fail "rebind message"
 pgrep -f "$SOCKDIR/aws" >/dev/null && fail "stub aws CLI still running"
 echo "aws: rebind refused"
+
+# --- team (spec §11) -------------------------------------------------------
+# The app creates a team on a bare repo; a second identity — the CLI
+# in-process, its own INFINITUS_TEAM_DIR — joins with a team code and
+# publishes a fixture transcript; the app approves and reads it back.
+"$CTL" team-status | expect "d is None" || fail "team-status must be null before a team exists"
+git init -q --bare "$SOCKDIR/team.git"
+"$CTL" team-create Papaya --remote "file://$SOCKDIR/team.git" --as Ann \
+    | expect "d['role']=='leader' and d['members'][0]['name']=='Ann' and d['members'][0]['founder']" || fail "team-create"
+CODE="$("$CTL" team-code --days 1 | json "d['code']")"
+case "$CODE" in infinitus://join/*) ;; *) fail "team-code shape" ;; esac
+NOW="$(date -u +%Y-%m-%dT%H:%M:%S.000Z)"
+mkdir -p "$SOCKDIR/fixture/projects/-tmp-e2e"
+printf '%s\n%s\n' \
+    "{\"type\":\"user\",\"cwd\":\"/tmp/e2e\",\"timestamp\":\"$NOW\",\"origin\":{\"kind\":\"human\"},\"message\":{\"role\":\"user\",\"content\":\"hello team\"}}" \
+    "{\"type\":\"assistant\",\"timestamp\":\"$NOW\",\"message\":{\"id\":\"e2e-1\",\"model\":\"claude-opus-5\",\"usage\":{\"input_tokens\":10,\"output_tokens\":1},\"content\":[{\"type\":\"text\",\"text\":\"hi\"}]}}" \
+    > "$SOCKDIR/fixture/projects/-tmp-e2e/e2e1.jsonl"
+CLI_TEAM="$SOCKDIR/team-cli"
+printf '%s' "$CODE" | INFINITUS_TEAM_DIR="$CLI_TEAM" "$CTL" team request - --name Bo >/dev/null || fail "cli team request"
+KID="$(INFINITUS_TEAM_DIR="$CLI_TEAM" "$CTL" team status | json "d['kid']")"
+"$CTL" team-fetch | expect "len(d['requests'])==1 and d['requests'][0]['name']=='Bo'" || fail "the request did not reach the leader"
+"$CTL" team-approve "$KID" | expect "any(m['name']=='Bo' and m['role']=='member' for m in d['members']) and not d['requests']" || fail "team-approve"
+INFINITUS_TEAM_DIR="$CLI_TEAM" "$CTL" team fetch >/dev/null || fail "cli team fetch"
+INFINITUS_TEAM_DIR="$CLI_TEAM" "$CTL" team publish --projects "$SOCKDIR/fixture/projects" \
+    | expect "d['transcriptChunks']>=1" || fail "cli team publish"
+"$CTL" team-fetch | expect "any(m['name']=='Bo' and 'stats' in m['kinds'] and 'transcripts' in m['kinds'] for m in d['members'])" || fail "the member's files are not readable"
+"$CTL" team-publish | expect "'published' in d" || fail "team-publish"
+"$CTL" team-status | expect "d.get('lastPublish') is not None and d.get('lastError') is None" || fail "loop state after publish"
+echo "team: ok (leader Ann, member Bo $KID)"
 
 # --- performance --------------------------------------------------------
 # Sampled AFTER the churn above so a timer left behind by a closed wall

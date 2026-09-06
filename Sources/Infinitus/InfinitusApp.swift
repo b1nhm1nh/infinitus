@@ -17,6 +17,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// outside the scene graph (the playground command channel) reaches
     /// the controller through here.
     static weak var shared: AppDelegate?
+    /// Set in InfinitusApp.init, alongside makeStatusItem: StatusItemController
+    /// keeps its AppModel private, so the URL-open handler needs its own way in.
+    weak var model: AppModel?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         AppDelegate.shared = self
@@ -41,8 +44,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         AppDelegate.terminating = true
         Lifecycle.log.notice("quit requested by pid \(Lifecycle.quitSenderPID.map(String.init) ?? "self", privacy: .public)")
-        return .terminateNow
+        // Spec §7: `now.json` goes on quit, on EVERY quit — Cmd-Q, logout,
+        // the relaunch path — not only AppModel.shutdown(). Bounded
+        // (TeamModel.quitBound) so a dead remote never holds the quit.
+        guard let team = model?.team, team.inTeam, !AppDelegate.teamQuitDone else { return .terminateNow }
+        AppDelegate.teamQuitDone = true
+        Task { @MainActor in
+            await team.quit()
+            sender.reply(toApplicationShouldTerminate: true)
+        }
+        return .terminateLater
     }
+    static var teamQuitDone = false
 
     /// `open Infinitus.app` on an already-running instance lands here: show
     /// the pinned window. This is the guaranteed way into the UI when the
@@ -51,6 +64,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                                        hasVisibleWindows: Bool) -> Bool {
         statusHolder?.controller.showPinnedWindow()
         return false
+    }
+
+    /// `infinitus://join/…` from a QR, a message or the phone (spec §6.2).
+    func application(_ application: NSApplication, open urls: [URL]) {
+        guard let model else { return }
+        for url in urls {
+            if model.team.open(url: url) { break }
+        }
     }
 }
 
@@ -64,6 +85,7 @@ struct InfinitusApp: App {
     @StateObject private var utilizationModel = UtilizationModel()
     @StateObject private var updateModel: UpdateModel
     @StateObject private var appRelease: AppReleaseModel
+    @StateObject private var brew: BrewUpdater
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
 
     init() {
@@ -96,12 +118,20 @@ struct InfinitusApp: App {
         let release = AppReleaseModel()
         _appRelease = StateObject(wrappedValue: release)
         release.onUpdate = { [weak model] in model?.appUpdateVersion = $0 }
+        release.onLatest = { [weak model] in model?.appReleaseLatest = $0 }
         release.startAutoCheck()
+        // Hoisted out of AboutPane so the phone's `/app/update` route
+        // (#121) drives the SAME BrewUpdater as the About pane's button
+        // — never two upgrades in flight.
+        let brew = BrewUpdater()
+        _brew = StateObject(wrappedValue: brew)
+        model.brewUpdater = brew
         let reliabilityModel = ResumeReliabilityModel()
         _reliabilityModel = StateObject(wrappedValue: reliabilityModel)
         // Warm the multi-second transcript scan at launch so the Usage tab
         // and the gamified gold column open onto data, not a spinner.
         usage.loadIfNeeded()
+        appDelegate.model = model
         appDelegate.makeStatusItem = { [weak appDelegate] in
             appDelegate?.statusHolder = StatusItemHolder(
                 model: model, usage: usage,
@@ -112,7 +142,7 @@ struct InfinitusApp: App {
                         notifyModel: notifyModel, usageModel: usage,
                         utilizationModel: utilization,
                         statsModel: model.statsModel,
-                        updateModel: update, appRelease: release)
+                        updateModel: update, appRelease: release, brew: brew)
                 })
         }
         model.startFeeds()
@@ -145,7 +175,7 @@ struct InfinitusApp: App {
                 notifyModel: notifyModel, usageModel: usageModel,
                 utilizationModel: utilizationModel,
                 statsModel: model.statsModel,
-                updateModel: updateModel, appRelease: appRelease))
+                updateModel: updateModel, appRelease: appRelease, brew: brew))
         }
         // ⌘, would raise that hidden scene window (and the controller
         // would hide it again — "opened and closed immediately", user
@@ -171,7 +201,7 @@ struct InfinitusApp: App {
     notifyModel: NotifyModel, usageModel: UsageModel,
     utilizationModel: UtilizationModel,
     statsModel: StatsModel,
-    updateModel: UpdateModel, appRelease: AppReleaseModel
+    updateModel: UpdateModel, appRelease: AppReleaseModel, brew: BrewUpdater
 ) -> [SettingsTab] {
     // Ordered by how often each pane is reached for (user 2026-08-30:
     // "reorder the settings"): everyday looks first, plumbing after,
@@ -206,6 +236,14 @@ struct InfinitusApp: App {
                     keywords: ["stats", "metrics", "commits", "prs", "lines",
                                "messages", "sessions", "week", "month", "year"],
                     view: AnyView(StatsPane(model: statsModel))),
+        SettingsTab(title: "Machine", symbol: "cpu", tint: .brown,
+                    keywords: ["machine", "health", "hooks", "runaway", "temp",
+                               "swap", "memory", "residue", "guardian"],
+                    view: AnyView(MachinePane(model: model.machineModel))),
+        SettingsTab(title: "Profiles", symbol: "person.text.rectangle", tint: .pink,
+                    keywords: ["profile", "preset", "start", "session", "model",
+                               "permission", "system prompt", "launch"],
+                    view: AnyView(ProfilesPane(profiles: model.sessionProfiles))),
         SettingsTab(title: "Activity", symbol: "clock.arrow.circlepath", tint: .teal,
                     keywords: ["history", "switches", "log", "events"],
                     view: AnyView(ActivityPane(model: model))),
@@ -216,6 +254,13 @@ struct InfinitusApp: App {
                                "phone", "iphone", "lan", "bonjour", "companion",
                                "tailscale", "cloudflare", "tunnel", "pair", "qr"],
                     view: AnyView(SyncPane(sync: model.sync, app: model))),
+        SettingsTab(title: LockModel.paneTitle, symbol: "lock.fill", tint: .gray,
+                    keywords: ["biometric", "touch id", "face id", "password",
+                               "unlock", "privacy", "team"],
+                    view: AnyView(LockPane(lock: model.lock))),
+        SettingsTab(title: TeamModel.paneTitle, symbol: "person.3", tint: .teal,
+                    keywords: ["team", "invite", "code", "join", "members", "leader", "share", "publish", "exclude"],
+                    view: AnyView(TeamPane(team: model.team, lock: model.lock))),
     ]
     + (model.debugMenu
        ? [SettingsTab(title: "Animations", symbol: "sparkles", tint: .pink,
@@ -227,7 +272,7 @@ struct InfinitusApp: App {
         SettingsTab(title: "About", symbol: "info.circle", tint: .indigo,
                     keywords: ["update", "version", "license", "links"],
                     image: AboutPane.infinitusIcon,
-                    view: AnyView(AboutPane(appRelease: appRelease))),
+                    view: AnyView(AboutPane(appRelease: appRelease, brew: brew))),
         // Providers under everything, CodexBar-style (user 2026-08-30).
         // The engine is cswap; Claude is what it drives (user 2026-08-30:
         // "claude is not an engine, cswap is").
@@ -761,7 +806,7 @@ struct MenuContent: View {
                 .contentShape(Rectangle())
                 .onTapGesture { model.sessionsShown.toggle() }
                 .popover(isPresented: $model.sessionsShown, arrowEdge: .trailing) {
-                    SessionListCard(live: live, progress: model.sessionProgress)
+                    MacSessionsPopover(model: model, live: live)
                 }
                 .instantTip(SessionSummary.tooltip(live))
         }
@@ -905,7 +950,7 @@ struct MenuContent: View {
             .contentShape(Rectangle())
             .onTapGesture { model.sessionsShown.toggle() }
             .popover(isPresented: $model.sessionsShown, arrowEdge: .bottom) {
-                SessionListCard(live: live, progress: model.sessionProgress)
+                MacSessionsPopover(model: model, live: live)
             }
             .instantTip(SessionSummary.tooltip(live), edge: .above)
         }
