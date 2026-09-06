@@ -98,7 +98,7 @@ struct UsagePane: View {
             } footer: {
                 Text("Choose how far back to look, then choose Refresh to rescan.")
             }
-            .id("Usage/Window")
+            .settingsAnchor("Usage/Window")
             if let report = model.report {
                 if let daily = report.daily, daily.count > 1 {
                     Section("Daily estimated spend") {
@@ -146,7 +146,7 @@ struct UsagePane: View {
                     Text(report.caveats.joined(separator: " "))
                         .font(.caption2).foregroundStyle(.secondary)
                 }
-                .id("Usage/Estimate")
+                .settingsAnchor("Usage/Estimate")
             } else if model.loading {
                 Text("Scanning transcripts…").foregroundStyle(.secondary)
             }

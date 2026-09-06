@@ -15,7 +15,7 @@ struct ActivityPane: View {
             } footer: {
                 Text("Every account change Infinitus made, newest first.")
             }
-            .id("Activity/Switch history")
+            .settingsAnchor("Activity/Switch history")
             Section {
                 if model.eventLog.isEmpty {
                     Text("No events yet this session").foregroundStyle(.secondary)
@@ -40,7 +40,7 @@ struct ActivityPane: View {
                 Text("The last thirty events since this launch; the list "
                      + "starts fresh each time Infinitus opens.")
             }
-            .id("Activity/Engine events")
+            .settingsAnchor("Activity/Engine events")
         }
         .formStyle(.grouped)
     }

@@ -151,7 +151,7 @@ struct UtilizationPane: View {
                     }
                 }
             }
-            .id("Utilization/Range")
+            .settingsAnchor("Utilization/Range")
             forecastSection
             fleetSection
             liveBattlePlanSection
@@ -223,7 +223,7 @@ struct UtilizationPane: View {
                  + "never a bill.")
                 .font(.caption2).foregroundStyle(.secondary)
         }
-        .id("Utilization/Run rate")
+        .settingsAnchor("Utilization/Run rate")
     }
 
     @ViewBuilder private func rateRow(_ label: String, _ t: TokenRates.Totals, divide: Double) -> some View {
@@ -318,7 +318,7 @@ struct UtilizationPane: View {
             Text("Estimate. " + (live.forecast?.basis ?? UsageForecast.basisText))
                 .font(.caption2).foregroundStyle(.secondary)
         }
-        .id("Utilization/Forecast")
+        .settingsAnchor("Utilization/Forecast")
     }
 
     @ViewBuilder private var fleetSection: some View {

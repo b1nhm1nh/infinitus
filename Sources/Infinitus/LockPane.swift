@@ -48,7 +48,7 @@ struct LockPane: View {
                      + "team, accepting an invite and requesting to join stay "
                      + "unavailable until it is.")
             }
-            .id("Lock/Unlocking")
+            .settingsAnchor("Lock/Unlocking")
         }
         .formStyle(.grouped)
         .confirmationDialog("Turn off biometric unlock?",

@@ -22,7 +22,7 @@ struct DisplayPane: View {
             // The wall's Section is built inside WallSection, so its
             // anchor rides the wrapper view rather than the Section.
             WallSection(model: model)
-                .id("Display/Fleet wall")
+                .settingsAnchor("Display/Fleet wall")
             sessionsSection
             startupSection
         }
@@ -78,7 +78,7 @@ struct DisplayPane: View {
                  + "it always comes back on the next launch, so the app "
                  + "can never strand itself with no way in.")
         }
-        .id("Display/Menu bar")
+        .settingsAnchor("Display/Menu bar")
     }
 
     // MARK: popup
@@ -159,7 +159,7 @@ struct DisplayPane: View {
                  + "always-on-top panel saying who recovers first and "
                  + "when.")
         }
-        .id("Display/Popup")
+        .settingsAnchor("Display/Popup")
     }
 
     // MARK: sessions
@@ -186,7 +186,7 @@ struct DisplayPane: View {
                  + "a cent each, and it re-asks when the work moves on. "
                  + "The terminal choice takes effect at the next launch.")
         }
-        .id("Display/Sessions")
+        .settingsAnchor("Display/Sessions")
     }
 
     // MARK: startup
@@ -218,7 +218,7 @@ struct DisplayPane: View {
                  + "mid-turn; the display may still sleep, the machine "
                  + "won't.")
         }
-        .id("Display/Startup")
+        .settingsAnchor("Display/Startup")
     }
 
 

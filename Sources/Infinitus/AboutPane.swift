@@ -443,7 +443,7 @@ struct AboutPane: View {
                      + "never replaces itself. Builds from source and zip "
                      + "installs get the release check only.")
             }
-            .id("About/Software Update")
+            .settingsAnchor("About/Software Update")
 
             Section {
                 LabeledContent("Delivery") {
@@ -463,7 +463,7 @@ struct AboutPane: View {
                        + "run with automatic signing, restores system "
                        + "notifications.")
             }
-            .id("About/Notifications")
+            .settingsAnchor("About/Notifications")
 
             Section("Links") {
                 linkRow("chevron.left.forwardslash.chevron.right", "GitHub",
@@ -472,7 +472,7 @@ struct AboutPane: View {
                 linkRow("shippingbox", "Project — Infinitus",
                         "https://github.com/deathemperor/infinitus")
             }
-            .id("About/Links")
+            .settingsAnchor("About/Links")
 
             Section {
                 Text("Infinitus by deathemperor · MIT License")

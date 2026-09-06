@@ -321,19 +321,17 @@ struct SettingsRoot: View {
     /// selects a ROW and opens the pane that row lives on.
     @State private var pane: String?
     @State private var query = ""
+    @State private var highlight: String?
+    @State private var clearHighlight: Task<Void, Never>?
+    @FocusState private var searchFocused: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
+    private var index: SettingsSearchIndex { SettingsSearchCatalog.index(tabs: tabs) }
     private var searching: Bool {
         !query.trimmingCharacters(in: .whitespaces).isEmpty
     }
-    /// Title+keyword narrowing, as before. Task 7 swaps it for the
-    /// label index that also matches the settings themselves.
-    private var filtered: [SettingsTab] {
-        let q = query.trimmingCharacters(in: .whitespaces)
-        guard !q.isEmpty else { return tabs }
-        return tabs.filter { tab in
-            tab.title.localizedCaseInsensitiveContains(q)
-                || tab.keywords.contains { $0.localizedCaseInsensitiveContains(q) }
-        }
+    private var results: [(pane: String, entries: [SettingsSearchEntry])] {
+        searching ? index.grouped(query) : []
     }
     private var current: SettingsTab? {
         tabs.first { $0.title == pane } ?? tabs.first
@@ -349,30 +347,35 @@ struct SettingsRoot: View {
                     .padding(.top, 14)
                     .padding(.horizontal, 10)
                     .padding(.bottom, 10)
-                SettingsSidebar(tabs: filtered, results: [], searching: false,
-                                query: query, selection: $selection)
+                SettingsSidebar(tabs: tabs, results: results,
+                                searching: searching, query: query,
+                                selection: $selection)
             }
             .frame(width: 215)
             Divider()
-            Group {
-                if let tab = current {
-                    tab.view
-                        .frame(maxWidth: group.contentWidth)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                }
-            }
+            detail
         }
         .frame(minWidth: 700, idealWidth: 960, minHeight: 480, idealHeight: 640)
         .background(WindowTitler(title: "Settings", subtitle: current?.title ?? ""))
+        // ⌘F puts the caret in the field; an accessory app has no menu
+        // bar to hang the standard Find item off (critique: Alex "has
+        // no ⌘F").
+        .overlay {
+            Button("") { searchFocused = true }
+                .keyboardShortcut("f", modifiers: .command)
+                .buttonStyle(.plain)
+                .opacity(0)
+                .frame(width: 0, height: 0)
+                .accessibilityHidden(true)
+        }
         .onAppear {
             if selection == nil {
                 selection = tabs.first?.title
                 pane = tabs.first?.title
             }
         }
-        .onChange(of: selection) { _, new in
-            if let new, tabs.contains(where: { $0.title == new }) { pane = new }
-        }
+        .onChange(of: selection) { _, new in select(new) }
+        .onChange(of: query) { _, _ in retargetForQuery() }
         // Dev harness: `playctl settings <Title>` lands on a named pane
         // (pane screenshots without synthetic sidebar clicks).
         .onReceive(NotificationCenter.default.publisher(
@@ -380,12 +383,48 @@ struct SettingsRoot: View {
             if let title = note.object as? String,
                tabs.contains(where: { $0.title == title }) {
                 query = ""
+                highlight = nil
                 selection = title
                 pane = title
             }
         }
         .reloadOnInjection()
     }
+
+    // MARK: detail
+
+    @ViewBuilder private var detail: some View {
+        ScrollViewReader { proxy in
+            Group {
+                if searching, results.isEmpty {
+                    // Nothing stale left on screen: the old shell blanked
+                    // the sidebar and kept the previous pane showing with
+                    // nothing selected (critique P1).
+                    ContentUnavailableView.search(text: query)
+                } else if let tab = current {
+                    tab.view
+                        .frame(maxWidth: group.contentWidth)
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .environment(\.settingsHighlight, highlight)
+            .onChange(of: highlight) { _, anchor in
+                guard let anchor else { return }
+                // The pane has to render before its sections have ids.
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                    if reduceMotion {
+                        proxy.scrollTo(anchor, anchor: .center)
+                    } else {
+                        withAnimation(.easeInOut(duration: 0.25)) {
+                            proxy.scrollTo(anchor, anchor: .center)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // MARK: search field
 
     private var searchField: some View {
         HStack(spacing: 5) {
@@ -396,6 +435,19 @@ struct SettingsRoot: View {
             TextField("Search settings", text: $query)
                 .textFieldStyle(.plain)
                 .font(.callout)
+                .focused($searchFocused)
+            if searching {
+                Button {
+                    query = ""
+                    searchFocused = true
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Clear the search")
+                .help("Clear the search")
+            }
         }
         .padding(.horizontal, 7)
         .padding(.vertical, 5)
@@ -403,6 +455,46 @@ struct SettingsRoot: View {
             .fill(Color.primary.opacity(0.06)))
         .overlay(RoundedRectangle(cornerRadius: 7)
             .strokeBorder(Color.secondary.opacity(0.25)))
+    }
+
+    // MARK: selection
+
+    /// A sidebar selection is either a pane title or a search hit's id.
+    private func select(_ id: String?) {
+        guard let id else { return }
+        if tabs.contains(where: { $0.title == id }) {
+            pane = id
+            flash(nil)
+        } else if let hit = index.entry(id: id) {
+            pane = hit.pane
+            flash(hit.anchor)
+        }
+    }
+
+    /// Keeps the detail honest while the query changes: the selected
+    /// pane stays if it still has hits, otherwise the first hit wins.
+    private func retargetForQuery() {
+        // Clearing the field: the sidebar goes back to pane rows, so a
+        // selection still holding a search hit's id would highlight
+        // nothing. Hand it back the pane that is showing.
+        guard searching else { flash(nil); selection = pane; return }
+        let groups = results
+        guard !groups.isEmpty else { return }
+        if let pane, groups.contains(where: { $0.pane == pane }) { return }
+        if let first = groups.first?.entries.first {
+            selection = first.id
+        }
+    }
+
+    private func flash(_ anchor: String?) {
+        clearHighlight?.cancel()
+        highlight = anchor
+        guard anchor != nil else { return }
+        clearHighlight = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 1_200_000_000)
+            guard !Task.isCancelled else { return }
+            highlight = nil
+        }
     }
 }
 

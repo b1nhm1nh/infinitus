@@ -93,7 +93,7 @@ struct MachinePane: View {
             Text("Watching costs one process listing a minute and one look "
                  + "at the temp directory every five.")
         }
-        .id("Machine/Watching")
+        .settingsAnchor("Machine/Watching")
     }
 
     // MARK: summary
@@ -136,7 +136,7 @@ struct MachinePane: View {
             }
             .font(PopupFont.caption).monospacedDigit()
         }
-        .id("Machine/Summary")
+        .settingsAnchor("Machine/Summary")
     }
 
     // MARK: warnings
@@ -325,7 +325,7 @@ struct MachinePane: View {
                 Text("No sessions").foregroundStyle(.secondary).font(PopupFont.caption)
             }
         }
-        .id("Machine/Sessions")
+        .settingsAnchor("Machine/Sessions")
     }
 
     private func sessionRow(_ session: SessionHealth) -> some View {

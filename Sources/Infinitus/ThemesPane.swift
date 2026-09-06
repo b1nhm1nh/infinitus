@@ -26,7 +26,7 @@ struct ThemesPane: View {
                     }
                 }
             }
-            .id("Themes/Built-in")
+            .settingsAnchor("Themes/Built-in")
             Section {
                 if model.customThemes.isEmpty {
                     Text("None yet.").foregroundStyle(.secondary)
@@ -47,9 +47,9 @@ struct ThemesPane: View {
                 Text("Your own skins live in a JSON file; Infinitus reloads "
                      + "it every time this pane opens.")
             }
-            .id("Themes/Your themes")
+            .settingsAnchor("Themes/Your themes")
             CommunityThemesSection(model: model)
-                .id("Themes/Community")
+                .settingsAnchor("Themes/Community")
         }
         .formStyle(.grouped)
         .onAppear { model.reloadCustomThemes() }

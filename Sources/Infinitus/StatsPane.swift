@@ -32,7 +32,7 @@ struct StatsPane: View {
                         .font(.caption).foregroundStyle(.secondary)
                 }
             }
-            .id("Stats/Period")
+            .settingsAnchor("Stats/Period")
             if let s = summary {
                 StatsTiles(summary: s)
                 effort(s)
@@ -41,7 +41,7 @@ struct StatsPane: View {
                     heatmap(s.total.hours)
                     sessionLengths(s)
                 }
-                .id("Stats/Rhythm")
+                .settingsAnchor("Stats/Rhythm")
             }
             Section {
                 Button("Refresh") { model.refresh() }.disabled(model.scanning)
