@@ -3,6 +3,13 @@ import WebKit
 import AuthenticationServices
 import InfinitusCore
 
+/// The one-clause explainer every "Add Account…" section's footer
+/// carries — a single definition so the fleetless-engine and per-fleet
+/// sites can't drift from each other.
+private let addAccountFooter =
+    "Opens Claude's sign-in in a private in-app window \u{2014} your "
+    + "browser session is never touched."
+
 /// Native account management (user 2026-08-31: "add new account,
 /// relogin, delete. do not reuse cswap['s login flow]"). The app hosts
 /// `claude auth login` on a PTY — NOT `setup-token`, whose inference-
@@ -600,8 +607,7 @@ struct AccountsPane: View {
                 } header: {
                     Text("Claude \u{00B7} \(engine.name)")
                 } footer: {
-                    Text("Opens Claude's sign-in in a private in-app window \u{2014} your "
-                         + "browser session is never touched.")
+                    Text(addAccountFooter)
                         .font(.caption2).foregroundStyle(.secondary)
                 }
             }
@@ -633,8 +639,8 @@ struct AccountsPane: View {
 }
 
 /// One fleet's rows in the Accounts tab. The row layout is shared by
-/// every engine; capabilities decide which controls appear (drag +
-/// sort toggles need `.reorder`, the name field `.rename`, and so on).
+/// every engine; capabilities decide which controls appear (the drag
+/// handle needs `.reorder`, the name field `.rename`, and so on).
 private struct FleetAccountsSection: View {
     @ObservedObject var fleet: FleetState
     @ObservedObject var model: AppModel
@@ -650,26 +656,33 @@ private struct FleetAccountsSection: View {
     var body: some View {
         Section {
             if fleet.accounts.isEmpty {
-                Text("No accounts yet \u{2014} add the first one below.")
-                    .foregroundStyle(.secondary)
-            }
-            // A bare ForEach in a grouped Form does not drag (probed on
-            // macOS 26: the same rows reorder inside a List and do not
-            // outside one), so the rows keep their List; the height it
-            // needs is a scaled metric rather than a hard-coded 30 pt.
-            List {
-                ForEach(fleet.accounts, id: \.number) { a in
-                    row(a).moveDisabled(!caps.contains(.reorder))
-                        .contextMenu { rowMenu(a) }
+                if isCswap || caps.contains(.addOAuth) {
+                    Text("No accounts yet \u{2014} add the first one below.")
+                        .foregroundStyle(.secondary)
                 }
-                .onMove { from, to in
-                    guard caps.contains(.reorder) else { return }
-                    var order = fleet.accounts.map(\.number)
-                    order.move(fromOffsets: from, toOffset: to)
-                    fleet.reorder(order)
+            } else {
+                // A bare ForEach in a grouped Form does not drag (probed on
+                // macOS 26: the same rows reorder inside a List and do not
+                // outside one), so the rows keep their List; the height it
+                // needs is a scaled metric rather than a hard-coded 30 pt.
+                List {
+                    ForEach(fleet.accounts, id: \.number) { a in
+                        if caps.contains(.rename) || canRelogin {
+                            row(a).moveDisabled(!caps.contains(.reorder))
+                                .contextMenu { rowMenu(a) }
+                        } else {
+                            row(a).moveDisabled(!caps.contains(.reorder))
+                        }
+                    }
+                    .onMove { from, to in
+                        guard caps.contains(.reorder) else { return }
+                        var order = fleet.accounts.map(\.number)
+                        order.move(fromOffsets: from, toOffset: to)
+                        fleet.reorder(order)
+                    }
                 }
+                .frame(minHeight: CGFloat(fleet.accounts.count) * rowHeight + 16)
             }
-            .frame(minHeight: CGFloat(fleet.accounts.count) * rowHeight + 16)
             if let err = model.reorderError {
                 Text(err).font(.caption).foregroundStyle(.red)
             }
@@ -690,7 +703,9 @@ private struct FleetAccountsSection: View {
                 }
             }
         } footer: {
-            Text(footerText).font(.caption2).foregroundStyle(.secondary)
+            if !footerText.isEmpty {
+                Text(footerText).font(.caption2).foregroundStyle(.secondary)
+            }
         }
         if isCswap || caps.contains(.addOAuth) {
             // A group's primary action sits in its own trailing group, the
@@ -704,8 +719,7 @@ private struct FleetAccountsSection: View {
                     OAuthAddRow(model: model, engineID: fleet.engineID, provider: fleet.provider)
                 }
             } footer: {
-                Text("Opens Claude's sign-in in a private in-app window \u{2014} your "
-                     + "browser session is never touched.")
+                Text(addAccountFooter)
                     .font(.caption2).foregroundStyle(.secondary)
             }
         }
