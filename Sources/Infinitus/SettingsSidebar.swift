@@ -150,14 +150,17 @@ struct SettingsSidebar: View {
     }
 
     @ViewBuilder private func resultRow(_ entry: SettingsSearchEntry) -> some View {
+        // A section named after its one setting (Stats/Period) would
+        // read "Period, in Period" — show and announce the label alone.
+        let section = entry.section.flatMap { $0 == entry.label ? nil : $0 }
         VStack(alignment: .leading, spacing: 1) {
             Text(entry.label)
-            if let section = entry.section {
+            if let section {
                 Text(section).font(.caption).foregroundStyle(.secondary)
             }
         }
         .accessibilityElement(children: .combine)
-        .accessibilityLabel(entry.section.map { "\(entry.label), in \($0)" } ?? entry.label)
+        .accessibilityLabel(section.map { "\(entry.label), in \($0)" } ?? entry.label)
         .tag(entry.id)
     }
 }

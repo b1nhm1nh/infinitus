@@ -63,8 +63,7 @@ final class UsageModel: ObservableObject {
                 withAnimation(.easeInOut(duration: 0.3)) { self.report = r }
             } catch {
                 Lifecycle.log.error("usage scan failed: \(String(describing: error), privacy: .public)")
-                self.error = "Couldn't read the transcripts. Make sure the "
-                    + "engine is installed, then choose Refresh."
+                self.error = "Couldn't scan the transcripts. Choose Refresh to try again."
             }
             self.loading = false
         }

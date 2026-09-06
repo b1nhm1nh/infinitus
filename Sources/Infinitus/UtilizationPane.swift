@@ -313,7 +313,7 @@ struct UtilizationPane: View {
                     .foregroundStyle(.secondary)
             }
         } header: {
-            Text("Forecast — every account at its own pace")
+            Text("Forecast")
         } footer: {
             Text("Estimate. " + (live.forecast?.basis ?? UsageForecast.basisText))
                 .font(.caption2).foregroundStyle(.secondary)

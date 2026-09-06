@@ -30,7 +30,7 @@ publishes the matching section as the GitHub release body.
 - Settings' sidebar is a real list: arrow keys, type-select, a focus ring and VoiceOver names, grouped into General, Accounts, Dashboards and Engines.
 - Settings search finds a setting by its own label, opens its pane and flashes the group it lives in; ⌘F jumps to the field.
 - The Settings window is called Settings and says which pane you're in.
-- Display is five named groups — Menu bar, Popup, Fleet wall, Sessions, Startup — each with a footer that says what the setting costs.
+- Display is five named groups — Menu bar, Popup, Fleet wall, Sessions, Refresh and startup — each with a footer that says what the setting costs.
 - The popup's headroom sorting moved to Settings › Display, where the rest of the popup's appearance lives.
 - Theme cards show the whole theme instead of hiding half of it in a sideways scroller, and name two accounts the way that theme would.
 - Utilization says what its gauge glyphs mean, and its run-rate methodology moved under "How this is measured".
