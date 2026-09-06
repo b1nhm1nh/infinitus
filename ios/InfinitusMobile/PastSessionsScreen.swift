@@ -70,7 +70,10 @@ struct PastSessionsScreen: View {
             }
         }
         .refreshable { await load() }
-        .task { await load() }
+        .task {
+            if macId == nil { macId = model.defaultTargetMacId }
+            await load()
+        }
     }
 
     /// Typing filters the fetched set on the phone; submitting asks the

@@ -346,8 +346,7 @@ actor NetworkFleetMirror: FleetMirror {
         if let stored = try await fetchFromStored(path: path, token: token, timeout: Self.candidateTimeout) {
             data = stored
         } else {
-            startBrowsing()
-            guard let discovered = await firstEndpoint() else { throw MirrorTransportError.timedOut }
+            let discovered = try await discover()
             (data, _) = try await fetch(discovered, path: path, hostHeader: "infinitus",
                                         useTLS: false, token: token, timeout: Self.candidateTimeout)
         }
@@ -389,8 +388,7 @@ actor NetworkFleetMirror: FleetMirror {
         if let stored = try await fetchFromStored(path: path, token: token, timeout: Self.candidateTimeout) {
             data = stored
         } else {
-            startBrowsing()
-            guard let discovered = await firstEndpoint() else { throw MirrorTransportError.timedOut }
+            let discovered = try await discover()
             (data, _) = try await fetch(discovered, path: path, hostHeader: "infinitus",
                                         useTLS: false, token: token, timeout: Self.candidateTimeout)
         }
@@ -435,8 +433,7 @@ actor NetworkFleetMirror: FleetMirror {
             try? parked?.saveTail(feed, pid: pid)
             return feed
         }
-        startBrowsing()
-        guard let discovered = await firstEndpoint() else { throw MirrorTransportError.timedOut }
+        let discovered = try await discover()
         let (data, _) = try await fetch(discovered, path: path, hostHeader: "infinitus",
                                         useTLS: false, token: token, timeout: Self.candidateTimeout)
         let feed = try Self.decodeFeed(data)
@@ -458,8 +455,7 @@ actor NetworkFleetMirror: FleetMirror {
         if let data = try await fetchFromStored(path: path, token: token, timeout: Self.candidateTimeout) {
             return data
         }
-        startBrowsing()
-        guard let discovered = await firstEndpoint() else { throw MirrorTransportError.timedOut }
+        let discovered = try await discover()
         let (data, _) = try await fetch(discovered, path: path, hostHeader: "infinitus",
                                         useTLS: false, token: token, timeout: Self.candidateTimeout)
         return data
@@ -469,6 +465,17 @@ actor NetworkFleetMirror: FleetMirror {
     /// own loop — `nil` means none of them answered for network reasons;
     /// a bad pairing token still throws, since that's equally actionable
     /// for either caller.
+    /// The Bonjour last resort for an RPC whose stored endpoints all
+    /// failed — for the primary only. A per-Mac pairing would otherwise
+    /// reach whichever Mac answers the browse (the primary, with the
+    /// wrong token: a 401 instead of "couldn't reach it" — #215).
+    private func discover() async throws -> NWEndpoint {
+        guard storage.isDefaults else { throw MirrorTransportError.timedOut }
+        startBrowsing()
+        guard let discovered = await firstEndpoint() else { throw MirrorTransportError.timedOut }
+        return discovered
+    }
+
     private func fetchFromStored(path: String, token: String, timeout: TimeInterval,
                                  method: String = "GET", body: Data? = nil) async throws -> Data? {
         for text in candidateEndpoints() {
@@ -527,8 +534,7 @@ actor NetworkFleetMirror: FleetMirror {
                                         useTLS: manual.useTLS, token: token,
                                         timeout: timeout, method: "POST", body: body)
         } else {
-            startBrowsing()
-            guard let discovered = await firstEndpoint() else { throw MirrorTransportError.timedOut }
+            let discovered = try await discover()
             (data, _) = try await fetch(discovered, path: path, hostHeader: "infinitus",
                                         useTLS: false, token: token, timeout: timeout,
                                         method: "POST", body: body)
@@ -570,8 +576,7 @@ actor NetworkFleetMirror: FleetMirror {
         if let stored = try await fetchFromStored(path: path, token: token, timeout: timeout) {
             data = stored
         } else {
-            startBrowsing()
-            guard let discovered = await firstEndpoint() else { throw MirrorTransportError.timedOut }
+            let discovered = try await discover()
             (data, _) = try await fetch(discovered, path: path, hostHeader: "infinitus",
                                         useTLS: false, token: token, timeout: timeout)
         }
@@ -639,8 +644,7 @@ actor NetworkFleetMirror: FleetMirror {
                                         useTLS: manual.useTLS, token: token,
                                         timeout: timeout, method: "POST", body: payload)
         } else {
-            startBrowsing()
-            guard let discovered = await firstEndpoint() else { throw MirrorTransportError.timedOut }
+            let discovered = try await discover()
             (data, _) = try await fetch(discovered, path: path, hostHeader: "infinitus",
                                         useTLS: false, token: token, timeout: timeout,
                                         method: "POST", body: payload)
