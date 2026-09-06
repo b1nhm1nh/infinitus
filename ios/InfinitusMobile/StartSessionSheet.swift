@@ -116,7 +116,12 @@ struct StartSessionSheet: View {
                     }
                 }
             }
-            .onAppear { if cwd.isEmpty { cwd = model.recentCwds(macId: macId).first ?? Self.other } }
+            .onAppear {
+                // A primary that has never answered defaults the sheet to a
+                // Mac that has (#215); the picker still offers every one.
+                if macId == nil { macId = model.defaultTargetMacId }
+                if cwd.isEmpty { cwd = model.recentCwds(macId: macId).first ?? Self.other }
+            }
             .onChange(of: macId) { _, _ in
                 // A different Mac: its own folders and profiles, the rest
                 // of the form (engine, prompt, permissions) stays typed.

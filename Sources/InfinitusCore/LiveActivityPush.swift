@@ -113,9 +113,15 @@ public enum LiveActivityPush {
         data(["aps": ["alert": ["title": title, "body": body], "sound": "default"]])
     }
 
+    /// ActivityKit decodes `content-state` with a default-strategy
+    /// JSONDecoder (WWDC23 10185: "always decoded using a JSONDecoder with
+    /// default decoding strategies … don't use any custom encoding
+    /// strategies"), so a Date is seconds since 2001-01-01, never since
+    /// 1970 — the latter put the revival countdown 31 years out (#226).
+    /// Only the `aps` keys (`timestamp`, `stale-date`, `dismissal-date`)
+    /// are Unix seconds.
     private static func json<S: Encodable>(_ state: S) -> Any {
         let encoder = JSONEncoder()
-        encoder.dateEncodingStrategy = .secondsSince1970
         guard let data = try? encoder.encode(state),
               let object = try? JSONSerialization.jsonObject(with: data) else { return [:] }
         return object

@@ -8,6 +8,20 @@ private func account(_ json: String) throws -> Account {
 private let base = #""email": "dev@example.com", "organizationName": "o", "organizationUuid": "u", "isOrganization": true"#
 
 final class RecoveryMathTests: XCTestCase {
+    // #227: the spotlighted reviver is the corrected pick, only with no
+    // candidate and a plausible future reset.
+    func testReviverOnlyWhileAllDeadAndPlausible() {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let soon = ISO8601DateFormatter().string(from: now.addingTimeInterval(3600))
+        let far = ISO8601DateFormatter().string(from: now.addingTimeInterval(400 * 24 * 3600))
+        let rec = NextRecovery(number: 2, at: soon)
+        XCTAssertEqual(RecoveryMath.reviver(nextCandidate: nil, nextRecovery: rec, now: now)?.number, 2)
+        XCTAssertNil(RecoveryMath.reviver(nextCandidate: 1, nextRecovery: rec, now: now))
+        XCTAssertNil(RecoveryMath.reviver(nextCandidate: nil, nextRecovery: nil, now: now))
+        XCTAssertNil(RecoveryMath.reviver(nextCandidate: nil, nextRecovery: NextRecovery(number: 2, at: far), now: now))
+        XCTAssertNil(RecoveryMath.reviver(nextCandidate: nil, nextRecovery: NextRecovery(number: 2, at: "garbage"), now: now))
+    }
+
     // (a) the reported bug: the active account is both dead and the
     // soonest reviver, but the engine's advisory (mirrored by
     // `_next_recovery`'s active-skip) would have named a later account.
@@ -35,6 +49,28 @@ final class RecoveryMathTests: XCTestCase {
         let rankable = try account(#"{"number": 6, \#(base), "active": false, "usageStatus": "ok", "usage": {"fiveHour": {"pct": 100, "resetsAt": "2026-09-05T00:00:00Z"}}}"#)
         let result = RecoveryMath.nextRecovery(accounts: [unrankable, rankable])
         XCTAssertEqual(result?.number, 6)
+    }
+
+    // (g) #226: the reviver is ranked by parsed date, and a reset that no
+    // real window could have (epoch-shaped, decades out, garbage) makes
+    // the account unrankable rather than the soonest — the phone showed
+    // a 31-year countdown for the account whose string sorted first.
+    func testImplausibleResetIsUnrankable() throws {
+        let now = ISO8601DateFormatter().date(from: "2026-09-06T12:00:00Z")!
+        let real = try account(#"{"number": 1, \#(base), "active": false, "usageStatus": "ok", "usage": {"fiveHour": {"pct": 100, "resetsAt": "2026-09-06T13:00:00.254457+00:00"}}}"#)
+        let farOut = try account(#"{"number": 2, \#(base), "active": false, "usageStatus": "ok", "usage": {"fiveHour": {"pct": 100, "resetsAt": "2057-05-16T08:28:25Z"}}}"#)
+        let epoch = try account(#"{"number": 3, \#(base), "active": false, "usageStatus": "ok", "usage": {"scoped": [{"pct": 100, "resetsAt": "1788000000", "model": "Fable"}]}}"#)
+        XCTAssertEqual(RecoveryMath.nextRecovery(accounts: [farOut, epoch, real], now: now)?.number, 1)
+        XCTAssertEqual(RecoveryMath.nextRecovery(accounts: [farOut, epoch], now: now), nil)
+        XCTAssertNil(RecoveryMath.revival(of: farOut, now: now))
+        XCTAssertNil(RecoveryMath.revival(of: epoch, now: now))
+        // A scoped window counts, and the LAST maxed window is the revival.
+        let scopedLater = try account(#"{"number": 4, \#(base), "active": false, "usageStatus": "ok", "usage": {"fiveHour": {"pct": 100, "resetsAt": "2026-09-06T12:30:00Z"}, "scoped": [{"pct": 100, "resetsAt": "2026-09-08T11:00:00.324579+00:00", "model": "Fable"}]}}"#)
+        XCTAssertEqual(RecoveryMath.revival(of: scopedLater, now: now)?.iso, "2026-09-08T11:00:00.324579+00:00")
+        XCTAssertEqual(RecoveryMath.nextRecovery(accounts: [scopedLater, real], now: now)?.number, 1)
+        // Fallback to the engine's word still applies when nobody ranks.
+        let engineValue = NextRecovery(number: 2, at: "2057-05-16T08:28:25Z")
+        XCTAssertEqual(RecoveryMath.corrected(engine: engineValue, accounts: [farOut], activeNumber: nil, now: now)?.number, 2)
     }
 
     // (d) corrected() must not invent an all-dead premise: nil engine

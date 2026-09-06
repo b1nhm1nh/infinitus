@@ -8,10 +8,14 @@ publishes the matching section as the GitHub release body.
 ## Unreleased
 
 ### Phone
+- The chat header follows Dynamic Type in all three styles; the Game HUD stops growing at the second accessibility size (#209).
+- Other Macs: their sessions and past sessions never reach the primary by mistake, and "+" and Past sessions open once any paired Mac has answered (#215).
+- The all-limited Live Activity counts down to the real revival instead of 31 years out, and every surface picks the reviver by parsed reset date, ignoring implausible ones (#226).
 - Review changes says why there is nothing to review — checkpoints off on the Mac, a folder outside git, or no prompt checkpointed yet — instead of a caption nobody saw (#214).
 - A message Claude Code held instead of delivering shows in the chat as a marker, with where to review it (#213).
 
 ### Mac
+- All accounts limited: the one that revives first floats to the top with a themed pulse and its own hh:mm:ss countdown inside the revive lead, on the popup, pop-out and the phone's rows.
 - Settings › Notifications sets the revive lead (default 10 min): how far ahead of an exhausted account's reset its row counts down live and the phone's reset alarm fires.
 - Phone messages and resume nudges reach sessions in every permission mode again: Claude Code 2.1.263 holds a peer message that claims a different permission class than the receiver's, so the app now asserts the session's own (#213).
 - "All accounts are exhausted" notifies once per outage and honors its toggle — the engine's ten-minute re-probes no longer repeat it.
@@ -39,7 +43,7 @@ publishes the matching section as the GitHub release body.
 - Start a session picks its permissions: Supervised, Auto-accept edits, Auto or Full access, passed to Claude Code as its permission mode.
 - Start a session offers the Mac's saved profiles as chips; one tap fills folder, engine, permissions, model, system prompt and first prompt.
 - A session started from a profile or in a permission mode says so on its row ("Review · Full access"), on the phone and in the Mac popover.
-- Swipe or long-press an account to star it or pause/resume its rotation from the phone; the Mac popup's rows carry the same two buttons beside the name.
+- Swipe or long-press an account to star it or pause/resume its rotation from the phone; on the Mac, right-click the name in the popup for the same, and a paused row shows a play button to resume.
 
 ### Mac
 - Infinitus is alpha software from this release on: the version reads 0.4.4-alpha.1 in About, `infinitusctl status` and the phone's Settings.
