@@ -136,6 +136,7 @@ struct TeamPane: View {
                 ForEach(snap.members) { m in memberRow(m, leader: snap.role == "leader") }
                 if snap.members.isEmpty { Text("No roster yet.").foregroundStyle(.secondary) }
             }
+            if snap.role == "leader" { TeamInsightsSection(team: team) } else { TeamMembersViewSection(team: team) }
             if snap.role == "leader" { inviteSection }
             sharingSection(snap)
             exclusionsSection
