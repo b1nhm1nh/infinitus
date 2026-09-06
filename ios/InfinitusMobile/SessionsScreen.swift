@@ -47,6 +47,9 @@ struct SessionsScreen: View {
                 .navigationDestination(for: SessionDetailRoute.self) { route in
                     SessionDetailScreen(model: model, progress: progress, session: route.session)
                 }
+                .navigationDestination(for: CheckpointsRoute.self) { route in
+                    CheckpointsScreen(session: route.session)
+                }
         }
         // A shake staged a capture for a session: open its feed (which
         // takes the capture into its composer). A feed already open for
@@ -323,6 +326,8 @@ struct SessionsScreen: View {
     private func metadata(_ session: SessionDetail) -> String {
         let p = progress.byPid[session.pid]
         var parts: [String] = []
+        // Born from a profile / in a permission mode (#163/#165) leads.
+        if let chip = model.snapshot?.births?[session.pid]?.chip { parts.append(chip) }
         if let branch = p?.gitBranch { parts.append("⎇ \(branch)") }
         if let model = p?.model { parts.append(shortModel(model)) }
         if session.kind != "interactive", !session.kind.isEmpty { parts.append(SessionWords.kind(session.kind)) }

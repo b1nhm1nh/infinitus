@@ -145,9 +145,10 @@ public struct RowTheme: Codable, Equatable, Sendable, Identifiable {
         // The chat composer's placeholder, typing and dictating (#124).
         "composerReply": "Reply…", "composerListening": "Listening…",
     ]
-    public static let plainTabLabels = ["sessions": "Sessions", "fleet": "Fleet", "settings": "Settings"]
+    public static let plainTabLabels = ["sessions": "Sessions", "fleet": "Fleet", "settings": "Settings", "team": "Team"]
     public static let plainTabIcons = [
         "sessions": "sf:brain", "fleet": "sf:gauge.with.dots.needle.67percent", "settings": "sf:gearshape",
+        "team": "sf:person.2.fill",
     ]
 
     /// The themed status word; unknown statuses capitalise the raw one.
@@ -268,8 +269,8 @@ public struct RowTheme: Codable, Equatable, Sendable, Identifiable {
                      "Sonnet": "Bard", "Haiku": "Imp"],
         planPrefix: "Lv ", slotPrefix: "P", resetWord: "respawning…", nextIcon: "🎲", activeIcon: "👑",
         sessionWords: ["busy": "Questing", "waiting": "Awaiting orders", "idle": "Resting at camp", "shell": "In the forge"],
-        tabLabels: ["sessions": "Quests", "fleet": "Party", "settings": "Inventory"],
-        tabIcons: ["sessions": "sf:scroll", "fleet": "sf:person.3.fill", "settings": "sf:bag.fill"],
+        tabLabels: ["sessions": "Quests", "fleet": "Party", "settings": "Inventory", "team": "Guild"],
+        tabIcons: ["sessions": "sf:scroll", "fleet": "sf:person.3.fill", "settings": "sf:bag.fill", "team": "sf:shield.lefthalf.filled"],
         accountNames: ["Paladin", "Ranger", "Rogue", "Cleric", "Wizard", "Warlock", "Druid", "Monk", "Knight", "Archer", "Sorcerer", "Barbarian", "Alchemist", "Sentinel", "Necromancer", "Bard"],
         loadingWords: ["loading": "Rolling initiative…", "empty": "The quest log is blank", "noSessions": "No quests underway", "searching": "Scouting for the Mac…", "composerReply": "Give your orders…", "composerListening": "Hearing you…"],
         loadingIcon: "sf:dice.fill", loadingMotion: "spin")
@@ -287,8 +288,8 @@ public struct RowTheme: Codable, Equatable, Sendable, Identifiable {
                      "Sonnet": "Indie", "Haiku": "Short"],
         planPrefix: "Studio ", slotPrefix: "🎬", resetWord: "premiering…", nextIcon: "🍿", activeIcon: "🌟",
         sessionWords: ["busy": "Rolling", "waiting": "Waiting for the cue", "idle": "Intermission", "shell": "Backstage"],
-        tabLabels: ["sessions": "Scenes", "fleet": "Cast", "settings": "Studio"],
-        tabIcons: ["sessions": "sf:film", "fleet": "sf:person.3.fill", "settings": "sf:slider.horizontal.3"],
+        tabLabels: ["sessions": "Scenes", "fleet": "Cast", "settings": "Studio", "team": "Crew"],
+        tabIcons: ["sessions": "sf:film", "fleet": "sf:person.3.fill", "settings": "sf:slider.horizontal.3", "team": "sf:person.2.fill"],
         accountNames: ["Director", "Producer", "Stuntman", "Cameo", "Montage", "Premiere", "Sequel", "Matinee", "Blockbuster", "Cliffhanger", "Trailer", "Voiceover", "Screenplay", "Boxoffice", "Redcarpet", "Cutscene"],
         loadingWords: ["loading": "Rolling film…", "empty": "Nothing on the reel yet", "noSessions": "No reels rolling", "searching": "Finding the projector…", "composerReply": "Feed the actor a line…", "composerListening": "Rolling sound…"],
         loadingIcon: "sf:film", loadingMotion: "spin")
@@ -306,8 +307,8 @@ public struct RowTheme: Codable, Equatable, Sendable, Identifiable {
                      "Sonnet": "Fury", "Haiku": "Shade"],
         planPrefix: "Heat ", slotPrefix: "†", resetWord: "raising the dead…", nextIcon: "🕯", activeIcon: "🌿",
         sessionWords: ["busy": "Fighting", "waiting": "Awaiting the call", "idle": "In the lounge", "shell": "At the forge"],
-        tabLabels: ["sessions": "Runs", "fleet": "Pantheon", "settings": "Mirror"],
-        tabIcons: ["sessions": "sf:flame", "fleet": "sf:person.3.fill", "settings": "sf:sparkles"],
+        tabLabels: ["sessions": "Runs", "fleet": "Pantheon", "settings": "Mirror", "team": "Clan"],
+        tabIcons: ["sessions": "sf:flame", "fleet": "sf:person.3.fill", "settings": "sf:sparkles", "team": "sf:person.2.fill"],
         accountNames: ["Zagreus", "Megaera", "Thanatos", "Cerberus", "Nyx", "Chaos", "Charon", "Hypnos", "Achilles", "Patroclus", "Orpheus", "Eurydice", "Sisyphus", "Dusa", "Skelly", "Hermes"],
         loadingWords: ["loading": "Crossing the Styx…", "empty": "The river is still", "noSessions": "No fights underway", "searching": "Calling for Charon…", "composerReply": "Command the shade…", "composerListening": "Listening from the depths…"],
         loadingIcon: "sf:flame.fill", loadingMotion: "flicker")
@@ -325,8 +326,8 @@ public struct RowTheme: Codable, Equatable, Sendable, Identifiable {
                      "Sonnet": "RAY", "Haiku": "Mk.II"],
         planPrefix: "Rank ", slotPrefix: "S", resetWord: "extraction inbound…", nextIcon: "🎯", activeIcon: "🐍",
         sessionWords: ["busy": "On mission", "waiting": "Awaiting orders", "idle": "In the box", "shell": "At the armory"],
-        tabLabels: ["sessions": "Missions", "fleet": "Squad", "settings": "Codec"],
-        tabIcons: ["sessions": "sf:target", "fleet": "sf:person.3.fill", "settings": "sf:antenna.radiowaves.left.and.right"],
+        tabLabels: ["sessions": "Missions", "fleet": "Squad", "settings": "Codec", "team": "Unit"],
+        tabIcons: ["sessions": "sf:target", "fleet": "sf:person.3.fill", "settings": "sf:antenna.radiowaves.left.and.right", "team": "sf:person.2.fill"],
         accountNames: ["Snake", "Otacon", "Raiden", "Ocelot", "Meryl", "Gray-Fox", "Sniper-Wolf", "Psycho-Mantis", "Vulcan-Raven", "Liquid", "Solidus", "Big-Boss", "Campbell", "Naomi", "Mei-Ling", "Kaz"],
         loadingWords: ["loading": "Establishing codec link…", "empty": "No intel yet", "noSessions": "No missions active", "searching": "Contacting HQ…", "composerReply": "Radio the operative…", "composerListening": "Codec open…"],
         loadingIcon: "sf:antenna.radiowaves.left.and.right", loadingMotion: "flicker")
@@ -344,8 +345,8 @@ public struct RowTheme: Codable, Equatable, Sendable, Identifiable {
                      "Sonnet": "sonnet-4", "Haiku": "haiku-4"],
         planPrefix: "tier-", slotPrefix: "agent-", resetWord: "rate limit lifting…", nextIcon: "⏭", activeIcon: "🧠",
         sessionWords: ["busy": "Reasoning", "waiting": "Blocked on a human", "idle": "Idle", "shell": "In the shell"],
-        tabLabels: ["sessions": "Agents", "fleet": "Providers", "settings": "Config"],
-        tabIcons: ["sessions": "sf:cpu", "fleet": "sf:server.rack", "settings": "sf:gearshape"],
+        tabLabels: ["sessions": "Agents", "fleet": "Providers", "settings": "Config", "team": "Org"],
+        tabIcons: ["sessions": "sf:cpu", "fleet": "sf:server.rack", "settings": "sf:gearshape", "team": "sf:building.2"],
         accountNames: ["Planner", "Executor", "Router", "Retriever", "Critic", "Verifier", "Summarizer", "Orchestrator", "Scout", "Worker", "Reviewer", "Indexer", "Sampler", "Toolsmith", "Tokenizer", "Grader"],
         loadingWords: ["loading": "Streaming tokens…", "empty": "Empty context", "noSessions": "No agents running", "searching": "Resolving the Mac…", "composerReply": "Prompt the agent…", "composerListening": "Transcribing…"],
         loadingIcon: "sf:cpu", loadingMotion: "pulse")
@@ -363,8 +364,8 @@ public struct RowTheme: Codable, Equatable, Sendable, Identifiable {
                      "Sonnet": "daemon", "Haiku": "script"],
         planPrefix: "v", slotPrefix: "#", resetWord: "recompiling…", nextIcon: "⏭", activeIcon: "⌨️",
         sessionWords: ["busy": "Coding", "waiting": "Needs review", "idle": "Idle", "shell": "At the terminal"],
-        tabLabels: ["sessions": "Tickets", "fleet": "Team", "settings": "Preferences"],
-        tabIcons: ["sessions": "sf:ticket", "fleet": "sf:person.3.fill", "settings": "sf:gearshape"],
+        tabLabels: ["sessions": "Tickets", "fleet": "Team", "settings": "Preferences", "team": "Squad"],
+        tabIcons: ["sessions": "sf:ticket", "fleet": "sf:person.3.fill", "settings": "sf:gearshape", "team": "sf:person.2.fill"],
         accountNames: ["Compiler", "Linker", "Debugger", "Kernel", "Daemon", "Pointer", "Mutex", "Segfault", "Bytecode", "Makefile", "Heap", "Stack", "Register", "Opcode", "Syscall", "Refactor"],
         loadingWords: ["loading": "Compiling…", "empty": "Empty log", "noSessions": "No builds running", "searching": "Pinging the Mac…", "composerReply": "Write the ticket…", "composerListening": "Taking dictation…"],
         loadingIcon: "sf:terminal", loadingMotion: "pulse")
@@ -382,8 +383,8 @@ public struct RowTheme: Codable, Equatable, Sendable, Identifiable {
                      "Sonnet": "Fighter", "Haiku": "Probe"],
         planPrefix: "Class ", slotPrefix: "🚀", resetWord: "recharging…", nextIcon: "📡", activeIcon: "🧑\u{200D}🚀",
         sessionWords: ["busy": "Warping", "waiting": "Awaiting command", "idle": "Docked", "shell": "In engineering"],
-        tabLabels: ["sessions": "Missions", "fleet": "Fleet", "settings": "Bridge"],
-        tabIcons: ["sessions": "sf:scope", "fleet": "sf:airplane", "settings": "sf:slider.horizontal.3"],
+        tabLabels: ["sessions": "Missions", "fleet": "Fleet", "settings": "Bridge", "team": "Alliance"],
+        tabIcons: ["sessions": "sf:scope", "fleet": "sf:airplane", "settings": "sf:slider.horizontal.3", "team": "sf:person.2.fill"],
         accountNames: ["Nebula", "Warpcore", "Photon", "Andromeda", "Quasar", "Deflector", "Hyperdrive", "Replicator", "Tachyon", "Starboard", "Airlock", "Cryopod", "Phaser", "Nacelle", "Wormhole", "Singularity"],
         loadingWords: ["loading": "Charging the warp core…", "empty": "No transmissions yet", "noSessions": "No ships underway", "searching": "Hailing the Mac…", "composerReply": "Hail the ship…", "composerListening": "Comms open…"],
         loadingIcon: "sf:atom", loadingMotion: "spin")
@@ -401,8 +402,8 @@ public struct RowTheme: Codable, Equatable, Sendable, Identifiable {
                      "Sonnet": "Deputy", "Haiku": "Tumbleweed"],
         planPrefix: "Bounty ", slotPrefix: "⭐", resetWord: "sun's rising…", nextIcon: "🌵", activeIcon: "🏇",
         sessionWords: ["busy": "Riding", "waiting": "At the saloon", "idle": "Camped", "shell": "At the smithy"],
-        tabLabels: ["sessions": "Posses", "fleet": "Ranch", "settings": "Saddlebag"],
-        tabIcons: ["sessions": "sf:hare", "fleet": "sf:house", "settings": "sf:bag"],
+        tabLabels: ["sessions": "Posses", "fleet": "Ranch", "settings": "Saddlebag", "team": "Outfit"],
+        tabIcons: ["sessions": "sf:hare", "fleet": "sf:house", "settings": "sf:bag", "team": "sf:person.2.fill"],
         accountNames: ["Sheriff", "Outlaw", "Marshal", "Deputy", "Wrangler", "Gunslinger", "Prospector", "Bandit", "Drifter", "Rancher", "Saloon", "Stagecoach", "Tumbleweed", "Maverick", "Bronco", "Mustang"],
         loadingWords: ["loading": "Saddling up…", "empty": "Tumbleweeds only", "noSessions": "Nobody's riding", "searching": "Tracking the Mac…", "composerReply": "Send word…", "composerListening": "Ears open…"],
         loadingIcon: "sf:sun.max.fill", loadingMotion: "spin")
@@ -420,8 +421,8 @@ public struct RowTheme: Codable, Equatable, Sendable, Identifiable {
                      "Sonnet": "Ripperdoc", "Haiku": "Gonk"],
         planPrefix: "Cred ", slotPrefix: "◢", resetWord: "rebooting…", nextIcon: "🕶", activeIcon: "⚡",
         sessionWords: ["busy": "Jacked in", "waiting": "Awaiting handshake", "idle": "Idle", "shell": "In the terminal"],
-        tabLabels: ["sessions": "Runs", "fleet": "Rig", "settings": "Deck"],
-        tabIcons: ["sessions": "sf:bolt", "fleet": "sf:cpu", "settings": "sf:slider.horizontal.3"],
+        tabLabels: ["sessions": "Runs", "fleet": "Rig", "settings": "Deck", "team": "Crew"],
+        tabIcons: ["sessions": "sf:bolt", "fleet": "sf:cpu", "settings": "sf:slider.horizontal.3", "team": "sf:person.2.fill"],
         accountNames: ["Netrunner", "Chrome", "Neon", "Glitch", "Static", "Proxy", "Cipher", "Ghost", "Wetware", "Blackice", "Datajack", "Overclock", "Synth", "Mainframe", "Firewall", "Zero-Day"],
         loadingWords: ["loading": "Jacking in…", "empty": "Empty buffer", "noSessions": "No runs active", "searching": "Scanning for the Mac…", "composerReply": "Jack a message in…", "composerListening": "Mic hot…"],
         loadingIcon: "sf:bolt.fill", loadingMotion: "flicker")
@@ -439,8 +440,8 @@ public struct RowTheme: Codable, Equatable, Sendable, Identifiable {
                      "Sonnet": "Wraith", "Haiku": "Ghoul"],
         planPrefix: "Crypt ", slotPrefix: "✟", resetWord: "tolling midnight…", nextIcon: "🌹", activeIcon: "🕯",
         sessionWords: ["busy": "Chanting", "waiting": "Awaiting confession", "idle": "At rest", "shell": "In the crypt"],
-        tabLabels: ["sessions": "Rites", "fleet": "Coven", "settings": "Sacristy"],
-        tabIcons: ["sessions": "sf:flame", "fleet": "sf:person.3.fill", "settings": "sf:gearshape"],
+        tabLabels: ["sessions": "Rites", "fleet": "Coven", "settings": "Sacristy", "team": "Order"],
+        tabIcons: ["sessions": "sf:flame", "fleet": "sf:person.3.fill", "settings": "sf:gearshape", "team": "sf:person.2.fill"],
         accountNames: ["Raven", "Belfry", "Gargoyle", "Candle", "Crypt", "Requiem", "Cathedral", "Vesper", "Nocturne", "Wraith", "Ember", "Sepulcher", "Lantern", "Moth", "Thorn", "Abbey"],
         loadingWords: ["loading": "Lighting the candles…", "empty": "The nave is silent", "noSessions": "No rites tonight", "searching": "Listening for the bell…", "composerReply": "Whisper to the acolyte…", "composerListening": "The walls listen…"],
         loadingIcon: "sf:flame", loadingMotion: "flicker")
@@ -458,8 +459,8 @@ public struct RowTheme: Codable, Equatable, Sendable, Identifiable {
                      "Sonnet": "Sonata", "Haiku": "Jingle"],
         planPrefix: "Act ", slotPrefix: "♪", resetWord: "tuning up…", nextIcon: "🎻", activeIcon: "🎷",
         sessionWords: ["busy": "Performing", "waiting": "Awaiting the conductor", "idle": "Between sets", "shell": "Tuning"],
-        tabLabels: ["sessions": "Sets", "fleet": "Ensemble", "settings": "Mixer"],
-        tabIcons: ["sessions": "sf:music.note.list", "fleet": "sf:person.3.fill", "settings": "sf:slider.horizontal.3"],
+        tabLabels: ["sessions": "Sets", "fleet": "Ensemble", "settings": "Mixer", "team": "Troupe"],
+        tabIcons: ["sessions": "sf:music.note.list", "fleet": "sf:person.3.fill", "settings": "sf:slider.horizontal.3", "team": "sf:person.2.fill"],
         accountNames: ["Overture", "Encore", "Tempo", "Crescendo", "Allegro", "Sonata", "Cadenza", "Aria", "Rondo", "Fugue", "Prelude", "Finale", "Vibrato", "Staccato", "Maestro", "Coda"],
         loadingWords: ["loading": "Tuning the orchestra…", "empty": "An empty score", "noSessions": "No sets playing", "searching": "Finding the conductor…", "composerReply": "Cue the next line…", "composerListening": "Mic's live…"],
         loadingIcon: "sf:music.note", loadingMotion: "bounce")
@@ -477,8 +478,8 @@ public struct RowTheme: Codable, Equatable, Sendable, Identifiable {
                      "Sonnet": "Wolf", "Haiku": "Hummingbird"],
         planPrefix: "Biome ", slotPrefix: "🐾", resetWord: "migrating…", nextIcon: "🦋", activeIcon: "🦁",
         sessionWords: ["busy": "Hunting", "waiting": "Waiting for the herd", "idle": "Grazing", "shell": "Burrowing"],
-        tabLabels: ["sessions": "Herds", "fleet": "Habitat", "settings": "Field notes"],
-        tabIcons: ["sessions": "sf:leaf", "fleet": "sf:globe.americas", "settings": "sf:book"],
+        tabLabels: ["sessions": "Herds", "fleet": "Habitat", "settings": "Field notes", "team": "Pack"],
+        tabIcons: ["sessions": "sf:leaf", "fleet": "sf:globe.americas", "settings": "sf:book", "team": "sf:person.2.fill"],
         accountNames: ["Falcon", "Orca", "Panther", "Condor", "Wolf", "Otter", "Lynx", "Heron", "Bison", "Jaguar", "Puffin", "Gecko", "Mantis", "Ibex", "Marlin", "Osprey"],
         loadingWords: ["loading": "Tracking the herd…", "empty": "Nothing stirs", "noSessions": "No hunts underway", "searching": "Following the migration…", "composerReply": "Call to the herd…", "composerListening": "Ears pricked…"],
         loadingIcon: "sf:leaf.fill", loadingMotion: "bounce")
@@ -496,8 +497,8 @@ public struct RowTheme: Codable, Equatable, Sendable, Identifiable {
                      "Sonnet": "Nebula", "Haiku": "Comet"],
         planPrefix: "Orbit ", slotPrefix: "✦", resetWord: "orbiting back…", nextIcon: "🔭", activeIcon: "🪐",
         sessionWords: ["busy": "Orbiting", "waiting": "Awaiting ground control", "idle": "Drifting", "shell": "In the airlock"],
-        tabLabels: ["sessions": "Missions", "fleet": "Constellation", "settings": "Mission control"],
-        tabIcons: ["sessions": "sf:moon.stars", "fleet": "sf:sparkles", "settings": "sf:gearshape"],
+        tabLabels: ["sessions": "Missions", "fleet": "Constellation", "settings": "Mission control", "team": "Crew"],
+        tabIcons: ["sessions": "sf:moon.stars", "fleet": "sf:sparkles", "settings": "sf:gearshape", "team": "sf:person.2.fill"],
         accountNames: ["Andromeda", "Orion", "Vega", "Sirius", "Pulsar", "Quasar", "Cassiopeia", "Lyra", "Altair", "Rigel", "Antares", "Polaris", "Kepler", "Halley", "Titan", "Europa"],
         loadingWords: ["loading": "Aligning the telescope…", "empty": "Empty sky", "noSessions": "No orbits active", "searching": "Calling ground control…", "composerReply": "Signal the crew…", "composerListening": "Ground control listening…"],
         loadingIcon: "sf:sparkles", loadingMotion: "pulse")
@@ -515,8 +516,8 @@ public struct RowTheme: Codable, Equatable, Sendable, Identifiable {
                      "Sonnet": "Dolphin", "Haiku": "Minnow"],
         planPrefix: "Depth ", slotPrefix: "🪸", resetWord: "tide turning…", nextIcon: "🐬", activeIcon: "⛵",
         sessionWords: ["busy": "Diving", "waiting": "Surfacing", "idle": "Adrift", "shell": "In the hold"],
-        tabLabels: ["sessions": "Voyages", "fleet": "Fleet", "settings": "Galley"],
-        tabIcons: ["sessions": "sf:water.waves", "fleet": "sf:sailboat", "settings": "sf:gearshape"],
+        tabLabels: ["sessions": "Voyages", "fleet": "Fleet", "settings": "Galley", "team": "Pod"],
+        tabIcons: ["sessions": "sf:water.waves", "fleet": "sf:sailboat", "settings": "sf:gearshape", "team": "sf:person.2.fill"],
         accountNames: ["Tide", "Kelp", "Coral", "Nautilus", "Abyss", "Trench", "Reef", "Kraken", "Manta", "Narwhal", "Lagoon", "Riptide", "Anchor", "Seafoam", "Marlin", "Barnacle"],
         loadingWords: ["loading": "Diving…", "empty": "Still water", "noSessions": "No dives underway", "searching": "Sounding for the Mac…", "composerReply": "Send a message in a bottle…", "composerListening": "Sonar on…"],
         loadingIcon: "sf:water.waves", loadingMotion: "bounce")

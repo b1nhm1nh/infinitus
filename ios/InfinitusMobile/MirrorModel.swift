@@ -31,6 +31,8 @@ final class MirrorModel: ObservableObject, FleetModel {
     /// (2026-09-04); `nil` for snapshots captured before this field
     /// existed, or before the Mac's first scan finished.
     var stats: Stats.Bundle? { snapshot?.stats }
+    /// The Mac's team (Settings › Team), for the phone's Team tab (plan 8).
+    var team: TeamSnapshot? { snapshot?.team }
     /// One engine's fleet per element, in the Mac's popup order.
     @Published private(set) var fleets: [MirrorFleetModel] = []
     private var fleetSinks: [String: AnyCancellable] = [:]

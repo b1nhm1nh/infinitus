@@ -137,8 +137,60 @@ final class AppModel: ObservableObject {
     /// The machine-health guardian (#115): Settings › Machine's model.
     let machineModel = MachineModel()
     let sessionProfiles = SessionProfilesModel()
+    /// What Infinitus started each live session as (#163/#165), by pid;
+    /// kept across launches, pruned to the roster on every export.
+    @Published private(set) var sessionBirths: [Int: SessionBirth] = SessionBirths.load(from: AppModel.birthsURL)
+    static let birthsURL = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        .appendingPathComponent("Infinitus/session-births.json")
+    func recordBirth(pid: Int, _ birth: SessionBirth) {
+        let live = ClaudeSessions.list(claudeDir: ClaudeSessions.configHome())
+        let alive = Set(live.map { Int($0.pid) })
+        sessionBirths = SessionBirths.pruned(sessionBirths, alive: alive.union([pid]))
+        // Pinned to the session id whenever the roster has it, so a
+        // reused pid after a reboot can never inherit a grant.
+        let id = live.first { Int($0.pid) == pid }?.sessionId
+        sessionBirths[pid] = id.map { birth.identified(as: $0) } ?? birth
+        // The profile's allow-list (#165) becomes the session's hook rules.
+        if let id { seedAllowList(birth, sessionId: id) }
+        try? SessionBirths.save(sessionBirths, to: Self.birthsURL)
+    }
     /// "Allow for this session" rules from the phone (#79), per session id.
     let toolApprovals = ToolApprovals()
+
+    private func profileAllowRules(_ birth: SessionBirth) -> [ToolApproval.Rule] {
+        guard let name = birth.profile else { return [] }
+        return sessionProfiles.profiles.first { SessionProfiles.same($0.name, name) }?.allowRules ?? []
+    }
+
+    /// A session born from a profile runs its allow-list without asking:
+    /// the same rules the phone's "Allow for this session" adds.
+    private func seedAllowList(_ birth: SessionBirth, sessionId: String) {
+        let rules = profileAllowRules(birth)
+        guard !rules.isEmpty, let name = birth.profile else { return }
+        for rule in rules { toolApprovals.add(rule, sessionId: sessionId) }
+        logEvent("hook", icon: "checkmark.shield", "profile \(name) allows \(rules.map(\.label).joined(separator: ", ")) in session \(sessionId.prefix(8))")
+    }
+
+    /// Moves a running session's permission mode (#163 phase 2): the
+    /// plugin's PreToolUse hook answers from it. The start mode is a
+    /// floor — Claude Code itself already lets those tools through, so
+    /// narrowing from here would only pretend.
+    func setSessionMode(_ text: String, pid: Int, record: ClaudeSessionRecord) -> SessionInput.Reply {
+        let mode = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let choice = SessionStart.hookModes.first(where: { $0.mode == mode }) else {
+            return SessionInput.Reply(outcome: "rejected", detail: "mode must be one of \(SessionStart.hookModes.map(\.mode).joined(separator: ", "))")
+        }
+        let birth = sessionBirths[pid] ?? SessionBirth()
+        let target: String? = choice.mode == "supervised" ? nil : choice.mode
+        if SessionStart.modeRank(target) < SessionStart.modeRank(birth.permissionMode) {
+            let started = birth.modeLabelForStart ?? "supervised"
+            return SessionInput.Reply(outcome: "rejected", detail: "the session started as \(started); a start mode cannot be narrowed from here")
+        }
+        toolApprovals.setMode(target, sessionId: record.sessionId)
+        recordBirth(pid: pid, birth.moved(to: target))
+        logEvent("hook", icon: "checkmark.shield", "session \(pid) moved to \(choice.label)")
+        return SessionInput.Reply(outcome: "delivered", channel: "mac", detail: choice.label)
+    }
     @Published var lastError: String?
     /// #7 layer 2: the reset battle plan for the current sprint, recomputed
     /// every snapshot; nil when there is nothing to plan. Manual mode: the
@@ -479,6 +531,9 @@ final class AppModel: ObservableObject {
     /// Where a session started from the phone opens (#91): "auto" (cmux
     /// when installed, else Terminal), "cmux", "terminal".
     @Published var sessionHost: String { didSet { defaults.set(sessionHost, forKey: "session_host") } }
+    /// Per-turn workspace checkpoints (#167): a hidden git ref per prompt,
+    /// recorded when the plugin's UserPromptSubmit hook fires.
+    @Published var checkpointsEnabled: Bool { didSet { defaults.set(checkpointsEnabled, forKey: "checkpoints_enabled") } }
     /// The status item in the theme's color with the theme's icon (#90),
     /// and its effects (switch/death/revival flash, the burn breath).
     @Published var menuBarThemed: Bool { didSet { defaults.set(menuBarThemed, forKey: "menubar_themed") } }
@@ -627,6 +682,10 @@ final class AppModel: ObservableObject {
             ClaudeSessions.list(claudeDir: ClaudeSessions.configHome())
                 .first { $0.sessionId == id }.map { Int($0.pid) }
         }
+        if event.name == "UserPromptSubmit", checkpointsEnabled, !isPlayground,
+           let sessionId = event.sessionId, let cwd = event.cwd {
+            recordCheckpoint(sessionId: sessionId, cwd: cwd, subject: event.prompt ?? "")
+        }
         if let line = event.pushLine, !isPlayground {
             logEvent("hook", icon: "bolt.horizontal", event.logLine)
             if let pid { pushTriggers.announceWaiting(pid: pid) }
@@ -650,6 +709,31 @@ final class AppModel: ObservableObject {
     }
     private var hookRefresh: Task<Void, Never>?
     private var lastHookRefresh = Date.distantPast
+
+    /// The snapshot runs git in the session's repository, off the main
+    /// thread; the first checkpoint of a session is logged, the rest are
+    /// quiet (one per prompt would drown the Activity pane). A failure
+    /// is logged once per session too.
+    private var checkpointed: Set<String> = []
+    private func recordCheckpoint(sessionId: String, cwd: String, subject: String) {
+        let first = !checkpointed.contains(sessionId)
+        checkpointed.insert(sessionId)
+        let repo = (cwd as NSString).lastPathComponent
+        Task.detached(priority: .utility) { [weak self] in
+            do {
+                guard let made = try Checkpoints.snapshot(cwd: cwd, sessionId: sessionId, subject: subject) else { return }
+                if first {
+                    await MainActor.run { self?.logEvent("other", icon: "clock.arrow.2.circlepath",
+                                                         "checkpointing \(repo) — \(made.subject)") }
+                }
+            } catch {
+                if first {
+                    await MainActor.run { self?.logEvent("other", icon: "exclamationmark.triangle",
+                                                         "checkpoint of \(repo) failed: \(error)") }
+                }
+            }
+        }
+    }
     static let hookRefreshSpacing: TimeInterval = 30
 
     func notify(_ body: String) {
@@ -788,6 +872,7 @@ final class AppModel: ObservableObject {
         pushRevived = defaults.object(forKey: "push_revived") as? Bool ?? true
         machineNameOverride = defaults.string(forKey: MachineName.overrideKey) ?? ""
         sessionHost = defaults.string(forKey: "session_host") ?? "auto"
+        checkpointsEnabled = defaults.object(forKey: "checkpoints_enabled") as? Bool ?? true
         menuBarThemed = defaults.object(forKey: "menubar_themed") as? Bool ?? true
         menuBarEffects = defaults.object(forKey: "menubar_effects") as? Bool ?? true
         if playground {
@@ -908,6 +993,7 @@ final class AppModel: ObservableObject {
         pushRevived = defaults.object(forKey: "push_revived") as? Bool ?? true
         machineNameOverride = defaults.string(forKey: MachineName.overrideKey) ?? ""
         sessionHost = defaults.string(forKey: "session_host") ?? "auto"
+        checkpointsEnabled = defaults.object(forKey: "checkpoints_enabled") as? Bool ?? true
         menuBarThemed = defaults.object(forKey: "menubar_themed") as? Bool ?? true
         menuBarEffects = defaults.object(forKey: "menubar_effects") as? Bool ?? true
     }
@@ -1068,14 +1154,62 @@ final class AppModel: ObservableObject {
             let verb = request.resume == nil ? "started" : "resumed"
             let born = request.profile.map { " (profile \($0))" } ?? ""
             Task { @MainActor in
+                if reply.outcome == "started", let pid = reply.pid, let birth = SessionBirth(request: request) {
+                    self?.recordBirth(pid: pid, birth)
+                }
                 self?.logMirrorInput(reply.outcome == "started" ? "🚀" : "⚠️",
                                      "phone \(verb) a session in \(label)\(born): \(reply.outcome)\(reply.host.map { " via \($0)" } ?? "")")
             }
             return reply
         }
+        // A session's hook mode (#163 phase 2) is remembered in its birth
+        // across a relaunch, but the hook answers from ToolApprovals'
+        // memory — reseed it, or the chip would promise a mode the hook
+        // no longer grants.
+        let live = ClaudeSessions.list(claudeDir: ClaudeSessions.configHome())
+        for (pid, birth) in sessionBirths {
+            guard let record = live.first(where: { Int($0.pid) == pid }), birth.sessionId == record.sessionId else { continue }
+            if let mode = birth.hookMode { toolApprovals.setMode(mode, sessionId: record.sessionId) }
+            for rule in profileAllowRules(birth) { toolApprovals.add(rule, sessionId: record.sessionId) }
+        }
         mirrorServer.pastSessions.set { limit, search in
             PastSessions.Reply(sessions: PastSessions.list(claudeDir: ClaudeSessions.configHome(),
                                                            limit: limit, search: search))
+        }
+        // The phone's checkpoint routes (#167 phase 2) act on the live
+        // session's record — the same lookup `infinitusctl checkpoints`
+        // makes; an unknown pid is a 404.
+        let session: @Sendable (Int32) -> ClaudeSessionRecord? = { pid in
+            ClaudeSessions.list(claudeDir: ClaudeSessions.configHome()).first { $0.pid == pid }
+        }
+        mirrorServer.checkpoints.set(.init(
+            list: { pid in
+                guard let record = session(pid) else { return nil }
+                let list = (try? Checkpoints.list(cwd: record.cwd, sessionId: record.sessionId)) ?? []
+                return Checkpoints.Reply(sessionId: record.sessionId, cwd: record.cwd, checkpoints: list)
+            },
+            diff: { pid, n, m in
+                guard let record = session(pid) else { return nil }
+                return try? Checkpoints.diff(cwd: record.cwd, sessionId: record.sessionId, from: n, to: m)
+            },
+            restore: { [weak self] pid, n in
+                guard let record = session(pid) else { return nil }
+                do {
+                    let (restored, backup) = try Checkpoints.restore(cwd: record.cwd, sessionId: record.sessionId, n: n)
+                    Task { @MainActor in
+                        self?.logEvent("other", icon: "clock.arrow.2.circlepath",
+                                       "phone restored \((record.cwd as NSString).lastPathComponent) to checkpoint \(restored.subject)")
+                    }
+                    return Checkpoints.RestoreReply(outcome: "restored", backup: backup?.n)
+                } catch {
+                    return Checkpoints.RestoreReply(outcome: "failed", detail: "\(error)")
+                }
+            }))
+        // The phone's Team tab (spec §9 step 8) — every call lands on the
+        // main actor, where TeamModel lives.
+        mirrorServer.teamMirror.set { [weak self] request in
+            guard let team = await MainActor.run(body: { self?.team }) else { return nil }
+            return await TeamMirrorHandler.reply(request, team: team)
         }
         team.gate = { [weak self] in TeamGate.check(lockEnabled: self?.lock.enabled) }
         team.sources = { [weak self] in self?.teamSources() ?? TeamPublisher.Sources(projectsDir: URL(fileURLWithPath: "/nonexistent"), home: NSHomeDirectory()) }
@@ -1201,6 +1335,17 @@ final class AppModel: ObservableObject {
             else {
                 Task { @MainActor in self?.logMirrorInput("⚠️", "phone input not delivered: unknown session") }
                 return SessionInput.Reply(outcome: "rejected", detail: "session ended")
+            }
+            // A mode change never reaches the terminal: it is the Mac's
+            // own state, decided on the main actor (the births live
+            // there). This queue never blocks main, so a hop is safe.
+            if request.kind == .mode {
+                return DispatchQueue.main.sync {
+                    MainActor.assumeIsolated {
+                        self?.setSessionMode(request.text, pid: Int(pid), record: record)
+                            ?? SessionInput.Reply(outcome: "rejected", detail: "app is shutting down")
+                    }
+                }
             }
             // "Allow for this session": remember the rule for the plugin's
             // PreToolUse hook, then answer the prompt on screen with Yes.
@@ -1827,9 +1972,15 @@ final class AppModel: ObservableObject {
             // Unbundled dev runs are a bare executable — `open` on its
             // directory would just raise Finder.
             let exe = Bundle.main.executablePath ?? ""
+            // applicationShouldTerminate can hold quit up to
+            // TeamModel.quitBound (5s) for a team's now.json delete, so a
+            // fixed sleep can no longer be trusted to outlast this
+            // process — wait for the pid to actually exit instead.
+            let pid = ProcessInfo.processInfo.processIdentifier
+            let wait = "while /bin/kill -0 \(pid) 2>/dev/null; do sleep 0.1; done; "
             let cmd = bundle.hasSuffix(".app")
-                ? "sleep 0.8; /usr/bin/open \"\(bundle)\""
-                : "sleep 0.8; exec \"\(exe)\""
+                ? wait + "/usr/bin/open \"\(bundle)\""
+                : wait + "exec \"\(exe)\""
             p.arguments = ["-c", cmd]
             try? p.run()
             await MainActor.run { NSApplication.shared.terminate(nil) }
@@ -2045,7 +2196,8 @@ final class AppModel: ObservableObject {
                                             stats: stats,
                                             pushesAlerts: self.liveActivityPusher.configured,
                                             app: appInfo, team: teamSnapshot,
-                                            profiles: self.sessionProfiles.profiles)
+                                            profiles: self.sessionProfiles.profiles,
+                                            births: self.sessionBirths)
             }
         }
         // All-limited: count the limit-stopped sessions waiting to be
@@ -2196,10 +2348,8 @@ final class AppModel: ObservableObject {
         quickTunnel.stop()
         namedTunnel.stop()
         let supervisor = supervisor
-        let team = team
         Task {
             await supervisor?.stop()
-            await team.quit()   // spec §7: now.json goes on quit (bounded)
             await MainActor.run { NSApplication.shared.terminate(nil) }
         }
     }

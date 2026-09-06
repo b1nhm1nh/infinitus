@@ -37,6 +37,8 @@ targets:
         # Scanning the Mac's pairing QR (#9 remote access) and taking a
         # photo to attach to a session message.
         NSCameraUsageDescription: Infinitus scans the pairing QR your Mac shows, and takes photos you attach to a session message.
+        # The Team tab's own lock (spec §2.2), Settings › Team.
+        NSFaceIDUsageDescription: Infinitus unlocks the Team tab with Face ID.
         # PhotosPicker attachments on a message (2026-09-03 "add features
         # to allow attachments").
         NSPhotoLibraryUsageDescription: Infinitus attaches photos you pick to a message sent into a session, and offers screenshots you just took for one-tap sending.

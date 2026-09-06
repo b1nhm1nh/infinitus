@@ -19,9 +19,12 @@ public struct TeamInvites: Codable, Equatable, Sendable {
     public mutating func consume(_ nonce: String) { nonces[nonce] = nil }
     public mutating func prune(now: Int) { nonces = nonces.filter { $0.value > now } }
 
-    public func matches(_ request: TeamRequest, now: Int) -> Bool {
-        guard let nonce = request.nonce, let expires = nonces[nonce] else { return false }
-        return expires > now
+    /// The stored nonce this request proves it was invited with (unexpired), or nil.
+    public func matches(_ request: TeamRequest, now: Int) -> String? {
+        guard let proof = request.proof else { return nil }
+        return nonces.first { nonce, expires in
+            expires > now && TeamRequest.proof(nonce: nonce, kid: request.keys.kid) == proof
+        }?.key
     }
 
     public static func file(teamDir: URL) -> URL { teamDir.appendingPathComponent("invites.json") }

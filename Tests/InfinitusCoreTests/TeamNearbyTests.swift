@@ -209,4 +209,39 @@ final class TeamNearbyTests: XCTestCase {
         XCTAssertEqual(status(response), 403)
         XCTAssertEqual(TeamNearby.Store.pending(team: member.config.id, paths: mp), [])
     }
+
+    func testClientVerifiesTheLeaderKeyBeforeSendingAndWritesTheBranchWhenItHoldsTheCredential() throws {
+        let remote = try makeRemote()
+        let (lp, ls) = machine("leader")
+        let (jp, js) = machine("joiner")
+        let leader = try TeamClient.create(name: "Papaya", remote: remote, token: nil, paths: lp, secrets: ls, now: 1_000)
+        let local = TeamNearby.Local.load(name: "Loc", discoverable: true, paths: lp, secrets: ls)
+        let endpoint = TeamNearby.Endpoint(local: local) { try TeamNearby.Store.save($0, paths: lp, secrets: ls) }
+        let peer = TeamNearby.Peer(name: "Loc", host: "leader.local", port: 1, kid: leader.identity.kid,
+                                   team: leader.config.id, role: "leader", discoverable: true)
+        // An HTTP function that routes into TeamNearby.respond — no sockets.
+        var posted = 0
+        let http: TeamNearby.Client.HTTP = { method, _, _, path, body in
+            if method == "POST" { posted += 1 }
+            let reply = TeamNearby.respond(MirrorTransport.Request(method: method, target: path, headers: [:], body: body ?? Data()), endpoint: endpoint)
+            let parsed = try XCTUnwrap(reply.flatMap(MirrorTransport.parseResponse))
+            return (parsed.status, parsed.body)
+        }
+        let out = try TeamNearby.Client.request(to: peer, name: "Bo", devices: ["Linux"], platform: "linux", paths: jp, secrets: js, http: http, now: 1_010)
+        XCTAssertEqual(out.stored, "branch")
+        XCTAssertEqual(posted, 1)
+        _ = try leader.fetch()
+        XCTAssertEqual(try leader.requests().map(\.doc.name), ["Bo"])
+
+        // A peer whose TXT kid is not what /team/key answers: nothing is posted.
+        var liar = peer; liar.kid = TeamIdentity.random().kid
+        posted = 0
+        XCTAssertThrowsError(try TeamNearby.Client.request(to: liar, name: "Bo", devices: [], platform: "linux", paths: jp, secrets: js, http: http)) {
+            guard case TeamNearby.Client.ClientError.keyMismatch = $0 else { return XCTFail("\($0)") }
+        }
+        XCTAssertEqual(posted, 0)
+        // A member peer leads no team.
+        var member = peer; member.role = "member"
+        XCTAssertThrowsError(try TeamNearby.Client.request(to: member, name: "Bo", devices: [], platform: "linux", paths: jp, secrets: js, http: http))
+    }
 }

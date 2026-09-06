@@ -228,3 +228,68 @@ public enum TeamNearby {
         }
     }
 }
+
+extension TeamNearby {
+    /// One discovered machine (spec §6.4): its TXT record and address.
+    public struct Peer: Codable, Equatable, Sendable, Identifiable {
+        public var name: String
+        public var host: String
+        public var port: UInt16
+        public var kid: String?
+        public var team: String?
+        public var role: String
+        public var discoverable: Bool
+        public var id: String { kid ?? host + ":" + String(port) }
+        public init(name: String, host: String, port: UInt16, kid: String?, team: String?, role: String, discoverable: Bool) {
+            self.name = name; self.host = host; self.port = port; self.kid = kid; self.team = team; self.role = role; self.discoverable = discoverable
+        }
+    }
+
+    /// The joiner's side of §6.4, shared by the CLI and the Mac pane so
+    /// the "is the peer who its TXT says" check lives once. HTTP is
+    /// injected: the CLI blocks on URLSession, tests route into
+    /// `respond`, and the pane runs on its own queue.
+    public enum Client {
+        public typealias HTTP = @Sendable (_ method: String, _ host: String, _ port: UInt16, _ path: String, _ body: Data?) throws -> (Int, Data)
+        public enum ClientError: Error, Equatable { case notALeader, keyMismatch(Int), refused(Int), unavailable }
+        public struct Outcome: Equatable, Sendable {
+            public var team: String, leader: String, kid: String, stored: String
+        }
+
+        public static func browse(seconds: TimeInterval) throws -> [Peer] {
+            #if os(macOS) || os(Linux)
+            return try MDNS.browse(seconds: seconds).map { peer in
+                let record = NearbyRecord(txtStrings: peer.txt) ?? .hidden
+                let host = peer.ipv4 ?? String(peer.host.dropLast(peer.host.hasSuffix(".") ? 1 : 0))
+                return Peer(name: record.discoverable ? record.name : peer.instance, host: host, port: peer.port,
+                            kid: record.discoverable ? record.kid : nil, team: record.discoverable ? record.team : nil,
+                            role: record.role, discoverable: record.discoverable)
+            }
+            #else
+            // MDNS's sockets are macOS + Linux only (like TeamGit's Process).
+            throw ClientError.unavailable
+            #endif
+        }
+
+        public static func request(to peer: Peer, name: String, devices: [String], platform: String,
+                                   paths: TeamPaths, secrets: TeamSecrets, http: HTTP,
+                                   now: Int = Int(Date().timeIntervalSince1970)) throws -> Outcome {
+            guard peer.role == "leader", let team = peer.team, let kid = peer.kid else { throw ClientError.notALeader }
+            let (keyStatus, keyBody) = try http("GET", peer.host, peer.port, keyPath, nil)
+            guard keyStatus == 200,
+                  let leaderKey = try? CanonicalJSON.decode(KeyReply.self, from: keyBody),
+                  leaderKey.keys.kid == kid else { throw ClientError.keyMismatch(keyStatus) }
+            let me = try TeamClient.identity(paths: paths, secrets: secrets)
+            let signed = try Signed.make(TeamRequest(keys: me.keys, name: name, devices: devices, platform: platform, at: now), by: me)
+            let body = try CanonicalJSON.encode(Request(team: team, request: signed))
+            let (status, replyBody) = try http("POST", peer.host, peer.port, requestPath, body)
+            guard status == 200, let reply = try? CanonicalJSON.decode(RequestReply.self, from: replyBody) else { throw ClientError.refused(status) }
+            var stored = reply.stored
+            if paths.teamIDs().contains(team) {
+                try Store.writeToRequestsBranch(team: team, signed: signed, paths: paths, secrets: secrets)
+                stored = "branch"
+            }
+            return Outcome(team: team, leader: kid, kid: me.kid, stored: stored)
+        }
+    }
+}

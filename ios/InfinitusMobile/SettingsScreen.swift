@@ -15,6 +15,9 @@ struct SettingsForm: View {
     @AppStorage(FleetAlarmCenter.enabledKey) private var fleetAlarms = true
 
     @ObservedObject var model: MirrorModel
+    /// The Team tab's biometric lock (spec §2.2), so the toggle's label
+    /// can name whatever this phone actually has.
+    @ObservedObject private var lock = MobileLock.shared
     /// The QR scanner (#9 remote access) is a sheet, not a screen: it
     /// exists for the ten seconds it takes to pair.
     @State private var scanning = false
@@ -175,6 +178,11 @@ struct SettingsForm: View {
                      + "an exhausted account's limit lifting in 10 minutes, "
                      + "and the account the fleet just swapped to. Needs "
                      + "nothing on the Mac.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            Section("Team") {
+                Toggle("Lock the Team tab with \(lock.methodName)", isOn: $lock.enabled)
+                Text("Joining a team from the phone needs the lock on (the Mac has the same rule).")
                     .font(.caption).foregroundStyle(.secondary)
             }
             AboutSettings(model: model)
