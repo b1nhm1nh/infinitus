@@ -2178,10 +2178,8 @@ final class AppModel: ObservableObject {
         quickTunnel.stop()
         namedTunnel.stop()
         let supervisor = supervisor
-        let team = team
         Task {
             await supervisor?.stop()
-            await team.quit()   // spec §7: now.json goes on quit (bounded)
             await MainActor.run { NSApplication.shared.terminate(nil) }
         }
     }

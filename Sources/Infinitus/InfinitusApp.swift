@@ -44,8 +44,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         AppDelegate.terminating = true
         Lifecycle.log.notice("quit requested by pid \(Lifecycle.quitSenderPID.map(String.init) ?? "self", privacy: .public)")
-        return .terminateNow
+        // Spec §7: `now.json` goes on quit, on EVERY quit — Cmd-Q, logout,
+        // the relaunch path — not only AppModel.shutdown(). Bounded
+        // (TeamModel.quitBound) so a dead remote never holds the quit.
+        guard let team = model?.team, team.inTeam, !AppDelegate.teamQuitDone else { return .terminateNow }
+        AppDelegate.teamQuitDone = true
+        Task { @MainActor in
+            await team.quit()
+            sender.reply(toApplicationShouldTerminate: true)
+        }
+        return .terminateLater
     }
+    static var teamQuitDone = false
 
     /// `open Infinitus.app` on an already-running instance lands here: show
     /// the pinned window. This is the guaranteed way into the UI when the
