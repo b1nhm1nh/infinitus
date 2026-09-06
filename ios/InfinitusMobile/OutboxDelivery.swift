@@ -55,6 +55,10 @@ enum OutboxDelivery {
             case "rejected" where reply.detail == "session ended": return .ended
             default: return .refused(reply.detail.map { "\(reply.outcome) — \($0)" } ?? reply.outcome)
             }
+        } catch MirrorTransportError.http(let code) {
+            // The Mac answered — a rotated pairing token, most likely. Not
+            // "gone", so the item must not retry forever as queued.
+            return .refused("HTTP \(code)")
         } catch {
             return .transport
         }
