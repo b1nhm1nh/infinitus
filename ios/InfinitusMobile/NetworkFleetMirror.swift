@@ -46,11 +46,17 @@ actor NetworkFleetMirror: FleetMirror {
         return digest.prefix(6).map { String(format: "%02x", $0) }.joined()
     }
 
-    nonisolated static var parkedCache: ParkedCache {
+    /// The disk cache root for one Mac's key — `parked/<token hash>/`
+    /// under App Support, the primary's and every other Mac's alike
+    /// (#144 phase 3).
+    nonisolated static func parkedCache(key: String) -> ParkedCache {
         let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
             ?? FileManager.default.temporaryDirectory
-        return ParkedCache(root: support.appendingPathComponent("parked").appendingPathComponent(parkedKey()))
+        return ParkedCache(root: support.appendingPathComponent("parked").appendingPathComponent(key))
     }
+
+    /// The primary Mac's cache.
+    nonisolated static var parkedCache: ParkedCache { parkedCache(key: parkedKey()) }
 
     /// True when the last `latest()` answered from the cache because no
     /// route reached the Mac — the phone is "parked".
@@ -102,7 +108,7 @@ actor NetworkFleetMirror: FleetMirror {
     private let onLastGood: (@Sendable (String) -> Void)?
     /// #168: disk cache for the primary Mac. `ParkedCache` keeps an
     /// in-memory "last saved" marker, so this actor holds ONE instance;
-    /// other Macs stay read-only in phase 1 (`nil`). `var` so
+    /// each other Mac's instance holds its own (#144 phase 3). `var` so
     /// `forgetCached()` can re-resolve it against a new pairing token.
     private var parked: ParkedCache?
 
@@ -119,7 +125,8 @@ actor NetworkFleetMirror: FleetMirror {
     init(pairing: MacPairing, onLastGood: (@Sendable (String) -> Void)? = nil) {
         storage = .pairing(pairing)
         self.onLastGood = onLastGood
-        parked = nil
+        parked = Self.parkedCache(key: Self.parkedKey(token: pairing.token))
+        cached = parked?.loadSnapshot()
         // The default line above is about Bonjour, which this instance
         // never uses — the Settings caption would otherwise say so
         // before the first fetch even runs.
@@ -133,9 +140,16 @@ actor NetworkFleetMirror: FleetMirror {
     func forgetCached() {
         cached = nil
         parked?.clear()
-        // The primary just changed underneath this instance — `parkedKey()`
-        // now hashes a different token, so the cache must move with it.
-        parked = Self.parkedCache
+        // The pairing changed underneath this instance — re-resolve the
+        // cache from what this instance authenticates as, never the
+        // primary's key on a per-Mac instance.
+        switch storage {
+        case .defaults: parked = Self.parkedCache
+        case .pairing(let pairing): parked = Self.parkedCache(key: Self.parkedKey(token: pairing.token))
+        }
+        // A promoted Mac's directory is keyed by its token, which is now
+        // the primary's — start from what it already cached (#144 phase 3).
+        cached = parked?.loadSnapshot()
         lastServedFromCache = false
         statusText = "looking for a Mac on this Wi-Fi…"
     }
@@ -332,8 +346,7 @@ actor NetworkFleetMirror: FleetMirror {
         if let stored = try await fetchFromStored(path: path, token: token, timeout: Self.candidateTimeout) {
             data = stored
         } else {
-            startBrowsing()
-            guard let discovered = await firstEndpoint() else { throw MirrorTransportError.timedOut }
+            let discovered = try await discover()
             (data, _) = try await fetch(discovered, path: path, hostHeader: "infinitus",
                                         useTLS: false, token: token, timeout: Self.candidateTimeout)
         }
@@ -375,8 +388,7 @@ actor NetworkFleetMirror: FleetMirror {
         if let stored = try await fetchFromStored(path: path, token: token, timeout: Self.candidateTimeout) {
             data = stored
         } else {
-            startBrowsing()
-            guard let discovered = await firstEndpoint() else { throw MirrorTransportError.timedOut }
+            let discovered = try await discover()
             (data, _) = try await fetch(discovered, path: path, hostHeader: "infinitus",
                                         useTLS: false, token: token, timeout: Self.candidateTimeout)
         }
@@ -421,8 +433,7 @@ actor NetworkFleetMirror: FleetMirror {
             try? parked?.saveTail(feed, pid: pid)
             return feed
         }
-        startBrowsing()
-        guard let discovered = await firstEndpoint() else { throw MirrorTransportError.timedOut }
+        let discovered = try await discover()
         let (data, _) = try await fetch(discovered, path: path, hostHeader: "infinitus",
                                         useTLS: false, token: token, timeout: Self.candidateTimeout)
         let feed = try Self.decodeFeed(data)
@@ -444,8 +455,7 @@ actor NetworkFleetMirror: FleetMirror {
         if let data = try await fetchFromStored(path: path, token: token, timeout: Self.candidateTimeout) {
             return data
         }
-        startBrowsing()
-        guard let discovered = await firstEndpoint() else { throw MirrorTransportError.timedOut }
+        let discovered = try await discover()
         let (data, _) = try await fetch(discovered, path: path, hostHeader: "infinitus",
                                         useTLS: false, token: token, timeout: Self.candidateTimeout)
         return data
@@ -455,6 +465,17 @@ actor NetworkFleetMirror: FleetMirror {
     /// own loop — `nil` means none of them answered for network reasons;
     /// a bad pairing token still throws, since that's equally actionable
     /// for either caller.
+    /// The Bonjour last resort for an RPC whose stored endpoints all
+    /// failed — for the primary only. A per-Mac pairing would otherwise
+    /// reach whichever Mac answers the browse (the primary, with the
+    /// wrong token: a 401 instead of "couldn't reach it" — #215).
+    private func discover() async throws -> NWEndpoint {
+        guard storage.isDefaults else { throw MirrorTransportError.timedOut }
+        startBrowsing()
+        guard let discovered = await firstEndpoint() else { throw MirrorTransportError.timedOut }
+        return discovered
+    }
+
     private func fetchFromStored(path: String, token: String, timeout: TimeInterval,
                                  method: String = "GET", body: Data? = nil) async throws -> Data? {
         for text in candidateEndpoints() {
@@ -513,8 +534,7 @@ actor NetworkFleetMirror: FleetMirror {
                                         useTLS: manual.useTLS, token: token,
                                         timeout: timeout, method: "POST", body: body)
         } else {
-            startBrowsing()
-            guard let discovered = await firstEndpoint() else { throw MirrorTransportError.timedOut }
+            let discovered = try await discover()
             (data, _) = try await fetch(discovered, path: path, hostHeader: "infinitus",
                                         useTLS: false, token: token, timeout: timeout,
                                         method: "POST", body: body)
@@ -556,8 +576,7 @@ actor NetworkFleetMirror: FleetMirror {
         if let stored = try await fetchFromStored(path: path, token: token, timeout: timeout) {
             data = stored
         } else {
-            startBrowsing()
-            guard let discovered = await firstEndpoint() else { throw MirrorTransportError.timedOut }
+            let discovered = try await discover()
             (data, _) = try await fetch(discovered, path: path, hostHeader: "infinitus",
                                         useTLS: false, token: token, timeout: timeout)
         }
@@ -586,6 +605,32 @@ actor NetworkFleetMirror: FleetMirror {
         try await postJSON(TeamMirror.codePath, body: TeamMirror.CodeRequest(days: days, invite: invite), timeout: 60)
     }
 
+    // Nearby (spec §6.4): the Mac's LAN lists and the actions on them.
+    func teamNearby() async throws -> TeamMirror.NearbyReply { try await teamGet(TeamMirror.nearbyPath) }
+    // The Mac browses mDNS for 2 s before it answers, so this waits like
+    // an action rather than like a read.
+    func teamNearbyScan() async throws -> TeamMirror.NearbyReply {
+        try await postJSON(TeamMirror.nearbyScanPath, body: TeamMirror.Empty(), timeout: 20)
+    }
+    // request / invite / accept do a git fetch + push on the Mac: 60 s,
+    // like join and approve. pull and ignore are cheaper but share the
+    // same serial queue behind them.
+    func teamNearbyRequest(kid: String, name: String) async throws -> TeamMirror.ActionReply {
+        try await postJSON(TeamMirror.nearbyRequestPath, body: TeamMirror.NearbyJoinRequest(kid: kid, name: name), timeout: 60)
+    }
+    func teamNearbyInvite(kid: String) async throws -> TeamMirror.ActionReply {
+        try await postJSON(TeamMirror.nearbyInvitePath, body: TeamMirror.KidRequest(kid: kid), timeout: 60)
+    }
+    func teamNearbyPull(kid: String) async throws -> TeamMirror.ActionReply {
+        try await postJSON(TeamMirror.nearbyPullPath, body: TeamMirror.KidRequest(kid: kid), timeout: 60)
+    }
+    func teamNearbyAccept(fromKid: String, name: String) async throws -> TeamMirror.ActionReply {
+        try await postJSON(TeamMirror.nearbyAcceptPath, body: TeamMirror.InviteAccept(fromKid: fromKid, name: name), timeout: 60)
+    }
+    func teamNearbyIgnore(fromKid: String) async throws -> TeamMirror.ActionReply {
+        try await postJSON(TeamMirror.nearbyIgnorePath, body: TeamMirror.KidRequest(kid: fromKid), timeout: 60)
+    }
+
     private func postJSON<B: Encodable, R: Decodable>(_ path: String, body: B,
                                                       timeout: TimeInterval = NetworkFleetMirror.inputTimeout) async throws -> R {
         let token = pairToken()
@@ -599,8 +644,7 @@ actor NetworkFleetMirror: FleetMirror {
                                         useTLS: manual.useTLS, token: token,
                                         timeout: timeout, method: "POST", body: payload)
         } else {
-            startBrowsing()
-            guard let discovered = await firstEndpoint() else { throw MirrorTransportError.timedOut }
+            let discovered = try await discover()
             (data, _) = try await fetch(discovered, path: path, hostHeader: "infinitus",
                                         useTLS: false, token: token, timeout: timeout,
                                         method: "POST", body: payload)

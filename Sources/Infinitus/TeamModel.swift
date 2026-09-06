@@ -49,6 +49,9 @@ final class TeamModel: ObservableObject {
     @Published private(set) var roster: Signed<TeamRoster>?
     /// A 2 s LAN browse's discoverable results (spec §6.4), on demand only.
     @Published private(set) var nearby: [TeamNearby.Peer] = []
+    /// Invitations this Mac has been sent over the LAN (spec §6.4), each
+    /// still sealed; the link inside is opened only by `acceptInvite`.
+    @Published private(set) var invites: [TeamNearby.Invite] = []
     /// Leaders: LAN requests parked under the team (never reached the requests branch).
     @Published private(set) var pendingNearby: [Signed<TeamRequest>] = []
     @Published private(set) var scanning = false
@@ -360,6 +363,16 @@ final class TeamModel: ObservableObject {
             let peers = try await run { _, _ in try TeamNearby.Client.browse(seconds: 2) }
             nearby = peers.filter { $0.discoverable && $0.kid != me }
         } catch { lastError = Self.mask(error) }
+        await loadInvites()
+    }
+
+    /// An invitation can land while the pane sits open and nothing else
+    /// reads that directory, so the Nearby scan refreshes it too. A file
+    /// read on the team queue, no network.
+    func loadInvites() async {
+        guard enabled else { return }
+        do { invites = try await run { paths, _ in TeamNearby.Store.invites(paths: paths) } }
+        catch { lastError = Self.mask(error) }
     }
 
     func requestNearby(_ peer: TeamNearby.Peer, name: String) async {
@@ -406,6 +419,42 @@ final class TeamModel: ObservableObject {
             let pendingFile = TeamNearby.Store.pendingDir(team: client.config.id, paths: paths).appendingPathComponent("\(signed.doc.keys.kid).json")
             try? FileManager.default.removeItem(at: pendingFile)
         }
+    }
+
+    /// Leader: seal an invite link to a discoverable peer and POST it
+    /// (spec §6.4). Not gated — minting an invite is not gated either
+    /// (`mintInvite`); the pane disables the button when the lock is off,
+    /// the same shape the Invite section uses.
+    func inviteNearby(_ peer: TeamNearby.Peer) async {
+        let machine = Host.current().localizedName ?? "Mac"
+        await action("Inviting \(peer.name)…") { paths, secrets in
+            _ = try TeamNearby.Client.invite(to: peer, fromName: machine, paths: paths, secrets: secrets,
+                                             http: Self.blockingHTTP)
+        }
+    }
+
+    /// Accepting an invitation IS joining (spec §2.2 gate): open the
+    /// sealed link with this machine's identity, request with the text
+    /// exactly as sealed, then drop the invitation file. The leader
+    /// auto-approves it — the nonce is one it minted.
+    func acceptInvite(_ invite: TeamNearby.Invite, name: String) async {
+        guard gated() else { return }
+        let device = Host.current().localizedName ?? "Mac"
+        await action("Accepting…") { paths, secrets in
+            let me = try TeamClient.identity(paths: paths, secrets: secrets)
+            let opened = try TeamNearby.openInvite(invite, identity: me)
+            _ = try TeamClient.request(code: opened.text, name: name, devices: [device], platform: "macos",
+                                       paths: paths, secrets: secrets)
+            try TeamNearby.Store.removeInvite(from: invite.from.kid, paths: paths)
+        }
+        await loadInvites()
+    }
+
+    func ignoreInvite(_ invite: TeamNearby.Invite) async {
+        await action("Ignoring…") { paths, _ in
+            try TeamNearby.Store.removeInvite(from: invite.from.kid, paths: paths)
+        }
+        await loadInvites()
     }
 
     // MARK: policy + aggregates (spec §8.3)
@@ -586,20 +635,14 @@ final class TeamModel: ObservableObject {
     }
 
     /// An invite link (spec §6.2): a code with a one-time nonce this
-    /// leader remembers and auto-approves.
+    /// leader remembers and auto-approves. `TeamInvites.mint` is the same
+    /// call a LAN invite makes (spec §6.4), so both write one book.
     func mintInvite(days: Int) async {
         var minted: String?
         await action("Making an invite…") { paths, secrets in
             guard let client = try Self.openClient(paths, secrets) else { throw TeamClient.ClientError.notInTeam }
             _ = try client.fetch()
-            let nonce = TeamInvites.newNonce()
-            let expires = Int(Date().timeIntervalSince1970) + days * 86_400
-            let dir = paths.teamDir(client.config.id)
-            var book = TeamInvites.load(teamDir: dir)
-            book.prune(now: Int(Date().timeIntervalSince1970))
-            book.add(nonce: nonce, expires: expires)
-            try book.save(teamDir: dir)
-            minted = try client.code(expiresIn: days * 86_400, nonce: nonce)
+            minted = try TeamInvites.mint(client: client, teamDir: paths.teamDir(client.config.id), days: days)
         }
         if let minted { code = minted }
     }

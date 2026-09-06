@@ -156,8 +156,7 @@ struct SettingsForm: View {
             } header: {
                 Text("Other Macs")
             } footer: {
-                Text("Scan another Mac's QR to add it; only the primary Mac gets "
-                     + "chats, approvals, widgets and Live Activities in this version.")
+                Text("Scan another Mac's QR to add it; widgets and Live Activities follow the primary Mac.")
             }
             DictationSettings()
             ScreenshotSettings()
@@ -217,6 +216,9 @@ struct SettingsForm: View {
         guard other.snapshot != nil else {
             return other.status.isEmpty ? "looking for this Mac…" : other.status
         }
+        if other.parked, let seen = other.snapshot?.capturedAt {
+            return "parked — last seen \(seen.formatted(.relative(presentation: .named)))"
+        }
         let sessions = other.fleets.reduce(0) { $0 + ($1.liveSessions?.total ?? 0) }
         return "\(other.fleets.count) fleet\(other.fleets.count == 1 ? "" : "s") · "
             + "\(sessions) session\(sessions == 1 ? "" : "s")"
@@ -255,6 +257,15 @@ struct ThemePreviewRow: View {
                       remaining: 62, dividers: (1..<5).map { Double($0) * 20 })
                 gauge(label: theme.weeklyLabel, color: theme.weeklyColor,
                       remaining: 38, dividers: (1..<7).map { Double($0) * 100 / 7 })
+            }
+            HStack(spacing: 4) {
+                if let glyph = theme.rateGlyph {
+                    Text(PopupGlyph.text(glyph)).font(PopupFont.caption)
+                } else {
+                    Image(systemName: "bolt.horizontal.fill").font(PopupFont.caption).foregroundStyle(.yellow)
+                }
+                Text(TokenRate(perMinute: 1200, peakPerMinute: 1200).label(theme: theme))
+                    .font(PopupFont.caption).foregroundStyle(.secondary).monospacedDigit()
             }
         }
         .padding(.vertical, 2)

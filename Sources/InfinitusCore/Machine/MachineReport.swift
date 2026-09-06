@@ -50,8 +50,13 @@ public struct MachineReport: Equatable, Sendable, Codable {
     ///   leaves a pile that grows every session start).
     /// - pipSpawner: the hook owner whose process tree holds a running
     ///   pip, when one is known.
+    /// - pipTarget: where the last pip seen was installing (`pipInstallTarget`)
+    ///   — the venv names the culprit when the pip was spawned detached
+    ///   and no hook tree holds it (security-guidance's SDK bootstrap,
+    ///   2026-09-06: "a hook" told the user nothing).
     public static func warnings(sample: MachineSample, hooks: [Hook], newcomers: [HookRegistration],
-                                tempGrowthPerHour: [String: Double] = [:], pipSpawner: String? = nil) -> [String] {
+                                tempGrowthPerHour: [String: Double] = [:], pipSpawner: String? = nil,
+                                pipTarget: String? = nil) -> [String] {
         var out: [String] = []
         for hook in newcomers {
             out.append("new hook: \(hook.owner) on \(hook.event) (\(hook.source.label))")
@@ -71,8 +76,8 @@ public struct MachineReport: Equatable, Sendable, Codable {
         out += fanOut(hooks)
         let pipGrowth = (tempGrowthPerHour["pip"] ?? 0) + (tempGrowthPerHour["python"] ?? 0)
         if pipGrowth >= retryLoopPerHour {
-            let who = pipSpawner.map { "\($0)'s hook" } ?? "a hook"
-            out.append("\(who) keeps re-running pip install — \(Int(pipGrowth)) new temp dirs per hour")
+            let who = pipSpawner.map { "\($0)'s hook" } ?? pipTarget.map { "a hook installing into \($0)" } ?? "a hook"
+            out.append("\(who) keeps re-running pip install — \(Int(pipGrowth)) new temp dirs per hour; its installs die and get retried")
         }
         return out
     }
@@ -95,7 +100,8 @@ public struct MachineReport: Equatable, Sendable, Codable {
     /// the pane keeps showing every warning).
     public enum WarningKind: Equatable, Sendable { case hooks, temp, other }
     public static func warningKind(_ warning: String) -> WarningKind {
-        if warning.hasPrefix("new hook:") || warning.contains(" instances (") || warning.contains(" commands on every ") { return .hooks }
+        if warning.hasPrefix("new hook:") || warning.contains(" instances (") || warning.contains(" commands on every ")
+            || warning.contains("keeps re-running pip install") { return .hooks }
         if warning.hasPrefix("temp directory") { return .temp }
         return .other
     }
@@ -105,6 +111,21 @@ public struct MachineReport: Equatable, Sendable, Codable {
         guard let by else { return "" }
         let parts = by.filter { $0.value >= 100 }.sorted { $0.value > $1.value }.map { "\($0.key) \($0.value)" }
         return parts.isEmpty ? "" : " (" + parts.joined(separator: ", ") + ")"
+    }
+
+    /// Where a running pip is installing: `--target <dir>`, else the venv
+    /// its interpreter lives in (`<venv>/bin/python -m pip install …`);
+    /// `home` is abbreviated to `~`. Nil when no row runs a pip install.
+    public static func pipInstallTarget(rows: [ProcessRow], home: String = NSHomeDirectory()) -> String? {
+        for row in rows where row.command.contains("pip install") {
+            let words = row.command.split(separator: " ").map(String.init)
+            var target: String?
+            if let i = words.firstIndex(of: "--target"), i + 1 < words.count { target = words[i + 1] }
+            else if let first = words.first, let range = first.range(of: "/bin/python") { target = String(first[..<range.lowerBound]) }
+            guard let target, !target.isEmpty else { continue }
+            return target.hasPrefix(home + "/") ? "~" + target.dropFirst(home.count) : target
+        }
+        return nil
     }
 
     /// One owner registering several commands under the same event and
