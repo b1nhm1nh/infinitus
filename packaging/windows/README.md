@@ -35,7 +35,10 @@ Paste the code, then Ctrl-Z and Enter. `infinitusctl team status` shows
 where you stand; a leader approves from the Mac, the phone or
 `infinitusctl team approve <kid>`. On a trusted LAN, `infinitusctl team
 nearby` and `infinitusctl team request --nearby <kid> --name "Your Name"`
-skip the code.
+skip the code — or let the leader invite you: `infinitusctl team
+nearby invite <kid|name>` on their end, then `infinitusctl team invites`
+to see it and `infinitusctl team accept <kid> --name "Your Name"` to
+join (`infinitusctl team ignore <kid>` deletes it instead).
 
 ## Sync on a timer
 
@@ -62,12 +65,13 @@ that lands on a moved remote pulls and pushes again by itself.
 ## What you control
 
 ```
-infinitusctl team share transcripts leaders
+infinitusctl team share transcripts off
 infinitusctl team exclude C:\work\private-repo
 infinitusctl team members --period week
 infinitusctl team identity recovery --show
 ```
 
-The kinds are `stats`, `now`, `sessions`, `transcripts` and `crashes`.
-`infinitusctl team --help` lists every subcommand; the Mac README's Team
-section walks the whole flow.
+The kinds are `stats`, `now`, `sessions`, `transcripts` and `crashes`;
+`off` keeps a kind on this machine entirely. `infinitusctl team --help`
+lists every subcommand; the Mac README's Team section walks the whole
+flow.

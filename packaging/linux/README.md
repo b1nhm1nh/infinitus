@@ -43,6 +43,12 @@ infinitusctl team nearby                                  # list machines
 infinitusctl team request --nearby <kid> --name "Your Name"
 ```
 
+Or let the leader come to you: they run `infinitusctl team nearby
+invite <kid|name> [--days N]` against your discoverable machine, you
+list it with `infinitusctl team invites`, then `infinitusctl team
+accept <kid> --name "Your Name"` joins (`infinitusctl team ignore <kid>`
+deletes it instead).
+
 The biometric lock the Mac and the phone gate joining behind has no
 Linux counterpart yet, so the CLI is open here by design.
 
@@ -71,14 +77,14 @@ A laptop that logs out should keep the timer alive with
 ## What you control
 
 ```sh
-infinitusctl team share transcripts leaders   # or: team, or <kid>[,<kid>…]
+infinitusctl team share transcripts off       # or: leaders, team, <kid>[,<kid>…]
 infinitusctl team exclude ~/work/private-repo # never published, local only
 infinitusctl team members --period week       # what teammates share with you
 infinitusctl team identity recovery --show    # keep this offline
 ```
 
-The kinds are `stats`, `now`, `sessions`, `transcripts` and `crashes`.
-Narrowing an audience only affects new envelopes — it cannot recall
-ciphertext teammates already fetched. `infinitusctl team --help` lists
-every subcommand. Leaving a team is a Mac action today (Settings › Team
-› Leave).
+The kinds are `stats`, `now`, `sessions`, `transcripts` and `crashes`;
+`off` keeps a kind on this machine entirely. Narrowing an audience only
+affects new envelopes — it cannot recall ciphertext teammates already
+fetched. `infinitusctl team --help` lists every subcommand. Leaving a
+team is a Mac action today (Settings › Team › Leave).
