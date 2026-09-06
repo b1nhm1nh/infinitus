@@ -9,6 +9,12 @@ import InfinitusCore
 /// snapshot. No timer: `refreshIfStale` rides AppModel's refresh tick
 /// (like StatsModel) and does a fetch + publish at most every 300 s.
 /// One team per Mac in the pane (several teams stay CLI-only, `--team`).
+/// The transcript picker's state, read in one pass on the team queue.
+private struct TranscriptPicker: Sendable, Equatable {
+    var choices = TeamTranscriptChoices()
+    var recent: [TeamPublisher.TranscriptSession] = []
+}
+
 @MainActor
 final class TeamModel: ObservableObject {
     static let paneTitle = "Team"
@@ -25,8 +31,16 @@ final class TeamModel: ObservableObject {
     /// The most recent publish pass's report (loop or `publishNow`); what
     /// `team-publish` replies with.
     @Published private(set) var lastReport: TeamPublisher.Report?
+    /// The running publish's progress (spec §7), or nil when nothing is
+    /// publishing. Set once per source and once per batch, never per chunk.
+    @Published private(set) var progress: TeamPublisher.Progress?
     @Published private(set) var shares = TeamShares()
     @Published private(set) var exclusions = TeamExclusions()
+    /// Spec §7: which sessions' transcripts travel. `recentTranscripts`
+    /// is filled only in `chosen` mode — the scan cache is tens of MB and
+    /// decoding it on every reload for a picker nobody opened is pure IO.
+    @Published private(set) var transcriptChoices = TeamTranscriptChoices()
+    @Published private(set) var recentTranscripts: [TeamPublisher.TranscriptSession] = []
     /// My identity's kid once read (creating it on first use, like the CLI).
     @Published private(set) var kid: String?
     /// From an `infinitus://join/…` link (Task 6): the pane's Join field prefills.
@@ -67,6 +81,8 @@ final class TeamModel: ObservableObject {
     private var loopRunning = false
     private var lastFetchAt: Int?
     private var lastPublishAt: Int?
+    /// Set by `quit()`, read by the publisher between transcript sources.
+    private let stopRequested = OSAllocatedUnfairLock(initialState: false)
 
     init(paths: TeamPaths, makeSecrets: @escaping @Sendable () -> TeamSecrets, defaults: UserDefaults) {
         self.paths = paths
@@ -154,20 +170,28 @@ final class TeamModel: ObservableObject {
         let fetch = lastFetchAt, publish = lastPublishAt, err = lastError
         return Task {
             do {
-                let result: (TeamSnapshot?, TeamReader?, TeamShares, TeamExclusions, String?, Signed<TeamRoster>?, [Signed<TeamRequest>]) = try await run { paths, secrets in
+                let result: (TeamSnapshot?, TeamReader?, TeamShares, TeamExclusions, String?, Signed<TeamRoster>?, [Signed<TeamRequest>], TranscriptPicker) = try await run { paths, secrets in
                     // Non-creating: showing a kid must never mint (and, on
                     // a denied keychain read, clobber) an identity that
                     // exists but the process could not decrypt.
                     let kid = secrets.read(TeamClient.identitySecretName).flatMap { try? TeamIdentity(secret: $0) }?.kid
                     let exclusions = TeamExclusions.load(paths: paths)
-                    guard let client = try Self.openClient(paths, secrets) else { return (nil, nil, TeamShares(), exclusions, kid, nil, []) }
+                    guard let client = try Self.openClient(paths, secrets) else { return (nil, nil, TeamShares(), exclusions, kid, nil, [], TranscriptPicker()) }
+                    let dir = paths.teamDir(client.config.id)
                     let (snap, reader) = try Self.snapshot(client, lastFetch: fetch, lastPublish: publish, lastError: err)
                     let pendingNearby = client.isLeader ? TeamNearby.Store.pending(team: client.config.id, paths: paths) : []
-                    return (snap, reader, TeamShares.load(teamDir: paths.teamDir(client.config.id)), exclusions, kid, client.roster, pendingNearby)
+                    let choices = TeamTranscriptChoices.load(teamDir: dir)
+                    let picker = TranscriptPicker(choices: choices, recent: choices.mode == .chosen
+                        ? TeamPublisher.recentTranscriptSessions(cacheURL: dir.appendingPathComponent("scan-cache.json"),
+                                                                 days: TeamPublisher.Sources.defaultTranscriptDays,
+                                                                 exclusions: exclusions)
+                        : [])
+                    return (snap, reader, TeamShares.load(teamDir: dir), exclusions, kid, client.roster, pendingNearby, picker)
                 }
                 withAnimation(.easeInOut(duration: 0.2)) {
                     snapshot = result.0; reader = result.1; shares = result.2; exclusions = result.3; kid = result.4
                     roster = result.5; pendingNearby = result.6
+                    transcriptChoices = result.7.choices; recentTranscripts = result.7.recent
                 }
             } catch {
                 lastError = Self.mask(error)
@@ -198,6 +222,11 @@ final class TeamModel: ObservableObject {
     private func loop(sources: TeamPublisher.Sources, publish: Bool) async -> Bool {
         let auto = autoApprove
         let aggregatesDue = lastAggregatesAt.map { Int(Date().timeIntervalSince1970) - $0 >= Self.aggregatesInterval } ?? true
+        var sources = sources
+        let stop = stopRequested
+        sources.onProgress = { [weak self] p in Task { @MainActor in self?.progress = p } }
+        sources.shouldStop = { stop.withLock { $0 } }
+        defer { progress = nil }
         do {
             let (fetched, published, report, aggregated) = try await run { paths, secrets in
                 guard let client = try Self.openClient(paths, secrets) else { return (nil as Int?, nil as Int?, nil as TeamPublisher.Report?, false) }
@@ -264,10 +293,14 @@ final class TeamModel: ObservableObject {
     /// this Mac "on". Only when this run published (nothing else put a
     /// `now.json` there — deleting an absent path would push an empty
     /// commit). Bounded: the team queue is serial, so a loop pass mid-push
-    /// could hold this for as long as git does; termination waits at most
+    /// could hold this for as long as git does; the stop flag lets that
+    /// pass return between transcript sources, termination waits at most
     /// `quitBound` and the child dies with the app.
-    static let quitBound: TimeInterval = 5
+    static let quitBound: TimeInterval = 20
     func quit() async {
+        // Before the guard: a first-ever publish is still in flight when
+        // `lastPublishAt` is nil, and it must still see the flag.
+        stopRequested.withLock { $0 = true }
         guard enabled, inTeam, lastPublishAt != nil else { return }
         let paths = self.paths, makeSecrets = self.makeSecrets
         let fired = OSAllocatedUnfairLock(initialState: false)
@@ -470,18 +503,26 @@ final class TeamModel: ObservableObject {
         return true
     }
 
-    /// Wraps a user action: busy label, error capture, reload.
-    private func action(_ label: String, _ work: @escaping @Sendable (TeamPaths, TeamSecrets) throws -> Void) async {
-        guard enabled else { lastError = "team is disabled in this instance"; return }
+    /// Wraps a user action: busy label, error capture, reload. Returns
+    /// THIS call's error, nil when it worked — `lastError` may already
+    /// hold an older one when the call starts, and the reload afterwards
+    /// can put a different one there, so a caller answering one request
+    /// (the phone's `ActionReply`) must use the return value.
+    @discardableResult
+    private func action(_ label: String, _ work: @escaping @Sendable (TeamPaths, TeamSecrets) throws -> Void) async -> String? {
+        guard enabled else { lastError = "team is disabled in this instance"; return lastError }
         busy = label
         defer { busy = nil }
+        var failure: String?
         do {
             try await run(work)
             lastError = nil
         } catch {
-            lastError = Self.mask(error)
+            failure = Self.mask(error)
+            lastError = failure
         }
         await load().value
+        return failure
     }
 
     /// A teammate's session as chat items (decrypted now, off the main actor).
@@ -521,14 +562,16 @@ final class TeamModel: ObservableObject {
         lastLoop = Date()
     }
 
-    func join(code: String, name: String) async {
-        guard gated() else { return }
+    @discardableResult
+    func join(code: String, name: String) async -> String? {
+        guard gated() else { return lastError }
         let code = code.trimmingCharacters(in: .whitespacesAndNewlines)
         let device = Host.current().localizedName ?? "Mac"
-        await action("Requesting to join…") { paths, secrets in
+        let failure = await action("Requesting to join…") { paths, secrets in
             _ = try TeamClient.request(code: code, name: name, devices: [device], platform: "macos", paths: paths, secrets: secrets)
         }
         pendingCode = nil
+        return failure
     }
 
     /// A team code (spec §6.3): no nonce, `days` of validity.
@@ -561,16 +604,18 @@ final class TeamModel: ObservableObject {
         if let minted { code = minted }
     }
 
-    func approve(kid: String) async {
-        guard gated() else { return }
-        await action("Approving…") { paths, secrets in
+    @discardableResult
+    func approve(kid: String) async -> String? {
+        guard gated() else { return lastError }
+        return await action("Approving…") { paths, secrets in
             guard let client = try Self.openClient(paths, secrets) else { throw TeamClient.ClientError.notInTeam }
             _ = try client.fetch()
             try client.approve(kid: kid)
         }
     }
 
-    func decline(kid: String) async {
+    @discardableResult
+    func decline(kid: String) async -> String? {
         await action("Declining…") { paths, secrets in
             guard let client = try Self.openClient(paths, secrets) else { throw TeamClient.ClientError.notInTeam }
             _ = try client.fetch()
@@ -603,6 +648,28 @@ final class TeamModel: ObservableObject {
             var shares = TeamShares.load(teamDir: dir)
             shares.byKind[kind] = target
             try shares.save(teamDir: dir)
+        }
+    }
+
+    /// Local setting (never sent): all recent sessions, or only the picked
+    /// ones. Applies to the next publish; already-published chunks stay.
+    func setTranscriptMode(_ mode: TeamTranscriptChoices.Mode) async {
+        await action("Saving…") { paths, _ in
+            guard let id = Self.teamID(paths) else { throw TeamClient.ClientError.notInTeam }
+            let dir = paths.teamDir(id)
+            var choices = TeamTranscriptChoices.load(teamDir: dir)
+            choices.mode = mode
+            try choices.save(teamDir: dir)
+        }
+    }
+
+    func setTranscript(_ id: String, shared: Bool) async {
+        await action("Saving…") { paths, _ in
+            guard let team = Self.teamID(paths) else { throw TeamClient.ClientError.notInTeam }
+            let dir = paths.teamDir(team)
+            var choices = TeamTranscriptChoices.load(teamDir: dir)
+            if shared { choices.chosen.insert(id) } else { choices.chosen.remove(id) }
+            try choices.save(teamDir: dir)
         }
     }
 

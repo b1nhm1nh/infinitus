@@ -6,12 +6,21 @@ import Foundation
 public struct TeamRoster: Codable, Equatable, Sendable {
     /// Where a member's files of one kind go (spec §1 audiences).
     public enum ShareTarget: Codable, Equatable, Sendable {
+        /// Nobody: the kind stays on this Mac — nothing is chunked,
+        /// sealed, copied to `published/` or re-shared, and `now.json`'s
+        /// `sharesTo` hint does not mention it. Offered for every member
+        /// kind, with consequences worth saying out loud: `now` off makes
+        /// this member look offline to the whole team (there is no live
+        /// state to read), and `stats` off drops them out of every leader
+        /// aggregate and leaderboard.
+        case off
         case leaders, team, members([String])
 
         public init(from decoder: Decoder) throws {
             let c = try decoder.singleValueContainer()
             if let kids = try? c.decode([String].self) { self = .members(kids); return }
             switch try c.decode(String.self) {
+            case "off": self = .off
             case "leaders": self = .leaders
             case "team": self = .team
             case let other: throw DecodingError.dataCorruptedError(in: c, debugDescription: "share target \(other)")
@@ -21,6 +30,7 @@ public struct TeamRoster: Codable, Equatable, Sendable {
         public func encode(to encoder: Encoder) throws {
             var c = encoder.singleValueContainer()
             switch self {
+            case .off: try c.encode("off")
             case .leaders: try c.encode("leaders")
             case .team: try c.encode("team")
             case .members(let kids): try c.encode(kids)
@@ -108,6 +118,7 @@ public struct TeamRoster: Codable, Equatable, Sendable {
     /// The sender is added by `Envelope.seal`.
     public func recipients(for target: ShareTarget) -> [TeamKeys] {
         switch target {
+        case .off: return []
         case .leaders: return leaders.map(\.keys)
         case .team: return everyone.map(\.keys)
         case .members(let kids): return everyone.filter { kids.contains($0.keys.kid) }.map(\.keys)

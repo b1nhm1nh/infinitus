@@ -22,11 +22,12 @@ public struct TeamShares: Codable, Equatable, Sendable {
         try CanonicalJSON.encode(self).write(to: Self.file(teamDir: teamDir), options: .atomic)
     }
 
-    /// The CLI / UI spelling: `leaders`, `team`, or kids separated by
-    /// commas, or as separate arguments.
+    /// The CLI / UI spelling: `off` (or `nobody`), `leaders`, `team`, or kids
+    /// separated by commas, or as separate arguments.
     public static func parseTarget(_ words: [String]) -> TeamRoster.ShareTarget? {
         let kids = words.flatMap { $0.split(separator: ",") }.map(String.init).filter { !$0.isEmpty }
         guard !kids.isEmpty else { return nil }
+        if kids == ["off"] || kids == ["nobody"] { return .off }
         if kids == ["leaders"] { return .leaders }
         if kids == ["team"] { return .team }
         return .members(kids)

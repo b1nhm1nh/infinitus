@@ -26,6 +26,20 @@ final class TeamClientTests: XCTestCase {
         return (paths, FileSecrets(dir: paths.secretsDir))
     }
 
+    /// A create that dies on the remote used to leave `<base>/<id>/store/`
+    /// behind — a config-less directory `teamIDs()` ignores but the user's
+    /// disk keeps (one was still on the 2026-09-06 machine).
+    func testAFailedCreateLeavesNoHalfMadeTeamBehind() throws {
+        let (paths, secrets) = machine("solo")
+        XCTAssertThrowsError(try TeamClient.create(name: "Papaya", remote: "file:///nonexistent/nope.git", token: "t0ken",
+                                                   paths: paths, secrets: secrets, now: 1_000))
+        XCTAssertEqual(paths.teamIDs(), [])
+        let left = ((try? FileManager.default.contentsOfDirectory(atPath: paths.base.path)) ?? []).filter { $0 != "secrets" }
+        XCTAssertEqual(left, [], "no team directory survives a failed create")
+        // The identity is this machine's, not the team's: it stays.
+        XCTAssertEqual(secrets.read(TeamClient.identitySecretName)?.count, 32)
+    }
+
     func testIdentityIsCreatedOnceAndReloaded() throws {
         let (paths, secrets) = machine("a")
         let first = try TeamClient.identity(paths: paths, secrets: secrets)
