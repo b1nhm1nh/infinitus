@@ -2,6 +2,15 @@ import XCTest
 @testable import InfinitusCore
 
 final class SessionFeedTests: XCTestCase {
+    func testUnknownKindDecodesAsOtherInsteadOfFailingTheChunk() throws {
+        let json = #"[{"kind":"user","text":"hi"},{"kind":"held-from-the-future","text":"later"}]"#
+        let items = try JSONDecoder().decode([SessionFeedItem].self, from: Data(json.utf8))
+        XCTAssertEqual(items.map(\.kind), [.user, .other])
+        XCTAssertEqual(items[1].text, "later")
+        let round = try JSONDecoder().decode([SessionFeedItem].self, from: JSONEncoder().encode(items))
+        XCTAssertEqual(round.map(\.kind), [.user, .other])
+    }
+
     func testUserAssistantTextAndBashToolInOrder() {
         let lines = [
             #"{"type":"user","timestamp":"2026-09-01T10:00:00.000Z","message":{"content":"fix the build"}}"#,
