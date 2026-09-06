@@ -34,6 +34,11 @@ final class EnginePaneCoreTests: XCTestCase {
         XCTAssertEqual(JSONValue.string("alpha").editableText, "alpha")
         XCTAssertEqual(JSONValue.array([]).editableText, "")
         XCTAssertEqual(JSONValue.object([:]).editableText, "")
+        // Int(Double) traps on these; they fall back to String(n).
+        XCTAssertEqual(JSONValue.number(.nan).editableText, "nan")
+        XCTAssertEqual(JSONValue.number(.infinity).editableText, "inf")
+        XCTAssertEqual(JSONValue.number(-.infinity).editableText, "-inf")
+        XCTAssertEqual(JSONValue.number(1e300).editableText, "1e+300")
     }
 
     func testProxyRoutingNotes() {
