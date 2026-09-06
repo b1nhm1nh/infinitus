@@ -19,6 +19,8 @@ struct DisplayPane: View {
         Form {
             menuBarSection
             popupSection
+            // The wall's Section is built inside WallSection, so its
+            // anchor rides the wrapper view rather than the Section.
             WallSection(model: model)
                 .id("Display/Fleet wall")
             sessionsSection
@@ -51,7 +53,7 @@ struct DisplayPane: View {
             Toggle("Count what's left, not what's used", isOn: $model.titleRemaining)
                 .disabled(model.titleIconOnly)
             Toggle("Follow the theme", isOn: $model.menuBarThemed)
-            Toggle("Effects", isOn: $model.menuBarEffects)
+            Toggle("Animate switches and burn", isOn: $model.menuBarEffects)
                 .disabled(!model.menuBarThemed)
             Toggle("Show the icon in the menu bar", isOn: $model.menuBarIconShown)
             if !model.menuBarIconShown {
@@ -64,13 +66,15 @@ struct DisplayPane: View {
             Text("Menu bar")
         } footer: {
             Text("Showing only the icon puts the rest of this group away "
-                 + "until you turn it off. The reset time is when the active "
-                 + "account's fuller window refills — as a countdown (↺2h14m) "
-                 + "or a clock time (↺20:29). Effects glow the item on a "
-                 + "switch and breathe an ember while the active account "
-                 + "burns ahead of pace. Hiding the icon lasts until quit: it "
-                 + "always comes back on the next launch, so the app can "
-                 + "never strand itself with no way in.")
+                 + "until you turn it off. The reset time is the refill of "
+                 + "whichever limit is further from empty, session or "
+                 + "weekly, as a countdown (↺2h14m) or a clock time "
+                 + "(↺20:29). Following the theme draws the loop in the "
+                 + "theme's colour with the theme's icon beside it; off "
+                 + "keeps the plain loop, and the animations need it on. "
+                 + "Hiding the icon lasts until quit: it always comes back "
+                 + "on the next launch, so the app can never strand itself "
+                 + "with no way in.")
         }
         .id("Display/Menu bar")
     }
@@ -117,6 +121,8 @@ struct DisplayPane: View {
                     }
                 }
             }
+            .accessibilityElement(children: .contain)
+            .accessibilityLabel("Layout")
             VStack(alignment: .leading, spacing: 6) {
                 Text("Size")
                 HStack(spacing: 12) {
@@ -126,6 +132,8 @@ struct DisplayPane: View {
                     sizeTile("Huge", "huge", 18)
                 }
             }
+            .accessibilityElement(children: .contain)
+            .accessibilityLabel("Size")
             glassSlider("Transparency", value: $model.glassFocused)
             Toggle("Compact rows", isOn: $model.compactRows)
             Toggle("Hide the action buttons", isOn: $model.footerActionsHidden)
@@ -135,16 +143,19 @@ struct DisplayPane: View {
         } header: {
             Text("Popup")
         } footer: {
-            Text("Transparency is one value for every state — the popup "
-                 + "never shifts with focus, and a bright app behind it is "
-                 + "capped to a legible level at every setting. Hiding the "
-                 + "action buttons leaves everything they did in the menu "
-                 + "bar icon's right-click menu. Sorting by headroom puts "
-                 + "the active account first, then the next candidate, then "
-                 + "the fullest — slot numbers don't move, and Settings › "
-                 + "Accounts keeps the engine's own order. The floating "
-                 + "countdown is a small always-on-top panel saying who "
-                 + "recovers first and when.")
+            Text("Higher transparency is clearer, lower is frostier, and "
+                 + "it is one value for every state — the popup never "
+                 + "shifts with focus, and a bright app behind it is "
+                 + "capped to a legible level at every setting. Compact "
+                 + "rows put each account on one line with icon-only "
+                 + "controls. Hiding the action buttons leaves everything "
+                 + "they did in the menu bar icon's right-click menu. "
+                 + "Sorting by headroom puts the active account first, "
+                 + "then the next candidate, then the fullest — slot "
+                 + "numbers don't move, and Settings › Accounts keeps the "
+                 + "engine's own order. The floating countdown is a small "
+                 + "always-on-top panel saying who recovers first and "
+                 + "when.")
         }
         .id("Display/Popup")
     }
@@ -194,9 +205,12 @@ struct DisplayPane: View {
             Toggle("Keep the Mac awake while sessions are working",
                    isOn: $model.keepAwake)
         } header: {
-            Text("Startup")
+            Text("Refresh and startup")
         } footer: {
-            Text("The login item points at where the app is right now — "
+            Text("The refresh interval is how often Infinitus asks for new "
+                 + "usage numbers; a longer one is lighter on the machine "
+                 + "and slower to notice a switch. "
+                 + "The login item points at where the app is right now — "
                  + "move it and turn this off and on again. Keeping the Mac "
                  + "awake holds a power assertion while any session is "
                  + "mid-turn; the display may still sleep, the machine "
@@ -283,10 +297,16 @@ private struct PickTile<Art: View>: View {
 extension DisplayPane {
     static let searchEntries: [SettingsSearchEntry] = {
         let menuBar = "Menu bar", popup = "Popup", wall = "Fleet wall"
-        let sessions = "Sessions", startup = "Startup"
-        func entry(_ section: String, _ label: String, _ keywords: [String]) -> SettingsSearchEntry {
+        let sessions = "Sessions"
+        // The last group is headed "Refresh and startup", but its anchor
+        // stays "Display/Startup": renaming a header must never move the
+        // Section id the search scrolls to.
+        let startup = "Refresh and startup", startupAnchor = "Display/Startup"
+        func entry(_ section: String, _ label: String, _ keywords: [String],
+                   anchor: String? = nil) -> SettingsSearchEntry {
             SettingsSearchEntry(pane: "Display", section: section,
-                                label: label, keywords: keywords)
+                                label: label, keywords: keywords,
+                                anchor: anchor)
         }
         return [
             entry(menuBar, "Show only the icon", ["glyph", "icon only", "menu bar"]),
@@ -296,7 +316,8 @@ extension DisplayPane {
             entry(menuBar, "Show model limits", ["model", "scoped", "opus", "fable"]),
             entry(menuBar, "Count what's left, not what's used", ["remaining", "used", "headroom"]),
             entry(menuBar, "Follow the theme", ["theme", "colour", "color"]),
-            entry(menuBar, "Effects", ["glow", "ember", "animation", "flash"]),
+            entry(menuBar, "Animate switches and burn",
+                  ["effects", "glow", "ember", "animation", "flash"]),
             entry(menuBar, "Show the icon in the menu bar", ["hide", "hidden", "status item"]),
             entry(popup, "Layout", ["wide", "stacked", "horizontal", "cards", "rows"]),
             entry(popup, "Size", ["text size", "large", "huge", "scale"]),
@@ -305,14 +326,18 @@ extension DisplayPane {
             entry(popup, "Hide the action buttons", ["actions", "buttons", "footer", "chips"]),
             entry(popup, "Sort rows by headroom", ["order", "sort", "headroom", "next"]),
             entry(popup, "Floating countdown when every account is out", ["revival", "panel", "floating", "all out"]),
-            entry(wall, "Display", ["wall", "screen", "monitor", "full screen"]),
+            entry(wall, "Screen", ["wall", "monitor", "external", "full screen"]),
             entry(wall, "Enter Full-Screen Fleet Wall", ["wall", "full screen", "kiosk"]),
             entry(sessions, "Checkpoint the repository at every prompt", ["checkpoint", "git", "restore", "diff", "undo"]),
             entry(sessions, "Name unnamed sessions with Claude Haiku", ["haiku", "name", "title", "auto name"]),
             entry(sessions, "New sessions from the phone open in", ["terminal", "cmux", "phone", "host"]),
-            entry(startup, "Refresh interval", ["poll", "interval", "refresh", "seconds"]),
-            entry(startup, "Start at login", ["login item", "startup", "launch", "boot"]),
-            entry(startup, "Keep the Mac awake while sessions are working", ["keep awake", "awake", "caffeinate", "sleep", "power"]),
+            entry(startup, "Refresh interval", ["poll", "interval", "refresh", "seconds"],
+                  anchor: startupAnchor),
+            entry(startup, "Start at login", ["login item", "startup", "launch", "boot"],
+                  anchor: startupAnchor),
+            entry(startup, "Keep the Mac awake while sessions are working",
+                  ["keep awake", "awake", "caffeinate", "sleep", "power"],
+                  anchor: startupAnchor),
         ]
     }()
 }

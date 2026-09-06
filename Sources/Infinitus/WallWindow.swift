@@ -129,7 +129,7 @@ struct WallSection: View {
 
     var body: some View {
         Section {
-            Picker("Display", selection: $choice) {
+            Picker("Screen", selection: $choice) {
                 Text("Spare screen (auto)").tag("")
                 ForEach(NSScreen.screens.map(\.localizedName), id: \.self) {
                     Text($0).tag($0)
