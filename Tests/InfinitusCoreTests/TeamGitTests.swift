@@ -109,4 +109,28 @@ final class TeamGitTests: XCTestCase {
         try a.sync()
         XCTAssertEqual(try a.get("roster/team.json"), Data("two".utf8))
     }
+
+    /// Reading stdout to the end first deadlocks as soon as the child
+    /// fills its 64 KB stderr pipe — git push writes its progress there
+    /// while we block, and neither side ever moves again.
+    func testDrainReadsBothPipesAtOnce() throws {
+        let done = expectation(description: "drained")
+        DispatchQueue.global().async {
+            let p = Process()
+            p.executableURL = URL(fileURLWithPath: "/bin/sh")
+            p.arguments = ["-c", "head -c 200000 /dev/zero | tr '\\0' x >&2; echo ok"]
+            let out = Pipe(), err = Pipe()
+            p.standardOutput = out
+            p.standardError = err
+            p.standardInput = FileHandle.nullDevice
+            do { try p.run() } catch { return XCTFail("\(error)") }
+            let (stdout, stderr) = TeamGit.drain(out: out.fileHandleForReading, err: err.fileHandleForReading)
+            p.waitUntilExit()
+            XCTAssertEqual(String(decoding: stdout, as: UTF8.self), "ok\n")
+            XCTAssertEqual(stderr.count, 200_000, "the whole chatty stderr, not one pipe buffer's worth")
+            XCTAssertEqual(p.terminationStatus, 0)
+            done.fulfill()
+        }
+        wait(for: [done], timeout: 10)
+    }
 }

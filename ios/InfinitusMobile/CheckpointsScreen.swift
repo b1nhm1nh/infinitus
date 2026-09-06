@@ -4,6 +4,7 @@ import InfinitusCore
 /// The session detail's Checkpoints row route.
 struct CheckpointsRoute: Hashable {
     let session: SessionDetail
+    var macId: String? = nil
 }
 
 /// A live session's checkpoint timeline (#167 phase 2), newest first —
@@ -13,6 +14,10 @@ struct CheckpointsRoute: Hashable {
 /// restore is itself undoable from this list).
 struct CheckpointsScreen: View {
     let session: SessionDetail
+    /// `nil` is the primary Mac (#144 phase 2).
+    var macId: String? = nil
+    @ObservedObject var model = MirrorModel.shared
+    private var mirror: NetworkFleetMirror { model.mirror(for: macId) }
     @State private var reply: Checkpoints.Reply?
     @State private var loading = false
     @State private var error: String?
@@ -57,6 +62,7 @@ struct CheckpointsScreen: View {
         .listStyle(.insetGrouped)
         .navigationTitle("Checkpoints")
         .navigationBarTitleDisplayMode(.inline)
+        .environment(\.sessionMirror, mirror)
         .overlay {
             if loading && reply == nil {
                 ProgressView()
@@ -94,7 +100,7 @@ struct CheckpointsScreen: View {
         loading = true
         defer { loading = false }
         do {
-            reply = try await NetworkFleetMirror.shared.checkpoints(pid: pid)
+            reply = try await mirror.checkpoints(pid: pid)
             error = nil
         } catch {
             self.error = error.localizedDescription
@@ -107,7 +113,7 @@ struct CheckpointsScreen: View {
         Task {
             defer { restoring = nil }
             do {
-                let outcome = try await NetworkFleetMirror.shared.restoreCheckpoint(pid: pid, n: checkpoint.n)
+                let outcome = try await mirror.restoreCheckpoint(pid: pid, n: checkpoint.n)
                 if outcome.outcome == "restored" {
                     result = "Restored to \(checkpoint.subject)"
                         + (outcome.backup.map { " — the state before is checkpoint #\($0)" } ?? "")
@@ -122,41 +128,195 @@ struct CheckpointsScreen: View {
     }
 }
 
-/// One checkpoint against the working tree now: the stat, then the
-/// patch (capped on the Mac at `Checkpoints.patchCap`).
+/// The chat's Review button target (#166): `Checkpoint` itself is not
+/// Identifiable.
+struct ReviewTarget: Identifiable {
+    let checkpoint: Checkpoint
+    var id: Int { checkpoint.n }
+}
+
+/// One checkpoint against the working tree now (#166): the files and
+/// their hunks, a tap comments a hunk, Approve / Request changes sends
+/// the review as the session's next message (`PatchReview.compose`).
 struct CheckpointDiffScreen: View {
     let pid: Int32
     let checkpoint: Checkpoint
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.sessionMirror) private var mirror
     @State private var diff: Checkpoints.Diff?
+    @State private var files: [PatchReview.File] = []
     @State private var error: String?
+    /// Comment text by hunk, keyed "fileIndex:hunkIndex".
+    @State private var comments: [String: String] = [:]
+    @State private var editing: HunkRef?
+    @State private var sending = false
+    @State private var sent: String?
+
+    struct HunkRef: Identifiable, Hashable {
+        let file: Int
+        let hunk: Int
+        var id: String { "\(file):\(hunk)" }
+    }
 
     var body: some View {
-        ScrollView([.vertical, .horizontal]) {
-            VStack(alignment: .leading, spacing: 12) {
-                if let error {
-                    Text(error).font(.caption).foregroundStyle(.orange)
-                } else if let diff {
-                    if diff.stat.isEmpty {
-                        Text("No changes since this checkpoint.").foregroundStyle(.secondary)
-                    } else {
-                        Text(diff.stat).font(.system(.caption, design: .monospaced)).foregroundStyle(.secondary)
-                        Text(diff.patch).font(.system(.caption2, design: .monospaced)).textSelection(.enabled)
-                        if diff.truncated {
-                            Text("Patch cut short on the Mac; the stat above is complete.")
-                                .font(.caption).foregroundStyle(.orange)
-                        }
+        List {
+            if let error {
+                Section { Text(error).font(.caption).foregroundStyle(.orange) }
+            }
+            if let diff, diff.stat.isEmpty {
+                Section { Text("No changes since this checkpoint.").foregroundStyle(.secondary) }
+            }
+            ForEach(Array(files.enumerated()), id: \.offset) { fi, file in
+                Section {
+                    if file.hunks.isEmpty {
+                        Text(file.note ?? "no text changes").font(.caption).foregroundStyle(.secondary)
                     }
-                } else {
-                    ProgressView()
+                    ForEach(Array(file.hunks.enumerated()), id: \.offset) { hi, hunk in
+                        let ref = HunkRef(file: fi, hunk: hi)
+                        Button { editing = ref } label: { hunkRow(hunk, comment: comments[ref.id]) }
+                            .buttonStyle(.plain)
+                    }
+                } header: {
+                    HStack {
+                        Text(file.path).font(.system(.caption, design: .monospaced)).lineLimit(1).truncationMode(.head)
+                        if let note = file.note { Text("· \(note)").font(.caption2) }
+                    }
+                    .textCase(nil)
                 }
             }
-            .padding()
+            if diff?.truncated == true {
+                Section { Text("Patch cut short on the Mac; the rest is not shown.").font(.caption).foregroundStyle(.orange) }
+            }
         }
+        .listStyle(.insetGrouped)
         .navigationTitle(checkpoint.subject)
         .navigationBarTitleDisplayMode(.inline)
-        .task {
-            do { diff = try await NetworkFleetMirror.shared.checkpointDiff(pid: pid, n: checkpoint.n) }
-            catch { self.error = error.localizedDescription }
+        .overlay { if diff == nil && error == nil { ProgressView() } }
+        .safeAreaInset(edge: .bottom) { verdictBar }
+        .sheet(item: $editing) { ref in
+            CommentSheet(hunk: files[ref.file].hunks[ref.hunk], text: comments[ref.id] ?? "") { text in
+                comments[ref.id] = text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : text
+            }
         }
+        .task {
+            do {
+                let fresh = try await mirror.checkpointDiff(pid: pid, n: checkpoint.n)
+                diff = fresh
+                files = PatchReview.parse(fresh.patch)
+            } catch { self.error = error.localizedDescription }
+        }
+    }
+
+    private func hunkRow(_ hunk: PatchReview.Hunk, comment: String?) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(hunk.header).font(.system(.caption2, design: .monospaced)).foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 0) {
+                ForEach(Array(hunk.lines.enumerated()), id: \.offset) { _, line in
+                    Text(line.isEmpty ? " " : line)
+                        .font(.system(.caption2, design: .monospaced))
+                        .foregroundStyle(line.hasPrefix("+") ? Color.green : line.hasPrefix("-") ? Color.red : Color.primary)
+                }
+            }
+            if let comment {
+                Label(comment, systemImage: "text.bubble").font(.caption).foregroundStyle(Color.accentColor).lineLimit(3)
+            }
+        }
+        .padding(.vertical, 2)
+        .contentShape(Rectangle())
+    }
+
+    private var commentList: [PatchReview.Comment] {
+        // In patch order (numerically — "10" sorts before "2" as text).
+        comments.compactMap { key, text -> (Int, Int, String)? in
+            let parts = key.split(separator: ":").compactMap { Int($0) }
+            guard parts.count == 2, parts[0] < files.count, parts[1] < files[parts[0]].hunks.count else { return nil }
+            return (parts[0], parts[1], text)
+        }
+        .sorted { ($0.0, $0.1) < ($1.0, $1.1) }
+        .map { PatchReview.Comment(path: files[$0.0].path, hunk: files[$0.0].hunks[$0.1], text: $0.2) }
+    }
+
+    private var verdictBar: some View {
+        VStack(spacing: 6) {
+            if let sent { Text(sent).font(.caption).foregroundStyle(.secondary) }
+            HStack(spacing: 12) {
+                Button { send(.approve) } label: {
+                    Label("Approve", systemImage: "checkmark.circle").frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+                .disabled(sending || diff == nil || diff?.stat.isEmpty == true)
+                Button { send(.requestChanges) } label: {
+                    Label(comments.isEmpty ? "Request changes" : "Request changes (\(comments.count))",
+                          systemImage: "exclamationmark.bubble").frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(sending || comments.isEmpty)
+            }
+        }
+        .padding(.horizontal)
+        .padding(.vertical, 8)
+        .background(.bar)
+    }
+
+    private func send(_ verdict: PatchReview.Verdict) {
+        sending = true
+        sent = nil
+        let text = PatchReview.compose(checkpoint: checkpoint.n, subject: checkpoint.subject,
+                                       verdict: verdict, comments: commentList)
+        Task {
+            defer { sending = false }
+            do {
+                let reply = try await mirror.sessionInput(pid: pid, request: .init(kind: .message, text: text))
+                if reply.outcome == "delivered" {
+                    dismiss()
+                } else {
+                    sent = reply.detail ?? reply.outcome
+                }
+            } catch {
+                sent = "couldn't reach the Mac"
+            }
+        }
+    }
+}
+
+/// One hunk's comment: the hunk above for reference, the text below.
+private struct CommentSheet: View {
+    let hunk: PatchReview.Hunk
+    @State var text: String
+    let save: (String) -> Void
+    @Environment(\.dismiss) private var dismiss
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        VStack(alignment: .leading, spacing: 0) {
+                            Text(hunk.header).foregroundStyle(.secondary)
+                            ForEach(Array(hunk.lines.prefix(PatchReview.excerptLines).enumerated()), id: \.offset) { _, line in
+                                Text(line.isEmpty ? " " : line)
+                                    .foregroundStyle(line.hasPrefix("+") ? Color.green : line.hasPrefix("-") ? Color.red : Color.primary)
+                            }
+                            if hunk.lines.count > PatchReview.excerptLines { Text("…").foregroundStyle(.secondary) }
+                        }
+                        .font(.system(.caption2, design: .monospaced))
+                    }
+                }
+                Section("Comment") {
+                    TextEditor(text: $text).frame(minHeight: 120).focused($focused)
+                }
+            }
+            .navigationTitle("Comment")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") { save(text); dismiss() }
+                }
+            }
+            .onAppear { focused = true }
+        }
+        .presentationDetents([.medium, .large])
     }
 }

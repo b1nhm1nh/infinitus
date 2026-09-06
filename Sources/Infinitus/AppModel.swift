@@ -143,13 +143,71 @@ final class AppModel: ObservableObject {
     static let birthsURL = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
         .appendingPathComponent("Infinitus/session-births.json")
     func recordBirth(pid: Int, _ birth: SessionBirth) {
-        let alive = Set(ClaudeSessions.list(claudeDir: ClaudeSessions.configHome()).map { Int($0.pid) })
+        let live = ClaudeSessions.list(claudeDir: ClaudeSessions.configHome())
+        let alive = Set(live.map { Int($0.pid) })
         sessionBirths = SessionBirths.pruned(sessionBirths, alive: alive.union([pid]))
-        sessionBirths[pid] = birth
+        // Pinned to the session id whenever the roster has it, so a
+        // reused pid after a reboot can never inherit a grant.
+        let id = live.first { Int($0.pid) == pid }?.sessionId
+        sessionBirths[pid] = id.map { birth.identified(as: $0) } ?? birth
+        // The profile's allow-list (#165) becomes the session's hook rules.
+        if let id { seedAllowList(birth, sessionId: id) }
         try? SessionBirths.save(sessionBirths, to: Self.birthsURL)
     }
     /// "Allow for this session" rules from the phone (#79), per session id.
     let toolApprovals = ToolApprovals()
+
+    private func profileAllowRules(_ birth: SessionBirth) -> [ToolApproval.Rule] {
+        guard let name = birth.profile else { return [] }
+        return sessionProfiles.profiles.first { SessionProfiles.same($0.name, name) }?.allowRules ?? []
+    }
+
+    /// A session born from a profile runs its allow-list without asking:
+    /// the same rules the phone's "Allow for this session" adds.
+    private func seedAllowList(_ birth: SessionBirth, sessionId: String) {
+        let rules = profileAllowRules(birth)
+        guard !rules.isEmpty, let name = birth.profile else { return }
+        for rule in rules { toolApprovals.add(rule, sessionId: sessionId) }
+        logEvent("hook", icon: "checkmark.shield", "profile \(name) allows \(rules.map(\.label).joined(separator: ", ")) in session \(sessionId.prefix(8))")
+    }
+
+    /// The phone's star/pause verbs (`POST /accounts/action`), with the
+    /// popup's own semantics: the same capability guards the control
+    /// server runs, and a star lands on the account right away when it
+    /// isn't the active one (FleetState.setPreferred).
+    func performAccountAction(_ request: AccountAction.Request) async -> AccountAction.Reply {
+        guard let fleet = fleets.first(where: { $0.id == request.fleet }) else {
+            return AccountAction.Reply(outcome: "notFound", detail: "no fleet \(request.fleet)")
+        }
+        guard let account = fleet.accounts.first(where: { $0.number == request.number }) else {
+            return AccountAction.Reply(outcome: "notFound", detail: "no account #\(request.number) in \(fleet.id)")
+        }
+        let engine = fleet.engine, provider = fleet.provider, number = request.number
+        do {
+            switch request.action {
+            case "hold", "unhold":
+                guard fleet.capabilities.contains(.hold) else {
+                    return AccountAction.Reply(outcome: "unsupported", detail: "\(fleet.id) does not support hold")
+                }
+                try await engine.setHold(fleet: provider, number: number, held: request.action == "hold")
+            case "prefer", "unprefer":
+                guard fleet.capabilities.contains(.prefer), account.preferred != nil else {
+                    return AccountAction.Reply(outcome: "unsupported", detail: "\(fleet.id) has no pick-first setting")
+                }
+                let on = request.action == "prefer"
+                try await engine.setPreferred(fleet: provider, number: number, on)
+                if on, !account.active, fleet.capabilities.contains(.switch) {
+                    try await engine.switchTo(fleet: provider, number: number)
+                }
+            default:
+                return AccountAction.Reply(outcome: "unsupported", detail: "unknown action \(request.action)")
+            }
+        } catch {
+            return AccountAction.Reply(outcome: "failed", detail: "\(error)")
+        }
+        await refreshSnapshot()
+        return AccountAction.Reply(outcome: "done")
+    }
 
     /// Moves a running session's permission mode (#163 phase 2): the
     /// plugin's PreToolUse hook answers from it. The start mode is a
@@ -1127,6 +1185,10 @@ final class AppModel: ObservableObject {
             guard let self else { return AppUpdate.Reply(outcome: "unavailable", detail: nil) }
             return await self.triggerAppUpdate()
         }
+        mirrorServer.accountAction.set { [weak self] request in
+            guard let self else { return AccountAction.Reply(outcome: "failed", detail: "app gone") }
+            return await self.performAccountAction(request)
+        }
         let host = sessionHost
         mirrorServer.sessionStart.set { [weak self] request in
             let reply = SessionLauncher.start(request, preferredHost: host)
@@ -1141,6 +1203,16 @@ final class AppModel: ObservableObject {
                                      "phone \(verb) a session in \(label)\(born): \(reply.outcome)\(reply.host.map { " via \($0)" } ?? "")")
             }
             return reply
+        }
+        // A session's hook mode (#163 phase 2) is remembered in its birth
+        // across a relaunch, but the hook answers from ToolApprovals'
+        // memory — reseed it, or the chip would promise a mode the hook
+        // no longer grants.
+        let live = ClaudeSessions.list(claudeDir: ClaudeSessions.configHome())
+        for (pid, birth) in sessionBirths {
+            guard let record = live.first(where: { Int($0.pid) == pid }), birth.sessionId == record.sessionId else { continue }
+            if let mode = birth.hookMode { toolApprovals.setMode(mode, sessionId: record.sessionId) }
+            for rule in profileAllowRules(birth) { toolApprovals.add(rule, sessionId: record.sessionId) }
         }
         mirrorServer.pastSessions.set { limit, search in
             PastSessions.Reply(sessions: PastSessions.list(claudeDir: ClaudeSessions.configHome(),
@@ -1297,10 +1369,14 @@ final class AppModel: ObservableObject {
         }
         mirrorServer.sessionInput.set { [weak self] pid, request in
             let claudeDir = ClaudeSessions.configHome()
-            guard let record = ClaudeSessions.list(claudeDir: claudeDir).first(where: { $0.pid == pid })
+            let records = ClaudeSessions.list(claudeDir: claudeDir)
+            // #168: a queued request may name a pid from before a reboot —
+            // the session lives on under a new one; its id does not change.
+            guard let record = records.first(where: { $0.pid == pid })
+                    ?? request.sessionId.flatMap({ id in records.first { $0.sessionId == id } })
             else {
                 Task { @MainActor in self?.logMirrorInput("⚠️", "phone input not delivered: unknown session") }
-                return nil
+                return SessionInput.Reply(outcome: "rejected", detail: "session ended")
             }
             // A mode change never reaches the terminal: it is the Mac's
             // own state, decided on the main actor (the births live
@@ -1333,6 +1409,12 @@ final class AppModel: ObservableObject {
                 } else {
                     let why = reply.detail.map { "\(reply.outcome) — \($0)" } ?? reply.outcome
                     self?.logMirrorInput("⚠️", "phone input not delivered: \(why)")
+                }
+                if request.queuedAt != nil, ["delivered", "running", "captured"].contains(reply.outcome) {
+                    // The phone queued this while the Mac was away; the
+                    // push reaches it even when the app is closed.
+                    self?.liveActivityPusher.pushAlert(title: "Delivered to \(label)",
+                                                       body: String(request.text.prefix(80)))
                 }
             }
             return reply
@@ -1933,7 +2015,7 @@ final class AppModel: ObservableObject {
             // directory would just raise Finder.
             let exe = Bundle.main.executablePath ?? ""
             // applicationShouldTerminate can hold quit up to
-            // TeamModel.quitBound (5s) for a team's now.json delete, so a
+            // TeamModel.quitBound (20s) for a team's now.json delete, so a
             // fixed sleep can no longer be trusted to outlast this
             // process — wait for the pid to actually exit instead.
             let pid = ProcessInfo.processInfo.processIdentifier
@@ -2122,7 +2204,7 @@ final class AppModel: ObservableObject {
             let serviceStatus = ServiceStatusSummary(
                 indicator: ServiceStatusModel.shared.indicator)
             let engine = engineBadge ?? .stopped
-            let allFleets = fleets.compactMap(\.lastFleet)
+            let allFleets = fleets.compactMap { $0.lastFleet?.with(capabilities: $0.capabilities) }
             let forecast = forecast
             let plan = battlePlan
             let awsLogins = awsLogins
@@ -2319,6 +2401,7 @@ final class AppModel: ObservableObject {
     func setRotation(_ number: Int, enabled: Bool) {
         primary?.setRotation(number, enabled: enabled)
     }
+    func setPreferred(_ number: Int, _ on: Bool) { primary?.setPreferred(number, on) }
     func reorder(_ order: [Int], done: (() -> Void)? = nil) {
         guard let primary else { done?(); return }
         primary.reorder(order, done: done)

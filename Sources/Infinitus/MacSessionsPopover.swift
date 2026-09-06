@@ -2,8 +2,8 @@ import SwiftUI
 import InfinitusCore
 import InfinitusUI
 
-/// The brain chip's popover: the live sessions card, then a collapsed
-/// "Past sessions" list (#164) — the newest transcripts under
+/// The brain chip's popover: the live sessions card, checkpoints, Start a
+/// session, then a collapsed "Past sessions" list (#164) — the newest transcripts under
 /// ~/.claude/projects, each resumable in a new terminal. The scan runs
 /// only when the disclosure opens, never per snapshot, so an idle
 /// pop-out stays idle.
@@ -26,6 +26,8 @@ struct MacSessionsPopover: View {
             SessionListCard(live: live, progress: model.sessionProgress, births: model.sessionBirths)
             Divider()
             CheckpointsSection(model: model, live: live)
+            Divider()
+            StartSessionSection(model: model)
             Divider()
             DisclosureGroup(isExpanded: $expanded) {
                 VStack(alignment: .leading, spacing: 4) {
@@ -70,6 +72,10 @@ struct MacSessionsPopover: View {
                     .buttonStyle(.borderless)
                     .font(PopupFont.caption)
             }
+            Button("Fork") { resume(session, fork: true) }
+                .buttonStyle(.borderless)
+                .font(PopupFont.caption)
+                .help("A new session continuing from this transcript; this one is left as it is.")
         }
         .help(session.cwd)
     }
@@ -79,7 +85,6 @@ struct MacSessionsPopover: View {
         loading = true
         Task.detached(priority: .userInitiated) {
             let list = PastSessions.list(claudeDir: ClaudeSessions.configHome(), limit: 30)
-                .filter { !$0.live }
             await MainActor.run {
                 past = list
                 loading = false
@@ -87,14 +92,16 @@ struct MacSessionsPopover: View {
         }
     }
 
-    private func resume(_ session: PastSession) {
+    private func resume(_ session: PastSession, fork: Bool = false) {
         note = nil
         let host = model.sessionHost
-        let request = SessionStart.Request(cwd: session.cwd, resume: session.sessionId)
+        let request = SessionStart.Request(cwd: session.cwd, resume: session.sessionId, fork: fork ? true : nil)
         Task.detached(priority: .userInitiated) {
             let reply = SessionLauncher.start(request, preferredHost: host)
             await MainActor.run {
                 if reply.outcome == "started" {
+                    // The row's "resumed" chip, as the phone's Resume gets.
+                    if let pid = reply.pid, let birth = SessionBirth(request: request) { model.recordBirth(pid: pid, birth) }
                     model.sessionsShown = false
                 } else {
                     note = reply.detail ?? reply.outcome

@@ -202,7 +202,7 @@ REV="$(python3 -c "print(' '.join(reversed('$ORDER'.split())))")"
 "$CTL" randomize-names cswap/claude | expect "len(set(a.get('alias') for a in d['fleet']['accounts']))==len(d['fleet']['accounts']) and len(d['names'])==len(d['fleet']['accounts'])" || fail "randomize-names didn't give every account its own name"
 # One account re-rolls alone (#145): one name, worn by that account, still distinct from every other.
 "$CTL" randomize-names cswap/claude 2 | expect "len(d['names'])==1 and [a for a in d['fleet']['accounts'] if a['number']==2][0].get('alias')==d['names'][0] and len(set(a.get('alias') for a in d['fleet']['accounts']))==len(d['fleet']['accounts'])" || fail "randomize-names <n> didn't re-roll account 2 alone"
-"$CTL" profile-set e2e-review --cwd /tmp --mode acceptEdits --model opus | expect "d['profile']['name']=='e2e-review' and d['profile']['permissionMode']=='acceptEdits' and d['profile']['model']=='opus'" || fail "profile-set didn't save the fields"
+"$CTL" profile-set e2e-review --cwd /tmp --mode acceptEdits --model opus --allow "Edit, Bash git" | expect "d['profile']['name']=='e2e-review' and d['profile']['permissionMode']=='acceptEdits' and d['profile']['model']=='opus' and d['profile']['allowTools']==['Edit','Bash git']" || fail "profile-set didn't save the fields"
 "$CTL" profiles | expect "[p['name'] for p in d['profiles']]==['e2e-review']" || fail "profiles didn't list the saved profile"
 "$CTL" profile-remove e2e-review | expect "d['removed'] is True" || fail "profile-remove didn't remove"
 "$CTL" past-sessions --limit 3 | expect "isinstance(d['sessions'], list) and len(d['sessions'])<=3" || fail "past-sessions didn't list"
@@ -342,6 +342,17 @@ KID="$(INFINITUS_TEAM_DIR="$CLI_TEAM" "$CTL" team status | json "d['kid']")"
 INFINITUS_TEAM_DIR="$CLI_TEAM" "$CTL" team fetch >/dev/null || fail "cli team fetch"
 INFINITUS_TEAM_DIR="$CLI_TEAM" "$CTL" team publish --projects "$SOCKDIR/fixture/projects" \
     | expect "d['transcriptChunks']>=1" || fail "cli team publish"
+# "Nobody" (spec §7): the appended line WOULD chunk — the point of the
+# assertion is that it does not while transcripts are off. Do not drop it.
+INFINITUS_TEAM_DIR="$CLI_TEAM" "$CTL" team share transcripts off \
+    | expect "d['byKind']['transcripts']=='off'" || fail "team share transcripts off"
+printf '%s\n' \
+    "{\"type\":\"assistant\",\"timestamp\":\"$NOW\",\"message\":{\"id\":\"e2e-2\",\"model\":\"claude-opus-5\",\"usage\":{\"input_tokens\":3,\"output_tokens\":1},\"content\":[{\"type\":\"text\",\"text\":\"more\"}]}}" \
+    >> "$SOCKDIR/fixture/projects/-tmp-e2e/e2e1.jsonl"
+INFINITUS_TEAM_DIR="$CLI_TEAM" "$CTL" team publish --projects "$SOCKDIR/fixture/projects" \
+    | expect "d['transcriptChunks']==0" || fail "transcripts off must publish no chunks"
+INFINITUS_TEAM_DIR="$CLI_TEAM" "$CTL" team share transcripts leaders \
+    | expect "d['byKind']['transcripts']=='leaders'" || fail "restore the transcripts audience"
 "$CTL" team-fetch | expect "any(m['name']=='Bo' and 'stats' in m['kinds'] and 'transcripts' in m['kinds'] for m in d['members'])" || fail "the member's files are not readable"
 "$CTL" team-publish | expect "'published' in d" || fail "team-publish"
 "$CTL" team-status | expect "d.get('lastPublish') is not None and d.get('lastError') is None" || fail "loop state after publish"

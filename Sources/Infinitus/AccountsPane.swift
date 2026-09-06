@@ -634,6 +634,10 @@ private struct FleetAccountsSection: View {
     private var isCswap: Bool { fleet.engineID == CswapEngine.engineID }
     private var caps: EngineCapabilities { fleet.capabilities }
     private var canRelogin: Bool { isCswap || caps.contains(.addOAuth) }
+    /// The rows' name fields by slot number, so Tab in one can hand
+    /// first-responder to the next row's field directly (user 2026-09-06:
+    /// "press tab -> go to rename next account").
+    @StateObject private var renameFields = RenameFields()
 
     var body: some View {
         Section("\(fleet.provider.displayName) \u{00B7} \(fleet.engine.displayName)") {
@@ -656,11 +660,6 @@ private struct FleetAccountsSection: View {
             List {
                 ForEach(fleet.accounts, id: \.number) { a in
                     row(a).moveDisabled(!caps.contains(.reorder))
-                        .contextMenu {
-                            if caps.contains(.rename) {
-                                Button("Re-roll name") { fleet.randomizeName(a.number) }
-                            }
-                        }
                 }
                 .onMove { from, to in
                     guard caps.contains(.reorder) else { return }
@@ -687,6 +686,14 @@ private struct FleetAccountsSection: View {
         }
     }
 
+    /// The slot numbers before and after `a` in this list's order — Tab
+    /// and Shift-Tab targets for its name field.
+    private func neighbours(of a: Account) -> (previous: Int?, next: Int?) {
+        let numbers = fleet.accounts.map(\.number)
+        guard let i = numbers.firstIndex(of: a.number) else { return (nil, nil) }
+        return (i > 0 ? numbers[i - 1] : nil, i + 1 < numbers.count ? numbers[i + 1] : nil)
+    }
+
     @ViewBuilder private func row(_ a: Account) -> some View {
         HStack(spacing: 8) {
             if caps.contains(.reorder) {
@@ -696,7 +703,14 @@ private struct FleetAccountsSection: View {
             Text("\(a.number)").monospacedDigit()
                 .foregroundStyle(.secondary)
             if caps.contains(.rename) {
-                RenameField(fleet: fleet, account: a)
+                RenameField(fleet: fleet, account: a, registry: renameFields,
+                            neighbours: neighbours(of: a))
+                    .frame(width: 150)
+                Button { fleet.randomizeName(a.number) } label: {
+                    Image(systemName: "dice")
+                }
+                .buttonStyle(.borderless)
+                .help("Re-roll name: a fresh themed name nobody in the fleet wears")
             }
             Text(a.email).lineLimit(1)
                 .font(.caption).foregroundStyle(.secondary)
@@ -928,29 +942,64 @@ private struct CswapAddFlow: View {
     }
 }
 
-/// One account's editable display name. Local draft, committed on Enter or
-/// focus loss — never on every keystroke (each commit is a `cswap alias`
-/// subprocess + snapshot refresh).
-private struct RenameField: View {
+/// The name fields of one fleet's list, by slot number (see RenameField).
+final class RenameFields: ObservableObject {
+    var fields: [Int: NSTextField] = [:]
+}
+
+/// One account's editable display name: an AppKit field, because Tab
+/// must hop to the NEXT account's field and SwiftUI's TextField lets the
+/// field editor swallow Tab before any key handler sees it. Committed on
+/// Enter, Tab or focus loss — never on every keystroke (each commit is a
+/// `cswap alias` subprocess + snapshot refresh).
+private struct RenameField: NSViewRepresentable {
     @ObservedObject var fleet: FleetState
     let account: Account
-    @State private var draft = ""
-    @FocusState private var focused: Bool
+    let registry: RenameFields
+    let neighbours: (previous: Int?, next: Int?)
 
-    var body: some View {
-        TextField("Name", text: $draft)
-            .textFieldStyle(.roundedBorder)
-            .frame(width: 150)
-            .focused($focused)
-            .onAppear { draft = account.alias ?? "" }
-            .onChange(of: account.alias) { draft = account.alias ?? "" }
-            .onSubmit { commit() }
-            .onChange(of: focused) { if !focused { commit() } }
+    func makeNSView(context: Context) -> NSTextField {
+        let field = NSTextField(string: account.alias ?? "")
+        field.placeholderString = "Name"
+        field.bezelStyle = .roundedBezel
+        field.delegate = context.coordinator
+        field.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        return field
     }
 
-    private func commit() {
-        let trimmed = draft.trimmingCharacters(in: .whitespaces)
-        guard trimmed != (account.alias ?? "") else { return }
-        fleet.rename(account.number, to: trimmed)
+    func updateNSView(_ field: NSTextField, context: Context) {
+        context.coordinator.parent = self
+        registry.fields[account.number] = field
+        // Never clobber what the user is typing: the engine's alias only
+        // lands while the field isn't being edited.
+        if field.currentEditor() == nil, field.stringValue != (account.alias ?? "") {
+            field.stringValue = account.alias ?? ""
+        }
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator(parent: self) }
+
+    final class Coordinator: NSObject, NSTextFieldDelegate {
+        var parent: RenameField
+        init(parent: RenameField) { self.parent = parent }
+
+        func controlTextDidEndEditing(_ notification: Notification) {
+            guard let field = notification.object as? NSTextField else { return }
+            let trimmed = field.stringValue.trimmingCharacters(in: .whitespaces)
+            guard trimmed != (parent.account.alias ?? "") else { return }
+            parent.fleet.rename(parent.account.number, to: trimmed)
+        }
+
+        func control(_ control: NSControl, textView: NSTextView, doCommandBy selector: Selector) -> Bool {
+            let target: Int?
+            if selector == #selector(NSResponder.insertTab(_:)) { target = parent.neighbours.next }
+            else if selector == #selector(NSResponder.insertBacktab(_:)) { target = parent.neighbours.previous }
+            else { return false }
+            guard let target, let next = parent.registry.fields[target] else { return false }
+            // Resigning first responder ends this field's editing (the
+            // commit above), then the next row's field takes over.
+            control.window?.makeFirstResponder(next)
+            return true
+        }
     }
 }
