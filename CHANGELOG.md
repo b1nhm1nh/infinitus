@@ -43,6 +43,9 @@ publishes the matching section as the GitHub release body.
 - Leaders publish the team picture to everyone (`team aggregates publish`), with per-member rows only when the roster's members-see-each-other policy is on, and `team policy` sets that and whether new requests are accepted.
 - `infinitusctl team identity export|import` seals your identity with a passphrase (PBKDF2 600k + ChaChaPoly, the same file on every platform), `identity recovery --show` prints the 8-group recovery key, and either restores the same kid on a new machine.
 - The site serves the passkey relying-party file for infinitus.run, and a release built with a provisioning profile carries the associated-domains entitlement the passkey identity needs.
+- The phone has a Team tab: roster, requests, invite links and team codes, a teammate's stats and sessions, their shared transcripts, and the leaders' team picture — approve, decline and join from the phone.
+- The phone's Team tab locks behind Face ID / Touch ID (Settings › Team); joining from the phone needs the lock on.
+- Every theme names the Team tab in its own words (Guild, Crew, Clan, Unit, Org).
 
 ## 0.4.3
 
