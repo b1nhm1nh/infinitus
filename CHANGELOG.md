@@ -5,6 +5,14 @@ links, no internals or workflow detail; one feature note is one line,
 a single short sentence (user 2026-09-04). The release workflow
 publishes the matching section as the GitHub release body.
 
+## Unreleased
+
+### Mac
+- "All accounts are exhausted" notifies once per outage and honors its toggle — the engine's ten-minute re-probes no longer repeat it.
+
+### Phone
+- A phone showing the revival countdown skips the duplicate all-dead alert, and a working activity starts silently.
+
 ## 0.4.4-alpha.1
 
 ### Stats

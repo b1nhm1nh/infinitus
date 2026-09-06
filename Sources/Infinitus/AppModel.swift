@@ -654,7 +654,7 @@ final class AppModel: ObservableObject {
     /// commands; no channels configured is a quiet no-op (try?). The
     /// away-push channels are cswap's.
     func push(_ msg: String) {
-        notify(msg)
+        notify(msg, phoneUnlessRevival: PushTriggers.isAllDeadMessage(msg))
         if let cswap {
             Task { _ = try? await cswap.run(["notify", "push", "-"], stdin: msg) }
         }
@@ -774,9 +774,12 @@ final class AppModel: ObservableObject {
     }
     static let hookRefreshSpacing: TimeInterval = 30
 
-    func notify(_ body: String) {
+    /// `phoneUnlessRevival`: a phone showing the all-dead countdown activity
+    /// (or about to get its start alert) already has this news — the Mac
+    /// banner still posts.
+    func notify(_ body: String, phoneUnlessRevival: Bool = false) {
         Notifier.post(title: "Infinitus", body: body)
-        liveActivityPusher.pushAlert(title: "Infinitus", body: body)
+        liveActivityPusher.pushAlert(title: "Infinitus", body: body, unlessRevival: phoneUnlessRevival)
     }
     private let awake = KeepAwake()
     /// Seeded with the AWS-login needs already pushed before the last
@@ -1815,8 +1818,8 @@ final class AppModel: ObservableObject {
                 notify(event.summary)
             case "account-unquarantined":
                 notify("account back in rotation")
-            case "all-exhausted":
-                notify("every account is at its limit")
+            // "all-exhausted" arrives on every engine re-probe (~10 min while
+            // dead): the latched PushTriggers message owns that notification.
             default:
                 break
             }
