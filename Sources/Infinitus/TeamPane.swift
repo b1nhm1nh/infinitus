@@ -117,6 +117,24 @@ struct TeamPane: View {
                     .font(.caption).foregroundStyle(.secondary)
             }
             .task { await team.scanNearby() }
+            if !team.invites.isEmpty {
+                Section("Invitations") {
+                    ForEach(team.invites) { invite in
+                        HStack {
+                            VStack(alignment: .leading) {
+                                Text("\(invite.fromName) invites you to \(invite.teamName)").bold()
+                                Text(invite.from.kid).font(.caption2.monospaced()).foregroundStyle(.tertiary)
+                            }
+                            Spacer()
+                            Button("Accept") { Task { await team.acceptInvite(invite, name: joinName) } }
+                                .disabled(!gateOpen || joinName.isEmpty)
+                            Button("Ignore") { Task { await team.ignoreInvite(invite) } }
+                        }
+                    }
+                    Text("The invitation stays sealed on this Mac until you accept; accepting joins straight away.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+            }
             Section("Identity") {
                 identityButtons
                 Text("A recovery key or an export file moves this Mac's identity to another Mac — import one before joining, not after.")
@@ -182,13 +200,24 @@ struct TeamPane: View {
                         }
                     }
                     ForEach(team.nearby) { peer in
-                        LabeledContent(peer.name) { Text("\(peer.role) · \(peer.team == snap.id ? "in this team" : "not in this team")").font(.caption).foregroundStyle(.secondary) }
+                        HStack {
+                            VStack(alignment: .leading) {
+                                Text(peer.name).bold()
+                                Text("\(peer.role) · \(peer.team == snap.id ? "in this team" : "not in this team")")
+                                    .font(.caption).foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            if peer.team != snap.id {
+                                Button("Invite") { Task { await team.inviteNearby(peer) } }.disabled(!gateOpen)
+                            }
+                        }
                     }
                     HStack {
                         Button(team.scanning ? "Scanning…" : "Scan") { Task { await team.scanNearby() } }.disabled(team.scanning)
                         Toggle("Discoverable", isOn: $team.discoverable).toggleStyle(.switch)
                     }
-                    Text("Members request to join from their Team pane; leader-initiated invites over the network come later.").font(.caption).foregroundStyle(.secondary)
+                    Text("Members can request to join from their Team pane, or you can invite a discoverable Mac; either way they appear in Requests once approved.")
+                        .font(.caption).foregroundStyle(.secondary)
                 }
                 .task { await team.scanNearby() }
             }
