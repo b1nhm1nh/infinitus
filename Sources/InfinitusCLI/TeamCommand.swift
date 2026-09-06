@@ -25,6 +25,7 @@ func teamUsage() -> String {
       aggregates publish [--period all|<p>]   (leaders) publish the team picture to the whole team
       policy [--requests code|off] [--members-see-each-other on|off]   (leaders) show or set the roster policy
       share <kind> off|leaders|team|<kid>[,<kid>…]  audience for stats|now|sessions|transcripts|crashes ("off" keeps it on this machine; new envelopes — see reshare)
+      leave [--rotate-identity]                    delete my files on the store, tell the leaders, forget the team here (and mint a new identity)
       exclude <project-dir> [--off]                keep a Claude Code project private (local, never sent)
       identity [show]                    this machine's identity kid
       identity recovery --show           the recovery key (base32, 8 groups) — keep it offline
@@ -75,7 +76,7 @@ func runTeam(_ args: [String]) -> Int32 {
     }
     var positional: [String] = []
     var options: [String: String] = [:]
-    let bareFlags: Set<String> = ["off", "show", "replace", "recovery"]
+    let bareFlags: Set<String> = ["off", "show", "replace", "recovery", "rotate-identity"]
     var flags: Set<String> = []
     var i = 1
     while i < args.count {
@@ -241,6 +242,15 @@ func runTeam(_ args: [String]) -> Int32 {
             shares.byKind[kind] = target
             try shares.save(teamDir: teamDir)
             emit(shares)
+        case "leave":
+            // Spec §6.5: the store side, then forget the team locally
+            // (dir + token). The identity stays unless --rotate-identity.
+            let c = try client()
+            _ = try? c.fetch()
+            try c.leave(rotateIdentity: flags.contains("rotate-identity"))
+            secrets.delete(TeamClient.tokenName(c.config.id))
+            try? FileManager.default.removeItem(at: paths.teamDir(c.config.id))
+            emit(["left": c.config.id, "kid": try TeamClient.identity(paths: paths, secrets: secrets).kid])
         case "exclude":
             guard let raw = positional.first else { return fail(teamUsage(), code: 2) }
             let project = URL(fileURLWithPath: raw).standardizedFileURL.path

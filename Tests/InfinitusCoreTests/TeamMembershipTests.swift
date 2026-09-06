@@ -11,8 +11,8 @@ final class TeamMembershipTests: XCTestCase {
 
     override func tearDownWithError() throws { try? FileManager.default.removeItem(at: scratch) }
 
-    func makeRemote() throws -> String {
-        let bare = scratch.appendingPathComponent("remote.git")
+    func makeRemote(_ name: String = "remote.git") throws -> String {
+        let bare = scratch.appendingPathComponent(name)
         let p = Process()
         p.executableURL = URL(fileURLWithPath: "/usr/bin/env")
         p.arguments = ["git", "init", "--bare", "-q", bare.path]
@@ -325,5 +325,59 @@ final class TeamMembershipTests: XCTestCase {
         XCTAssertFalse(TeamClient.isPathSegment("../other"))
         XCTAssertFalse(TeamClient.isPathSegment("a/b"))
         XCTAssertFalse(TeamClient.isPathSegment("a\\b"))
+    }
+
+    /// Spec §6.5: "Member key rotation is offered so even the member
+    /// can't reopen old envelopes."
+    func testLeaveCanRotateThisMachinesIdentity() throws {
+        let remote = try makeRemote()
+        let (lp, ls) = machine("leader"), (mp, ms) = machine("member")
+        let leader = try TeamClient.create(name: "Papaya", remote: remote, token: nil, paths: lp, secrets: ls, now: 1_000)
+        let member = try TeamClient.request(code: try leader.code(expiresIn: 600, now: 1_000), name: "Bo", devices: [],
+                                            platform: "linux", paths: mp, secrets: ms, now: 1_010)
+        _ = try leader.fetch(); try leader.approve(kid: member.identity.kid, now: 1_020); _ = try member.fetch()
+        let old = member.identity
+        // An envelope this Mac could open before it left.
+        let sealed = try Envelope.seal(Data("secret".utf8), kind: TeamKinds.now, from: leader.identity,
+                                       to: [old.keys], at: 1_030)
+
+        try member.leave(rotateIdentity: true, now: 1_040)
+
+        let fresh = try TeamClient.identity(paths: mp, secrets: ms)
+        XCTAssertNotEqual(fresh.kid, old.kid, "a fresh identity was minted")
+        XCTAssertNotEqual(ms.read(TeamClient.identitySecretName), old.secret, "the old secret is gone, not kept alongside")
+        XCTAssertThrowsError(try Envelope.open(sealed, as: fresh, senderKey: { _ in leader.identity.keys })) {
+            XCTAssertEqual($0 as? Envelope.EnvelopeError, .notARecipient)
+        }
+        // The leave itself still happened.
+        _ = try leader.fetch()
+        XCTAssertEqual(try leader.readableHeaders().count, 0)
+        XCTAssertNotNil(try leader.store.get("requests/\(old.kid).leave"))
+    }
+
+    /// The identity is this MACHINE's, not this team's: rotating it while
+    /// another team on the same Mac knows the old kid would silently
+    /// unmake that membership.
+    func testRotationIsRefusedWhileAnotherTeamOnThisMacKnowsTheKid() throws {
+        let remote = try makeRemote()
+        let (lp, ls) = machine("leader"), (mp, ms) = machine("member")
+        let leader = try TeamClient.create(name: "Papaya", remote: remote, token: nil, paths: lp, secrets: ls, now: 1_000)
+        let member = try TeamClient.request(code: try leader.code(expiresIn: 600, now: 1_000), name: "Bo", devices: [],
+                                            platform: "linux", paths: mp, secrets: ms, now: 1_010)
+        _ = try leader.fetch(); try leader.approve(kid: member.identity.kid, now: 1_020); _ = try member.fetch()
+        try member.publish(kind: TeamKinds.now, path: "now.json", plaintext: Data("{}".utf8),
+                           audience: .leaders, now: 1_025)
+        // A second team on the same machine, same identity.
+        _ = try TeamClient.create(name: "Other", remote: try makeRemote("other.git"), token: nil,
+                                  paths: mp, secrets: ms, now: 1_030)
+
+        XCTAssertThrowsError(try member.leave(rotateIdentity: true, now: 1_040)) {
+            XCTAssertEqual($0 as? TeamClient.ClientError, .identityInUse)
+        }
+        XCTAssertEqual(ms.read(TeamClient.identitySecretName), member.identity.secret, "nothing rotated")
+        _ = try leader.fetch()
+        XCTAssertEqual(try leader.readableHeaders().count, 1, "the guard ran before anything was pushed: the file is still there")
+        // Leaving without rotation is unaffected.
+        XCTAssertNoThrow(try member.leave(now: 1_041))
     }
 }

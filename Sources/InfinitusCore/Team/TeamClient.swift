@@ -49,6 +49,10 @@ public final class TeamClient {
         /// A caller asked to seal to the "Nobody" audience. `TeamPublisher`
         /// skips those kinds before it gets here; this is the backstop.
         case audienceOff
+        /// `leave(rotateIdentity: true)` on a Mac that is in another
+        /// team: the identity is the machine's, and that team's roster
+        /// knows the old kid.
+        case identityInUse
     }
 
     public static let identitySecretName = "identity"
@@ -442,8 +446,14 @@ public final class TeamClient {
     /// Spec §6.5 leave: every file under `m/<my kid>/` is deleted (the
     /// history stays, ciphertext) and `requests/<kid>.leave` tells the
     /// leaders — one push. The caller then forgets the team locally
-    /// (team dir + token secret); the identity stays.
-    public func leave(now: Int = Int(Date().timeIntervalSince1970)) throws {
+    /// (team dir + token secret); the identity stays unless `rotateIdentity`.
+    public func leave(rotateIdentity: Bool = false, now: Int = Int(Date().timeIntervalSince1970)) throws {
+        // Spec §6.5 offers key rotation "so even the member can't reopen
+        // old envelopes" — but the identity belongs to this MACHINE, so
+        // rotating it while another team here knows the old kid would
+        // silently unmake that membership. Checked before anything is
+        // pushed, so a refusal leaves the team untouched.
+        if rotateIdentity, paths.teamIDs().contains(where: { $0 != config.id }) { throw ClientError.identityInUse }
         try store.sync()  // list() reads local refs only; a stale tree leaves another device's files behind
         var writes: [String: Data?] = [:]
         for entry in try store.list("m/") where entry.path.hasPrefix("m/\(identity.kid)/") {
@@ -456,6 +466,10 @@ public final class TeamClient {
         let note = TeamRequest(keys: identity.keys, name: "", devices: [], platform: "leave", at: now)
         writes["requests/\(identity.kid).leave"] = try CanonicalJSON.encode(try Signed.make(note, by: identity))
         try store.putAll(writes)
+        // Only after the branch is cleared and the note is pushed: a new
+        // identity cannot sign as the old kid, so rotating first would
+        // leave files nobody can delete.
+        if rotateIdentity { try secrets.write(Self.identitySecretName, TeamIdentity.random().secret) }
     }
 
     /// `readableHeaders` plus how many stored files it could not read a
