@@ -54,6 +54,9 @@ publishes the matching section as the GitHub release body.
 - The Mac's Checkpoints section shows a checkpoint's diff against now (the stat inline, the patch a Copy away).
 
 ### Team (preview)
+- Team: a leader invites a discoverable Mac over the local network, and the invitee accepts from Invitations.
+- Team: the phone's Nearby — scan the network, ask a leader to join, invite a Mac, accept an invitation.
+- `infinitusctl team nearby invite`, `team invites`, `team accept` and `team ignore` do the same from a terminal.
 - Share a kind with Nobody and it never leaves this Mac (`infinitusctl team share transcripts off`).
 - Pick which recent sessions' transcripts are shared.
 - A publish shows its progress in Settings › Team, and quitting stops it after the current batch.
