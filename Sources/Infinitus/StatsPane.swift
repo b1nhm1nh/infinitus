@@ -24,7 +24,7 @@ struct StatsPane: View {
                 }
                 .pickerStyle(.segmented)
                 if let s = summary {
-                    Text("\(s.from) – \(s.to) · streak \(s.streak) day\(s.streak == 1 ? "" : "s")")
+                    Text("\(s.from) – \(s.to) · \(s.streak)-day streak")
                         .font(.caption).foregroundStyle(.secondary).monospacedDigit()
                 }
                 if model.scanning {
@@ -32,6 +32,7 @@ struct StatsPane: View {
                         .font(.caption).foregroundStyle(.secondary)
                 }
             }
+            .id("Stats/Period")
             if let s = summary {
                 StatsTiles(summary: s)
                 effort(s)
@@ -40,10 +41,16 @@ struct StatsPane: View {
                     heatmap(s.total.hours)
                     sessionLengths(s)
                 }
+                .id("Stats/Rhythm")
             }
             Section {
-                ForEach(model.notes, id: \.self) { Text($0).font(.caption).foregroundStyle(.secondary) }
                 Button("Refresh") { model.refresh() }.disabled(model.scanning)
+            } header: {
+                Text("Scan")
+            } footer: {
+                VStack(alignment: .leading, spacing: 2) {
+                    ForEach(model.notes, id: \.self) { Text($0) }
+                }
             }
         }
         .formStyle(.grouped)
@@ -169,4 +176,13 @@ struct StatsPane: View {
         }
         .padding(.vertical, 4)
     }
+}
+
+extension StatsPane {
+    static let searchEntries: [SettingsSearchEntry] = [
+        SettingsSearchEntry(pane: "Stats", section: "Period", label: "Period",
+                            keywords: ["week", "month", "year", "period", "streak"], anchor: "Stats/Period"),
+        SettingsSearchEntry(pane: "Stats", section: "Rhythm", label: "Rhythm",
+                            keywords: ["heatmap", "hours", "session lengths", "rhythm"], anchor: "Stats/Rhythm"),
+    ]
 }

@@ -61,7 +61,11 @@ final class UsageModel: ObservableObject {
                 // popup wider in one frame (container-jump bug,
                 // user 2026-08-30).
                 withAnimation(.easeInOut(duration: 0.3)) { self.report = r }
-            } catch { self.error = "\(error)" }
+            } catch {
+                Lifecycle.log.error("usage scan failed: \(String(describing: error), privacy: .public)")
+                self.error = "Couldn't read the transcripts. Make sure the "
+                    + "engine is installed, then choose Refresh."
+            }
             self.loading = false
         }
     }
@@ -72,22 +76,28 @@ struct UsagePane: View {
 
     var body: some View {
         Form {
-            HStack {
-                Picker("Window", selection: $model.days) {
-                    Text("7 days").tag(7)
-                    Text("14 days").tag(14)
-                    Text("30 days").tag(30)
+            Section {
+                HStack {
+                    Picker("Window", selection: $model.days) {
+                        Text("7 days").tag(7)
+                        Text("14 days").tag(14)
+                        Text("30 days").tag(30)
+                    }
+                    .frame(maxWidth: 220)
+                    Spacer()
+                    if model.loading {
+                        ProgressView().controlSize(.small)
+                    } else {
+                        Button("Refresh") { model.refresh() }
+                    }
                 }
-                .frame(maxWidth: 220)
-                Spacer()
-                if model.loading {
-                    ProgressView().controlSize(.small)
-                } else {
-                    Button("Refresh") { model.refresh() }
-                }
+            } footer: {
+                Text("Spend is estimated from your own transcripts at API "
+                     + "list prices — it is not a bill.")
             }
             if let err = model.error {
                 Text(err).font(.caption).foregroundStyle(.red)
+                    .accessibilityLabel("Error. \(err)")
             }
             if let report = model.report {
                 if let daily = report.daily, daily.count > 1 {
@@ -123,7 +133,7 @@ struct UsagePane: View {
                         bucketRow(row)
                     }
                     if let extra = report.unattributed {
-                        bucketRow(extra, fallbackName: "before switch log")
+                        bucketRow(extra, fallbackName: "Before the switch log")
                     }
                     LabeledContent("Total") {
                         Text(usd(report.estimatedTotalUSD)).bold().monospacedDigit()
@@ -136,6 +146,7 @@ struct UsagePane: View {
                     Text(report.caveats.joined(separator: " "))
                         .font(.caption2).foregroundStyle(.secondary)
                 }
+                .id("Usage/Estimate")
             } else if model.loading {
                 Text("Scanning transcripts…").foregroundStyle(.secondary)
             }
@@ -157,7 +168,7 @@ struct UsagePane: View {
                 Text(usd(row.estimatedUSD)).monospacedDigit()
             }
             HStack(spacing: 8) {
-                Text("\(row.messages) msgs")
+                Text("\(row.messages) messages")
                 Text("out \(TokenFormat.compact(row.output))")
                 Text("cache \(TokenFormat.compact(row.cacheRead + row.cacheWrite))")
                 if let top = row.models.first {
@@ -166,6 +177,7 @@ struct UsagePane: View {
             }
             .font(.caption).foregroundStyle(.secondary)
         }
+        .accessibilityElement(children: .combine)
     }
 
     private func usd(_ v: Double) -> String {
@@ -192,7 +204,7 @@ struct UsagePane: View {
             }
         }
         return (report.daily ?? []).map { slice in
-            let name = slice.account.map { names[$0] ?? "#\($0)" } ?? "unattributed"
+            let name = slice.account.map { names[$0] ?? "#\($0)" } ?? "Unattributed"
             return ChartPoint(
                 id: "\(slice.date)/\(slice.account.map(String.init) ?? "-")",
                 day: String(slice.date.suffix(5)),   // "MM-DD"
@@ -220,3 +232,12 @@ struct UsagePane: View {
 /// The cash column in the shared fleet views (#9 phase B) reads the
 /// cached report through this.
 extension UsageModel: UsageSource {}
+
+extension UsagePane {
+    static let searchEntries: [SettingsSearchEntry] = [
+        SettingsSearchEntry(pane: "Usage", section: "Estimate", label: "Window",
+                            keywords: ["7 days", "14 days", "30 days", "window"], anchor: "Usage/Estimate"),
+        SettingsSearchEntry(pane: "Usage", section: "Estimate", label: "Estimated spend",
+                            keywords: ["spend", "cost", "dollars", "estimate", "tokens"], anchor: "Usage/Estimate"),
+    ]
+}

@@ -154,8 +154,8 @@ struct UtilizationPane: View {
             liveBattlePlanSection
             runRateSection
             if model.samples.isEmpty && !model.loading {
-                Text("No history yet — samples accrue while Infinitus runs "
-                     + "(one per engine usage poll).")
+                Text("No history yet. Samples build up while Infinitus runs — "
+                     + "one per engine usage poll.")
                     .foregroundStyle(.secondary)
             } else {
                 utilizationSection
@@ -188,7 +188,7 @@ struct UtilizationPane: View {
                 }
                 .monospacedDigit()
                 if !r.unpricedModels.isEmpty {
-                    Text("Unpriced (tokens counted, $ not): " + r.unpricedModels.joined(separator: ", "))
+                    Text("Tokens counted but not priced: " + r.unpricedModels.joined(separator: ", "))
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 if let t = live.tokenRate {
@@ -202,6 +202,13 @@ struct UtilizationPane: View {
             } else {
                 Text("No transcript usage found.").foregroundStyle(.secondary)
             }
+            DisclosureGroup("How this is measured") {
+                Text("Per minute and per hour come from the last 60 minutes, "
+                     + "per day from the last 24 hours, per week from the "
+                     + "last 7 days. One turn is counted once. Dollars are "
+                     + "what the same tokens would cost at API list prices.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
         } header: {
             HStack {
                 Text("Run rate")
@@ -209,12 +216,11 @@ struct UtilizationPane: View {
                 if model.ratesScanning, model.rates != nil { ProgressView().controlSize(.mini) }
             }
         } footer: {
-            Text("Read off Claude Code's own transcripts: per minute and per hour "
-                 + "from the last 60 minutes, per day from the last 24 hours, per week "
-                 + "from the last 7 days. One turn counted once; dollars are what the "
-                 + "same tokens would cost at API list prices — an estimate, not a bill.")
+            Text("Read off Claude Code's own transcripts — an estimate, "
+                 + "never a bill.")
                 .font(.caption2).foregroundStyle(.secondary)
         }
+        .id("Utilization/Run rate")
     }
 
     @ViewBuilder private func rateRow(_ label: String, _ t: TokenRates.Totals, divide: Double) -> some View {
@@ -232,22 +238,37 @@ struct UtilizationPane: View {
 
     @ViewBuilder private var forecastSection: some View {
         Section {
+            if !liveTheme.plain {
+                // The gauge keys are the theme's own words, and under a
+                // themed skin they are emoji — three glyphs per account
+                // with nothing saying what they mean (critique: "un-legended
+                // column keys"). One themed line fixes it for all thirteen.
+                HStack(spacing: 14) {
+                    Text("\(liveTheme.sessionLabel) session (5h)")
+                    Text("\(liveTheme.weeklyLabel) weekly (7d)")
+                    if !liveTheme.scopedPrefix.trimmingCharacters(in: .whitespaces).isEmpty {
+                        Text("\(liveTheme.scopedPrefix.trimmingCharacters(in: .whitespaces)) model limit")
+                    }
+                }
+                .font(.caption).foregroundStyle(.secondary)
+                .accessibilityElement(children: .combine)
+            }
             if let f = live.forecast, let lines = f.accounts, !lines.isEmpty {
                 ForEach(lines, id: \.number) { line in
                     VStack(alignment: .leading, spacing: 3) {
                         HStack(spacing: 6) {
                             Text(line.label).bold()
                             if line.active {
-                                Text("active").font(.caption).foregroundStyle(.orange)
+                                Text("Active").font(.caption).foregroundStyle(.orange)
                             } else if line.disabled {
-                                Text("held").font(.caption).foregroundStyle(.secondary)
+                                Text("On Hold").font(.caption).foregroundStyle(.secondary)
                             }
                             Spacer()
                             if let at = line.bindsAt, let w = line.bindsWindow {
                                 Text("\(ForecastWords.gaugeName(w, theme: liveTheme)) binds first, \(ForecastClock.label(at))")
                                     .font(.caption).foregroundStyle(.orange)
                             } else {
-                                Text("no limit in sight").font(.caption).foregroundStyle(.secondary)
+                                Text("No limit in sight").font(.caption).foregroundStyle(.secondary)
                             }
                         }
                         ForEach(line.windows, id: \.name) { w in
@@ -255,20 +276,21 @@ struct UtilizationPane: View {
                                 Text(ForecastWords.gaugeName(w.name, theme: liveTheme))
                                     .frame(width: 56, alignment: .leading)
                                 Text("\(Int(w.pct.rounded()))%").frame(width: 40, alignment: .trailing)
-                                Text(w.ratePctPerHour.map { ForecastWords.rate($0) } ?? "pace unknown")
+                                Text(w.ratePctPerHour.map { ForecastWords.rate($0) } ?? "Pace unknown")
                                     .frame(width: 84, alignment: .trailing)
                                     .foregroundStyle(w.ratePctPerHour == nil ? .secondary : .primary)
-                                Text(w.hitsAt.map { "out " + ForecastClock.label($0) }
-                                     ?? (w.ratePctPerHour == nil ? "" : "resets before it fills"))
+                                Text(w.hitsAt.map { "Out " + ForecastClock.label($0) }
+                                     ?? (w.ratePctPerHour == nil ? "" : "Resets before it fills"))
                                     .foregroundStyle(w.hitsAt == nil ? Color.secondary : Color.orange)
                                 Spacer()
                                 if let r = w.resetsAt {
-                                    Text("resets " + ForecastClock.label(r)).foregroundStyle(.secondary)
+                                    Text("Resets " + ForecastClock.label(r)).foregroundStyle(.secondary)
                                 }
                             }
                             .font(.caption).monospacedDigit()
                         }
                     }
+                    .accessibilityElement(children: .combine)
                 }
             } else {
                 Text("No projection yet — needs an active account and ten minutes of polls.")
@@ -280,6 +302,7 @@ struct UtilizationPane: View {
             Text("Estimate. " + (live.forecast?.basis ?? UsageForecast.basisText))
                 .font(.caption2).foregroundStyle(.secondary)
         }
+        .id("Utilization/Forecast")
     }
 
     @ViewBuilder private var fleetSection: some View {
@@ -443,13 +466,13 @@ struct UtilizationPane: View {
                             .monospacedDigit()
                             .foregroundStyle(.secondary)
                         if w.closed && w.peakPct < 5 {
-                            Text("unused")
+                            Text("Unused")
                                 .font(.caption2)
                                 .padding(.horizontal, 6).padding(.vertical, 2)
                                 .background(.orange.opacity(0.2), in: Capsule())
                                 .foregroundStyle(.orange)
                         } else if !w.closed {
-                            Text("open")
+                            Text("Open")
                                 .font(.caption2).foregroundStyle(.secondary)
                         }
                     }
@@ -470,7 +493,7 @@ struct UtilizationPane: View {
             } footer: {
                 Text("Peak % observed inside each reconstructed 5h window "
                      + "(windows are use-it-or-lose-it, so peak is what "
-                     + "\"used\" means). Bars: how many windows have "
+                     + "“used” means). Bars: how many windows have "
                      + "started at each hour of day — the sprint rhythm.")
                     .font(.caption2).foregroundStyle(.secondary)
             }
@@ -616,4 +639,15 @@ struct UtilizationPane: View {
     private func shortName(_ email: String) -> String {
         String(email.prefix(while: { $0 != "@" }))
     }
+}
+
+extension UtilizationPane {
+    static let searchEntries: [SettingsSearchEntry] = [
+        SettingsSearchEntry(pane: "Utilization", section: "Forecast", label: "Forecast",
+                            keywords: ["forecast", "binds", "pace", "projection", "when"]),
+        SettingsSearchEntry(pane: "Utilization", section: "Run rate", label: "Run rate",
+                            keywords: ["tokens per minute", "run rate", "rate", "burn", "throughput"]),
+        SettingsSearchEntry(pane: "Utilization", section: "Forecast", label: "Range",
+                            keywords: ["range", "24 hours", "7 days", "30 days", "history"]),
+    ]
 }
