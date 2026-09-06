@@ -46,11 +46,17 @@ actor NetworkFleetMirror: FleetMirror {
         return digest.prefix(6).map { String(format: "%02x", $0) }.joined()
     }
 
-    nonisolated static var parkedCache: ParkedCache {
+    /// The disk cache root for one Mac's key — `parked/<token hash>/`
+    /// under App Support, the primary's and every other Mac's alike
+    /// (#144 phase 3).
+    nonisolated static func parkedCache(key: String) -> ParkedCache {
         let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
             ?? FileManager.default.temporaryDirectory
-        return ParkedCache(root: support.appendingPathComponent("parked").appendingPathComponent(parkedKey()))
+        return ParkedCache(root: support.appendingPathComponent("parked").appendingPathComponent(key))
     }
+
+    /// The primary Mac's cache.
+    nonisolated static var parkedCache: ParkedCache { parkedCache(key: parkedKey()) }
 
     /// True when the last `latest()` answered from the cache because no
     /// route reached the Mac — the phone is "parked".
@@ -102,7 +108,7 @@ actor NetworkFleetMirror: FleetMirror {
     private let onLastGood: (@Sendable (String) -> Void)?
     /// #168: disk cache for the primary Mac. `ParkedCache` keeps an
     /// in-memory "last saved" marker, so this actor holds ONE instance;
-    /// other Macs stay read-only in phase 1 (`nil`). `var` so
+    /// each other Mac's instance holds its own (#144 phase 3). `var` so
     /// `forgetCached()` can re-resolve it against a new pairing token.
     private var parked: ParkedCache?
 
@@ -119,7 +125,8 @@ actor NetworkFleetMirror: FleetMirror {
     init(pairing: MacPairing, onLastGood: (@Sendable (String) -> Void)? = nil) {
         storage = .pairing(pairing)
         self.onLastGood = onLastGood
-        parked = nil
+        parked = Self.parkedCache(key: Self.parkedKey(token: pairing.token))
+        cached = parked?.loadSnapshot()
         // The default line above is about Bonjour, which this instance
         // never uses — the Settings caption would otherwise say so
         // before the first fetch even runs.
@@ -133,9 +140,16 @@ actor NetworkFleetMirror: FleetMirror {
     func forgetCached() {
         cached = nil
         parked?.clear()
-        // The primary just changed underneath this instance — `parkedKey()`
-        // now hashes a different token, so the cache must move with it.
-        parked = Self.parkedCache
+        // The pairing changed underneath this instance — re-resolve the
+        // cache from what this instance authenticates as, never the
+        // primary's key on a per-Mac instance.
+        switch storage {
+        case .defaults: parked = Self.parkedCache
+        case .pairing(let pairing): parked = Self.parkedCache(key: Self.parkedKey(token: pairing.token))
+        }
+        // A promoted Mac's directory is keyed by its token, which is now
+        // the primary's — start from what it already cached (#144 phase 3).
+        cached = parked?.loadSnapshot()
         lastServedFromCache = false
         statusText = "looking for a Mac on this Wi-Fi…"
     }

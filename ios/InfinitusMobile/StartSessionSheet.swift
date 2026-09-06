@@ -1,7 +1,7 @@
 import InfinitusCore
 import SwiftUI
 
-/// Start a session on the Mac from the phone (#91): a repository from
+/// Start a session on a Mac from the phone (#91; any paired Mac since #144 phase 3): a repository from
 /// the folders sessions have run in (or any path), the engine, an
 /// optional first prompt. Start opens a terminal on the Mac and, once
 /// the session registers, its chat here.
@@ -17,6 +17,8 @@ struct StartSessionSheet: View {
     /// The chip applied last (#165): its model and system prompt ride
     /// along unseen; the visible fields it set can still be changed.
     @State private var profile: SessionProfile?
+    /// Which paired Mac starts it (#144 phase 3); `nil` is the primary.
+    @State private var macId: String?
     @State private var starting = false
     @State private var error: String?
 
@@ -25,11 +27,22 @@ struct StartSessionSheet: View {
     var body: some View {
         NavigationStack {
             Form {
-                if let profiles = model.snapshot?.profiles, !profiles.isEmpty {
+                if !model.others.isEmpty {
+                    Section("Mac") {
+                        Picker("Mac", selection: $macId) {
+                            Text(model.machineName(macId: nil)).tag(String?.none)
+                            ForEach(model.others) { other in
+                                Text(other.pairing.name).tag(String?.some(other.id))
+                            }
+                        }
+                        .pickerStyle(.menu)
+                    }
+                }
+                if !model.profiles(macId: macId).isEmpty {
                     Section {
                         ScrollView(.horizontal, showsIndicators: false) {
                             HStack(spacing: 8) {
-                                ForEach(profiles) { p in
+                                ForEach(model.profiles(macId: macId)) { p in
                                     Button { apply(p) } label: {
                                         Text(p.name)
                                             .font(.subheadline.weight(profile?.name == p.name ? .semibold : .regular))
@@ -49,7 +62,7 @@ struct StartSessionSheet: View {
                 }
                 Section("Repository") {
                     Picker("Repository", selection: $cwd) {
-                        ForEach(model.recentCwds, id: \.self) { path in
+                        ForEach(model.recentCwds(macId: macId), id: \.self) { path in
                             Text((path as NSString).lastPathComponent).tag(path)
                         }
                         Text("Another folder…").tag(Self.other)
@@ -103,7 +116,14 @@ struct StartSessionSheet: View {
                     }
                 }
             }
-            .onAppear { if cwd.isEmpty { cwd = model.recentCwds.first ?? Self.other } }
+            .onAppear { if cwd.isEmpty { cwd = model.recentCwds(macId: macId).first ?? Self.other } }
+            .onChange(of: macId) { _, _ in
+                // A different Mac: its own folders and profiles, the rest
+                // of the form (engine, prompt, permissions) stays typed.
+                profile = nil
+                error = nil
+                cwd = model.recentCwds(macId: macId).first ?? Self.other
+            }
         }
     }
 
@@ -112,7 +132,7 @@ struct StartSessionSheet: View {
     private func apply(_ p: SessionProfile) {
         profile = p
         if let folder = p.cwd, !folder.isEmpty {
-            if model.recentCwds.contains(folder) { cwd = folder } else { cwd = Self.other; custom = folder }
+            if model.recentCwds(macId: macId).contains(folder) { cwd = folder } else { cwd = Self.other; custom = folder }
         }
         if let e = p.engine, !e.isEmpty { engine = e }
         if let m = p.permissionMode { permissionMode = m }
@@ -143,15 +163,18 @@ struct StartSessionSheet: View {
                                            profile: profile?.name)
         Task {
             do {
-                let reply = try await NetworkFleetMirror.shared.startSession(request)
+                let reply = try await model.mirror(for: macId).startSession(request)
                 guard reply.outcome == "started" else {
                     error = reply.detail ?? reply.outcome
                     starting = false
                     return
                 }
-                if let pid = reply.pid { model.requestedPid = pid }
+                if let pid = reply.pid {
+                    model.requestedMacId = macId
+                    model.requestedPid = pid
+                }
                 dismiss()
-                await model.refresh()
+                await model.refresh(macId: macId)
             } catch {
                 self.error = error.localizedDescription
                 starting = false
