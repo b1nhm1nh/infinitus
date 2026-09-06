@@ -81,20 +81,23 @@ jobs:
   # deflate — the team envelopes stay byte-identical cross-platform), so
   # no vcpkg and no INCLUDE/LIB env: once LIB is set, clang stops adding
   # the VC and SDK lib dirs of its own (msvcrt.lib went missing, #171).
-  # Non-blocking until proven on real runners; locally verified on the
-  # 6.3.3 toolchain (windows/env.ps1).
+  # Non-blocking until proven on real runners; verified on 6.3.3 locally
+  # (windows/env.ps1) — the 6.1 toolchain cannot link the test bundle
+  # here (the daemon's main collides with the XCTest runner's on PE,
+  # duplicate `main`), 6.3.3 links it.
   windows:
     # windows-latest moved to Visual Studio 18, whose STL refuses the
-    # swift-6.1 toolchain's clang (STL1000 "expected Clang 20 or newer",
-    # #155) before any of our code compiles; 2022 still carries VS 17.
+    # older swift toolchains' clang (STL1000 "expected Clang 20 or
+    # newer", #155) before any of our code compiles; 2022 still carries
+    # VS 17.
     runs-on: windows-2022
     continue-on-error: true
     steps:
       - uses: actions/checkout@v4
       - uses: compnerd/gha-setup-swift@v0.4.1
         with:
-          branch: swift-6.1-release
-          tag: 6.1-RELEASE
+          branch: swift-6.3.3-release
+          tag: 6.3.3-RELEASE
       # One --product per invocation: with two, SwiftPM builds only the
       # last (2026-09-03).
       - run: swift build --product infinitus-win
