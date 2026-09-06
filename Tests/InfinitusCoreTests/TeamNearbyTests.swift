@@ -74,9 +74,11 @@ final class TeamNearbyTests: XCTestCase {
         let hidden = TeamNearby.Endpoint(local: .hidden) { _ in "branch" }
         XCTAssertEqual(status(TeamNearby.respond(http("GET", TeamNearby.keyPath), endpoint: hidden)), 404)
         XCTAssertEqual(status(TeamNearby.respond(http("POST", TeamNearby.requestPath), endpoint: hidden)), 404)
-        // Wrong method, and step 6's route that isn't here yet.
+        // Wrong method on a real route.
         XCTAssertEqual(status(TeamNearby.respond(http("GET", TeamNearby.requestPath), endpoint: endpoint)), 404)
-        XCTAssertEqual(status(TeamNearby.respond(http("POST", "/team/invite"), endpoint: endpoint)), 404)
+        XCTAssertEqual(status(TeamNearby.respond(http("GET", TeamNearby.invitePath), endpoint: endpoint)), 404)
+        // The invite route exists now: a body that isn't one is a 400, not a 404.
+        XCTAssertEqual(status(TeamNearby.respond(http("POST", TeamNearby.invitePath), endpoint: endpoint)), 400)
     }
 
     func testRequestOverTheLanLandsInTheRequestsBranch() throws {
@@ -243,5 +245,93 @@ final class TeamNearbyTests: XCTestCase {
         // A member peer leads no team.
         var member = peer; member.role = "member"
         XCTAssertThrowsError(try TeamNearby.Client.request(to: member, name: "Bo", devices: [], platform: "linux", paths: jp, secrets: js, http: http))
+    }
+
+    func testInviteRouteKeepsASealedInviteAndRefusesAnythingItCannotOpen() throws {
+        let remote = try makeRemote()
+        let (lp, ls) = machine("leader")
+        let (jp, js) = machine("joiner")
+        let leader = try TeamClient.create(name: "Papaya", remote: remote, token: nil, paths: lp, secrets: ls, now: 1_000)
+        let joiner = try TeamClient.identity(paths: jp, secrets: js)
+        let local = TeamNearby.Local.load(name: "Bo", discoverable: true, paths: jp, secrets: js)
+        let endpoint = TeamNearby.Endpoint(local: local, store: { _ in "branch" },
+                                           storeInvite: { try TeamNearby.Store.saveInvite($0, paths: jp) })
+        let link = try leader.code(expiresIn: 7 * 86_400, nonce: TeamInvites.newNonce(), now: 1_000)
+        let sealed = try Envelope.seal(Data(link.utf8), kind: "invite", from: leader.identity, to: [joiner.keys], at: 1_001)
+        let invite = TeamNearby.Invite(from: leader.identity.keys, fromName: "Loc", teamName: "Papaya", envelope: sealed)
+
+        let ok = TeamNearby.respond(http("POST", TeamNearby.invitePath, body: try CanonicalJSON.encode(invite)), endpoint: endpoint)
+        XCTAssertEqual(status(ok), 200)
+        XCTAssertEqual(try body(TeamNearby.InviteReply.self, ok), TeamNearby.InviteReply(ok: true))
+        XCTAssertEqual(TeamNearby.Store.invites(paths: jp), [invite])
+        XCTAssertEqual(invite.at, 1_001)
+
+        // The envelope's sender must be the `from` the body claims.
+        var lying = invite; lying.from = TeamIdentity.random().keys
+        XCTAssertEqual(status(TeamNearby.respond(http("POST", TeamNearby.invitePath, body: try CanonicalJSON.encode(lying)), endpoint: endpoint)), 400)
+        // Sealed to someone else: this machine is not among the recipients.
+        let elsewhere = try Envelope.seal(Data(link.utf8), kind: "invite", from: leader.identity,
+                                          to: [TeamIdentity.random().keys], at: 1_001)
+        let notMine = TeamNearby.Invite(from: leader.identity.keys, fromName: "Loc", teamName: "Papaya", envelope: elsewhere)
+        XCTAssertEqual(status(TeamNearby.respond(http("POST", TeamNearby.invitePath, body: try CanonicalJSON.encode(notMine)), endpoint: endpoint)), 400)
+        XCTAssertEqual(status(TeamNearby.respond(http("POST", TeamNearby.invitePath, body: Data("nope".utf8)), endpoint: endpoint)), 400)
+        // A hidden machine says nothing at all.
+        let hidden = TeamNearby.Endpoint(local: .hidden, store: { _ in "branch" })
+        XCTAssertEqual(status(TeamNearby.respond(http("POST", TeamNearby.invitePath, body: try CanonicalJSON.encode(invite)), endpoint: hidden)), 404)
+        // A store that refuses is a 503, not a crash — and an endpoint with
+        // no invite store wired refuses the same way.
+        let unwired = TeamNearby.Endpoint(local: local, store: { _ in "branch" })
+        XCTAssertEqual(status(TeamNearby.respond(http("POST", TeamNearby.invitePath, body: try CanonicalJSON.encode(invite)), endpoint: unwired)), 503)
+
+        // Opening gives the link back verbatim and the code it decodes to.
+        let opened = try TeamNearby.openInvite(invite, identity: joiner, now: 1_002)
+        XCTAssertEqual(opened.text, link)
+        XCTAssertEqual(opened.code.team, leader.config.id)
+        XCTAssertNotNil(opened.code.nonce)
+        // A forged sender key never opens it, and neither does the wrong identity.
+        var wrongSender = invite; wrongSender.from = TeamIdentity.random().keys
+        XCTAssertThrowsError(try TeamNearby.openInvite(wrongSender, identity: joiner, now: 1_002))
+        XCTAssertThrowsError(try TeamNearby.openInvite(invite, identity: TeamIdentity.random(), now: 1_002))
+        // An expired code is refused at open time, not at accept time.
+        XCTAssertThrowsError(try TeamNearby.openInvite(invite, identity: joiner, now: 1_000 + 8 * 86_400)) {
+            XCTAssertEqual($0 as? TeamCode.CodeError, .expired)
+        }
+
+        // Ignoring removes it; twice is an error, never a silent success.
+        try TeamNearby.Store.removeInvite(from: leader.identity.kid, paths: jp)
+        XCTAssertEqual(TeamNearby.Store.invites(paths: jp), [])
+        XCTAssertThrowsError(try TeamNearby.Store.removeInvite(from: leader.identity.kid, paths: jp)) {
+            XCTAssertEqual($0 as? TeamNearby.StoreError, .noInvite)
+        }
+    }
+
+    func testInvitesLiveBesideTheTeamsAndAreCapped() throws {
+        let (jp, _) = machine("joiner")
+        func invite(_ from: TeamIdentity, team: String = "T") throws -> TeamNearby.Invite {
+            TeamNearby.Invite(from: from.keys, fromName: "L", teamName: team,
+                              envelope: try Envelope.seal(Data("x".utf8), kind: "invite", from: from, to: [], at: 1))
+        }
+        for _ in 0..<TeamNearby.inviteCap {
+            try TeamNearby.Store.saveInvite(try invite(TeamIdentity.random()), paths: jp)
+        }
+        XCTAssertEqual(TeamNearby.Store.invites(paths: jp).count, TeamNearby.inviteCap)
+        // The invites dir is beside the team dirs, never inside one, and is
+        // not mistaken for a team (no config.json).
+        XCTAssertEqual(TeamNearby.Store.invitesDir(paths: jp), jp.base.appendingPathComponent("invites"))
+        XCTAssertEqual(jp.teamIDs(), [])
+        // Full: a new sender is refused.
+        XCTAssertThrowsError(try TeamNearby.Store.saveInvite(try invite(TeamIdentity.random()), paths: jp)) {
+            XCTAssertEqual($0 as? TeamNearby.StoreError, .full)
+        }
+        // …but a sender already in the book may replace its own invite.
+        let first = try XCTUnwrap(TeamNearby.Store.invites(paths: jp).first)
+        var again = first; again.teamName = "T2"
+        XCTAssertNoThrow(try TeamNearby.Store.saveInvite(again, paths: jp))
+        XCTAssertEqual(TeamNearby.Store.invites(paths: jp).count, TeamNearby.inviteCap)
+        XCTAssertEqual(TeamNearby.Store.invites(paths: jp).first?.teamName, "T2")
+        // A garbled or misnamed file is skipped, not fatal.
+        let dir = TeamNearby.Store.invitesDir(paths: jp)
+        try Data("junk".utf8).write(to: dir.appendingPathComponent("zzz.json"))
+        XCTAssertEqual(TeamNearby.Store.invites(paths: jp).count, TeamNearby.inviteCap)
     }
 }

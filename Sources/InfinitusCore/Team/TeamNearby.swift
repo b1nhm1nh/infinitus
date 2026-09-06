@@ -4,11 +4,13 @@ import Foundation
 /// the two LAN routes (`GET /team/key`, `POST /team/request`) as pure
 /// request → response functions so the Mac's MirrorServer and the
 /// Linux PosixHTTPServer mount one handler, and where an incoming
-/// request lands. `POST /team/invite` is step 6's. Lives beside
-/// TeamClient, never in it: TeamClient's surface is the publisher's.
+/// request lands. `POST /team/invite` is the leader's half of §6.4: an
+/// invite link sealed to one peer. Lives beside TeamClient, never in it:
+/// TeamClient's surface is the publisher's.
 public enum TeamNearby {
     public static let keyPath = "/team/key"
     public static let requestPath = "/team/request"
+    public static let invitePath = "/team/invite"
     public static let routePrefix = "/team/"
     /// The UserDefaults bool the Mac app, its Team pane (plan 5) and
     /// `infinitusctl team-discoverable` share. Off by default.
@@ -19,6 +21,11 @@ public enum TeamNearby {
     /// the push succeeds, so the count rarely nears this. The
     /// `requests` branch itself has no such ceiling.
     public static let pendingCap = 100
+    /// Invitations a machine will hold at once. An unauthenticated LAN
+    /// peer can post one per kid, so the count is bounded the same way
+    /// `pendingCap` bounds requests; a sender already in the book may
+    /// always replace its own.
+    public static let inviteCap = 20
 
     /// `GET /team/key`.
     public struct KeyReply: Codable, Equatable, Sendable {
@@ -50,6 +57,35 @@ public enum TeamNearby {
         public var stored: String
 
         public init(ok: Bool, stored: String) { self.ok = ok; self.stored = stored }
+    }
+
+    /// `POST /team/invite` body (spec §6.4): the leader's keys and names,
+    /// and the invite link (§6.2) sealed to the peer's encryption key.
+    /// The link carries the store's write credential, so it exists on the
+    /// wire and on disk only as ciphertext; `openInvite` is the only way
+    /// back to the text, and it needs this machine's identity.
+    public struct Invite: Codable, Equatable, Sendable, Identifiable {
+        public var from: TeamKeys
+        /// The inviting machine's display name, for "Loc invites you to Papaya".
+        public var fromName: String
+        public var teamName: String
+        /// `Envelope.seal(Data(link.utf8), kind: "invite", …)`.
+        public var envelope: Data
+
+        public var id: String { from.kid }
+        /// When the sender sealed it — read from the signed envelope
+        /// header rather than a field of its own, so nobody can backdate
+        /// an invitation without breaking the signature.
+        public var at: Int { (try? Envelope.header(of: envelope).at) ?? 0 }
+
+        public init(from: TeamKeys, fromName: String, teamName: String, envelope: Data) {
+            self.from = from; self.fromName = fromName; self.teamName = teamName; self.envelope = envelope
+        }
+    }
+
+    public struct InviteReply: Codable, Equatable, Sendable {
+        public var ok: Bool
+        public init(ok: Bool) { self.ok = ok }
     }
 
     // MARK: local standing
@@ -105,14 +141,19 @@ public enum TeamNearby {
 
     // MARK: routes
 
-    /// What the routes need: the local standing and where a request goes
-    /// (`store` returns "branch" or "pending").
+    /// What the routes need: the local standing, where a request goes
+    /// (`store` returns "branch" or "pending") and where an invitation
+    /// goes (`storeInvite`).
     public struct Endpoint {
         public var local: Local
         public var store: (Request) throws -> String
+        /// Defaulted to a refusal so an endpoint built without one answers
+        /// 503 rather than pretending it kept the invitation.
+        public var storeInvite: (Invite) throws -> Void
 
-        public init(local: Local, store: @escaping (Request) throws -> String) {
-            self.local = local; self.store = store
+        public init(local: Local, store: @escaping (Request) throws -> String,
+                    storeInvite: @escaping (Invite) throws -> Void = { _ in throw StoreError.full }) {
+            self.local = local; self.store = store; self.storeInvite = storeInvite
         }
     }
 
@@ -153,6 +194,31 @@ public enum TeamNearby {
                 return MirrorTransport.response(status: 503, reason: "Service Unavailable", contentType: "text/plain",
                                                 body: Data("request not stored\n".utf8))
             }
+        case ("POST", TeamNearby.invitePath):
+            // The peer that sealed this must be the peer the body names,
+            // and it must have sealed it to ME: an invitation nobody here
+            // can open is refused rather than parked on disk. Everything
+            // else about it — team, expiry, leader signature — is checked
+            // when it is opened (`openInvite`), on the identity that can
+            // actually read it.
+            guard let invite = try? CanonicalJSON.decode(Invite.self, from: request.body),
+                  Store.isPathSegment(invite.from.kid),
+                  let header = try? Envelope.header(of: invite.envelope),
+                  header.kind == "invite",
+                  header.from == invite.from.kid,
+                  header.to.contains(where: { $0.kid == keys.kid }) else {
+                return MirrorTransport.badRequestResponse()
+            }
+            do {
+                try endpoint.storeInvite(invite)
+                guard let body = try? CanonicalJSON.encode(InviteReply(ok: true)) else {
+                    return MirrorTransport.notFoundResponse()
+                }
+                return MirrorTransport.jsonResponse(body)
+            } catch {
+                return MirrorTransport.response(status: 503, reason: "Service Unavailable", contentType: "text/plain",
+                                                body: Data("invite not stored\n".utf8))
+            }
         default:
             return MirrorTransport.notFoundResponse()
         }
@@ -160,7 +226,11 @@ public enum TeamNearby {
 
     // MARK: storage
 
-    public enum StoreError: Error, Equatable { case unknownTeam, badKid, full }
+    public enum StoreError: Error, Equatable {
+        case unknownTeam, badKid, full
+        /// `removeInvite` on an invitation that is already gone.
+        case noInvite
+    }
 
     public enum Store {
         public static func pendingDir(team: String, paths: TeamPaths) -> URL {
@@ -211,6 +281,53 @@ public enum TeamNearby {
             }
         }
 
+        /// Invitations sit BESIDE the team dirs, not inside one: the
+        /// invitee usually has no team yet. `teamIDs()` only counts
+        /// directories with a config, so this one is never mistaken for
+        /// a team.
+        public static func invitesDir(paths: TeamPaths) -> URL {
+            paths.base.appendingPathComponent("invites")
+        }
+
+        /// `<base>/invites/<from kid>.json`, the invitation exactly as it
+        /// arrived — the envelope stays SEALED here. One file per sender,
+        /// so a peer can refresh its own invitation but not flood.
+        public static func saveInvite(_ invite: Invite, paths: TeamPaths) throws {
+            let kid = invite.from.kid
+            guard isPathSegment(kid) else { throw StoreError.badKid }
+            let dir = invitesDir(paths: paths)
+            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            let file = dir.appendingPathComponent("\(kid).json")
+            let existing = (try? FileManager.default.contentsOfDirectory(atPath: dir.path)) ?? []
+            guard existing.count < TeamNearby.inviteCap || FileManager.default.fileExists(atPath: file.path) else {
+                throw StoreError.full
+            }
+            try CanonicalJSON.encode(invite).write(to: file)
+        }
+
+        /// Unreadable or misnamed files are skipped, like `pending`.
+        public static func invites(paths: TeamPaths) -> [Invite] {
+            let dir = invitesDir(paths: paths)
+            let names = ((try? FileManager.default.contentsOfDirectory(atPath: dir.path)) ?? []).sorted()
+            return names.compactMap { name in
+                guard name.hasSuffix(".json"),
+                      let data = try? Data(contentsOf: dir.appendingPathComponent(name)),
+                      let invite = try? CanonicalJSON.decode(Invite.self, from: data),
+                      name == "\(invite.from.kid).json" else { return nil }
+                return invite
+            }
+        }
+
+        /// Accept and Ignore both end here. A missing file is `noInvite`,
+        /// never a silent success — the phone shows "that invitation is
+        /// gone" instead of a green tick over nothing.
+        public static func removeInvite(from kid: String, paths: TeamPaths) throws {
+            guard isPathSegment(kid) else { throw StoreError.badKid }
+            let file = invitesDir(paths: paths).appendingPathComponent("\(kid).json")
+            guard FileManager.default.fileExists(atPath: file.path) else { throw StoreError.noInvite }
+            try FileManager.default.removeItem(at: file)
+        }
+
         /// `requests/<kid>.json` on the team's store, with whatever
         /// credential this machine holds: the leader's when a request
         /// arrives over the LAN, the joiner's own when it already has the
@@ -226,6 +343,22 @@ public enum TeamNearby {
             try store.open()
             try store.put("requests/\(kid).json", try CanonicalJSON.encode(signed))
         }
+    }
+
+    /// Opens an invitation with this machine's identity (spec §6.4). The
+    /// sender key is pinned to the `from` the body carried, so a stranger
+    /// cannot pass its own envelope off as the leader's; `TeamCode.decode`
+    /// then checks the leader's signature over the code and its expiry,
+    /// which is what makes an opened invitation safe to join with. The
+    /// TEXT comes back as sealed — the caller hands that to
+    /// `TeamClient.request(code:…)` rather than re-encoding the code,
+    /// which would need the leader's key to sign.
+    public static func openInvite(_ invite: Invite, identity: TeamIdentity,
+                                  now: Int = Int(Date().timeIntervalSince1970)) throws -> (text: String, code: TeamCode) {
+        let (_, plaintext) = try Envelope.open(invite.envelope, as: identity,
+                                               senderKey: { $0 == invite.from.kid ? invite.from : nil })
+        let text = String(decoding: plaintext, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
+        return (text, try TeamCode.decode(text, now: now))
     }
 }
 
