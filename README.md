@@ -138,9 +138,9 @@ One line per feature; the site and the CHANGELOG carry the detail.
 - **Crash reports, on-device** — both apps record their own crashes; any report can go into a session's chat for triage.
 - **Randomize names** — every account gets a fresh name from the theme's pool, or one account with the dice beside its name; Tab moves between the name fields.
 - **Star & pause anywhere** — right-click a name in the popup, or swipe / long-press on the phone, to star an account or pause its rotation; a paused row shows a play button to resume.
-- **Team (preview)** — a team on any git remote; members publish stats, sessions and chosen transcripts end-to-end encrypted to the people they pick, and leaders see who's on, who's blocked and what it costs per member, repo and model.
+- **Team (preview)** — a team on any git remote; members publish stats, sessions, chosen transcripts and their fleet — every account with tier, state and headroom — end-to-end encrypted to the people they pick, and leaders see who's on, who's blocked, who's about to run dry and what it costs per member, repo and model.
 - **Joining a team** — invite links and QR, team codes, `infinitus://join`, same-network discovery, and leader-initiated LAN invites accepted from Invitations; approve from the Mac; the phone's Team tab has its own Nearby (scan, request to join, invite, accept); Linux members use `infinitusctl team` alone.
-- **Share settings** — "off" per kind (stats, sessions, transcripts, crashes) keeps it on this machine entirely; a Mac picker chooses which recent sessions' transcripts go out; a publish shows its progress, and the plaintext copies it keeps are capped at 1 GB.
+- **Share settings** — "off" per kind (stats, sessions, transcripts, crashes, fleet) keeps it on this machine entirely; a Mac picker chooses which recent sessions' transcripts go out; a publish shows its progress, and the plaintext copies it keeps are capped at 1 GB.
 - **Your team identity** — a local key behind Touch ID, a recovery key, a passphrase-sealed export.
 - **Parked** — the Mac asleep or away, the phone still shows the fleet and every transcript, and a message you send waits and goes out when it's back.
 - **Every Mac's chats** — a session under another paired Mac opens like any other; what you send goes to that Mac, and waits for it if it's away.
@@ -235,7 +235,7 @@ usage: infinitusctl team <subcommand> [args] [--option value]
   aggregates                          the leaders' published team picture
   aggregates publish [--period all|<p>]   (leaders) publish the team picture to the whole team
   policy [--requests code|off] [--members-see-each-other on|off]   (leaders) show or set the roster policy
-  share <kind> off|leaders|team|<kid>[,<kid>…]  audience for stats|now|sessions|transcripts|crashes ("off" keeps it on this machine; new envelopes — see reshare)
+  share <kind> off|leaders|team|<kid>[,<kid>…]  audience for stats|now|sessions|transcripts|crashes|fleet ("off" keeps it on this machine; new envelopes — see reshare)
   exclude <project-dir> [--off]                keep a Claude Code project private (local, never sent)
   identity [show]                    this machine's identity kid
   identity recovery --show           the recovery key (base32, 8 groups) — keep it offline
@@ -251,7 +251,7 @@ Narrowing an audience cannot recall ciphertext teammates already fetched.
 ```
 
 `infinitusctl team share <kind> off|leaders|team|<kid>` picks who sees
-each kind (`stats`, `now`, `sessions`, `transcripts`, `crashes`); "off"
+each kind (`stats`, `now`, `sessions`, `transcripts`, `crashes`, `fleet`); "off"
 (Nobody) keeps that kind on this machine entirely. Which recent
 sessions' transcripts get shared is a Mac-only picker — Settings › Team
 › "Which sessions". A publish shows its progress in Settings › Team,
