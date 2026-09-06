@@ -3,7 +3,7 @@ import Foundation
 import Darwin
 private let sysSend = Darwin.send
 private let sysSockStream = SOCK_STREAM
-#else
+#elseif canImport(Glibc)
 import Glibc
 private let sysSend = Glibc.send
 private let sysSockStream = Int32(SOCK_STREAM.rawValue)   // Glibc enum
@@ -114,6 +114,11 @@ public enum PeerSocket {
     }
 
     static func write(_ payload: Data, to socketPath: String, timeout: TimeInterval) -> Bool {
+        #if os(Windows)
+        // Claude Code's peer inbox is a unix socket; there is no Windows
+        // build of it to talk to yet (#171). The caller falls back.
+        return false
+        #else
         let fd = socket(AF_UNIX, sysSockStream, 0)
         guard fd >= 0 else { return false }
         defer { close(fd) }
@@ -149,5 +154,6 @@ public enum PeerSocket {
             sent += n
         }
         return true
+        #endif
     }
 }

@@ -43,7 +43,14 @@ public struct FileSecrets: TeamSecrets {
         try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: tmp.path)
         // rename(2) replaces the target in one step: a concurrent reader
         // sees either the old secret or the new one, never none.
+        #if os(Windows)
+        // No rename(2) semantics on NTFS from Foundation; remove + move
+        // is the closest (#171 parity).
+        try? FileManager.default.removeItem(at: target)
+        try FileManager.default.moveItem(at: tmp, to: target)
+        #else
         guard rename(tmp.path, target.path) == 0 else { throw SecretsError.writeFailed(errno) }
+        #endif
         renamed = true
     }
 
