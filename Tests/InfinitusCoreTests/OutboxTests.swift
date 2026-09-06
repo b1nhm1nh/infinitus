@@ -122,4 +122,37 @@ final class OutboxTests: XCTestCase {
         XCTAssertNotNil(deliveredId)
         XCTAssertNotEqual(left[0].request.requestId, deliveredId)
     }
+
+    func testDiscardDuringFlightIsNotResurrected() async throws {
+        let box = Outbox(root: root)
+        let item = try box.enqueue(macKey: "m", pid: 1, sessionId: nil, sessionName: "a", request: request("one"), now: t0)
+        let results = await box.flush(macKey: "m", now: t0) { _ in
+            // The user discards the message while it's in flight.
+            box.remove(id: item.id)
+            return .transport
+        }
+        XCTAssertEqual(results.map(\.delivery), [.transport])
+        XCTAssertEqual(box.items(macKey: "m").count, 0)
+    }
+
+    func testMergeBeforeMarkInFlightIsNotClobbered() async throws {
+        let box = Outbox(root: root)
+        _ = try box.enqueue(macKey: "m", pid: 1, sessionId: nil, sessionName: "a", request: request("a"), now: t0)
+        _ = try box.enqueue(macKey: "m", pid: 2, sessionId: nil, sessionName: "b", request: request("b"), now: t0.addingTimeInterval(1))
+        var seen: [String] = []
+        _ = await box.flush(macKey: "m", now: t0) { item in
+            // While pid 1 is in flight, a message lands on pid 2 — after
+            // the pass's `items()` snapshot, before pid 2 is marked in
+            // flight. The mark-in-flight step must reload fresh under
+            // the lock rather than trust that snapshot.
+            if item.pid == 1 {
+                _ = try? box.enqueue(macKey: "m", pid: 2, sessionId: nil, sessionName: "b",
+                                     request: request("two"), now: t0.addingTimeInterval(2))
+            }
+            seen.append(item.request.text)
+            return .delivered
+        }
+        XCTAssertEqual(seen, ["a", "b\n\ntwo"])
+        XCTAssertEqual(box.items(macKey: "m").count, 0)
+    }
 }
