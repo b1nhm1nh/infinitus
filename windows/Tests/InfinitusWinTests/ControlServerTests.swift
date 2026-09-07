@@ -157,6 +157,37 @@ final class ControlServerTests: XCTestCase {
         }
     }
 
+    /// `control perf` answers the Mac's ControlProtocol shape. Values are
+    /// environmental; only the keys and that they are numbers are pinned.
+    func testControlPerfShape() throws {
+        let pipeName = "infinitus-test-perf-\(UUID().uuidString)"
+        try DaemonHarness.scratch { dir in
+            try self.withServe(pipeName: pipeName, claudeDir: dir) { _ in
+                let (lines, error, status) = try DaemonHarness.run(
+                    ["control", "perf"],
+                    environment: ["INFINITUS_CONTROL_PIPE": pipeName]
+                )
+                XCTAssertEqual(status, 0, error.joined(separator: "\n"))
+                let joined = lines.joined(separator: "\n")
+                guard let data = joined.data(using: .utf8),
+                      let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                    XCTFail("could not parse perf JSON: \(joined)")
+                    return
+                }
+                for key in ["cpuSeconds", "rssBytes", "heapBytes", "threads", "uptimeSeconds"] {
+                    XCTAssertNotNil(json[key], "perf missing \(key): \(joined)")
+                    XCTAssertTrue(json[key] is NSNumber, "\(key) is not a number: \(joined)")
+                }
+                let cpu = (json["cpuSeconds"] as? NSNumber)?.doubleValue ?? -1
+                let rss = (json["rssBytes"] as? NSNumber)?.doubleValue ?? -1
+                let threads = (json["threads"] as? NSNumber)?.doubleValue ?? -1
+                XCTAssertGreaterThanOrEqual(cpu, 0, "cpuSeconds")
+                XCTAssertGreaterThan(rss, 0, "rssBytes must be a live working set")
+                XCTAssertGreaterThanOrEqual(threads, 1, "threads")
+            }
+        }
+    }
+
     /// Unknown command returns error and non-zero exit code.
     func testControlUnknownCommand() throws {
         let (lines, error, status) = try DaemonHarness.run(["control", "boguscmd"])

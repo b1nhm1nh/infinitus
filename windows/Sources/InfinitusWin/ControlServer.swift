@@ -224,6 +224,17 @@ enum ControlServer {
             data.append(0x0A)
             return data
 
+        case "perf":
+            // Same shape as ControlProtocol.swift `perf` / the Mac's
+            // infinitusctl perf: sample twice, 15 s apart, for idle %.
+            let uptime = Date().timeIntervalSince(startTime)
+            let sample = WinPerf.snapshot(uptimeSeconds: uptime)
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
+            var data = (try? encoder.encode(sample)) ?? Data(#"{"error":"failed to encode perf"}"#.utf8)
+            data.append(0x0A)
+            return data
+
         case "sessions":
             let rows = WinSessions.list(claudeDir: claudeDir)
             let encoder = JSONEncoder()
@@ -297,14 +308,14 @@ enum ControlServer {
 
 func control(_ args: [String]) -> Int32 {
     guard let cmd = args.first else {
-        FileHandle.standardError.write(Data("usage: infinitus-win control status|sessions|snapshot|message [--pid N <text>]|switch [N]\n".utf8))
+        FileHandle.standardError.write(Data("usage: infinitus-win control status|sessions|snapshot|perf|message [--pid N <text>]|switch [N]\n".utf8))
         return 2
     }
 
     var requestPayload: [String: Any] = [:]
 
     switch cmd {
-    case "status", "sessions", "snapshot":
+    case "status", "sessions", "snapshot", "perf":
         requestPayload["cmd"] = cmd
 
     case "switch":
