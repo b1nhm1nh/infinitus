@@ -362,61 +362,30 @@ public enum SettingsShell {
     }
 
     private static func createPanes(hwnd: HWND, state: State, instance: HMODULE?) {
-        // Descriptors mapping to SettingsCatalog
-        // 10 General + 3 Engine + 1 Legacy
-        let allDescriptors: [(PaneDescriptor, (PaneDescriptor) -> SettingsPane)] = [
-            (
-                DisplayPane.descriptor,
-                { _ in DisplayPane() }
-            ),
-            (
-                AccountsPane.descriptor,
-                { _ in AccountsPane() }
-            ),
-            (
-                ThemesPane.descriptor,
-                { _ in ThemesPane() }
-            ),
-            (
-                PushPane.descriptor,
-                { _ in PushPane() }
-            ),
-            (
-                UsagePane.descriptor,
-                { _ in UsagePane() }
-            ),
-            (
-                UtilizationPane.descriptor,
-                { _ in UtilizationPane() }
-            ),
-            (
-                StatsPane.descriptor,
-                { _ in StatsPane() }
-            ),
-            (
-                ActivityPane.descriptor,
-                { _ in ActivityPane() }
-            ),
-            (
-                DevicesPane.descriptor,
-                { _ in DevicesPane() }
-            ),
-            (
-                AboutPane.descriptor,
-                { _ in AboutPane() }
-            ),
-            (
-                CswapPane.descriptor,
-                { _ in CswapPane() }
-            ),
-            (
-                CLIProxyPane.descriptor,
-                { _ in CLIProxyPane() }
-            ),
-            (
-                NineRouterPane.descriptor,
-                { _ in NineRouterPane() }
-            )
+        // 13 General + 3 Engine. Team (phase 02) and Animations (phase 07)
+        // are not registered here. Machine is in the catalog always and
+        // inserted only when WinMachineStore.paneShown, matching the Mac.
+        var allDescriptors: [(PaneDescriptor, (PaneDescriptor) -> SettingsPane)] = [
+            (DisplayPane.descriptor, { _ in DisplayPane() }),
+            (AccountsPane.descriptor, { _ in AccountsPane() }),
+            (ThemesPane.descriptor, { _ in ThemesPane() }),
+            (PushPane.descriptor, { _ in PushPane() }),
+            (UsagePane.descriptor, { _ in UsagePane() }),
+            (UtilizationPane.descriptor, { _ in UtilizationPane() }),
+            (StatsPane.descriptor, { _ in StatsPane() }),
+        ]
+        if WinMachineStore.paneShown {
+            allDescriptors.append((MachinePane.descriptor, { _ in MachinePane() }))
+        }
+        allDescriptors += [
+            (ProfilesPane.descriptor, { _ in ProfilesPane() }),
+            (ActivityPane.descriptor, { _ in ActivityPane() }),
+            (DevicesPane.descriptor, { _ in DevicesPane() }),
+            (LockPane.descriptor, { _ in LockPane() }),
+            (AboutPane.descriptor, { _ in AboutPane() }),
+            (CswapPane.descriptor, { _ in CswapPane() }),
+            (CLIProxyPane.descriptor, { _ in CLIProxyPane() }),
+            (NineRouterPane.descriptor, { _ in NineRouterPane() }),
         ]
 
         state.panes = []

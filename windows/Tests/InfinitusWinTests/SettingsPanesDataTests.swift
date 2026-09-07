@@ -217,4 +217,91 @@ final class SettingsPanesDataTests: XCTestCase {
         XCTAssertTrue(stop2, "Loop must stop when remainingFiles is 0")
         XCTAssertTrue(state.isDone)
     }
+
+    // MARK: - Phase 06 catalog + pane data
+
+    func testCatalogHasSixteenUniquePanesAndValidSections() {
+        let all = SettingsCatalogWin.allDescriptors
+        XCTAssertEqual(all.count, 16)
+        let ids = all.map(\.id)
+        XCTAssertEqual(Set(ids).count, 16)
+        XCTAssertFalse(ids.contains("team"))
+        XCTAssertFalse(ids.contains("animations"))
+        XCTAssertFalse(ids.contains("placeholder"))
+        for d in all {
+            XCTAssertTrue(d.section == .general || d.section == .engines, "invalid section for \(d.id)")
+        }
+        XCTAssertEqual(all.filter { $0.section == .engines }.map(\.id), ["cswap", "cliproxy", "9router"])
+        XCTAssertEqual(all.first { $0.id == "profiles" }?.section, .general)
+        XCTAssertEqual(all.first { $0.id == "lock" }?.section, .general)
+        XCTAssertEqual(all.first { $0.id == "machine" }?.section, .general)
+        XCTAssertTrue(SettingsCatalogWin.matches(SettingsCatalogWin.profiles, query: "system prompt"))
+        XCTAssertTrue(SettingsCatalogWin.matches(SettingsCatalogWin.lock, query: "relock"))
+        XCTAssertTrue(SettingsCatalogWin.matches(SettingsCatalogWin.machine, query: "hooks"))
+    }
+
+    func testLockStoreRoundTripsPolicy() throws {
+        let file = tempDir.appendingPathComponent("lock.json")
+        var policy = LockPolicy(enabled: true, relock: .fiveMinutes)
+        policy.unlocked(at: 1_000)
+        try WinLockStore.save(policy, to: file)
+        let loaded = WinLockStore.load(from: file)
+        XCTAssertTrue(loaded.enabled)
+        XCTAssertEqual(loaded.relock, .fiveMinutes)
+        XCTAssertTrue(loaded.locked, "load reconstructs from the two settings; surfaces start locked")
+        XCTAssertEqual(WinLockStore.relockLabels.map(\.0), LockPolicy.Relock.allCases)
+    }
+
+    func testProfilesStoreRoundTripsThroughCore() throws {
+        let file = tempDir.appendingPathComponent("session-profiles.json")
+        let review = SessionProfile(name: "Review", cwd: "D:\\w\\repo", permissionMode: "acceptEdits",
+                                    model: "opus", systemPrompt: "Review only.", prompt: "Review the diff")
+        try WinProfilesStore.save([review], to: file)
+        let loaded = WinProfilesStore.load(from: file)
+        XCTAssertEqual(loaded, [review])
+        XCTAssertEqual(loaded[0].summary.contains("opus"), true)
+    }
+
+    func testMachineTextRendersCoreReport() {
+        var sample = MachineSample(cores: 8, swapUsedMB: 1024, swapTotalMB: 4096,
+                                   processes: 120, running: 3, uninterruptible: 1, zombies: 0,
+                                   claudeRSSMB: 900)
+        sample.tempEntries = 12
+        let reg = HookRegistration(event: "Notification", matcher: nil,
+                                   command: "/Users/me/.claude/hooks/peon-ping/peon.sh",
+                                   timeout: nil, source: .user)
+        var live = HookInventory.Live(); live.instances = 2; live.oldestSeconds = 90
+        let hook = MachineReport.Hook(registration: reg, spawnsPerHour: 30, live: live)
+        var residue = MachineReport.ResidueCounts()
+        residue.staleSockets = 2
+        residue.staleSessionEnvs = 1
+        residue.tempEntries = 12
+        residue.transcriptsBytes = 1_048_576
+        let session = SessionHealth(pid: 7, name: "review", cwd: "D:\\w\\repo",
+                                    rssMB: 400, ageSeconds: 600, lastActivityAt: nil)
+        let report = MachineReport(sample: sample, hooks: [hook], runaways: [],
+                                   residue: residue, sessions: [session],
+                                   warnings: ["swap 95% full"])
+        let summary = WinMachineText.summaryLines(sample)
+        XCTAssertEqual(summary.first?.label, "Cores")
+        XCTAssertEqual(summary.first?.value, "8")
+        XCTAssertTrue(WinMachineText.hookLines(report)[0].contains("peon-ping"))
+        XCTAssertEqual(WinMachineText.runawayLines(report), ["Nothing flagged"])
+        XCTAssertTrue(WinMachineText.residueLine(residue).contains("2 stale sockets"))
+        XCTAssertTrue(WinMachineText.sessionLines([session])[0].contains("review"))
+        XCTAssertEqual(WinMachineText.bytes(1_048_576), "1.0 MB")
+    }
+
+    func testMachinePrefsRoundTrip() throws {
+        let file = tempDir.appendingPathComponent("machine.json")
+        var prefs = WinMachineStore.Prefs()
+        prefs.enabled = false
+        prefs.notifyHooks = false
+        prefs.idleHours = 24
+        prefs.showPane = true
+        prefs.hookFingerprint = ["a|b|c"]
+        try WinMachineStore.save(prefs, to: file)
+        let loaded = WinMachineStore.load(from: file)
+        XCTAssertEqual(loaded, prefs)
+    }
 }

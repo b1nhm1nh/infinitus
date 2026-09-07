@@ -129,7 +129,7 @@ final class SettingsShellTests: XCTestCase {
 
     func testPaneIDBlocksDoNotOverlap() {
         var seenIDs = Set<Int32>()
-        for paneIndex in 0..<14 {
+        for paneIndex in 0..<16 {
             let start = PaneIDs.block(Int32(paneIndex))
             let end = start + PaneIDs.stride
             XCTAssertGreaterThanOrEqual(start, PaneIDs.base)

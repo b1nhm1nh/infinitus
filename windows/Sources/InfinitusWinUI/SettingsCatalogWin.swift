@@ -94,4 +94,81 @@ public enum SettingsCatalogWin {
         let rows = Int32(ceil(Double(itemCount) / Double(columns)))
         return rows * (cardHeight + gap) + chromeHeight
     }
+
+    // MARK: - Known panes (testable without HWND)
+
+    /// The 16 Windows settings panes. Team (phase 02) and Animations
+    /// (phase 07) are deliberately absent. Machine is in the catalog
+    /// always; the shell hides it when `WinMachineStore.paneShown` is
+    /// false, matching the Mac's `MachineModel.paneShown` gate.
+    public static let allDescriptors: [PaneDescriptor] = [
+        display, accounts, themes, push, usage, utilization, stats,
+        machine, profiles, activity, devices, lock, about,
+        cswap, cliproxy, nineRouter,
+    ]
+
+    public static let display = PaneDescriptor(
+        id: "display", title: "Display", glyph: "\u{E7F4}", tintRGB: (150, 90, 220),
+        keywords: ["layout", "popup", "size", "compact", "menu bar", "icon", "title", "tray", "tooltip", "preview", "refresh", "autostart", "awake", "balloon"],
+        section: .general)
+    public static let accounts = PaneDescriptor(
+        id: "accounts", title: "Accounts", glyph: "\u{E716}", tintRGB: (52, 152, 219),
+        keywords: ["account", "login", "relogin", "token", "add", "remove", "delete", "oauth", "order", "reorder", "alias", "rename"],
+        section: .general)
+    public static let themes = PaneDescriptor(
+        id: "themes", title: "Themes", glyph: "\u{E790}", tintRGB: (230, 140, 40),
+        keywords: ["theme", "skin", "gallery", "community", "rpg", "row", "gamification"],
+        section: .general)
+    public static let push = PaneDescriptor(
+        id: "push", title: "Push", glyph: "\u{E95A}", tintRGB: (220, 60, 60),
+        keywords: ["slack", "telegram", "webhook", "notification", "push", "away"],
+        section: .general)
+    public static let usage = PaneDescriptor(
+        id: "usage", title: "Usage", glyph: "\u{E9D2}", tintRGB: (50, 190, 90),
+        keywords: ["spend", "cost", "tokens", "estimate", "usage", "model", "account"],
+        section: .general)
+    public static let utilization = PaneDescriptor(
+        id: "utilization", title: "Utilization", glyph: "\u{E9D9}", tintRGB: (80, 210, 180),
+        keywords: ["history", "utilization", "waste", "window", "5h", "7d", "weekly", "chart", "over time", "run rate", "tokens", "forecast"],
+        section: .general)
+    public static let stats = PaneDescriptor(
+        id: "stats", title: "Stats", glyph: "\u{E9E9}", tintRGB: (108, 92, 231),
+        keywords: ["stats", "metrics", "commits", "prs", "lines", "messages", "sessions", "week", "month", "year", "heatmap", "rhythm"],
+        section: .general)
+    public static let machine = PaneDescriptor(
+        id: "machine", title: "Machine", glyph: "\u{E950}", tintRGB: (160, 110, 70),
+        keywords: ["machine", "health", "hooks", "runaway", "temp", "swap", "memory", "residue", "guardian", "watch", "cpu", "process"],
+        section: .general)
+    public static let profiles = PaneDescriptor(
+        id: "profiles", title: "Profiles", glyph: "\u{E77B}", tintRGB: (230, 90, 140),
+        keywords: ["profile", "preset", "start", "session", "model", "permission", "system prompt", "launch", "folder", "engine", "prompt"],
+        section: .general)
+    public static let activity = PaneDescriptor(
+        id: "activity", title: "Activity", glyph: "\u{E81C}", tintRGB: (60, 180, 180),
+        keywords: ["history", "switches", "log", "events", "activity", "switch"],
+        section: .general)
+    public static let devices = PaneDescriptor(
+        id: "devices", title: "Devices", glyph: "\u{E8EA}", tintRGB: (60, 190, 220),
+        keywords: ["sync", "settings", "devices", "phone", "iphone", "lan", "companion", "tailscale", "pair", "qr", "export", "import"],
+        section: .general)
+    public static let lock = PaneDescriptor(
+        id: "lock", title: "Lock", glyph: "\u{E72E}", tintRGB: (128, 128, 128),
+        keywords: ["lock", "unlock", "privacy", "relock", "timeout", "sleep", "team", "hello", "pin", "password"],
+        section: .general)
+    public static let about = PaneDescriptor(
+        id: "about", title: "About", glyph: "\u{E946}", tintRGB: (100, 95, 220),
+        keywords: ["update", "version", "license", "links", "components", "runtime", "daemon", "cswap", "claude"],
+        section: .general)
+    public static let cswap = PaneDescriptor(
+        id: "cswap", title: "cswap", glyph: "\u{E713}", tintRGB: (149, 165, 166),
+        keywords: ["engine", "auto switch", "interval", "config", "threshold", "rotate", "claude", "provider", "update", "upgrade", "pypi", "nudge", "resume", "wake", "session"],
+        section: .engines)
+    public static let cliproxy = PaneDescriptor(
+        id: "cliproxy", title: "CLIProxyAPI", glyph: "\u{E839}", tintRGB: (149, 165, 166),
+        keywords: ["proxy", "cliproxy", "router", "management", "key", "engine", "provider", "claude"],
+        section: .engines)
+    public static let nineRouter = PaneDescriptor(
+        id: "9router", title: "9Router", glyph: "\u{E72D}", tintRGB: (149, 165, 166),
+        keywords: ["9router", "router", "engine", "provider", "claude", "password"],
+        section: .engines)
 }
