@@ -36,6 +36,10 @@ func teamUsage() -> String {
       put --kind <k> --path <p> --file <f> [--audience leaders|team|<kid,kid>]   one opaque file (debugging)
       list                                         envelopes addressed to me
       read <path> [--out <file>]                   decrypt one envelope
+      grant <leaders|team|kid,…> [--sessions a,b] [--view] [--send] [--approve] [--mode] [--resume] [--key]
+                                                   let those people drive the sessions named (default: all)
+      revoke <grant id>                            take a grant back
+      grants                                       the grants on this machine
 
     Narrowing an audience cannot recall ciphertext teammates already fetched.
 
@@ -78,6 +82,7 @@ private struct MemberRow: Encodable {
 
 func runTeam(_ args: [String]) -> Int32 {
     if let code = runTeamNearby(args) { return code }   // nearby | --discoverable | request --nearby (TeamNearbyCommand.swift)
+    if let code = runTeamControl(args) { return code }  // grant | revoke | grants (TeamControlCommand.swift)
     guard let sub = args.first, sub != "--help", sub != "-h" else {
         print(teamUsage(), terminator: "")
         return args.isEmpty ? 2 : 0
