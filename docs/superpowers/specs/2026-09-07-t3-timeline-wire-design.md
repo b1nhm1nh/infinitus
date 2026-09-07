@@ -214,19 +214,29 @@ public struct SessionFacts: Codable, Sendable, Equatable {
     public let latestTurn: Turn?
     public let planProgress: PlanProgress?   // {step, completed, total}
     public let latestUserMessageAt: Date?
-    public let settledOverride: Bool?        // nil = not set
+    public let settledOverride: SettledOverride?  // "settled" | "active" | nil (T3 orchestration.ts ThreadShell)
     public let settledAt: Date?
+    public let unsettledAt: Date?            // re-entry stamp for active-list order
     public let snoozedUntil: Date?
+    public let snoozedAt: Date?
     public let pinnedAt: Date?
 }
 ```
 
-`SessionDetail.facts: SessionFacts?` (additive, `Models.swift`). `status`
+Facts ride the snapshot as `MirrorSnapshot.factsByPid: [Int: SessionFacts]?`
+(additive, `FleetMirror.swift`), the app-owned per-pid sibling of
+`progressByPid` — not `SessionDetail`, which is decoded verbatim from the
+engine's list output and can't carry app fields (amended 2026-09-07 while
+planning P2). `status`
 maps the record: `busy → running`, `waiting → running` with a pending
 request, `idle → ready` after a completed turn else `idle`, exited → `stopped`.
 
 `AttentionStore` (Core) persists `{sessionId: {settledOverride, settledAt,
-snoozedUntil, pinnedAt}}` as JSON in App Support `Infinitus/attention.json`,
+unsettledAt, snoozedUntil, snoozedAt, pinnedAt}}` with T3's decider rules
+(`apps/server/src/orchestration/decider.ts` @ acc0a219e: settle also unpins
+and unsnoozes; unsettle → "active", `unsettledAt` = now unless already
+active; snooze needs `until` > now, `snoozedAt` = existing ?? now; pin keeps
+the first `pinnedAt` and un-settles / unsnoozes; unpin clears) as JSON in App Support `Infinitus/attention.json`,
 keyed by **session id** (not pid) so it survives restarts and resumes.
 Route `POST /sessions/{pid}/attention` body `{action: settle | unsettle |
 snooze | unsnooze | pin | unpin, until?: Date, commandId?}` mirrors
@@ -282,17 +292,23 @@ accept a snapshot at any time (T3 rule).
 `POST /sessions/{pid}/input`, `POST /sessions/start` and the attention route
 accept `commandId` (client-minted UUID). `Receipts` (Core, in-memory, cap
 1,000, 1 h TTL): same id + same target ⇒ the cached reply (200); same id +
-different target ⇒ 409; a tombstone per interrupted/removed input so a
-retry cannot resurrect it (T3 outbox doctrine). Absent `commandId` behaves
-as today.
+different target ⇒ 409; a duplicate while the first is still running ⇒ 409
+`in-flight`; tombstones are per pid — an interrupt (`kind: key`, `escape`)
+tombstones that pid's receipts so a retry cannot resurrect the stopped
+input (410), and a pid leaving the roster drops them (T3 outbox doctrine;
+amended 2026-09-07 while planning P3: the phone's ids are not known
+server-side, so tombstoning is by pid). Absent `commandId` behaves as
+today.
 
 ### 3.5 `GET /.well-known/infinitus` (unauthenticated)
 
 `{machineId, label, platform: "macos", appVersion, capabilities:
 {timeline, sequence, attention, leases, ownedSessions, checkpoints, team,
 pastSessions, images}}` — booleans, absent = unsupported, so the phone hides a
-feature on skew instead of failing to decode. `machineId` is the existing
-per-Mac identity used by the multi-Mac mirror (#144).
+feature on skew instead of failing to decode. `machineId` is a UUID minted
+once per Mac and kept in UserDefaults (`machine_id`, `MachineIdentity`):
+no Mac-side identity existed — the multi-Mac mirror's `MacPairing.id` is
+phone-local (amended 2026-09-07 while planning P3).
 
 ## 4. Phase 5 — leases
 
