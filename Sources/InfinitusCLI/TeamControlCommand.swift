@@ -1,5 +1,8 @@
 import Foundation
 import InfinitusCore
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 
 // `infinitusctl team grant | revoke | grants` (#220 §7.3): who may drive
 // which of this machine's sessions. Writes <teamDir>/grants.json, which

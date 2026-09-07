@@ -645,6 +645,13 @@ final class TeamModel: ObservableObject {
         Set(snapshot?.members.first { $0.kid == kid }?.controls ?? [])
     }
 
+    /// The sessions of `kid` at least one of their grants to me names
+    /// (a grant without a session list covers every session).
+    func drivableSessions(of kid: String) -> [TeamDocs.LiveSession] {
+        guard let me = self.kid, let roster, let now = reader?.members[kid]?.now else { return [] }
+        return now.sessions.filter { TeamSnapshot.controls(hints: now.grantsTo, roster: roster.doc, me: me, session: $0.id) != nil }
+    }
+
     private func onDriveQueue<T: Sendable>(_ work: @escaping @Sendable () throws -> T) async throws -> T {
         try await withCheckedThrowingContinuation { cont in
             driveQueue.async {

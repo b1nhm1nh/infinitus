@@ -74,10 +74,11 @@ public struct TeamSnapshot: Codable, Equatable, Sendable {
 
     /// The union of every hint whose audience names `me`, sorted; nil
     /// when no hint does (the row reads as "cannot drive").
-    public static func controls(hints: [TeamDocs.GrantHint]?, roster: TeamRoster?, me: String) -> [String]? {
+    public static func controls(hints: [TeamDocs.GrantHint]?, roster: TeamRoster?, me: String, session: String? = nil) -> [String]? {
         guard let hints, let roster else { return nil }
         var out = Set<String>()
         for hint in hints where roster.recipients(for: hint.audience).contains(where: { $0.kid == me }) {
+            if let session, let only = hint.sessions, !only.contains(session) { continue }
             out.formUnion(hint.capabilities)
         }
         return out.isEmpty ? nil : out.sorted()

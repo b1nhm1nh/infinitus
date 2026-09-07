@@ -15,5 +15,8 @@ final class TeamSnapshotControlsTests: XCTestCase {
         XCTAssertEqual(TeamSnapshot.controls(hints: now.grantsTo, roster: roster, me: cy.kid), ["approve"])
         XCTAssertNil(TeamSnapshot.controls(hints: now.grantsTo, roster: roster, me: bo.kid), "nothing granted reads as nil")
         XCTAssertNil(TeamSnapshot.controls(hints: nil, roster: roster, me: ann.kid))
+        XCTAssertEqual(TeamSnapshot.controls(hints: now.grantsTo, roster: roster, me: cy.kid, session: "s1"), ["approve"])
+        XCTAssertNil(TeamSnapshot.controls(hints: now.grantsTo, roster: roster, me: cy.kid, session: "s2"), "a session the grant does not name")
+        XCTAssertEqual(TeamSnapshot.controls(hints: now.grantsTo, roster: roster, me: ann.kid, session: "s2"), ["send", "view"], "no session list = every session")
     }
 }

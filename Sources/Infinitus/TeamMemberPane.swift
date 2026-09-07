@@ -36,8 +36,9 @@ struct TeamMemberPane: View {
             if let m = member, let fleet = m.fleet {
                 fleetSection(fleet, lastPublished: m.lastPublished)
             }
-            if let m = member, let sessions = m.now?.sessions, !sessions.isEmpty, !team.controls(grantedBy: kid).isEmpty {
-                driveSection(sessions)
+            let drivable = team.drivableSessions(of: kid)
+            if !drivable.isEmpty {
+                driveSection(drivable)
             }
             if let m = member, !m.sessions.isEmpty {
                 Section("Sessions") {
