@@ -315,7 +315,9 @@ final class TeamModel: ObservableObject {
         do {
             let (fetched, published, report, aggregated) = try await run { paths, secrets in
                 guard let client = try Self.openClient(paths, secrets) else { return (nil as Int?, nil as Int?, nil as TeamPublisher.Report?, false) }
-                _ = try client.fetch()
+                // Pending: roster and requests only, until the roster admits
+                // us — the member branches carry the transcripts (#321).
+                _ = try client.fetch(branches: client.isMember ? nil : TeamClient.joinBranches)
                 let fetched = Int(Date().timeIntervalSince1970)
                 fetchedHook?(client)
                 if auto { try Self.autoApprove(client, paths: paths) }
@@ -1016,7 +1018,8 @@ final class TeamModel: ObservableObject {
     func leave() async {
         await action("Leaving…") { paths, secrets in
             guard let client = try Self.openClient(paths, secrets) else { throw TeamClient.ClientError.notInTeam }
-            _ = try? client.fetch()
+            // Withdrawing a pending request must not first pull every branch (#321).
+            _ = try? client.fetch(branches: client.isMember ? nil : TeamClient.joinBranches)
             try client.leave()
             secrets.delete(TeamClient.tokenName(client.config.id))
             try FileManager.default.removeItem(at: paths.teamDir(client.config.id))
