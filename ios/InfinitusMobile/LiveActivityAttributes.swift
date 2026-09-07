@@ -8,12 +8,17 @@ import InfinitusCore
 // in-app update carry identical JSON. `machine` is fixed for an
 // activity's life; the Mac's push-to-start sends it as `attributes`.
 
-struct RevivalActivity: ActivityAttributes {
+/// A card belongs to one Mac (#144): `machine` is the Mac's name.
+protocol MacCard: ActivityAttributes {
+    var machine: String { get }
+}
+
+struct RevivalActivity: MacCard {
     typealias ContentState = RevivalActivityState
     var machine: String
 }
 
-struct WorkingActivity: ActivityAttributes {
+struct WorkingActivity: MacCard {
     typealias ContentState = WorkingActivityState
     var machine: String
 }

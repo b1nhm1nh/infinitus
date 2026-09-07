@@ -86,6 +86,15 @@ final class MirrorModel: ObservableObject, FleetModel {
         return otherMirror(for: pairing)
     }
 
+    /// The mirror of the Mac named `machine` — a Live Activity's owner
+    /// (#144). The primary when it wears the name or when no paired Mac
+    /// does: a card can predate the pairing that would name its Mac.
+    func mirror(machine: String) -> NetworkFleetMirror {
+        if snapshot?.machineName == machine { return .shared }
+        guard let pairing = others.first(where: { $0.pairing.name == machine })?.pairing else { return .shared }
+        return otherMirror(for: pairing)
+    }
+
     func progress(macId: String?, pid: Int) -> SessionProgress? {
         guard let macId else { return sessionProgress.byPid[pid] }
         return other(macId)?.snapshot?.progressByPid?[pid]
@@ -231,7 +240,12 @@ final class MirrorModel: ObservableObject, FleetModel {
         localIntroSpeed = defaults.object(forKey: "intro_speed") as? Double ?? 1.0
         macPopupView = defaults.object(forKey: "mac_popup_view") as? Bool ?? false
         reachableAgain = { Task { await OutboxDelivery.flush() } }
-        otherReachable = { id in Task { await OutboxDelivery.flush(macId: id) } }
+        otherReachable = { id in
+            Task {
+                await OutboxDelivery.flush(macId: id)
+                await LiveActivities.shared.resendPhoneTokens(macId: id)
+            }
+        }
     }
 
     /// Pairs with a Mac from a scanned QR or an `infinitus://pair?…` deep
@@ -284,6 +298,7 @@ final class MirrorModel: ObservableObject, FleetModel {
         list.removeAll { $0.id == id }
         MacPairing.save(list, defaults)
         otherMirrors.removeValue(forKey: id)
+        endActivities(of: other(id)?.pairing)
         others.removeAll { $0.id == id }
     }
 
@@ -478,6 +493,7 @@ final class MirrorModel: ObservableObject, FleetModel {
         for pairing in pairings where !stillPaired.contains(pairing.id) {
             NetworkFleetMirror.parkedCache(key: NetworkFleetMirror.parkedKey(token: pairing.token)).clear()
             otherMirrors.removeValue(forKey: pairing.id)
+            endActivities(of: pairing)
         }
         let existingByID = Dictionary(uniqueKeysWithValues: others.map { ($0.id, $0) })
         others = pairings.filter { stillPaired.contains($0.id) }.map { pairing in
@@ -499,6 +515,15 @@ final class MirrorModel: ObservableObject, FleetModel {
         }
         refreshShortcutMacs()
         syncShareSuggestions()
+        // Each other Mac's own pair of Live Activities (#144); a Mac out
+        // of reach keeps whatever its cards last showed.
+        for mac in others where !mac.parked {
+            guard let snapshot = mac.snapshot else { continue }
+            LiveActivities.shared.sync(
+                fleet: mac.fleets.first { $0.provider == .claude } ?? mac.fleets.first,
+                machine: snapshot.machineName, tokenRate: snapshot.tokenRate,
+                capturedAt: snapshot.capturedAt, primary: false)
+        }
         // Per-Mac reachable edge: newly answering ids fire once; a Mac
         // still down stays out of the set and fires nothing. Keyed on
         // `parked`, not snapshot presence: `latest()` hands back the
@@ -556,6 +581,13 @@ final class MirrorModel: ObservableObject, FleetModel {
         guard let index = list.firstIndex(where: { $0.id == id }) else { return }
         list[index].lastGood = endpoint
         MacPairing.save(list, defaults)
+    }
+
+    /// A forgotten Mac's Live Activities go with it (#144) — unless it
+    /// wore the primary's name, whose cards those then are.
+    private func endActivities(of pairing: MacPairing?) {
+        guard let name = pairing?.name, name != snapshot?.machineName else { return }
+        LiveActivities.shared.end(machine: name)
     }
 
     private func renameOther(id: String, to name: String) {
