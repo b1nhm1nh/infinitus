@@ -97,13 +97,13 @@ public enum SettingsCatalogWin {
 
     // MARK: - Known panes (testable without HWND)
 
-    /// The 16 Windows settings panes. Team (phase 02) and Animations
-    /// (phase 07) are deliberately absent. Machine is in the catalog
-    /// always; the shell hides it when `WinMachineStore.paneShown` is
-    /// false, matching the Mac's `MachineModel.paneShown` gate.
+    /// The 17 Windows settings panes. Animations (phase 07) is
+    /// deliberately absent. Machine is in the catalog always; the shell
+    /// hides it when `WinMachineStore.paneShown` is false, matching the
+    /// Mac's `MachineModel.paneShown` gate.
     public static let allDescriptors: [PaneDescriptor] = [
         display, accounts, themes, push, usage, utilization, stats,
-        machine, profiles, activity, devices, lock, about,
+        machine, profiles, activity, devices, lock, team, about,
         cswap, cliproxy, nineRouter,
     ]
 
@@ -154,6 +154,10 @@ public enum SettingsCatalogWin {
     public static let lock = PaneDescriptor(
         id: "lock", title: "Lock", glyph: "\u{E72E}", tintRGB: (128, 128, 128),
         keywords: ["lock", "unlock", "privacy", "relock", "timeout", "sleep", "team", "hello", "pin", "password"],
+        section: .general)
+    public static let team = PaneDescriptor(
+        id: "team", title: "Team", glyph: "\u{E902}", tintRGB: (70, 130, 180),
+        keywords: ["team", "join", "code", "publish", "roster", "identity", "kid", "invite", "nearby"],
         section: .general)
     public static let about = PaneDescriptor(
         id: "about", title: "About", glyph: "\u{E946}", tintRGB: (100, 95, 220),

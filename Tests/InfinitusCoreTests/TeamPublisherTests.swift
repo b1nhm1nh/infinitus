@@ -9,24 +9,11 @@ final class TeamPublisherTests: XCTestCase {
         try FileManager.default.createDirectory(at: scratch, withIntermediateDirectories: true)
     }
 
-    /// The Team store shells `/usr/bin/env git` and its residue rules
-    /// assert POSIX modes - neither exists on Windows yet (upstream).
-    func skipOffPOSIX() throws {
-        #if os(Windows)
-        try XCTSkipIf(true, "Team git shellouts / POSIX modes are not ported to Windows yet")
-        #endif
-    }
+    func skipIfNoGit() throws { try TeamGitSupport.skipIfNoGit() }
 
     override func tearDownWithError() throws { try? FileManager.default.removeItem(at: scratch) }
 
-    func makeRemote() throws -> String {
-        let bare = scratch.appendingPathComponent("remote.git")
-        let p = Process()
-        p.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-        p.arguments = ["git", "init", "--bare", "-q", bare.path]
-        try p.run(); p.waitUntilExit()
-        return "file://" + bare.path
-    }
+    func makeRemote() throws -> String { try TeamGitSupport.makeRemote(in: scratch) }
 
     func machine(_ name: String) -> (TeamPaths, FileSecrets) {
         let paths = TeamPaths(base: scratch.appendingPathComponent(name))
@@ -89,7 +76,7 @@ final class TeamPublisherTests: XCTestCase {
     }
 
     func testPublishWrapsEachKindToItsAudienceHonoursExclusionsAndRedacts() throws {
-        try skipOffPOSIX()
+        try skipIfNoGit()
         let t = try team()
         let projects = try writeProjects(scratch)
         let teamDir = t.alicePaths.teamDir(t.alice.config.id)
@@ -171,16 +158,12 @@ final class TeamPublisherTests: XCTestCase {
     }
 
     func commits(_ remote: URL) throws -> Int {
-        let p = Process()
-        p.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-        p.arguments = ["git", "-C", remote.path, "rev-list", "--count", "--all"]
-        let out = Pipe(); p.standardOutput = out
-        try p.run(); p.waitUntilExit()
-        return Int(String(decoding: out.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)) ?? -1
+        let text = try TeamGitSupport.git(["-C", remote.path, "rev-list", "--count", "--all"])
+        return Int(text) ?? -1
     }
 
     func testTranscriptWindowIsNarrowerThanTheStatsWindow() throws {
-        try skipOffPOSIX()
+        try skipIfNoGit()
         let t = try team()
         let projects = try writeProjects(scratch)
         var s = sources(projects)
@@ -199,7 +182,7 @@ final class TeamPublisherTests: XCTestCase {
     }
 
     func testBatchesPushSeparatelyAndSaveStateBetweenThem() throws {
-        try skipOffPOSIX()
+        try skipIfNoGit()
         let t = try team()
         let projects = try writeProjects(scratch)
         var s = sources(projects)
@@ -217,7 +200,7 @@ final class TeamPublisherTests: XCTestCase {
     }
 
     func testHeaderScanRemembersHeadersByBlobVersion() throws {
-        try skipOffPOSIX()
+        try skipIfNoGit()
         let t = try team()
         let me = "m/\(t.alice.identity.kid)/"
         let mine = "t/\(t.alice.identity.kid)/"   // transcripts live on their own branch (#321)
@@ -241,7 +224,7 @@ final class TeamPublisherTests: XCTestCase {
     }
 
     func testReshareRewrapsHistoryToTheCurrentAudienceAfterPromotion() throws {
-        try skipOffPOSIX()
+        try skipIfNoGit()
         let t = try team()
         let projects = try writeProjects(scratch)
         var ex = TeamExclusions(); ex.set("/r/secret", excluded: true); try ex.save(paths: t.alicePaths)
@@ -303,7 +286,7 @@ final class TeamPublisherTests: XCTestCase {
     }
 
     func testPendingMemberCannotPublish() throws {
-        try skipOffPOSIX()
+        try skipIfNoGit()
         let remote = try makeRemote()
         let (lp, ls) = machine("leader"), (pp, ps) = machine("pending")
         let leader = try TeamClient.create(name: "P", remote: remote, token: nil, paths: lp, secrets: ls, now: 1_000)
@@ -318,7 +301,7 @@ final class TeamPublisherTests: XCTestCase {
     /// Spec §7: a kind shared with Nobody is not chunked, not sealed, not
     /// copied and not hinted at on the store.
     func testAKindSharedWithNobodyNeverLeavesTheMac() throws {
-        try skipOffPOSIX()
+        try skipIfNoGit()
         let t = try team()
         let projects = try writeProjects(scratch)
         let teamDir = t.alicePaths.teamDir(t.alice.config.id)
@@ -364,7 +347,7 @@ final class TeamPublisherTests: XCTestCase {
     /// `now` off after a publish would leave this member looking "on"
     /// forever, so the stale now.json is retired once.
     func testNowSharedWithNobodyIsRetiredFromTheStore() throws {
-        try skipOffPOSIX()
+        try skipIfNoGit()
         let t = try team()
         let projects = try writeProjects(scratch)
         let teamDir = t.alicePaths.teamDir(t.alice.config.id)
@@ -389,7 +372,7 @@ final class TeamPublisherTests: XCTestCase {
     /// pass like now.json so `at` stays truthful, and is retired once
     /// when the share row goes to Nobody.
     func testFleetIsPublishedSkippedWhileUnchangedAndRetiredWhenOff() throws {
-        try skipOffPOSIX()
+        try skipIfNoGit()
         let t = try team()
         let projects = try writeProjects(scratch)
         let teamDir = t.alicePaths.teamDir(t.alice.config.id)
@@ -424,7 +407,7 @@ final class TeamPublisherTests: XCTestCase {
     /// Spec §7: the member picks which sessions' transcripts travel; a
     /// session's sub-agents ride its choice.
     func testOnlyChosenSessionsAreChunkedAndThePickerListsTheRecentOnes() throws {
-        try skipOffPOSIX()
+        try skipIfNoGit()
         let t = try team()
         let projects = try writeProjects(scratch)
         let teamDir = t.alicePaths.teamDir(t.alice.config.id)
@@ -467,7 +450,7 @@ final class TeamPublisherTests: XCTestCase {
     /// publisher then scans nothing — a projects dir that does not
     /// exist publishes the same set — and writes no cache of its own.
     func testAScanHandedInSkipsTheScannerAndItsCache() throws {
-        try skipOffPOSIX()
+        try skipIfNoGit()
         let t = try team()
         let projects = try writeProjects(scratch)
         let scanned = StatsScanner.scan(projectsDir: projects, cacheURL: nil).entries
@@ -500,7 +483,7 @@ final class TeamPublisherTests: XCTestCase {
     /// bound (a month of transcripts was 9 GB): the oldest transcript
     /// copies go, and only those.
     func testPublishedCopiesArePrunedOldestTranscriptFirst() throws {
-        try skipOffPOSIX()
+        try skipIfNoGit()
         let t = try team()
         let projects = try writeProjects(scratch)
         let publisher = TeamPublisher(client: t.alice, paths: t.alicePaths)
@@ -531,7 +514,7 @@ final class TeamPublisherTests: XCTestCase {
     /// corpus is thousands of chunks and every main-actor hop is a CA
     /// transaction (the pop-out must idle at ~0%).
     func testProgressFiresPerSourceAndPerBatchOnly() throws {
-        try skipOffPOSIX()
+        try skipIfNoGit()
         let t = try team()
         let projects = try writeProjects(scratch)
         // `publish` is synchronous on this thread and so is the callback,
@@ -555,7 +538,7 @@ final class TeamPublisherTests: XCTestCase {
     /// Quit asks the publisher to stop; what it had pushed stays pushed
     /// and the cursor is saved, so the next pass resumes.
     func testStopBetweenSourcesSavesTheCursorAndLeavesTheRestForNextTime() throws {
-        try skipOffPOSIX()
+        try skipIfNoGit()
         let t = try team()
         let projects = try writeProjects(scratch)
         let publisher = TeamPublisher(client: t.alice, paths: t.alicePaths)
@@ -591,7 +574,7 @@ final class TeamPublisherTests: XCTestCase {
     /// drained over several passes, and the report says how much is
     /// still to go (the pane shows "catching up, N MB to go").
     func testRemainingBytesCountsTheTailAndDrainsOverPasses() throws {
-        try skipOffPOSIX()
+        try skipIfNoGit()
         let t = try team()
         let projects = try writeProjects(scratch)
         let publisher = TeamPublisher(client: t.alice, paths: t.alicePaths)
@@ -631,7 +614,7 @@ final class TeamPublisherTests: XCTestCase {
     /// The batch never sits in the heap: every staged item is sealed to
     /// `<teamDir>/spool/<n>.bin` and git hashes the file itself.
     func testEveryStagedItemIsSealedToTheSpoolAndPushedFromThere() throws {
-        try skipOffPOSIX()
+        try skipIfNoGit()
         let t = try team()
         let projects = try writeProjects(scratch)
         let publisher = TeamPublisher(client: t.alice, paths: t.alicePaths)
@@ -657,7 +640,7 @@ final class TeamPublisherTests: XCTestCase {
     /// The spool holds sealed envelopes about to reach a shared remote;
     /// it is created 0700, not the umask default.
     func testSpoolDirIsCreatedPrivate() throws {
-        try skipOffPOSIX()
+        try skipIfNoGit()
         let t = try team()
         let projects = try writeProjects(scratch)
         let publisher = TeamPublisher(client: t.alice, paths: t.alicePaths)

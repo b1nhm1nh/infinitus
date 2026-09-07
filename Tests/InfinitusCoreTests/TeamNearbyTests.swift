@@ -9,11 +9,11 @@ final class TeamNearbyTests: XCTestCase {
         try FileManager.default.createDirectory(at: scratch, withIntermediateDirectories: true)
     }
 
-    /// The Team store shells `/usr/bin/env git` and its residue rules
-    /// assert POSIX modes - neither exists on Windows yet (upstream).
+    /// LAN discovery is macOS/Linux-only (see phase 02). Windows advertise
+    /// is one-way and carries no TXT, so nearby stays deferred.
     func skipOffPOSIX() throws {
         #if os(Windows)
-        try XCTSkipIf(true, "Team git shellouts / POSIX modes are not ported to Windows yet")
+        try XCTSkipIf(true, "LAN discovery is macOS/Linux-only (see phase 02)")
         #endif
     }
 

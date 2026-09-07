@@ -33,6 +33,10 @@ public final class TeamGit: TeamStore {
         /// killed. Not `.failed`: `putAll`'s race retry must never fire
         /// on a stall, and the pane words it differently.
         case stalled(command: String, idle: TimeInterval)
+        /// Windows: `GitLocator` found no `git.exe`. Distinct from
+        /// `unavailable` so the CLI and the pane can say "install Git for
+        /// Windows" rather than "team is unavailable here".
+        case gitNotFound
     }
 
     /// The idle watchdog on `fetch`, `push` and `ls-remote`: a child that
@@ -571,15 +575,28 @@ public final class TeamGit: TeamStore {
         throw GitError.unavailable
         #else
         let p = Process()
+        var argv: [String]
+        #if os(Windows)
+        // GitLocator, not `gitExecutable`: Windows keeps its own search
+        // (PATH, Program Files, per-user) and a missing git is a distinct
+        // `gitNotFound`, not a silent /usr/bin/env fallback.
+        guard let git = GitLocator.cachedLocate() else { throw GitError.gitNotFound }
+        p.executableURL = URL(fileURLWithPath: git)
+        // Bare-repo plumbing never checks files out, but a user-level
+        // `core.autocrlf=true` would still rewrite a path-form
+        // `hash-object` (the `--stdin` path is safe; this is belt).
+        argv = ["-c", "core.autocrlf=false"]
+        #else
         p.executableURL = Self.gitExecutable
-        var argv: [String] = []
+        argv = []
+        #endif
         if useGitDir { argv += ["--git-dir", gitDir.path] }
         if token != nil {
             argv += ["-c", "credential.helper=",
                      "-c", "credential.helper=!f() { echo username=infinitus; echo \"password=$\(Self.tokenEnv)\"; }; f"]
         }
         argv += args
-        p.arguments = Self.gitExecutable.path == "/usr/bin/env" ? ["git"] + argv : argv
+        p.arguments = p.executableURL?.path == "/usr/bin/env" ? ["git"] + argv : argv
         p.environment = Self.childEnvironment(base: ProcessInfo.processInfo.environment, extra: extra, token: token)
         let out = Pipe(), err = Pipe()
         p.standardOutput = out; p.standardError = err
@@ -638,6 +655,7 @@ extension TeamGit.GitError: CustomStringConvertible {
         case .notEmpty: return "That remote already has content — use an empty repository"
         case .stalled(let command, let idle):
             return "the store did not answer for \(Int(idle)) s (git \(command.split(separator: " ").first ?? "") gave up)"
+        case .gitNotFound: return "git not found — install Git for Windows"
         }
     }
 }

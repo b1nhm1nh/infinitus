@@ -4,11 +4,7 @@ import XCTest
 final class TeamControlStoreTests: XCTestCase {
     var scratch: URL!
     override func setUpWithError() throws {
-        #if os(Windows)
-        // The store round-trips through a real git remote (makeRemote
-        // shells /usr/bin/env git) — not ported to Windows yet.
-        try XCTSkipIf(true, "Team git shellouts are POSIX-only; not ported to Windows yet")
-        #endif
+        try TeamGitSupport.skipIfNoGit()
         scratch = FileManager.default.temporaryDirectory.appendingPathComponent("teamcontrolstore-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: scratch, withIntermediateDirectories: true)
     }
@@ -18,12 +14,7 @@ final class TeamControlStoreTests: XCTestCase {
         try? FileManager.default.removeItem(at: scratch)
     }
 
-    func makeRemote() throws -> String {
-        let bare = scratch.appendingPathComponent("remote.git")
-        let p = Process(); p.executableURL = URL(fileURLWithPath: "/usr/bin/env"); p.arguments = ["git", "init", "--bare", "-q", bare.path]
-        try p.run(); p.waitUntilExit()
-        return "file://" + bare.path
-    }
+    func makeRemote() throws -> String { try TeamGitSupport.makeRemote(in: scratch) }
     func machine(_ name: String) -> (TeamPaths, TeamSecrets) {
         let paths = TeamPaths(base: scratch.appendingPathComponent(name))
         return (paths, FileSecrets(dir: paths.secretsDir))

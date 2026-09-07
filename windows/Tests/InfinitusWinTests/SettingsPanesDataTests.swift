@@ -222,10 +222,10 @@ final class SettingsPanesDataTests: XCTestCase {
 
     func testCatalogHasSixteenUniquePanesAndValidSections() {
         let all = SettingsCatalogWin.allDescriptors
-        XCTAssertEqual(all.count, 16)
+        XCTAssertEqual(all.count, 17)
         let ids = all.map(\.id)
-        XCTAssertEqual(Set(ids).count, 16)
-        XCTAssertFalse(ids.contains("team"))
+        XCTAssertEqual(Set(ids).count, 17)
+        XCTAssertTrue(ids.contains("team"))
         XCTAssertFalse(ids.contains("animations"))
         XCTAssertFalse(ids.contains("placeholder"))
         for d in all {
@@ -238,6 +238,8 @@ final class SettingsPanesDataTests: XCTestCase {
         XCTAssertTrue(SettingsCatalogWin.matches(SettingsCatalogWin.profiles, query: "system prompt"))
         XCTAssertTrue(SettingsCatalogWin.matches(SettingsCatalogWin.lock, query: "relock"))
         XCTAssertTrue(SettingsCatalogWin.matches(SettingsCatalogWin.machine, query: "hooks"))
+        XCTAssertTrue(SettingsCatalogWin.matches(SettingsCatalogWin.team, query: "join"))
+        XCTAssertEqual(all.first { $0.id == "team" }?.section, .general)
     }
 
     func testLockStoreRoundTripsPolicy() throws {

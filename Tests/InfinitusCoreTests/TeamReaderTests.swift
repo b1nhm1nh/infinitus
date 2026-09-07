@@ -9,13 +9,7 @@ final class TeamReaderTests: XCTestCase {
         try FileManager.default.createDirectory(at: scratch, withIntermediateDirectories: true)
     }
 
-    /// The Team store shells `/usr/bin/env git` and its residue rules
-    /// assert POSIX modes - neither exists on Windows yet (upstream).
-    func skipOffPOSIX() throws {
-        #if os(Windows)
-        try XCTSkipIf(true, "Team git shellouts / POSIX modes are not ported to Windows yet")
-        #endif
-    }
+    func skipIfNoGit() throws { try TeamGitSupport.skipIfNoGit() }
 
     override func tearDownWithError() throws { try? FileManager.default.removeItem(at: scratch) }
 
@@ -95,14 +89,7 @@ final class TeamReaderTests: XCTestCase {
 
     // MARK: the spec §11 integration flow
 
-    func makeRemote() throws -> String {
-        let bare = scratch.appendingPathComponent("remote.git")
-        let p = Process()
-        p.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-        p.arguments = ["git", "init", "--bare", "-q", bare.path]
-        try p.run(); p.waitUntilExit()
-        return "file://" + bare.path
-    }
+    func makeRemote() throws -> String { try TeamGitSupport.makeRemote(in: scratch) }
 
     func machine(_ name: String) -> (TeamPaths, FileSecrets) {
         let paths = TeamPaths(base: scratch.appendingPathComponent(name))
@@ -136,7 +123,7 @@ final class TeamReaderTests: XCTestCase {
     }
 
     func testCreateCodeRequestApprovePublishFetchReadThenRemove() throws {
-        try skipOffPOSIX()
+        try skipIfNoGit()
         let remote = try makeRemote()
         let (lp, ls) = machine("leader"), (ap, asec) = machine("alice"), (bp, bs) = machine("bob")
         // create → code → request → approve

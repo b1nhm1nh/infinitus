@@ -362,9 +362,9 @@ public enum SettingsShell {
     }
 
     private static func createPanes(hwnd: HWND, state: State, instance: HMODULE?) {
-        // 13 General + 3 Engine. Team (phase 02) and Animations (phase 07)
-        // are not registered here. Machine is in the catalog always and
-        // inserted only when WinMachineStore.paneShown, matching the Mac.
+        // 14 General + 3 Engine. Animations (phase 07) is not registered
+        // here. Machine is in the catalog always and inserted only when
+        // WinMachineStore.paneShown, matching the Mac.
         var allDescriptors: [(PaneDescriptor, (PaneDescriptor) -> SettingsPane)] = [
             (DisplayPane.descriptor, { _ in DisplayPane() }),
             (AccountsPane.descriptor, { _ in AccountsPane() }),
@@ -382,6 +382,7 @@ public enum SettingsShell {
             (ActivityPane.descriptor, { _ in ActivityPane() }),
             (DevicesPane.descriptor, { _ in DevicesPane() }),
             (LockPane.descriptor, { _ in LockPane() }),
+            (TeamPane.descriptor, { _ in TeamPane() }),
             (AboutPane.descriptor, { _ in AboutPane() }),
             (CswapPane.descriptor, { _ in CswapPane() }),
             (CLIProxyPane.descriptor, { _ in CLIProxyPane() }),

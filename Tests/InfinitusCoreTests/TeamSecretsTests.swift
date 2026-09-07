@@ -4,7 +4,7 @@ import XCTest
 final class TeamSecretsTests: XCTestCase {
     func testFileSecretsAreOwnerOnlyAndRoundTrip() throws {
         #if os(Windows)
-        try XCTSkipIf(true, "Team git shellouts / POSIX file modes are not ported to Windows yet")
+        try XCTSkipIf(true, "POSIX permissions (0600/0700) are not supported on Windows NTFS (posixPermissions is nil)")
         #endif
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("secrets-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: dir) }
@@ -32,8 +32,15 @@ final class TeamSecretsTests: XCTestCase {
         XCTAssertEqual(over.storeDir("t1").path, "/tmp/teams-x/t1/store")
         XCTAssertEqual(over.secretsDir.path, "/tmp/teams-x/secrets")
         let plain = TeamPaths.standard(environment: [:], home: "/home/u")
+        XCTAssertEqual(plain.base.lastPathComponent, "teams")
         #if os(macOS)
         XCTAssertEqual(plain.base.path, "/home/u/Library/Application Support/Infinitus/teams")
+        #elseif os(Windows)
+        let winEnv = TeamPaths.standard(environment: ["APPDATA": #"D:\Roaming"#], home: #"C:\Users\u"#)
+        XCTAssertEqual(winEnv.base.path, URL(fileURLWithPath: #"D:\Roaming"#)
+            .appendingPathComponent("Infinitus")
+            .appendingPathComponent("teams").path)
+        XCTAssertEqual(winEnv.base.deletingLastPathComponent().lastPathComponent, "Infinitus")
         #else
         XCTAssertEqual(plain.base.path, "/home/u/.local/share/infinitus/teams")
         XCTAssertEqual(TeamPaths.standard(environment: ["XDG_DATA_HOME": "/data"], home: "/home/u").base.path,
@@ -57,7 +64,7 @@ final class TeamSecretsTests: XCTestCase {
     /// target was deleted first — a reader in that window saw no secret.
     func testWriteReplacesAnExistingSecretAtomically() throws {
         #if os(Windows)
-        try XCTSkipIf(true, "Team git shellouts / POSIX file modes are not ported to Windows yet")
+        try XCTSkipIf(true, "POSIX permissions (0600) are not supported on Windows NTFS (posixPermissions is nil)")
         #endif
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("secrets-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: dir) }

@@ -2,11 +2,7 @@ import XCTest
 @testable import InfinitusCore
 
 final class TeamInvitesTests: XCTestCase {
-    func skipOffPOSIX() throws {
-        #if os(Windows)
-        try XCTSkipIf(true, "Team git shellouts / POSIX modes are not ported to Windows yet")
-        #endif
-    }
+    func skipIfNoGit() throws { try TeamGitSupport.skipIfNoGit() }
 
     func testNonceIsRandomBase32() {
         let a = TeamInvites.newNonce(), b = TeamInvites.newNonce()
@@ -57,7 +53,7 @@ final class TeamInvitesTests: XCTestCase {
     }
 
     func testCodeCarriesTheNonceAndAutoApprovalIsTheLeadersDecision() throws {
-        try skipOffPOSIX()
+        try skipIfNoGit()
         let leader = TeamIdentity.random()
         let paths = TeamPaths(base: FileManager.default.temporaryDirectory.appendingPathComponent("inv-\(UUID().uuidString)"))
         defer { try? FileManager.default.removeItem(at: paths.base) }
@@ -65,8 +61,7 @@ final class TeamInvitesTests: XCTestCase {
         try secrets.write(TeamClient.identitySecretName, leader.secret)
         // A bare remote is needed for create; reuse the membership tests' helper shape.
         let bare = paths.base.appendingPathComponent("remote.git")
-        let p = Process(); p.executableURL = URL(fileURLWithPath: "/usr/bin/env"); p.arguments = ["git", "init", "--bare", "-q", bare.path]
-        try p.run(); p.waitUntilExit()
+        _ = try TeamGitSupport.git(["init", "--bare", "-q", bare.path])
         let client = try TeamClient.create(name: "T", remote: "file://" + bare.path, token: nil, paths: paths, secrets: secrets, now: 100)
         let nonce = TeamInvites.newNonce()
         let text = try client.code(expiresIn: 600, nonce: nonce, now: 100)
@@ -85,13 +80,12 @@ final class TeamInvitesTests: XCTestCase {
     }
 
     func testMintAddsOneNonceToTheBookAndTheLinkCarriesIt() throws {
-        try skipOffPOSIX()
+        try skipIfNoGit()
         let paths = TeamPaths(base: FileManager.default.temporaryDirectory.appendingPathComponent("mint-\(UUID().uuidString)"))
         defer { try? FileManager.default.removeItem(at: paths.base) }
         let secrets = FileSecrets(dir: paths.secretsDir)
         let bare = paths.base.appendingPathComponent("remote.git")
-        let p = Process(); p.executableURL = URL(fileURLWithPath: "/usr/bin/env"); p.arguments = ["git", "init", "--bare", "-q", bare.path]
-        try p.run(); p.waitUntilExit()
+        _ = try TeamGitSupport.git(["init", "--bare", "-q", bare.path])
         let client = try TeamClient.create(name: "T", remote: "file://" + bare.path, token: nil, paths: paths, secrets: secrets, now: 100)
         let dir = paths.teamDir(client.config.id)
         // A nonce that expired before this mint is pruned by the same call.
@@ -114,13 +108,12 @@ final class TeamInvitesTests: XCTestCase {
     /// the book, so a leader who can't mint right now (closed requests)
     /// doesn't leave a dangling nonce nobody will ever redeem.
     func testMintLeavesTheBookUntouchedWhenTheClientRefuses() throws {
-        try skipOffPOSIX()
+        try skipIfNoGit()
         let paths = TeamPaths(base: FileManager.default.temporaryDirectory.appendingPathComponent("mint-fail-\(UUID().uuidString)"))
         defer { try? FileManager.default.removeItem(at: paths.base) }
         let secrets = FileSecrets(dir: paths.secretsDir)
         let bare = paths.base.appendingPathComponent("remote.git")
-        let p = Process(); p.executableURL = URL(fileURLWithPath: "/usr/bin/env"); p.arguments = ["git", "init", "--bare", "-q", bare.path]
-        try p.run(); p.waitUntilExit()
+        _ = try TeamGitSupport.git(["init", "--bare", "-q", bare.path])
         let client = try TeamClient.create(name: "T", remote: "file://" + bare.path, token: nil, paths: paths, secrets: secrets, now: 100)
         var closed = try XCTUnwrap(client.roster).doc
         closed.policy.requests = "off"

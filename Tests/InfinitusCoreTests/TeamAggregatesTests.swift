@@ -8,21 +8,10 @@ final class TeamAggregatesTests: XCTestCase {
         try FileManager.default.createDirectory(at: scratch, withIntermediateDirectories: true)
     }
 
-    /// The Team store shells `/usr/bin/env git` and its residue rules
-    /// assert POSIX modes - neither exists on Windows yet (upstream).
-    func skipOffPOSIX() throws {
-        #if os(Windows)
-        try XCTSkipIf(true, "Team git shellouts / POSIX modes are not ported to Windows yet")
-        #endif
-    }
+    func skipIfNoGit() throws { try TeamGitSupport.skipIfNoGit() }
     override func tearDownWithError() throws { try? FileManager.default.removeItem(at: scratch) }
 
-    func makeRemote() throws -> String {
-        let bare = scratch.appendingPathComponent("remote.git")
-        let p = Process(); p.executableURL = URL(fileURLWithPath: "/usr/bin/env"); p.arguments = ["git", "init", "--bare", "-q", bare.path]
-        try p.run(); p.waitUntilExit()
-        return "file://" + bare.path
-    }
+    func makeRemote() throws -> String { try TeamGitSupport.makeRemote(in: scratch) }
     func machine(_ name: String) -> (TeamPaths, FileSecrets) {
         let paths = TeamPaths(base: scratch.appendingPathComponent(name)); return (paths, FileSecrets(dir: paths.secretsDir))
     }
@@ -77,7 +66,7 @@ final class TeamAggregatesTests: XCTestCase {
     }
 
     func testLeaderPublishesAndMemberReadsAggregates() throws {
-        try skipOffPOSIX()
+        try skipIfNoGit()
         let (leader, member) = try team()
         let now = Date(timeIntervalSince1970: 1_788_609_600)
         let roster = leader.roster!.doc
@@ -94,7 +83,7 @@ final class TeamAggregatesTests: XCTestCase {
     }
 
     func testAggregatesFromANonLeaderAreIgnored() throws {
-        try skipOffPOSIX()
+        try skipIfNoGit()
         let (leader, member) = try team()
         // A member with store access writes an envelope under the leaders' path.
         let forged = try Envelope.seal(Data("{\"schema\":1}".utf8), kind: TeamKinds.aggregates, from: member.identity,
@@ -106,7 +95,7 @@ final class TeamAggregatesTests: XCTestCase {
     }
 
     func testPolicyOffHidesRequestsAndTheCode() throws {
-        try skipOffPOSIX()
+        try skipIfNoGit()
         let (leader, member) = try team()
         XCTAssertNoThrow(try leader.code(expiresIn: 60, now: 3_000))
         try leader.setPolicy(TeamRoster.Policy(requests: "off", membersSeeEachOther: true))
