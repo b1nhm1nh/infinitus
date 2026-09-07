@@ -100,6 +100,72 @@ final class OwnedSessionsRouteTests: XCTestCase {
         try XCTSkipIf(true, "spawns a POSIX shell fake")
     }
 
+    // MARK: - Phase 04: /activities/token route tests
+
+    /// Option A push: POST /activities/token answers 200 with canPush=false capability flag.
+    func testActivityTokenRouteAnswersCapabilityFlag() throws {
+        try DaemonHarness.scratch { dir in
+            let handler = self.handler(claudeDir: dir)
+            let body = Data("{}".utf8)
+            let response = handler(self.post(MirrorTransport.activityTokenPath, body: body))
+            let parsed = try XCTUnwrap(MirrorTransport.parseResponse(response))
+            XCTAssertEqual(parsed.status, 200)
+
+            struct ActivityTokenReply: Decodable {
+                let ok: Bool
+                let canPush: Bool
+                let pushCapable: Bool
+                let reason: String?
+            }
+            let reply = try JSONDecoder().decode(ActivityTokenReply.self, from: parsed.body)
+            XCTAssertTrue(reply.ok)
+            XCTAssertFalse(reply.canPush)
+            XCTAssertFalse(reply.pushCapable)
+            XCTAssertNotNil(reply.reason)
+        }
+    }
+
+    /// POST /activities/token requires authorization.
+    func testActivityTokenRouteUnauthorizedWithoutToken() throws {
+        try DaemonHarness.scratch { dir in
+            let handler = self.handler(claudeDir: dir)
+            let unauth = MirrorTransport.Request(
+                method: "POST", target: MirrorTransport.activityTokenPath,
+                headers: ["content-length": "2"],
+                body: Data("{}".utf8))
+            let response = handler(unauth)
+            let parsed = try XCTUnwrap(MirrorTransport.parseResponse(response))
+            XCTAssertEqual(parsed.status, 401)
+        }
+    }
+
+    /// Phone sends an ActivityPushRegistration payload on launch; verify it returns 200 with canPush: false.
+    func testActivityTokenRouteAcceptsFullRegistrationPayload() throws {
+        try DaemonHarness.scratch { dir in
+            let handler = self.handler(claudeDir: dir)
+            let payload = """
+            {
+                "kind": "alert",
+                "token": "0123456789abcdef0123456789abcdef",
+                "deviceId": "phone-test-device",
+                "deviceName": "iPhone",
+                "environment": "sandbox",
+                "registeredAt": "2026-09-07T00:00:00Z"
+            }
+            """
+            let response = handler(self.post(MirrorTransport.activityTokenPath, body: Data(payload.utf8)))
+            let parsed = try XCTUnwrap(MirrorTransport.parseResponse(response))
+            XCTAssertEqual(parsed.status, 200)
+            guard let json = try? JSONSerialization.jsonObject(with: parsed.body) as? [String: Any] else {
+                XCTFail("response body must be valid JSON")
+                return
+            }
+            XCTAssertEqual(json["ok"] as? Bool, true)
+            XCTAssertEqual(json["canPush"] as? Bool, false)
+            XCTAssertEqual(json["pushCapable"] as? Bool, false)
+        }
+    }
+
     private final class Flag: @unchecked Sendable { var value = false }
 
     // MARK: plumbing

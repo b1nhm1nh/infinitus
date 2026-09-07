@@ -63,6 +63,9 @@ final class TrayState {
     /// Last tick's pid → status, so a balloon fires on a real change and
     /// not on every refresh. Empty until the first refresh has run.
     var lastStatuses: [Int32: String] = [:]
+    /// Phase 04: last tick's fleet exhaustion state, so limit-stop balloon
+    /// fires once when every account dies and re-arms when one recovers.
+    var lastFleetAllDead: Bool? = nil
     /// The account each account-row command id switches to, rebuilt every
     /// time the menu opens (the list can change between opens).
     var accountCommands: [UINT: Int] = [:]
@@ -252,6 +255,21 @@ func refresh() {
         for line in TrayNotify.transitions(previous: state.lastStatuses,
                                            current: statuses, names: names) {
             TrayNotify.balloon(window, title: "Infinitus", body: line)
+        }
+
+        // Limit stop: announce when all accounts in the fleet are exhausted.
+        // Cached read only — never shells out on the UI tick.
+        if let accounts = TrayFleet.cached()?.accounts, !accounts.isEmpty {
+            let deadCount = accounts.filter { AccountVitals.isDead($0.usage) }.count
+            let allDead = deadCount == accounts.count
+            if let previous = state.lastFleetAllDead {
+                if let alert = TrayNotify.limitStop(previousAllDead: previous,
+                                                    currentAllDead: allDead,
+                                                    accountCount: accounts.count) {
+                    TrayNotify.balloon(window, title: "Infinitus", body: alert)
+                }
+            }
+            state.lastFleetAllDead = allDead
         }
     }
     state.lastStatuses = statuses
@@ -632,6 +650,30 @@ func run() -> Int32 {
             let ok = lines.count == expected
             if !ok { failures += 1 }
             print("  [\(ok ? "ok" : "FAIL")] \(label) → \(lines.count) (want \(expected)) \(lines)")
+        }
+        // Phase 04: toast composition tests for events that would have pushed on Mac.
+        let pushCases: [(String, String, String)] = [
+            ("limitStop toast",
+             TrayNotify.limitStop(previousAllDead: false, currentAllDead: true, accountCount: 3) ?? "",
+             "All 3 accounts exhausted — nothing left to switch to"),
+            ("limitStop re-arm silent",
+             TrayNotify.limitStop(previousAllDead: true, currentAllDead: true, accountCount: 3) ?? "silent",
+             "silent"),
+            ("teamCommandAnswered toast",
+             TrayNotify.teamCommandAnswered(peer: "MacBook", command: "resume", outcome: "delivered"),
+             "Team command from MacBook (resume): delivered"),
+            ("sessionsFinished quiet by default",
+             TrayNotify.transitions(previous: [1: "busy"], current: [1: "idle"], names: names).joined(),
+             ""),
+            ("sessionsFinished announced when knob on",
+             TrayNotify.transitions(previous: [1: "busy"], current: [1: "idle"], names: names,
+                                    announceSessionsFinished: true).first ?? "",
+             "All sessions finished — 0 of 1 working"),
+        ]
+        for (label, actual, expected) in pushCases {
+            let ok = actual == expected
+            if !ok { failures += 1 }
+            print("  [\(ok ? "ok" : "FAIL")] \(label) → \"\(actual)\" (want \"\(expected)\")")
         }
         print("transitions: \(failures == 0 ? "all pass" : "\(failures) FAILED")")
         _ = TrayFleet.menuLines()

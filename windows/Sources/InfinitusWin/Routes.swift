@@ -48,11 +48,18 @@ enum Routes {
                 return start(request: request, owned: owned, locate: locate,
                              startOverride: startOverride, log: log)
             }
-            // The phone posts its push token on launch; Windows has no
-            // APNs path, so accept and discard rather than 404 on every
-            // launch (02-feed-readonly.md).
+            // The phone posts its push token on launch. Windows cannot push
+            // to APNs directly: Apple requires a .p8 private signing key
+            // held exclusively in macOS Keychain, and LiveActivityPush has no
+            // non-CryptoKit ES256 signing path.
+            // Mac-relay option (Option B in docs/windows-phase-04-push.md) was
+            // considered but rejected for v1: it re-introduces a 24/7 Mac
+            // relay dependency and opens an inbound push trust surface.
+            // Option A: accept 2xx with an explicit capability flag so the phone
+            // knows lock-screen push delivery is unavailable on this host.
             if request.method == "POST", request.path == MirrorTransport.activityTokenPath {
-                return MirrorTransport.jsonResponse(Data("{}".utf8))
+                return MirrorTransport.jsonResponse(
+                    Data(#"{"ok":true,"canPush":false,"pushCapable":false,"reason":"APNs requires Apple .p8 key held only in macOS keychain"}"#.utf8))
             }
             return MirrorTransport.notFoundResponse()
         }
