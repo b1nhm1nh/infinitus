@@ -86,6 +86,10 @@ private let addAccountFooter =
     private weak var model: AppModel?
     private var master: FileHandle?
     private var buffer = ""
+    /// The CLI's last lines, plain text, shown under "Waiting for the
+    /// token" — a stall then says what the CLI is waiting for instead of
+    /// spinning mutely (user 2026-09-07, stuck at the spinner again).
+    @Published var cliTail = ""
     private var previousActive: Int?
     private var shimDir: URL?
     private var authWindow: NSWindow?
@@ -305,13 +309,28 @@ private let addAccountFooter =
         // exchange comes back as an "OAuth error: …" line plus "Press
         // Enter to try again"; unsurfaced, the flow spun at "Waiting for
         // the token" forever (user 2026-09-07). Hand the field back.
-        if case .waitingForToken = phase, let r = buffer.range(of: "OAuth error: ") {
-            let line = buffer[r.upperBound...].split(whereSeparator: \.isNewline).first
-            codeError = line.map { String($0).trimmingCharacters(in: .whitespaces) } ?? "the code was rejected"
-            code = ""
-            phase = .awaitingLogin
-            master?.write(Data("\r".utf8))    // back to the paste prompt
-            buffer = ""
+        cliTail = buffer.split(whereSeparator: \.isNewline)
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty && !$0.hasPrefix("https://") }
+            .suffix(3).joined(separator: "\n")
+        if case .waitingForToken = phase {
+            // "OAuth error: …" is the CLI's wording; "Invalid code" /
+            // "Login failed" / "Error: …" cover the rest of its vocabulary.
+            let rejection: String? = {
+                if let r = buffer.range(of: "OAuth error: ") {
+                    return buffer[r.upperBound...].split(whereSeparator: \.isNewline).first.map(String.init)
+                }
+                return buffer.split(whereSeparator: \.isNewline).map(String.init).last {
+                    $0.range(of: #"(?i)(invalid|failed|error)"#, options: .regularExpression) != nil
+                }
+            }()
+            if let rejection {
+                codeError = rejection.trimmingCharacters(in: .whitespaces)
+                code = ""
+                phase = .awaitingLogin
+                master?.write(Data("\r".utf8))    // back to the paste prompt
+                buffer = ""
+            }
         }
         // OAuth URL: the shim's stash first — it gets the exact argv
         // URL with no tty wrapping risk; stdout regex is the fallback.
@@ -418,7 +437,10 @@ private let addAccountFooter =
         // saved-session auto-routing sent a passkey account into the
         // private window — where WebAuthn can never run — and hit the
         // Bluetooth-fallback wall again (user screenshot 2026-08-31).
-        // The private window stays strictly opt-in.
+        // The private window stays strictly opt-in. A sheet SHARING the
+        // browser's cookies behind a claude.ai logout hop was tried
+        // (2026-09-07): Google remembered, but the double sheet flash
+        // bothered more than typing the email — reverted the same day.
         startSystemSheet()
     }
 
@@ -879,10 +901,12 @@ private struct FleetAccountsSection: View {
     /// 20x, Active" after the slot and the name instead of three
     /// unlabelled fragments. The name and the action buttons stay
     /// separate: combining them away would make them unreachable.
-    /// The email shows only when the name is not already the email.
+    /// The email shows unless the name IS the email. Without a name the
+    /// field shows its "Name" placeholder, so a fresh account showed
+    /// neither (user screenshot 2026-09-07: "email cannot be displayed").
     @ViewBuilder private func detail(_ a: Account) -> some View {
         HStack(spacing: 8) {
-            if let alias = a.alias, !alias.isEmpty {
+            if a.alias != a.email {
                 Text(a.email).lineLimit(1)
                     .font(.caption).foregroundStyle(.secondary)
             }
@@ -1196,12 +1220,20 @@ private struct CswapAddFlow: View {
                 }
             }
         case .waitingForToken, .registering:
-            HStack(spacing: 8) {
-                ProgressView().controlSize(.small)
-                Text(flow.phase == .registering
-                     ? "Handing the token to the engine\u{2026}"
-                     : "Waiting for the token\u{2026}")
-                Button("Cancel") { flow.cancel() }
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 8) {
+                    ProgressView().controlSize(.small)
+                    Text(flow.phase == .registering
+                         ? "Handing the token to the engine\u{2026}"
+                         : "Waiting for the token\u{2026}")
+                    Button("Cancel") { flow.cancel() }
+                }
+                if flow.phase == .waitingForToken, !flow.cliTail.isEmpty {
+                    Text("The sign-in CLI says: \(flow.cliTail)")
+                        .font(.caption.monospaced()).foregroundStyle(.secondary)
+                        .textSelection(.enabled)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
         case .done:
             HStack(spacing: 8) {
