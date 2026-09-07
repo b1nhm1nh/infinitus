@@ -67,6 +67,22 @@ enum ShareBridge {
         return true
     }
 
+    /// A suggestions-row conversation names one session on one Mac
+    /// (#144): the primary's by cwd alone — what every donation was
+    /// before other Macs existed — another Mac's as "mac:<id>\u{1F}<cwd>"
+    /// (the unit separator: a pairing id is a UUID, a path never holds it).
+    static func conversation(macId: String?, cwd: String) -> String {
+        macId.map { "mac:\($0)\u{1F}\(cwd)" } ?? cwd
+    }
+
+    static func session(conversation: String) -> (macId: String?, cwd: String) {
+        guard conversation.hasPrefix("mac:"), let cut = conversation.firstIndex(of: "\u{1F}") else {
+            return (nil, conversation)
+        }
+        let id = conversation[conversation.index(conversation.startIndex, offsetBy: 4)..<cut]
+        return (String(id), String(conversation[conversation.index(after: cut)...]))
+    }
+
     /// The extension's side too: the other paired Macs, each reached
     /// through `NetworkFleetMirror(pairing:)` rather than the defaults.
     static func others() -> [MacPairing] {
