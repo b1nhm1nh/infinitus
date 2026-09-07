@@ -524,13 +524,13 @@ public final class TeamGit: TeamStore {
     static func feed(_ handle: FileHandle, _ data: Data) {
         #if canImport(Darwin)
         _ = fcntl(handle.fileDescriptor, F_SETNOSIGPIPE, 1)
-        #else
+        #elseif !os(Windows)
         _ = ignoreSigpipe   // Linux has no per-descriptor switch
         #endif
         try? handle.write(contentsOf: data)
         try? handle.close()
     }
-    #if !canImport(Darwin)
+    #if !canImport(Darwin) && !os(Windows)
     private static let ignoreSigpipe: Void = { _ = signal(SIGPIPE, SIG_IGN) }()
     #endif
 

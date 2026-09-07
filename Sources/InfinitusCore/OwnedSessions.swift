@@ -48,14 +48,15 @@ public actor OwnedSessions {
         init(pid: Int32, cwd: String, stdin: FileHandle) {
             self.pid = pid; self.cwd = cwd; self.stdin = stdin
             // A write to a child that already exited must fail, not raise
-            // SIGPIPE at the app (TeamGit.feed's idiom).
+            // SIGPIPE at the app (TeamGit.feed's idiom). Windows has no
+            // SIGPIPE; a write to a dead pipe just errors.
             #if canImport(Darwin)
             _ = fcntl(stdin.fileDescriptor, F_SETNOSIGPIPE, 1)
-            #else
+            #elseif !os(Windows)
             _ = Child.ignoreSigpipe
             #endif
         }
-        #if !canImport(Darwin)
+        #if !canImport(Darwin) && !os(Windows)
         private static let ignoreSigpipe: Void = { _ = signal(SIGPIPE, SIG_IGN) }()
         #endif
 
@@ -294,7 +295,14 @@ public actor OwnedSessions {
             for _ in 0..<20 where processes[pid]?.isRunning == true {
                 try? await Task.sleep(nanoseconds: 100_000_000)
             }
-            if processes[pid]?.isRunning == true { kill(pid, SIGKILL) }
+            if processes[pid]?.isRunning == true {
+                #if os(Windows)
+                // No SIGKILL. terminate() already ran; a still-running
+                // child is as far as Foundation goes on Windows.
+                #else
+                kill(pid, SIGKILL)
+                #endif
+            }
         }
     }
 

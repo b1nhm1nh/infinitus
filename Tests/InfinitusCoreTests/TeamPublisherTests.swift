@@ -373,6 +373,7 @@ final class TeamPublisherTests: XCTestCase {
     /// pass like now.json so `at` stays truthful, and is retired once
     /// when the share row goes to Nobody.
     func testFleetIsPublishedSkippedWhileUnchangedAndRetiredWhenOff() throws {
+        try skipOffPOSIX()
         let t = try team()
         let projects = try writeProjects(scratch)
         let teamDir = t.alicePaths.teamDir(t.alice.config.id)
@@ -449,6 +450,7 @@ final class TeamPublisherTests: XCTestCase {
     /// publisher then scans nothing — a projects dir that does not
     /// exist publishes the same set — and writes no cache of its own.
     func testAScanHandedInSkipsTheScannerAndItsCache() throws {
+        try skipOffPOSIX()
         let t = try team()
         let projects = try writeProjects(scratch)
         let scanned = StatsScanner.scan(projectsDir: projects, cacheURL: nil).entries
@@ -569,6 +571,7 @@ final class TeamPublisherTests: XCTestCase {
     /// drained over several passes, and the report says how much is
     /// still to go (the pane shows "catching up, N MB to go").
     func testRemainingBytesCountsTheTailAndDrainsOverPasses() throws {
+        try skipOffPOSIX()
         let t = try team()
         let projects = try writeProjects(scratch)
         let publisher = TeamPublisher(client: t.alice, paths: t.alicePaths)
@@ -608,6 +611,7 @@ final class TeamPublisherTests: XCTestCase {
     /// The batch never sits in the heap: every staged item is sealed to
     /// `<teamDir>/spool/<n>.bin` and git hashes the file itself.
     func testEveryStagedItemIsSealedToTheSpoolAndPushedFromThere() throws {
+        try skipOffPOSIX()
         let t = try team()
         let projects = try writeProjects(scratch)
         let publisher = TeamPublisher(client: t.alice, paths: t.alicePaths)
@@ -633,6 +637,7 @@ final class TeamPublisherTests: XCTestCase {
     /// The spool holds sealed envelopes about to reach a shared remote;
     /// it is created 0700, not the umask default.
     func testSpoolDirIsCreatedPrivate() throws {
+        try skipOffPOSIX()
         let t = try team()
         let projects = try writeProjects(scratch)
         let publisher = TeamPublisher(client: t.alice, paths: t.alicePaths)
