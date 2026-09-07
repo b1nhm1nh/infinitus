@@ -247,15 +247,17 @@ func which(_ name: String) -> String? {
 /// process list. Blocks until killed.
 // MARK: - serve (W7)
 
-/// `infinitus-win serve [--port N] [--claude-dir P] [--token-file P]` —
-/// the real thing: the phone's whole HTTP surface (snapshot, feed tail
-/// with long-poll, images, input) over the pairing token. Without
-/// `--token-file` it uses the stored token, so `pair` then `serve` is the
-/// entire setup.
+/// `infinitus-win serve [--port N] [--claude-dir P] [--token-file P]
+/// [--auto-resume] [--team-grant]` — the real thing: the phone's whole HTTP
+/// surface (snapshot, feed tail with long-poll, images, input) over the
+/// pairing token. Without `--token-file` it uses the stored token, so `pair`
+/// then `serve` is the entire setup. `--team-grant` runs the store-lane
+/// grantor (off unless asked: it types into sessions on a teammate's behalf).
 func serve(_ args: [String]) -> Int32 {
     var tokenFile: String?, port: UInt16 = defaultMirrorPort
     var claudeDir = ClaudeSessions.configHome()
     var autoResume = false
+    var teamGrant = false
     var index = args.startIndex
     while index < args.endIndex {
         switch args[index] {
@@ -274,6 +276,7 @@ func serve(_ args: [String]) -> Int32 {
             }
             port = parsed
         case "--auto-resume": autoResume = true
+        case "--team-grant": teamGrant = true
         default:
             fail("serve: unknown flag \(args[index])")
         }
@@ -313,20 +316,31 @@ func serve(_ args: [String]) -> Int32 {
         print("if the phone can't reach it, allow inbound TCP \(bound):")
         print("  netsh advfirewall firewall add rule name=\"Infinitus \(bound)\" dir=in action=allow protocol=TCP localport=\(bound)")
         let advertised = WinBonjour.advertise(port: bound)
-        ControlServer.start(claudeDir: claudeDir, snapshot: snapshot)
+        ControlServer.start(claudeDir: claudeDir, snapshot: snapshot, owned: owned)
         ControlServer.recordState(port: bound, bonjour: advertised)
         // Opt-in, like the Mac's toggle: a nudge types into someone's
         // session. Held alive by the run loop below.
-        var supervisor: ResumeSupervisor?
+        var resumeSupervisor: ResumeSupervisor?
         if autoResume {
             let started = ResumeSupervisor(claudeDir: claudeDir) { line in
                 print(line)
                 fflush(stdout)
             }
             started.start()
-            supervisor = started
+            resumeSupervisor = started
         }
-        _ = supervisor
+        // Same posture, stronger reason: the grantor types into the user's
+        // sessions on a teammate's behalf. Off unless `--team-grant`.
+        var teamSupervisor: TeamSupervisor?
+        if teamGrant {
+            let started = TeamSupervisor(claudeDir: claudeDir, owned: owned) { line in
+                print(line)
+                fflush(stdout)
+            }
+            started.start()
+            teamSupervisor = started
+        }
+        _ = (resumeSupervisor, teamSupervisor)
         fflush(stdout)
         RunLoop.main.run()
     } catch {

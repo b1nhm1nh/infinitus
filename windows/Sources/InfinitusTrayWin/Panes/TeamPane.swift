@@ -35,9 +35,15 @@ public final class TeamPane: SettingsPane {
     private var publishBtnHwnd: HWND?
     private var mintCodeBtnHwnd: HWND?
 
+    private var lastPassHwnd: HWND?
+    private var driversEmptyHwnd: HWND?
+    private var revokeBtns: [HWND?] = []
+
     private var busy = false
     private var snapshot = Snapshot()
     private var computedHeight: Int32 = 900
+    private var lastLayoutWidth: Int32 = 0
+    private var lastLayoutHeight: Int32 = 0
 
     private enum Cmd {
         static let create: Int32 = 1
@@ -46,6 +52,8 @@ public final class TeamPane: SettingsPane {
         static let publish: Int32 = 4
         static let mintCode: Int32 = 5
         static let teamCombo: Int32 = 6
+        static let revokeBase: Int32 = 100
+        static let revokeCount: Int32 = 16
     }
 
     private struct TeamRow: Sendable {
@@ -60,6 +68,11 @@ public final class TeamPane: SettingsPane {
         var rosterLine: String
     }
 
+    private struct GrantRow: Sendable {
+        var id: String
+        var line: String
+    }
+
     private struct Snapshot: Sendable {
         var kid: String?
         var displayName: String = ""
@@ -71,6 +84,17 @@ public final class TeamPane: SettingsPane {
         var code: String?
         var error: String?
         var statusLine: String = ""
+        var grants: [GrantRow] = []
+        var lastPassLine: String = ""
+    }
+
+    /// Same shape as `TeamSupervisor.LastPass` — tray does not link InfinitusWin.
+    private struct LastPassFile: Codable {
+        var at: Int
+        var answered: Int
+        var lastOutcome: String?
+        var lastRefusal: String?
+        var error: String?
     }
 
     public init() {}
@@ -102,6 +126,13 @@ public final class TeamPane: SettingsPane {
         publishBtnHwnd = PaneControls.button("Publish now", in: ctx, id: base + Cmd.publish, x: 0, y: 0, w: 0, h: 0)
         mintCodeBtnHwnd = PaneControls.button("Make a code", in: ctx, id: base + Cmd.mintCode, x: 0, y: 0, w: 0, h: 0)
 
+        lastPassHwnd = PaneControls.label("", in: ctx, x: 0, y: 0, w: 0, h: 0, caption: true)
+        driversEmptyHwnd = PaneControls.label("", in: ctx, x: 0, y: 0, w: 0, h: 0, caption: true)
+        revokeBtns = (0..<Cmd.revokeCount).map { i in
+            PaneControls.button("Revoke", in: ctx, id: base + Cmd.revokeBase + i, x: 0, y: 0, w: 0, h: 0)
+        }
+        for btn in revokeBtns { if let h = btn { ShowWindow(h, SW_HIDE) } }
+
         let defaultName = ProcessInfo.processInfo.environment["USERNAME"] ?? "Windows"
         PaneControls.setText(createLeaderHwnd, defaultName)
         PaneControls.setText(joinNameHwnd, defaultName)
@@ -109,6 +140,8 @@ public final class TeamPane: SettingsPane {
 
     public func layout(width: Int32, height: Int32) {
         guard let ctx else { return }
+        lastLayoutWidth = width
+        lastLayoutHeight = height
         ctx.recycleTransients()
         let m = ctx.metrics
         let pad = m.pad
@@ -182,6 +215,32 @@ public final class TeamPane: SettingsPane {
         y += m.px(80)
         y += PaneControls.helpText(
             "Fetch and Publish run off the UI thread and only when you ask — nothing ticks while this pane is open. Nearby LAN invites stay on macOS/Linux.",
+            in: ctx, x: pad, y: y, width: fullW) + m.px(12)
+
+        y = PaneControls.sectionHeader("Drivers", in: ctx, y: y, width: width)
+        if let h = lastPassHwnd { MoveWindow(h, pad, y, fullW, m.px(36), true) }
+        y += m.px(40)
+        if snapshot.grants.isEmpty {
+            if let h = driversEmptyHwnd { MoveWindow(h, pad, y, fullW, m.px(18), true); ShowWindow(h, SW_SHOW) }
+            y += m.px(22)
+            for btn in revokeBtns { if let h = btn { ShowWindow(h, SW_HIDE) } }
+        } else {
+            if let h = driversEmptyHwnd { ShowWindow(h, SW_HIDE) }
+            let shown = min(snapshot.grants.count, Int(Cmd.revokeCount))
+            for i in 0..<shown {
+                _ = PaneControls.label(snapshot.grants[i].line, in: ctx, x: pad, y: y, w: max(80, fullW - m.px(90)), h: m.px(32), caption: true, transient: true)
+                if let h = revokeBtns[i] {
+                    ShowWindow(h, SW_SHOW)
+                    MoveWindow(h, pad + fullW - m.px(80), y, m.px(80), btnH, true)
+                }
+                y += m.px(36)
+            }
+            for i in shown..<revokeBtns.count {
+                if let h = revokeBtns[i] { ShowWindow(h, SW_HIDE) }
+            }
+        }
+        y += PaneControls.helpText(
+            "Revoke is local and takes effect on the next command — nothing is pushed to the driver, and work already in flight is not interrupted. Owned sessions (this daemon's stdin) and sessions with a live pipe are drivable; a granted key on any other session answers noSurface.",
             in: ctx, x: pad, y: y, width: fullW) + pad
 
         computedHeight = y
@@ -222,7 +281,13 @@ public final class TeamPane: SettingsPane {
         case Cmd.teamCombo:
             if code == UINT(CBN_SELCHANGE) {
                 snapshot.selectedID = selectedTeamID()
-                paint()
+                reload(fetch: false)
+            }
+            return true
+        case Cmd.revokeBase..<(Cmd.revokeBase + Cmd.revokeCount):
+            let index = Int(rel - Cmd.revokeBase)
+            if snapshot.grants.indices.contains(index) {
+                revokeGrant(id: snapshot.grants[index].id)
             }
             return true
         default:
@@ -274,6 +339,11 @@ public final class TeamPane: SettingsPane {
             PaneControls.setText(rosterHwnd, "")
         }
         if let code = snapshot.code { PaneControls.setText(codeHwnd, code) }
+        PaneControls.setText(lastPassHwnd, snapshot.lastPassLine)
+        PaneControls.setText(driversEmptyHwnd,
+                             snapshot.grants.isEmpty ? "Nobody can drive your sessions." : "")
+        let shown = min(snapshot.grants.count, Int(Cmd.revokeCount))
+        for i in 0..<shown { PaneControls.enable(revokeBtns[i], !busy) }
     }
 
     private func refillCombo() {
@@ -301,10 +371,17 @@ public final class TeamPane: SettingsPane {
         }, then: { [weak self] snap in
             guard let self else { return }
             self.busy = false
-            self.snapshot = snap
-            self.refillCombo()
-            self.paint()
+            self.applySnapshot(snap)
         })
+    }
+
+    private func applySnapshot(_ snap: Snapshot) {
+        snapshot = snap
+        refillCombo()
+        if lastLayoutWidth > 0 {
+            layout(width: lastLayoutWidth, height: lastLayoutHeight)
+        }
+        paint()
     }
 
     private static func loadSnapshot(selectedID: String?, fetch: Bool) -> Snapshot {
@@ -318,6 +395,8 @@ public final class TeamPane: SettingsPane {
         snap.kid = secrets.read(TeamClient.identitySecretName).flatMap { try? TeamIdentity(secret: $0) }?.kid
         guard snap.gitFound else {
             snap.error = "\(TeamGit.GitError.gitNotFound)"
+            snap.selectedID = selectedID ?? paths.teamIDs().first
+            fillDrivers(&snap, paths: paths)
             return snap
         }
         for id in paths.teamIDs() {
@@ -339,7 +418,65 @@ public final class TeamPane: SettingsPane {
         }
         snap.selectedID = selectedID.flatMap { id in snap.teams.contains(where: { $0.id == id }) ? id : nil }
             ?? snap.teams.first?.id
+        fillDrivers(&snap, paths: paths)
         return snap
+    }
+
+    private static func fillDrivers(_ snap: inout Snapshot, paths: TeamPaths) {
+        guard let id = snap.selectedID else {
+            snap.grants = []
+            snap.lastPassLine = ""
+            return
+        }
+        let teamDir = paths.teamDir(id)
+        let roster = (try? Data(contentsOf: paths.rosterFile(id)))
+            .flatMap { try? CanonicalJSON.decode(Signed<TeamRoster>.self, from: $0) }?.doc
+        snap.grants = TeamGrants.load(teamDir: teamDir).grants.map {
+            GrantRow(id: $0.id, line: grantLine($0, roster: roster))
+        }
+        snap.lastPassLine = lastPassCaption(teamDir: teamDir)
+    }
+
+    private static func grantLine(_ grant: TeamGrants.Grant, roster: TeamRoster?) -> String {
+        let who: String
+        switch grant.audience {
+        case .off: who = "nobody"
+        case .leaders: who = "leaders"
+        case .team: who = "whole team"
+        case .members(let kids):
+            who = kids.map { kid in
+                roster?.everyone.first { $0.keys.kid == kid }?.name ?? String(kid.prefix(8))
+            }.joined(separator: ", ")
+        }
+        let sessions: String
+        switch grant.sessions {
+        case .all: sessions = "all sessions"
+        case .some(let ids): sessions = ids.count == 1 ? "1 session" : "\(ids.count) sessions"
+        }
+        let caps = grant.capabilities.sorted().joined(separator: ", ")
+        return "\(who) · \(sessions) · \(caps) · since \(stamp(grant.since))"
+    }
+
+    private static func lastPassCaption(teamDir: URL) -> String {
+        let file = teamDir.appendingPathComponent("control-last-pass.json")
+        guard let data = try? Data(contentsOf: file),
+              let pass = try? JSONDecoder().decode(LastPassFile.self, from: data) else {
+            return "No grantor pass yet. Run infinitus-win serve --team-grant."
+        }
+        if let error = pass.error, !error.isEmpty {
+            return "Last pass \(stamp(pass.at)): \(error)"
+        }
+        var line = "Last pass \(stamp(pass.at)): answered \(pass.answered)"
+        if let outcome = pass.lastOutcome { line += " · last \(outcome)" }
+        if let refusal = pass.lastRefusal { line += " · refused \(refusal)" }
+        return line
+    }
+
+    private static func stamp(_ at: Int) -> String {
+        let f = DateFormatter()
+        f.dateStyle = .short
+        f.timeStyle = .short
+        return f.string(from: Date(timeIntervalSince1970: TimeInterval(at)))
     }
 
     private func createTeam() {
@@ -369,14 +506,14 @@ public final class TeamPane: SettingsPane {
             self.busy = false
             switch result {
             case .success(let snap):
-                self.snapshot = snap
-                self.snapshot.statusLine = "Created."
+                var snap = snap
+                snap.statusLine = "Created."
+                self.applySnapshot(snap)
                 PaneControls.setText(self.createTokenHwnd, "")
             case .failure(let error):
                 self.snapshot.error = TeamGit.masked("\(error)")
+                self.paint()
             }
-            self.refillCombo()
-            self.paint()
         })
     }
 
@@ -405,13 +542,13 @@ public final class TeamPane: SettingsPane {
             self.busy = false
             switch result {
             case .success(let snap):
-                self.snapshot = snap
-                self.snapshot.statusLine = "Requested. Waiting for a leader to approve."
+                var snap = snap
+                snap.statusLine = "Requested. Waiting for a leader to approve."
+                self.applySnapshot(snap)
             case .failure(let error):
                 self.snapshot.error = TeamGit.masked("\(error)")
+                self.paint()
             }
-            self.refillCombo()
-            self.paint()
         })
     }
 
@@ -457,12 +594,44 @@ public final class TeamPane: SettingsPane {
             self.busy = false
             switch result {
             case .success(let snap):
-                self.snapshot = snap
+                self.applySnapshot(snap)
             case .failure(let error):
                 self.snapshot.error = TeamGit.masked("\(error)")
+                self.paint()
             }
-            self.refillCombo()
-            self.paint()
+        })
+    }
+
+    private func revokeGrant(id: String) {
+        guard let ctx, !busy else { return }
+        guard let teamID = selectedTeamID() else {
+            snapshot.error = "not in a team"
+            paint()
+            return
+        }
+        busy = true
+        snapshot.statusLine = "Revoking…"
+        snapshot.error = nil
+        paint()
+        ctx.async({
+            let paths = TeamPaths.standard()
+            let teamDir = paths.teamDir(teamID)
+            var grants = TeamGrants.load(teamDir: teamDir)
+            _ = grants.remove(id: id)
+            try grants.save(teamDir: teamDir)
+            var snap = Self.loadSnapshot(selectedID: teamID, fetch: false)
+            snap.statusLine = "Revoked. Takes effect on the next command."
+            return snap
+        }, then: { [weak self] (result: Result<Snapshot, Error>) in
+            guard let self else { return }
+            self.busy = false
+            switch result {
+            case .success(let snap):
+                self.applySnapshot(snap)
+            case .failure(let error):
+                self.snapshot.error = TeamGit.masked("\(error)")
+                self.paint()
+            }
         })
     }
 }

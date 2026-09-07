@@ -137,16 +137,11 @@ enum Routes {
             log("phone input not delivered: unknown session \(pid)")
             return MirrorTransport.notFoundResponse()
         }
-        let deliver = deliverOverride ?? owned.existing?.deliver
-        let reply = SessionInput.deliver(
-            request: decoded, record: record,
-            hosts: [],                       // no pty on Windows: owned stdin or pipe
-            claudeDir: claudeDir,
-            ttyOfPid: { _ in nil }, ancestorsOf: { _ in [] },
-            socketSend: { record, text in
-                NamedPipe.send(text: text, record: record, claudeDir: claudeDir)
-            },
-            owned: deliver)
+        // Same lane as the control pipe and the team grantor — one queue, so
+        // an HTTP input and a granted command never interleave frames into
+        // the same named pipe (Mac: MirrorServer.storePass hops the queue).
+        let reply = DeliveryLane.deliver(pid: pid, request: decoded, owned: owned,
+                                         claudeDir: claudeDir, deliverOverride: deliverOverride)
         let label = URL(fileURLWithPath: record.cwd).lastPathComponent
         if reply.outcome == "delivered" {
             log("phone -> \(label): \"\(decoded.text.prefix(60))\" (\(reply.channel ?? "?"))")

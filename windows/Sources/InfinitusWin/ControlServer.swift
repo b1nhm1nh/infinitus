@@ -36,6 +36,7 @@ enum ControlServer {
     private nonisolated(unsafe) static var bonjourAdvertised: Bool = false
     private nonisolated(unsafe) static var sharedSnapshot: SnapshotCache?
     private nonisolated(unsafe) static var sharedClaudeDir: URL?
+    private nonisolated(unsafe) static var sharedOwned: OwnedSessionsBox?
 
     static func recordState(port: UInt16, bonjour: Bool) {
         lock.lock()
@@ -46,13 +47,14 @@ enum ControlServer {
 
     /// Starts the control listener on a background thread. Never fatal:
     /// a failure logs and leaves `serve` running.
-    static func start(claudeDir: URL, snapshot: SnapshotCache) {
+    static func start(claudeDir: URL, snapshot: SnapshotCache, owned: OwnedSessionsBox) {
         lock.lock()
         defer { lock.unlock() }
         guard !isRunning else { return }
 
         sharedClaudeDir = claudeDir
         sharedSnapshot = snapshot
+        sharedOwned = owned
         startTime = Date()
         isRunning = true
         let pipe = pipePath()
@@ -276,24 +278,9 @@ enum ControlServer {
                   let text = json["text"] as? String, !text.isEmpty else {
                 return Data(#"{"error":"invalid pid or text"}"#.utf8) + Data([0x0A])
             }
-            guard let record = ClaudeSessions.list(claudeDir: claudeDir).first(where: { $0.pid == pid }) else {
-                let reply = SessionInput.Reply(outcome: "noChannel", channel: nil, detail: "no live session with pid \(pid)")
-                var data = (try? JSONEncoder().encode(reply)) ?? Data()
-                data.append(0x0A)
-                return data
-            }
+            lock.lock(); let owned = sharedOwned ?? OwnedSessionsBox(); lock.unlock()
             let req = SessionInput.Request(kind: .message, text: text)
-            let reply = SessionInput.deliver(
-                request: req,
-                record: record,
-                hosts: [],
-                claudeDir: claudeDir,
-                ttyOfPid: { _ in nil },
-                ancestorsOf: { _ in [] },
-                socketSend: { record, text in
-                    NamedPipe.send(text: text, record: record, claudeDir: claudeDir)
-                }
-            )
+            let reply = DeliveryLane.deliver(pid: pid, request: req, owned: owned, claudeDir: claudeDir)
             var data = (try? JSONEncoder().encode(reply)) ?? Data(#"{"outcome":"rejected"}"#.utf8)
             data.append(0x0A)
             return data
