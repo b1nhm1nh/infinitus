@@ -68,6 +68,8 @@ public enum TeamControl {
         public static let unknownSender = "unknownSender"
         public static let badRequest = "badRequest"
         public static let rateLimited = "rateLimited"
+        /// Driver-side only: the store lane is waiting on the grantor's fetch.
+        public static let queued = "queued"
         public static let refusals: Set<String> = [noGrant, notLive, expired, replayed, unknownSender, badRequest, rateLimited]
     }
 
