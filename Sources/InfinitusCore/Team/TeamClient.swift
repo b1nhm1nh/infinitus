@@ -65,7 +65,9 @@ public final class TeamClient {
     public private(set) var roster: Signed<TeamRoster>?
     private let paths: TeamPaths
     /// Test hook: where the client's own files (state, caches) live.
-    var teamDirForTests: URL { paths.teamDir(config.id) }
+    /// `<base>/<team id>`: grants, the control ledgers, `cloudflare.json`.
+    public var teamDir: URL { paths.teamDir(config.id) }
+    var teamDirForTests: URL { teamDir }
     private let secrets: TeamSecrets
     let store: TeamGit
 
