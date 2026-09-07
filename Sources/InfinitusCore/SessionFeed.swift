@@ -118,10 +118,13 @@ public struct SessionFeed: Codable, Sendable {
     /// as `?since=` so the Mac can hold the reply until something changed
     /// (long-poll). New optional field.
     public let stamp: String?
+    /// The T3-shaped timeline built from the same tail (#223 phase 1).
+    /// New optional field: older phones ignore it.
+    public let timeline: SessionTimeline?
 
     public init(pid: Int32, sessionId: String, cwd: String, status: String?,
                 waiting: Bool, items: [SessionFeedItem], name: String? = nil,
-                stamp: String? = nil) {
+                stamp: String? = nil, timeline: SessionTimeline? = nil) {
         self.pid = pid
         self.sessionId = sessionId
         self.cwd = cwd
@@ -130,6 +133,7 @@ public struct SessionFeed: Codable, Sendable {
         self.items = items
         self.name = name
         self.stamp = stamp
+        self.timeline = timeline
     }
 }
 
@@ -160,18 +164,33 @@ public enum SessionFeedReader {
         guard !record.sessionId.isEmpty else { return nil }
         let url = Transcript.locate(cwd: record.cwd, sessionId: record.sessionId, claudeDir: claudeDir)
         var window = tailBytes
-        var parsed = parse(lines: tail(of: url, maxBytes: window), limit: limit)
+        var entries = tail(of: url, maxBytes: window).compactMap(decodeLine)
+        var parsed = parse(entries: entries, limit: limit)
         let size = ((try? FileManager.default.attributesOfItem(atPath: url.path))?[.size] as? NSNumber)?.intValue ?? 0
         while parsed.count < limit, window < size, window < tailBytesMax {
             window *= 4
-            parsed = parse(lines: tail(of: url, maxBytes: window), limit: limit)
+            entries = tail(of: url, maxBytes: window).compactMap(decodeLine)
+            parsed = parse(entries: entries, limit: limit)
         }
         let raw = attachAgents(parsed, transcript: url)
         let (items, waiting) = finalize(items: raw, status: record.status,
                                         statusUpdatedAt: record.statusUpdatedAt)
+        // The T3 timeline (#223): a second walk over the entries already decoded.
+        let timeline = SessionTimelineBuilder.build(entries: entries, status: record.status,
+                                                    statusUpdatedAt: record.statusUpdatedAt, agents: agents(in: raw))
         return SessionFeed(pid: record.pid, sessionId: record.sessionId, cwd: record.cwd,
                            status: record.status, waiting: waiting, items: items,
-                           name: record.name, stamp: stamp(record: record, claudeDir: claudeDir))
+                           name: record.name, stamp: stamp(record: record, claudeDir: claudeDir),
+                           timeline: timeline)
+    }
+
+    /// The sub-agent summaries `attachAgents` filled, by spawning tool_use id.
+    static func agents(in items: [SessionFeedItem]) -> [String: SessionFeedItem.Agent] {
+        var out: [String: SessionFeedItem.Agent] = [:]
+        for item in items where item.kind == .agent {
+            if let id = item.toolUseId, let agent = item.agent { out[id] = agent }
+        }
+        return out
     }
 
     /// "size-mtime" of the transcript plus the record's status, so a
@@ -312,7 +331,10 @@ public enum SessionFeedReader {
     }
 
     public static func parse(lines: [String], limit: Int) -> [SessionFeedItem] {
-        let entries: [[String: Any]] = lines.compactMap(decodeLine)
+        parse(entries: lines.compactMap(decodeLine), limit: limit)
+    }
+
+    static func parse(entries: [[String: Any]], limit: Int) -> [SessionFeedItem] {
 
         /// A run of consecutive `.tool` items — any tools (user 2026-09-03:
         /// "all the tool uses should be combined into one") — collapsed
@@ -628,7 +650,7 @@ public enum SessionFeedReader {
         return (sender, body)
     }
 
-    private static func errorSummary(_ block: [String: Any]) -> String {
+    static func errorSummary(_ block: [String: Any]) -> String {
         if let text = block["content"] as? String { return String(text.prefix(200)) }
         if let parts = block["content"] as? [[String: Any]],
            let text = parts.first(where: { ($0["type"] as? String) == "text" })?["text"] as? String {
@@ -637,7 +659,7 @@ public enum SessionFeedReader {
         return "tool error"
     }
 
-    private static func describeQuestion(_ block: [String: Any]) -> (String, [String]) {
+    static func describeQuestion(_ block: [String: Any]) -> (String, [String]) {
         guard let input = block["input"] as? [String: Any],
               let questions = input["questions"] as? [[String: Any]], !questions.isEmpty
         else { return ("", []) }
@@ -651,7 +673,7 @@ public enum SessionFeedReader {
     /// One-line summary of a tool call's input — the Bash command or the
     /// file path, same signals `SessionProgress.describe` reads, just
     /// without the verb prefix (the tool name carries that on the phone).
-    private static func describeTool(name: String, input: [String: Any]) -> String {
+    static func describeTool(name: String, input: [String: Any]) -> String {
         switch name {
         case "Bash":
             let command = (input["command"] as? String ?? "").replacingOccurrences(of: "\n", with: " ")
