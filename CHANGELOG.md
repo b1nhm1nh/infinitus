@@ -8,6 +8,7 @@ publishes the matching section as the GitHub release body.
 ## Unreleased
 
 ### Phone
+- Tapping a "Fleet on a Mac" widget opens the sessions list at that Mac's section (#144).
 - A "Fleet on a Mac" widget joins the Fleet widget: pick which paired Mac it shows in the widget's editor (#144).
 - Every paired Mac gets its own Live Activities: a working card and a revival countdown per Mac, each kept moving by the Mac it belongs to (#144).
 - The share sheet's suggestions row lists sessions from every paired Mac, each named with its Mac (#144).
@@ -29,6 +30,7 @@ publishes the matching section as the GitHub release body.
 - A message Claude Code held instead of delivering shows in the chat as a marker, with where to review it (#213).
 
 ### Mac
+- Settings › Machine shows on dev builds and stays hidden on releases.
 - Fewer stray notifications: "all sessions finished" needs ten minutes of work first, its stretch and the last-alive warning survive a relaunch, and engine housekeeping events no longer post banners (#231).
 - Team members say when they joined, on their row and in their detail; a removed member still readable says when they were removed; `team members` gains `joined` (#219).
 - Settings polish: every engine error reads as a sentence, the search highlight fades in and out, Machine labels share one casing, and a `-mock_mode YES` dev instance shows mock accounts (#249).
