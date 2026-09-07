@@ -129,6 +129,22 @@ final class TeamHostnameTests: XCTestCase {
         XCTAssertEqual(ledger.orphans(roster: leader.roster!.doc).map(\.kid), [bob.identity.kid])
     }
 
+    func testNewTokenKeepsRecordsUnderTheSameZoneAndRefusesAnother() throws {
+        let dir = scratch.appendingPathComponent("team")
+        var old = TeamHostnames.Ledger(zone: "example.com", label: "team")
+        old.zoneID = "zone1"; old.accountID = "acct1"
+        old.records["k1"] = .init(hostname: "ann.team.example.com", tunnelID: "t", dnsID: "d", at: 1)
+        try old.save(teamDir: dir)
+        let same = try TeamHostnames.ledger(zone: " Example.COM ", label: "Lab", teamDir: dir)
+        XCTAssertEqual(same.zone, "example.com"); XCTAssertEqual(same.label, "lab")
+        XCTAssertEqual(same.records.count, 1)
+        XCTAssertNil(same.zoneID, "ids are re-fetched so the new token gets checked")
+        XCTAssertThrowsError(try TeamHostnames.ledger(zone: "other.org", label: "team", teamDir: dir)) { error in
+            XCTAssertEqual(error as? TeamHostnames.HostnameError, .zoneInUse("example.com", 1))
+        }
+        XCTAssertThrowsError(try TeamHostnames.ledger(zone: "bad zone", label: "team", teamDir: dir))
+    }
+
     func testApiErrorsCarryOnlyTheMessage() throws {
         let (leader, bob, _) = try team()
         let http: TeamControl.Deliver.HTTP = { _, _, _, _, _ in

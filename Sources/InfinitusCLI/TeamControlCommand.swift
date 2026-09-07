@@ -156,11 +156,7 @@ func runTeamControl(_ args: [String]) -> Int32? {
                 }
                 let token = String(decoding: FileHandle.standardInput.readDataToEndOfFile(), as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
                 guard !token.isEmpty else { return controlFail("no token on stdin", code: 2) }
-                var ledger = TeamHostnames.Ledger(zone: positional[1].lowercased(), label: (options["label"] ?? TeamHostnames.defaultLabel).lowercased())
-                guard TeamHostnames.validName(ledger.zone), TeamHostnames.validName(ledger.label) else {
-                    return controlFail("zone and label are DNS names (lowercase letters, digits, - and .)", code: 2)
-                }
-                if let old = TeamHostnames.Ledger.load(teamDir: teamDir), old.zone == ledger.zone { ledger.records = old.records }
+                var ledger = try TeamHostnames.ledger(zone: positional[1], label: options["label"] ?? TeamHostnames.defaultLabel, teamDir: teamDir)
                 let ids = try TeamHostnames.Cloudflare(token: token, http: controlHTTP).ids(ledger: &ledger)
                 try secrets.write(TeamHostnames.secretName, Data(token.utf8))
                 try ledger.save(teamDir: teamDir)

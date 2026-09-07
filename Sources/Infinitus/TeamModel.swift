@@ -856,12 +856,7 @@ final class TeamModel: ObservableObject {
         await action("Checking the token…") { paths, secrets in
             guard let team = Self.teamID(paths) else { throw TeamClient.ClientError.notInTeam }
             let dir = paths.teamDir(team)
-            var ledger = TeamHostnames.Ledger(zone: zone.trimmingCharacters(in: .whitespaces).lowercased(),
-                                              label: label.trimmingCharacters(in: .whitespaces).lowercased())
-            guard TeamHostnames.validName(ledger.zone), TeamHostnames.validName(ledger.label) else {
-                throw TeamHostnames.HostnameError.badName("\(ledger.label).\(ledger.zone)")
-            }
-            if let old = TeamHostnames.Ledger.load(teamDir: dir), old.zone == ledger.zone { ledger.records = old.records }
+            var ledger = try TeamHostnames.ledger(zone: zone, label: label, teamDir: dir)
             let trimmed = token.trimmingCharacters(in: .whitespacesAndNewlines)
             _ = try TeamHostnames.Cloudflare(token: trimmed, http: Self.urlHTTP).ids(ledger: &ledger)
             try secrets.write(TeamHostnames.secretName, Data(trimmed.utf8))

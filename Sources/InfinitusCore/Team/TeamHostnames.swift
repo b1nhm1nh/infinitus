@@ -16,6 +16,8 @@ public enum TeamHostnames {
         case badName(String)
         case api(Int, String)
         case unknownMember
+        /// Hostnames exist under another zone; a new token must not strand them.
+        case zoneInUse(String, Int)
     }
 
     public struct Record: Codable, Equatable, Sendable {
@@ -47,6 +49,21 @@ public enum TeamHostnames {
         public func orphans(roster: TeamRoster) -> [(kid: String, record: Record)] {
             records.filter { roster.keys(for: $0.key) == nil }.map { ($0.key, $0.value) }.sorted { $0.0 < $1.0 }
         }
+    }
+
+    /// The ledger a new token starts from: names validated, earlier records
+    /// carried over under the same zone (ids are re-fetched so the token is
+    /// checked), refused while hostnames exist under another zone.
+    public static func ledger(zone: String, label: String, teamDir: URL) throws -> Ledger {
+        let ledger = Ledger(zone: zone.trimmingCharacters(in: .whitespaces).lowercased(),
+                            label: label.trimmingCharacters(in: .whitespaces).lowercased())
+        guard validName(ledger.zone), validName(ledger.label) else { throw HostnameError.badName("\(ledger.label).\(ledger.zone)") }
+        var out = ledger
+        if let old = Ledger.load(teamDir: teamDir), !old.records.isEmpty {
+            guard old.zone == ledger.zone else { throw HostnameError.zoneInUse(old.zone, old.records.count) }
+            out.records = old.records
+        }
+        return out
     }
 
     // MARK: names
@@ -216,6 +233,7 @@ extension TeamHostnames.HostnameError: LocalizedError {
         case .badName(let name): return "not a DNS name: \(name)"
         case .api(let status, let message): return "Cloudflare: \(message) (HTTP \(status))"
         case .unknownMember: return "no such teammate"
+        case .zoneInUse(let zone, let n): return "\(n) hostname\(n == 1 ? "" : "s") exist under \(zone); delete them before switching zones"
         }
     }
 }
