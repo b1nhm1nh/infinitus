@@ -35,6 +35,7 @@ publishes the matching section as the GitHub release body.
 - A message Claude Code held instead of delivering shows in the chat as a marker, with where to review it (#213).
 
 ### Mac
+- A sign-in code Claude rejects (half-copied, or a failed exchange) comes straight back to the paste field with the reason, instead of waiting forever.
 - The setup steps (install the engine, add the first account) show on a solid background instead of glass.
 - The private sign-in window keeps your Google login across accounts, so adding or re-logging an account skips the email field.
 - The Mac serves a browser page for machines without the app — sessions list, chat with a session, Start a session — at the "Copy Browser Link" address in Settings › Devices (#151).
