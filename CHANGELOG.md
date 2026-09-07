@@ -7,6 +7,10 @@ publishes the matching section as the GitHub release body.
 
 ## Unreleased
 
+### Sessions
+- Start a session headless — no terminal; Infinitus runs it and the Mac window, phone and browser page are its chat — from the popup, the phone, or as the default in Settings › Display (#151).
+- The Mac can own a Claude Code session outright — no terminal — and answer its permission prompts and questions from the phone or the popup (#151).
+
 ### Phone
 - Tapping a "Fleet on a Mac" widget opens the sessions list at that Mac's section (#144).
 - A "Fleet on a Mac" widget joins the Fleet widget: pick which paired Mac it shows in the widget's editor (#144).
