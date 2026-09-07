@@ -58,6 +58,7 @@ publishes the matching section as the GitHub release body.
 - A phone showing the revival countdown skips the duplicate all-dead alert, and a working activity starts silently.
 
 ### Team (preview)
+- Team session control, core: grants, sealed command and ack envelopes, the verification pipeline and the control routes land in InfinitusCore with tests; nothing is mounted yet (#220).
 - Team store hardening: `--team` ids are one path segment, git's stdin is fed without a pipe deadlock or SIGPIPE, the CLI reports encoding failures instead of exiting 0, garbled signer keys read as a bad signature (#55).
 - A teammate's fleet — every account with tier, state and headroom — shows in their detail on the Mac and the phone, with a Fleet share row (default: leaders) and a headroom board for leaders (#221).
 - A removed teammate's files stay readable up to the moment they were removed, and only later ones are ignored.
