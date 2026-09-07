@@ -92,6 +92,10 @@ final class TeamModel: ObservableObject {
     let makeSecrets: @Sendable () -> TeamSecrets
     private let defaults: UserDefaults
     private let queue = DispatchQueue(label: "run.infinitus.team", qos: .utility)
+    /// Driving a teammate (#220 §5.3): the network lanes and tail polls
+    /// never touch the team queue; only the store publish rides `run`.
+    private let driveQueue = DispatchQueue(label: "run.infinitus.team-drive", qos: .userInitiated)
+    private let deliver = OSAllocatedUnfairLock(initialState: TeamControl.Deliver(http: TeamModel.urlHTTP, interfaces: []))
     private var lastLoop: Date?
     private var loopRunning = false
     private var lastFetchAt: Int?
@@ -611,6 +615,91 @@ final class TeamModel: ObservableObject {
         }
         await load().value
         return failure
+    }
+
+    // MARK: driving a teammate's session (#220 §5.3, §7.2)
+
+    /// One exchange with a grantor's endpoint (LAN, hostname or tunnel);
+    /// the lane's own timeout caps a vanished peer.
+    private nonisolated static let urlHTTP: TeamControl.Deliver.HTTP = { method, url, headers, body, timeout in
+        var request = URLRequest(url: url)
+        request.httpMethod = method
+        request.httpBody = body
+        request.timeoutInterval = timeout
+        for (name, value) in headers { request.setValue(value, forHTTPHeaderField: name) }
+        if body != nil { request.setValue("application/octet-stream", forHTTPHeaderField: "Content-Type") }
+        let done = DispatchSemaphore(value: 0)
+        let box = OSAllocatedUnfairLock<(Int, Data, Error?)>(initialState: (0, Data(), nil))
+        URLSession.shared.dataTask(with: request) { data, response, error in
+            box.withLock { $0 = ((response as? HTTPURLResponse)?.statusCode ?? 0, data ?? Data(), error) }
+            done.signal()
+        }.resume()
+        done.wait()
+        let (status, data, failure) = box.withLock { $0 }
+        if let failure { throw failure }
+        return (status, data)
+    }
+
+    /// The capabilities `kid` granted me, from their published hint.
+    func controls(grantedBy kid: String) -> Set<String> {
+        Set(snapshot?.members.first { $0.kid == kid }?.controls ?? [])
+    }
+
+    private func onDriveQueue<T: Sendable>(_ work: @escaping @Sendable () throws -> T) async throws -> T {
+        try await withCheckedThrowingContinuation { cont in
+            driveQueue.async {
+                do { cont.resume(returning: try work()) } catch { cont.resume(throwing: error) }
+            }
+        }
+    }
+
+    /// One command to a teammate's session: the network lanes first, the
+    /// store when none answers. nil ⇒ `lastError` says why.
+    func drive(kid: String, session: String, action: String, text: String?) async -> TeamControl.Delivery? {
+        guard enabled, inTeam else { lastError = "not in a team"; return nil }
+        let endpoints = reader?.members[kid]?.now?.endpoints
+        let command = TeamControl.Command(id: TeamControl.newCommandID(), to: kid, session: session, action: action, text: text,
+                                          at: Int(Date().timeIntervalSince1970))
+        let paths = self.paths, makeSecrets = self.makeSecrets, deliver = self.deliver
+        do {
+            let network = try await onDriveQueue { () -> TeamControl.Delivery? in
+                guard let client = try Self.openClient(paths, makeSecrets()), let roster = client.roster?.doc else {
+                    throw TeamControl.DriveError.noRoster
+                }
+                return try deliver.withLock { d in
+                    d.interfaces = InterfaceAddresses.ipv4()
+                    return try TeamControl.Drive.network(command, identity: client.identity, roster: roster, endpoints: endpoints, deliver: &d)
+                }
+            }
+            if let network { return network }
+            return try await run { paths, secrets in
+                guard let client = try Self.openClient(paths, secrets) else { throw TeamControl.DriveError.noRoster }
+                return try TeamControl.Drive.store(command, client: client)
+            }
+        } catch {
+            lastError = Self.mask(error)
+            return nil
+        }
+    }
+
+    /// The session's feed off the grantor's tail route; nil when no
+    /// network lane answers (the store never carries a tail).
+    func tail(kid: String, session: String, since: String?) async -> (lane: TeamControl.Lane, feed: SessionFeed)? {
+        guard enabled else { return nil }
+        let endpoints = reader?.members[kid]?.now?.endpoints
+        let paths = self.paths, makeSecrets = self.makeSecrets, deliver = self.deliver
+        return try? await onDriveQueue { () -> (lane: TeamControl.Lane, feed: SessionFeed)? in
+            guard let client = try Self.openClient(paths, makeSecrets()) else { return nil }
+            guard let (lane, body) = try deliver.withLock({ d in
+                d.interfaces = InterfaceAddresses.ipv4()
+                return try TeamControl.Drive.tail(kid: kid, session: session, since: since, identity: client.identity,
+                                                  endpoints: endpoints, deliver: &d)
+            }) else { return nil }
+            let decoder = JSONDecoder()
+            decoder.dateDecodingStrategy = .iso8601
+            guard let feed = try? decoder.decode(SessionFeed.self, from: body) else { return nil }
+            return (lane, feed)
+        }
     }
 
     /// A teammate's session as chat items (decrypted now, off the main actor).

@@ -36,6 +36,9 @@ struct TeamMemberPane: View {
             if let m = member, let fleet = m.fleet {
                 fleetSection(fleet, lastPublished: m.lastPublished)
             }
+            if let m = member, let sessions = m.now?.sessions, !sessions.isEmpty, !team.controls(grantedBy: kid).isEmpty {
+                driveSection(sessions)
+            }
             if let m = member, !m.sessions.isEmpty {
                 Section("Sessions") {
                     ForEach(m.sessions, id: \.id) { row in
@@ -84,6 +87,27 @@ struct TeamMemberPane: View {
                 }
             }
             .frame(minWidth: 520, minHeight: 420)
+        }
+    }
+
+    // MARK: drive (#220 §7.2)
+
+    /// The sessions they let me drive, each opening the remote chat window.
+    private func driveSection(_ sessions: [TeamDocs.LiveSession]) -> some View {
+        Section {
+            ForEach(sessions, id: \.id) { s in
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(s.name ?? s.project).bold()
+                        Text("\(s.project) · \(s.status)").font(.caption).foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    Button("Drive…") { TeamSessionChatWindows.shared.open(kid: kid, session: s, team: team) }
+                }
+            }
+        } header: { Text("Drive") } footer: {
+            Text("They let you \(team.controls(grantedBy: kid).sorted().joined(separator: ", ")). Commands go over LAN, a tunnel, or the store on their next fetch.")
+                .font(.caption).foregroundStyle(.secondary)
         }
     }
 
