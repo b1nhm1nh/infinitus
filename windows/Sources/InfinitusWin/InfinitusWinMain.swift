@@ -32,18 +32,25 @@ func fail(_ message: String) -> Never {
     exit(2)
 }
 
-let subcommand = CommandLine.arguments.dropFirst().first
-if subcommand == "--version" || subcommand == "-V" {
-    print("infinitus-win \(infinitusWinVersion)")
-    exit(0)
+/// Entry is `@main` so tests can `@testable import InfinitusWin` without
+/// running the CLI (W2: top-level `exit` killed the test host on import).
+@main
+enum InfinitusWinMain {
+    static func main() {
+        let subcommand = CommandLine.arguments.dropFirst().first
+        if subcommand == "--version" || subcommand == "-V" {
+            print("infinitus-win \(infinitusWinVersion)")
+            exit(0)
+        }
+        guard let subcommand, let run = commands[subcommand] else {
+            print("infinitus-win \(infinitusWinVersion) — Infinitus mirror daemon for Windows")
+            let seen = subcommand.map { " \($0)" } ?? ""
+            print("unknown or missing subcommand\(seen) — one of \(commands.keys.sorted().joined(separator: ", "))")
+            exit(2)
+        }
+        exit(run(Array(CommandLine.arguments.dropFirst(2))))
+    }
 }
-guard let subcommand, let run = commands[subcommand] else {
-    print("infinitus-win \(infinitusWinVersion) — Infinitus mirror daemon for Windows")
-    let seen = subcommand.map { " \($0)" } ?? ""
-    print("unknown or missing subcommand\(seen) — one of \(commands.keys.sorted().joined(separator: ", "))")
-    exit(2)
-}
-exit(run(Array(CommandLine.arguments.dropFirst(2))))
 
 // MARK: - sessions (W3)
 
@@ -283,10 +290,16 @@ func serve(_ args: [String]) -> Int32 {
     }
 
     let snapshot = SnapshotCache(claudeDir: claudeDir)
-    let handler = Routes.handler(claudeDir: claudeDir, snapshot: snapshot, token: token) { line in
+    // Made here, not on first start: shutdown must be able to stopAll
+    // even if no session was ever owned. `existing` still stays nil
+    // until a start locates claude.
+    let owned = OwnedSessionsBox()
+    owned.installShutdown()
+    let handler = Routes.handler(claudeDir: claudeDir, snapshot: snapshot, token: token,
+                                 owned: owned, log: { line in
         print(line)
         fflush(stdout)
-    }
+    })
     let server = WinHTTPServer(
         authorize: { MirrorTransport.isAuthorized($0, token: token) },
         handler: handler)
