@@ -37,6 +37,11 @@ final class TeamModel: ObservableObject {
     @Published private(set) var shares = TeamShares()
     /// Team session control (#220): who may drive which of my sessions.
     @Published private(set) var grants = TeamGrants()
+    /// Hostnames this leader minted (#220 §5.4): ids only, the token is a secret.
+    @Published private(set) var hostnames: TeamHostnames.Ledger?
+    @Published private(set) var cloudflareConfigured = false
+    /// A leader gave this Mac a hostname: AppModel stores the token and starts the tunnel.
+    var onHostname: ((TeamControl.Hostname, _ from: String) -> Void)?
     @Published private(set) var exclusions = TeamExclusions()
     /// Spec §7: which sessions' transcripts travel. `recentTranscripts`
     /// is filled only in `chosen` mode — the scan cache is tens of MB and
@@ -196,18 +201,26 @@ final class TeamModel: ObservableObject {
         let scan = appScan()
         return Task {
             do {
-                let result: (TeamSnapshot?, TeamReader?, TeamShares, TeamExclusions, String?, Signed<TeamRoster>?, [Signed<TeamRequest>], TranscriptPicker, TeamGrants) = try await run { paths, secrets in
+                let result: (TeamSnapshot?, TeamReader?, TeamShares, TeamExclusions, String?, Signed<TeamRoster>?, [Signed<TeamRequest>], TranscriptPicker, TeamGrants, HostnameState) = try await run { paths, secrets in
                     // Non-creating: showing a kid must never mint (and, on
                     // a denied keychain read, clobber) an identity that
                     // exists but the process could not decrypt.
                     let kid = secrets.read(TeamClient.identitySecretName).flatMap { try? TeamIdentity(secret: $0) }?.kid
                     let exclusions = TeamExclusions.load(paths: paths)
-                    guard let client = try Self.openClient(paths, secrets) else { return (nil, nil, TeamShares(), exclusions, kid, nil, [], TranscriptPicker(), TeamGrants()) }
+                    guard let client = try Self.openClient(paths, secrets) else { return (nil, nil, TeamShares(), exclusions, kid, nil, [], TranscriptPicker(), TeamGrants(), HostnameState()) }
                     let dir = paths.teamDir(client.config.id)
                     let (snap, reader) = try Self.snapshot(client, lastFetch: fetch, lastPublish: publish, lastError: err)
                     // Driver side of the store lane (#220): my acked or stale
                     // commands go; a push-free scan when there are none.
                     if let reader { _ = try? TeamControl.Store.driverReap(client: client, acks: reader.ackIDs) }
+                    // Member side of §5.4: a hostname a leader sealed to me, applied once per blob.
+                    var hostnameState = HostnameState(ledger: TeamHostnames.Ledger.load(teamDir: dir),
+                                                      configured: secrets.read(TeamHostnames.secretName) != nil)
+                    var applied = TeamControl.Handled.load(teamDir: dir, name: TeamControl.Handled.hostnamesFile)
+                    if let fresh = try? TeamHostnames.inbox(client: client, handled: &applied) {
+                        hostnameState.fresh = fresh
+                        try? applied.save(teamDir: dir, name: TeamControl.Handled.hostnamesFile)
+                    }
                     let pendingNearby = client.isLeader ? TeamNearby.Store.pending(team: client.config.id, paths: paths) : []
                     let choices = TeamTranscriptChoices.load(teamDir: dir)
                     let recent: [TeamPublisher.TranscriptSession]
@@ -222,15 +235,17 @@ final class TeamModel: ObservableObject {
                                                                         exclusions: exclusions)
                     }
                     let picker = TranscriptPicker(choices: choices, recent: recent)
-                    return (snap, reader, TeamShares.load(teamDir: dir), exclusions, kid, client.roster, pendingNearby, picker, TeamGrants.load(teamDir: dir))
+                    return (snap, reader, TeamShares.load(teamDir: dir), exclusions, kid, client.roster, pendingNearby, picker, TeamGrants.load(teamDir: dir), hostnameState)
                 }
                 withAnimation(.easeInOut(duration: 0.2)) {
                     snapshot = result.0; reader = result.1; shares = result.2; exclusions = result.3; kid = result.4
                     roster = result.5; pendingNearby = result.6
                     transcriptChoices = result.7.choices; recentTranscripts = result.7.recent
                     grants = result.8
+                    hostnames = result.9.ledger; cloudflareConfigured = result.9.configured
                 }
                 onLoaded?()
+                if let fresh = result.9.fresh { onHostname?(fresh.hostname, fresh.from) }
             } catch {
                 lastError = Self.mask(error)
             }
@@ -814,6 +829,71 @@ final class TeamModel: ObservableObject {
             guard let client = try Self.openClient(paths, secrets) else { throw TeamClient.ClientError.notInTeam }
             _ = try client.fetch()
             try client.remove(kid: kid)
+            // Their hostname goes with them when the token is at hand (#220 §5.4), else it lists as orphaned.
+            if var ledger = TeamHostnames.Ledger.load(teamDir: client.teamDir) {
+                _ = try TeamHostnames.forget(client: client, kid: kid, cloudflare: Self.cloudflare(secrets), ledger: &ledger)
+                try ledger.save(teamDir: client.teamDir)
+            }
+        }
+    }
+
+    // MARK: hostnames (#220 §5.4)
+
+    struct HostnameState: Sendable {
+        var ledger: TeamHostnames.Ledger?
+        var configured = false
+        var fresh: (hostname: TeamControl.Hostname, from: String)?
+    }
+
+    private nonisolated static func cloudflare(_ secrets: TeamSecrets) -> TeamHostnames.Cloudflare? {
+        secrets.read(TeamHostnames.secretName).flatMap { String(data: $0, encoding: .utf8) }.map { .init(token: $0, http: urlHTTP) }
+    }
+
+    func hostname(of kid: String) -> String? { hostnames?.records[kid]?.hostname }
+
+    /// The token is checked against the zone before it is kept; ids cached, records of the same zone carried over.
+    func saveCloudflare(zone: String, label: String, token: String) async {
+        await action("Checking the token…") { paths, secrets in
+            guard let team = Self.teamID(paths) else { throw TeamClient.ClientError.notInTeam }
+            let dir = paths.teamDir(team)
+            var ledger = TeamHostnames.Ledger(zone: zone.trimmingCharacters(in: .whitespaces).lowercased(),
+                                              label: label.trimmingCharacters(in: .whitespaces).lowercased())
+            guard TeamHostnames.validName(ledger.zone), TeamHostnames.validName(ledger.label) else {
+                throw TeamHostnames.HostnameError.badName("\(ledger.label).\(ledger.zone)")
+            }
+            if let old = TeamHostnames.Ledger.load(teamDir: dir), old.zone == ledger.zone { ledger.records = old.records }
+            let trimmed = token.trimmingCharacters(in: .whitespacesAndNewlines)
+            _ = try TeamHostnames.Cloudflare(token: trimmed, http: Self.urlHTTP).ids(ledger: &ledger)
+            try secrets.write(TeamHostnames.secretName, Data(trimmed.utf8))
+            try ledger.save(teamDir: dir)
+        }
+    }
+
+    func forgetCloudflare() async {
+        await action("Forgetting…") { _, secrets in secrets.delete(TeamHostnames.secretName) }
+    }
+
+    func giveHostname(kid: String) async {
+        await action("Minting…") { paths, secrets in
+            guard let client = try Self.openClient(paths, secrets) else { throw TeamClient.ClientError.notInTeam }
+            guard var ledger = TeamHostnames.Ledger.load(teamDir: client.teamDir), let cf = Self.cloudflare(secrets) else {
+                throw TeamHostnames.HostnameError.notConfigured
+            }
+            _ = try client.fetch()
+            _ = try TeamHostnames.give(client: client, kid: kid, cloudflare: cf, ledger: &ledger)
+            try ledger.save(teamDir: client.teamDir)
+        }
+    }
+
+    /// An orphaned record (its member gone) once a token is present.
+    func deleteHostname(kid: String) async {
+        await action("Deleting…") { paths, secrets in
+            guard let client = try Self.openClient(paths, secrets) else { throw TeamClient.ClientError.notInTeam }
+            guard var ledger = TeamHostnames.Ledger.load(teamDir: client.teamDir), let cf = Self.cloudflare(secrets) else {
+                throw TeamHostnames.HostnameError.notConfigured
+            }
+            _ = try TeamHostnames.forget(client: client, kid: kid, cloudflare: cf, ledger: &ledger)
+            try ledger.save(teamDir: client.teamDir)
         }
     }
 
