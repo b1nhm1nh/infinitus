@@ -686,6 +686,9 @@ final class MirrorModel: ObservableObject, FleetModel {
     /// A screen asking the shell to switch tabs (the Fleet hero's
     /// sessions line, a Live Activity tap); RootView consumes it.
     @Published var requestedTab: String?
+    /// A per-Mac widget's tap (#144) asking the sessions list to scroll
+    /// to that Mac's section; SessionsScreen consumes it.
+    @Published var requestedSectionMacId: String?
     /// A shake's capture, with the session it's for; the Sessions tab
     /// opens that feed and the feed moves it into its composer.
     @Published var stagedCapture: StagedCapture?

@@ -75,9 +75,13 @@ struct InfinitusMobileApp: App {
                 // opened from anywhere on the phone (#9 remote access).
                 .onOpenURL { url in
                     // `infinitus://sessions` — a Live Activity tap lands on
-                    // whatever is waiting, not the fleet.
-                    if url.host == "sessions" { model.requestedTab = "sessions" }
-                    else { model.applyPairing(url.absoluteString) }
+                    // whatever is waiting, not the fleet; `?mac=<id>` — a
+                    // per-Mac widget's tap (#144) — on that Mac's section.
+                    if url.host == "sessions" {
+                        model.requestedTab = "sessions"
+                        model.requestedSectionMacId = URLComponents(url: url, resolvingAgainstBaseURL: false)?
+                            .queryItems?.first { $0.name == "mac" }?.value
+                    } else { model.applyPairing(url.absoluteString) }
                 }
         }
         .onChange(of: scenePhase) { _, phase in

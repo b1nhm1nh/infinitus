@@ -112,12 +112,21 @@ struct SessionsScreen: View {
 
     @ViewBuilder private var content: some View {
         if !fleetsWithSessions.isEmpty || !othersWithSessions.isEmpty {
-            List {
-                awsLoginSection
-                primarySections
-                otherMacSections
+            ScrollViewReader { proxy in
+                List {
+                    awsLoginSection
+                    primarySections
+                    otherMacSections
+                }
+                .listStyle(.insetGrouped)
+                // A per-Mac widget's tap (#144): from a cold launch the
+                // screen mounts after the request was set, so `onAppear`
+                // is the only firing — a turn late, once the list is laid
+                // out. A Mac still to answer waits for its snapshot.
+                .onAppear { DispatchQueue.main.async { scrollToRequestedMac(proxy) } }
+                .onChange(of: model.requestedSectionMacId) { _, _ in scrollToRequestedMac(proxy) }
+                .onChange(of: model.others.map { $0.snapshot?.capturedAt }) { _, _ in scrollToRequestedMac(proxy) }
             }
-            .listStyle(.insetGrouped)
             .sheet(item: $awsLoginItem) { AwsLoginScreen(item: $0) }
             // A cold launch from the notification asks before the first
             // snapshot is in; the request waits for the login to appear.
@@ -197,7 +206,25 @@ struct SessionsScreen: View {
                     }
                 }
             }
+            .id(Self.sectionID(macId: other.id))
         }
+    }
+
+    private static func sectionID(macId: String) -> String { "mac:\(macId)" }
+
+    /// A per-Mac widget's tap (#144): the list scrolls to that Mac's
+    /// section once it has one. The primary's key and a Mac forgotten
+    /// while the tap was in flight are simply dropped.
+    private func scrollToRequestedMac(_ proxy: ScrollViewProxy) {
+        guard let macId = model.requestedSectionMacId else { return }
+        guard macId != WidgetBridge.primary, model.other(macId) != nil else {
+            model.requestedSectionMacId = nil
+            return
+        }
+        guard othersWithSessions.contains(where: { $0.id == macId }) else { return }
+        model.requestedSectionMacId = nil
+        path = NavigationPath()
+        withAnimation { proxy.scrollTo(Self.sectionID(macId: macId), anchor: .top) }
     }
 
     /// A session started from the + sheet or Past sessions: its chat
