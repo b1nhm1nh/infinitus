@@ -64,6 +64,11 @@ public enum TeamDocs {
         public var crashesToday: Int
         /// The audience hint a leader copies into the roster (§5).
         public var sharesTo: [String: TeamRoster.ShareTarget]
+        /// #220 §5.1 / §2 — hints; absent in docs from before them. Left
+        /// out of the memberwise init so every existing caller compiles
+        /// and older readers see byte-identical documents.
+        public var endpoints: TeamControl.Endpoints?
+        public var grantsTo: [GrantHint]?
         public init(at: Int, sessions: [LiveSession], fleets: [Fleet], blockers: [String], crashesToday: Int,
                     sharesTo: [String: TeamRoster.ShareTarget]) {
             self.at = at; self.sessions = sessions; self.fleets = fleets; self.blockers = blockers
