@@ -121,12 +121,14 @@ final class CswapLocatorTests: XCTestCase {
             environment: [:]))
     }
 
-    /// Live box check: uv's `~\.local\bin\cswap.exe` is first and exists here.
-    func testLiveLocateFindsUvInstall() {
+    /// Live box check: uv's `~\.local\bin\cswap.exe` is first and exists when installed.
+    func testLiveLocateFindsUvInstall() throws {
         if ProcessInfo.processInfo.environment["INFINITUS_CSWAP"] != nil { return }
+        let expected = "\(NSHomeDirectory())\\.local\\bin\\cswap.exe"
+        try XCTSkipUnless(FileManager.default.fileExists(atPath: expected), "cswap.exe not installed at \(expected)")
         XCTAssertEqual(
             CswapLocator.locate(environment: [:]),
-            "\(NSHomeDirectory())\\.local\\bin\\cswap.exe")
+            expected)
     }
     #else
     func testPosixDefaultCandidatesAreUnchanged() {
