@@ -72,6 +72,8 @@ final class TeamModel: ObservableObject {
     var enabled = true
     /// Set by AppModel: the biometric-lock verdict for create / join / approve (spec §2.2).
     var gate: () -> TeamGate.Verdict = { .allowed }
+    /// After every load: the mirror server rebuilds its control endpoint (#220).
+    var onLoaded: (() -> Void)?
     /// Set by AppModel: what this Mac publishes (projects dir, live sessions, crashes, fleets, blockers).
     var sources: () -> TeamPublisher.Sources = { TeamPublisher.Sources(projectsDir: URL(fileURLWithPath: "/nonexistent"), home: NSHomeDirectory()) }
     /// Set by AppModel: true when this instance scans its transcripts for
@@ -210,6 +212,7 @@ final class TeamModel: ObservableObject {
                     roster = result.5; pendingNearby = result.6
                     transcriptChoices = result.7.choices; recentTranscripts = result.7.recent
                 }
+                onLoaded?()
             } catch {
                 lastError = Self.mask(error)
             }
