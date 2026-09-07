@@ -679,6 +679,23 @@ final class AppModel: ObservableObject {
     let attentionStore = AttentionStore(url: AttentionStore.defaultURL)
     /// Numbers every timeline change for `/timeline` resumes (#223 phase 4).
     let sequenceLog = SequenceLog()
+
+    /// The Mac's own popup / pop-out / chat window is a client too (#223
+    /// phase 5): while one is open, nothing the user sees here depends on
+    /// a phone holding a lease. StatusItemController and the chat window
+    /// call it on show / hide; the cap is the TTL, so a UI that dies
+    /// never pins work for more than five minutes.
+    private var localUIVisible = false
+    func reportLocalActivity(visible: Bool) {
+        localUIVisible = visible
+        if visible {
+            mirrorServer.leases.report(.init(clientId: ClientActivity.localClientId, visible: true, focused: true,
+                                             recentlyInteracted: true, scopes: [.sessions, .fleets, .stats],
+                                             ttlMs: ClientActivity.ttlCapMs))
+        } else {
+            mirrorServer.leases.release(clientId: ClientActivity.localClientId)
+        }
+    }
     private(set) lazy var timelineCache = TimelineCache(log: sequenceLog)
     let mirrorServer = MirrorServer()
     /// Agent CLI socket (ControlServer.swift); the real model only.
@@ -1491,16 +1508,21 @@ final class AppModel: ObservableObject {
         mirrorServer.timeline.set { pid, after, epoch, wait in
             let claudeDir = ClaudeSessions.configHome()
             let owned = ownedBox.existing.flatMap { $0.ownedPids.contains(pid) ? $0 : nil }
-            // Long-poll only when the client is current: the stamp is the
-            // record's, same wait rule as /tail (owned pids cap at ownedWait).
-            if let after, after >= sequenceLog.current, wait > 0,
-               let record = ClaudeSessions.list(claudeDir: claudeDir).first(where: { $0.pid == pid }) {
+            guard var record = ClaudeSessions.list(claudeDir: claudeDir).first(where: { $0.pid == pid }),
+                  var timeline = timelineCache.timeline(record: record, claudeDir: claudeDir) else { return nil }
+            // Rebuilt first, so a change since the client's last reply
+            // answers at once; the long-poll only when THIS pid has
+            // nothing after the cursor (a gap snapshots without waiting).
+            // Same wait rule as /tail: the record stamp, owned pids capped.
+            if wait > 0, let after, sequenceLog.events(pid: pid, after: after)?.isEmpty == true {
                 SessionFeedReader.waitForChange(pid: pid, claudeDir: claudeDir,
                                                 since: SessionFeedReader.stamp(record: record, claudeDir: claudeDir),
                                                 wait: owned == nil ? wait : min(wait, OwnedFeed.ownedWait))
+                if let fresh = ClaudeSessions.list(claudeDir: claudeDir).first(where: { $0.pid == pid }),
+                   let rebuilt = timelineCache.timeline(record: fresh, claudeDir: claudeDir) {
+                    record = fresh; timeline = rebuilt
+                }
             }
-            guard let record = ClaudeSessions.list(claudeDir: claudeDir).first(where: { $0.pid == pid }),
-                  let timeline = timelineCache.timeline(record: record, claudeDir: claudeDir) else { return nil }
             let full = timeline.appending(pending: owned?.pending(pid: pid) ?? [])
             let facts = SessionFacts.derive(timeline: full, status: record.status,
                                             attention: attentionStore.entry(sessionId: record.sessionId))
@@ -2418,7 +2440,9 @@ final class AppModel: ObservableObject {
                 updateChannel: BrewUpdater.channel.rawValue,
                 phoneLatest: appReleaseLatest)
             let timelineCache = timelineCache, attentionStore = attentionStore, ownedBox = ownedBox
-            let sequenceLog = sequenceLog
+            let sequenceLog = sequenceLog, leases = mirrorServer.leases
+            // A living UI keeps its lease; the cap only catches one that died.
+            if localUIVisible { reportLocalActivity(visible: true) }
             Task.detached(priority: .utility) { [mirrorExporter] in
                 await mirrorExporter.record(listJSON: raw, prefs: prefs,
                                             serviceStatus: serviceStatus,
@@ -2431,8 +2455,12 @@ final class AppModel: ObservableObject {
                                             profiles: self.sessionProfiles.profiles,
                                             births: self.sessionBirths,
                                             facts: { records in
-                                                timelineCache.facts(records: records, claudeDir: ClaudeSessions.configHome(),
-                                                                    attention: attentionStore) { ownedBox.existing?.pending(pid: $0) ?? [] }
+                                                // Only leased sessions get a timeline rebuild (#223
+                                                // phase 5); an unleased pid is absent from factsByPid
+                                                // and the phone falls back to today's rows.
+                                                let wanted = leases.leasedPids().map { pids in records.filter { pids.contains($0.pid) } } ?? records
+                                                return timelineCache.facts(records: wanted, claudeDir: ClaudeSessions.configHome(),
+                                                                           attention: attentionStore, roster: records) { ownedBox.existing?.pending(pid: $0) ?? [] }
                                             },
                                             sequence: sequenceLog)
             }
