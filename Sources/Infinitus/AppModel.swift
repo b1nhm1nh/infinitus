@@ -1235,6 +1235,14 @@ final class AppModel: ObservableObject {
             Task { @MainActor in self?.recordTeamControl(audit, driverName: name) }
         }
         team.onLoaded = { [weak self] in self?.mirrorServer.refreshTeamControl() }
+        // Team session control (#220): the phone's delivery path, origin
+        // "team". Wired here, not in applyMirrorLAN — the store lane runs
+        // with the LAN listener off.
+        mirrorServer.teamControl.setDeliver { [weak self] pid, request, origin in
+            self?.deliverSessionInput(pid: pid, request, from: origin)
+                ?? SessionInput.Reply(outcome: "rejected", detail: "app is shutting down")
+        }
+        team.onFetched = { [mirrorServer] client in mirrorServer.teamControl.storePass(client) }
         quickTunnel.log = { [weak self] icon, text in
             self?.logEvent("other", icon: icon, text)
         }
@@ -1448,11 +1456,6 @@ final class AppModel: ObservableObject {
         }
         mirrorServer.sessionInput.set { [weak self] pid, request in
             self?.deliverSessionInput(pid: pid, request, from: "phone")
-                ?? SessionInput.Reply(outcome: "rejected", detail: "app is shutting down")
-        }
-        // Team session control (#220): the same path, origin "team".
-        mirrorServer.teamControlDeliver = { [weak self] pid, request, origin in
-            self?.deliverSessionInput(pid: pid, request, from: origin)
                 ?? SessionInput.Reply(outcome: "rejected", detail: "app is shutting down")
         }
         applyQuickTunnel()

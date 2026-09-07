@@ -40,6 +40,11 @@ func teamUsage() -> String {
                                                    let those people drive the sessions named (default: all)
       revoke <grant id>                            take a grant back
       grants                                       the grants on this machine
+      send <kid> <sessionId>                       drive: the message on stdin (LAN, tunnel, or the store on their next fetch)
+      approve <kid> <sessionId> allow|deny         answer the prompt their session is showing
+      mode <kid> <sessionId> <supervised|acceptEdits|bypassPermissions>
+      tail <kid> <sessionId> [--follow]            their session's feed (needs the view grant; --follow polls every 3 s)
+      acks                                         answers to my store-lane commands (and forgets the answered ones)
 
     Narrowing an audience cannot recall ciphertext teammates already fetched.
 

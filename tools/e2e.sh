@@ -380,7 +380,25 @@ INFINITUS_TEAM_DIR="$CLI_TEAM" "$CTL" team publish --projects "$SOCKDIR/fixture/
 "$CTL" team-fetch | expect "[m for m in d['members'] if m['name']=='Bo'][0].get('controls')==['send']" || fail "the grant hint did not reach the leader's snapshot"
 INFINITUS_TEAM_DIR="$CLI_TEAM" "$CTL" team revoke "$GRANT" | expect "d['removed']" || fail "team revoke"
 INFINITUS_TEAM_DIR="$CLI_TEAM" "$CTL" team grants | expect "d['grants']==[]" || fail "revoke left the grant"
-echo "team control: ok"
+# Driver over the store lane: Ann grants Bo `send` on the live session;
+# Bo's send finds no endpoint in Ann's now.json (no listener in mock
+# mode) and lands in the store; Ann's next fetch executes it into the
+# session's peer inbox and acks; Bo reads the ack. A capability Bo was
+# NOT given is acked as a refusal. (The HTTP lanes are unit-tested: a
+# listener here would collide with the real app's mirror port.)
+ANN_KID="$("$CTL" team-status | json "d['kid']")"
+"$CTL" team grant "$KID" --sessions e2e-aws --send | expect "d['capabilities']==['send']" || fail "ann grant"
+ANN_GRANT="$("$CTL" team grants | json "d['grants'][0]['id']")"
+printf 'hello from Bo via the store' | INFINITUS_TEAM_DIR="$CLI_TEAM" "$CTL" team send "$ANN_KID" e2e-aws \
+    | expect "d['lane']=='store' and d['outcome']=='queued'" || fail "team send"
+INFINITUS_TEAM_DIR="$CLI_TEAM" "$CTL" team mode "$ANN_KID" e2e-aws acceptEdits | expect "d['lane']=='store'" || fail "team mode"
+"$CTL" team-fetch >/dev/null || fail "grantor fetch"
+grep -q 'hello from Bo via the store' "$INBOX" \
+    || fail "the store command never reached the session (events: $("$CTL" events --limit 100 | python3 -c "import json,sys; print([e['text'] for e in json.load(sys.stdin) if e['icon']=='person.2'])"); acks: $(INFINITUS_TEAM_DIR="$CLI_TEAM" "$CTL" team acks 2>&1 | head -c 400))"
+INFINITUS_TEAM_DIR="$CLI_TEAM" "$CTL" team acks \
+    | expect "sorted(r['outcome'] for r in d)==['delivered','noGrant']" || fail "acks (got: $(INFINITUS_TEAM_DIR="$CLI_TEAM" "$CTL" team acks 2>&1 | head -c 300))"
+"$CTL" team revoke "$ANN_GRANT" | expect "d['removed']" || fail "ann revoke"
+echo "team control: ok (grantor + store-lane driver)"
 
 # --- performance --------------------------------------------------------
 # Sampled AFTER the churn above so a timer left behind by a closed wall

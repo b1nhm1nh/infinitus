@@ -66,6 +66,7 @@ publishes the matching section as the GitHub release body.
 - A phone showing the revival countdown skips the duplicate all-dead alert, and a working activity starts silently.
 
 ### Team (preview)
+- Team session control, driver side: drive a teammate's granted session from their detail on the Mac or with `infinitusctl team send|approve|mode|tail` — over LAN, a tunnel, or the store on their next fetch, each command answered with its lane and outcome (#220).
 - Team session control on the Mac, grantor side: grant teammates view, send, approve, mode, resume or key on chosen sessions from Settings › Team or `infinitusctl team grant`; commands arrive at the mirror server, every one is audited, and the sessions popover says who is driving (#220).
 - Team session control, core: grants, sealed command and ack envelopes, the verification pipeline and the control routes land in InfinitusCore with tests; nothing is mounted yet (#220).
 - Team store hardening: `--team` ids are one path segment, git's stdin is fed without a pipe deadlock or SIGPIPE, the CLI reports encoding failures instead of exiting 0, garbled signer keys read as a bad signature (#55).

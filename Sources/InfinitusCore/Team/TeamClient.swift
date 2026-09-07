@@ -538,6 +538,10 @@ public final class TeamClient {
 
     public func readable() throws -> [StoreEntry] { try readableHeaders().map(\.entry) }
 
+    /// One store file as sealed bytes (for `TeamControl.handle`, which
+    /// verifies the envelope itself); nil when the path is not there.
+    public func raw(_ path: String) throws -> Data? { try store.get(path) }
+
     public func read(_ path: String) throws -> (Envelope.Header, Data) {
         guard let roster = roster?.doc else { throw ClientError.noRoster }
         guard let data = try store.get(path) else { throw Envelope.EnvelopeError.malformed }

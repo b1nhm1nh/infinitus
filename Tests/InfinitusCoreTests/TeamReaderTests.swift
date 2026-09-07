@@ -112,6 +112,21 @@ final class TeamReaderTests: XCTestCase {
         return projects
     }
 
+    func testFoldKeepsCommandPathsAndDecodesAcks() throws {
+        let g = TeamIdentity.random(), d = TeamIdentity.random()
+        let roster = TeamRoster(id: "t", name: "T", createdAt: 1,
+                                leaders: [TeamRoster.Member(keys: g.keys, name: "G", since: 1, founder: true)],
+                                members: [TeamRoster.Member(keys: d.keys, name: "D", since: 2)], removed: [], rev: 2)
+        let ack = TeamControl.Ack(id: "c-0123456789", outcome: "delivered", detail: nil, at: 5)
+        let docs = ["m/\(g.kid)/control/acks/c-0123456789.json": try CanonicalJSON.encode(ack)]
+        let headers = [entry("m/\(d.kid)/control/commands/c-0123456789.json", kind: TeamKinds.command, from: d.kid, at: 4),
+                       entry("m/\(g.kid)/control/acks/c-0123456789.json", kind: TeamKinds.ack, from: g.kid, at: 5)]
+        let reader = TeamReader.fold(headers: headers, roster: roster) { docs[$0] ?? Data() }
+        XCTAssertEqual(reader.members[d.kid]?.commands, ["m/\(d.kid)/control/commands/c-0123456789.json"])
+        XCTAssertEqual(reader.members[g.kid]?.acks["c-0123456789"], ack)
+        XCTAssertEqual(reader.ackIDs, ["c-0123456789"])
+    }
+
     func testCreateCodeRequestApprovePublishFetchReadThenRemove() throws {
         let remote = try makeRemote()
         let (lp, ls) = machine("leader"), (ap, asec) = machine("alice"), (bp, bs) = machine("bob")

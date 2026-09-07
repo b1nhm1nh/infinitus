@@ -1,9 +1,14 @@
 import Foundation
 import InfinitusCore
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 
 // `infinitusctl team grant | revoke | grants` (#220 §7.3): who may drive
 // which of this machine's sessions. Writes <teamDir>/grants.json, which
 // the Mac's grantor endpoint reads per request — no socket needed.
+// `send | approve | mode | tail | acks`: driving a teammate's session from
+// this machine's own identity — LAN, tunnel, then the store (§5.3).
 
 private func emit<T: Encodable>(_ value: T) {
     let enc = JSONEncoder()
@@ -21,7 +26,7 @@ private func controlFail(_ message: String, code: Int32 = 1) -> Int32 {
 
 /// nil when `args` is not one of ours.
 func runTeamControl(_ args: [String]) -> Int32? {
-    guard let sub = args.first, ["grant", "revoke", "grants"].contains(sub) else { return nil }
+    guard let sub = args.first, ["grant", "revoke", "grants", "send", "approve", "mode", "tail", "acks"].contains(sub) else { return nil }
     let capabilityFlags: Set<String> = [TeamGrants.view, TeamGrants.send, TeamGrants.approve, TeamGrants.mode, TeamGrants.resume, TeamGrants.key]
     var positional: [String] = []
     var options: [String: String] = [:]
@@ -31,7 +36,8 @@ func runTeamControl(_ args: [String]) -> Int32? {
         let a = args[i]
         if a.hasPrefix("--") {
             let key = String(a.dropFirst(2))
-            if capabilityFlags.contains(key) || key == "json" { flags.insert(key); i += 1; continue }
+            // Capability names are bare flags only on `grant`; `team send --send` would otherwise be swallowed.
+            if (sub == "grant" && capabilityFlags.contains(key)) || key == "json" || key == "follow" { flags.insert(key); i += 1; continue }
             guard i + 1 < args.count, !args[i + 1].hasPrefix("--") else {
                 return controlFail("--\(key) needs a value\n\n\(teamUsage())", code: 2)
             }
@@ -81,6 +87,60 @@ func runTeamControl(_ args: [String]) -> Int32? {
             let removed = grants.remove(id: id)
             if removed { try grants.save(teamDir: teamDir) }
             emit(["removed": removed])
+        case "send", "approve", "mode":
+            guard positional.count >= 2 else { return controlFail(teamUsage(), code: 2) }
+            let (kid, session) = (positional[0], positional[1])
+            let text: String
+            switch sub {
+            case "send":
+                let stdin = String(decoding: FileHandle.standardInput.readDataToEndOfFile(), as: UTF8.self)
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !stdin.isEmpty else { return controlFail("team send: the message comes on stdin", code: 2) }
+                text = stdin
+            case "approve":
+                guard positional.count == 3, ["allow", "deny"].contains(positional[2]) else { return controlFail(teamUsage(), code: 2) }
+                text = positional[2]
+            default:
+                guard positional.count == 3 else { return controlFail(teamUsage(), code: 2) }
+                text = positional[2]
+            }
+            _ = try client.fetch()
+            let endpoints = try TeamReader.load(client: client).members[kid]?.now?.endpoints
+            var deliver = TeamControl.Deliver(http: controlHTTP, interfaces: InterfaceAddresses.ipv4())
+            let command = TeamControl.Command(id: TeamControl.newCommandID(), to: kid, session: session, action: sub, text: text,
+                                              at: Int(Date().timeIntervalSince1970))
+            emit(try TeamControl.Drive.send(command, client: client, endpoints: endpoints, deliver: &deliver))
+        case "tail":
+            guard positional.count >= 2 else { return controlFail(teamUsage(), code: 2) }
+            let (kid, session) = (positional[0], positional[1])
+            _ = try client.fetch()
+            let endpoints = try TeamReader.load(client: client).members[kid]?.now?.endpoints
+            var deliver = TeamControl.Deliver(http: controlHTTP, interfaces: InterfaceAddresses.ipv4())
+            var since: String?
+            let decoder = JSONDecoder()
+            decoder.dateDecodingStrategy = .iso8601
+            repeat {
+                guard let (lane, body) = try TeamControl.Drive.tail(kid: kid, session: session, since: since, identity: client.identity,
+                                                                    endpoints: endpoints, deliver: &deliver),
+                      let feed = try? decoder.decode(SessionFeed.self, from: body) else {
+                    return controlFail("no live tail from \(kid) (no reachable endpoint, or no view grant)")
+                }
+                if since == nil { FileHandle.standardError.write(Data("# \(lane.label) · \(feed.status ?? "?")\n".utf8)) }
+                if feed.stamp != since || since == nil {
+                    for item in feed.items { print("\(item.kind.rawValue)\t\(item.text.replacingOccurrences(of: "\n", with: "\n\t"))") }
+                    since = feed.stamp
+                }
+                if flags.contains("follow") { Thread.sleep(forTimeInterval: 3) }
+            } while flags.contains("follow")
+        case "acks":
+            _ = try client.fetch()
+            let reader = try TeamReader.load(client: client)
+            struct Row: Encodable { var id: String; var from: String; var outcome: String; var detail: String?; var at: Int }
+            let rows = reader.members.values
+                .flatMap { m in m.acks.values.map { Row(id: $0.id, from: m.kid, outcome: $0.outcome, detail: $0.detail, at: $0.at) } }
+                .sorted { $0.at > $1.at }
+            _ = try TeamControl.Store.driverReap(client: client, acks: reader.ackIDs)
+            emit(rows)
         default:
             emit(grants)
         }
@@ -88,4 +148,24 @@ func runTeamControl(_ args: [String]) -> Int32? {
     } catch {
         return controlFail(error.localizedDescription)
     }
+}
+
+/// One exchange with a grantor's endpoint; the lane's timeout caps it.
+private let controlHTTP: TeamControl.Deliver.HTTP = { method, url, headers, body, timeout in
+    var request = URLRequest(url: url)
+    request.httpMethod = method
+    request.httpBody = body
+    request.timeoutInterval = timeout
+    for (name, value) in headers { request.setValue(value, forHTTPHeaderField: name) }
+    if body != nil { request.setValue("application/octet-stream", forHTTPHeaderField: "Content-Type") }
+    let done = DispatchSemaphore(value: 0)
+    final class Box: @unchecked Sendable { var result: (Int, Data) = (0, Data()); var failure: Error? }
+    let box = Box()
+    URLSession.shared.dataTask(with: request) { data, response, error in
+        if let error { box.failure = error } else { box.result = ((response as? HTTPURLResponse)?.statusCode ?? 0, data ?? Data()) }
+        done.signal()
+    }.resume()
+    done.wait()
+    if let failure = box.failure { throw failure }
+    return box.result
 }

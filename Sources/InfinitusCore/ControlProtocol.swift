@@ -215,7 +215,7 @@ public struct ControlCommand: Codable, Sendable, Equatable {
                        replyShape: "{enabled, locked, relock: immediately|5 min|1 h|on sleep}"),
         ControlCommand(name: "team-status", effect: .read,
                        summary: "Settings › Team: the team this Mac is in — members with what they last published, today's effort and blockers, pending requests, the loop's last fetch/publish — or null when there is none.",
-                       replyShape: "{id, name, remote (masked), kid, role: leader|member|pending, rev, members: [{kid, name, role, isMe, founder, lastPublished, kinds, sessionsNow, blockers, crashes, todayUSD, todayMessages, todayCommits}], requests: [{kid, name, platform, devices, at}], lastFetch, lastPublish, lastError} | null"),
+                       replyShape: "{id, name, remote (masked), kid, role: leader|member|pending, rev, members: [{kid, name, role, isMe, founder, lastPublished, kinds, sessionsNow, blockers, crashes, todayUSD, todayMessages, todayCommits, fleet, controls}], requests: [{kid, name, platform, devices, at}], lastFetch, lastPublish, lastError} | null"),
         ControlCommand(name: "team-create", args: ["<name>"], options: ["--remote <url>", "--as <your name>"], effect: .write,
                        summary: "Create a team on an empty git remote (no credential over the socket: use a file:// or ssh remote, or the pane). Needs the biometric lock on (INFINITUS_LOCK_GATE=open in CI).",
                        replyShape: "team-status"),
