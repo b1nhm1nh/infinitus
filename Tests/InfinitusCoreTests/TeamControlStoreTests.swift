@@ -4,10 +4,19 @@ import XCTest
 final class TeamControlStoreTests: XCTestCase {
     var scratch: URL!
     override func setUpWithError() throws {
+        #if os(Windows)
+        // The store round-trips through a real git remote (makeRemote
+        // shells /usr/bin/env git) — not ported to Windows yet.
+        try XCTSkipIf(true, "Team git shellouts are POSIX-only; not ported to Windows yet")
+        #endif
         scratch = FileManager.default.temporaryDirectory.appendingPathComponent("teamcontrolstore-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: scratch, withIntermediateDirectories: true)
     }
-    override func tearDownWithError() throws { try? FileManager.default.removeItem(at: scratch) }
+    override func tearDownWithError() throws {
+        // A skipped setUp never assigned scratch.
+        guard scratch != nil else { return }
+        try? FileManager.default.removeItem(at: scratch)
+    }
 
     func makeRemote() throws -> String {
         let bare = scratch.appendingPathComponent("remote.git")
