@@ -100,6 +100,9 @@ final class LiveActivities {
     /// Mac was asked; a Mac no longer in `ids` was forgotten.
     func publishWidgets(keeping ids: Set<String>) {
         widgetPayloads = widgetPayloads.filter { ids.contains($0.key) }
+        // Nothing synced yet this run (a fresh process whose primary has
+        // not answered): the widgets keep what they last drew.
+        guard !widgetPayloads.isEmpty else { return }
         let others = widgetPayloads.values.filter { $0.id != WidgetBridge.primary }
             .sorted { $0.machine < $1.machine }
         WidgetBridge.publish([widgetPayloads[WidgetBridge.primary]].compactMap { $0 } + others)

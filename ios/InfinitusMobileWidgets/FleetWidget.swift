@@ -26,7 +26,9 @@ struct FleetWidget: Widget {
 /// first: a placed StaticConfiguration widget whose kind turns into an
 /// AppIntentConfiguration shows nothing but its placeholder from then on
 /// (Apple forums 661247, 788784), so the original keeps its kind and
-/// its primary Mac. Blank Mac means the primary.
+/// its primary Mac. Blank Mac means the primary, and so does a Mac the
+/// bridge no longer lists (forgotten, or made primary): its entity
+/// doesn't rehydrate, the parameter comes back nil.
 struct MacFleetWidget: Widget {
     var body: some WidgetConfiguration {
         AppIntentConfiguration(kind: "run.infinitus.mobile.fleet.mac", intent: PickMacIntent.self,
@@ -125,7 +127,7 @@ struct FleetWidgetView: View {
             default: MediumFleet(state: state, revival: payload.revival, stale: entry.stale)
             }
         } else {
-            Text(entry.payload == nil ? "Open Infinitus to pair with your Mac." : "This Mac is no longer paired.")
+            Text("Open Infinitus to pair with your Mac.")
                 .font(.caption).foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
         }
