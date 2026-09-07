@@ -33,6 +33,31 @@ final class OwnedWireTests: XCTestCase {
         XCTAssertNil(ClaudeLocator.locate(candidates: [], exists: { _ in false }, loginShell: { "" }))
     }
 
+    #if os(Windows)
+    func testWindowsCandidatesComeBeforeTheShellProbe() {
+        let home = #"C:\Users\test"#
+        let candidates = ClaudeLocator.defaultCandidates(home: home)
+        XCTAssertEqual(candidates, [
+            #"C:\Users\test\.local\bin\claude.exe"#,
+            #"C:\Users\test\AppData\Roaming\npm\claude.cmd"#,
+        ])
+        XCTAssertEqual(
+            ClaudeLocator.locate(candidates: candidates,
+                                 exists: { $0.hasSuffix("claude.cmd") },
+                                 loginShell: { #"C:\Windows\claude.exe"# }),
+            #"C:\Users\test\AppData\Roaming\npm\claude.cmd"#)
+        XCTAssertEqual(
+            ClaudeLocator.locate(candidates: candidates,
+                                 exists: { $0.hasSuffix("claude.exe") },
+                                 loginShell: { "" }),
+            #"C:\Users\test\.local\bin\claude.exe"#)
+        XCTAssertNil(
+            ClaudeLocator.locate(candidates: candidates,
+                                 exists: { _ in false },
+                                 loginShell: { "" }))
+    }
+    #endif
+
     // MARK: argv
 
     func testArgumentsCarryTheStreamingFlagsAndOnlyKnownModes() {
