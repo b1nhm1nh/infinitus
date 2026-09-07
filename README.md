@@ -120,7 +120,7 @@ One line per feature; the site and the CHANGELOG carry the detail.
 - **Session chat from the phone** — each transcript as a chat with markdown, tool chips and sub-agent cards; reply, attach photos and files, answer prompts.
 - **Allow for this session** — the phone's permission card can allow a tool for the rest of the session; with the plugin, that prompt never comes back.
 - **Start a session from the phone** — a repository, the engine, a first prompt; the Mac opens cmux or Terminal and the chat follows. Siri too.
-- **Widgets in your theme** — home and lock-screen widgets show the active account's windows, what's waiting, and the revival countdown.
+- **Widgets in your theme** — home and lock-screen widgets show the active account's windows, what's waiting, and the revival countdown; "Fleet on a Mac" shows a paired Mac of your choice.
 - **AWS sign-in from the phone** — an expired `aws login` shows up on both, the phone runs it with passkeys, and the session is told to continue.
 - **Three engines** — cswap, CLIProxyAPI and 9Router as stacked fleets; policy stays in each engine, the app sets its knobs.
 - **"At this pace"** — measured burn per window, when each runs out, a per-account forecast and a plain-words plan for the next reset.

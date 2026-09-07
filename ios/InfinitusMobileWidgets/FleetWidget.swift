@@ -1,3 +1,4 @@
+import AppIntents
 import InfinitusCore
 import InfinitusUI
 import SwiftUI
@@ -21,6 +22,46 @@ struct FleetWidget: Widget {
     }
 }
 
+/// The same widget for a chosen Mac (#144), its own kind beside the
+/// first: a placed StaticConfiguration widget whose kind turns into an
+/// AppIntentConfiguration shows nothing but its placeholder from then on
+/// (Apple forums 661247, 788784), so the original keeps its kind and
+/// its primary Mac. Blank Mac means the primary.
+struct MacFleetWidget: Widget {
+    var body: some WidgetConfiguration {
+        AppIntentConfiguration(kind: "run.infinitus.mobile.fleet.mac", intent: PickMacIntent.self,
+                               provider: MacFleetProvider()) { entry in
+            FleetWidgetView(entry: entry)
+                .containerBackground(.fill.tertiary, for: .widget)
+                .widgetURL(URL(string: "infinitus://sessions"))
+        }
+        .configurationDisplayName("Fleet on a Mac")
+        .description("One paired Mac's active account in your theme — pick the Mac in the widget's editor.")
+        .supportedFamilies([.systemSmall, .systemMedium,
+                            .accessoryCircular, .accessoryRectangular, .accessoryInline])
+    }
+}
+
+struct MacFleetProvider: AppIntentTimelineProvider {
+    func placeholder(in context: Context) -> FleetEntry {
+        FleetEntry(date: Date(), payload: FleetProvider.sample)
+    }
+
+    func snapshot(for configuration: PickMacIntent, in context: Context) async -> FleetEntry {
+        FleetEntry(date: Date(), payload: Self.payload(for: configuration) ?? FleetProvider.sample)
+    }
+
+    func timeline(for configuration: PickMacIntent, in context: Context) async -> Timeline<FleetEntry> {
+        FleetProvider.timeline(Self.payload(for: configuration))
+    }
+
+    private static func payload(for configuration: PickMacIntent) -> WidgetBridge.Payload? {
+        let all = WidgetBridge.load()
+        guard let mac = configuration.mac else { return WidgetBridge.primaryPayload(in: all) }
+        return all.first { $0.id == mac.id }
+    }
+}
+
 struct FleetEntry: TimelineEntry {
     let date: Date
     let payload: WidgetBridge.Payload?
@@ -38,24 +79,28 @@ struct FleetProvider: TimelineProvider {
     }
 
     func getSnapshot(in context: Context, completion: @escaping (FleetEntry) -> Void) {
-        completion(FleetEntry(date: Date(), payload: WidgetBridge.load() ?? Self.sample))
+        completion(FleetEntry(date: Date(), payload: WidgetBridge.primaryPayload(in: WidgetBridge.load()) ?? Self.sample))
+    }
+
+    func getTimeline(in context: Context, completion: @escaping (Timeline<FleetEntry>) -> Void) {
+        completion(Self.timeline(WidgetBridge.primaryPayload(in: WidgetBridge.load())))
     }
 
     /// One entry now and one at the stale mark; the app reloads the
-    /// timeline whenever a refresh changed something.
-    func getTimeline(in context: Context, completion: @escaping (Timeline<FleetEntry>) -> Void) {
+    /// timeline whenever a poll changed something.
+    static func timeline(_ payload: WidgetBridge.Payload?) -> Timeline<FleetEntry> {
         let now = Date()
-        let payload = WidgetBridge.load()
         var entries = [FleetEntry(date: now, payload: payload)]
         if let payload {
             let staleAt = payload.capturedAt.addingTimeInterval(LiveActivityBuilder.workingStale + 1)
             if staleAt > now { entries.append(FleetEntry(date: staleAt, payload: payload)) }
         }
-        completion(Timeline(entries: entries, policy: .after(now.addingTimeInterval(30 * 60))))
+        return Timeline(entries: entries, policy: .after(now.addingTimeInterval(30 * 60)))
     }
 
     /// The gallery's preview: an RPG-themed account mid-quest.
     static let sample = WidgetBridge.Payload(
+        id: WidgetBridge.primary,
         working: WorkingActivityState(
             active: "Infinitus", icon: "👑", slot: "P2", plan: "Lv 20x", cash: nil,
             windows: [ActivityWindow(label: "MP", color: "blue", pct: 22, reset: "4h47m"),
@@ -80,7 +125,7 @@ struct FleetWidgetView: View {
             default: MediumFleet(state: state, revival: payload.revival, stale: entry.stale)
             }
         } else {
-            Text("Open Infinitus to pair with your Mac.")
+            Text(entry.payload == nil ? "Open Infinitus to pair with your Mac." : "This Mac is no longer paired.")
                 .font(.caption).foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
         }

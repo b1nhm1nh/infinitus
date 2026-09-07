@@ -8,6 +8,7 @@ publishes the matching section as the GitHub release body.
 ## Unreleased
 
 ### Phone
+- A "Fleet on a Mac" widget joins the Fleet widget: pick which paired Mac it shows in the widget's editor (#144).
 - Every paired Mac gets its own Live Activities: a working card and a revival countdown per Mac, each kept moving by the Mac it belongs to (#144).
 - The share sheet's suggestions row lists sessions from every paired Mac, each named with its Mac (#144).
 - Share → Infinitus lists the live sessions of every paired Mac, each row naming its Mac, and posts to that Mac (#144).

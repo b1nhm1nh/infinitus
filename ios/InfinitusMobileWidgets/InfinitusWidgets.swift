@@ -8,6 +8,7 @@ import WidgetKit
 struct InfinitusWidgets: WidgetBundle {
     var body: some Widget {
         FleetWidget()
+        MacFleetWidget()
         RevivalLiveActivity()
         WorkingLiveActivity()
     }
