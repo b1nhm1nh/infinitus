@@ -14,6 +14,8 @@ struct StartSessionSection: View {
     @State private var custom = ""
     @State private var engine = "claude"
     @State private var permissionMode = ""
+    /// #151: no terminal — Infinitus runs the session and is its chat.
+    @State private var headless = false
     @State private var prompt = ""
     @State private var starting = false
     @State private var note: String?
@@ -66,6 +68,8 @@ struct StartSessionSection: View {
                         ForEach(SessionStart.permissionModes, id: \.mode) { Text($0.label).tag($0.mode) }
                     }
                     .font(PopupFont.caption)
+                    Toggle("Headless — no terminal, chat from Infinitus", isOn: $headless)
+                        .font(PopupFont.caption)
                 }
                 TextField("First prompt (optional)", text: $prompt, axis: .vertical)
                     .textFieldStyle(.roundedBorder)
@@ -107,13 +111,16 @@ struct StartSessionSection: View {
         let claude = engine == "claude"
         let request = SessionStart.Request(cwd: chosenFolder, engine: engine,
                                            prompt: prompt.isEmpty ? nil : prompt,
-                                           permissionMode: claude && !permissionMode.isEmpty ? permissionMode : nil,
+                                           // Supervised headless = ask every time through Infinitus
+                                           // ("manual"); a terminal keeps the user's own default.
+                                           permissionMode: claude ? (permissionMode.isEmpty ? (headless ? "manual" : nil) : permissionMode) : nil,
                                            model: claude ? profile?.model : nil,
                                            systemPrompt: claude ? profile?.systemPrompt : nil,
-                                           profile: profile?.name)
+                                           profile: profile?.name,
+                                           headless: claude && headless)
         let host = model.sessionHost
         Task.detached(priority: .userInitiated) {
-            let reply = SessionLauncher.start(request, preferredHost: host)
+            let reply = await model.startSession(request, preferredHost: host)
             await MainActor.run {
                 starting = false
                 if reply.outcome == "started" {
