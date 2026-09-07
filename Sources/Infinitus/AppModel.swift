@@ -1390,7 +1390,21 @@ final class AppModel: ObservableObject {
             thumbnails[key] = thumb
             return (thumb, "image/jpeg")
         }
-        mirrorServer.sessionInput.set { [weak self] pid, request in
+        let deliver = makeInputDeliverer()
+        mirrorServer.sessionInput.set { pid, request in deliver(pid, request, "phone") }
+        mirrorServer.teamControlDeliver = deliver
+        applyQuickTunnel()
+        applyNamedTunnel()
+    }
+
+
+    /// The one path for input from outside the terminal: the phone lane
+    /// and the team lane (#220) both run it on `mirrorInputQueue`, so
+    /// keystrokes to one pty never interleave. `origin` is the log's
+    /// "phone" or "team"; a team approve arrives already mapped to a key
+    /// (TeamControl.request), so the ToolApproval branch is phone-only.
+    func makeInputDeliverer() -> @Sendable (Int32, SessionInput.Request, String) -> SessionInput.Reply {
+        { [weak self] pid, request, origin in
             let claudeDir = ClaudeSessions.configHome()
             let records = ClaudeSessions.list(claudeDir: claudeDir)
             // #168: a queued request may name a pid from before a reboot —
@@ -1398,7 +1412,7 @@ final class AppModel: ObservableObject {
             guard let record = records.first(where: { $0.pid == pid })
                     ?? request.sessionId.flatMap({ id in records.first { $0.sessionId == id } })
             else {
-                Task { @MainActor in self?.logMirrorInput("⚠️", "phone input not delivered: unknown session") }
+                Task { @MainActor in self?.logMirrorInput("⚠️", "\(origin) input not delivered: unknown session") }
                 return SessionInput.Reply(outcome: "rejected", detail: "session ended")
             }
             // A mode change never reaches the terminal: it is the Mac's
@@ -1418,7 +1432,7 @@ final class AppModel: ObservableObject {
             if request.kind == .approve {
                 if let rule = ToolApproval.decode(request.text) {
                     self?.toolApprovals.add(rule, sessionId: record.sessionId)
-                    Task { @MainActor in self?.logMirrorInput("🛡️", "phone allows \(rule.label) for the rest of session \(pid)") }
+                    Task { @MainActor in self?.logMirrorInput("🛡️", "\(origin) allows \(rule.label) for the rest of session \(pid)") }
                 }
                 request = SessionInput.Request(kind: .key, text: "1")
             }
@@ -1428,12 +1442,12 @@ final class AppModel: ObservableObject {
             Task { @MainActor in
                 if reply.outcome == "delivered" {
                     let preview = String(request.text.prefix(60))
-                    self?.logMirrorInput("📲", "phone → \(label): \"\(preview)\" (\(reply.channel ?? "?"))")
+                    self?.logMirrorInput("📲", "\(origin) → \(label): \"\(preview)\" (\(reply.channel ?? "?"))")
                 } else {
                     let why = reply.detail.map { "\(reply.outcome) — \($0)" } ?? reply.outcome
-                    self?.logMirrorInput("⚠️", "phone input not delivered: \(why)")
+                    self?.logMirrorInput("⚠️", "\(origin) input not delivered: \(why)")
                 }
-                if request.queuedAt != nil, ["delivered", "running", "captured"].contains(reply.outcome) {
+                if origin == "phone", request.queuedAt != nil, ["delivered", "running", "captured"].contains(reply.outcome) {
                     // The phone queued this while the Mac was away; the
                     // push reaches it even when the app is closed.
                     self?.liveActivityPusher.pushAlert(title: "Delivered to \(label)",
@@ -1442,8 +1456,6 @@ final class AppModel: ObservableObject {
             }
             return reply
         }
-        applyQuickTunnel()
-        applyNamedTunnel()
     }
 
     /// Every phone-injected input is logged, per #17 — success or not.

@@ -273,6 +273,43 @@ final class MirrorSessionInputBox: @unchecked Sendable {
     }
 }
 
+/// Team session control (#220): the grantor's endpoint, boxed like the
+/// rest. Rebuilt off main when the team standing changes (`refreshTeamControl`);
+/// `respond` runs under `MirrorServer.controlQueue` only, so the replay
+/// set and the rate limit are mutated by one thread, and execution hops
+/// to `mirrorInputQueue` inside the endpoint's `execute`.
+final class MirrorTeamControlBox: @unchecked Sendable {
+    private let lock = NSLock()
+    private var endpoint: TeamControl.Endpoint?
+    private var teamDir: URL?
+    /// The live feed by session id (the phone's tail, keyed by pid).
+    var tail = TeamControlRoute.Tail { _, _ in nil }
+    /// Every command, accepted or refused, with the driver's roster name.
+    var onAudit: (@Sendable (TeamControl.Audit, String?) -> Void)?
+
+    func set(_ new: TeamControl.Endpoint?, teamDir dir: URL?) {
+        lock.lock(); endpoint = new; teamDir = dir; lock.unlock()
+    }
+
+    /// `controlQueue` only.
+    func respond(_ request: MirrorTransport.Request) -> Data? {
+        lock.lock(); var ep = endpoint; let dir = teamDir; lock.unlock()
+        ep?.lastAudit = nil
+        let response = TeamControlRoute.respond(request, endpoint: &ep, tail: tail)
+        guard let ep else { return response }
+        lock.lock()
+        endpoint?.seen = ep.seen
+        endpoint?.limit = ep.limit
+        lock.unlock()
+        if let audit = ep.lastAudit {
+            if let dir { try? ep.seen.save(teamDir: dir) }
+            let name = ep.roster()?.everyone.first { $0.keys.kid == audit.driver }?.name
+            onAudit?(audit, name)
+        }
+        return response
+    }
+}
+
 /// The Nearby standing (TXT record + `/team/*` routes, spec §6.4), boxed
 /// like the rest: the main actor refreshes it when the discoverable
 /// switch flips, the connection handlers read it on the network queue.
@@ -373,6 +410,10 @@ final class MirrorServer: ObservableObject {
     /// Answers `POST /app/update` (#121); set by AppModel once at start.
     let appUpdate = MirrorAppUpdateBox()
     let accountAction = MirrorAccountActionBox()
+    /// Team session control (#220): `/team/command` and `/team/sessions/<id>/tail`.
+    let teamControl = MirrorTeamControlBox()
+    /// The shared input deliverer (AppModel.makeInputDeliverer); set once at start.
+    var teamControlDeliver: (@Sendable (Int32, SessionInput.Request, String) -> SessionInput.Reply)?
     /// Event-log sink (icon, text), set by AppModel.
     var log: ((String, String) -> Void)?
     /// Fires with the bound port once the listener is up — the quick
