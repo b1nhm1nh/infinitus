@@ -34,6 +34,10 @@ final class TeamModel: ObservableObject {
     /// The running publish's progress (spec §7), or nil when nothing is
     /// publishing. Set once per source and once per batch, never per chunk.
     @Published private(set) var progress: TeamPublisher.Progress?
+    /// git's latest progress line while a store command runs ("Receiving
+    /// objects: 45% (…)", "waiting for the store to answer…"), nil
+    /// between commands. Fed by `TeamGit.activity`, at most every ~2 s.
+    @Published private(set) var storeActivity: String?
     @Published private(set) var shares = TeamShares()
     /// Team session control (#220): who may drive which of my sessions.
     @Published private(set) var grants = TeamGrants()
@@ -111,6 +115,10 @@ final class TeamModel: ObservableObject {
     private var lastPublishAt: Int?
     /// Set by `quit()`, read by the publisher between transcript sources.
     private let stopRequested = OSAllocatedUnfairLock(initialState: false)
+    /// Set while a user action waits on the team queue: the running
+    /// publish yields at its next source instead of making Approve wait
+    /// for the whole corpus on a slow store.
+    private let yieldRequested = OSAllocatedUnfairLock(initialState: false)
 
     init(paths: TeamPaths, makeSecrets: @escaping @Sendable () -> TeamSecrets, defaults: UserDefaults) {
         self.paths = paths
@@ -118,6 +126,14 @@ final class TeamModel: ObservableObject {
         self.defaults = defaults
         autoApprove = defaults.object(forKey: Self.autoApproveKey) as? Bool ?? true
         discoverable = defaults.bool(forKey: TeamNearby.discoverableDefaultsKey)
+        // Guarded: a hop enqueued as the command ended must not land
+        // after the action's `defer` cleared the label.
+        TeamGit.activity.set { [weak self] line in
+            Task { @MainActor in
+                guard let self, self.busy != nil || self.loopRunning else { return }
+                self.storeActivity = line
+            }
+        }
     }
 
     func setAutoApprove(_ on: Bool) {
@@ -290,8 +306,12 @@ final class TeamModel: ObservableObject {
         let publish = publish && (scan.entries != nil || !scan.owns)
         let stop = stopRequested, fetchedHook = onFetched
         sources.onProgress = { [weak self] p in Task { @MainActor in self?.progress = p } }
-        sources.shouldStop = { stop.withLock { $0 } }
-        defer { progress = nil }
+        // A user action queued behind this pass asks the publisher to
+        // cut at the next source (`yieldRequested`); the pass then
+        // resumes on the next tick, not after `loopInterval`.
+        let yield = yieldRequested
+        sources.shouldStop = { stop.withLock { $0 } || yield.withLock { $0 } }
+        defer { progress = nil; storeActivity = nil }
         do {
             let (fetched, published, report, aggregated) = try await run { paths, secrets in
                 guard let client = try Self.openClient(paths, secrets) else { return (nil as Int?, nil as Int?, nil as TeamPublisher.Report?, false) }
@@ -319,7 +339,10 @@ final class TeamModel: ObservableObject {
             }
             if let fetched { lastFetchAt = fetched }
             if let published { lastPublishAt = published }
-            if let report { lastReport = report }
+            if let report {
+                lastReport = report
+                if report.stopped, !stop.withLock({ $0 }) { lastLoop = nil }
+            }
             if aggregated { lastAggregatesAt = Int(Date().timeIntervalSince1970) }
             lastError = nil
             await load().value
@@ -624,7 +647,8 @@ final class TeamModel: ObservableObject {
     private func action(_ label: String, _ work: @escaping @Sendable (TeamPaths, TeamSecrets) throws -> Void) async -> String? {
         guard enabled else { lastError = "team is disabled in this instance"; return lastError }
         busy = label
-        defer { busy = nil }
+        yieldRequested.withLock { $0 = true }
+        defer { busy = nil; storeActivity = nil; yieldRequested.withLock { $0 = false } }
         var failure: String?
         do {
             try await run(work)
