@@ -363,6 +363,9 @@ func runTeam(_ args: [String]) -> Int32 {
             sources.liveSessions = ClaudeSessions.list(claudeDir: claudeDir)
             sources.crashes = CrashStore(directory: CrashStore.defaultDirectory()).list()
             if let days = options["days"].flatMap(Int.init) { sources.historyDays = days }
+            // #220: what this machine lets whom do rides now.json from here too.
+            let hints = TeamGrants.load(teamDir: paths.teamDir(c.config.id)).hints
+            sources.grantsTo = hints.isEmpty ? nil : hints
             emit(try TeamPublisher(client: c, paths: paths).publish(sources: sources))
         case "reshare":
             let c = try client(); _ = try c.fetch()
