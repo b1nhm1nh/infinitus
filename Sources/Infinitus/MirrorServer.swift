@@ -283,6 +283,7 @@ final class MirrorTeamControlBox: @unchecked Sendable {
     private let lock = NSLock()
     private var endpoint: TeamControl.Endpoint?
     private var teamDir: URL?
+    private var deliverer: (@Sendable (Int32, SessionInput.Request, String) -> SessionInput.Reply)?
     /// Verification, the replay set and the rate limit are single-threaded
     /// here for BOTH lanes (#220); delivery hops to `mirrorInputQueue`.
     static let queue = DispatchQueue(label: "run.infinitus.team-control")
@@ -293,6 +294,19 @@ final class MirrorTeamControlBox: @unchecked Sendable {
 
     func set(_ new: TeamControl.Endpoint?, teamDir dir: URL?) {
         lock.lock(); endpoint = new; teamDir = dir; lock.unlock()
+    }
+
+    /// The shared input deliverer (AppModel.deliverSessionInput), read at
+    /// execute time — the endpoint is first built at `start()`, before
+    /// AppModel has wired it (the e2e's "app is shutting down" refusal).
+    func setDeliver(_ new: @escaping @Sendable (Int32, SessionInput.Request, String) -> SessionInput.Reply) {
+        lock.lock(); deliverer = new; lock.unlock()
+    }
+
+    func deliver(_ pid: Int32, _ request: SessionInput.Request, from origin: String) -> SessionInput.Reply {
+        lock.lock(); let current = deliverer; lock.unlock()
+        guard let current else { return SessionInput.Reply(outcome: "rejected", detail: "app is shutting down") }
+        return current(pid, request, origin)
     }
 
     /// `Self.queue` only.
@@ -436,8 +450,6 @@ final class MirrorServer: ObservableObject {
     let accountAction = MirrorAccountActionBox()
     /// Team session control (#220): `/team/command` and `/team/sessions/<id>/tail`.
     let teamControl = MirrorTeamControlBox()
-    /// The shared input deliverer (AppModel.deliverSessionInput); set once at start.
-    var teamControlDeliver: (@Sendable (Int32, SessionInput.Request, String) -> SessionInput.Reply)?
     /// Event-log sink (icon, text), set by AppModel.
     var log: ((String, String) -> Void)?
     /// Fires with the bound port once the listener is up — the quick
@@ -490,7 +502,6 @@ final class MirrorServer: ObservableObject {
     /// identity this process can read ⇒ no endpoint ⇒ every control route
     /// answers 404.
     func refreshTeamControl() {
-        let deliver = teamControlDeliver
         let feed = sessionFeed
         let box = teamControl
         DispatchQueue.global(qos: .utility).async {
@@ -517,8 +528,7 @@ final class MirrorServer: ObservableObject {
                     guard let request = TeamControl.request(action: action, text: text) else {
                         return SessionInput.Reply(outcome: "rejected", detail: "nothing to run for \(action)")
                     }
-                    guard let deliver else { return SessionInput.Reply(outcome: "rejected", detail: "app is shutting down") }
-                    return mirrorInputQueue.sync { deliver(pid, request, "team") }
+                    return mirrorInputQueue.sync { box.deliver(pid, request, from: "team") }
                 },
                 seen: TeamControl.SeenIDs.load(teamDir: dir), limit: TeamControl.RateLimit())
             box.tail = TeamControlRoute.Tail { sessionId, since in

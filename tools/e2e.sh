@@ -393,7 +393,8 @@ printf 'hello from Bo via the store' | INFINITUS_TEAM_DIR="$CLI_TEAM" "$CTL" tea
     | expect "d['lane']=='store' and d['outcome']=='queued'" || fail "team send"
 INFINITUS_TEAM_DIR="$CLI_TEAM" "$CTL" team mode "$ANN_KID" e2e-aws acceptEdits | expect "d['lane']=='store'" || fail "team mode"
 "$CTL" team-fetch >/dev/null || fail "grantor fetch"
-grep -q 'hello from Bo via the store' "$INBOX" || fail "the store command never reached the session (inbox: $(head -c 300 "$INBOX" 2>/dev/null))"
+grep -q 'hello from Bo via the store' "$INBOX" \
+    || fail "the store command never reached the session (events: $("$CTL" events --limit 100 | python3 -c "import json,sys; print([e['text'] for e in json.load(sys.stdin) if e['icon']=='person.2'])"); acks: $(INFINITUS_TEAM_DIR="$CLI_TEAM" "$CTL" team acks 2>&1 | head -c 400))"
 INFINITUS_TEAM_DIR="$CLI_TEAM" "$CTL" team acks \
     | expect "sorted(r['outcome'] for r in d)==['delivered','noGrant']" || fail "acks (got: $(INFINITUS_TEAM_DIR="$CLI_TEAM" "$CTL" team acks 2>&1 | head -c 300))"
 "$CTL" team revoke "$ANN_GRANT" | expect "d['removed']" || fail "ann revoke"

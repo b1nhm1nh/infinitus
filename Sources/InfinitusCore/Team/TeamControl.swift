@@ -326,18 +326,20 @@ extension TeamControl {
                     Audit(driver: v.header.from, session: v.command.session, action: v.command.action, outcome: reply.outcome, detail: reply.detail),
                     driverKeys)
         case .failure(.outcome(let outcome, let detail)):
-            let id = driverKeys != nil ? commandID(file, as: endpoint.identity, roster: roster) : ""
+            let command = driverKeys != nil ? commandBody(file, as: endpoint.identity, roster: roster) : nil
             let unknown = outcome == Outcome.unknownSender || header == nil
-            return (Ack(id: id, outcome: outcome, detail: detail, at: nowSec),
-                    Audit(driver: header?.from ?? "?", session: "", action: "", outcome: outcome, detail: detail),
+            return (Ack(id: command?.id ?? "", outcome: outcome, detail: detail, at: nowSec),
+                    Audit(driver: header?.from ?? "?", session: command?.session ?? "", action: command?.action ?? "",
+                          outcome: outcome, detail: detail),
                     unknown ? nil : driverKeys)
         }
     }
 
-    /// The command id for a refusal ack, when the envelope opens at all.
-    private static func commandID(_ file: Data, as me: TeamIdentity, roster: TeamRoster?) -> String {
+    /// The refused command, when the envelope opens at all: its id names
+    /// the ack, its session and action the audit line.
+    private static func commandBody(_ file: Data, as me: TeamIdentity, roster: TeamRoster?) -> Command? {
         guard let roster, let sealedAt = try? Envelope.header(of: file).at,
-              let (_, body) = try? Envelope.open(file, as: me, senderKey: { roster.keys(for: $0, at: sealedAt) }) else { return "" }
-        return (try? CanonicalJSON.decode(Command.self, from: body))?.id ?? ""
+              let (_, body) = try? Envelope.open(file, as: me, senderKey: { roster.keys(for: $0, at: sealedAt) }) else { return nil }
+        return try? CanonicalJSON.decode(Command.self, from: body)
     }
 }
