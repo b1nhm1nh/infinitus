@@ -470,7 +470,13 @@ final class MirrorModel: ObservableObject, FleetModel {
         let pairings = MacPairing.load(defaults)
         let ids = Set(pairings.map(\.id))
         otherMirrors = otherMirrors.filter { ids.contains($0.key) }
-        guard !pairings.isEmpty else { others = []; refreshShortcutMacs(); syncShareSuggestions(); return }
+        guard !pairings.isEmpty else {
+            others = []
+            refreshShortcutMacs()
+            syncShareSuggestions()
+            LiveActivities.shared.publishWidgets(keeping: [WidgetBridge.primary])
+            return
+        }
         let mirrors = pairings.map { ($0, otherMirror(for: $0)) }
         // `for await` yields in COMPLETION order, not the pairings' own
         // order — collecting by id and remapping keeps the Fleet/
@@ -522,8 +528,9 @@ final class MirrorModel: ObservableObject, FleetModel {
             LiveActivities.shared.sync(
                 fleet: mac.fleets.first { $0.provider == .claude } ?? mac.fleets.first,
                 machine: snapshot.machineName, tokenRate: snapshot.tokenRate,
-                capturedAt: snapshot.capturedAt, primary: false)
+                capturedAt: snapshot.capturedAt, macId: mac.id)
         }
+        LiveActivities.shared.publishWidgets(keeping: Set([WidgetBridge.primary] + others.map(\.id)))
         // Per-Mac reachable edge: newly answering ids fire once; a Mac
         // still down stays out of the set and fires nothing. Keyed on
         // `parked`, not snapshot presence: `latest()` hands back the

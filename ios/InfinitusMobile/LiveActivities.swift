@@ -27,6 +27,8 @@ final class LiveActivities {
     /// within reach after they arrived.
     private var phoneTokens: [ActivityPushRegistration.Kind: Data] = [:]
     private var themeID: String?
+    /// What the widgets draw, per Mac (#144), by pairing id.
+    private var widgetPayloads: [String: WidgetBridge.Payload] = [:]
     /// The primary Mac accepted this phone's alert token — its APNs
     /// alerts reach here, so the local swap banner (#86) stands down.
     private(set) var alertTokenRegistered = false
@@ -47,9 +49,9 @@ final class LiveActivities {
         watchPushToStartTokens()
     }
 
-    /// `primary`: the widgets (#80) draw the primary Mac only, for now.
+    /// `macId`: the Mac's pairing id, nil for the primary.
     func sync(fleet: MirrorFleetModel?, machine: String, tokenRate: TokenRate?, capturedAt: Date,
-              primary: Bool = true) {
+              macId: String? = nil) {
         guard let fleet else { return }
         let engineFleet = EngineFleet(engineID: fleet.id, provider: fleet.provider, accounts: fleet.accounts,
                                       activeNumber: fleet.activeNumber, nextCandidate: fleet.nextCandidate,
@@ -57,11 +59,11 @@ final class LiveActivities {
         let revivalState = LiveActivityBuilder.revival(fleet: engineFleet, theme: fleet.rowTheme)
         let workingState = LiveActivityBuilder.working(fleet: engineFleet, theme: fleet.rowTheme,
                                                        report: fleet.report, tokenRate: tokenRate)
-        // The widgets (#80) draw the same states, activities enabled or not.
-        if primary {
-            WidgetBridge.publish(.init(working: workingState, revival: revivalState,
-                                       machine: machine, capturedAt: capturedAt))
-        }
+        // The widgets (#80) draw the same states, activities enabled or
+        // not; `publishWidgets` hands them over once per poll.
+        widgetPayloads[macId ?? WidgetBridge.primary] = .init(
+            id: macId ?? WidgetBridge.primary, working: workingState, revival: revivalState,
+            machine: machine, capturedAt: capturedAt)
         guard ActivityAuthorizationInfo().areActivitiesEnabled else {
             log.notice("live activities disabled for this app")
             return
@@ -92,6 +94,18 @@ final class LiveActivities {
         }
         skippingOld.remove(machine)
         syncWorking(workingState, machine: machine)
+    }
+
+    /// The widgets' payloads, primary first — once per poll, after every
+    /// Mac was asked; a Mac no longer in `ids` was forgotten.
+    func publishWidgets(keeping ids: Set<String>) {
+        widgetPayloads = widgetPayloads.filter { ids.contains($0.key) }
+        // Nothing synced yet this run (a fresh process whose primary has
+        // not answered): the widgets keep what they last drew.
+        guard !widgetPayloads.isEmpty else { return }
+        let others = widgetPayloads.values.filter { $0.id != WidgetBridge.primary }
+            .sorted { $0.machine < $1.machine }
+        WidgetBridge.publish([widgetPayloads[WidgetBridge.primary]].compactMap { $0 } + others)
     }
 
     /// A Mac forgotten (#144): its cards go with the pairing.
