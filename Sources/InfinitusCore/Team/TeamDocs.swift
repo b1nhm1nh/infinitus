@@ -42,6 +42,18 @@ public enum TeamDocs {
         }
     }
 
+    /// A grantor's hint of who may drive which sessions (#220 §2); the
+    /// grantor's own grants file decides, this only draws controls.
+    public struct GrantHint: Codable, Equatable, Sendable {
+        public var audience: TeamRoster.ShareTarget
+        /// nil = every session.
+        public var sessions: [String]?
+        public var capabilities: [String]
+        public init(audience: TeamRoster.ShareTarget, sessions: [String]?, capabilities: [String]) {
+            self.audience = audience; self.sessions = sessions; self.capabilities = capabilities
+        }
+    }
+
     /// `now.json` — live state; deleted on quit.
     public struct Now: Codable, Equatable, Sendable {
         public var schema = 1
