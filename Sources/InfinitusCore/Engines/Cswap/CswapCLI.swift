@@ -4,25 +4,71 @@ import Foundation
 /// Where the `cswap` binary lives. Checked in order; first hit wins.
 public enum CswapLocator {
     public static func defaultCandidates(home: String = NSHomeDirectory()) -> [String] {
-        [
+        #if os(Windows)
+        // uv/pipx both land here; the .exe suffix is what
+        // isExecutableFile matches (verified on this box 2026-09-04).
+        return windowsCandidates(home: home)
+        #else
+        return [
             "\(home)/.local/bin/cswap",
             "/opt/homebrew/bin/cswap",
             "/usr/local/bin/cswap",
         ]
+        #endif
+    }
+
+    /// Windows install locations. Always compiled so the list is unit-tested
+    /// on every host; `defaultCandidates` is the only production caller.
+    /// `localAppData: nil` is the stripped-environment fallback.
+    public static func windowsCandidates(
+        home: String,
+        localAppData: String? = ProcessInfo.processInfo.environment["LOCALAPPDATA"]
+    ) -> [String] {
+        let local = localAppData ?? "\(home)\\AppData\\Local"
+        return [
+            "\(home)\\.local\\bin\\cswap.exe",
+            "\(local)\\Programs\\cswap\\cswap.exe",
+            "\(local)\\pipx\\venvs\\claude-swap\\Scripts\\cswap.exe",
+        ]
+    }
+
+    /// PATH walker, `.exe` only. A pip console-script shim can be a `.cmd`,
+    /// and `Process.executableURL` cannot run one without `cmd.exe /c` —
+    /// an argv-quoting hazard, and secrets travel on stdin to stay out of
+    /// argv. A `.cmd`-only install therefore reads as "not found".
+    /// Always compiled (pure string work) so tests cover it on every host.
+    public static func pathCandidates(name: String = "cswap", path: String) -> [String] {
+        var out: [String] = []
+        for dir in path.split(separator: ";") where !dir.isEmpty {
+            out.append("\(dir)\\\(name).exe")
+        }
+        return out
     }
 
     public static func locate(
         candidates: [String]? = nil,
-        exists: (String) -> Bool = { FileManager.default.isExecutableFile(atPath: $0) }
+        exists: (String) -> Bool = { FileManager.default.isExecutableFile(atPath: $0) },
+        path: String? = nil,
+        environment: [String: String]? = nil
     ) -> String? {
         // Dev override: INFINITUS_CSWAP=/path pins the binary; the empty
         // string simulates a machine with no engine (onboarding testing —
         // a $HOME override can't fake it, NSHomeDirectory ignores $HOME).
-        if candidates == nil,
-           let forced = ProcessInfo.processInfo.environment["INFINITUS_CSWAP"] {
+        let env = environment ?? ProcessInfo.processInfo.environment
+        if candidates == nil, let forced = env["INFINITUS_CSWAP"] {
             return forced.isEmpty ? nil : (exists(forced) ? forced : nil)
         }
-        return (candidates ?? defaultCandidates()).first(where: exists)
+        if let hit = (candidates ?? defaultCandidates()).first(where: exists) {
+            return hit
+        }
+        #if os(Windows)
+        // Fourth lane the three literals miss: `pip install --user` lands
+        // in a Python Scripts dir. `.exe` only — see pathCandidates.
+        return pathCandidates(path: path ?? env["PATH"] ?? "").first(where: exists)
+        #else
+        _ = path
+        return nil
+        #endif
     }
 }
 
