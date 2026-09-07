@@ -35,7 +35,7 @@ struct MacFleetWidget: Widget {
                                provider: MacFleetProvider()) { entry in
             FleetWidgetView(entry: entry)
                 .containerBackground(.fill.tertiary, for: .widget)
-                .widgetURL(URL(string: "infinitus://sessions"))
+                .widgetURL(entry.sessionsURL)
         }
         .configurationDisplayName("Fleet on a Mac")
         .description("One paired Mac's active account in your theme — pick the Mac in the widget's editor.")
@@ -72,6 +72,14 @@ struct FleetEntry: TimelineEntry {
     var stale: Bool {
         guard let payload else { return false }
         return date.timeIntervalSince(payload.capturedAt) > LiveActivityBuilder.workingStale
+    }
+    /// The tap: the sessions tab, at this Mac's section when it isn't
+    /// the primary (#144).
+    var sessionsURL: URL? {
+        guard let payload, payload.id != WidgetBridge.primary else { return URL(string: "infinitus://sessions") }
+        var parts = URLComponents(string: "infinitus://sessions")
+        parts?.queryItems = [URLQueryItem(name: "mac", value: payload.id)]
+        return parts?.url
     }
 }
 
