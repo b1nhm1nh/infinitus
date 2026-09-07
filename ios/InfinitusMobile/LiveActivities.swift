@@ -251,7 +251,9 @@ final class LiveActivities {
         let ok = await NetworkFleetMirror.shared.registerActivityToken(registration)
         if kind == .alert { alertTokenRegistered = ok }
         log.notice("\(kind.rawValue) token \(ok ? "registered with the Mac" : "NOT registered — Mac unreachable")")
-        for mac in model.others where !mac.parked {
+        // A Mac that has never answered would cost a timeout each; it gets
+        // the tokens on its first answer (`resendPhoneTokens`).
+        for mac in model.others where mac.snapshot != nil && !mac.parked {
             let ok = await model.mirror(for: mac.id).registerActivityToken(registration)
             log.notice("\(kind.rawValue) token \(ok ? "registered with" : "NOT registered — unreachable:") \(mac.pairing.name)")
         }
