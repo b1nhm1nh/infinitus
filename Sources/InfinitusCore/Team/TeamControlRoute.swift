@@ -73,7 +73,7 @@ public enum TeamControlRoute {
             let since = request.target.split(separator: "?", maxSplits: 1).dropFirst().first
                 .flatMap { $0.split(separator: "&").first { $0.hasPrefix("since=") } }.map { String($0.dropFirst("since=".count)) }
             guard let bytes = tail.read(id, since) else { return MirrorTransport.notFoundResponse() }
-            return MirrorTransport.response(status: 200, reason: "OK", contentType: "application/x-ndjson", body: bytes)
+            return MirrorTransport.response(status: 200, reason: "OK", contentType: "application/json", body: bytes)
         default:
             return MirrorTransport.notFoundResponse()
         }

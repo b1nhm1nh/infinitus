@@ -76,6 +76,8 @@ final class TeamModel: ObservableObject {
     var gate: () -> TeamGate.Verdict = { .allowed }
     /// After every load: the mirror server rebuilds its control endpoint (#220).
     var onLoaded: (() -> Void)?
+    /// After every fetch, on the team queue: the grantor's store-lane pass (#220 §5.3).
+    var onFetched: (@Sendable (TeamClient) -> Void)?
     /// Set by AppModel: what this Mac publishes (projects dir, live sessions, crashes, fleets, blockers).
     var sources: () -> TeamPublisher.Sources = { TeamPublisher.Sources(projectsDir: URL(fileURLWithPath: "/nonexistent"), home: NSHomeDirectory()) }
     /// Set by AppModel: true when this instance scans its transcripts for
@@ -147,6 +149,12 @@ final class TeamModel: ObservableObject {
     /// than assuming the whole message is a bare URL.
     private nonisolated static func mask(_ error: Error) -> String {
         if (error as? TeamIdentityExport.ExportError) == .badPassphrase { return "wrong passphrase" }
+        if let drive = error as? TeamControl.DriveError {
+            switch drive {
+            case .noRoster: return "not in a team"
+            case .unknownKid(let kid): return "no teammate \(kid)"
+            }
+        }
         if let nearby = error as? TeamNearby.Client.ClientError {
             switch nearby {
             case .notALeader: return "that machine leads no team"
@@ -193,6 +201,9 @@ final class TeamModel: ObservableObject {
                     guard let client = try Self.openClient(paths, secrets) else { return (nil, nil, TeamShares(), exclusions, kid, nil, [], TranscriptPicker(), TeamGrants()) }
                     let dir = paths.teamDir(client.config.id)
                     let (snap, reader) = try Self.snapshot(client, lastFetch: fetch, lastPublish: publish, lastError: err)
+                    // Driver side of the store lane (#220): my acked or stale
+                    // commands go; a push-free scan when there are none.
+                    if let reader { _ = try? TeamControl.Store.driverReap(client: client, acks: reader.ackIDs) }
                     let pendingNearby = client.isLeader ? TeamNearby.Store.pending(team: client.config.id, paths: paths) : []
                     let choices = TeamTranscriptChoices.load(teamDir: dir)
                     let recent: [TeamPublisher.TranscriptSession]
@@ -251,7 +262,7 @@ final class TeamModel: ObservableObject {
         // The app's own scan has not finished since launch: fetch now,
         // publish next tick — never scan the corpus a second time.
         let publish = publish && (scan.entries != nil || !scan.owns)
-        let stop = stopRequested
+        let stop = stopRequested, fetchedHook = onFetched
         sources.onProgress = { [weak self] p in Task { @MainActor in self?.progress = p } }
         sources.shouldStop = { stop.withLock { $0 } }
         defer { progress = nil }
@@ -260,6 +271,7 @@ final class TeamModel: ObservableObject {
                 guard let client = try Self.openClient(paths, secrets) else { return (nil as Int?, nil as Int?, nil as TeamPublisher.Report?, false) }
                 _ = try client.fetch()
                 let fetched = Int(Date().timeIntervalSince1970)
+                fetchedHook?(client)
                 if auto { try Self.autoApprove(client, paths: paths) }
                 var published: Int?
                 var report: TeamPublisher.Report?

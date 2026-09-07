@@ -275,13 +275,17 @@ final class MirrorSessionInputBox: @unchecked Sendable {
 
 /// Team session control (#220): the grantor's endpoint, boxed like the
 /// rest. Rebuilt off main when the team standing changes (`refreshTeamControl`);
-/// `respond` runs under `MirrorServer.controlQueue` only, so the replay
-/// set and the rate limit are mutated by one thread, and execution hops
-/// to `mirrorInputQueue` inside the endpoint's `execute`.
+/// `respond` (the HTTP lanes) and `storePass` (the store lane) both run
+/// under `MirrorTeamControlBox.queue`, so the replay set and the rate
+/// limit are mutated by one thread, and execution hops to
+/// `mirrorInputQueue` inside the endpoint's `execute`.
 final class MirrorTeamControlBox: @unchecked Sendable {
     private let lock = NSLock()
     private var endpoint: TeamControl.Endpoint?
     private var teamDir: URL?
+    /// Verification, the replay set and the rate limit are single-threaded
+    /// here for BOTH lanes (#220); delivery hops to `mirrorInputQueue`.
+    static let queue = DispatchQueue(label: "run.infinitus.team-control")
     /// The live feed by session id (the phone's tail, keyed by pid).
     var tail = TeamControlRoute.Tail { _, _ in nil }
     /// Every command, accepted or refused, with the driver's roster name.
@@ -291,7 +295,7 @@ final class MirrorTeamControlBox: @unchecked Sendable {
         lock.lock(); endpoint = new; teamDir = dir; lock.unlock()
     }
 
-    /// `controlQueue` only.
+    /// `Self.queue` only.
     func respond(_ request: MirrorTransport.Request) -> Data? {
         lock.lock(); var ep = endpoint; let dir = teamDir; lock.unlock()
         ep?.lastAudit = nil
@@ -307,6 +311,26 @@ final class MirrorTeamControlBox: @unchecked Sendable {
             onAudit?(audit, name)
         }
         return response
+    }
+
+    /// Lane 4 (#220 §5.3): after a fetch, the commands under the store
+    /// addressed to me. Called on the team queue; hops onto the control
+    /// queue so the HTTP route can't interleave.
+    func storePass(_ client: TeamClient) {
+        Self.queue.sync {
+            lock.lock(); let current = endpoint; let dir = teamDir; lock.unlock()
+            guard var ep = current, let dir else { return }
+            var handled = TeamControl.Handled.load(teamDir: dir)
+            let audits: [TeamControl.Audit]
+            do { audits = try TeamControl.Store.grantorPass(client: client, endpoint: &ep, handled: &handled) }
+            catch { Lifecycle.log.error("team control store pass: \(TeamGit.masked("\(error)"), privacy: .public)"); return }
+            lock.lock(); endpoint?.seen = ep.seen; endpoint?.limit = ep.limit; lock.unlock()
+            guard !audits.isEmpty else { return }
+            try? ep.seen.save(teamDir: dir)
+            try? handled.save(teamDir: dir)
+            let roster = ep.roster()
+            for audit in audits { onAudit?(audit, roster?.everyone.first { $0.keys.kid == audit.driver }?.name) }
+        }
     }
 }
 
@@ -426,9 +450,6 @@ final class MirrorServer: ObservableObject {
     /// race `TeamGit`'s bare-repo push (no in-process lock of its own) and
     /// turn each other's request into an unearned 503.
     private static let teamStoreQueue = DispatchQueue(label: "run.infinitus.team-store")
-    /// Control commands only (#220): verification, the replay set and the
-    /// rate limit are single-threaded here; delivery hops to `mirrorInputQueue`.
-    private static let controlQueue = DispatchQueue(label: "run.infinitus.team-control")
 
     func start(machineName: String, token: String) {
         self.token.set(token)
@@ -728,7 +749,7 @@ final class MirrorServer: ObservableObject {
             // defense in depth (e.g. a token regenerated mid-request).
             if let request = MirrorTransport.parseRequestWithBody(buffer, bodyCap: cap) {
                 if request.path == TeamControlRoute.commandPath || TeamControlRoute.tailSessionId(request.path) != nil {
-                    controlQueue.async {
+                    MirrorTeamControlBox.queue.async {
                         let response = teamControl.respond(request) ?? MirrorTransport.notFoundResponse()
                         connection.send(content: response, completion: .contentProcessed { _ in connection.cancel() })
                     }

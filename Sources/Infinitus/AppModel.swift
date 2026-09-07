@@ -1235,6 +1235,7 @@ final class AppModel: ObservableObject {
             Task { @MainActor in self?.recordTeamControl(audit, driverName: name) }
         }
         team.onLoaded = { [weak self] in self?.mirrorServer.refreshTeamControl() }
+        team.onFetched = { [mirrorServer] client in mirrorServer.teamControl.storePass(client) }
         quickTunnel.log = { [weak self] icon, text in
             self?.logEvent("other", icon: icon, text)
         }
