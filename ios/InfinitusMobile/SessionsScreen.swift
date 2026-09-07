@@ -124,7 +124,11 @@ struct SessionsScreen: View {
                 // is the only firing — a turn late, once the list is laid
                 // out. A Mac still to answer waits for its snapshot.
                 .onAppear { DispatchQueue.main.async { scrollToRequestedMac(proxy) } }
-                .onChange(of: model.requestedSectionMacId) { _, _ in scrollToRequestedMac(proxy) }
+                // A warm tap from another tab: the request lands while
+                // the tab is still switching — a turn later the list is on.
+                .onChange(of: model.requestedSectionMacId) { _, _ in
+                    DispatchQueue.main.async { scrollToRequestedMac(proxy) }
+                }
                 .onChange(of: model.others.map { $0.snapshot?.capturedAt }) { _, _ in scrollToRequestedMac(proxy) }
             }
             .sheet(item: $awsLoginItem) { AwsLoginScreen(item: $0) }
@@ -213,15 +217,20 @@ struct SessionsScreen: View {
     private static func sectionID(macId: String) -> String { "mac:\(macId)" }
 
     /// A per-Mac widget's tap (#144): the list scrolls to that Mac's
-    /// section once it has one. The primary's key and a Mac forgotten
-    /// while the tap was in flight are simply dropped.
+    /// section once it has one. Dropped: the primary's key, a Mac
+    /// forgotten while the tap was in flight, and a Mac that has
+    /// answered with no session to show — a request kept past that
+    /// would jump the list minutes later, when one starts.
     private func scrollToRequestedMac(_ proxy: ScrollViewProxy) {
         guard let macId = model.requestedSectionMacId else { return }
-        guard macId != WidgetBridge.primary, model.other(macId) != nil else {
+        guard macId != WidgetBridge.primary, let mac = model.other(macId) else {
             model.requestedSectionMacId = nil
             return
         }
-        guard othersWithSessions.contains(where: { $0.id == macId }) else { return }
+        guard othersWithSessions.contains(where: { $0.id == macId }) else {
+            if mac.snapshot != nil { model.requestedSectionMacId = nil }
+            return
+        }
         model.requestedSectionMacId = nil
         path = NavigationPath()
         withAnimation { proxy.scrollTo(Self.sectionID(macId: macId), anchor: .top) }
