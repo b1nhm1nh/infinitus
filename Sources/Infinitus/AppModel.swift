@@ -336,6 +336,9 @@ final class AppModel: ObservableObject {
     /// Set by StatusItemHolder — toggles the full-screen fleet wall
     /// (issue #11).
     var showWall: (() -> Void)?
+    /// Opens a live session's chat window (#151); set by the status item
+    /// controller, called from the sessions card's rows.
+    var openSessionChat: ((SessionDetail) -> Void)?
     // The bundle on disk was rebuilt since this instance launched (the
     // dev loop, or a manual make-app.sh) — surfaced as "restart to update".
     @Published var appUpdatePending = false
@@ -1433,21 +1436,27 @@ final class AppModel: ObservableObject {
             thumbnails[key] = thumb
             return (thumb, "image/jpeg")
         }
-        let deliver = makeInputDeliverer()
-        mirrorServer.sessionInput.set { pid, request in deliver(pid, request, "phone") }
-        mirrorServer.teamControlDeliver = deliver
+        mirrorServer.sessionInput.set { [weak self] pid, request in
+            self?.deliverSessionInput(pid: pid, request, from: "phone")
+                ?? SessionInput.Reply(outcome: "rejected", detail: "app is shutting down")
+        }
+        // Team session control (#220): the same path, origin "team".
+        mirrorServer.teamControlDeliver = { [weak self] pid, request, origin in
+            self?.deliverSessionInput(pid: pid, request, from: origin)
+                ?? SessionInput.Reply(outcome: "rejected", detail: "app is shutting down")
+        }
         applyQuickTunnel()
         applyNamedTunnel()
     }
 
-
-    /// The one path for input from outside the terminal: the phone lane
-    /// and the team lane (#220) both run it on `mirrorInputQueue`, so
-    /// keystrokes to one pty never interleave. `origin` is the log's
-    /// "phone" or "team"; a team approve arrives already mapped to a key
-    /// (TeamControl.request), so the ToolApproval branch is phone-only.
-    func makeInputDeliverer() -> @Sendable (Int32, SessionInput.Request, String) -> SessionInput.Reply {
-        { [weak self] pid, request, origin in
+    /// One request into a live session, the way the phone's
+    /// `POST /sessions/<pid>/input` lands it — and the Mac's own chat
+    /// window (#151): a mode change is decided here, "allow for this
+    /// session" records the rule then answers Yes, everything else goes
+    /// through `SessionInput.deliver`. Off the main actor; hops in for
+    /// the log and the births.
+    nonisolated func deliverSessionInput(pid: Int32, _ request: SessionInput.Request,
+                                         from source: String) -> SessionInput.Reply {
             let claudeDir = ClaudeSessions.configHome()
             let records = ClaudeSessions.list(claudeDir: claudeDir)
             // #168: a queued request may name a pid from before a reboot —
@@ -1455,7 +1464,7 @@ final class AppModel: ObservableObject {
             guard let record = records.first(where: { $0.pid == pid })
                     ?? request.sessionId.flatMap({ id in records.first { $0.sessionId == id } })
             else {
-                Task { @MainActor in self?.logMirrorInput("⚠️", "\(origin) input not delivered: unknown session") }
+                Task { @MainActor in self.logMirrorInput("⚠️", "\(source) input not delivered: unknown session") }
                 return SessionInput.Reply(outcome: "rejected", detail: "session ended")
             }
             // A mode change never reaches the terminal: it is the Mac's
@@ -1464,7 +1473,7 @@ final class AppModel: ObservableObject {
             if request.kind == .mode {
                 return DispatchQueue.main.sync {
                     MainActor.assumeIsolated {
-                        self?.setSessionMode(request.text, pid: Int(pid), record: record)
+                        self.setSessionMode(request.text, pid: Int(pid), record: record)
                             ?? SessionInput.Reply(outcome: "rejected", detail: "app is shutting down")
                     }
                 }
@@ -1474,8 +1483,8 @@ final class AppModel: ObservableObject {
             var request = request
             if request.kind == .approve {
                 if let rule = ToolApproval.decode(request.text) {
-                    self?.toolApprovals.add(rule, sessionId: record.sessionId)
-                    Task { @MainActor in self?.logMirrorInput("🛡️", "\(origin) allows \(rule.label) for the rest of session \(pid)") }
+                    self.toolApprovals.add(rule, sessionId: record.sessionId)
+                    Task { @MainActor in self.logMirrorInput("🛡️", "\(source) allows \(rule.label) for the rest of session \(pid)") }
                 }
                 request = SessionInput.Request(kind: .key, text: "1")
             }
@@ -1485,20 +1494,19 @@ final class AppModel: ObservableObject {
             Task { @MainActor in
                 if reply.outcome == "delivered" {
                     let preview = String(request.text.prefix(60))
-                    self?.logMirrorInput("📲", "\(origin) → \(label): \"\(preview)\" (\(reply.channel ?? "?"))")
+                    self.logMirrorInput("📲", "\(source) → \(label): \"\(preview)\" (\(reply.channel ?? "?"))")
                 } else {
                     let why = reply.detail.map { "\(reply.outcome) — \($0)" } ?? reply.outcome
-                    self?.logMirrorInput("⚠️", "\(origin) input not delivered: \(why)")
+                    self.logMirrorInput("⚠️", "\(source) input not delivered: \(why)")
                 }
-                if origin == "phone", request.queuedAt != nil, ["delivered", "running", "captured"].contains(reply.outcome) {
+                if source == "phone", request.queuedAt != nil, ["delivered", "running", "captured"].contains(reply.outcome) {
                     // The phone queued this while the Mac was away; the
                     // push reaches it even when the app is closed.
-                    self?.liveActivityPusher.pushAlert(title: "Delivered to \(label)",
+                    self.liveActivityPusher.pushAlert(title: "Delivered to \(label)",
                                                        body: String(request.text.prefix(80)))
                 }
             }
             return reply
-        }
     }
 
     /// Every phone-injected input is logged, per #17 — success or not.

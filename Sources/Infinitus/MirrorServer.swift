@@ -412,7 +412,7 @@ final class MirrorServer: ObservableObject {
     let accountAction = MirrorAccountActionBox()
     /// Team session control (#220): `/team/command` and `/team/sessions/<id>/tail`.
     let teamControl = MirrorTeamControlBox()
-    /// The shared input deliverer (AppModel.makeInputDeliverer); set once at start.
+    /// The shared input deliverer (AppModel.deliverSessionInput); set once at start.
     var teamControlDeliver: (@Sendable (Int32, SessionInput.Request, String) -> SessionInput.Reply)?
     /// Event-log sink (icon, text), set by AppModel.
     var log: ((String, String) -> Void)?

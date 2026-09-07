@@ -23,7 +23,11 @@ struct MacSessionsPopover: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            SessionListCard(live: live, progress: model.sessionProgress, births: model.sessionBirths)
+            SessionListCard(live: live, progress: model.sessionProgress, births: model.sessionBirths,
+                            onOpen: { session in
+                                model.sessionsShown = false
+                                model.openSessionChat?(session)
+                            })
             // Team session control (#220 §6): who drove a session in the last minute.
             let driving = model.drivenBy.filter { $0.value.until > Date() }
             ForEach(driving.keys.sorted(), id: \.self) { id in
