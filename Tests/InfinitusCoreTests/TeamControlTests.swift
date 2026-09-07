@@ -150,6 +150,8 @@ final class TeamControlTests: XCTestCase {
         // 2. addressed to someone else although sealed to me.
         var cmd = command(); cmd.to = eve.kid
         XCTAssertEqual(outcome(try sealed(cmd), &ep), "badRequest")
+        // 2b. body clock differs from the envelope's (a backdated header would consult an older roster).
+        XCTAssertEqual(outcome(try TeamControl.sealCommand(command(), from: driver, to: grantor.keys, at: 999), &ep), "badRequest")
         // 3. expired / from the future / ttl above the cap.
         XCTAssertEqual(outcome(try sealed(command(at: 800, ttl: 100)), &ep), "expired")
         XCTAssertEqual(outcome(try sealed(command(at: 1_010 + TeamControl.maxFutureSkew + 1)), &ep), "badRequest")

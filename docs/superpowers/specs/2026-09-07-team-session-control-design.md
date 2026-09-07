@@ -88,7 +88,7 @@ Two member kinds join `TeamKinds.memberKinds`, both under
   cap 600). `action` ∈ `send | approve | mode | resume | key`; `text` is
   the prompt, decision, mode name or key.
 - `outcome` reuses `SessionInput.Reply.outcome` strings (`delivered`,
-  `typedUnverified`, `running`, `capturedInput`, `noSurface`) plus the
+  `running`, `captured`, `noSurface`, `noChannel`, `rejected`) plus the
   refusals: `noGrant`, `notLive`, `expired`, `replayed`, `unknownSender`,
   `badRequest`, `rateLimited`.
 - The same bytes travel on every lane. The path shapes above are the

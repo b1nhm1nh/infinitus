@@ -257,6 +257,8 @@ extension TeamControl {
             return .failure(.outcome(Outcome.badRequest, detail: "\(error)"))
         }
         guard command.to == endpoint.identity.kid else { return .failure(.outcome(Outcome.badRequest, detail: "addressed to another kid")) }
+        // The roster was consulted at the sealed time; the body's clock must be the same one.
+        guard command.at == header.at else { return .failure(.outcome(Outcome.badRequest, detail: "at differs from the envelope")) }
         let nowSec = Int(endpoint.now().timeIntervalSince1970)
         guard (1...maxTTL).contains(command.ttl) else { return .failure(.outcome(Outcome.badRequest, detail: "ttl")) }
         guard command.at <= nowSec + maxFutureSkew else { return .failure(.outcome(Outcome.badRequest, detail: "from the future")) }
