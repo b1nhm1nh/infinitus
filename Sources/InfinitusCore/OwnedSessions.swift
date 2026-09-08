@@ -322,9 +322,32 @@ public actor OwnedSessions {
     /// it) — and only ever SIGTERM, the same as the orderly `stop` path's
     /// first step. Every entry is removed whether or not it matched: a
     /// stale one (pid dead, record gone, sessionId changed) is just noise.
+    /// `kill(pid, 0)` where kill(2) exists; the query-only OpenProcess
+    /// check on Windows (ClaudeSessions' own liveness test).
+    static func defaultAlive(_ pid: Int32) -> Bool {
+        #if os(Windows)
+        ClaudeSessions.isAlive(pid)
+        #else
+        kill(pid, 0) == 0
+        #endif
+    }
+
+    /// SIGTERM where kill(2) exists. Windows has no signal interface to a
+    /// foreign pid; the sweep still forgets every ledger entry, and the
+    /// daemon's own children were stopped through `stop`'s terminate path.
+    static func defaultSignal(_ pid: Int32) -> Void {
+        #if !os(Windows)
+        kill(pid, SIGTERM)
+        #endif
+    }
+
     public nonisolated static func sweepOrphans(ledger: OwnedLedger, claudeDir: URL,
-                                                alive: (Int32) -> Bool = { kill($0, 0) == 0 },
-                                                signal: (Int32) -> Void = { kill($0, SIGTERM) }) -> [Int32] {
+                                                alive: ((Int32) -> Bool)? = nil,
+                                                signal: ((Int32) -> Void)? = nil) -> [Int32] {
+        // Default arguments cannot name internal members of a public
+        // declaration (they compile in the caller's module) — resolve here.
+        let alive = alive ?? defaultAlive
+        let signal = signal ?? defaultSignal
         let records = ClaudeSessions.list(claudeDir: claudeDir, alive: alive)
         var signalled: [Int32] = []
         for entry in ledger.entries() {
