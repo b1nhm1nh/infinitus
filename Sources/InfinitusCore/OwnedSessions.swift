@@ -77,7 +77,15 @@ public actor OwnedSessions {
             if s == .exited { pendingList.removeAll() }
             return true
         }
-        func closeStdin() { writeLock.lock(); try? stdin.close(); writeLock.unlock() }
+        /// False when a frame write is stuck on a full pipe — the fd is
+        /// left open (still owned by that writer) so `stop` can move on to
+        /// `terminate()` instead of wedging behind it forever.
+        @discardableResult
+        func closeStdin(timeout: TimeInterval = 3) -> Bool {
+            guard writeLock.lock(before: Date().addingTimeInterval(timeout)) else { return false }
+            try? stdin.close(); writeLock.unlock()
+            return true
+        }
     }
 
     final class Registry: @unchecked Sendable {
@@ -98,12 +106,15 @@ public actor OwnedSessions {
     public nonisolated let wake = NSCondition()
     private let binaryPath: String
     private let onState: @Sendable (Int32, State) -> Void
+    /// The orphan ledger (#151 follow-up): nil in tests that don't care.
+    private let ledger: OwnedLedger?
     private var processes: [Int32: Process] = [:]
     private var version: [Int]?
     private var loginShellPath: String?
 
-    public init(binaryPath: String, onState: @escaping @Sendable (Int32, State) -> Void) {
+    public init(binaryPath: String, ledger: OwnedLedger? = nil, onState: @escaping @Sendable (Int32, State) -> Void) {
         self.binaryPath = binaryPath
+        self.ledger = ledger
         self.onState = onState
     }
 
@@ -177,12 +188,20 @@ public actor OwnedSessions {
         let child = Child(pid: p.processIdentifier, cwd: req.cwd, stdin: stdin.fileHandleForWriting)
         registry.add(child)
         processes[child.pid] = p
-        attach(stdout.fileHandleForReading, to: child)
+        let ledger = self.ledger
+        // Recorded before init arrives — a crash between spawn and init
+        // must still leave a pid the next launch's sweep can find (empty
+        // sessionId there means "skip", never "match anything").
+        ledger?.record(pid: child.pid, sessionId: "")
+        attach(stdout.fileHandleForReading, to: child, ledger: ledger)
         p.terminationHandler = { [weak self, registry] _ in
             stdout.fileHandleForReading.readabilityHandler = nil
             if child.set(.exited) { self?.publish(child.pid, .exited) }
-            child.closeStdin()
+            // The child is already gone — any blocked write has failed with
+            // EPIPE by now, so a short wait is enough.
+            child.closeStdin(timeout: 0.5)
             registry.remove(child.pid)
+            ledger?.forget(pid: child.pid)
             Task { [weak self] in await self?.forget(child.pid) }
         }
         // The handler goes on after `run()` (it needs the pid for the
@@ -201,7 +220,7 @@ public actor OwnedSessions {
 
     /// The pipe reader: lines to states, prompts to the parked list.
     /// Nothing is published per line — `onState` fires on transitions.
-    private nonisolated func attach(_ handle: FileHandle, to child: Child) {
+    private nonisolated func attach(_ handle: FileHandle, to child: Child, ledger: OwnedLedger?) {
         let buffer = LineBuffer()
         handle.readabilityHandler = { [weak self] h in
             let chunk = h.availableData
@@ -210,6 +229,9 @@ public actor OwnedSessions {
                 switch OwnedWire.decode(line: line) {
                 case .initialized(let sid, _):
                     child.sessionId = sid
+                    // The sweep matches on this — the roster record's
+                    // sessionId is what tells our pid apart from a reused one.
+                    ledger?.record(pid: child.pid, sessionId: sid)
                     if !child.turnOpen, child.set(.idle) { self?.publish(child.pid, .idle) }
                 case .canUseTool(let pending):
                     child.park(pending)
@@ -231,9 +253,12 @@ public actor OwnedSessions {
     /// (#274's lesson).
     public func stop(pid: Int32) async {
         guard let child = registry[pid] else { return }
-        child.closeStdin()
-        for _ in 0..<30 where processes[pid]?.isRunning == true {
-            try? await Task.sleep(nanoseconds: 100_000_000)
+        // A frame write stuck on a full pipe holds `writeLock`; closeStdin
+        // gives up rather than wait behind it, straight to terminate().
+        if child.closeStdin() {
+            for _ in 0..<30 where processes[pid]?.isRunning == true {
+                try? await Task.sleep(nanoseconds: 100_000_000)
+            }
         }
         if processes[pid]?.isRunning == true {
             processes[pid]?.terminate()
@@ -250,6 +275,31 @@ public actor OwnedSessions {
         await withTaskGroup(of: Void.self) { group in
             for pid in pids { group.addTask { await self.stop(pid: pid) } }
         }
+    }
+
+    /// Launch-time cleanup (#151 follow-up): a headless child survives a
+    /// SIGKILL of the app (no PDEATHSIG on Darwin), so the NEXT launch
+    /// reconciles last run's ledger against the live roster. A pid is only
+    /// ever signalled when its roster record's sessionId matches OURS —
+    /// `entrypoint: sdk-cli` alone is not proof (any SDK consumer writes
+    /// it) — and only ever SIGTERM, the same as the orderly `stop` path's
+    /// first step. Every entry is removed whether or not it matched: a
+    /// stale one (pid dead, record gone, sessionId changed) is just noise.
+    public nonisolated static func sweepOrphans(ledger: OwnedLedger, claudeDir: URL,
+                                                alive: (Int32) -> Bool = { kill($0, 0) == 0 },
+                                                signal: (Int32) -> Void = { kill($0, SIGTERM) }) -> [Int32] {
+        let records = ClaudeSessions.list(claudeDir: claudeDir, alive: alive)
+        var signalled: [Int32] = []
+        for entry in ledger.entries() {
+            defer { ledger.forget(pid: entry.pid) }
+            guard !entry.sessionId.isEmpty, alive(entry.pid),
+                  let record = records.first(where: { $0.pid == entry.pid }),
+                  record.sessionId == entry.sessionId, record.entrypoint == "sdk-cli"
+            else { continue }
+            signal(entry.pid)
+            signalled.append(entry.pid)
+        }
+        return signalled
     }
 
     private func installedVersion() async -> [Int]? {
