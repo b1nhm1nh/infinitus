@@ -8,6 +8,8 @@ publishes the matching section as the GitHub release body.
 ## Unreleased
 
 ### Mac
+- A click into an account's name field focuses it at once; only the drag handle starts a reorder now, so the row no longer holds every click until the mouse comes up.
+- Stats folds run off the main thread, so a refresh no longer freezes the window for a third of a second.
 - Ignite says what it did: the plan line reports "<account>'s window started — resets 3:20 PM" (or the failure) for ten seconds, the armed "Sure?" state is a solid orange pill, and the account's usage refreshes right away (#338).
 - The Activity log and `infinitusctl events` survive a relaunch: the last hundred events come back from the durable log at launch (#338).
 - The wall honors the biometric lock: while the app is locked it shows the lock, not the sessions (#55).
