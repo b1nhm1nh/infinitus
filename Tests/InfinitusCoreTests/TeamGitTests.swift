@@ -290,6 +290,7 @@ final class TeamGitTests: XCTestCase {
     /// stdout, waits `idle` for stderr, kills it, and reports the stall
     /// — after the "waiting" notice.
     func testASilentNetworkChildIsKilledAndReportedAsStalled() throws {
+        try skipOffPOSIX()
         let done = expectation(description: "drained")
         let notices = Locked<[String]>([])
         DispatchQueue.global().async {
@@ -318,6 +319,7 @@ final class TeamGitTests: XCTestCase {
     /// A slow child that keeps talking is never a stall, and its latest
     /// `\r`-updated line reaches the sink.
     func testAChattySlowChildIsNotAStallAndReportsItsLastLine() throws {
+        try skipOffPOSIX()
         let done = expectation(description: "drained")
         let notices = Locked<[String]>([])
         DispatchQueue.global().async {

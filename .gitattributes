@@ -1,0 +1,6 @@
+# Fixtures and scripts are byte-sensitive: keep them LF on every clone
+# (this box checks out CRLF via core.autocrlf=true, and Swift's
+# `split(separator: "\n")` does not split a CRLF grapheme).
+*.jsonl text eol=lf
+*.sh text eol=lf
+*.ps1 text eol=crlf

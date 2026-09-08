@@ -16,10 +16,12 @@ final class TeamClientTests: XCTestCase {
     /// One "machine": its own paths and secrets.
     /// `refs/remotes/origin/*` of a store dir, sorted.
     func remoteBranches(in storeDir: URL) -> [String] {
+        guard let git = try? TeamGitSupport.gitExecutable() else { return [] }
         let p = Process()
-        p.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-        p.arguments = ["git", "--git-dir", storeDir.appendingPathComponent("store.git").path,
-                       "for-each-ref", "--format=%(refname:short)", "refs/remotes/origin/"]
+        p.executableURL = git
+        p.arguments = TeamGitSupport.gitArguments([
+            "--git-dir", storeDir.appendingPathComponent("store.git").path,
+            "for-each-ref", "--format=%(refname:short)", "refs/remotes/origin/"])
         let out = Pipe(); p.standardOutput = out
         try? p.run(); p.waitUntilExit()
         return String(decoding: out.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)

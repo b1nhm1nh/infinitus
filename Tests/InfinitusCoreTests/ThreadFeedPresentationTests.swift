@@ -8,7 +8,7 @@ final class ThreadFeedPresentationTests: XCTestCase {
     func entries(_ name: String) throws -> [[String: Any]] {
         let url = Bundle.module.url(forResource: "Fixtures/timeline/\(name)", withExtension: "jsonl")!
         let text = try String(contentsOf: url, encoding: .utf8)
-        return text.split(separator: "\n").compactMap { SessionFeedReader.decodeLine(String($0)) }
+        return text.split(whereSeparator: \.isNewline).compactMap { SessionFeedReader.decodeLine(String($0)) }
     }
     func timeline(_ name: String, status: String = "idle", drop: Set<String> = []) throws -> SessionTimeline {
         let e = try entries(name).filter { !drop.contains($0["uuid"] as? String ?? "") }

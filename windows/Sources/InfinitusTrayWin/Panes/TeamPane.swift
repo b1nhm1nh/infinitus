@@ -14,7 +14,6 @@ public final class TeamPane: SettingsPane {
     private var identityKidHwnd: HWND?
     private var identityNameHwnd: HWND?
     private var gitStatusHwnd: HWND?
-    private var lockStatusHwnd: HWND?
     private var errorHwnd: HWND?
 
     private var createNameHwnd: HWND?
@@ -78,7 +77,6 @@ public final class TeamPane: SettingsPane {
         var displayName: String = ""
         var gitFound: Bool = false
         var gitPath: String?
-        var lockOn: Bool = false
         var teams: [TeamRow] = []
         var selectedID: String?
         var code: String?
@@ -105,7 +103,6 @@ public final class TeamPane: SettingsPane {
         identityKidHwnd = PaneControls.label("", in: ctx, x: 0, y: 0, w: 0, h: 0)
         identityNameHwnd = PaneControls.label("", in: ctx, x: 0, y: 0, w: 0, h: 0)
         gitStatusHwnd = PaneControls.label("", in: ctx, x: 0, y: 0, w: 0, h: 0, caption: true)
-        lockStatusHwnd = PaneControls.label("", in: ctx, x: 0, y: 0, w: 0, h: 0, caption: true)
         errorHwnd = PaneControls.label("", in: ctx, x: 0, y: 0, w: 0, h: 0, caption: true)
 
         createNameHwnd = PaneControls.edit(in: ctx, id: base + 20, x: 0, y: 0, w: 0, h: 0)
@@ -159,8 +156,6 @@ public final class TeamPane: SettingsPane {
         y += fieldH + m.px(4)
         if let h = gitStatusHwnd { MoveWindow(h, pad, y, fullW, m.px(18), true) }
         y += m.px(20)
-        if let h = lockStatusHwnd { MoveWindow(h, pad, y, fullW, m.px(18), true) }
-        y += m.px(22)
         if let h = errorHwnd { MoveWindow(h, pad, y, fullW, m.px(36), true) }
         y += m.px(40)
 
@@ -314,14 +309,9 @@ public final class TeamPane: SettingsPane {
         } else {
             PaneControls.setText(gitStatusHwnd, "git not found — install Git for Windows")
         }
-        if snapshot.lockOn {
-            PaneControls.setText(lockStatusHwnd, "Lock is on.")
-        } else {
-            PaneControls.setText(lockStatusHwnd, TeamGate.reason + " (Lock pane).")
-        }
         PaneControls.setText(errorHwnd, snapshot.error ?? snapshot.statusLine)
 
-        let gateOpen = snapshot.lockOn && snapshot.gitFound && !busy
+        let gateOpen = snapshot.gitFound && !busy
         PaneControls.enable(createBtnHwnd, gateOpen)
         PaneControls.enable(joinBtnHwnd, gateOpen)
         let inTeam = snapshot.selectedID != nil || !snapshot.teams.isEmpty
@@ -389,7 +379,6 @@ public final class TeamPane: SettingsPane {
         snap.displayName = ProcessInfo.processInfo.environment["USERNAME"] ?? "Windows"
         snap.gitPath = GitLocator.locate()
         snap.gitFound = snap.gitPath != nil
-        snap.lockOn = TeamGate.check(lockEnabled: WinLockStore.load().enabled) == .allowed
         let paths = TeamPaths.standard()
         let secrets = FileSecrets(dir: paths.secretsDir)
         snap.kid = secrets.read(TeamClient.identitySecretName).flatMap { try? TeamIdentity(secret: $0) }?.kid

@@ -18,8 +18,10 @@ final class MirrorDescriptorTests: XCTestCase {
         XCTAssertTrue(text.contains(#""leases":true"#))
         #if os(macOS)
         XCTAssertEqual(d.platform, "macos")
-        #else
+        #elseif os(Linux)
         XCTAssertEqual(d.platform, "linux")
+        #else
+        XCTAssertEqual(d.platform, "other")
         #endif
         XCTAssertEqual(d.machineId, "m1")
         XCTAssertEqual(MirrorTransport.wellKnownPath, "/.well-known/infinitus")

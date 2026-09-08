@@ -314,6 +314,25 @@ public actor OwnedSessions {
         }
     }
 
+    /// `kill(pid, 0)` where kill(2) exists; the query-only OpenProcess
+    /// check on Windows (ClaudeSessions' own liveness test).
+    static func defaultAlive(_ pid: Int32) -> Bool {
+        #if os(Windows)
+        ClaudeSessions.isAlive(pid)
+        #else
+        kill(pid, 0) == 0
+        #endif
+    }
+
+    /// SIGTERM where kill(2) exists. Windows has no signal interface to a
+    /// foreign pid; the sweep still forgets every ledger entry, and the
+    /// daemon's own children were stopped through `stop`'s terminate path.
+    static func defaultSignal(_ pid: Int32) -> Void {
+        #if !os(Windows)
+        kill(pid, SIGTERM)
+        #endif
+    }
+
     /// Launch-time cleanup (#151 follow-up): a headless child survives a
     /// SIGKILL of the app (no PDEATHSIG on Darwin), so the NEXT launch
     /// reconciles last run's ledger against the live roster. A pid is only
