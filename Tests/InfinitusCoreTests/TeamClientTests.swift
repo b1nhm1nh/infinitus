@@ -11,22 +11,17 @@ final class TeamClientTests: XCTestCase {
 
     override func tearDownWithError() throws { try? FileManager.default.removeItem(at: scratch) }
 
-    func makeRemote() throws -> String {
-        let bare = scratch.appendingPathComponent("remote.git")
-        let p = Process()
-        p.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-        p.arguments = ["git", "init", "--bare", "-q", bare.path]
-        try p.run(); p.waitUntilExit()
-        return "file://" + bare.path
-    }
+    func makeRemote() throws -> String { try TeamGitSupport.makeRemote(in: scratch) }
 
     /// One "machine": its own paths and secrets.
     /// `refs/remotes/origin/*` of a store dir, sorted.
     func remoteBranches(in storeDir: URL) -> [String] {
+        guard let git = try? TeamGitSupport.gitExecutable() else { return [] }
         let p = Process()
-        p.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-        p.arguments = ["git", "--git-dir", storeDir.appendingPathComponent("store.git").path,
-                       "for-each-ref", "--format=%(refname:short)", "refs/remotes/origin/"]
+        p.executableURL = git
+        p.arguments = TeamGitSupport.gitArguments([
+            "--git-dir", storeDir.appendingPathComponent("store.git").path,
+            "for-each-ref", "--format=%(refname:short)", "refs/remotes/origin/"])
         let out = Pipe(); p.standardOutput = out
         try? p.run(); p.waitUntilExit()
         return String(decoding: out.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
@@ -42,9 +37,7 @@ final class TeamClientTests: XCTestCase {
     /// behind — a config-less directory `teamIDs()` ignores but the user's
     /// disk keeps (one was still on the 2026-09-06 machine).
     func testAFailedCreateLeavesNoHalfMadeTeamBehind() throws {
-        #if os(Windows)
-        try XCTSkipIf(true, "Team git shellouts / POSIX file modes are not ported to Windows yet")
-        #endif
+        try TeamGitSupport.skipIfNoGit()
         let (paths, secrets) = machine("solo")
         XCTAssertThrowsError(try TeamClient.create(name: "Papaya", remote: "file:///nonexistent/nope.git", token: "t0ken",
                                                    paths: paths, secrets: secrets, now: 1_000))
@@ -60,9 +53,7 @@ final class TeamClientTests: XCTestCase {
     /// history — and a member joining later would fetch a store nobody
     /// meant to share.
     func testCreateRefusesARemoteThatAlreadyHasContent() throws {
-        #if os(Windows)
-        try XCTSkipIf(true, "Team git shellouts / POSIX file modes are not ported to Windows yet")
-        #endif
+        try TeamGitSupport.skipIfNoGit()
         let remote = try makeRemote()
         // Seed the bare repo through the store adapter itself: one commit
         // on the `roster` branch is all "not empty" takes.
@@ -94,6 +85,7 @@ final class TeamClientTests: XCTestCase {
     }
 
     func testCreateRequestApprovePublishRead() throws {
+        try TeamGitSupport.skipIfNoGit()
         let remote = try makeRemote()
         let (lp, ls) = machine("leader")
         let (mp, ms) = machine("member")
@@ -195,6 +187,7 @@ final class TeamClientTests: XCTestCase {
     /// roster a joiner accepts first must carry the code leader's own
     /// signature — not merely list them.
     func testAForgedFirstRosterIsRefusedAndNothingIsPersisted() throws {
+        try TeamGitSupport.skipIfNoGit()
         let remote = try makeRemote()
         let (lp, ls) = machine("leader")
         let (jp, js) = machine("joiner")
@@ -350,6 +343,7 @@ final class TeamClientTests: XCTestCase {
     /// request under someone else's kid, and a leader's kid is never
     /// re-approved as a member.
     func testAnImpostorRequestUnderAnotherKidIsIgnored() throws {
+        try TeamGitSupport.skipIfNoGit()
         let remote = try makeRemote()
         let (lp, ls) = machine("leader")
         let (ep, es) = machine("eve")
@@ -391,9 +385,7 @@ final class TeamClientTests: XCTestCase {
     /// store never accepted must leave none of it behind — nor a
     /// config-less team dir.
     func testARefusedJoinLeavesNoCredentialOnDisk() throws {
-        #if os(Windows)
-        try XCTSkipIf(true, "Team git shellouts / POSIX file modes are not ported to Windows yet")
-        #endif
+        try TeamGitSupport.skipIfNoGit()
         let remote = try makeRemote()
         let (lp, ls) = machine("leader")
         let leader = try TeamClient.create(name: "Papaya", remote: remote, token: "t0ken", paths: lp, secrets: ls, now: 1_000)

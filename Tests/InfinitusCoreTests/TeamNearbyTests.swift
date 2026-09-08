@@ -9,6 +9,14 @@ final class TeamNearbyTests: XCTestCase {
         try FileManager.default.createDirectory(at: scratch, withIntermediateDirectories: true)
     }
 
+    /// LAN discovery is macOS/Linux-only (see phase 02). Windows advertise
+    /// is one-way and carries no TXT, so nearby stays deferred.
+    func skipOffPOSIX() throws {
+        #if os(Windows)
+        try XCTSkipIf(true, "LAN discovery is macOS/Linux-only (see phase 02)")
+        #endif
+    }
+
     override func tearDownWithError() throws { try? FileManager.default.removeItem(at: scratch) }
 
     func makeRemote(_ name: String = "remote.git") throws -> String {
@@ -37,6 +45,7 @@ final class TeamNearbyTests: XCTestCase {
     }
 
     func testLocalStandingFollowsTheRosterAndTheSwitch() throws {
+        try skipOffPOSIX()
         let remote = try makeRemote()
         let (lp, ls) = machine("leader")
         let leader = try TeamClient.create(name: "Papaya", remote: remote, token: nil, paths: lp, secrets: ls, now: 1_000)
@@ -58,6 +67,7 @@ final class TeamNearbyTests: XCTestCase {
     }
 
     func testRoutesAnswerOnlyWhenDiscoverable() throws {
+        try skipOffPOSIX()
         let remote = try makeRemote()
         let (lp, ls) = machine("leader")
         let leader = try TeamClient.create(name: "Papaya", remote: remote, token: nil, paths: lp, secrets: ls, now: 1_000)
@@ -82,6 +92,7 @@ final class TeamNearbyTests: XCTestCase {
     }
 
     func testRequestOverTheLanLandsInTheRequestsBranch() throws {
+        try skipOffPOSIX()
         let remote = try makeRemote()
         let (lp, ls) = machine("leader")
         let (jp, js) = machine("joiner")
@@ -146,6 +157,7 @@ final class TeamNearbyTests: XCTestCase {
     /// 403, and the store is never touched (nothing pending, nothing on
     /// the branch).
     func testRequestRefusedWhenLeaderHasClosedRequests() throws {
+        try skipOffPOSIX()
         let remote = try makeRemote()
         let (lp, ls) = machine("leader")
         let (jp, js) = machine("joiner")
@@ -177,6 +189,7 @@ final class TeamNearbyTests: XCTestCase {
     /// member's Mac holds the team's write credential too, so the check
     /// must not be leader-only.
     func testRequestRefusedWhenMemberHasClosedRequests() throws {
+        try skipOffPOSIX()
         let remote = try makeRemote()
         let (lp, ls) = machine("leader")
         let (mp, ms) = machine("member")
@@ -213,6 +226,7 @@ final class TeamNearbyTests: XCTestCase {
     }
 
     func testClientVerifiesTheLeaderKeyBeforeSendingAndWritesTheBranchWhenItHoldsTheCredential() throws {
+        try skipOffPOSIX()
         let remote = try makeRemote()
         let (lp, ls) = machine("leader")
         let (jp, js) = machine("joiner")
@@ -248,6 +262,7 @@ final class TeamNearbyTests: XCTestCase {
     }
 
     func testInviteRouteKeepsASealedInviteAndRefusesAnythingItCannotOpen() throws {
+        try skipOffPOSIX()
         let remote = try makeRemote()
         let (lp, ls) = machine("leader")
         let (jp, js) = machine("joiner")
@@ -326,6 +341,7 @@ final class TeamNearbyTests: XCTestCase {
     /// else's) could otherwise present a genuine-looking "Loc invites
     /// you to Papaya".
     func testOpenInviteRejectsACodeThatDoesNotMatchTheInvitesClaims() throws {
+        try skipOffPOSIX()
         let remote = try makeRemote()
         let (lp, ls) = machine("leader")
         let (jp, js) = machine("joiner")
@@ -439,6 +455,7 @@ final class TeamNearbyTests: XCTestCase {
     }
 
     func testLeaderInvitesAPeerAndTheOpenedLinkJoinsAndAutoApproves() throws {
+        try skipOffPOSIX()
         let remote = try makeRemote()
         let (lp, ls) = machine("leader")
         let (jp, js) = machine("joiner")
@@ -495,6 +512,7 @@ final class TeamNearbyTests: XCTestCase {
     /// accepted, so a refused POST must drop the nonce it already
     /// committed rather than leave it dangling in the leader's book.
     func testClientInviteDropsTheNonceWhenThePeerRefuses() throws {
+        try skipOffPOSIX()
         let remote = try makeRemote()
         let (lp, ls) = machine("leader")
         let leader = try TeamClient.create(name: "Papaya", remote: remote, token: nil, paths: lp, secrets: ls, now: 1_000)

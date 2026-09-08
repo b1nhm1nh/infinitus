@@ -136,6 +136,7 @@ final class MachineHealthTests: XCTestCase {
     }
 
     func testResidueRulesAreOwnerDead() throws {
+        try skipOffPOSIX()
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("residue-\(UUID().uuidString)")
         let socks = dir.appendingPathComponent("cc-socks"); let envs = dir.appendingPathComponent("session-env"); let tmp = dir.appendingPathComponent("T")
         for d in [socks, envs, tmp] { try FileManager.default.createDirectory(at: d, withIntermediateDirectories: true) }

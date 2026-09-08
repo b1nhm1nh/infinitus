@@ -7,14 +7,11 @@ final class TeamAggregatesTests: XCTestCase {
         scratch = FileManager.default.temporaryDirectory.appendingPathComponent("aggr-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: scratch, withIntermediateDirectories: true)
     }
+
+    func skipIfNoGit() throws { try TeamGitSupport.skipIfNoGit() }
     override func tearDownWithError() throws { try? FileManager.default.removeItem(at: scratch) }
 
-    func makeRemote() throws -> String {
-        let bare = scratch.appendingPathComponent("remote.git")
-        let p = Process(); p.executableURL = URL(fileURLWithPath: "/usr/bin/env"); p.arguments = ["git", "init", "--bare", "-q", bare.path]
-        try p.run(); p.waitUntilExit()
-        return "file://" + bare.path
-    }
+    func makeRemote() throws -> String { try TeamGitSupport.makeRemote(in: scratch) }
     func machine(_ name: String) -> (TeamPaths, FileSecrets) {
         let paths = TeamPaths(base: scratch.appendingPathComponent(name)); return (paths, FileSecrets(dir: paths.secretsDir))
     }
@@ -69,6 +66,7 @@ final class TeamAggregatesTests: XCTestCase {
     }
 
     func testLeaderPublishesAndMemberReadsAggregates() throws {
+        try skipIfNoGit()
         let (leader, member) = try team()
         let now = Date(timeIntervalSince1970: 1_788_609_600)
         let roster = leader.roster!.doc
@@ -85,6 +83,7 @@ final class TeamAggregatesTests: XCTestCase {
     }
 
     func testAggregatesFromANonLeaderAreIgnored() throws {
+        try skipIfNoGit()
         let (leader, member) = try team()
         // A member with store access writes an envelope under the leaders' path.
         let forged = try Envelope.seal(Data("{\"schema\":1}".utf8), kind: TeamKinds.aggregates, from: member.identity,
@@ -96,6 +95,7 @@ final class TeamAggregatesTests: XCTestCase {
     }
 
     func testPolicyOffHidesRequestsAndTheCode() throws {
+        try skipIfNoGit()
         let (leader, member) = try team()
         XCTAssertNoThrow(try leader.code(expiresIn: 60, now: 3_000))
         try leader.setPolicy(TeamRoster.Policy(requests: "off", membersSeeEachOther: true))

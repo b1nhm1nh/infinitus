@@ -16,3 +16,4 @@ ios/InfinitusMobile/InfinitusMobile.entitlements
 ios/InfinitusMobileShare/Info.plist
 ios/InfinitusMobileShare/InfinitusMobileShare.entitlements
 ios/InfinitusMobileWidgets/InfinitusMobileWidgets.entitlements
+.build-*/

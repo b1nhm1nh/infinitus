@@ -9,15 +9,12 @@ final class TeamMembershipTests: XCTestCase {
         try FileManager.default.createDirectory(at: scratch, withIntermediateDirectories: true)
     }
 
+    func skipIfNoGit() throws { try TeamGitSupport.skipIfNoGit() }
+
     override func tearDownWithError() throws { try? FileManager.default.removeItem(at: scratch) }
 
     func makeRemote(_ name: String = "remote.git") throws -> String {
-        let bare = scratch.appendingPathComponent(name)
-        let p = Process()
-        p.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-        p.arguments = ["git", "init", "--bare", "-q", bare.path]
-        try p.run(); p.waitUntilExit()
-        return "file://" + bare.path
+        try TeamGitSupport.makeRemote(in: scratch, name: name)
     }
 
     func machine(_ name: String) -> (TeamPaths, FileSecrets) {
@@ -125,6 +122,7 @@ final class TeamMembershipTests: XCTestCase {
     // MARK: roster edits over the store
 
     func testPromoteAndRemove() throws {
+        try skipIfNoGit()
         let (leader, member, remote) = try team()
         // A second member, to be promoted.
         let (cp, cs) = machine("carol")
@@ -170,6 +168,7 @@ final class TeamMembershipTests: XCTestCase {
     /// readable; those sealed after are ignored, and once the member
     /// fetches the roster it cannot publish at all.
     func testRemovedMembersLaterEnvelopesAreIgnored() throws {
+        try skipIfNoGit()
         let (leader, member, _) = try team()
         let before = try member.publish(kind: "stats", path: "days/2026-09-01.json", plaintext: Data("{\"schema\":1}".utf8),
                                         audience: .leaders, now: 1_030)
@@ -193,7 +192,7 @@ final class TeamMembershipTests: XCTestCase {
     /// the removal — the earlier one (sealed AT the removal instant)
     /// stays readable, the later one does not.
     func testTheEnvelopeSealedAtTheRemovalInstantIsStillReadable() throws {
-        try skipOffPOSIX()
+        try skipIfNoGit()
         let (leader, member, _) = try team()
         let at = try member.publish(kind: TeamKinds.stats, path: "days/2026-09-01.json",
                                     plaintext: Data("{\"schema\":1}".utf8), audience: .leaders, now: 1_040)
@@ -210,6 +209,7 @@ final class TeamMembershipTests: XCTestCase {
     /// replayed under another member's branch, or under a path whose
     /// shape names a different kind, is ignored.
     func testEnvelopesAreCheckedAgainstTheirPath() throws {
+        try skipIfNoGit()
         let (leader, member, remote) = try team()
         let (cp, cs) = machine("carol")
         let carol = try TeamClient.request(code: try leader.code(expiresIn: 600, now: 1_030), name: "Carol", devices: [],
@@ -241,6 +241,7 @@ final class TeamMembershipTests: XCTestCase {
     }
 
     func testBatchedPublishIsOnePushAndUnpublishDeletes() throws {
+        try skipIfNoGit()
         let (leader, member, _) = try team()
         let paths = try member.publish([
             TeamClient.PublishItem(kind: "now", path: "now.json", plaintext: Data("n".utf8), audience: .leaders),
@@ -258,6 +259,7 @@ final class TeamMembershipTests: XCTestCase {
     // MARK: plan 5 — founder name, leave
 
     func testCreateNamesTheFounder() throws {
+        try skipIfNoGit()
         let remote = try makeRemote()
         let (lp, ls) = machine("leader")
         let leader = try TeamClient.create(name: "Papaya", remote: remote, token: nil, leaderName: "Ann", paths: lp, secrets: ls, now: 1_000)
@@ -266,6 +268,7 @@ final class TeamMembershipTests: XCTestCase {
     }
 
     func testLeaveDeletesOwnFilesAndLeavesANote() throws {
+        try skipIfNoGit()
         let (leader, member, _) = try team()
         try member.publish(kind: TeamKinds.now, path: "now.json",
                            plaintext: try CanonicalJSON.encode(TeamDocs.Now(at: 1, sessions: [], fleets: [], blockers: [], crashesToday: 0, sharesTo: [:])),
@@ -280,6 +283,7 @@ final class TeamMembershipTests: XCTestCase {
     }
 
     func testLeaveSyncsFirstSoAnotherDeviceOfMineIsNotLeftBehind() throws {
+        try skipIfNoGit()
         let remote = try makeRemote()
         let (lp, ls) = machine("leader"), (mp, ms) = machine("member")
         let leader = try TeamClient.create(name: "Papaya", remote: remote, token: nil, paths: lp, secrets: ls, now: 1_000)
@@ -311,7 +315,7 @@ final class TeamMembershipTests: XCTestCase {
     /// read. A garbled blob is counted and skipped, and nothing is
     /// decrypted just to list it.
     func testReadableScanSkipsUnreadableBlobsAndCountsThem() throws {
-        try skipOffPOSIX()
+        try skipIfNoGit()
         let (leader, member, remote) = try team()
         let good = try member.publish(kind: TeamKinds.now, path: "now.json", plaintext: Data("{}".utf8),
                                       audience: .leaders, now: 1_030)
@@ -342,7 +346,7 @@ final class TeamMembershipTests: XCTestCase {
     /// Spec §6.5: "Member key rotation is offered so even the member
     /// can't reopen old envelopes."
     func testLeaveCanRotateThisMachinesIdentity() throws {
-        try skipOffPOSIX()
+        try skipIfNoGit()
         let remote = try makeRemote()
         let (lp, ls) = machine("leader"), (mp, ms) = machine("member")
         let leader = try TeamClient.create(name: "Papaya", remote: remote, token: nil, paths: lp, secrets: ls, now: 1_000)
@@ -372,7 +376,7 @@ final class TeamMembershipTests: XCTestCase {
     /// another team on the same Mac knows the old kid would silently
     /// unmake that membership.
     func testRotationIsRefusedWhileAnotherTeamOnThisMacKnowsTheKid() throws {
-        try skipOffPOSIX()
+        try skipIfNoGit()
         let remote = try makeRemote()
         let (lp, ls) = machine("leader"), (mp, ms) = machine("member")
         let leader = try TeamClient.create(name: "Papaya", remote: remote, token: nil, paths: lp, secrets: ls, now: 1_000)

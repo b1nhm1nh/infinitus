@@ -26,7 +26,8 @@ final class NineRouterEngineTests: XCTestCase {
     {"plan":"Claude Code","extraUsage":null,"quotas":{
       "session (5h)":{"used":63.2,"total":100,"remaining":36.8,"remainingPercentage":36.8,"resetAt":"2026-09-03T10:00:00.000Z","unlimited":false},
       "weekly (7d)":{"used":91,"total":100,"remaining":9,"remainingPercentage":9,"resetAt":"2026-09-08T10:00:00.000Z","unlimited":false},
-      "weekly opus (7d)":{"used":40,"total":100,"remaining":60,"remainingPercentage":60,"resetAt":"2026-09-08T10:00:00.000Z","unlimited":false}
+      "weekly opus (7d)":{"used":40,"total":100,"remaining":60,"remainingPercentage":60,"resetAt":"2026-09-08T10:00:00.000Z","unlimited":false},
+      "weekly fable (7d)":{"used":0,"total":100,"remaining":100,"remainingPercentage":100,"resetAt":"2026-09-08T10:00:00.000Z","unlimited":false}
     }}
     """
 
@@ -202,7 +203,9 @@ final class NineRouterEngineTests: XCTestCase {
         if case .unavailable = NineRouterUsage.parse(Data("garbage".utf8)) {} else { XCTFail("garbage is unavailable") }
         if case .expired = NineRouterUsage.parse(Data(#"{"message":"OAuth token expired"}"#.utf8)) {} else { XCTFail("expected expired") }
         if case .ok(let u, _) = NineRouterUsage.parse(Data(Self.usage.utf8)) {
-            XCTAssertEqual(u?.scoped?.map(\.name), ["Opus"])
+            // Most-burned first: Opus 40%, then Fable's fresh 0% — the
+            // per-model weekly rows every Claude connection carries now.
+            XCTAssertEqual(u?.scoped?.map(\.name), ["Opus", "Fable"])
         } else { XCTFail("expected ok") }
     }
 

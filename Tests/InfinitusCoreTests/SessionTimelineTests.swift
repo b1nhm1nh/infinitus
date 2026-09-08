@@ -7,7 +7,9 @@ final class SessionTimelineTests: XCTestCase {
     func entries(_ name: String) throws -> [[String: Any]] {
         let url = Bundle.module.url(forResource: "Fixtures/timeline/\(name)", withExtension: "jsonl")!
         let text = try String(contentsOf: url, encoding: .utf8)
-        return text.split(separator: "\n").compactMap { SessionFeedReader.decodeLine(String($0)) }
+        // autocrlf checkouts hand the fixture over with CRLF endings —
+        // a trailing \r must not ride into the decoder (EventFeedTests).
+        return text.split(whereSeparator: \.isNewline).compactMap { SessionFeedReader.decodeLine(String($0)) }
     }
     func lines(_ raw: [String]) -> [[String: Any]] { raw.compactMap(SessionFeedReader.decodeLine) }
     func build(_ e: [[String: Any]], status: String? = "idle", statusUpdatedAt: Date? = nil,

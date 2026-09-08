@@ -4,17 +4,17 @@ import XCTest
 final class TeamControlStoreTests: XCTestCase {
     var scratch: URL!
     override func setUpWithError() throws {
+        try TeamGitSupport.skipIfNoGit()
         scratch = FileManager.default.temporaryDirectory.appendingPathComponent("teamcontrolstore-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: scratch, withIntermediateDirectories: true)
     }
-    override func tearDownWithError() throws { try? FileManager.default.removeItem(at: scratch) }
-
-    func makeRemote() throws -> String {
-        let bare = scratch.appendingPathComponent("remote.git")
-        let p = Process(); p.executableURL = URL(fileURLWithPath: "/usr/bin/env"); p.arguments = ["git", "init", "--bare", "-q", bare.path]
-        try p.run(); p.waitUntilExit()
-        return "file://" + bare.path
+    override func tearDownWithError() throws {
+        // A skipped setUp never assigned scratch.
+        guard scratch != nil else { return }
+        try? FileManager.default.removeItem(at: scratch)
     }
+
+    func makeRemote() throws -> String { try TeamGitSupport.makeRemote(in: scratch) }
     func machine(_ name: String) -> (TeamPaths, TeamSecrets) {
         let paths = TeamPaths(base: scratch.appendingPathComponent(name))
         return (paths, FileSecrets(dir: paths.secretsDir))

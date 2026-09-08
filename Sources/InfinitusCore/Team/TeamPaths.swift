@@ -17,6 +17,14 @@ public struct TeamPaths {
         #if os(macOS)
         return TeamPaths(base: URL(fileURLWithPath: home)
             .appendingPathComponent("Library/Application Support/Infinitus/teams"))
+        #elseif os(Windows)
+        // Roaming user data, matching the rest of the Windows app
+        // (`%APPDATA%\Infinitus\…`). XDG under `$HOME` is the Linux answer.
+        let roaming = environment["APPDATA"].flatMap { $0.isEmpty ? nil : $0 }
+            ?? (home + "\\AppData\\Roaming")
+        return TeamPaths(base: URL(fileURLWithPath: roaming)
+            .appendingPathComponent("Infinitus")
+            .appendingPathComponent("teams"))
         #else
         let data = environment["XDG_DATA_HOME"].flatMap { $0.isEmpty ? nil : $0 }
             ?? (home + "/.local/share")

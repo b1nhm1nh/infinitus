@@ -9,7 +9,15 @@ public enum ClaudeLocator {
     public static let minimumVersion = [2, 1, 259]
 
     public static func defaultCandidates(home: String = NSHomeDirectory()) -> [String] {
+        #if os(Windows)
+        // npm's global shim is a .cmd; a uv/cargo install is a .exe.
+        [
+            "\(home)\\.local\\bin\\claude.exe",
+            "\(home)\\AppData\\Roaming\\npm\\claude.cmd",
+        ]
+        #else
         ["\(home)/.local/bin/claude", "/opt/homebrew/bin/claude", "/usr/local/bin/claude"]
+        #endif
     }
 
     #if !os(iOS)
@@ -23,16 +31,36 @@ public enum ClaudeLocator {
         return found.isEmpty ? nil : found
     }
 
-    /// One `command -v claude` in the user's login shell — cached, it costs
-    /// a shell startup. Sync: `locate` runs from plain GUI code.
-    public static let loginShellLookup: () -> String = { captureSync("/bin/zsh", ["-lc", "command -v claude"]) ?? "" }
+    /// Last-resort PATH lookup for `claude`. Sync: `locate` runs from
+    /// plain GUI code. A login shell on POSIX (a GUI app's PATH misses
+    /// version managers); `cmd /c where` on Windows.
+    public static let loginShellLookup: () -> String = {
+        #if os(Windows)
+        // `where` is a cmd builtin; Process cannot launch a builtin.
+        // ProcessInfo's env lookup is case-sensitive — Windows stores COMSPEC.
+        let cmd = ProcessInfo.processInfo.environment["COMSPEC"]
+            ?? "C:\\Windows\\System32\\cmd.exe"
+        let raw = (captureSync(cmd, ["/c", "where", "claude"]) ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        // `where` lists every match; locate wants one path.
+        return raw.split(whereSeparator: \.isNewline).first.map(String.init) ?? ""
+        #else
+        return captureSync("/bin/zsh", ["-lc", "command -v claude"]) ?? ""
+        #endif
+    }
 
     /// The PATH a login shell sees. An owned session's Bash tool needs
     /// `gh`, `node`, `swift`… and the bundled app inherits none of them;
     /// a terminal-started session gets them for free. Empty where there
     /// is no zsh (Linux CI) — callers fall back to the fixed prefixes.
+    /// Windows has no login shell: the daemon's own PATH is already the user's.
     public static func loginShellPath() async -> String {
-        (await capture("/bin/zsh", ["-lc", "echo $PATH"]) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        #if os(Windows)
+        // No login-shell concept; a Windows daemon already inherited PATH.
+        return ProcessInfo.processInfo.environment["PATH"] ?? ""
+        #else
+        return (await capture("/bin/zsh", ["-lc", "echo $PATH"]) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        #endif
     }
 
     /// `executable arguments…` → its stdout, nil when it won't launch. The
