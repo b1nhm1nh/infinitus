@@ -1,12 +1,6 @@
 import XCTest
 @testable import InfinitusCore
 
-    func skipOffPOSIX() throws {
-        #if os(Windows)
-        try XCTSkipIf(true, "Team git shellouts / POSIX modes are not ported to Windows yet")
-        #endif
-    }
-
 final class MachineHealthTests: XCTestCase {
     func testWarningKindsMatchTheMutes() {
         XCTAssertEqual(MachineReport.warningKind("new hook: semgrep on PostToolUse (plugin)"), .hooks)
