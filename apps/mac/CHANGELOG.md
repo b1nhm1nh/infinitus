@@ -22,6 +22,7 @@ publishes the matching section as the GitHub release body.
 - Settings › Infinitus no longer describes terminal sessions or Team: the Lock page's team refusal is gone, the relaunch dialog and the Accounts sign-ins speak of threads and profiles, and the Priority page keeps its rows when the Mac renames that section (#1041).
 - The Best-of card shows what each member has written so far — files changed, lines added and removed — next to its turns and time (#269).
 - A babysit that stopped at its round cap now shows in the sidebar's Needs attention section as "Babysit" until you send again, and the composer's toggle reads "Babysit stopped" (#269).
+- Settings › Updates has a Nightly track — last night's build of everything from main — beside Release, and you can switch between the two either way (#1042).
 
 ## 0.5.0-alpha.7
 
