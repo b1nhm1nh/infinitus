@@ -8,6 +8,8 @@ publishes the matching section as the GitHub release body.
 ## Unreleased
 
 ### Mac
+- The Slack webhook and Telegram bot channels are gone: the Mac's pushes reach Notification Center and the phone only.
+- The Linux tray no longer posts its pushes to Slack or Telegram; the desktop notification stays.
 - A terminal session's permission prompts can no longer be routed to the desktop or the web; they stay in the terminal.
 - A thread phase alert sent from the desktop always reaches every channel again: the switches to skip the Mac's own banner or its Slack post are gone.
 - The Team features are gone (shared fleets, member roster, join codes, nearby discovery, team control): Infinitus is about threads now.
