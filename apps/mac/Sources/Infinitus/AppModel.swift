@@ -605,6 +605,9 @@ final class AppModel: ObservableObject {
             applyForkTunnel()
         }
     }
+    /// How a fork-server publish is probed before it is followed (#1137);
+    /// a stored property so a test can answer without a socket.
+    var forkServerProbe: ForkServerProbe.Transport = ForkServerProbe.urlSession
     /// The fork's stable hostname on the named tunnel (#650): when set
     /// and the companion's named tunnel is running, the fork rides that
     /// tunnel as a second ingress rule instead of minting a fresh
@@ -1862,6 +1865,19 @@ final class AppModel: ObservableObject {
 
     private func logMirrorInput(_ icon: String, _ text: String) {
         logEvent("other", icon: icon, text)
+    }
+
+    /// Guards a fork-server publish that would move the target (#1137): the
+    /// quick tunnel and the CLI's credential origin only follow a port that
+    /// serves `/.well-known/t3/environment`, and only when the port they would
+    /// leave still does. `ForkServerProbe.verdict` holds the rule; this adds
+    /// the work-log line, so a refusal is on the record rather than inferred.
+    func acceptsForkServerPublish(port: Int) async -> Bool {
+        let verdict = await ForkServerProbe.verdict(newPort: port, currentPort: forkServerPort,
+                                                   using: forkServerProbe)
+        if verdict == .accept { return true }
+        logMirrorInput("⚠️", ForkServerProbe.refusalLine(port: port))
+        return false
     }
 
     /// Whether this instance may open a door onto this Mac at all — the
