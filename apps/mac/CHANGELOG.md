@@ -11,6 +11,9 @@ publishes the matching section as the GitHub release body.
 - The Team features are gone (shared fleets, member roster, join codes, nearby discovery, team control): Infinitus is about threads now.
 - An account row is flagged stale only when swapd's last fetch for it actually failed, and the tooltip then names the error.
 
+### Desktop
+- A babysit that stopped at its round cap now shows in the sidebar's Needs attention section as "Babysit" until you send again, and the composer's toggle reads "Babysit stopped" (#269).
+
 ## 0.5.0-alpha.7
 
 ### Mac
