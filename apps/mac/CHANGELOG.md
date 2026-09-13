@@ -7,6 +7,9 @@ publishes the matching section as the GitHub release body.
 
 ## Unreleased
 
+### Desktop
+- Worktree branches are named `infinitus/…` instead of `t3code/…`; branches made before this keep working and are still renamed after the first turn.
+
 ### Mac
 - The Claude Code plugin (its hooks, MCP server and slash commands), `infinitusctl plugin` / `mcp` and the hook verbs are gone: Infinitus no longer watches terminal sessions.
 - "Allow for this session" and the session permission mode switch are gone with the plugin.
