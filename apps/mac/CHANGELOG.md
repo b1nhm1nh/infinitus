@@ -19,6 +19,7 @@ publishes the matching section as the GitHub release body.
 - `infinitusctl 9router` reads the 9Router base URL, whether a password is stored and the error its last refresh failed with.
 - A 5-hour reset that lands after midnight shows the time alone — the date only appears past a day out.
 - Rows an engine could not refresh say how old their numbers are instead of reading as current, on every engine rather than swapd alone.
+- The desktop's thread card can be shown on the phone's lock screen: the Mac starts it, redraws it as threads move and ends it when the desktop says so (#1047).
 
 
 ## 0.5.0-alpha.8
