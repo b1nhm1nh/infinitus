@@ -7,6 +7,8 @@ publishes the matching section as the GitHub release body.
 
 ## Unreleased
 
+### Mac
+- An account row is flagged stale only when swapd's last fetch for it actually failed, and the tooltip then names the error.
 
 ## 0.5.0-alpha.7
 
