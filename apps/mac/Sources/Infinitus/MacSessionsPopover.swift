@@ -27,7 +27,6 @@ struct MacSessionsPopover: View {
             // the Infinitus desktop app is where a session opens.
             SessionListCard(live: live, progress: model.sessionProgress, births: model.sessionBirths)
             Divider()
-            CheckpointsSection(model: model, live: live)
             Divider()
             StartSessionSection(model: model)
             Divider()

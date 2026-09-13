@@ -54,8 +54,6 @@ final class ControlProtocolTests: XCTestCase {
         XCTAssertEqual(ControlCommand.named("profile-set")?.args, ["<name>"])
         XCTAssertEqual(ControlCommand.named("profile-remove")?.effect, .write)
         XCTAssertTrue(ControlCommand.named("status")?.replyShape.contains("forkTunnel:{enabled, port, state, url?, hostname?}") ?? false)
-        XCTAssertEqual(ControlCommand.named("checkpoint-restore")?.effect, .destructive)
-        XCTAssertEqual(ControlCommand.named("checkpoint-diff")?.args, ["<pid|name>", "<n>", "[m]"])
         XCTAssertEqual(ControlCommand.named("prefer")?.requires, "prefer")
         XCTAssertEqual(ControlCommand.named("lock-status")?.effect, .read)
         XCTAssertEqual(ControlCommand.named("signin-begin")?.effect, .human)
@@ -65,7 +63,6 @@ final class ControlProtocolTests: XCTestCase {
         XCTAssertTrue(ControlCommand.named("signin-code")?.summary.contains("stdin") ?? false)
         XCTAssertEqual(ControlCommand.named("signin-cancel")?.effect, .write)
         XCTAssertEqual(ControlCommand.named("lock-status")?.args, [])
-        XCTAssertEqual(ControlCommand.named("session-mode")?.effect, .write)
         XCTAssertEqual(ControlCommand.named("resume-session")?.options, ["--fork"])
         XCTAssertEqual(ControlCommand.named("show")?.args, ["popout|settings"])
         XCTAssertEqual(ControlCommand.named("hide")?.args, ["popout|settings"])
@@ -132,7 +129,7 @@ final class ControlProtocolTests: XCTestCase {
         let secret = ControlCommand.all.filter { $0.stdin == "secret" }.map(\.name)
         XCTAssertEqual(secret, ["aws-login-callback", "aws-login-code", "gcloud-login-code", "signin-code", "proxy-key", "9router-password", "desktop-credential"])
         let payload = ControlCommand.all.filter { $0.stdin == "payload" }.map(\.name)
-        XCTAssertEqual(Set(payload), ["send", "approve", "event", "push"])
+        XCTAssertEqual(Set(payload), ["send", "push"])
         XCTAssertNil(ControlCommand.all.first { $0.name == "status" }?.stdin)
     }
 
