@@ -16,6 +16,7 @@ publishes the matching section as the GitHub release body.
 - `infinitusctl`'s desktop verbs — projects, threads, `thread new`/`send`/`show` — work again instead of failing with "unreadable reply".
 - `infinitusctl 9router` reads the 9Router base URL, whether a password is stored and the error its last refresh failed with.
 - A 5-hour reset that lands after midnight shows the time alone — the date only appears past a day out.
+- Rows an engine could not refresh say how old their numbers are instead of reading as current, on every engine rather than swapd alone.
 
 
 ## 0.5.0-alpha.8
