@@ -46,7 +46,7 @@ function catalogEntry(
   target: ConnectionTarget,
   profile: Option.Option<ConnectionProfile> = Option.none(),
 ): ConnectionCatalogEntry {
-  return { target, profile };
+  return { target, profile, enabled: true };
 }
 
 function collectingTracer(spans: Array<string>): Tracer.Tracer {

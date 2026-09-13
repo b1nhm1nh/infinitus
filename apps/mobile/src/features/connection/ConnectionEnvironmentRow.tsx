@@ -11,6 +11,7 @@ import Animated, { FadeIn, FadeOut, LinearTransition } from "react-native-reanim
 
 import { AppText as Text, AppTextInput as TextInput } from "../../components/AppText";
 import { EnvironmentMachineSymbol } from "../../components/EnvironmentMachineSymbol";
+import { ThemedSwitch } from "../../components/ThemedSwitch";
 import { cn } from "../../lib/cn";
 import { copyTextWithHaptic } from "../../lib/copyTextWithHaptic";
 import { useEnvironmentPresentation } from "../../state/presentation";
@@ -20,6 +21,9 @@ import { serverEnvironment } from "../../state/server";
 import { ConnectionStatusDot } from "./ConnectionStatusDot";
 
 function connectionStatusLabel(environment: ConnectedEnvironmentSummary): string | null {
+  if (!environment.isEnabled) {
+    return "Off";
+  }
   return connectionStatusText({
     phase: environment.connectionState,
     error: environment.connectionError,
@@ -33,6 +37,7 @@ export function ConnectionEnvironmentRow(props: {
   readonly onToggle: () => void;
   readonly onReconnect: (environmentId: EnvironmentId) => void;
   readonly onRemove: (environmentId: EnvironmentId) => void;
+  readonly onSetEnabled: (environmentId: EnvironmentId, enabled: boolean) => void;
   readonly onUpdate: (
     environmentId: EnvironmentId,
     updates: { readonly label: string; readonly displayUrl: string },
@@ -43,16 +48,18 @@ export function ConnectionEnvironmentRow(props: {
   const serverConfig = useAtomValue(
     serverEnvironment.configValueAtom(props.environment.environmentId),
   );
+  const enabled = props.environment.isEnabled;
   const statusLabel = connectionStatusLabel(props.environment);
   // Fork (#663): where this connect got through, or the host it also answers on.
   const roamingLine = roamingHostsLine(
     useEnvironmentPresentation(props.environment.environmentId).presentation?.entry ?? null,
   );
-  const statusTraceId = props.environment.connectionErrorTraceId;
-  const hasConnectionFailure = props.environment.connectionError !== null;
+  const statusTraceId = enabled ? props.environment.connectionErrorTraceId : null;
+  const hasConnectionFailure = enabled && props.environment.connectionError !== null;
   const isRetrying =
-    props.environment.connectionState === "connecting" ||
-    props.environment.connectionState === "reconnecting";
+    enabled &&
+    (props.environment.connectionState === "connecting" ||
+      props.environment.connectionState === "reconnecting");
   const handleSave = useCallback(async () => {
     const result = await props.onUpdate(props.environment.environmentId, {
       label: label.trim(),
@@ -76,7 +83,7 @@ export function ConnectionEnvironmentRow(props: {
         onPress={props.onToggle}
       >
         <ConnectionStatusDot
-          state={props.environment.connectionState}
+          state={enabled ? props.environment.connectionState : "available"}
           pulse={isRetrying}
           size={8}
         />
@@ -136,6 +143,10 @@ export function ConnectionEnvironmentRow(props: {
           ) : null}
         </View>
 
+        <ThemedSwitch
+          onValueChange={(next) => props.onSetEnabled(props.environment.environmentId, next)}
+          value={enabled}
+        />
         <SymbolView
           name="chevron.down"
           size={12}
@@ -209,7 +220,8 @@ export function ConnectionEnvironmentRow(props: {
             )}
 
             <Pressable
-              className="h-[42px] w-[42px] items-center justify-center rounded-[14px] border border-input-border bg-input active:opacity-70"
+              className="h-[42px] w-[42px] items-center justify-center rounded-[14px] border border-input-border bg-input active:opacity-70 disabled:opacity-40"
+              disabled={!enabled}
               onPress={() => props.onReconnect(props.environment.environmentId)}
             >
               <SymbolView

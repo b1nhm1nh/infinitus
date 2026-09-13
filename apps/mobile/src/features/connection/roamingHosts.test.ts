@@ -26,13 +26,14 @@ const entry = (over: Partial<ConstructorParameters<typeof BearerConnectionProfil
       ...over,
     }),
   ),
+  enabled: true,
 });
 
 describe("roamingHostsLine", () => {
   it("says nothing for a one-host environment or none at all", () => {
     expect(roamingHostsLine(null)).toBeNull();
     expect(roamingHostsLine(entry())).toBeNull();
-    expect(roamingHostsLine({ target, profile: Option.none() })).toBeNull();
+    expect(roamingHostsLine({ target, profile: Option.none(), enabled: true })).toBeNull();
   });
 
   it("names the other door at home and the one in use while away", () => {

@@ -29,6 +29,7 @@ import { InfinitusEventToasts } from "../components/InfinitusEventToasts";
 import { DesktopNotificationCoordinator } from "../components/desktop/DesktopNotificationCoordinator";
 import { InfinitusCompletionSoundCoordinator } from "../components/desktop/InfinitusCompletionSoundCoordinator";
 import { ProviderUpdateLaunchNotification } from "../components/ProviderUpdateLaunchNotification";
+import { ThreadNotificationCoordinator } from "../components/ThreadNotificationCoordinator";
 import { SlowRpcRequestToastCoordinator } from "../components/SlowRpcRequestToastCoordinator";
 import { ThemeEditorHost } from "../components/settings/ThemeEditorHost";
 import { useCopyToClipboard } from "../hooks/useCopyToClipboard";
@@ -72,6 +73,7 @@ import {
 } from "../components/KeybindingsUpdateToast.logic";
 
 import { getDesktopSnapShotBridge } from "../lib/desktopSnapShot";
+import { installDesktopPasteAsText } from "../lib/desktopPasteAsText";
 import { shouldResumeSnapShotSetupOnStartup } from "../lib/snapShotSetupResume";
 
 export const Route = createRootRoute({
@@ -113,6 +115,7 @@ export const Route = createRootRoute({
 });
 
 function RootRouteView() {
+  useEffect(() => installDesktopPasteAsText(window.desktopBridge, window), []);
   const pathname = useLocation({ select: (location) => location.pathname });
   const { authGateState } = Route.useRouteContext();
   const primaryEnvironmentAuthenticated = authGateState.status === "authenticated";
@@ -206,6 +209,7 @@ function RootRouteView() {
           <InfinitusCompletionSoundCoordinator />
           {primaryEnvironmentAuthenticated ? <DesktopNotificationCoordinator /> : null}
           <CaptureGestureCoordinator />
+          <ThreadNotificationCoordinator />
           <ConfirmDialogHost />
           <SlowRpcRequestToastCoordinator />
           {primaryEnvironmentAuthenticated ? <InfinitusEventToasts /> : null}
