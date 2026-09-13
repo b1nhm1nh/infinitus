@@ -600,7 +600,7 @@ export const SETTINGS_SEARCH_ITEMS = [
     to: "/settings/source-control",
     scope: "environment-defaults",
     searchTerms: [
-      "version control git github gitlab bitbucket azure devops hosting integrations credentials scan server environment",
+      "version control git github gitlab forgejo gitea tea codeberg bitbucket azure devops hosting integrations credentials scan server environment",
     ],
   },
   {
@@ -722,6 +722,7 @@ export const SETTINGS_SEARCH_ITEMS = [
     ],
   },
   {
+<<<<<<< HEAD
     // The Infinitus panes are drawn from the native app's own preference
     // catalog, so each page is indexed once by its destination rather than
     // row by row; `targetId` is the first section the page renders.
@@ -805,6 +806,12 @@ export const SETTINGS_SEARCH_ITEMS = [
     targetId: "infinitus-engines",
     infinitusOnly: true,
     searchTerms: ["swapd cliproxy 9router proxy accounts registered key"],
+=======
+    id: "github-routing",
+    title: "GitHub routing",
+    to: "/settings/connections",
+    searchTerms: ["pull request trusted environments shared credentials permissions read actions"],
+>>>>>>> upstream/main
   },
   {
     id: "archive",
