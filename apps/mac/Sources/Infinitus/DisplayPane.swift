@@ -269,7 +269,6 @@ private struct PickTile<Art: View>: View {
 extension DisplayPane {
     static let searchEntries: [SettingsSearchEntry] = {
         let menuBar = "Menu bar", popup = "Popup"
-        let sessions = "Sessions"
         // The last group is headed "Refresh and startup", but its anchor
         // stays "Display/Startup": renaming a header must never move the
         // Section id the search scrolls to.
@@ -297,7 +296,6 @@ extension DisplayPane {
             entry(popup, "Compact rows", ["compact", "one line", "dense"]),
             entry(popup, "Hide the action buttons", ["actions", "buttons", "footer", "chips"]),
             entry(popup, "Sort rows by headroom", ["order", "sort", "headroom", "next"]),
-            entry(sessions, "Chat header", ["hud", "compact", "strip", "chat", "header", "unit frame"]),
             entry(startup, "Refresh interval", ["poll", "interval", "refresh", "seconds"],
                   anchor: startupAnchor),
             entry(startup, "Start at login", ["login item", "startup", "launch", "boot"],
