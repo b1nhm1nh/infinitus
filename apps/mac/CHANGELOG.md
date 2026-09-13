@@ -21,6 +21,9 @@ publishes the matching section as the GitHub release body.
 - Rows an engine could not refresh say how old their numbers are instead of reading as current, on every engine rather than swapd alone.
 - The desktop's thread card can be shown on the phone's lock screen: the Mac starts it, redraws it as threads move and ends it when the desktop says so (#1047).
 
+### Phone
+- Settings › Infinitus has "Thread card on the lock screen": a Live Activity of what your threads are doing, kept moving by the Mac over push with the app closed, plus a test card that needs no push (#1047).
+
 
 ## 0.5.0-alpha.8
 
