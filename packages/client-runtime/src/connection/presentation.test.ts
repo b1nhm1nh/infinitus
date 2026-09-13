@@ -35,6 +35,7 @@ const ENTRY: ConnectionCatalogEntry = {
       wsBaseUrl: "wss://environment.example.test",
     }),
   ),
+  enabled: true,
 };
 
 function supervisorState(overrides: Partial<SupervisorConnectionState>): SupervisorConnectionState {
@@ -72,6 +73,7 @@ describe("connection presentation", () => {
           lastGoodHttpBaseUrl: "https://code.infinitus.run",
         }),
       ),
+      enabled: true,
     };
     expect(connectionCatalogDisplayUrl(roamed)).toBe("https://environment.example.test");
     expect(connectionCatalogAlternateHosts(roamed)).toEqual(["https://code.infinitus.run"]);
@@ -88,6 +90,7 @@ describe("connection presentation", () => {
           lastGoodHttpBaseUrl: "https://environment.example.test",
         }),
       ),
+      enabled: true,
     };
     expect(connectionCatalogRoamedHost(home)).toBeNull();
   });
