@@ -7,6 +7,9 @@ publishes the matching section as the GitHub release body.
 
 ## Unreleased
 
+
+## 0.5.0-alpha.7
+
 ### Mac
 - An account that is out on one window (the 5h session, the week, or a model such as Fable) now shows that window's reset in its own place and keeps every other gauge visible, in the popup and on the cards.
 
