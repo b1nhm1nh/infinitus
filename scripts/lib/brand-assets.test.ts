@@ -82,6 +82,7 @@ describe("brand-assets", () => {
     expect(resolveWebAssetBrandForPackageVersion("0.0.29")).toBe("infinitus");
     expect(resolveWebAssetBrandForPackageVersion("0.5.0-alpha.1")).toBe("infinitus");
     expect(resolveWebAssetBrandForPackageVersion("0.0.29-nightly.20260723.882")).toBe("nightly");
+<<<<<<< HEAD
     expect(resolveWebAssetBrandForPackageVersion("0.0.40-infinitus.20260911.8")).toBe("infinitus");
     expect(
       resolveWebAssetBrandForPackageVersion("0.5.0-alpha.7-infinitus-nightly.20260913.42"),
@@ -93,6 +94,9 @@ describe("brand-assets", () => {
       sourceRelativePath: BRAND_ASSET_PATHS.infinitusWebFaviconIco,
       targetRelativePath: "apps/web/dist/favicon.ico",
     });
+=======
+    expect(resolveWebAssetBrandForPackageVersion("0.0.29-preview.20260723.882")).toBe("nightly");
+>>>>>>> upstream/main
   });
 
   it("keeps development, nightly, and production icon families separate", () => {

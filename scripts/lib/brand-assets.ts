@@ -55,7 +55,11 @@ export function resolveWebAssetBrandForChannel(channel: WebAssetChannel): WebAss
     (`-infinitus-nightly.<date>.<run>`, #1042) included; only an upstream
     nightly — first prerelease id `nightly` — keeps its own (#823). */
 export function resolveWebAssetBrandForPackageVersion(version: string): WebAssetBrand {
+<<<<<<< HEAD
   return /^\d+\.\d+\.\d+-nightly\./.test(version) ? "nightly" : "infinitus";
+=======
+  return /^[^-+]+-(?:nightly|preview)\./.test(version) ? "nightly" : "production";
+>>>>>>> upstream/main
 }
 
 export interface IconOverride {

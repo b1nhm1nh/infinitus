@@ -1,10 +1,21 @@
 import type { DesktopUpdateChannel } from "@t3tools/contracts";
 
+<<<<<<< HEAD
 /** The version's first prerelease id (`alpha` for `0.5.0-alpha.1`), or
     undefined for a plain version. electron-updater and electron-builder key
     the GitHub feed on it (#924), so every rule here reads it and never a
     substring: `0.5.0-alpha.6-infinitus-nightly.20260913.42` is an `alpha`. */
 const PRERELEASE_ID_PATTERN = /^\d+\.\d+\.\d+-([0-9A-Za-z-]+)/;
+=======
+const NIGHTLY_VERSION_PATTERN = /^[^-+]+-nightly\.\d{8}\.\d+$/;
+// Preview builds are the maintainers' test train, cut by hand from unreleased
+// branches to exercise the release flow. They share nightly's branding but
+// are packaged without an update feed (see
+// isDesktopPreviewVersion in scripts/build-desktop-artifact.ts), so the
+// channel a preview install reports is cosmetic: it never checks for updates
+// and no updater feed ever lists a preview release.
+const PRERELEASE_VERSION_PATTERN = /^[^-+]+-(?:nightly|preview)\.\d{8}\.\d+$/;
+>>>>>>> upstream/main
 
 function resolvePrereleaseId(version: string): string | undefined {
   return PRERELEASE_ID_PATTERN.exec(version)?.[1];
@@ -12,6 +23,7 @@ function resolvePrereleaseId(version: string): string | undefined {
 
 /** An upstream nightly: `x.y.z-nightly.<date>.<run>`. */
 export function isNightlyDesktopVersion(version: string): boolean {
+<<<<<<< HEAD
   return resolvePrereleaseId(version) === "nightly";
 }
 
@@ -92,4 +104,11 @@ export function resolveElectronUpdaterFeed(
   return prereleaseId === undefined
     ? { channel: "latest", allowPrerelease: false, allowDowngrade: nightlyBuild }
     : { channel: prereleaseId, allowPrerelease: true, allowDowngrade: nightlyBuild };
+=======
+  return PRERELEASE_VERSION_PATTERN.test(version);
+}
+
+export function resolveDefaultDesktopUpdateChannel(appVersion: string): DesktopUpdateChannel {
+  return NIGHTLY_VERSION_PATTERN.test(appVersion) ? "nightly" : "latest";
+>>>>>>> upstream/main
 }
