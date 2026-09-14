@@ -144,8 +144,8 @@ function HostedStaticOnboardingState() {
                 Connect to a computer running {PRODUCT_NAME}
               </EmptyTitle>
               <EmptyDescription className="mt-2 text-sm leading-relaxed text-muted-foreground/78">
-                This app connects to {PRODUCT_NAME} running on your computer or a server. Start
-                the {PRODUCT_NAME} desktop app or command-line server on that machine and keep it
+                This app connects to {PRODUCT_NAME} running on your computer or a server. Start the{" "}
+                {PRODUCT_NAME} desktop app or command-line server on that machine and keep it
                 running.
               </EmptyDescription>
               <EmptyDescription className="mt-2 text-sm leading-relaxed text-muted-foreground/78">

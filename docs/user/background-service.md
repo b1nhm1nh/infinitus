@@ -47,8 +47,9 @@ threads and settings under `~/.infinitus/userdata` intact.
 
 `t3 update` moves a script-installed `t3` to the newest release: it downloads
 and verifies it, points `t3` at it, and asks before restarting a background
-service (pass `--yes` from a script; a server you started by hand is left for
-you to restart). Pass an exact version to pin one, or `--allow-downgrade` to
+service (pass `--yes` from a script; decline and the service keeps running its
+current version until `t3 service restart`; a server you started by hand is
+left for you to restart). Pass an exact version to pin one, or `--allow-downgrade` to
 move backwards. Install and update use the version of the `t3` you run; an
 older `t3` refuses to replace a newer service unless you add
 `--allow-downgrade`. `t3 uninstall` reverses the install script — the service,

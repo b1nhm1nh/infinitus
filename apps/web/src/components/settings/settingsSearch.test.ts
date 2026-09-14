@@ -191,6 +191,7 @@ describe("searchSettings", () => {
       canManageLocalBackend: false,
       isWslSettingsRowVisible: false,
       hasThreadAutoSettlement: false,
+      hasInfinitusEnvironment: false,
     };
     const remoteOnly = filterAvailableSettingsSearchItems({
       ...availability,
