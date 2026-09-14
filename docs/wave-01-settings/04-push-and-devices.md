@@ -3,7 +3,7 @@
 **Depends on `01`.** Compile against `01`'s final `SettingsPane`
 protocol. Read `00-architecture.md` first.
 
-Two panes, one task: both are about *reaching you when you're away*, both
+Two panes, one task: both are about _reaching you when you're away_, both
 handle secrets, and both are small enough that splitting them would cost
 more in coordination than it saves.
 
@@ -137,6 +137,7 @@ Linux tray does exactly this in `serve` and gates the flags from env vars
 (`Sources/InfinitusTray/InfinitusTray.swift:568-613`).
 
 So the plan:
+
 1. Add the tick to `infinitus-win serve`, modelled line for line on
    `InfinitusTray.tickPushes` (`InfinitusTray.swift:583-612`) — same
    account-health mapping, same `liveSessions.sessions` pass-through, same
@@ -171,20 +172,20 @@ Descriptor: `id: "devices"`, glyph `` (CellPhone), tint
 
 ## Scope
 
-| Mac section | Windows |
-|---|---|
-| Set-up walkthrough (4 live steps) | **port** — the checklist is the best part of this pane |
-| Phone companion toggle + status | **port** — starts/stops `infinitus-win serve` |
-| Pairing token: reveal/copy/regenerate | **port** |
-| Pair a phone: QR + route list | **port** — QR rendered with GDI |
-| Tailscale row | **port** (detect only) |
-| Cloudflare quick tunnel | **drop** — macOS-only in this repo |
-| Cloudflare named tunnel | **drop** — same |
-| Rendezvous publish | **drop** — depends on the tunnel |
-| Phone lock screen (APNs .p8) | **drop** — no APNs path on Windows |
-| Connected devices list | **port if cheap** — needs the daemon to report clients |
-| iCloud sync | **drop** |
-| File export/import | **port** |
+| Mac section                           | Windows                                                |
+| ------------------------------------- | ------------------------------------------------------ |
+| Set-up walkthrough (4 live steps)     | **port** — the checklist is the best part of this pane |
+| Phone companion toggle + status       | **port** — starts/stops `infinitus-win serve`          |
+| Pairing token: reveal/copy/regenerate | **port**                                               |
+| Pair a phone: QR + route list         | **port** — QR rendered with GDI                        |
+| Tailscale row                         | **port** (detect only)                                 |
+| Cloudflare quick tunnel               | **drop** — macOS-only in this repo                     |
+| Cloudflare named tunnel               | **drop** — same                                        |
+| Rendezvous publish                    | **drop** — depends on the tunnel                       |
+| Phone lock screen (APNs .p8)          | **drop** — no APNs path on Windows                     |
+| Connected devices list                | **port if cheap** — needs the daemon to report clients |
+| iCloud sync                           | **drop**                                               |
+| File export/import                    | **port**                                               |
 
 ## Layout
 
@@ -272,13 +273,14 @@ versions 1–10 covers up to ~213 bytes at level M — plenty. Do **not**
 implement Kanji/alphanumeric modes or versions 11–40.
 
 This is a known-hard-to-get-right piece of code. Requirements:
+
 - Reed–Solomon over GF(256) with the standard QR generator polynomial.
 - All 8 mask patterns evaluated with the four penalty rules; lowest wins.
 - Format and (for version ≥ 7) version information bits.
 - **Test against known vectors.** Encode `"HELLO WORLD"` and a real pair
   URL, and assert the module matrix against a reference produced by
   `qrencode` (or any trusted encoder) checked in as a fixture. A QR that
-  encodes *something* but not the right thing is a silent failure — a
+  encodes _something_ but not the right thing is a silent failure — a
   phone just says "can't read this". Do not ship it without a
   round-trip-verified fixture.
 - If the encoder proves to be more than this dispatch can hold: **fall
@@ -305,6 +307,7 @@ serving" and a second daemon would steal the socket). **Reuse those; do
 not write a second probe.**
 
 State shown:
+
 - daemon started by this tray → "listening on 47824".
 - something else already on the port → "a mirror daemon is already
   serving port 47824" (the exact string `startDaemon` posts) and the
@@ -322,6 +325,7 @@ after a change."
 deliberately **never creates one** — minting here would leave the daemon
 serving a different secret than the URL just copied
 (`WinPairing.swift:22-25`). Respect that:
+
 - no token → "No pairing token yet." + `[ Create one ]` which shells
   `infinitus-win pair` (the CLI owns creation) and re-reads.
 - Reveal/Hide toggles between `MirrorPairing.mask(token)` and the raw
@@ -375,7 +379,7 @@ Core: `{ app: [String: JSONValue], themes: [RowTheme], engine: [String: String] 
 - Export: `GetSaveFileNameW`, default name `infinitus-settings.json`.
   Build `app` from `WinSettings` (encode to JSON, decode as
   `[String: JSONValue]` — one round trip, no hand-mapping), `themes` from
-  `RowTheme.loadCustom(from: windowsThemesURL)`, `engine` from the *set*
+  `RowTheme.loadCustom(from: windowsThemesURL)`, `engine` from the _set_
   entries of `cswap config list --json` (`entry.isSet` only — the Mac's
   scope, "the spec table holds no secrets").
 - Import: `GetOpenFileNameW`, decode, apply: `app` → `WinSettingsStore`
@@ -389,12 +393,14 @@ Core: `{ app: [String: JSONValue], themes: [RowTheme], engine: [String: String] 
 ## Tests
 
 Core:
+
 - `QRCodeTests` — the fixture round trip described above, plus:
   `testMatrixIsSquareAndOdd`, `testQuietZoneIsCallerOwned` (the matrix
   excludes it), `testTooLongReturnsNil`.
 - `SyncSnapshot` round trip with a `WinSettings`-shaped `app` dict.
 
 `InfinitusWinUI`:
+
 - `testWalkthroughStepsFromState` — a pure
   `PairingChecklist.steps(serving:port:lastServed:routes:) -> [Step]`
   with `done` flags; assert each combination. (Extract it exactly as the
@@ -407,6 +413,7 @@ Core:
 ## Acceptance
 
 **Push**
+
 1. Pane shows masked status for both channels, or "cswap not found".
 2. Saving a Slack webhook works, the field clears, the status shows a
    masked value, and `Get-Process`/Process Explorer never shows the
@@ -417,24 +424,17 @@ Core:
 6. Trigger toggles persist and (per the note) either drive the daemon or
    are documented as pending.
 
-**Devices**
-7. The checklist reflects real state and ticks as steps complete.
-8. Toggle starts the daemon; a daemon started elsewhere is detected and
-   not duplicated.
-9. QR renders and **a real phone scans it** — this is the acceptance, not
-   "a QR appeared". If the fallback path was taken, the typed route +
-   token pairs a real phone instead.
-10. Reveal/Copy/Regenerate behave; regenerate warns first.
-11. Tailscale route appears within ~3 s of connecting, without reopening.
-12. Firewall command copies.
-13. Export then import on the same machine is a no-op; a Mac export
-    imports without error.
-14. Agent brief pastes into a terminal and the `curl.exe` line returns
-    200 with the right token, 401 with a wrong one.
+**Devices** 7. The checklist reflects real state and ticks as steps complete. 8. Toggle starts the daemon; a daemon started elsewhere is detected and
+not duplicated. 9. QR renders and **a real phone scans it** — this is the acceptance, not
+"a QR appeared". If the fallback path was taken, the typed route +
+token pairs a real phone instead. 10. Reveal/Copy/Regenerate behave; regenerate warns first. 11. Tailscale route appears within ~3 s of connecting, without reopening. 12. Firewall command copies. 13. Export then import on the same machine is a no-op; a Mac export
+imports without error. 14. Agent brief pastes into a terminal and the `curl.exe` line returns
+200 with the right token, 401 with a wrong one.
 
 ## Report
 
 Status; files; tests; commit. Plus:
+
 - QR route taken (own encoder / qrencode / typed fallback) and the
   fixture used to verify it;
 - whether the push trigger tick landed in `infinitus-win serve` or was

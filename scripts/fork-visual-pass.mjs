@@ -1,0 +1,349 @@
+/**
+ * Fork visual pass: drives one headless Chrome over CDP against a running
+ * web app — pairs, clicks through the first-run wizard, then screenshots each
+ * route and prints its page text.
+ *
+ *   node scripts/fork-visual-pass.mjs --pair-url <url> --out <dir> [/route …]
+ *
+ *   --base-url <origin>   where routes are opened (default: the pair URL's origin)
+ *   --cdp-port <n>        Chrome's remote-debugging port (default 9345; a port
+ *                         another Chrome holds is fine — the browser we spawned
+ *                         is found by its own endpoint, never by the port)
+ *   --profile <dir>       Chrome user-data dir (default: a temp dir, removed on exit)
+ *   --settle-ms <n>       wait after a route mounts before the shot (default 15000)
+ *   --mount-timeout-ms <n> give up waiting for a route to mount (default 90000; a
+ *                         dev server compiling a cold route chunk can take a while)
+ *   CHROME_BIN            Chrome binary (default: the macOS Google Chrome path)
+ *
+ * The pair URL carries the token; it is never printed. Node ≥ 22 (global
+ * fetch + WebSocket), no dependencies.
+ */
+import * as NodeChildProcess from "node:child_process";
+import * as NodeFS from "node:fs";
+import * as NodeOS from "node:os";
+import * as NodePath from "node:path";
+
+const DEFAULT_CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
+const WIZARD_HEADING = /Set up /;
+const WIZARD_BUTTON =
+  /^(Skip|Skip for now|Do not import projects|Done|Finish|Continue|Get started)/i;
+const APP_MOUNTED = ["Toggle Sidebar", "All projects"];
+const STALLED_GATE = "Still connecting";
+const PAIR_FAILED = ["Invalid pairing token", "Pair with this environment"];
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+function parseArgs(argv) {
+  const options = { routes: [], cdpPort: 9345, settleMs: 15_000, mountTimeoutMs: 90_000 };
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i];
+    const next = () => {
+      const value = argv[++i];
+      if (value === undefined) throw new Error(`${arg} needs a value`);
+      return value;
+    };
+    if (arg === "--pair-url") options.pairUrl = next();
+    else if (arg === "--out") options.out = next();
+    else if (arg === "--base-url") options.baseUrl = next();
+    else if (arg === "--cdp-port") options.cdpPort = Number(next());
+    else if (arg === "--profile") options.profile = next();
+    else if (arg === "--settle-ms") options.settleMs = Number(next());
+    else if (arg === "--mount-timeout-ms") options.mountTimeoutMs = Number(next());
+    else if (arg.startsWith("/")) options.routes.push(arg);
+    else throw new Error(`unknown argument ${arg}`);
+  }
+  if (!options.pairUrl || !options.out) {
+    throw new Error("usage: fork-visual-pass.mjs --pair-url <url> --out <dir> [/route …]");
+  }
+  options.baseUrl ??= new URL(options.pairUrl).origin;
+  return options;
+}
+
+async function launchChrome({ cdpPort, profile }) {
+  const child = NodeChildProcess.spawn(
+    process.env.CHROME_BIN ?? DEFAULT_CHROME,
+    [
+      "--headless=new",
+      `--remote-debugging-port=${cdpPort}`,
+      `--user-data-dir=${profile}`,
+      "--no-first-run",
+      "--no-default-browser-check",
+      "--window-size=1400,900",
+      "about:blank",
+    ],
+    { stdio: ["ignore", "ignore", "pipe"] },
+  );
+  // Chrome's last lines of stderr, for the error when the port never opens —
+  // and for the endpoint it actually listens on, which is the only way to know
+  // the browser answering the port is ours. A second Chrome asked for a port
+  // another one already holds does not fail: it binds the same number on the
+  // other address family (IPv4 vs IPv6) and logs `bind() failed`, so probing
+  // `127.0.0.1:<port>` can hand us a concurrent run's browser and both passes
+  // then drive one page, shifting every capture onto the wrong route.
+  let stderr = "";
+  const endpoint = new Promise((resolve) => {
+    child.stderr.on("data", (chunk) => {
+      stderr = (stderr + chunk).slice(-2000);
+      const match = /DevTools listening on (ws:\/\/\S+)/.exec(stderr);
+      if (match) resolve(match[1]);
+    });
+  });
+  // A cold CI runner can take well over 10 s to bring the port up.
+  const exited = new Promise((resolve) => child.once("exit", () => resolve(null)));
+  const browserWsUrl = await Promise.race([endpoint, exited, sleep(30_000)]);
+  if (typeof browserWsUrl !== "string") {
+    child.kill();
+    throw new Error(
+      child.exitCode === null
+        ? `Chrome did not open its debugging port in 30 s\n${stderr}`
+        : `Chrome exited with ${child.exitCode}\n${stderr}`,
+    );
+  }
+  // Ask this browser for its own targets, over its own endpoint's origin.
+  const origin = new URL(browserWsUrl.replace(/^ws:/, "http:")).origin;
+  for (let i = 0; i < 150; i++) {
+    if (child.exitCode !== null) {
+      throw new Error(`Chrome exited with ${child.exitCode}\n${stderr}`);
+    }
+    try {
+      const list = await (await fetch(`${origin}/json/list`)).json();
+      const page = list.find((target) => target.type === "page");
+      if (page) return { child, wsUrl: page.webSocketDebuggerUrl };
+    } catch {
+      // not serving targets yet
+    }
+    await sleep(200);
+  }
+  child.kill();
+  throw new Error(`Chrome opened ${origin} but served no page target\n${stderr}`);
+}
+
+function connect(wsUrl) {
+  const ws = new WebSocket(wsUrl);
+  const pending = new Map();
+  let nextId = 0;
+  ws.addEventListener("message", (event) => {
+    const message = JSON.parse(event.data);
+    if (message.id && pending.has(message.id)) {
+      pending.get(message.id)(message);
+      pending.delete(message.id);
+    }
+  });
+  const send = (method, params = {}) =>
+    new Promise((resolve) => {
+      const id = ++nextId;
+      pending.set(id, resolve);
+      ws.send(JSON.stringify({ id, method, params }));
+    });
+  const evaluate = async (expression) =>
+    (await send("Runtime.evaluate", { expression, returnByValue: true, awaitPromise: true })).result
+      ?.result?.value;
+  const ready = new Promise((resolve) => {
+    ws.addEventListener("open", resolve, { once: true });
+  });
+  return { ws, send, evaluate, ready };
+}
+
+let options;
+try {
+  options = parseArgs(process.argv.slice(2));
+} catch (error) {
+  console.error(error instanceof Error ? error.message : String(error));
+  process.exit(2);
+}
+NodeFS.mkdirSync(options.out, { recursive: true });
+const ownsProfile = options.profile === undefined;
+const profile =
+  options.profile ?? NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "fork-visual-pass-"));
+const chrome = await launchChrome({ cdpPort: options.cdpPort, profile });
+/** Chrome must be gone before its profile dir goes, or rm races its shutdown. */
+const shutdown = async () => {
+  const exited = new Promise((resolve) => {
+    chrome.child.once("exit", resolve);
+    setTimeout(resolve, 5000);
+  });
+  chrome.child.kill();
+  await exited;
+  if (ownsProfile) NodeFS.rmSync(profile, { recursive: true, force: true, maxRetries: 3 });
+};
+process.on("SIGINT", () => void shutdown().then(() => process.exit(130)));
+// An uncaught error still takes Chrome down (the temp profile is left for inspection).
+process.on("exit", () => chrome.child.kill());
+
+const { ws, send, evaluate, ready } = connect(chrome.wsUrl);
+await ready;
+await send("Page.enable");
+await send("Runtime.enable");
+await send("Emulation.setDeviceMetricsOverride", {
+  width: 1400,
+  height: 900,
+  deviceScaleFactor: 1,
+  mobile: false,
+});
+
+/**
+ * What the page shows, fields included. `innerText` leaves out every form
+ * control's value, so a port rendered as "3,773", a stale hostname or an empty
+ * required field reached no check and the route still passed — yet the values
+ * are what these pages exist to show. Each field contributes `[label: value]`
+ * where it sits, so a marker or a forbidden phrase can name one.
+ *
+ * Only fields carrying a real accessible name are taken: base-ui puts a hidden
+ * twin behind every switch and number field, and those have none, so this
+ * skips them and reads the named widget the user actually sees — one entry per
+ * control, keyed by a name a route table can be written against rather than a
+ * generated id. Password values never travel.
+ */
+const FIELD_VALUES = `(() => {
+  const nameOf = (el) => {
+    const aria = el.getAttribute("aria-label");
+    if (aria && aria.trim()) return aria.trim();
+    const labelledBy = el.getAttribute("aria-labelledby");
+    if (labelledBy) {
+      const text = labelledBy
+        .split(/\\s+/)
+        .map((id) => document.getElementById(id)?.innerText ?? "")
+        .join(" ")
+        .trim();
+      if (text) return text;
+    }
+    const label = el.labels?.[0]?.innerText?.trim();
+    return label || "";
+  };
+  // base-ui's switch is a span with no aria-checked: its state is the
+  // data-checked / data-unchecked attribute its styles key off.
+  const checkedOf = (el) => {
+    const aria = el.getAttribute("aria-checked");
+    if (aria !== null) return aria === "true" ? "on" : aria === "false" ? "off" : aria;
+    if (el.hasAttribute("data-checked")) return "on";
+    if (el.hasAttribute("data-unchecked")) return "off";
+    return el.checked ? "on" : "off";
+  };
+  const valueOf = (el) => {
+    const role = el.getAttribute("role");
+    if (role === "switch" || role === "checkbox" || el.type === "checkbox" || el.type === "radio") {
+      return checkedOf(el);
+    }
+    if (el.tagName === "SELECT") return el.selectedOptions?.[0]?.text?.trim() ?? el.value;
+    if (el.type === "password") return el.value ? "(set)" : "(empty)";
+    if (el.tagName === "INPUT" || el.tagName === "TEXTAREA") return el.value;
+    return el.innerText?.trim() ?? "";
+  };
+  const fields = document.querySelectorAll(
+    "input, select, textarea, [role=switch], [role=checkbox], [role=combobox]",
+  );
+  for (const el of fields) {
+    if (el.type === "hidden") continue;
+    const name = nameOf(el);
+    // No accessible name: a base-ui hidden twin, or a control no check can
+    // name anyway. The visible widget beside it carries the same state.
+    if (!name) continue;
+    const marker = document.createElement("span");
+    marker.dataset.forkVisualField = "1";
+    marker.textContent = " [" + name + ": " + valueOf(el) + "] ";
+    el.insertAdjacentElement("afterend", marker);
+  }
+  const text = document.body.innerText;
+  for (const marker of document.querySelectorAll("[data-fork-visual-field]")) marker.remove();
+  return text;
+})()`;
+
+const pageText = async () => ((await evaluate(FIELD_VALUES)) ?? "").replace(/\s+/g, " ");
+
+/**
+ * Until the app tree is mounted on `expectPath`; reloads on the stalled
+ * connection gate. The path is half the wait on purpose: the page still on
+ * screen shows the same `APP_MOUNTED` markers the next one will, so mount
+ * alone is satisfied by a navigation that has not committed yet — and a run
+ * slow enough for that to repeat drifts whole routes behind, writing each
+ * capture under an earlier route's name. Pass no path for a navigation that
+ * lands somewhere of its own (pairing redirects to the app root).
+ */
+const waitForApp = async (label, expectPath) => {
+  const deadline = Date.now() + options.mountTimeoutMs;
+  let path = null;
+  while (Date.now() < deadline) {
+    const text = await pageText();
+    path = await evaluate("location.pathname");
+    if (text.includes(STALLED_GATE)) {
+      await evaluate("location.reload()");
+      await sleep(4000);
+      continue;
+    }
+    const onRoute = expectPath === undefined || path === expectPath;
+    if (onRoute && APP_MOUNTED.some((marker) => text.includes(marker))) return text;
+    await sleep(1500);
+  }
+  console.warn(
+    `${label}: not mounted at ${expectPath ?? "any path"} after ${options.mountTimeoutMs} ms (on ${path}; boot shell?)`,
+  );
+  return await pageText();
+};
+
+const clickWizardButton = () =>
+  evaluate(`(() => {
+    const button = [...document.querySelectorAll("button")].find(
+      (b) => ${WIZARD_BUTTON.toString()}.test(b.innerText.trim()) && !b.disabled,
+    );
+    if (!button) return null;
+    button.click();
+    return button.innerText.trim();
+  })()`);
+
+await send("Page.navigate", { url: options.pairUrl });
+const afterPair = await waitForApp("pair");
+if (PAIR_FAILED.some((marker) => afterPair.includes(marker))) {
+  console.error(
+    "pairing failed (tokens are single-use and expire; mint a fresh one):",
+    afterPair.slice(0, 200),
+  );
+  await shutdown();
+  process.exit(1);
+}
+console.log(`paired with ${options.baseUrl}:`, afterPair.slice(0, 120));
+
+for (let i = 0; i < 12 && !WIZARD_HEADING.test(await pageText()); i++) await sleep(1500);
+for (let i = 0; i < 10 && WIZARD_HEADING.test(await pageText()); i++) {
+  const clicked = await clickWizardButton();
+  console.log("wizard click:", clicked);
+  if (!clicked) {
+    console.log(
+      "buttons:",
+      await evaluate(
+        `[...document.querySelectorAll("button")].map((b) => b.innerText.trim()).filter(Boolean).join(" | ")`,
+      ),
+    );
+    break;
+  }
+  await sleep(3500);
+}
+console.log("after wizard:", (await pageText()).slice(0, 160));
+
+let mismatched = 0;
+for (const route of options.routes) {
+  await send("Page.navigate", { url: `${options.baseUrl}${route}` });
+  await waitForApp(route, route);
+  await sleep(options.settleMs);
+  const shot = await send("Page.captureScreenshot", { format: "png" });
+  const name = route.replace(/^\//, "").replace(/\//g, "-") || "home";
+  const text = await pageText();
+  // Settling can outlive a redirect, so the shot is proved against the path it
+  // was actually taken on, not the one the wait ended at.
+  const shotPath = await evaluate("location.pathname");
+  if (shotPath !== route) {
+    mismatched++;
+    console.error(`${route}: captured ${shotPath} instead — text-${name}.txt is not this route`);
+  }
+  NodeFS.writeFileSync(
+    NodePath.join(options.out, `shot-${name}.png`),
+    Buffer.from(shot.result.data, "base64"),
+  );
+  NodeFS.writeFileSync(NodePath.join(options.out, `text-${name}.txt`), text);
+  console.log(`${route}:`, text.slice(0, 400));
+}
+
+ws.close();
+await shutdown();
+// A capture written under the wrong route's name would let the check pass on a
+// page it never opened, so the run fails rather than leaving that for the eye.
+process.exit(mismatched === 0 ? 0 : 1);

@@ -51,11 +51,11 @@ Never gate on engine identity. `EngineCapabilities`
 (`Sources/InfinitusCore/AccountEngine.swift:26-64`) says what each engine
 can do:
 
-| engine | capabilities |
-|---|---|
-| cswap | `.all` (`CswapEngine.swift:16`) |
+| engine      | capabilities                                                        |
+| ----------- | ------------------------------------------------------------------- |
+| cswap       | `.all` (`CswapEngine.swift:16`)                                     |
 | CLIProxyAPI | `.switch, .hold, .rename, .remove, .addOAuth, .costReport, .prefer` |
-| 9Router | `.switch, .hold, .remove` |
+| 9Router     | `.switch, .hold, .remove`                                           |
 
 `TrayFleet` returns fleets, not engines, so the pane needs the
 capabilities for a fleet's `engineID`. Add to Core (small, pure,
@@ -103,9 +103,10 @@ when `.rename`, else static text), email `px(200)`, plan chip
 at `px(26)` each.
 
 Controls per row:
+
 - **Name** — an `EDIT` when the fleet has `.rename`. Commit on `EN_KILLFOCUS`
   and on Enter; an empty value **unsets** the alias (`cswap alias N
-  --unset`, `CswapCLI.setAlias` already handles the empty case). Show the
+--unset`, `CswapCLI.setAlias` already handles the empty case). Show the
   email's local part as the placeholder. The Mac uses a `RenameField`
   with exactly this contract.
 - **★ prefer** — only when `.prefer` **and** `account.preferred != nil`.
@@ -143,6 +144,7 @@ Controls per row:
 Status chips, painted (not controls) — the Mac's `statusChip`
 (`AccountsPane.swift:801-818`). Active and health are **separate facts**;
 both can show:
+
 - `active` → green pill.
 - `disabled == true` → grey "held" pill.
 - else `usageStatus != "ok"` → orange pill with
@@ -159,6 +161,7 @@ cycles through them." Drag can be a follow-up issue.
 Also on the pane, per fleet, matching the Mac's captions
 (`AccountsPane.swift:777-796` — each sentence appears only when the fleet
 has the control it describes):
+
 - `.reorder` → "Use ▲▼ to set the rotation order — Rotate cycles through them."
 - `.prefer` → "Star an account to have the engine land on it first when it
   switches." / when no account reports `preferred`: "Stars need a cswap
@@ -169,6 +172,7 @@ has the control it describes):
   everywhere); clear it to go back to the email."
 
 Per-fleet buttons under the rows:
+
 - **Randomize names** when `.rename` — `theme.randomAccountNames(count:)`
   then one `cswap alias` per account. The theme is
   `settings.gamificationStyle`'s `RowTheme`; the Off theme and
@@ -202,6 +206,7 @@ Per-fleet buttons under the rows:
     default to force.
 
 Empty states:
+
 - no engine → "No swap engine found. Install claude-swap
   (`uv tool install claude-swap`) or point Claude Code at 9Router."
 - engine, no accounts → "No accounts yet — `cswap add` registers one."
@@ -261,7 +266,7 @@ generic renderer:
 - Validate with `SettingDraft.validate(_:for:)`
   (`Sources/InfinitusCore/SettingsLogic.swift:8-47`) before shelling.
   `.valid(v)` → `cswap config set key v`; `.unset` → `cswap config unset
-  key`; `.invalid(why)` → red text under the control, no shell call.
+key`; `.invalid(why)` → red text under the control, no shell call.
 - After a successful set, **reload the whole list** (the Mac does) — the
   engine may normalise a value.
 - The loading guard matters: while repopulating, a choice control's
@@ -436,6 +441,7 @@ cache, `isAvailable()`, `fleets()`, `refresh(force:)`, `invalidate()`,
 and switch/hold/remove forwarding.
 
 **This may be more than fits in one dispatch.** If so:
+
 - land the pane (config, probe, routing) and the DPAPI store;
 - return `DONE_WITH_CONCERNS` naming the fleet wiring as the remainder,
   and file an issue;
@@ -481,6 +487,7 @@ Accounts
 ```
 
 Required changes beyond a move:
+
 - **Apply the user-only DACL to `9router.json`.** It holds a password in
   plaintext today and inherits whatever ACL `%APPDATA%\Infinitus` has.
   Three lines, using the same helper as `pair-token`. Do this even though
@@ -503,6 +510,7 @@ Required changes beyond a move:
 ## Tests
 
 Core (`Tests/InfinitusCoreTests/`):
+
 - `EngineCatalog.capabilities(for:)` vs each live engine's own
   `capabilities` — three assertions.
 - `SettingsFormLabels` — `sectionTitle("autoswitch") == "Auto-switch"`,
@@ -515,6 +523,7 @@ Core (`Tests/InfinitusCoreTests/`):
   `ClaudeSessions.configHome()/settings.json`.
 
 Windows (`InfinitusWinUI`):
+
 - `testRowActionsFollowCapabilities` — given a fleet whose engineID is
   `"9router"`, the row model exposes switch/hold/remove and **not**
   rename/prefer/backup. Do this against a pure `AccountRowModel` struct
@@ -557,6 +566,7 @@ Windows (`InfinitusWinUI`):
 ## Report
 
 Status; files; tests; commit. Plus:
+
 - whether CLIProxy fleet wiring landed or was deferred (+ issue);
 - whether the engine toggle relaunches the tray or defers to next start;
 - the `icacls` output for `9router.json` and `cliproxy.json`;

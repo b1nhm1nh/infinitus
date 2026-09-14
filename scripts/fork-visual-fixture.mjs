@@ -1,0 +1,494 @@
+#!/usr/bin/env node
+/**
+ * An Infinitus control socket for the fork's visual pass in CI: one Node net
+ * server that speaks the control protocol (one JSON line in, one JSON line
+ * out, then the connection closes) and answers the read verbs the web pages
+ * poll with canned data, so every fork route can render its populated state
+ * on a runner that has no menu-bar app.
+ *
+ *   node scripts/fork-visual-fixture.mjs --socket /tmp/inf-vp.sock
+ *
+ * The manifest and the preference catalog in `fork-visual-fixture.data.json`
+ * are `infinitusctl manifest --json` / `prefs --json` captures with every
+ * pref value reset to its default; the accounts, the forecast and the stats
+ * are made up. Secrets: none — every write verb
+ * and every unknown verb is refused with `ok: false`, and only verb names are
+ * logged. No dependencies; node ≥ 22.
+ */
+import * as NodeFS from "node:fs";
+import * as NodeNet from "node:net";
+import * as NodePath from "node:path";
+
+const data = JSON.parse(
+  NodeFS.readFileSync(NodePath.join(import.meta.dirname, "fork-visual-fixture.data.json"), "utf8"),
+);
+
+function parseArgs(argv) {
+  let socket;
+  for (let i = 0; i < argv.length; i++) {
+    if (argv[i] === "--socket") socket = argv[++i];
+  }
+  if (!socket) throw new Error("usage: fork-visual-fixture.mjs --socket <path>");
+  return { socket };
+}
+
+const nowSeconds = () => Math.floor(Date.now() / 1000);
+const isoIn = (seconds) => new Date(Date.now() + seconds * 1000).toISOString();
+const dayKey = (daysAgo) => new Date(Date.now() - daysAgo * 86_400_000).toISOString().slice(0, 10);
+
+/** A usage window as the swapd engine reports it (percent, countdown, reset). */
+const usageWindow = (name, pct, resetsIn) => ({
+  name,
+  pct,
+  countdown: `${Math.floor(resetsIn / 3600)}h ${Math.floor((resetsIn % 3600) / 60)}m`,
+  clock: isoIn(resetsIn),
+  resetsAt: isoIn(resetsIn),
+  aheadOfPace: pct < 50,
+  expectedPct: 50,
+  willLastToReset: pct < 80,
+});
+
+const ACCOUNTS = [
+  { number: 1, alias: "ada-fixture", email: "ada@example.com", active: true, five: 34, seven: 40 },
+  {
+    number: 2,
+    alias: "grace-fixture",
+    email: "grace@example.com",
+    active: false,
+    five: 0,
+    seven: 66,
+  },
+  {
+    number: 3,
+    alias: "linus-fixture",
+    email: "linus@example.com",
+    active: false,
+    five: 12,
+    seven: 8,
+  },
+];
+
+const fleets = () => [
+  {
+    key: "claude",
+    engineID: "swapd",
+    provider: "claude",
+    capabilities: ["switch", "rotate", "hold", "unhold", "rename", "prefer", "reorder", "ignite"],
+    activeNumber: 1,
+    nextCandidate: 3,
+    candidateOrder: [1, 3, 2],
+    accounts: ACCOUNTS.map((account) => ({
+      number: account.number,
+      alias: account.alias,
+      email: account.email,
+      plan: "max",
+      active: account.active,
+      disabled: false,
+      preferred: account.number === 1,
+      isOrganization: false,
+      usage: {
+        fiveHour: usageWindow("5h", account.five, 2 * 3600 + 600),
+        sevenDay: usageWindow("7d", account.seven, 3 * 86_400 + 5 * 3600),
+        scoped: [],
+      },
+      usageStatus: "ok",
+      usageAgeSeconds: 42,
+      usageFetchedAt: isoIn(-42),
+    })),
+  },
+];
+
+/** The active account's 5h pace, in percent per hour: 34 % to full in the two
+    hours it has before the window resets, so the projection is one a real Mac
+    could produce (`UsageForecast.project` drops `hitsAt` when the reset comes
+    first, and the guard test holds the fixture to that). */
+const ACTIVE_FIVE_HOUR_RATE = (100 - ACCOUNTS[0].five) / 2;
+
+const forecastLine = (account) => ({
+  number: account.number,
+  email: account.email,
+  alias: account.alias,
+  active: account.active,
+  disabled: false,
+  windows: [
+    {
+      name: "5h",
+      pct: account.five,
+      ratePctPerHour: account.active ? ACTIVE_FIVE_HOUR_RATE : 0,
+      resetsAt: nowSeconds() + 2 * 3600 + 600,
+      hitsAt: account.active ? nowSeconds() + 2 * 3600 : null,
+    },
+    {
+      name: "7d",
+      pct: account.seven,
+      ratePctPerHour: account.active ? 0.8 : 0,
+      resetsAt: nowSeconds() + 3 * 86_400 + 5 * 3600,
+      hitsAt: null,
+    },
+  ],
+});
+
+const forecast = () => ({
+  forecast: {
+    computedAt: nowSeconds(),
+    basis: "Fixture rates: the last hour of polls, straight-line.",
+    active: forecastLine(ACCOUNTS[0]),
+    accounts: ACCOUNTS.map(forecastLine),
+    allDeadAt: nowSeconds() + 6 * 86_400,
+    drainOrder: [1, 3, 2],
+  },
+});
+
+const tally = (n, usd) => ({
+  n,
+  s: n * 90,
+  in: n * 4000,
+  out: n * 900,
+  usd,
+  cr: n * 30_000,
+  cw: n * 2000,
+  sv: usd,
+});
+
+const statsDay = (scale) => ({
+  humanMessages: 40 * scale,
+  phoneMessages: 6 * scale,
+  agentMessages: 120 * scale,
+  nudges: 3 * scale,
+  subagents: 4 * scale,
+  turns: 90 * scale,
+  toolCalls: { Edit: 55 * scale, Bash: 70 * scale, Read: 140 * scale },
+  toolErrors: 5 * scale,
+  questions: 7 * scale,
+  denials: 1 * scale,
+  retries: 2 * scale,
+  waitingSeconds: 1800 * scale,
+  compactions: 2 * scale,
+  // A max across days on the Mac, not a sum, so it does not scale with the
+  // period — and the one tile that carries a unit ("34 tool calls").
+  longestUnattended: 34,
+  inputTokens: 900_000 * scale,
+  outputTokens: 120_000 * scale,
+  usd: 18.4 * scale,
+  cacheReadTokens: 6_000_000 * scale,
+  cacheWriteTokens: 400_000 * scale,
+  cacheSavingsUSD: 9.1 * scale,
+  peakTokensPerMinute: 42_000,
+  activities: {
+    code: tally(30 * scale, 9.2 * scale),
+    review: tally(8 * scale, 3.1 * scale),
+    debug: tally(6 * scale, 2.4 * scale),
+  },
+  byModel: {
+    "claude-opus-5": tally(30 * scale, 12.4 * scale),
+    "claude-sonnet-5": tally(14 * scale, 3.2 * scale),
+  },
+  byEngine: { claude: tally(40 * scale, 15.1 * scale), codex: tally(4 * scale, 0.9 * scale) },
+  byEffort: { high: tally(20 * scale, 10.5 * scale), medium: tally(24 * scale, 4.6 * scale) },
+  sessionTally: 6 * scale,
+  sessionSeconds: 5 * 3600 * scale,
+  sessionBuckets: [2 * scale, 2 * scale, 1 * scale, 1 * scale],
+  commits: 9 * scale,
+  linesAdded: 640 * scale,
+  linesRemoved: 210 * scale,
+  filesTouched: 31 * scale,
+  coAuthoredByClaude: 9 * scale,
+  reverts: 1 * scale,
+  prsOpened: 3 * scale,
+  prsMerged: 2 * scale,
+  // The two the "Mean hours to merge" tile divides: 9 h per merged PR, one
+  // timing per merge, so the tile reads 4.5 whatever the period.
+  mergeHoursTotal: 9 * scale,
+  mergeCount: 2 * scale,
+  // The compact form the Mac sends once the repo set is dropped, which the
+  // Repos tile only reads when `repos` is absent or empty.
+  repoTally: 3,
+  switches: 1 * scale,
+  limitStops: 2 * scale,
+  revivals: 2 * scale,
+  minutesLostToLimits: 11 * scale,
+  ignites: 1 * scale,
+  resumes: 3 * scale,
+});
+
+// #747: the Utilization page's history and run rate — one sample per
+// bucket per account over the range, the 5h window wobbling around each
+// account's fixture percentage, the 7d one flat.
+const utilization = (days) => {
+  const bucket = days <= 1 ? 300 : days <= 7 ? 1800 : 7200;
+  const points = 48;
+  const step = Math.floor((days * 86_400) / points);
+  const now = Math.floor(Date.now() / 1000);
+  const samples = [];
+  for (let index = 0; index < points; index += 1) {
+    const t = now - (points - 1 - index) * step;
+    for (const account of ACCOUNTS) {
+      const wobble = Math.round(10 * Math.sin((index / points) * Math.PI * 2 + account.number));
+      samples.push({
+        t,
+        email: account.email,
+        number: account.number,
+        active: account.active,
+        fiveHour: { pct: Math.max(0, Math.min(100, account.five + wobble)), resetsAt: t + 3600 },
+        sevenDay: { pct: account.seven, resetsAt: t + 86_400 },
+      });
+    }
+  }
+  // The window telemetry beside the chart: the Mac reconstructs these off
+  // its full history, so they are their own rows rather than a fold of the
+  // samples above. Three closed 5h windows per account plus one still
+  // ticking for the active one, and the last two weekly rollovers.
+  const fiveHourWindows = [];
+  for (const account of ACCOUNTS) {
+    for (let back = 1; back <= 3; back += 1) {
+      const resetsAt = now - back * 21_600 - account.number * 900;
+      fiveHourWindows.push({
+        email: account.email,
+        number: account.number,
+        start: resetsAt - 18_000,
+        resetsAt,
+        peakPct: Math.max(2, account.five + back * 7 - account.number * 3),
+        samples: 40 - back * 6,
+        closed: true,
+      });
+    }
+  }
+  fiveHourWindows.push({
+    email: ACCOUNTS[0].email,
+    number: ACCOUNTS[0].number,
+    start: now - 7200,
+    resetsAt: now + 10_800,
+    peakPct: ACCOUNTS[0].five,
+    samples: 12,
+    closed: false,
+  });
+  const generations = ACCOUNTS.flatMap((account, index) => [
+    {
+      email: account.email,
+      window: "7d",
+      resetAt: now - 86_400 * (2 + index),
+      finalPct: Math.max(5, account.seven - 4),
+      observationGap: index === 1 ? 9 * 3600 : 1200,
+    },
+    {
+      email: account.email,
+      window: "7d",
+      resetAt: now - 86_400 * (9 + index),
+      finalPct: Math.max(5, account.seven - 18),
+      observationGap: 600,
+    },
+  ]);
+  return {
+    days,
+    bucketSeconds: bucket,
+    samples,
+    generations,
+    fiveHourWindows,
+    replay: {
+      from: now - days * 86_400,
+      to: now,
+      switches: 2,
+      coldSwitches: 1,
+      stalledSeconds: 780,
+      sawActiveFlag: true,
+    },
+    windows: ["5h", "7d"],
+    emails: ACCOUNTS.map((account) => account.email),
+    rates: {
+      computedAt: now,
+      lastHour: {
+        input: 12_400,
+        output: 3100,
+        cacheRead: 88_000,
+        cacheWrite: 2200,
+        usd: 0.61,
+        messages: 14,
+      },
+      lastDay: {
+        input: 210_000,
+        output: 48_000,
+        cacheRead: 1_900_000,
+        cacheWrite: 31_000,
+        usd: 9.8,
+        messages: 260,
+      },
+      lastWeek: {
+        input: 1_300_000,
+        output: 290_000,
+        cacheRead: 12_000_000,
+        cacheWrite: 190_000,
+        usd: 58.2,
+        messages: 1620,
+      },
+      files: 41,
+      unpricedModels: [],
+    },
+    liveRate: { perMinute: 1200, peakPerMinute: 3900 },
+  };
+};
+
+const stats = (period) => {
+  const days = period === "day" ? 1 : period === "month" ? 30 : period === "year" ? 365 : 7;
+  const shown = Math.min(days, 7);
+  return {
+    period,
+    from: dayKey(days - 1),
+    to: dayKey(0),
+    total: statsDay(days),
+    previous: statsDay(Math.max(1, days - 1)),
+    daily: Array.from({ length: shown }, (_, index) => ({
+      key: dayKey(shown - 1 - index),
+      day: statsDay(1),
+    })),
+    streak: 5,
+  };
+};
+
+const events = () => [
+  {
+    id: "evt-1",
+    at: isoIn(-3600),
+    kind: "switch",
+    icon: "arrow.triangle.2.circlepath",
+    text: "Switched to ada-fixture",
+  },
+  // One row of every kind the Mac logs, worded the way it words them
+  // (`AppModel.logEvent`'s call sites; `all exhausted` is `EngineEvent`'s
+  // default summary), so the Activity route's chips are all on screen and
+  // the visual pass can assert them (#1111).
+  {
+    id: "evt-2",
+    at: isoIn(-2700),
+    kind: "death",
+    icon: "heart.slash",
+    text: "grace-fixture hit a limit",
+  },
+  { id: "evt-3", at: isoIn(-2400), kind: "limit", icon: "battery.0percent", text: "all exhausted" },
+  {
+    id: "evt-4",
+    at: isoIn(-2100),
+    kind: "revival",
+    icon: "heart.fill",
+    text: "grace-fixture is back — reset early",
+  },
+  {
+    id: "evt-5",
+    at: isoIn(-1800),
+    kind: "ignite",
+    icon: "flag.checkered",
+    text: "ignited linus-fixture — window started, resets 11:17 PM",
+  },
+  {
+    id: "evt-6",
+    at: isoIn(-1500),
+    kind: "desktop",
+    icon: "key",
+    text: "desktop credential stored for http://127.0.0.1:3773",
+  },
+  {
+    id: "evt-7",
+    at: isoIn(-1350),
+    kind: "pairing",
+    icon: "🔑",
+    text: "phone pairing token regenerated",
+  },
+  { id: "evt-8", at: isoIn(-1200), kind: "team", icon: "person.3", text: "Grace's Mac published" },
+  {
+    id: "evt-9",
+    at: isoIn(-300),
+    kind: "other",
+    icon: "sparkles",
+    text: "Visual pass fixture is answering",
+  },
+];
+
+/** The reply `result` for one request, or undefined for a verb the fixture refuses. */
+function answer(request, socketPath) {
+  const { command, args = [], options = {} } = request;
+  switch (command) {
+    case "manifest":
+      return data.manifest;
+    case "status":
+      return {
+        version: "0.0.0-fixture",
+        sha: "fixture",
+        socket: socketPath,
+        badge: "",
+        playground: false,
+        signInRunning: false,
+        engines: {
+          swapd: { enabled: true, registered: true },
+          cliproxy: { enabled: false, registered: false, keyPresent: false },
+          "9router": { enabled: false, registered: false, keyPresent: false },
+        },
+        forkTunnel: { enabled: false, port: 3773, state: "off" },
+      };
+    case "fleets":
+    case "refresh":
+      return fleets();
+    case "forecast":
+      return forecast();
+    case "prefs":
+      // One verb for reads and writes; the fixture holds no state to write.
+      return args[0] === "set" ? undefined : data.prefs;
+    case "stats":
+      return stats(typeof options.period === "string" ? options.period : "week");
+    case "utilization":
+      return utilization(Number(options.days) || 7);
+    case "events":
+      return options.after === undefined
+        ? events()
+        : { after: options.after, known: true, rows: [] };
+    case "aws-logins":
+      return { logins: [] };
+    case "client-activity":
+      return { clientId: "fixture" };
+    case "lock-status":
+      return { enabled: true, locked: false, relock: "5 min" };
+    default:
+      return undefined;
+  }
+}
+
+const options = parseArgs(process.argv.slice(2));
+const schemaVersion = data.manifest.schemaVersion;
+NodeFS.rmSync(options.socket, { force: true });
+
+const server = NodeNet.createServer((socket) => {
+  let buffer = "";
+  socket.setEncoding("utf8");
+  socket.on("data", (chunk) => {
+    buffer += chunk;
+    const newline = buffer.indexOf("\n");
+    if (newline === -1) return;
+    let reply;
+    let verb = "?";
+    try {
+      const request = JSON.parse(buffer.slice(0, newline));
+      verb = typeof request.command === "string" ? request.command : "?";
+      const result = answer(request, options.socket);
+      reply =
+        result === undefined
+          ? { schemaVersion, ok: false, error: `fixture: no answer for ${verb}` }
+          : { schemaVersion, ok: true, result };
+    } catch {
+      reply = { schemaVersion, ok: false, error: "fixture: request was not one JSON line" };
+    }
+    // Verb names only: a request may carry material the fixture must not keep.
+    console.error(`fixture: ${verb} -> ${reply.ok ? "ok" : "refused"}`);
+    socket.end(`${JSON.stringify(reply)}\n`);
+  });
+  socket.on("error", () => socket.destroy());
+});
+
+const stop = () => {
+  server.close();
+  NodeFS.rmSync(options.socket, { force: true });
+  process.exit(0);
+};
+process.on("SIGINT", stop);
+process.on("SIGTERM", stop);
+
+server.listen(options.socket, () => {
+  console.log(`fixture listening on ${options.socket}`);
+});

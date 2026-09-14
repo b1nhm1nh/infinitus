@@ -44,6 +44,7 @@ enum GDIChart {
 ```
 
 Rules:
+
 - **No animation, no timers.** CLAUDE.md's idle-CPU rule; the accounts
   panel idles at 0.13% precisely because it paints on demand.
 - Every chart is painted inside the pane's existing `WM_PAINT`, into the
@@ -57,21 +58,21 @@ Rules:
 
 Empty state is a first-class case in every one of these panes. The Mac
 says "No history yet — samples accrue while Infinitus runs". Say the
-equivalent, and say *how* to get data.
+equivalent, and say _how_ to get data.
 
 ## Shared: scanning off the UI thread
 
 Every scan below goes through `ctx.async` with a generation guard
 (`01`). Concretely:
 
-| scan | cost | source |
-|---|---|---|
-| `cswap usage --days N --json` | seconds, streams GBs of transcripts | `CswapCLI.swift:292-294` |
-| `StatsScanner.scan` | **minutes** cold; chunked at 64 MB | `StatsModel.swift:104-147` |
-| `TokenRateScanner.scan` | seconds | `TokenRates.swift:80` |
-| `UsageHistory.load` + merge | file IO, ~ms–s | `UsageHistory.swift:127` |
-| repo git/gh scan | minutes on a long history | `RepoStatsScanner` |
-| `cswap history --json` | fast | `CswapCLI.swift:282` |
+| scan                          | cost                                | source                     |
+| ----------------------------- | ----------------------------------- | -------------------------- |
+| `cswap usage --days N --json` | seconds, streams GBs of transcripts | `CswapCLI.swift:292-294`   |
+| `StatsScanner.scan`           | **minutes** cold; chunked at 64 MB  | `StatsModel.swift:104-147` |
+| `TokenRateScanner.scan`       | seconds                             | `TokenRates.swift:80`      |
+| `UsageHistory.load` + merge   | file IO, ~ms–s                      | `UsageHistory.swift:127`   |
+| repo git/gh scan              | minutes on a long history           | `RepoStatsScanner`         |
+| `cswap history --json`        | fast                                | `CswapCLI.swift:282`       |
 
 Cache to disk so a pane never opens onto a spinner twice. Paths, all under
 `%APPDATA%\Infinitus\` (`00-architecture.md`):
@@ -121,6 +122,7 @@ Estimated spend, last 7 days
 ```
 
 Notes:
+
 - The caveats **are the feature**. They carry the price-table date and
   the not-a-bill warning. Render them unconditionally, in `captionFont`,
   wrapped (`UsagePane.swift:133-137`).
@@ -148,17 +150,17 @@ Descriptor: `id: "utilization"`, glyph `` (StackedLineChart), tint
 The Mac pane has eight sections. Port five; two of the dropped ones
 depend on a live `AppModel` relay that has no Windows equivalent.
 
-| section | Windows |
-|---|---|
-| Range picker (24h / 7d / 30d) | port |
-| Forecast — every account at its own pace | port (computed here, see below) |
-| Fleet — all accounts out / drain order | port |
-| Battle plan — **live** | **drop** — the Mac's `LiveForecastRelay` is fed by `AppModel`'s snapshot loop |
-| Run rate (tokens & $ per min/hour/day/week) | port |
-| Utilization over time chart | port |
-| 5h windows + rhythm | port |
-| Battle plan — dry run | port (it is `WindowPlanner.replay` over history, no live state) |
-| Waste at weekly resets | port |
+| section                                     | Windows                                                                       |
+| ------------------------------------------- | ----------------------------------------------------------------------------- |
+| Range picker (24h / 7d / 30d)               | port                                                                          |
+| Forecast — every account at its own pace    | port (computed here, see below)                                               |
+| Fleet — all accounts out / drain order      | port                                                                          |
+| Battle plan — **live**                      | **drop** — the Mac's `LiveForecastRelay` is fed by `AppModel`'s snapshot loop |
+| Run rate (tokens & $ per min/hour/day/week) | port                                                                          |
+| Utilization over time chart                 | port                                                                          |
+| 5h windows + rhythm                         | port                                                                          |
+| Battle plan — dry run                       | port (it is `WindowPlanner.replay` over history, no live state)               |
+| Waste at weekly resets                      | port                                                                          |
 
 ### History has to exist first
 
@@ -182,6 +184,7 @@ enum WinUsageHistoryRecorder {
 ```
 
 Lift the logic from `Sources/Infinitus/UsageHistoryRecorder.swift`:
+
 - dedupe on the engine's **poll instant** (`usageFetchedAt`), not the wall
   clock — `UsageHistory.samples` already keys on it, and recording the
   sampling time would write a line per tick instead of per poll;
@@ -317,6 +320,7 @@ Rhythm
 ```
 
 Implementation:
+
 - Tile grid: `GridItem(.adaptive(minimum: 150))` on the Mac → columns =
   `max(1, contentWidth / px(160))`, tile `px(150)×px(78)`.
 - Tile paint: id in `captionFont`/`dim`; value in a semibold body font,
@@ -384,6 +388,7 @@ Two sources:
    numbers to names from the current fleet (alias, else the email's local
    part). Time formatting: "20:20" today, "yesterday 17:21", "Aug 28
    06:44" (`SwitchHistoryView.swift:48-61`).
+
    > **Windows date-formatting hazard.** Setting
    > `DateFormatter.timeZone` to a named IANA zone **traps** on Windows
    > (swift-corelibs-foundation, Swift 6.3.3 — verified 2026-09-05; it
@@ -402,6 +407,7 @@ Two sources:
    same file — so this affects two panes.
 
    Add a Windows `EventStore`:
+
    ```swift
    /// The tray's durable event log — %APPDATA%\Infinitus\events.jsonl,
    /// one JSON line per event. The Mac's EventStore, minus the actor
@@ -414,6 +420,7 @@ Two sources:
        static func prune(now: Date = Date())   // 400-day retention
    }
    ```
+
    Encode/decode with `.iso8601` dates and `.sortedKeys`, exactly as the
    Mac does (`EventStore.swift:14-24`), so the two files are
    interchangeable.
@@ -448,10 +455,12 @@ timestamp right-aligned in `captionFont`.
 ## Tests
 
 Core — mostly already covered; add only what is new:
+
 - If `TokenFormat` / `ForecastWords` / `ForecastClock` move to Core, their
   existing behaviour must be pinned by a test before the move and after.
 
 `InfinitusWinUI`:
+
 - `testEventStoreRoundTrip` — append 3, load 3, order preserved.
 - `testEventStoreSkipsTornLine` — a truncated last line is ignored, the
   rest load (the Mac's `load` already does this via `split` +
@@ -493,6 +502,7 @@ Core — mostly already covered; add only what is new:
 ## Report
 
 Status; files; tests; commit. Plus:
+
 - which of `TokenFormat` / `ForecastWords` / `ForecastClock` moved to
   Core, and confirmation the Mac renders unchanged;
 - whether the usage-history recorder and the event store landed (they are

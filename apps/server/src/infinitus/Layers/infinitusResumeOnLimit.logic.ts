@@ -1,0 +1,218 @@
+import type {
+  ModelSelection,
+  ProviderInstanceConfigMap,
+  ProviderRuntimeEvent,
+  ThreadId,
+  TurnId,
+} from "@t3tools/contracts";
+import type { InfinitusFleet, InfinitusSnapshot } from "@t3tools/contracts/infinitus";
+
+/**
+ * Resume-on-limit for the threads this server runs (#648): the pure half.
+ * When the Claude account behind a thread's turn hits its usage limit and the
+ * engine swaps (or the account comes back), the turn is re-issued on whatever
+ * account is live now. These are the same rules native's terminal nudge
+ * applies (ResumeService / ResumeGate): once per stop, alive only as fresh as
+ * the probe, spaced by a cooldown.
+ */
+
+/** The Claude Code driver, the only one this covers. */
+const CLAUDE_DRIVER = "claudeAgent";
+/** Fleets whose accounts are Claude ones, whatever engine runs them. */
+const CLAUDE_PROVIDER = "claude";
+/** The engine's word for an account that can take work. */
+const ACCOUNT_OK = "ok";
+/** The variable a proxied instance carries (`applyProxyDraft`, #1088): its
+    requests never spend a swapd account, so its limit is the proxy's own. */
+const PROXY_BASE_URL_VARIABLE = "ANTHROPIC_BASE_URL";
+
+/** Two resumes of one thread are never closer than this; a flapping "ok"
+    cannot chain them. Native's ResumeGate spaces its nudges the same way. */
+export const RESUME_COOLDOWN_MS = 120_000;
+
+/** The work-log row a resume leaves in the thread. Free-form kind: no
+    contract change, and no `.failed` suffix so it never reads as severe. */
+export const RESUME_MARKER_KIND = "infinitus.turn.resumed";
+/** The row a limit stop leaves the moment it lands (#270 I): the sidebar pill
+    and the banner read "Limit hit" from it until the resumed row or a new
+    turn follows. */
+export const LIMIT_MARKER_KIND = "infinitus.thread.limited";
+
+/** What the resumed turn is told — upstream's own continuation prompt (the one
+    a server update sends), so the thread reads the same after either. */
+export const CONTINUATION_PROMPT = "Continue where you left off.";
+
+/** A turn a usage limit stopped, as this server saw it. `parked`: the SDK
+    holds the turn open with nothing arriving (the common case); `failed`: the
+    CLI ended the turn with the limit as its error. */
+export interface LimitStop {
+  readonly threadId: ThreadId;
+  readonly turnId: TurnId | null;
+  readonly kind: "parked" | "failed";
+  readonly stoppedAt: number;
+  /** Who each Claude fleet ran on when the stop landed, by fleet key; the
+      marker names the change. */
+  readonly activeAtStop: ReadonlyMap<string, string>;
+  /** When the window that rejected the turn resets (epoch ms), from the SDK's
+      `rate_limit_info`; null for a failed turn, whose error names no reset. */
+  readonly resetsAt: number | null;
+  /** The proxied instance the thread runs on (#1088), else null: its limit
+      belongs to the proxy's upstream, so no swapd account is named and no
+      rotation resumes it. */
+  readonly proxy: string | null;
+}
+
+/**
+ * The limit stop one runtime event reports, or null. Both arms read structured
+ * evidence, never the adapter's prose: a parked turn arrives as the adapter's
+ * `runtime.warning` carrying the SDK's `rate_limit_info` with
+ * `status: "rejected"`; a failed one as a `turn.completed` whose state is
+ * `failed` and whose payload carries `usageLimited`. Matching the error text
+ * instead read every wording with "usage limit" in it as a stop — including
+ * the CLI's context-window gate, whose message said so until it was reworded.
+ */
+export function limitStopFromEvent(
+  event: ProviderRuntimeEvent,
+  now: number,
+  snapshot: InfinitusSnapshot,
+): LimitStop | null {
+  if (event.provider !== CLAUDE_DRIVER) return null;
+  const base = {
+    threadId: event.threadId,
+    turnId: event.turnId ?? null,
+    stoppedAt: now,
+    activeAtStop: activeClaudeAccounts(snapshot),
+    proxy: null,
+  };
+  if (event.type === "runtime.warning") {
+    const detail = event.payload.detail;
+    if (
+      typeof detail === "object" &&
+      detail !== null &&
+      "status" in detail &&
+      detail.status === "rejected"
+    ) {
+      const resetsAt = "resetsAt" in detail ? detail.resetsAt : undefined;
+      return {
+        ...base,
+        kind: "parked",
+        // Epoch seconds on the wire, as the adapter reads it.
+        resetsAt:
+          typeof resetsAt === "number" && Number.isFinite(resetsAt) ? resetsAt * 1000 : null,
+      };
+    }
+    return null;
+  }
+  if (
+    event.type === "turn.completed" &&
+    event.payload.state === "failed" &&
+    event.payload.usageLimited === true
+  ) {
+    return { ...base, kind: "failed", resetsAt: null };
+  }
+  return null;
+}
+
+/**
+ * The proxied instance's label when the thread's instance routes through one
+ * (`ANTHROPIC_BASE_URL` on its environment), else null. The display name,
+ * falling back to the instance id.
+ */
+export function proxyInstanceLabel(
+  instances: ProviderInstanceConfigMap,
+  selection: Pick<ModelSelection, "instanceId">,
+): string | null {
+  const instance = instances[selection.instanceId];
+  if (instance === undefined) return null;
+  const proxied = (instance.environment ?? []).some(
+    (variable) => variable.name === PROXY_BASE_URL_VARIABLE && variable.value.trim() !== "",
+  );
+  return proxied ? (instance.displayName ?? selection.instanceId) : null;
+}
+
+/** The stop as a proxied instance's: no account named, never resumed. */
+export function proxyStop(stop: LimitStop, proxy: string): LimitStop {
+  return { ...stop, proxy, activeAtStop: new Map() };
+}
+
+/**
+ * Whether one runtime event means the stop is no longer ours to resume: the
+ * turn moved on (the user interrupted or re-sent, the CLI recovered) or the
+ * session went away. Our own interrupt lands after the record is gone, so it
+ * never reaches here for the stop it ends.
+ */
+export function eventCancelsStop(event: ProviderRuntimeEvent, stop: LimitStop): boolean {
+  if (event.threadId !== stop.threadId) return false;
+  switch (event.type) {
+    case "turn.started":
+      return true;
+    case "turn.aborted":
+    case "session.exited":
+      return true;
+    case "turn.completed":
+      // A parked turn that completes did so on its own; a failed stop's own
+      // completion is the event that recorded it.
+      return stop.kind === "parked";
+    default:
+      return false;
+  }
+}
+
+function claudeFleets(snapshot: InfinitusSnapshot): ReadonlyArray<InfinitusFleet> {
+  return snapshot.fleets.filter((fleet) => fleet.provider === CLAUDE_PROVIDER);
+}
+
+function accountLabel(account: InfinitusFleet["accounts"][number]): string {
+  return account.alias ?? account.email;
+}
+
+/** The active account of every Claude fleet, by fleet key. */
+export function activeClaudeAccounts(snapshot: InfinitusSnapshot): ReadonlyMap<string, string> {
+  const out = new Map<string, string>();
+  for (const fleet of claudeFleets(snapshot)) {
+    const active = fleet.accounts.find((account) => account.active);
+    if (active !== undefined) out.set(fleet.key, accountLabel(active));
+  }
+  return out;
+}
+
+/** Who to resume on, or null while nothing has changed. */
+export interface ResumeTarget {
+  readonly fleetKey: string;
+  readonly account: string;
+  readonly from: string | null;
+}
+
+/**
+ * Native's ResumeGate: an active Claude account that reads `ok`, and that
+ * reading taken after the stop — a probe from before it would only repeat the
+ * account that just ran out. An engine that reports no probe time gets the
+ * weaker test, a different account than the one at the stop.
+ */
+export function resumeTarget(stop: LimitStop, snapshot: InfinitusSnapshot): ResumeTarget | null {
+  // A proxy's limit: no account on this Mac can lift it (#1088).
+  if (stop.proxy !== null) return null;
+  for (const fleet of claudeFleets(snapshot)) {
+    const active = fleet.accounts.find((account) => account.active);
+    if (active === undefined || active.usageStatus !== ACCOUNT_OK) continue;
+    const from = stop.activeAtStop.get(fleet.key) ?? null;
+    const label = accountLabel(active);
+    const fetchedAt = active.usageFetchedAt === undefined ? NaN : Date.parse(active.usageFetchedAt);
+    const fresh = Number.isFinite(fetchedAt) ? fetchedAt > stop.stoppedAt : label !== from;
+    if (fresh) return { fleetKey: fleet.key, account: label, from };
+  }
+  return null;
+}
+
+/** The marker's line. */
+/** The limited row's line: the account whose limit stopped the turn, when
+    the snapshot named one. */
+export function limitMarkerSummary(stop: LimitStop): string {
+  if (stop.proxy !== null) return `Limit hit on the proxy instance ${stop.proxy}`;
+  const accounts = [...new Set(stop.activeAtStop.values())];
+  return accounts.length === 0 ? "Limit hit" : `Limit hit on ${accounts.join(", ")}`;
+}
+
+export function resumeMarkerSummary(target: ResumeTarget): string {
+  return `Turn resumed on ${target.account}`;
+}

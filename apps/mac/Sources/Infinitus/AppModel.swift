@@ -1,0 +1,2362 @@
+import Foundation
+import Combine
+import SwiftUI
+import AppKit
+import os
+import InfinitusCore
+import InfinitusUI
+
+/// Main-actor state the MenuBarExtra renders. Feeds per spec §2:
+/// snapshots from `swapd list --json` (timer + right after any switch
+/// event), events from the supervised `swapd auto --json`.
+@MainActor
+final class AppModel: ObservableObject {
+    // MARK: fleets (#8 multi-engine seam)
+    //
+    // Every enabled engine's fleets live in the registry as FleetState
+    // objects — rows, ticks, pending switch. AppModel stays the popup
+    // chrome's model AND a FleetModel facade over the PRIMARY Claude
+    // fleet (swapd's on a swapd machine), so the mac-only panes, the
+    // title, resume nudges and push triggers keep reading `accounts`
+    // exactly as before.
+    private(set) lazy var registry = EngineRegistry(host: self)
+    var fleets: [FleetState] { registry.fleets }
+    var primary: FleetState? { registry.primary }
+    /// Per-engine last error (the primary's also lands in lastError).
+    @Published var engineErrors: [String: String] = [:]
+    /// When each engine last answered `snapshot()`. The age a failing
+    /// engine's retained rows report falls back to this when the engine
+    /// stamped no `usageFetchedAt` of its own (`FleetState.markStale`).
+    private var engineLastGood: [String: Date] = [:]
+    /// Per-engine honesty note for the fleet header (proxy: routing
+    /// strategy that ignores priority tiers).
+    @Published var fleetCaveats: [String: String] = [:]
+    private var forwardingFleetChange = false
+
+    var accounts: [Account] { primary?.accounts ?? [] }
+    var activeNumber: Int? { primary?.activeNumber }
+    var nextCandidate: Int? { primary?.nextCandidate }
+    var nextRecovery: NextRecovery? { primary?.nextRecovery }
+    /// The desktop's thread card's own count of active threads (#1047),
+    /// nil until a card has ever arrived — the busy signal `WindowPlanner`
+    /// reads now that the terminal session tracker is gone (#1041 d6).
+    @Published var desktopActiveThreads: Int?
+    /// Session-list popover (brain chip click) — popup-wide state so the
+    /// wide chip and the rail badge share one popover.
+    @Published var sessionsShown = false
+    // Animation triggers. switchFlashTick fires the celebration sweep on
+    // the (new) active row; dataPulseTick ripples the sync dot whenever a
+    // snapshot actually changed something visible.
+    var switchFlashTick: Int {
+        get { primary?.switchFlashTick ?? 0 }
+        set { primary?.switchFlashTick = newValue }
+    }
+    /// Per-account death beats: bumped when a row flips alive -> dead
+    /// in a snapshot (the celebration's mirror, user 2026-08-30).
+    var deathTicks: [Int: Int] {
+        get { primary?.deathTicks ?? [:] }
+        set { primary?.deathTicks = newValue }
+    }
+    /// Rows currently DYING: dead in the data, but still rendered with
+    /// their gauges for a beat so the killing-blow drama (drop plunge,
+    /// shard finisher, death beat) plays out — the dead layout swap
+    /// unmounted the bar instantly ("killed instantly", user
+    /// 2026-08-31). Cleared a few seconds after each death.
+    var dying: Set<Int> {
+        get { primary?.dying ?? [] }
+        set { primary?.dying = newValue }
+    }
+    /// Revival fanfares: bumped when a row flips dead -> alive (its
+    /// window reset while drained) — the dramatic full-line glow
+    /// (user 2026-08-31).
+    var reviveTicks: [Int: Int] {
+        get { primary?.reviveTicks ?? [:] }
+        set { primary?.reviveTicks = newValue }
+    }
+    /// Click-to-switch staging: the row sets this, the popup's
+    /// confirmation alert commits or clears it.
+    var pendingSwitch: Int? {
+        get { primary?.pendingSwitch }
+        set { primary?.pendingSwitch = newValue }
+    }
+    @Published var dataPulseTick = 0
+
+    /// A fleet's rows changed: whoever observes the host (title, popup
+    /// chrome, panes) re-renders. Guarded — FleetState forwards host
+    /// changes down, and this is the return trip.
+    func forwardFleetChange() {
+        guard !forwardingFleetChange else { return }
+        forwardingFleetChange = true
+        objectWillChange.send()
+        forwardingFleetChange = false
+    }
+    /// Debug-only (defaults write … debug_menu -bool true): adds the
+    /// Animations tab so every effect can be fired by hand. Set in init
+    /// AFTER migrateLegacyDefaults: a stored-property initializer runs
+    /// first, and the first launch under the new bundle id read the
+    /// not-yet-copied key (user 2026-09-03 "not seeing the animations
+    /// setting on current build").
+    let debugMenu: Bool
+    /// swapd's `auto` under the supervisor (#475: one daemon per enabled
+    /// engine, each owning its account policy).
+    @Published var swapdState: EngineSupervisor.State = .stopped
+    struct EventEntry: Identifiable {
+        let id = UUID()
+        var at = Date()
+        let kind: String
+        let icon: String
+        let text: String
+    }
+    /// The Activity tail, `infinitusctl events` and the wall's last
+    /// lines: the last 100 events — seeded from the durable log at
+    /// launch (`seedEventLog`), so a relaunch or rebuild no longer wipes
+    /// what the user just did (#338).
+    @Published var eventLog: [EventEntry] = []
+    let eventStore = EventStore()
+    private let launchedAt = Date()
+    lazy var statsModel = StatsModel(eventStore: eventStore)
+
+    /// Every event goes through here: the Activity pane's tail and the
+    /// durable log Stats reads. `kind` is StatsEvents' vocabulary
+    /// (switch/death/limit/revival/ignite/resume/nudge/pairing/other).
+    func logEvent(_ kind: String, icon: String, _ text: String) {
+        eventLog.append(EventEntry(kind: kind, icon: icon, text: text))
+        if eventLog.count > 100 { eventLog.removeFirst(eventLog.count - 100) }
+        // The durable log belongs to the real instance alone. A mock,
+        // playground or e2e instance shares the same App Support path
+        // (only the defaults domain and the control socket differ), and
+        // would otherwise write demo switches into the user's own
+        // months of history — the same gate `statsModel.enabled` uses.
+        guard !isPlayground, !mockMode else { return }
+        let event = StatsEvent(at: Date(), kind: kind, icon: icon, text: text)
+        Task.detached(priority: .utility) { [eventStore] in await eventStore.append(event) }
+    }
+    /// The phone's star/pause verbs (`POST /accounts/action`), with the
+    /// popup's own semantics: the same capability guards the control
+    /// server runs, and a star lands on the account right away when it
+    /// isn't the active one (FleetState.setPreferred).
+    func performAccountAction(_ request: AccountAction.Request) async -> AccountAction.Reply {
+        guard let fleet = fleets.first(where: { $0.id == request.fleet }) else {
+            return AccountAction.Reply(outcome: "notFound", detail: "no fleet \(request.fleet)")
+        }
+        guard let account = fleet.accounts.first(where: { $0.number == request.number }) else {
+            return AccountAction.Reply(outcome: "notFound", detail: "no account #\(request.number) in \(fleet.id)")
+        }
+        let engine = fleet.engine, provider = fleet.provider, number = request.number
+        do {
+            switch request.action {
+            case "hold", "unhold":
+                guard fleet.capabilities.contains(.hold) else {
+                    return AccountAction.Reply(outcome: "unsupported", detail: "\(fleet.id) does not support hold")
+                }
+                try await engine.setHold(fleet: provider, number: number, held: request.action == "hold")
+            case "prefer", "unprefer":
+                guard fleet.capabilities.contains(.prefer), account.preferred != nil else {
+                    return AccountAction.Reply(outcome: "unsupported", detail: "\(fleet.id) has no pick-first setting")
+                }
+                let on = request.action == "prefer"
+                try await engine.setPreferred(fleet: provider, number: number, on)
+                if on, !account.active, fleet.capabilities.contains(.switch) {
+                    try await engine.switchTo(fleet: provider, number: number)
+                }
+            default:
+                return AccountAction.Reply(outcome: "unsupported", detail: "unknown action \(request.action)")
+            }
+        } catch {
+            return AccountAction.Reply(outcome: "failed", detail: "\(error)")
+        }
+        await refreshSnapshot()
+        return AccountAction.Reply(outcome: "done")
+    }
+
+    @Published var lastError: String?
+    /// #7 layer 2: the reset battle plan for the current sprint, recomputed
+    /// every snapshot; nil when there is nothing to plan. Manual mode: the
+    /// popup line offers the ignite step behind a confirm, nothing runs
+    /// by itself.
+    @Published var battlePlan: WindowPlanner.Plan?
+    @Published var igniting: Int?
+    /// #338: what the last ignition did, for the plan line to say out
+    /// loud for a few seconds — the chip otherwise vanishes silently.
+    @Published var igniteResult: IgniteResult?
+    /// Run-rate projection: when the active account's windows hit their
+    /// limits and when the fleet is out, at the measured pace (nil until
+    /// there is an active account). The planner reads the same rates.
+    @Published var forecast: UsageForecast?
+    /// Sessions whose AWS sign-in lapsed + logins in flight (AwsLogin.swift).
+    @Published var awsLogins: [AwsLogin.Item] = []
+    /// Crash reports from the phone (MetricKit, over the mirror) and this
+    /// Mac's own diagnostic reports; newest first (CrashReport.swift).
+    @Published private(set) var crashReports: [CrashReport] = []
+    let crashStore = CrashStore(directory: CrashStore.defaultDirectory())
+    private var awsLoginStates: [AwsLogin.State] = []
+    private var awsAnnouncedRunKeys: Set<String> = []
+    private var awsLoginQuitWatch: AnyCancellable?
+    private(set) lazy var awsLoginRunner: AwsLoginRunner = {
+        let runner = AwsLoginRunner(
+            onChange: { [weak self] states in Task { @MainActor in self?.awsLoginStates = states; self?.rebuildAwsLogins() } },
+            onDone: { [weak self] state in Task { @MainActor in self?.awsLoginLanded(state) } },
+            // INFINITUS_AWS_LEDGER: the e2e gate's own file, so its stub
+            // logins never land in (or read) the real app's ledger.
+            ledgerURL: ProcessInfo.processInfo.environment["INFINITUS_AWS_LEDGER"].map { URL(fileURLWithPath: $0) }
+                ?? AppSupport.root().appendingPathComponent("aws-logins.json"))
+        // A CLI left behind at quit keeps its localhost listener alive.
+        awsLoginQuitWatch = NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)
+            .sink { _ in runner.killAll() }
+        return runner
+    }()
+    /// Last 24h of usage samples, the burn-rate input (5h pace over the
+    /// last hour, weekly pace over the day). Seeded from this machine's
+    /// history file at launch so the first plan doesn't wait ten minutes
+    /// for fresh polls.
+    private var recentSamples: [UsageSample] = []
+
+    /// The swapd binary this Mac has, when it has one (#8): the engine is
+    /// registered from it, and the pane shows where it is. Mock mode and
+    /// the playground run the bundled demo script in its place.
+    let swapd: SwapdCLI?
+    /// The Animation Playground is retired (#654); the guards it gated —
+    /// snapshot cache, notifications, resume nudges, push, sync, power
+    /// assertions, the engine supervisor — stay put until they are swept.
+    let isPlayground = false
+    /// Set by StatusItemHolder — opens the controller-owned Settings window
+    /// (the SwiftUI Settings scene is unreachable from popover hosts).
+    var showSettings: (() -> Void)?
+    /// Set by StatusItemHolder — closes and re-shows an open popover.
+    /// NSPopover keeps a stale fitting size when the content swaps shape
+    /// wholesale (wide<->stacked left it clipped or oversized until a
+    /// manual reopen, user-verified); a programmatic bounce is that same
+    /// fix without the user doing it.
+    var reopenPopover: (() -> Void)?
+    /// Set by StatusItemHolder — closes the popover and opens the same
+    /// content as a free-floating window (the pop-out action).
+    var popOut: (() -> Void)?
+    // The bundle on disk was rebuilt since this instance launched (the
+    // dev loop, or a manual make-app.sh) — surfaced as "restart to update".
+    @Published var appUpdatePending = false
+    /// A newer Infinitus release than this build (About → Updates does
+    /// the check; the popup chip just points there).
+    @Published var appUpdateVersion: String?
+    /// Whatever About's release check last found, newer or not (#121) —
+    /// the phone mirrors this to know when a newer PHONE build is out.
+    @Published var appReleaseLatest: String?
+    /// The one BrewUpdater instance the About pane's button and the
+    /// phone's `POST /app/update` route both drive; set by InfinitusApp.
+    var brewUpdater: BrewUpdater?
+    private let launchExecutableDate = AppModel.executableDate()
+    private var swapdSupervisor: EngineSupervisor?
+    private var refreshTask: Task<Void, Never>?
+    private var lastNotifiedActive: Int?
+
+    // Display prefs, persisted to UserDefaults under the same names and
+    // defaults as the rumps MenuBarSettings. @Published (not @AppStorage):
+    // @AppStorage inside an ObservableObject never fires objectWillChange,
+    // so the MenuBarExtra title would go stale.
+    @Published var showAccountName: Bool { didSet { defaults.set(showAccountName, forKey: "show_account_name") } }
+    @Published var titlePct: String { didSet { defaults.set(titlePct, forKey: "title_pct") } }
+    @Published var titleScoped: Bool { didSet { defaults.set(titleScoped, forKey: "title_scoped") } }
+    // Menu bar percentages count remaining instead of used (todo
+    // 2026-08-30). Menu-bar-only: the popup gauges stay HP-style.
+    @Published var titleRemaining: Bool { didSet { defaults.set(titleRemaining, forKey: "title_remaining") } }
+    @Published var titleReset: String { didSet { defaults.set(titleReset, forKey: "title_reset") } }
+    /// Icon only in the menu bar — no name, no percentages (user
+    /// 2026-08-30). Display-time override; the individual title prefs
+    /// keep their values for when this flips back off.
+    @Published var titleIconOnly: Bool { didSet { defaults.set(titleIconOnly, forKey: "title_icon_only") } }
+    @Published var refreshInterval: Int { didSet { defaults.set(refreshInterval, forKey: "refresh_interval") } }
+    @Published var gamification: String { didSet { defaults.set(gamification, forKey: "gamification_style") } }
+    @Published var compactRows: Bool { didSet { defaults.set(compactRows, forKey: "compact_rows") } }
+    // Hide the popup's action controls but keep the status chips (claude
+    // status, working sessions, engine badge) — todo 2026-08-30. Safe to
+    // persist: every hidden action lives in the status item's right-click
+    // menu, so Settings/Quit can never strand.
+    @Published var footerActionsHidden: Bool { didSet { defaults.set(footerActionsHidden, forKey: "footer_actions_hidden") } }
+    @Published var popupLayout: String { didSet { defaults.set(popupLayout, forKey: "popup_layout") } }
+    @Published var popupTextSize: String { didSet { defaults.set(popupTextSize, forKey: "popup_text_size") } }
+    // Popup transparency, 0 (full frost) … 1 (clearest). ONE dial for
+    // every focus state: the backdrop-blur glass renders identically
+    // everywhere, and a per-focus value made the popup visibly jump as
+    // key state flapped (user 2026-08-30: "another state that randomly
+    // transition"). Key name kept for existing prefs.
+    @Published var glassFocused: Double { didSet { defaults.set(glassFocused, forKey: "glass_focused") } }
+    /// Content-fill scale for the transparency dial. Once the chrome
+    /// went pure at max (measured: body gaps match the backdrop's
+    /// luminance), the card/band fills were what still blocked the
+    /// backdrop (user 2026-08-30: "max transparency doesn't make glass
+    /// transparency that much") — so they thin with the dial too.
+    var fillScale: Double { 1 - 0.6 * glassFocused }
+    // Launch-intro choreography (dev-tunable, 2026-08-30): content
+    // entrance style, overall speed multiplier, title flourish variant.
+    // introTick replays the whole intro on demand.
+    @Published var introTick = 0
+    @Published var introStyle: String { didSet { defaults.set(introStyle, forKey: "intro_style") } }
+    @Published var introSpeed: Double { didSet { defaults.set(introSpeed, forKey: "intro_speed") } }
+    @Published var introTitle: String { didSet { defaults.set(introTitle, forKey: "intro_title") } }
+    /// Pace fire on 7d/model bars ("off"/"ember"/"flame"/"limit").
+    @Published var burnStyle: String { didSet { defaults.set(burnStyle, forKey: "burn_style") } }
+    /// Mock mode (user 2026-08-31): the bundled demo fleet stands in
+    /// for the engine. Machine-local, deliberately never synced. swapd
+    /// is a let, so flipping this relaunches — the restart IS the
+    /// re-detect.
+    @Published var mockMode: Bool {
+        didSet {
+            defaults.set(mockMode, forKey: "mock_mode")
+            relaunchApp()
+        }
+    }
+
+    // MARK: engines (#8) — which engines the registry runs. Like
+    // mockMode, flipping one relaunches: the registry is built once at
+    // init and the restart IS the re-detect.
+    /// The swapd engine: on by default, off when asked.
+    @Published var swapdEnabled: Bool {
+        didSet {
+            guard swapdEnabled != oldValue else { return }
+            defaults.set(swapdEnabled, forKey: "engine_swapd_enabled")
+            relaunchApp()
+        }
+    }
+    @Published var cliproxyEnabled: Bool {
+        didSet {
+            guard cliproxyEnabled != oldValue else { return }
+            defaults.set(cliproxyEnabled, forKey: "engine_cliproxy_enabled")
+            relaunchApp()
+        }
+    }
+    /// The proxy's management endpoint; the key lives in the keychain
+    /// under this string (Keychain.swift).
+    var cliproxyBaseURL: String {
+        defaults.string(forKey: "cliproxy_base_url") ?? CLIProxyEngine.defaultBaseURL.absoluteString
+    }
+    /// Memoised for the process: the only writers are the two save
+    /// functions below, which relaunch — and `status` asked the keychain
+    /// twice per desktop-app poll before this (#346's sample).
+    private var cliproxyKeyPresentCache: Bool?
+    var cliproxyKeyPresent: Bool {
+        if let cached = cliproxyKeyPresentCache { return cached }
+        let present = Keychain.read(account: cliproxyBaseURL) != nil
+        cliproxyKeyPresentCache = present
+        return present
+    }
+
+    /// Pane "Save & restart": URL to defaults, key to the keychain
+    /// (empty key = clear), then relaunch so the registry rebuilds.
+    func saveCLIProxy(baseURL: String, key: String) {
+        let url = baseURL.trimmingCharacters(in: .whitespaces)
+        let old = cliproxyBaseURL
+        if old != url { Keychain.delete(account: old) }
+        defaults.set(url, forKey: "cliproxy_base_url")
+        let trimmed = key.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty { Keychain.delete(account: url) }
+        else { _ = Keychain.write(account: url, value: trimmed) }
+        cliproxyKeyPresentCache = !trimmed.isEmpty
+        relaunchApp()
+    }
+
+    /// 9Router (third engine): same shape as the proxy — toggle in
+    /// defaults, password in the keychain under the base URL.
+    @Published var nineRouterEnabled: Bool {
+        didSet {
+            guard nineRouterEnabled != oldValue else { return }
+            defaults.set(nineRouterEnabled, forKey: "engine_9router_enabled")
+            relaunchApp()
+        }
+    }
+    /// Claude Code's settings.json points its API
+    /// (`env.ANTHROPIC_BASE_URL`) at the 9Router endpoint: the 9Router
+    /// fleet is what Claude Code actually hits, so it leads
+    /// (EngineRegistry.primary). Re-read only when the file changes —
+    /// refreshRouting.
+    @Published var routedVia9Router = false
+    /// Where the routed env points: the settings URL's origin
+    /// (scheme://host:port). The engine runs against THIS, not the
+    /// configured base URL — on this Mac the router lives on the LAN
+    /// (192.168.2.12:20128), so the loopback default would poll
+    /// nothing. Launch-time only; engines don't move once built.
+    private(set) var routingBaseURL: URL?
+    /// settings.json's stamp at the last routing read.
+    private var routingStamp: (mtime: Date, size: Int)?
+    var nineRouterBaseURL: String {
+        defaults.string(forKey: "9router_base_url") ?? NineRouterEngine.defaultBaseURL.absoluteString
+    }
+    private var nineRouterPasswordPresentCache: Bool?
+    var nineRouterPasswordPresent: Bool {
+        if let cached = nineRouterPasswordPresentCache { return cached }
+        let present = Keychain.read(account: nineRouterBaseURL, service: Keychain.nineRouterService) != nil
+        nineRouterPasswordPresentCache = present
+        return present
+    }
+    func saveNineRouter(baseURL: String, password: String) {
+        let url = baseURL.trimmingCharacters(in: .whitespaces)
+        let old = nineRouterBaseURL
+        if old != url { Keychain.delete(account: old, service: Keychain.nineRouterService) }
+        defaults.set(url, forKey: "9router_base_url")
+        let trimmed = password.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty { Keychain.delete(account: url, service: Keychain.nineRouterService) }
+        else { _ = Keychain.write(account: url, value: trimmed, service: Keychain.nineRouterService) }
+        nineRouterPasswordPresentCache = !trimmed.isEmpty
+        relaunchApp()
+    }
+
+    static let cliproxyLedgerURL: URL = {
+        AppSupport.root().appendingPathComponent("engines/cliproxy/usage.jsonl")
+    }()
+
+    /// OAuth add / re-login for an engine that signs accounts in through
+    /// a browser (the proxy): the same in-app sign-in chooser as cswap
+    /// (system sheet or per-account private window — never the user's
+    /// default browser), polling the engine until the credential lands.
+    func addOAuthAccount(engineID: String, provider: Provider, relogin: Account? = nil,
+                         headless: Bool = false) {
+        guard let engine = registry.engine(id: engineID),
+              engine.capabilities.contains(.addOAuth),
+              !addingFirstAccount, !TokenFlow.shared.running else { return }
+        addingFirstAccount = true
+        firstAccountMessage = nil
+        TokenFlow.shared.start(model: self, engine: engine, provider: provider,
+                               relogin: relogin, headless: headless) { [weak self] message in
+            self?.firstAccountMessage = message
+            self?.addingFirstAccount = false
+        }
+    }
+
+    /// `GET /routing/strategy` as of the last refresh (proxy engine only).
+    @Published var proxyRoutingStrategy: String?
+    /// nil = the proxy has no session-affinity route (pre-#5447): the
+    /// pane shows the YAML note instead of a toggle.
+    @Published var proxySessionAffinity: Bool?
+
+    /// The CLIProxyAPI tab's routing picker: PUT, then a refresh so the
+    /// caveat line and the mapped fleet follow the new mode.
+    func setProxySessionAffinity(_ on: Bool) {
+        guard let proxy = registry.engine(id: CLIProxyEngine.engineID) as? CLIProxyEngine else { return }
+        Task {
+            do {
+                try await proxy.setSessionAffinity(on)
+                engineErrors[CLIProxyEngine.engineID] = nil
+            } catch {
+                engineErrors[CLIProxyEngine.engineID] =
+                    (error as? EngineError)?.errorDescription ?? "\(error)"
+            }
+            await refreshSnapshot()
+        }
+    }
+
+    func setProxyRoutingStrategy(_ strategy: String) {
+        guard let proxy = registry.engine(id: CLIProxyEngine.engineID) as? CLIProxyEngine else { return }
+        Task {
+            do {
+                try await proxy.setRoutingStrategy(strategy)
+                engineErrors[CLIProxyEngine.engineID] = nil
+            } catch {
+                engineErrors[CLIProxyEngine.engineID] =
+                    (error as? EngineError)?.errorDescription ?? "\(error)"
+            }
+            await refreshSnapshot()
+        }
+    }
+
+    /// Intro phase timing: bars (and the active-row flash) hold until
+    /// the content entrance has fully landed (user 2026-08-30: "only
+    /// when content in full display -> play bar fills + flash").
+    var introContentDuration: Double { 0.7 / max(0.2, introSpeed) }
+    var introBarDelay: Double { introContentDuration + 0.25 }
+
+    /// The debug pane's Replay: the WHOLE sequence, not just the
+    /// entrances — bars replay via the introTick environment, and the
+    /// flash fires after the fill starts.
+    func replayIntro() {
+        introTick += 1
+        DispatchQueue.main.asyncAfter(deadline: .now() + introBarDelay + 0.5) {
+            self.switchFlashTick += 1
+        }
+    }
+    // Persisted since #828 (`menu_bar_enabled`): the desktop app and
+    // `infinitusctl prefs set menu_bar_enabled true` can restore a hidden
+    // icon, so it no longer needs the popup to be reachable. Off, the app
+    // runs headless — the socket, the mirror and the pinned window stay.
+    @Published var menuBarIconShown: Bool { didSet { defaults.set(menuBarIconShown, forKey: "menu_bar_enabled") } }
+    // Pin holds the popover open (click-outside stops closing it).
+    // Persisted by request — a pinned popup stays pinned across relaunches.
+    @Published var popoverPinned: Bool { didSet { defaults.set(popoverPinned, forKey: "popover_pinned") } }
+    /// Display-only row order (PopupSort): the engine's slots, headroom
+    /// with active + next pinned (todo 2026-09-01), or the engine's own
+    /// candidate ranking (#542). Engine slots never move — nothing is
+    /// written (the app-side auto-order writer was removed 2026-09-03:
+    /// pick-first is an engine knob, see EngineCapabilities.prefer).
+    /// `popup_sort`; a pre-#542 `sort_headroom` Bool seeds it once.
+    @Published var popupSort: PopupSort {
+        didSet { defaults.set(popupSort.rawValue, forKey: "popup_sort") }
+    }
+    static func popupSort(_ defaults: UserDefaults) -> PopupSort {
+        if let raw = defaults.string(forKey: "popup_sort"), let sort = PopupSort(rawValue: raw) {
+            return sort
+        }
+        return PopupSort(legacyHeadroom: defaults.object(forKey: "sort_headroom") as? Bool ?? true)
+    }
+    // Away-push triggers beyond switches (PushTriggers has the rules).
+    @Published var pushAllDead: Bool { didSet { defaults.set(pushAllDead, forKey: "push_all_dead") } }
+    @Published var pushLastAlive: Bool { didSet { defaults.set(pushLastAlive, forKey: "push_last_alive") } }
+    /// "<name> is back" (and "all accounts are back — reset early") pushes (2026-09-05).
+    @Published var pushRevived: Bool { didSet { defaults.set(pushRevived, forKey: "push_revived") } }
+    /// Minutes before a reset that the row's countdown goes live and the
+    /// phone's reset alarm fires (#227); mirrored to the phone in FleetPrefs.
+    @Published var reviveLeadMinutes: Int { didSet { defaults.set(reviveLeadMinutes, forKey: "revive_lead_minutes") } }
+    var reviveLead: TimeInterval { TimeInterval(reviveLeadMinutes * 60) }
+    /// Headroom mode (#616): "off" or "hold"; the thresholds are the
+    /// hysteresis band each fleet's verdict moves in. A change re-judges
+    /// every fleet at once, so `fleets` answers the new setting now.
+    @Published var priorityMode: String { didSet { defaults.set(priorityMode, forKey: "priority_mode"); rejudgeHeadroom() } }
+    @Published var priorityLowPct: Int { didSet { defaults.set(priorityLowPct, forKey: "priority_low_pct"); rejudgeHeadroom() } }
+    @Published var priorityAbundantPct: Int { didSet { defaults.set(priorityAbundantPct, forKey: "priority_abundant_pct"); rejudgeHeadroom() } }
+    private func rejudgeHeadroom() { for fleet in fleets { fleet.judgeHeadroom() } }
+    /// Settings › Sync "This Mac's name" (#99); empty follows the computer name.
+    @Published var machineNameOverride: String {
+        didSet {
+            defaults.set(machineNameOverride, forKey: MachineName.overrideKey)
+            guard machineNameOverride != oldValue else { return }
+            // The Bonjour service carries the name — re-advertise.
+            mirrorServer.stop()
+            applyMirrorLAN()
+        }
+    }
+    var machineName: String { MachineName.current(defaults: defaults) }
+    /// The status item in the theme's color with the theme's icon (#90),
+    /// and its effects (switch/death/revival flash, the burn breath).
+    @Published var menuBarThemed: Bool { didSet { defaults.set(menuBarThemed, forKey: "menubar_themed") } }
+    @Published var menuBarEffects: Bool { didSet { defaults.set(menuBarEffects, forKey: "menubar_effects") } }
+    // Phone companion (#9): serve the mirror snapshot over the LAN when
+    // the Sync pane's toggle is on. Off by default — it's an open port.
+    @Published var mirrorLANEnabled: Bool {
+        didSet {
+            defaults.set(mirrorLANEnabled, forKey: "mirror_lan_enabled")
+            applyMirrorLAN()
+        }
+    }
+    /// The pairing token every mirror request must carry (#9 remote
+    /// access). Not a credential to Anthropic — a read key for this
+    /// Mac's snapshot, which is why plain UserDefaults is its home.
+    @Published var mirrorPairToken: String {
+        didSet {
+            defaults.set(mirrorPairToken, forKey: "mirror_pair_token")
+            mirrorServer.token.set(mirrorPairToken)
+        }
+    }
+    /// Publish the quick tunnel's current URL to the infinitus.run
+    /// rendezvous (MirrorRendezvous) so a paired phone finds the new
+    /// address after a restart instead of rescanning. On by default: it
+    /// only ever runs while a tunnel does, and the URL is useless
+    /// without the token.
+    @Published var mirrorRendezvousEnabled: Bool {
+        didSet {
+            defaults.set(mirrorRendezvousEnabled, forKey: "mirror_rendezvous_enabled")
+            if mirrorRendezvousEnabled, let url = publicURL { publishRendezvous(url) }
+        }
+    }
+    /// "Expose through a Cloudflare quick tunnel" — off by default; a
+    /// public hostname, even a throwaway one, is never a default.
+    @Published var mirrorTunnelEnabled: Bool {
+        didSet {
+            defaults.set(mirrorTunnelEnabled, forKey: "mirror_tunnel_enabled")
+            applyQuickTunnel()
+        }
+    }
+    /// The named Cloudflare tunnel (#9, the restart-proof route): the
+    /// user's own hostname, the token in the keychain. Off by default.
+    @Published var mirrorNamedTunnelEnabled: Bool {
+        didSet {
+            defaults.set(mirrorNamedTunnelEnabled, forKey: NamedTunnel.enabledKey)
+            applyNamedTunnel()
+        }
+    }
+    @Published var mirrorNamedTunnelHost: String {
+        didSet {
+            defaults.set(mirrorNamedTunnelHost, forKey: NamedTunnel.hostnameKey)
+            applyNamedTunnel()
+        }
+    }
+    /// The quick tunnel fronting the T3 Code fork server's port (#572):
+    /// off by default like the mirror's. The port is where the fork's
+    /// server bound (it scans up from 3773 when that one is taken, so
+    /// the server sets this pref on startup).
+    @Published var forkTunnelEnabled: Bool {
+        didSet {
+            defaults.set(forkTunnelEnabled, forKey: "fork_tunnel_enabled")
+            applyForkTunnel()
+        }
+    }
+    @Published var forkServerPort: Int {
+        didSet {
+            defaults.set(forkServerPort, forKey: "fork_server_port")
+            applyForkTunnel()
+        }
+    }
+    /// How a fork-server publish is probed before it is followed (#1137);
+    /// a stored property so a test can answer without a socket.
+    var forkServerProbe: ForkServerProbe.Transport = ForkServerProbe.urlSession
+    /// The fork's stable hostname on the named tunnel (#650): when set
+    /// and the companion's named tunnel is running, the fork rides that
+    /// tunnel as a second ingress rule instead of minting a fresh
+    /// `*.trycloudflare.com` name every relaunch. Empty = quick tunnel.
+    @Published var forkTunnelHostname: String {
+        didSet {
+            defaults.set(forkTunnelHostname, forKey: "fork_tunnel_hostname")
+            applyForkTunnel()
+        }
+    }
+    let sync = SettingsSyncModel()
+    let historyRecorder = UsageHistoryRecorder()
+    let mirrorExporter = MirrorExporter()
+
+    /// The Mac's own popup / pop-out / chat window is a client too (#223
+    /// phase 5): while one is open, nothing the user sees here depends on
+    /// a phone holding a lease. StatusItemController and the chat window
+    /// call it on show / hide; the cap is the TTL, so a UI that dies
+    /// never pins work for more than five minutes.
+    /// The local surfaces on screen by id — "popup", "popout",
+    /// "chat:<pid>" — the lease holds while any is up, so closing the
+    /// popup over an open chat window drops nothing.
+    private var visibleSurfaces = Set<String>()
+    private var localUIVisible: Bool { !visibleSurfaces.isEmpty }
+    func uiSurface(_ id: String, visible: Bool) {
+        if visible { visibleSurfaces.insert(id) } else { visibleSurfaces.remove(id) }
+        // Every change re-reports: the scopes follow WHICH surfaces show,
+        // not only whether any does (the stats pane closing while the
+        // popup stays must drop `.stats`, #499).
+        reportLocalActivity(visible: localUIVisible)
+    }
+    /// The popup and pop-out watch sessions and fleets; only the Stats
+    /// pane watches stats. Holding `.stats` from every local surface kept
+    /// the lazy stats cache (~27 MB of Day maps, tallies and file entries)
+    /// resident whenever the popup was open (#499).
+    private func reportLocalActivity(visible: Bool) {
+        if visible {
+            var scopes: [ClientActivity.Scope] = []
+            if !visibleSurfaces.subtracting([Self.statsSurface]).isEmpty { scopes += [.sessions, .fleets] }
+            if visibleSurfaces.contains(Self.statsSurface) { scopes.append(.stats) }
+            mirrorServer.leases.report(.init(clientId: ClientActivity.localClientId, visible: true, focused: true,
+                                             recentlyInteracted: true, scopes: scopes,
+                                             ttlMs: ClientActivity.ttlCapMs))
+        } else {
+            mirrorServer.leases.release(clientId: ClientActivity.localClientId)
+        }
+    }
+    /// `uiSurface` id the Stats pane reports while it shows.
+    static let statsSurface = "stats"
+    let mirrorServer = MirrorServer()
+    /// Agent CLI socket (ControlServer.swift); the real model only.
+    private(set) lazy var controlServer = ControlServer(model: self)
+    /// The biometric lock (LockModel.swift); the surfaces and the Lock pane read it.
+    private(set) lazy var lock = LockModel(defaults: defaults)
+    /// The desktop's CLI credential (#822): stored by `desktop-credential`, read by `desktop-token`.
+    private(set) lazy var desktopCredential: DesktopCredential = {
+        let credential = DesktopCredential(defaults: defaults)
+        credential.log = { [weak self] text in self?.logEvent("desktop", icon: "key", text) }
+        return credential
+    }()
+    let quickTunnel = QuickTunnel()
+    let namedTunnel = NamedTunnel()
+    let forkTunnel = QuickTunnel(pidKey: "fork_tunnel_pid")
+    /// Live Activity pushes to the phone (APNs), LiveActivityPusher.swift.
+    let liveActivityPusher = LiveActivityPusher()
+
+    /// Every app notification: Notification Center here, and the same
+    /// text to any phone that registered an alert token (issue #3).
+    /// Both push channels: the Mac notice (+ Live Activity alert) and the
+    /// phone (#756: the engine's own away-push channels went with cswap;
+    /// swapd's `notify` only reports).
+    func push(_ msg: String) {
+        notify(msg)
+    }
+
+    /// The alias every live session runs on right now — one active
+    /// account per engine, so it is the fleet's, not the session's (#612).
+    var activeAccountName: String? {
+        guard let fleet = primary, let n = fleet.activeNumber,
+              let account = fleet.accounts.first(where: { $0.number == n }) else { return nil }
+        return account.alias ?? String(account.email.prefix(while: { $0 != "@" }))
+    }
+
+    /// Probes the engine as each dead account's countdown ends (see
+    /// RevivalProbe): the next reset's schedule replaces the last, and
+    /// a probe that finds nothing dead ends the run.
+    private var revivalProbe: Task<Void, Never>?
+    private var revivalProbeReset: Date?
+    private func scheduleRevivalProbe(accounts: [Account]) {
+        let reset = RevivalProbe.nextReset(accounts: accounts)
+        guard reset != revivalProbeReset else { return }
+        revivalProbe?.cancel()
+        revivalProbeReset = reset
+        guard let reset else { revivalProbe = nil; return }
+        let probes = RevivalProbe.schedule(reset: reset)
+        revivalProbe = Task { [weak self] in
+            for at in probes {
+                let wait = at.timeIntervalSinceNow
+                if wait > 0 { try? await Task.sleep(for: .seconds(wait)) }
+                guard !Task.isCancelled, let self else { return }
+                logEvent("other", icon: "arrow.clockwise", "countdown ended — asking the engine again")
+                await refreshSnapshot()
+                guard !Task.isCancelled else { return }
+                if RevivalProbe.nextReset(accounts: primary?.lastFleet?.accounts ?? []).map({ $0 > Date() }) ?? true { return }
+            }
+        }
+    }
+
+    /// The pass a freshly surfaced AWS-login need starts (rebuildAwsLogins).
+    private var awsNeedRefresh: Task<Void, Never>?
+    /// That pass writes the mirror snapshot past the exporter's throttle.
+    private var mirrorExportDue = false
+
+    func notify(_ body: String) {
+        Notifier.post(title: "Infinitus", body: body)
+        liveActivityPusher.pushAlert(title: "Infinitus", body: body)
+    }
+    /// Seeded with what the triggers remembered before the last relaunch
+    /// (#98, #231): the last-alive warning.
+    private lazy var pushTriggers = PushTriggers(memory: persistedPushMemory)
+    private lazy var persistedPushMemory: PushTriggers.Memory = {
+        if let data = defaults.data(forKey: Self.pushMemoryKey),
+           let memory = try? JSONDecoder().decode(PushTriggers.Memory.self, from: data) { return memory }
+        return PushTriggers.Memory()
+    }()
+    static let pushMemoryKey = "push_triggers_memory"
+    private let defaults: UserDefaults
+
+    /// Custom skins from themes.json, loaded at launch and on demand
+    /// (the Display pane reloads when it appears).
+    @Published var customThemes: [RowTheme] = RowTheme.loadCustom()
+    var availableThemes: [RowTheme] { RowTheme.builtins + customThemes }
+    var rowTheme: RowTheme {
+        availableThemes.first { $0.id == gamification } ?? .off
+    }
+    func reloadCustomThemes() { customThemes = RowTheme.loadCustom() }
+
+    /// Popup scale factor — applied as a measured scaleEffect (macOS has
+    /// no Dynamic Type; see PopupScale).
+    var popupScale: CGFloat {
+        switch popupTextSize {
+        case "large": return 1.15
+        case "xlarge": return 1.3
+        case "huge": return 1.5
+        default: return 1
+        }
+    }
+
+    var title: String {
+        if titleIconOnly { return "" }
+        return TitleFormatter.format(
+            account: accounts.first(where: { $0.active }),
+            prefs: TitlePrefs(showAccountName: showAccountName,
+                              titlePct: titlePct, titleScoped: titleScoped,
+                              titleRemaining: titleRemaining,
+                              titleReset: titleReset),
+            icon: "")  // the status button wears MenuBarGlyph instead
+    }
+
+    /// One-time prefs adoption from the pre-2026-08-30 bundle id
+    /// (io.github.claude-swap.CswapBar.g2). Bundled runs only — the
+    /// unbundled domain is per-executable name and unaffected. Copies,
+    /// never moves: the old domain stays for rollback. Locally-set keys win.
+    /// First launch under a new bundle id copies the previous id's
+    /// prefs domain (the bundled app's UserDefaults.standard IS the
+    /// bundle id): com.huuloc.limitless (2026-08-30 → 2026-09-03), and
+    /// before it the CswapBar g2 domain. Each hop runs once; existing
+    /// keys are never overwritten.
+    private static func migrateLegacyDefaults() {
+        guard AppDefaults.suite == nil else { return }   // a dev suite starts empty
+        let std = AppDefaults.standard
+        for (domain, marker) in [("com.huuloc.infinitus", "migrated_from_huuloc_id"),
+                                 ("com.huuloc.limitless", "migrated_from_limitless_id"),
+                                 ("io.github.claude-swap.CswapBar.g2", "migrated_from_g2")] {
+            guard !std.bool(forKey: marker), let legacy = std.persistentDomain(forName: domain) else { continue }
+            for (key, value) in legacy where std.object(forKey: key) == nil {
+                std.set(value, forKey: key)
+            }
+            std.set(true, forKey: marker)
+        }
+    }
+
+    init() {
+        // The playground is retired (#654); `isPlayground` is a constant
+        // now and `self` is out of reach during phase 1, so the guards
+        // below read this local until they are swept.
+        let playground = false
+        defaults = AppDefaults.standard
+        Self.migrateLegacyDefaults()
+        debugMenu = AppDefaults.standard.bool(forKey: "debug_menu")
+        showAccountName = defaults.object(forKey: "show_account_name") as? Bool ?? true
+        let pct = defaults.string(forKey: "title_pct") ?? "both"
+        titlePct = TitlePrefs.pctChoices.contains(pct) ? pct : "both"
+        titleScoped = defaults.object(forKey: "title_scoped") as? Bool ?? false
+        let interval = defaults.object(forKey: "refresh_interval") as? Int ?? 60
+        refreshInterval = TitlePrefs.refreshChoices.contains(interval) ? interval : 60
+        // Any string is allowed — resolution falls back to the plain theme
+        // when the id names neither a built-in nor a custom theme.
+        gamification = defaults.string(forKey: "gamification_style")
+            ?? ((defaults.object(forKey: "gamified_rows") as? Bool ?? false) ? "rpg" : "off")
+        compactRows = defaults.object(forKey: "compact_rows") as? Bool ?? false
+        footerActionsHidden = defaults.object(forKey: "footer_actions_hidden") as? Bool ?? false
+        titleRemaining = defaults.object(forKey: "title_remaining") as? Bool ?? false
+        let reset = defaults.string(forKey: "title_reset") ?? "countdown"
+        titleReset = TitlePrefs.resetChoices.contains(reset) ? reset : "countdown"
+        titleIconOnly = defaults.object(forKey: "title_icon_only") as? Bool ?? false
+        popoverPinned = defaults.object(forKey: "popover_pinned") as? Bool ?? false
+        popupLayout = defaults.string(forKey: "popup_layout") ?? "wide"
+        popupTextSize = defaults.string(forKey: "popup_text_size") ?? "default"
+        glassFocused = defaults.object(forKey: "glass_focused") as? Double ?? 0.7
+        introStyle = defaults.string(forKey: "intro_style") ?? "top"
+        introSpeed = defaults.object(forKey: "intro_speed") as? Double ?? 1.0
+        introTitle = defaults.string(forKey: "intro_title") ?? "zoom"
+        burnStyle = defaults.string(forKey: "burn_style") ?? "ember"
+        // Local: init reads it again below before every stored
+        // property is set (two-phase init forbids self.mockMode there).
+        // `bool(forKey:)`, not `object as? Bool`: the argument domain of
+        // a dev launch (`-mock_mode YES`) holds the String "YES", which
+        // only the typed getter reads as true (#249).
+        let mock = defaults.bool(forKey: "mock_mode")
+        mockMode = mock
+        swapdEnabled = defaults.object(forKey: "engine_swapd_enabled") as? Bool ?? true
+        cliproxyEnabled = defaults.object(forKey: "engine_cliproxy_enabled") as? Bool ?? false
+        // Claude Code → 9Router routing (user 2026-09-04): when the
+        // settings.json env names the 9Router base URL (or its
+        // well-known loopback port), Claude Code's requests ride
+        // 9Router and that engine leads. Riding the env is not a
+        // stored choice: the key is written only while absent, so an
+        // explicit off (false) wins, and an env removal drops the
+        // engine back off at the next launch. The write bypasses the
+        // @Published setter on purpose — its didSet relaunches. The
+        // router URL is read from defaults directly: computed
+        // properties are off-limits this early in init.
+        let routerURL = URL(string: defaults.string(forKey: "9router_base_url")
+            ?? NineRouterEngine.defaultBaseURL.absoluteString)
+        let routedSettings = playground ? nil : ClaudeCodeRouting.anthropicBaseURL()
+        let routed = ClaudeCodeRouting.isRouted(routedSettings, to: routerURL)
+        routingBaseURL = routed ? ClaudeCodeRouting.origin(of: routedSettings) ?? routerURL : nil
+        if routed, defaults.object(forKey: "engine_9router_enabled") == nil {
+            defaults.set(true, forKey: "engine_9router_enabled")
+        }
+        routedVia9Router = routed
+        nineRouterEnabled = defaults.object(forKey: "engine_9router_enabled") as? Bool ?? false
+        popupSort = Self.popupSort(defaults)
+        mirrorLANEnabled = defaults.object(forKey: "mirror_lan_enabled") as? Bool ?? false
+        mirrorTunnelEnabled = defaults.object(forKey: "mirror_tunnel_enabled") as? Bool ?? false
+        mirrorRendezvousEnabled = defaults.object(forKey: "mirror_rendezvous_enabled") as? Bool ?? true
+        mirrorNamedTunnelEnabled = defaults.bool(forKey: NamedTunnel.enabledKey)
+        mirrorNamedTunnelHost = defaults.string(forKey: NamedTunnel.hostnameKey) ?? ""
+        forkTunnelEnabled = defaults.object(forKey: "fork_tunnel_enabled") as? Bool ?? false
+        forkTunnelHostname = defaults.string(forKey: "fork_tunnel_hostname") ?? ""
+        forkServerPort = defaults.object(forKey: "fork_server_port") as? Int ?? ForkTunnelStatus.defaultPort
+        // One token per install, minted the first time anyone looks.
+        let storedToken = defaults.string(forKey: "mirror_pair_token") ?? ""
+        mirrorPairToken = storedToken.isEmpty ? MirrorPairing.generateToken() : storedToken
+        // Push triggers default ON — they exist because they were asked for.
+        pushAllDead = defaults.object(forKey: "push_all_dead") as? Bool ?? true
+        pushLastAlive = defaults.object(forKey: "push_last_alive") as? Bool ?? true
+        pushRevived = defaults.object(forKey: "push_revived") as? Bool ?? true
+        reviveLeadMinutes = defaults.object(forKey: "revive_lead_minutes") as? Int ?? 10
+        priorityMode = Self.priorityMode(defaults)
+        priorityLowPct = defaults.object(forKey: "priority_low_pct") as? Int ?? 80
+        priorityAbundantPct = defaults.object(forKey: "priority_abundant_pct") as? Int ?? 50
+        machineNameOverride = defaults.string(forKey: MachineName.overrideKey) ?? ""
+        menuBarThemed = defaults.object(forKey: "menubar_themed") as? Bool ?? true
+        menuBarIconShown = defaults.object(forKey: "menu_bar_enabled") as? Bool ?? true
+        menuBarEffects = defaults.object(forKey: "menubar_effects") as? Bool ?? true
+        if playground {
+            // Isolation is the contract: no demo script, no data at all
+            // (never fall back to the real engine here).
+            if let demo = Self.demoScriptPath() {
+                swapd = SwapdCLI(binaryPath: demo)
+            } else {
+                swapd = nil
+                lastError = "demo script missing — playground has no data"
+            }
+        } else if mock, let demo = Self.demoScriptPath() {
+            swapd = SwapdCLI(binaryPath: demo)
+        } else if let path = SwapdLocator.locate() {
+            swapd = SwapdCLI(binaryPath: path)
+            if mock {
+                lastError = "demo script missing — running the real engine"
+            }
+        } else {
+            swapd = nil
+            if swapdEnabled { lastError = "Account engine missing — install a current Infinitus release to restore bundled swapd, then relaunch." }
+        }
+        // A freshly minted token has to survive the launch that made it:
+        // property initialisation doesn't run `didSet`.
+        if storedToken.isEmpty { defaults.set(mirrorPairToken, forKey: "mirror_pair_token") }
+        if !playground { sync.attach(model: self) }
+        if let swapd, swapdEnabled || playground { registry.register(SwapdEngine(cli: swapd)) }
+        // The proxy is never part of the playground (isolation contract)
+        // and needs its key before it can be an engine at all.
+        if !playground, cliproxyEnabled,
+           let url = URL(string: cliproxyBaseURL),
+           let key = Keychain.read(account: cliproxyBaseURL) {
+            registry.register(CLIProxyEngine(
+                baseURL: url, managementKey: key, ledgerURL: Self.cliproxyLedgerURL))
+        } else if !playground, cliproxyEnabled {
+            lastError = "CLIProxyAPI is enabled but no management key is readable — enter it in Settings → CLIProxyAPI"
+        }
+        if !playground, nineRouterEnabled, let url = URL(string: nineRouterBaseURL) {
+            // A missing password still registers: 9Router with "require
+            // login" off answers loopback anonymously; otherwise the first
+            // poll reports unauthorized and the pane says so. Routed?
+            // The engine runs where the env points (the origin), with
+            // the password looked up under that URL first — the
+            // dashboard password follows the router, not the config.
+            let base = routingBaseURL ?? url
+            registry.register(NineRouterEngine(
+                baseURL: base,
+                password: Keychain.read(account: base.absoluteString, service: Keychain.nineRouterService)
+                    ?? Keychain.read(account: nineRouterBaseURL, service: Keychain.nineRouterService)
+                    ?? ""))
+        }
+        registry.routedEngineID = routedVia9Router ? NineRouterEngine.engineID : nil
+        NSLog("Infinitus engines: %@", registry.engines.map(\.id).joined(separator: ", "))
+        // Last run's snapshot renders NOW — the popup otherwise opened
+        // as an empty sliver and expanded seconds later when the first
+        // `swapd list` returned, eating the intro (user 2026-08-30).
+        // Live values roll in over it via the numeric transitions.
+        if !playground,
+           let data = try? Data(contentsOf: Self.snapshotCacheURL),
+           let cached = try? JSONDecoder().decode([EngineFleet].self, from: data) {
+            for fleet in cached where registry.engine(id: fleet.engineID) != nil {
+                registry.state(for: fleet).seed(fleet)
+            }
+        }
+        // A mock/playground instance must never start a real cold
+        // backfill or write real App Support caches under
+        // Infinitus/stats/ (matches the historyRecorder guard above).
+        statsModel.enabled = !isPlayground && !mockMode
+        statsModel.leases = mirrorServer.leases
+    }
+
+    /// App-side cache of our own subprocess output (never an engine
+    /// internal file).
+    static let snapshotCacheURL: URL = {
+        return AppSupport.root().appendingPathComponent("snapshot-cache.json")
+    }()
+
+    /// The popup just opened with data already on screen (cache or an
+    /// earlier snapshot): play the launch flash on the same clock the
+    /// data-landing path uses. No-op while empty — that case is handled
+    /// by firstLoad in refreshSnapshot.
+    func introOpened() {
+        guard !accounts.isEmpty else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + introBarDelay + 0.5) {
+            self.switchFlashTick += 1
+        }
+    }
+
+    /// Re-read the persisted display prefs after an iCloud sync pull — the
+    /// @Published values were initialized once at launch and would
+    /// otherwise never see the imported defaults.
+    /// The preference catalog with this install's values (#558): what
+    /// `infinitusctl prefs` and the mirror's `GET /prefs` answer.
+    func prefsReply(keys: [String]? = nil) throws -> PrefCatalog.Reply {
+        try PrefCatalog.reply(from: defaults, keys: keys, choices: ["gamification_style": themeChoices])
+    }
+
+    /// The open theme set as `{id, name}` rows (#747): the built-ins plus
+    /// the user's `themes.json`, which no static catalog can list.
+    private var themeChoices: [JSONValue] {
+        availableThemes.map { .object(["id": .string($0.id), "name": .string($0.name)]) }
+    }
+
+    /// One preference written and taken live (#558 write side): the
+    /// engine toggles go through their own setters, whose `didSet`
+    /// relaunches the app, with the `engine` command's guards; every
+    /// other key is stored and re-read by `reloadPrefs`, so its `didSet`
+    /// side effects (the LAN listener, the title) run as
+    /// they do from the panes. Returns the updated pref and whether the
+    /// app is relaunching behind the reply.
+    func setPref(key: String, value: JSONValue) throws -> (pref: PrefCatalog.Pref, restarting: Bool) {
+        let entry = try PrefCatalog.validate(key: key, value: value)
+        if entry.effect == .restart, case .bool(let on) = value,
+           let engine = Self.enginePrefs[key] {
+            let changed = try setEngineEnabled(engine, on: on)
+            return (PrefCatalog.pref(entry, in: defaults), changed)
+        }
+        let pref = try PrefCatalog.write(value, key: key, to: defaults)
+        reloadPrefs()
+        return (pref, false)
+    }
+
+    static let enginePrefs = ["engine_swapd_enabled": "swapd", "engine_cliproxy_enabled": "cliproxy",
+                              "engine_9router_enabled": "9router"]
+
+    /// `engine <id> on|off` and `prefs set engine_<id>_enabled`: the
+    /// toggle behind the same guards; true when it changed (the setter's
+    /// `didSet` then relaunches), false when it already was so.
+    func setEngineEnabled(_ engine: String, on: Bool) throws -> Bool {
+        switch engine {
+        case "swapd":
+            guard swapd != nil || !on else { throw PrefCatalog.Violation(key: "engine_swapd_enabled", message: "swapd is not installed") }
+            guard swapdEnabled != on else { return false }
+            swapdEnabled = on
+        case "cliproxy":
+            guard cliproxyKeyPresent || !on else { throw PrefCatalog.Violation(key: "engine_cliproxy_enabled", message: "store a management key first (proxy-key)") }
+            guard cliproxyEnabled != on else { return false }
+            cliproxyEnabled = on
+        case "9router":
+            guard nineRouterEnabled != on else { return false }
+            nineRouterEnabled = on
+        default:
+            throw PrefCatalog.Violation(key: engine, message: "unknown engine \(engine)")
+        }
+        return true
+    }
+
+    /// Every pref re-read from defaults (an iCloud apply, `prefs set`).
+    /// Each property is assigned only when its value moved: a `didSet`
+    /// that re-applies its state — the LAN listener, the revival panel,
+    /// the theme's layers — must not run for the thirty-odd keys a
+    /// one-key write leaves alone (an e2e `prefs set popup_layout` cost
+    /// 40 MB of RSS through the untouched didSets, 2026-09-10).
+    private static func priorityMode(_ defaults: UserDefaults) -> String {
+        let mode = defaults.string(forKey: "priority_mode") ?? "off"
+        return PrefCatalog.priorityModes.contains(mode) ? mode : "off"
+    }
+
+    func reloadPrefs() {
+        func set<T: Equatable>(_ path: ReferenceWritableKeyPath<AppModel, T>, _ value: T) {
+            if self[keyPath: path] != value { self[keyPath: path] = value }
+        }
+        set(\.showAccountName, defaults.object(forKey: "show_account_name") as? Bool ?? true)
+        let pct = defaults.string(forKey: "title_pct") ?? "both"
+        set(\.titlePct, TitlePrefs.pctChoices.contains(pct) ? pct : "both")
+        set(\.titleScoped, defaults.object(forKey: "title_scoped") as? Bool ?? false)
+        let interval = defaults.object(forKey: "refresh_interval") as? Int ?? 60
+        set(\.refreshInterval, TitlePrefs.refreshChoices.contains(interval) ? interval : 60)
+        set(\.gamification, defaults.string(forKey: "gamification_style") ?? "off")
+        set(\.introStyle, defaults.string(forKey: "intro_style") ?? "top")
+        set(\.introSpeed, defaults.object(forKey: "intro_speed") as? Double ?? 1.0)
+        set(\.introTitle, defaults.string(forKey: "intro_title") ?? "zoom")
+        set(\.burnStyle, defaults.string(forKey: "burn_style") ?? "ember")
+        set(\.compactRows, defaults.object(forKey: "compact_rows") as? Bool ?? false)
+        set(\.footerActionsHidden, defaults.object(forKey: "footer_actions_hidden") as? Bool ?? false)
+        set(\.titleRemaining, defaults.object(forKey: "title_remaining") as? Bool ?? false)
+        let reset = defaults.string(forKey: "title_reset") ?? "countdown"
+        set(\.titleReset, TitlePrefs.resetChoices.contains(reset) ? reset : "countdown")
+        set(\.titleIconOnly, defaults.object(forKey: "title_icon_only") as? Bool ?? false)
+        set(\.popupLayout, defaults.string(forKey: "popup_layout") ?? "wide")
+        set(\.popupTextSize, defaults.string(forKey: "popup_text_size") ?? "default")
+        set(\.glassFocused, defaults.object(forKey: "glass_focused") as? Double ?? 0.7)
+        set(\.popupSort, Self.popupSort(defaults))
+        set(\.pushAllDead, defaults.object(forKey: "push_all_dead") as? Bool ?? true)
+        set(\.pushLastAlive, defaults.object(forKey: "push_last_alive") as? Bool ?? true)
+        set(\.pushRevived, defaults.object(forKey: "push_revived") as? Bool ?? true)
+        set(\.reviveLeadMinutes, defaults.object(forKey: "revive_lead_minutes") as? Int ?? 10)
+        set(\.priorityMode, Self.priorityMode(defaults))
+        set(\.priorityLowPct, defaults.object(forKey: "priority_low_pct") as? Int ?? 80)
+        set(\.priorityAbundantPct, defaults.object(forKey: "priority_abundant_pct") as? Int ?? 50)
+        set(\.machineNameOverride, defaults.string(forKey: MachineName.overrideKey) ?? "")
+        set(\.menuBarThemed, defaults.object(forKey: "menubar_themed") as? Bool ?? true)
+        set(\.menuBarIconShown, defaults.object(forKey: "menu_bar_enabled") as? Bool ?? true)
+        set(\.menuBarEffects, defaults.object(forKey: "menubar_effects") as? Bool ?? true)
+        set(\.mirrorLANEnabled, defaults.object(forKey: "mirror_lan_enabled") as? Bool ?? false)
+        set(\.mirrorTunnelEnabled, defaults.object(forKey: "mirror_tunnel_enabled") as? Bool ?? false)
+        set(\.mirrorRendezvousEnabled, defaults.object(forKey: "mirror_rendezvous_enabled") as? Bool ?? true)
+        set(\.forkTunnelEnabled, defaults.object(forKey: "fork_tunnel_enabled") as? Bool ?? false)
+        set(\.forkServerPort, defaults.object(forKey: "fork_server_port") as? Int ?? ForkTunnelStatus.defaultPort)
+        set(\.forkTunnelHostname, defaults.string(forKey: "fork_tunnel_hostname") ?? "")
+    }
+
+    // MARK: battle plan (#7)
+
+    private func updateBattlePlan(_ list: AccountList) {
+        let now = Date().timeIntervalSince1970
+        let fresh = UsageHistory.samples(accounts: list.accounts)
+        var seen = Set(recentSamples.map(\.dedupeKey))
+        for s in fresh where seen.insert(s.dedupeKey).inserted { recentSamples.append(s) }
+        recentSamples.removeAll { $0.t < now - UsageForecast.weeklyLookback }
+        let states = list.accounts.map { a in
+            WindowPlanner.AccountState(
+                number: a.number, email: a.email, active: a.active,
+                disabled: a.disabled ?? false,
+                fiveHourPct: a.usage?.fiveHour?.pct,
+                fiveHourResetsAt: a.usage?.fiveHour?.resetsAt
+                    .flatMap(UsageHistory.parseISO)?.timeIntervalSince1970,
+                weeklyPct: ([a.usage?.sevenDay?.pct] + (a.usage?.scoped ?? []).map { $0.pct })
+                    .compactMap { $0 }.max() ?? 0)
+        }
+        // Every account at its own measured pace (the detail dashboard);
+        // the planner and the fleet drain read the active one's.
+        var ratesByEmail: [String: [String: Double]] = [:]
+        for a in list.accounts where ratesByEmail[a.email] == nil {
+            ratesByEmail[a.email] = WindowTelemetry.burnRates(recentSamples, email: a.email, now: now)
+        }
+        let rates = list.accounts.first { $0.active }.flatMap { ratesByEmail[$0.email] } ?? [:]
+        // Projections extrapolate from when the engine READ the
+        // percentages (usageFetchedAt → the sample's t), not from this
+        // poll's clock: anchored to `now` they crept later between
+        // fetches and snapped back on each new sample.
+        let measuredAt = fresh.map(\.t).max() ?? now
+        // The terminal session count is gone (#1041 d6); the desktop's
+        // thread card says whether threads are running, and before any
+        // card has ever arrived the plan is drawn as if busy.
+        let plan = WindowPlanner.plan(accounts: states, burnPctPerHour: rates["5h"],
+                                      busySessions: desktopActiveThreads ?? 1, now: now,
+                                      measuredAt: measuredAt)
+        if plan != battlePlan { battlePlan = plan }
+        let inputs = list.accounts.map { a in
+            UsageForecast.AccountInput(
+                number: a.number, email: a.email, alias: a.alias, active: a.active,
+                disabled: a.disabled ?? false,
+                fiveHour: window(a.usage?.fiveHour), sevenDay: window(a.usage?.sevenDay),
+                scoped: Dictionary((a.usage?.scoped ?? []).compactMap { sc in
+                    window(sc).map { (sc.name ?? "?", $0) }
+                }, uniquingKeysWith: { a, _ in a }))
+        }
+        let next = UsageForecast.build(accounts: inputs, ratesByEmail: ratesByEmail, now: now,
+                                       measuredAt: measuredAt)
+        // Republish only when a projection moved — with the sample-time
+        // anchor that is a new sample or a new rate, not every poll.
+        if next.accounts != forecast?.accounts || next.allDeadAt != forecast?.allDeadAt {
+            forecast = next
+            // The forecast lands after `apply` already judged this
+            // poll's headroom (#616 remainder 1) — re-judge now that a
+            // fresh projection exists. Idempotent: judge only publishes
+            // on change.
+            primary?.judgeHeadroom()
+        }
+        let relay = LiveForecastRelay.shared
+        relay.forecast = forecast
+        relay.plan = battlePlan
+        if relay.theme.id != rowTheme.id { relay.theme = rowTheme }
+    }
+
+    private func window(_ w: UsageWindow?) -> UsageSample.Window? {
+        guard let w else { return nil }
+        return .init(pct: w.pct, resetsAt: w.resetsAt.flatMap(UsageHistory.parseISO)?.timeIntervalSince1970)
+    }
+
+    /// The last 100 durable events back into the Activity tail (#338),
+    /// under whatever this launch has logged meanwhile — those are on
+    /// disk too by now, so only events from before launch are taken.
+    private func seedEventLog() {
+        guard !isPlayground, !mockMode else { return }
+        let launchedAt = launchedAt
+        Task.detached(priority: .utility) { [weak self, eventStore] in
+            let past = await eventStore.load().filter { $0.at < launchedAt }.suffix(100)
+            await MainActor.run { [weak self] in
+                guard let self else { return }
+                self.eventLog = past.map { EventEntry(at: $0.at, kind: $0.kind, icon: $0.icon, text: $0.text) } + self.eventLog
+                if self.eventLog.count > 100 { self.eventLog.removeFirst(self.eventLog.count - 100) }
+            }
+        }
+    }
+
+    /// Seed the burn-rate buffer from this machine's own history file.
+    private func seedRecentSamples() {
+        guard !isPlayground, !mockMode else { return }
+        let url = UsageHistoryRecorder.localURL
+        Task.detached(priority: .utility) { [weak self] in
+            let cutoff = Date().timeIntervalSince1970 - UsageForecast.weeklyLookback
+            let recent = UsageHistory.load(url: url).filter { $0.t >= cutoff }
+            await MainActor.run { [weak self] in
+                guard let self, self.recentSamples.isEmpty else { return }
+                self.recentSamples = recent
+            }
+        }
+    }
+
+    var canIgnite: Bool { capabilities.contains(.ignite) }
+
+    /// Ignite account n on that fleet's engine and publish what the engine
+    /// then says about it; the returned instant is when the window it
+    /// started ends, or nil when nothing could say.
+    ///
+    /// A `.refreshAccount` engine (swapd) fetches THAT account past its
+    /// serve floor and answers with the fleet, so the reset is the real
+    /// one; everything else waits for the next full snapshot, whose rows
+    /// may still carry the pre-ignite window.
+    @discardableResult
+    func igniteAndPublish(_ state: FleetState, number: Int) async throws -> Date? {
+        try await state.engine.ignite(fleet: state.provider, number: number)
+        let resets = try await igniteReset(state, number: number)
+        // The endpoint reports the window minutes after the run (#338):
+        // keep asking for this account until its clock shows.
+        if resets == nil { followUpIgnite(state, number: number) }
+        return resets
+    }
+
+    /// Fetch account n again and read when its 5h window ends, or nil
+    /// while the endpoint has not reported one.
+    private func igniteReset(_ state: FleetState, number: Int) async throws -> Date? {
+        let engine = state.engine, provider = state.provider
+        guard engine.capabilities.contains(.refreshAccount) else {
+            await refreshSnapshot()
+            return state.accounts.first { $0.number == number }?.usage?.fiveHour?.resetsAt
+                .flatMap(UsageHistory.parseISO)
+        }
+        let fleet = try await engine.refresh(fleet: provider, number: number)
+        _ = registry.state(for: fleet).apply(fleet)
+        return fleet.accounts.first { $0.number == number }?.usage?.fiveHour?.resetsAt
+            .flatMap(UsageHistory.parseISO)
+    }
+
+    private var igniteFollowUp: Task<Void, Never>?
+
+    /// `IgniteFollowUp.delays` more fetches of account n; the plan line
+    /// keeps its "waiting" result (and so does not offer the account
+    /// again) until the clock shows or the schedule runs out.
+    private func followUpIgnite(_ state: FleetState, number: Int) {
+        igniteFollowUp?.cancel()
+        let name = accountName(number)
+        igniteFollowUp = Task { [weak self] in
+            for delay in IgniteFollowUp.delays {
+                try? await Task.sleep(for: .seconds(delay))
+                if Task.isCancelled { return }
+                guard let resets = try? await self?.igniteReset(state, number: number) else { continue }
+                let result = IgniteResult(text: IgniteFollowUp.started(name, resets: resets), ok: true)
+                self?.logEvent("ignite", icon: "flag.checkered", "ignited \(name) — window started, resets \(IgniteFollowUp.clock(resets))")
+                self?.igniteResult = result
+                try? await Task.sleep(for: .seconds(10))
+                if self?.igniteResult == result { self?.igniteResult = nil }
+                return
+            }
+            let result = IgniteResult(text: IgniteFollowUp.unseen(name), ok: false)
+            self?.logEvent("other", icon: "exclamationmark.triangle", result.text)
+            self?.igniteResult = result
+        }
+    }
+
+    private func accountName(_ number: Int) -> String {
+        accounts.first { $0.number == number }
+            .map { $0.alias ?? String($0.email.prefix(while: { $0 != "@" })) } ?? "#\(number)"
+    }
+
+    /// Manual ignition (#7 MVP step 3) through the primary fleet's engine
+    /// (`AccountEngine.ignite`, capability-gated): one tiny request as
+    /// account n so its 5h clock starts now; the fleet stays put. Outcome
+    /// in the event log; ~1K weekly tokens on n.
+    func ignite(_ number: Int) {
+        guard let primary, canIgnite, !isPlayground, igniting == nil else { return }
+        igniting = number
+        let fleet = primary
+        let name = accountName(number)
+        logEvent("ignite", icon: "flag.checkered", "igniting \(name)'s 5h window")
+        Task { [weak self] in
+            var result: IgniteResult?
+            var waiting = false
+            do {
+                // No guessed "now + 5 h": the run's window is only known
+                // once the endpoint reports it, which takes minutes (#338).
+                // Meanwhile the follow-up asks again and the result stays
+                // "waiting", so the plan line does not offer n again.
+                if let resets = try await self?.igniteAndPublish(fleet, number: number) {
+                    result = IgniteResult(text: IgniteFollowUp.started(name, resets: resets), ok: true)
+                    self?.logEvent("ignite", icon: "flag.checkered", "ignited \(name) — window started, resets \(IgniteFollowUp.clock(resets))")
+                } else {
+                    result = IgniteResult(text: IgniteFollowUp.waiting(name), ok: true)
+                    self?.logEvent("ignite", icon: "flag.checkered", "ignited \(name) — waiting for its clock to show")
+                    waiting = true
+                }
+            } catch {
+                result = IgniteResult(text: "ignite \(name) failed: \((error as? CLIError)?.message ?? error.localizedDescription)", ok: false)
+                self?.logEvent("other", icon: "exclamationmark.triangle", result!.text)
+            }
+            self?.igniting = nil
+            self?.igniteResult = result
+            if waiting { return }
+            try? await Task.sleep(for: .seconds(10))
+            if self?.igniteResult == result { self?.igniteResult = nil }
+        }
+    }
+
+    /// Idempotent: called from app init so the supervised engine starts at
+    /// LAUNCH — a window-style MenuBarExtra may not build its content view
+    /// until the first click, and rumps started its engine immediately.
+    func startFeeds() {
+        detectOnboarding()
+        seedEventLog()
+        seedRecentSamples()
+        // Same gate as logEvent: a mock instance must not rewrite the
+        // real events log either.
+        if !isPlayground, !mockMode {
+            Task.detached(priority: .utility) { [eventStore] in await eventStore.prune() }
+        }
+        mirrorServer.log = { [weak self] icon, text in
+            self?.logEvent("other", icon: icon, text)
+        }
+        quickTunnel.log = { [weak self] icon, text in
+            self?.logEvent("other", icon: icon, text)
+        }
+        namedTunnel.log = quickTunnel.log
+        forkTunnel.log = { [weak self] icon, text in
+            self?.logEvent("other", icon: icon, "fork server: " + text)
+        }
+        liveActivityPusher.log = quickTunnel.log
+        mirrorServer.activityTokens.set { [weak self] registration in
+            Task { @MainActor in self?.liveActivityPusher.register(registration) }
+        }
+        mirrorServer.crashes.set { [weak self] report in
+            Task { @MainActor in self?.ingestCrash(report, announce: true) }
+        }
+        mirrorServer.appUpdate.set { [weak self] in
+            guard let self else { return AppUpdate.Reply(outcome: "unavailable", detail: nil) }
+            return await self.triggerAppUpdate()
+        }
+        mirrorServer.accountAction.set { [weak self] request in
+            guard let self else { return AccountAction.Reply(outcome: "failed", detail: "app gone") }
+            return await self.performAccountAction(request)
+        }
+        // UserDefaults is thread-safe; the closure only reads it.
+        nonisolated(unsafe) let prefDefaults = defaults
+        mirrorServer.prefs.set { try PrefCatalog.reply(from: prefDefaults) }
+        mirrorServer.prefs.setWrite { [weak self] write in
+            // The box is synchronous and off-main; the write and its
+            // reload touch published state, so it hops to the main actor
+            // and waits (the session-start box does the same).
+            let done = DispatchSemaphore(value: 0)
+            nonisolated(unsafe) var outcome: Result<PrefCatalog.Pref, Error> =
+                .failure(PrefCatalog.Violation(key: write.key, message: "app gone"))
+            Task { @MainActor in
+                if let self { outcome = Result { try self.setPref(key: write.key, value: write.value).pref } }
+                done.signal()
+            }
+            done.wait()
+            return try outcome.get()
+        }
+        crashReports = crashStore.list()
+        scanMacCrashReports()
+        quickTunnel.onURL = { [weak self] url in self?.publishRendezvous(url) }
+        // Up or down, the named tunnel decides whether the quick one runs;
+        // its hostname is never published to the rendezvous (`publicURL`).
+        namedTunnel.onConnected = { [weak self] _ in self?.applyQuickTunnel() }
+        // The tunnels can only point at a bound port, which arrives later.
+        // Named first: it ends by applying the quick tunnel, which must see
+        // the named process already running to stay down (#697).
+        mirrorServer.onReady = { [weak self] _ in
+            self?.applyNamedTunnel()
+        }
+        applyMirrorLAN()
+        _ = awsLoginRunner
+        // The playground gets a socket only where INFINITUS_CONTROL_SOCKET
+        // points — never the real app's path.
+        if !isPlayground || ProcessInfo.processInfo.environment["INFINITUS_CONTROL_SOCKET"] != nil {
+            controlServer.start()
+        }
+        guard swapdSupervisor == nil, refreshTask == nil else { return }
+        if let swapd, !isPlayground, swapdEnabled { startSwapd(binary: swapd.binaryPath) }
+        guard !registry.engines.isEmpty else { return }
+        refreshTask = Task { [weak self] in
+            while !Task.isCancelled {
+                await self?.refreshSnapshot()
+                // Read the pref each pass so an interval change applies on
+                // the next tick without restarting the task.
+                let seconds = await MainActor.run { self?.refreshInterval ?? 60 }
+                try? await Task.sleep(nanoseconds: UInt64(seconds) * 1_000_000_000)
+            }
+        }
+    }
+
+    /// `POST /app/update` (#121): the phone's own trigger for this Mac's
+    /// update, reusing the same BrewUpdater the About pane's button
+    /// drives so the two never run two upgrades at once.
+    private func triggerAppUpdate() -> AppUpdate.Reply {
+        guard BrewUpdater.channel != .nested else {
+            return AppUpdate.Reply(outcome: "unavailable", detail: "updates arrive with Infinitus desktop")
+        }
+        guard BrewUpdater.channel != .source else {
+            return AppUpdate.Reply(outcome: "unavailable",
+                                   detail: "this Mac runs a source build — rebuild from the repo")
+        }
+        guard appUpdateVersion != nil else {
+            return AppUpdate.Reply(outcome: "upToDate", detail: nil)
+        }
+        brewUpdater?.upgrade()
+        return AppUpdate.Reply(outcome: "started",
+                               detail: "brew is upgrading Infinitus; the Mac relaunches when it's done")
+    }
+
+    /// Starts or stops the phone companion's LAN listener (#9). Never in
+    /// the playground: it seeds from the real defaults and would
+    /// advertise a second service with the same machine name.
+    private func applyMirrorLAN() {
+        let allowed = exposureAllowed
+        mirrorServer.phoneEnabled = mirrorLANEnabled
+        guard allowed, mirrorLANEnabled else {
+            mirrorServer.stop()
+            quickTunnel.stop()
+            namedTunnel.stop()
+            return
+        }
+        if !mirrorLANEnabled {
+            quickTunnel.stop()
+            namedTunnel.stop()
+        }
+        let payload = mirrorServer.payload
+        Task { [mirrorExporter] in await mirrorExporter.attach(payload: payload) }
+        mirrorServer.start(machineName: machineName,
+                           token: mirrorPairToken)
+        mirrorServer.awsLogin.set(
+            start: { [weak self] request in
+                guard let self else { return AwsLogin.Reply(ok: false, error: "app gone") }
+                let items = await MainActor.run { self.awsLogins }
+                let provider = request.provider ?? AwsLogin.inferProvider(profile: request.profile, items: items)
+                return await self.startAwsLogin(provider: provider, profile: request.profile, pid: request.pid,
+                                                local: request.local ?? false, remote: request.remote)
+            },
+            code: { [weak self] request in
+                guard let self else { return AwsLogin.Reply(ok: false, error: "app gone") }
+                let items = await MainActor.run { self.awsLogins }
+                let provider = request.provider ?? AwsLogin.inferProvider(profile: request.profile, items: items)
+                return await self.submitAwsLoginCode(provider: provider, profile: request.profile, code: request.code)
+            },
+            callback: { [weak self] request in
+                guard let self else { return AwsLogin.Reply(ok: false, error: "app gone") }
+                let items = await MainActor.run { self.awsLogins }
+                let provider = request.provider ?? AwsLogin.inferProvider(profile: request.profile, items: items)
+                return await self.awsLoginRunner.relay(provider: provider, profile: request.profile, url: request.url)
+            })
+        mirrorServer.descriptor.set {
+            MirrorDescriptor.current(machineId: MachineIdentity.current(), label: MachineName.current(),
+                                     appVersion: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "dev")
+        }
+        applyNamedTunnel()  // ends by applying the quick tunnel (#697)
+        applyForkTunnel()
+    }
+
+    /// Every phone-injected input is logged, per #17 — success or not.
+    // MARK: AWS sign-in from the phone (AwsLogin.swift)
+
+    /// Items are the logins the verbs started (aws-login / gcloud-login):
+    /// they show while running and after a failure, and clear once the
+    /// runner reports them done.
+    private func rebuildAwsLogins() {
+        let configText = (try? String(contentsOf: AwsLogin.defaultConfigURL(), encoding: .utf8)) ?? ""
+        let items: [AwsLogin.Item] = awsLoginStates.filter { $0.phase != .done }.map { state in
+            AwsLogin.Item(profile: state.profile, flow: state.flow, state: state,
+                         account: state.providerOrAws == .aws ? AwsLogin.account(profile: state.profile, configText: configText) : nil,
+                         provider: state.provider)
+        }
+        if items != awsLogins { awsLogins = items }
+        // A run that just reached a phase with something to show (a URL
+        // or a user code) goes out now — the mirror snapshot and the
+        // phone's alert otherwise ride the fleet poll, up to a minute
+        // away. Re-keyed per run (not per item), so moving from
+        // `starting` to `waitingForCode` still counts as new: `key()`
+        // does not change across that move.
+        let waiting = Set(awsLoginStates.filter { $0.phase == .waitingForBrowser || $0.phase == .waitingForCode }.map(\.runKey))
+        awsAnnouncedRunKeys.formIntersection(Set(awsLoginStates.filter { $0.phase != .done }.map(\.runKey)))
+        let fresh = waiting.subtracting(awsAnnouncedRunKeys)
+        awsAnnouncedRunKeys.formUnion(waiting)
+        if !fresh.isEmpty, !isPlayground, awsNeedRefresh == nil {
+            mirrorExportDue = true
+            awsNeedRefresh = Task { [weak self] in
+                await self?.refreshSnapshot()
+                self?.awsNeedRefresh = nil
+            }
+        }
+    }
+
+    /// `remote` nil = no flow asked for: this only REPORTS the profile's
+    /// login (in flight or finished) and starts nothing — the phone polls
+    /// this route every 2 s, and a poll that started the default flow
+    /// re-opened the sign-in the moment the code flow finished
+    /// (2026-09-03). false = the profile's default flow, true = the code
+    /// flow; either replaces a run of the other kind.
+    func startAwsLogin(provider: AwsLogin.Provider = .aws, profile: String, pid: Int?, local: Bool, remote: Bool? = nil) async -> AwsLogin.Reply {
+        // The e2e gate runs in mock mode against a stub CLI (INFINITUS_AWS_CLI / INFINITUS_GCLOUD_CLI).
+        guard !isPlayground, !mockMode || ProcessInfo.processInfo.environment[provider.cliOverrideEnv] != nil
+        else { return AwsLogin.Reply(ok: false, error: "not in a demo instance") }
+        if !local, remote == nil {
+            let state = await awsLoginRunner.state(provider: provider, profile: profile)
+            return AwsLogin.Reply(ok: state != nil, state: state, error: state == nil ? "no login in flight for \(profile)" : nil)
+        }
+        let configText = (try? String(contentsOf: AwsLogin.defaultConfigURL(), encoding: .utf8)) ?? ""
+        var flow: AwsLogin.Flow = local ? .local : provider.flow(profile: profile, configText: configText)
+        if remote == true, flow == .relay { flow = .remote }
+        let reply = await awsLoginRunner.start(provider: provider, profile: profile, flow: flow)
+        logMirrorInput(reply.ok ? "🔐" : "⚠️",
+                       reply.ok ? "\(provider.cliName) login started for \(profile) (\(flow.rawValue))"
+                                : "\(provider.cliName) login for \(profile): \(reply.error ?? "failed")")
+        return reply
+    }
+
+    /// FleetModel's fire-and-forget forms (the popup button).
+    func startAwsLogin(profile: String, pid: Int?, local: Bool) {
+        startLogin(provider: .aws, profile: profile, pid: pid, local: local)
+    }
+
+    func startLogin(provider: AwsLogin.Provider, profile: String, pid: Int?, local: Bool) {
+        Task { _ = await startAwsLogin(provider: provider, profile: profile, pid: pid, local: local) }
+    }
+
+    func submitAwsLoginCode(provider: AwsLogin.Provider = .aws, profile: String, code: String) async -> AwsLogin.Reply {
+        await awsLoginRunner.submit(provider: provider, profile: profile, code: code)
+    }
+
+    /// The login landed: log the sign-in.
+    private func awsLoginLanded(_ state: AwsLogin.State) {
+        logMirrorInput("🔐", "\(state.providerOrAws.cliName) login for \(state.profile) signed in")
+    }
+
+    // MARK: crash reports (built-in, no third party — user 2026-09-04)
+
+    /// Stores a report, logs it, and — for the phone's — says so.
+    func ingestCrash(_ report: CrashReport, announce: Bool) {
+        guard !crashReports.contains(where: { $0.id == report.id }) else { return }
+        try? crashStore.save(report)
+        crashReports = crashStore.list()
+        logEvent("other", icon: "💥", "\(report.summary)")
+        if announce, !isPlayground { notify("phone app crashed — \(report.reason)") }
+    }
+
+    func removeCrash(_ id: String) {
+        crashStore.remove(id)
+        crashReports = crashStore.list()
+    }
+
+    /// This Mac's own crashes: `~/Library/Logs/DiagnosticReports/
+    /// Infinitus-*.ips` newer than the last look. The first look starts
+    /// the clock — old reports aren't news.
+    private func scanMacCrashReports() {
+        let key = "crash_scan_watermark"
+        let now = Date().timeIntervalSince1970
+        guard let since = defaults.object(forKey: key) as? Double else {
+            defaults.set(now, forKey: key)
+            return
+        }
+        defaults.set(now, forKey: key)
+        let dir = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Logs/DiagnosticReports")
+        guard let names = try? FileManager.default.contentsOfDirectory(atPath: dir.path) else { return }
+        for name in names where name.hasPrefix("Infinitus-") && name.hasSuffix(".ips") {
+            let url = dir.appendingPathComponent(name)
+            guard let mtime = (try? FileManager.default.attributesOfItem(atPath: url.path))?[.modificationDate] as? Date,
+                  mtime.timeIntervalSince1970 > since,
+                  let text = try? String(contentsOf: url, encoding: .utf8),
+                  let report = CrashReport.fromIPS(text, device: machineName) else { continue }
+            ingestCrash(report, announce: false)
+        }
+    }
+
+    private func logMirrorInput(_ icon: String, _ text: String) {
+        logEvent("other", icon: icon, text)
+    }
+
+    /// Guards a fork-server publish that would move the target (#1137): the
+    /// quick tunnel and the CLI's credential origin only follow a port that
+    /// serves `/.well-known/t3/environment`, and only when the port they would
+    /// leave still does. `ForkServerProbe.verdict` holds the rule; this adds
+    /// the work-log line, so a refusal is on the record rather than inferred.
+    func acceptsForkServerPublish(port: Int) async -> Bool {
+        let verdict = await ForkServerProbe.verdict(newPort: port, currentPort: forkServerPort,
+                                                   using: forkServerProbe)
+        if verdict == .accept { return true }
+        logMirrorInput("⚠️", ForkServerProbe.refusalLine(port: port))
+        return false
+    }
+
+    /// Whether this instance may open a door onto this Mac at all — the
+    /// LAN listener and every tunnel. Mock mode only swaps the CLI —
+    /// sessions/usage in the snapshot are still this machine's real
+    /// ones, so a dev instance must never advertise them on the LAN.
+    /// `mirror_lan_allow_mock` lifts that for a dev COPY of the binary
+    /// only (the shipped process is named Infinitus), so the server can
+    /// be exercised end to end.
+    private var exposureAllowed: Bool {
+        let mockAllowed = mockMode
+            && ProcessInfo.processInfo.processName != "Infinitus"
+            && defaults.bool(forKey: "mirror_lan_allow_mock")
+        return !isPlayground && (!mockMode || mockAllowed)
+    }
+
+    /// Starts or stops the tunnel fronting the fork server's port (#572).
+    /// Independent of the mirror listener — the fork's server binds its
+    /// own port. With a stable hostname on the running named tunnel
+    /// (#650) nothing is started: the companion's connector carries the
+    /// fork as a second ingress rule. Otherwise a quick tunnel; a port
+    /// change restarts it, cloudflared is told the port on its command
+    /// line.
+    private func applyForkTunnel() {
+        let port = forkServerPort
+        if forkTunnel.isRunning, forkTunnel.port.map(Int.init) != port { forkTunnel.stop() }
+        guard forkTunnelEnabled, exposureAllowed, ForkTunnelStatus.isValidPort(port) else {
+            forkTunnel.stop()
+            return
+        }
+        if forkNamedHost != nil {
+            forkTunnel.stop()
+            return
+        }
+        forkTunnel.start(port: UInt16(port))
+    }
+
+    /// The fork's hostname on the named tunnel while that route applies:
+    /// a hostname is set and the companion's named tunnel is configured
+    /// (enabled, with a hostname). The route follows configuration, not
+    /// the connector's life: once chosen, the fork never falls back to a
+    /// quick tunnel — a dead named tunnel reports `stopped` (no throwaway
+    /// name under the phone), and it comes back with the connector. A
+    /// locally-managed tunnel (config.yml) is checked for the ingress
+    /// rule to the fork's port; a dashboard-managed one can't be, so the
+    /// pref is trusted. Logged once per change, not per refresh.
+    private var forkNamedHost: String? {
+        let host = NamedTunnel.normalizeHostname(forkTunnelHostname)
+        let companion = NamedTunnel.normalizeHostname(mirrorNamedTunnelHost)
+        guard !host.isEmpty, mirrorNamedTunnelEnabled, !companion.isEmpty else { return nil }
+        if NamedTunnel.localConfigCovers(companion), !NamedTunnel.localConfigRoutes(host, toPort: forkServerPort) {
+            if forkNamedHostWarned != host {
+                forkNamedHostWarned = host
+                logMirrorInput("⚠️", "~/.cloudflared/config.yml has no ingress for \(host) → :\(forkServerPort); the fork uses a quick tunnel")
+            }
+            return nil
+        }
+        return host
+    }
+    private var forkNamedHostWarned = ""
+
+    /// `status`'s `forkTunnel`.
+    var forkTunnelStatus: ForkTunnelStatus {
+        if let host = forkNamedHost {
+            return ForkTunnelStatus.derive(enabled: forkTunnelEnabled, port: forkServerPort, allowed: exposureAllowed,
+                                           available: forkTunnel.isAvailable, running: namedTunnel.isRunning,
+                                           url: namedTunnel.connected ? "https://\(host)" : nil)
+        }
+        return ForkTunnelStatus.derive(enabled: forkTunnelEnabled, port: forkServerPort, allowed: exposureAllowed,
+                                       available: forkTunnel.isAvailable, running: forkTunnel.isRunning,
+                                       url: forkTunnel.url)
+    }
+
+    /// Starts or stops the Cloudflare quick tunnel (#9). It only ever
+    /// fronts the listener, so it follows the LAN toggle too. While the
+    /// named tunnel's cloudflared runs it stands down (#697: one public
+    /// door is enough — gated on the process, not on `connected`, so a
+    /// relaunch never spawns a quick tunnel just to kill it seconds later
+    /// when the named one registers) and comes back as the fallback the
+    /// moment that process exits (`NamedTunnel.ended`).
+    private func applyQuickTunnel() {
+        if namedTunnel.isRunning {
+            if quickTunnel.isRunning { logEvent("other", icon: "🌐", "quick tunnel stood down: the named tunnel has the door") }
+            quickTunnel.stop()
+            return
+        }
+        guard mirrorTunnelEnabled, mirrorLANEnabled,
+              let port = mirrorServer.port else {
+            quickTunnel.stop()
+            return
+        }
+        quickTunnel.start(port: port)
+    }
+
+    /// Starts or stops the named tunnel (#9): needs the toggle, a
+    /// hostname, a token in the keychain and a bound port. A hostname
+    /// change while running restarts it — the token is per hostname.
+    private func applyNamedTunnel() {
+        let host = NamedTunnel.normalizeHostname(mirrorNamedTunnelHost)
+        if namedTunnel.isRunning, namedTunnel.hostname != host { namedTunnel.stop() }
+        guard mirrorNamedTunnelEnabled, mirrorLANEnabled, mirrorServer.port != nil,
+              !host.isEmpty else {
+            namedTunnel.stop()
+            applyForkTunnel()
+            applyQuickTunnel()
+            return
+        }
+        // A local cloudflared config for this hostname wins over a token:
+        // it was set up on this Mac and carries its own credentials file.
+        if NamedTunnel.localConfigCovers(host) {
+            namedTunnel.start(hostname: host, token: nil)
+        } else if let token = NamedTunnel.token(for: host) {
+            namedTunnel.start(hostname: host, token: token)
+        } else {
+            namedTunnel.stop()
+        }
+        applyForkTunnel()
+        applyQuickTunnel()
+    }
+
+    var namedTunnelTokenPresent: Bool {
+        let host = NamedTunnel.normalizeHostname(mirrorNamedTunnelHost)
+        return !host.isEmpty && NamedTunnel.token(for: host) != nil
+    }
+
+    /// The locally-managed setup is in place for the typed hostname.
+    var namedTunnelLocalConfig: Bool {
+        NamedTunnel.localConfigCovers(NamedTunnel.normalizeHostname(mirrorNamedTunnelHost))
+    }
+
+    /// Stores (or, when empty, forgets) the tunnel token for the current
+    /// hostname and applies it at once.
+    func saveNamedTunnelToken(_ token: String) {
+        let host = NamedTunnel.normalizeHostname(mirrorNamedTunnelHost)
+        guard !host.isEmpty else { return }
+        NamedTunnel.setToken(token, for: host)
+        namedTunnel.stop()
+        applyNamedTunnel()
+    }
+
+    /// A new pairing token: every phone must be re-paired, and the
+    /// running listener picks it up without a restart.
+    func regeneratePairToken() {
+        mirrorPairToken = MirrorPairing.generateToken()
+        logEvent("pairing", icon: "🔑", "phone pairing token regenerated")
+        // A new token is a new rendezvous key; the old entry just expires.
+        if let url = publicURL { publishRendezvous(url) }
+    }
+
+    /// The address the rendezvous carries: the quick tunnel's only. The
+    /// named hostname is stable, so nothing needs a lookup for it, and
+    /// infinitus.run's worker and the phone's `parseLookup` accept
+    /// `*.trycloudflare.com` alone — offering it answered HTTP 400 on
+    /// every named connect (#697).
+    private var publicURL: String? { quickTunnel.url }
+
+    /// PUTs the public tunnel URL under this token's rendezvous key
+    /// (MirrorRendezvous). Best effort: the QR still carries the URL, this
+    /// only spares the rescan after a restart.
+    func publishRendezvous(_ url: String) {
+        guard mirrorRendezvousEnabled else { return }
+        if let target = MirrorRendezvous.url(token: mirrorPairToken) { publish(url, at: target, label: "tunnel address") }
+    }
+
+    private func publish(_ url: String, at target: URL, label: String) {
+        var request = URLRequest(url: target, timeoutInterval: 10)
+        request.httpMethod = "PUT"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = MirrorRendezvous.publishBody(url: url)
+        URLSession.shared.dataTask(with: request) { [weak self] _, response, error in
+            let code = (response as? HTTPURLResponse)?.statusCode ?? 0
+            Task { @MainActor in
+                if code == 204 {
+                    self?.logEvent("other", icon: "mappin", "\(label) published to infinitus.run")
+                } else {
+                    let why = error?.localizedDescription ?? "HTTP \(code)"
+                    self?.logEvent("other", icon: "exclamationmark.triangle", "rendezvous publish failed (\(label)): \(why)")
+                }
+            }
+        }.resume()
+    }
+
+    /// Every way a phone can reach this Mac right now (#9 remote access):
+    /// lan, tailnet, named tunnel, quick tunnel, in that order — the order the single pair QR
+    /// lists them in, and the order the phone tries them in.
+    var pairRoutes: [PairRoute] {
+        guard let port = mirrorServer.port else { return [] }
+        var routes: [PairRoute] = []
+        let addresses = LocalAddresses.ipv4()
+        func route(id: String, title: String, detail: String, endpoint: String) {
+            routes.append(PairRoute(id: id, title: title, detail: detail, endpoint: endpoint))
+        }
+        if let lan = MirrorPairing.lanAddress(in: addresses) {
+            route(id: "lan", title: "On this Wi-Fi",
+                  detail: "Both devices on the same network.",
+                  endpoint: "http://\(lan):\(port)")
+        }
+        if let tailnet = MirrorPairing.tailnetAddress(in: addresses) {
+            route(id: "tailnet", title: "Anywhere via Tailscale",
+                  detail: "The phone needs Tailscale, signed into the same "
+                        + "tailnet. Nothing else to set up — this Mac already "
+                        + "listens on every interface.",
+                  endpoint: "http://\(tailnet):\(port)")
+        }
+        if let named = namedTunnel.endpoint {
+            route(id: "named", title: "Anywhere, your domain",
+                  detail: "Your Cloudflare tunnel hostname — the same every start.",
+                  endpoint: named)
+        }
+        if let tunnel = quickTunnel.url {
+            route(id: "tunnel", title: "Anywhere, no account",
+                  detail: "A random Cloudflare URL that changes every start; "
+                        + "the pairing token is the only lock.",
+                  endpoint: tunnel)
+        }
+        return routes
+    }
+
+    /// The one QR a phone ever needs to scan (#9 pair once, every route):
+    /// every current route's endpoint, in `pairRoutes` order, plus the
+    /// token. Empty until at least one route is up, so the pane can hide
+    /// the QR instead of encoding a useless link.
+    var pairURL: String {
+        let endpoints = pairRoutes.map(\.endpoint)
+        guard !endpoints.isEmpty else { return "" }
+        return MirrorPairing.pairURL(endpoints: endpoints, token: mirrorPairToken)
+    }
+
+    /// `swapd auto --json` under `SWAPD_SUPERVISED=1` (#475): the daemon's
+    /// NDJSON stream, restarted by the supervisor; its state feeds the
+    /// Engines pane and the badge.
+    private func startSwapd(binary: String) {
+        let supervisor = EngineSupervisor(
+            binaryPath: binary, arguments: ["auto", "--json"], environmentFlag: "SWAPD_SUPERVISED",
+            onLine: { [weak self] line in
+                Task { @MainActor in self?.consume(line) }
+            },
+            onState: { [weak self] state in
+                Task { @MainActor in self?.swapdState = state }
+            }
+        )
+        swapdSupervisor = supervisor
+        Task { await supervisor.start() }
+    }
+
+    /// Engine event kinds → the durable log's vocabulary.
+    static func eventKind(_ engineKind: String) -> String {
+        switch engineKind {
+        case "switch": "switch"
+        case "all-exhausted": "limit"
+        case "session-resumed": "resume"
+        default: "other"
+        }
+    }
+
+    /// The last "no-switch" line logged: the engine repeats "no switch —
+    /// already consuming soonest" after every minute's poll, and the
+    /// poll itself says nothing, so neither reaches the Activity tail or
+    /// the durable log until the reason changes (Infi4, 2026-09-11).
+    private var lastNoSwitch: String?
+
+    private func consume(_ line: EventLine) {
+        switch line {
+        case .event(let event):
+            // Heartbeats: `poll` and `sleep` mark every tick and say
+            // nothing (#475: the real daemon logs "sleep" once a minute).
+            if event.kind == "poll" || event.kind == "sleep" { return }
+            if event.kind == "no-switch" {
+                if event.summary == lastNoSwitch { return }
+                lastNoSwitch = event.summary
+            }
+            logEvent(Self.eventKind(event.kind), icon: event.icon, event.summary)
+            switch event.kind {
+            case "switch":
+                Task { await refreshSnapshot() }  // the snapshot diff posts the notification
+            // Logged only (#231). "all-exhausted" arrives on every engine
+            // re-probe (~10 min while dead): the latched PushTriggers message
+            // owns that notification. session-resumed, remote-control-rearmed
+            // and account-unquarantined used to post banners with no latch
+            // and no Settings › Notify toggle; both are swapd's own
+            // housekeeping now (#1041), and the revival diff already
+            // carries the account-back news.
+            default:
+                break
+            }
+        case .schemaMismatch(let version):
+            swapdState = .schemaMismatch(version)
+        case .garbage:
+            break  // logged upstream; never fatal (spec §2)
+        }
+    }
+
+    private static func executableDate() -> Date? {
+        guard let url = Bundle.main.executableURL else { return nil }
+        return (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?
+            .contentModificationDate
+    }
+
+    /// Stop the engine cleanly, then relaunch this app from its bundle —
+    /// the "restart to update" action after an on-disk rebuild.
+    // MARK: onboarding — engine install (todo 2026-08-30)
+
+    /// The bundled demo engine (tools/demo-swapd -> Resources), a tiny
+    /// fabricated-fleet swapd. Unbundled dev runs look next to the
+    /// executable instead (run-unbundled.sh copies it there).
+    static func demoScriptPath() -> String? {
+        if let p = Bundle.main.path(forResource: "demo-swapd", ofType: nil),
+           FileManager.default.isExecutableFile(atPath: p) { return p }
+        if let dir = (Bundle.main.executablePath as NSString?)?
+            .deletingLastPathComponent {
+            let p = dir + "/demo-swapd"
+            if FileManager.default.isExecutableFile(atPath: p) { return p }
+        }
+        return nil
+    }
+
+    /// Playground-only: pretend no engine was found, so the onboarding
+    /// card is reachable without an env-var relaunch (issue #6).
+    @Published var simulateNoEngine = false
+    /// True when no engine at all is configured (no swapd binary and no
+    /// proxy); the popup swaps its rows for the onboarding card. A
+    /// proxy-only setup is a working setup, not a missing engine.
+    var engineMissing: Bool { registry.engines.isEmpty || simulateNoEngine }
+    /// A setup step (no engine / no account yet) is on screen: the popup
+    /// paints solid over the glass so the steps read against any desktop
+    /// (user 2026-09-07 from the phone: "Disable liquid glass for set up
+    /// steps", photo of the card over a Finder icon grid).
+    var setupStepShown: Bool { engineMissing || (accounts.isEmpty && snapshotLoaded) }
+    /// swapd is on and its binary was found — the only case the rail's
+    /// auto-switch toggle and badge mean anything.
+    var swapdRegistered: Bool { registry.engines.contains { $0.id == SwapdEngine.engineID } }
+    /// The primary fleet's engine when it can adopt Claude Code's current
+    /// login (`.addCurrent`): the in-app sign-in flow hands it the fresh
+    /// credential. Gate UI on this, never on an engine id.
+    var currentLoginEngine: AccountEngine? {
+        guard let primary, primary.capabilities.contains(.addCurrent) else { return nil }
+        return primary.engine
+    }
+
+    // MARK: onboarding — machine detection (todo 2026-09-01)
+
+    @Published var claudeCLI: ClaudeCLIInfo?
+    @Published var cliProxy: CLIProxyInfo?
+    /// Something answered on the management port while the auth dir
+    /// exists — the proxy is probably running right now.
+    @Published var cliProxyLive = false
+    @Published var addingFirstAccount = false
+    @Published var firstAccountMessage: String?
+    /// Set once a real snapshot decoded — gates the "no accounts" card
+    /// so it can't flash during the first refresh.
+    var snapshotLoaded: Bool { primary?.snapshotLoaded ?? false }
+
+    func detectOnboarding() {
+        Task.detached(priority: .utility) { [weak self] in
+            let claude = ClaudeCLIDetect.info()
+            let proxy = CLIProxyDetect.info()
+            let live: Bool
+            if proxy != nil {
+                var req = URLRequest(
+                    url: URL(string: "http://127.0.0.1:\(CLIProxyDetect.defaultPort)/")!)
+                req.timeoutInterval = 0.8
+                // ANY HTTP answer counts — management routes 404 without a
+                // secret key, the point is that something is listening.
+                live = (try? await URLSession.shared.data(for: req)) != nil
+            } else {
+                live = false
+            }
+            await MainActor.run { [weak self] in
+                guard let self else { return }
+                self.claudeCLI = claude.isPresent ? claude : nil
+                self.cliProxy = proxy
+                self.cliProxyLive = live
+            }
+        }
+    }
+
+    /// `swapd add` registers whichever account Claude Code is signed in
+    /// as — the "adopt the current login" onboarding path.
+    func addFirstAccount() {
+        guard let engine = currentLoginEngine, !addingFirstAccount else { return }
+        addingFirstAccount = true
+        firstAccountMessage = nil
+        Task {
+            do {
+                try await engine.addCurrent()
+                await refreshSnapshot()
+            } catch {
+                // The engine's own text when it gave one (`swapd add` says
+                // what went wrong in its login); otherwise a sentence, never
+                // the raw error.
+                firstAccountMessage = EngineFailure.sentence(error)
+            }
+            addingFirstAccount = false
+        }
+    }
+    func relaunchApp() {
+        let bundle = Bundle.main.bundleURL.path
+        let oldSwapd = swapdSupervisor
+        swapdSupervisor = nil
+        Task {
+            await oldSwapd?.stop()
+            let p = Process()
+            p.executableURL = URL(fileURLWithPath: "/bin/sh")
+            // Unbundled dev runs are a bare executable — `open` on its
+            // directory would just raise Finder.
+            let exe = Bundle.main.executablePath ?? ""
+            // A fixed sleep can't be trusted to outlast this process —
+            // wait for the pid to actually exit instead.
+            let pid = ProcessInfo.processInfo.processIdentifier
+            let wait = "while /bin/kill -0 \(pid) 2>/dev/null; do sleep 0.1; done; "
+            let cmd = bundle.hasSuffix(".app")
+                ? wait + "/usr/bin/open \"\(bundle)\""
+                : wait + "exec \"\(exe)\""
+            p.arguments = ["-c", cmd]
+            try? p.run()
+            await MainActor.run {
+                NSApplication.shared.terminate(nil)
+            }
+        }
+    }
+
+    /// One pass over every enabled engine: snapshots gathered
+    /// concurrently, applied per fleet, then the app-level hooks
+    /// (cache, history, mirror, notifications, resume, push, sync) run
+    /// off the PRIMARY Claude fleet exactly as they did when swapd was
+    /// the only engine. An engine that fails keeps its last good rows
+    /// (the rumps menubar's _worker policy) and records its error.
+    /// Re-read Claude Code's settings.json for the routing env only
+    /// when the file changed (a stat per refresh, a parse on change).
+    /// Enablement and registration stay launch-time decisions — this
+    /// moves the primary fleet and the pane note only.
+    private func refreshRouting() {
+        guard !isPlayground else { return }
+        let url = TokenRateScanner.configHome().appendingPathComponent("settings.json")
+        guard let attrs = try? FileManager.default.attributesOfItem(atPath: url.path),
+              let mtime = attrs[.modificationDate] as? Date
+        else {
+            if routedVia9Router {
+                routedVia9Router = false
+                registry.routedEngineID = nil
+                NSLog("Infinitus routing: settings.json gone — Claude Code no longer routed via 9Router")
+            }
+            routingStamp = nil
+            return
+        }
+        let size = attrs[.size] as? Int ?? 0
+        if let stamp = routingStamp, stamp.mtime == mtime, stamp.size == size { return }
+        routingStamp = (mtime, size)
+        let routed = ClaudeCodeRouting.isRouted(
+            ClaudeCodeRouting.anthropicBaseURL(), to: URL(string: nineRouterBaseURL))
+        guard routed != routedVia9Router else { return }
+        routedVia9Router = routed
+        registry.routedEngineID = routed ? NineRouterEngine.engineID : nil
+        NSLog("Infinitus routing: Claude Code %@ 9Router (env.ANTHROPIC_BASE_URL)",
+              routed ? "routed via" : "no longer routed via")
+    }
+
+    func refreshSnapshot() async {
+        refreshRouting()
+        let engines = registry.engines
+        guard !engines.isEmpty else { return }
+        var results: [(id: String, fleets: [EngineFleet]?, error: Error?)] = []
+        await withTaskGroup(of: (String, [EngineFleet]?, Error?).self) { group in
+            for engine in engines {
+                group.addTask {
+                    do { return (engine.id, try await engine.snapshot(), nil) }
+                    catch { return (engine.id, nil, error) }
+                }
+            }
+            for await r in group { results.append((r.0, r.1, r.2)) }
+        }
+        var primaryResult: (fleet: EngineFleet, change: FleetState.Change)?
+        var anyChanged = false
+        for r in results {
+            guard let fleets = r.fleets else {
+                let message = (r.error as? EngineError)?.errorDescription ?? "\(r.error!)"
+                if engineErrors[r.id] != message {
+                    NSLog("Infinitus engine %@: %@", r.id, message)
+                    engineErrors[r.id] = message
+                }
+                // Keeping the rows is right — they are still the best
+                // numbers the app has — but they must stop reading as
+                // current: every countdown on them is recomputed live
+                // off stored reset times, so an hour-old reading looked
+                // exactly like a fresh one. Age them instead.
+                for state in registry.fleets where state.engineID == r.id {
+                    state.markStale(reason: message, lastGood: engineLastGood[r.id], now: Date())
+                }
+                continue
+            }
+            // Only publish a change: every @Published set re-runs each
+            // observer's body, once per refresh, even for an identical value (#18).
+            if engineErrors[r.id] != nil { engineErrors[r.id] = nil }
+            engineLastGood[r.id] = Date()
+            for reported in fleets {
+                let state = registry.state(for: reported)
+                let fleet = reported
+                let before = state.lastFleet
+                let change = state.apply(fleet)
+                anyChanged = anyChanged || change.changed
+                if state === primary {
+                    primaryResult = (fleet, change)
+                    for n in change.newlyDead {
+                        let name = fleet.accounts.first { $0.number == n }.map { $0.alias ?? $0.email } ?? "#\(n)"
+                        logEvent("death", icon: "heart.slash", "\(name) hit a limit")
+                    }
+                    // A revival before the advertised reset is Anthropic
+                    // resetting early — worth saying; the whole fleet
+                    // coming back at once, doubly so (user 2026-09-05).
+                    let wasAllDead = before.map { f in
+                        let live = f.accounts.filter { $0.disabled != true && $0.usage != nil }
+                        return !live.isEmpty && live.allSatisfy { AccountVitals.isDead($0.usage) }
+                    } ?? false
+                    let noneDeadNow = !fleet.accounts.contains { $0.disabled != true && AccountVitals.isDead($0.usage) }
+                    var early = false
+                    for n in change.newlyAlive {
+                        let name = fleet.accounts.first { $0.number == n }.map { $0.alias ?? $0.email } ?? "#\(n)"
+                        let wasEarly = RevivalProbe.wasEarly(previous: before?.accounts.first { $0.number == n })
+                        early = early || wasEarly
+                        logEvent("revival", icon: "heart.fill", "\(name) is back" + (wasEarly ? " — reset early" : ""))
+                    }
+                    if !change.firstLoad, !change.newlyAlive.isEmpty, pushRevived, !isPlayground {
+                        if wasAllDead && noneDeadNow {
+                            push("all accounts are back" + (early ? " — Anthropic reset early" : ""))
+                        } else {
+                            for n in change.newlyAlive {
+                                let name = fleet.accounts.first { $0.number == n }.map { $0.alias ?? $0.email } ?? "#\(n)"
+                                push("\(name) is back" + (early ? " — reset early" : ""))
+                            }
+                        }
+                    }
+                    scheduleRevivalProbe(accounts: fleet.accounts)
+                }
+            }
+        }
+        // The same account in two fleets: hand each engine the usage the
+        // others fetched, so Anthropic sees one usage poll per email,
+        // not one per engine (user 2026-09-02: 429s). Claude fleets only:
+        // the budget being spared is Anthropic's, and a Codex login with
+        // the same email is a different account with its own window (#899).
+        let stamp = Date()
+        for engine in engines {
+            var byEmail: [String: SharedUsage] = [:]
+            for r in results where r.id != engine.id {
+                for fleet in r.fleets ?? [] where fleet.provider == .claude {
+                    for a in fleet.accounts where a.usageStatus == "ok" {
+                        if let u = a.usage, byEmail[a.email] == nil {
+                            byEmail[a.email] = SharedUsage(usage: u, at: stamp)
+                        }
+                    }
+                }
+            }
+            if !byEmail.isEmpty { await engine.offerSharedUsage(byEmail) }
+        }
+        if let proxy = registry.engine(id: CLIProxyEngine.engineID) as? CLIProxyEngine {
+            let strategy = await proxy.routingStrategy ?? ""
+            proxyRoutingStrategy = strategy.isEmpty ? nil : strategy
+            proxySessionAffinity = await proxy.sessionAffinity
+            fleetCaveats[CLIProxyEngine.engineID] =
+                (strategy.isEmpty || strategy == "fill-first")
+                    ? nil : "\(strategy) routing ignores priority — switch is advisory"
+        }
+        if !isPlayground {
+            let cache = fleets.compactMap(\.lastFleet)
+            if let data = try? JSONEncoder().encode(cache) {
+                try? FileManager.default.createDirectory(
+                    at: Self.snapshotCacheURL.deletingLastPathComponent(),
+                    withIntermediateDirectories: true)
+                try? data.write(to: Self.snapshotCacheURL, options: .atomic)
+            }
+        }
+        if anyChanged { dataPulseTick += 1 }
+        guard let primary, let primaryResult else {
+            // The primary engine failed this pass (or there is none).
+            if let id = primary?.engineID, let err = engineErrors[id] {
+                lastError = err
+            }
+            return
+        }
+        let (fleet, change) = primaryResult
+        let list = AccountList(activeAccountNumber: fleet.activeNumber,
+                               accounts: fleet.accounts,
+                               nextCandidate: fleet.nextCandidate,
+                               candidateOrder: fleet.candidateOrder,
+                               nextRecovery: fleet.nextRecovery)
+        let raw = fleet.raw ?? (try? JSONEncoder().encode(list)) ?? Data()
+        let previous = change.previousActive
+        let firstLoad = change.firstLoad
+        if !isPlayground {
+            updateBattlePlan(list)
+        }
+        // Utilization history (todo 2026-09-01): every real snapshot
+        // feeds the per-machine JSONL; the playground's fabricated
+        // fleet must never pollute it — nor a mock-mode dev instance's
+        // (four demo-cast files turned up in App Support, 2026-09-03).
+        if !isPlayground, !mockMode {
+            let accts = list.accounts
+            let syncOn = sync.enabled
+            Task.detached(priority: .utility) { [historyRecorder] in
+                await historyRecorder.record(accounts: accts, syncEnabled: syncOn)
+            }
+            // Fleet mirror (#9 phase 1): lets the mobile companion see
+            // this machine's last snapshot. Throttled inside the actor.
+            // Prefs (#9 phase C1: "Follow Mac") captured here on the
+            // main actor since AppModel's published properties aren't
+            // Sendable-safe to read from the detached task.
+            let prefs = FleetPrefs(
+                themeID: gamification, compactRows: compactRows,
+                popupLayout: popupLayout, burnStyle: burnStyle,
+                introStyle: introStyle, introTitle: introTitle,
+                introSpeed: introSpeed, customThemes: customThemes,
+                sortByHeadroom: popupSort != .engine, popupSort: popupSort.rawValue,
+                popupTextSize: popupTextSize, reviveLeadMinutes: reviveLeadMinutes)
+            // Footer-chip state (#9 phase D2), captured here for the
+            // same main-actor reason as the prefs above.
+            let serviceStatus = ServiceStatusSummary(
+                indicator: ServiceStatusModel.shared.indicator)
+            let engine = engineBadge ?? .stopped
+            let allFleets = fleets.compactMap { $0.lastFleet?.with(capabilities: $0.capabilities) }
+            let forecast = forecast
+            let plan = battlePlan
+            let awsLogins = awsLogins
+            statsModel.refreshIfStale()
+            let stats = statsModel.bundle
+            // This Mac's own version, mirrored for the phone's Settings
+            // (#121) — same keys ControlServer.status reads.
+            let info = Bundle.main.infoDictionary ?? [:]
+            let appInfo = AppInfo(
+                version: info["CFBundleShortVersionString"] as? String ?? "dev",
+                sha: info["InfinitusGitSHA"] as? String ?? info["CFBundleVersion"] as? String ?? "dev",
+                updateVersion: appUpdateVersion,
+                updateChannel: BrewUpdater.channel.rawValue,
+                phoneLatest: appReleaseLatest)
+            let mirrorNow = mirrorExportDue
+            mirrorExportDue = false
+            // A living UI keeps its lease; the cap only catches one that died.
+            if localUIVisible { reportLocalActivity(visible: true) }
+            Task.detached(priority: .utility) { [mirrorExporter] in
+                await mirrorExporter.record(listJSON: raw, prefs: prefs,
+                                            serviceStatus: serviceStatus,
+                                            engine: engine, fleets: allFleets,
+                                            forecast: forecast, plan: plan,
+                                            awsLogins: awsLogins,
+                                            stats: stats,
+                                            pushesAlerts: self.liveActivityPusher.configured,
+                                            app: appInfo,
+                                            now: mirrorNow)
+            }
+        }
+        // Death/revive ticks fired inside FleetState.apply.
+        // Launch greeting: once the first snapshot renders, the
+        // active row plays its sweep alongside the bars' fill-up
+        // (user 2026-08-30). Delayed so the popup has drawn.
+        // First snapshot = the intro's single clock: every entrance,
+        // the bars, the flash, and the title all key off this tick,
+        // so the sequence is identical run to run (title timing
+        // drifted when it ran from view-mount instead).
+        if firstLoad {
+            DispatchQueue.main.async { self.replayIntro() }
+        }
+        lastError = nil
+        // Piggyback on the refresh tick: one cheap stat per pass.
+        if !appUpdatePending, let launched = launchExecutableDate,
+           let now = Self.executableDate(),
+           now > launched.addingTimeInterval(1) {
+            appUpdatePending = true
+        }
+        // Switch notifications come from this DISPLAY-feed diff, not the
+        // engine's `switch` events: our engine is parked whenever another
+        // host (a stray `swapd auto`) holds the mutex, and a
+        // parked engine sees no events — the 2026-08-28 silent-switch
+        // bug. The diff sees every switch regardless of who executed it,
+        // manual ones included.
+        if !isPlayground, let current = list.activeAccountNumber,
+           let previous, previous != current, lastNotifiedActive != current {
+            lastNotifiedActive = current
+            let name = accounts.first(where: { $0.number == current })
+                .map { $0.alias ?? String($0.email.prefix(while: { $0 != "@" })) } ?? "#\(current)"
+            notify("switched to account \(current) (\(name))")
+        }
+        controlServer.heal()
+        // Same display-feed vantage as the switch diff above: these
+        // triggers fire even while the supervised engine is parked.
+        let health = list.accounts
+            .filter { !($0.disabled ?? false) && $0.usage != nil }
+            .map { a in PushTriggers.Account(
+                number: a.number,
+                name: a.alias ?? String(a.email.prefix(while: { $0 != "@" })),
+                dead: AccountVitals.isDead(a.usage),
+                worstPct: PushTriggers.worstPlanPct(a.usage)) }
+        let pushes = pushTriggers.tick(
+            accounts: health,
+            flags: .init(allDead: pushAllDead, lastAlive: pushLastAlive),
+            now: Date())
+        if pushTriggers.memory != persistedPushMemory {
+            persistedPushMemory = pushTriggers.memory
+            if let data = try? JSONEncoder().encode(persistedPushMemory) { defaults.set(data, forKey: Self.pushMemoryKey) }
+        }
+        for msg in pushes where !isPlayground { push(msg) }
+        if !isPlayground { await sync.tick() }
+    }
+
+    /// The badge click: running -> stop, stopped -> start ("auto switch
+    /// status is clickable to toggle", user 2026-08-30). Deliberate states
+    /// only — refused/backing-off/mismatch stay informational.
+    func toggleEngine() {
+        switch swapdState {
+        case .running, .backingOff:
+            let supervisor = swapdSupervisor
+            swapdSupervisor = nil
+            swapdState = .stopped
+            Task { await supervisor?.stop() }
+        case .stopped:
+            guard let swapd, swapdRegistered else { return }
+            startSwapd(binary: swapd.binaryPath)
+        case .refused, .schemaMismatch:
+            break
+        }
+    }
+
+    /// The daemon the sidebar badge reports.
+    var engineState: EngineSupervisor.State { swapdState }
+    var engineBadgeShown: Bool { swapdRegistered }
+
+    // Primary-fleet actions (the mac-only panes and the wall call these;
+    // the shared rows act on their own FleetState).
+    func switchTo(_ number: Int) { primary?.switchTo(number) }
+    func rotate() { primary?.rotate() }
+
+    @Published var reorderError: String?
+
+    /// Apply a drag-reorder: `order` is the account numbers in their new
+    /// top-to-bottom sequence. Optimistically re-sorts the local rows so the
+    /// row lands where it was dropped, then lets the snapshot confirm.
+    /// Quit path: stop the supervised engine BEFORE the process dies, so
+    /// the child never outlives the app holding the mutex (the engine also
+    /// watches its stdin pipe for EOF as the backstop against a hard kill).
+    func shutdown() {
+        // The tunnels are child processes: they must not outlive the app.
+        quickTunnel.stop()
+        namedTunnel.stop()
+        forkTunnel.stop()
+        let swapdSupervisor = swapdSupervisor
+        Task {
+            await swapdSupervisor?.stop()
+            await MainActor.run {
+                NSApplication.shared.terminate(nil)
+            }
+        }
+    }
+
+    func rename(_ number: Int, to name: String) { primary?.rename(number, to: name) }
+    var displayAccounts: [Account] { primary?.displayAccounts ?? [] }
+    func setRotation(_ number: Int, enabled: Bool) {
+        primary?.setRotation(number, enabled: enabled)
+    }
+    func setPreferred(_ number: Int, _ on: Bool) { primary?.setPreferred(number, on) }
+    func reorder(_ order: [Int], done: (() -> Void)? = nil) {
+        guard let primary else { done?(); return }
+        primary.reorder(order, done: done)
+    }
+}
+
+/// The shared fleet views (InfinitusUI, #9 phase B) render off this —
+/// every requirement is an existing member; only the relogin action is
+/// mac-only, so it lands here rather than in the protocol's no-op.
+extension AppModel: FleetModel {
+    // A click while a flow already runs brings ITS windows back rather
+    // than doing nothing (user 2026-09-13: "pressing again show nothing"
+    // — the sign-in was alive the whole time, buried under the pinned
+    // pop-out). `start` keeps its own guard; this is the way back in.
+    func startRelogin(_ account: Account) {
+        guard !TokenFlow.shared.running, !addingFirstAccount else {
+            TokenFlow.shared.reopenAuth(); return
+        }
+        TokenFlow.shared.start(model: self, relogin: account)
+    }
+    func addAccount() {
+        guard !TokenFlow.shared.running, !addingFirstAccount else {
+            TokenFlow.shared.reopenAuth(); return
+        }
+        TokenFlow.shared.start(model: self)
+    }
+    var canAddAccount: Bool { currentLoginEngine != nil }
+
+    /// The engine badge's portable half (#9 phase D2) — the supervisor's
+    /// own State can't cross to iOS, so the shared footer reads this.
+    var engineBadge: EngineBadge? {
+        // The badge is the supervised daemon's state; with no engine the
+        // footer hides the chip.
+        guard engineBadgeShown else { return nil }
+        switch engineState {
+        case .running: return .running
+        case .refused: return .refused
+        case .backingOff(let seconds): return .backingOff(seconds: seconds)
+        case .schemaMismatch: return .schemaMismatch
+        case .stopped: return .stopped
+        }
+    }
+
+    /// The footer's update chip opens Settings through the closure the
+    /// status item injects.
+    func openSettings() { showSettings?() }
+
+    /// The "at this pace" line's click. The Utilization pane is the
+    /// desktop app's now (#654, #774); Settings is what the Mac still opens.
+    func openForecast() {
+        showSettings?()
+    }
+
+    /// The primary fleet's engine decides what the mac-only panes may do.
+    var capabilities: EngineCapabilities { primary?.capabilities ?? .all }
+}

@@ -1,0 +1,102 @@
+import * as Schema from "effect/Schema";
+import * as SchemaTransformation from "effect/SchemaTransformation";
+
+import { ThreadEnvMode } from "./environment.ts";
+import { ProjectScriptIcon } from "./orchestration.ts";
+import { PRODUCT_NAME } from "./productName.ts";
+
+/** File name of the checked-in project file, resolved at the workspace root. */
+export const T3_PROJECT_FILE_NAME = "infinitus.json";
+
+/** Upstream's name for the same file, still read when the preferred one is absent. */
+export const LEGACY_T3_PROJECT_FILE_NAME = "t3.json";
+
+/**
+ * The names a workspace root is searched for, in order. The first one that
+ * exists decides; a second file is never merged into the first.
+ */
+export const T3_PROJECT_FILE_NAMES = [T3_PROJECT_FILE_NAME, LEGACY_T3_PROJECT_FILE_NAME] as const;
+
+/** Public URL of the published JSON Schema for {@link T3ProjectFile}. */
+export const T3_PROJECT_FILE_SCHEMA_URL = "https://infinitus.run/schema/infinitus.json";
+
+const T3_PROJECT_FILE_PATH_MAX_LENGTH = 512;
+const T3_PROJECT_FILE_MAX_SCRIPTS = 50;
+
+// Annotations go on the encoded (string) side so they survive into the
+// published JSON Schema; decoding still trims and re-validates non-emptiness.
+const trimmedNonEmpty = (annotations: { readonly description: string }, maxLength?: number) => {
+  const annotated = Schema.String.annotate(annotations);
+  const encoded =
+    maxLength === undefined
+      ? annotated.check(Schema.isNonEmpty())
+      : annotated.check(Schema.isNonEmpty(), Schema.isMaxLength(maxLength));
+  return encoded.pipe(Schema.decodeTo(encoded, SchemaTransformation.trim()));
+};
+
+export const T3ProjectFileScript = Schema.Struct({
+  name: trimmedNonEmpty({
+    description: `Display name for the script, shown in the ${PRODUCT_NAME} scripts menu.`,
+  }),
+  command: trimmedNonEmpty({
+    description: `Shell command executed in a ${PRODUCT_NAME} terminal at the project root. The environment carries T3CODE_PROJECT_ROOT, T3CODE_WORKTREE_PATH (worktree threads) and T3CODE_PORT…T3CODE_PORT_END, ten ports derived from the checkout.`,
+  }),
+  icon: Schema.optionalKey(
+    ProjectScriptIcon.annotate({
+      description: 'Icon shown next to the script in the scripts menu. Defaults to "play".',
+    }),
+  ),
+  runOnWorktreeCreate: Schema.optionalKey(
+    Schema.Boolean.annotate({
+      description:
+        "When true, the script runs automatically after a worktree is created for a new thread.",
+    }),
+  ),
+  previewUrl: Schema.optionalKey(
+    trimmedNonEmpty({
+      description:
+        "URL opened in the in-app browser preview when this script runs. Only honored on the desktop build.",
+    }),
+  ),
+  autoOpenPreview: Schema.optionalKey(
+    Schema.Boolean.annotate({
+      description:
+        "When true, automatically open the preview panel at `previewUrl` the moment the script starts.",
+    }),
+  ),
+}).annotate({
+  description: `A project script that team members can import into ${PRODUCT_NAME}.`,
+});
+export type T3ProjectFileScript = typeof T3ProjectFileScript.Type;
+
+export const T3ProjectFile = Schema.Struct({
+  $schema: Schema.optionalKey(
+    Schema.String.annotate({
+      description: `URL of the JSON Schema for this file, typically "${T3_PROJECT_FILE_SCHEMA_URL}".`,
+    }),
+  ),
+  iconPath: Schema.optionalKey(
+    trimmedNonEmpty(
+      {
+        description: `Workspace-relative path to the project icon (e.g. "assets/logo.svg"). Checked before ${PRODUCT_NAME}'s built-in icon locations.`,
+      },
+      T3_PROJECT_FILE_PATH_MAX_LENGTH,
+    ),
+  ),
+  defaultThreadEnvMode: Schema.optionalKey(
+    ThreadEnvMode.annotate({
+      description: `Where new threads start for this repository: "worktree" for a fresh git worktree, "local" for the current checkout. A per-project setting in ${PRODUCT_NAME} overrides this; when neither is set, the global default applies.`,
+    }),
+  ),
+  scripts: Schema.optionalKey(
+    Schema.Array(T3ProjectFileScript)
+      .annotate({
+        description: `Project scripts shared with everyone who opens this repository in ${PRODUCT_NAME}.`,
+      })
+      .check(Schema.isMaxLength(T3_PROJECT_FILE_MAX_SCRIPTS)),
+  ),
+}).annotate({
+  title: `${PRODUCT_NAME} project file`,
+  description: `Checked-in project configuration for ${PRODUCT_NAME} (${T3_PROJECT_FILE_NAME} at the repository root).`,
+});
+export type T3ProjectFile = typeof T3ProjectFile.Type;

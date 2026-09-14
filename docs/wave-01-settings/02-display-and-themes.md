@@ -21,30 +21,31 @@ Descriptor: `id: "display"`, glyph `` (Segoe Fluent `TaskbarSettings`
 The Mac pane mixes three unrelated things: menu-bar title format, popup
 presentation, and machine behaviour. Only the first and third exist here.
 
-| Mac control | Windows |
-|---|---|
-| Menu bar shows only the icon | **port** → "Tray tooltip shows only the icon" |
-| Show account name in menu bar | **port** → tray tooltip |
-| Title percentage (`off`/`5h`/`7d`/`both`) | **port** |
-| Reset time in title (`off`/`countdown`/`clock`) | **port** |
-| Show model limits in title | **port** |
-| Menu bar counts remaining, not used | **port** |
-| Popup layout (wide/stacked/hstack) | **drop** — no popup |
-| Popup size | **drop** |
-| Popup transparency | **drop** |
-| Compact popup | **drop** |
-| Hide popup actions | **drop** |
-| Floating countdown panel | **drop** |
-| Wall | **drop** |
-| Name unnamed sessions with Haiku | **drop** — the namer shells `claude -p`; out of scope for wave 01, file an issue |
-| Show menu bar icon | **drop** — hiding the tray icon would strand the app |
-| Refresh interval (30/60/300) | **port** |
-| Start at login | **port** — `TrayAutostart` (moves here from Legacy) |
-| Keep Mac awake while sessions work | **port** → "Keep Windows awake while sessions are working" (see below) |
+| Mac control                                     | Windows                                                                          |
+| ----------------------------------------------- | -------------------------------------------------------------------------------- |
+| Menu bar shows only the icon                    | **port** → "Tray tooltip shows only the icon"                                    |
+| Show account name in menu bar                   | **port** → tray tooltip                                                          |
+| Title percentage (`off`/`5h`/`7d`/`both`)       | **port**                                                                         |
+| Reset time in title (`off`/`countdown`/`clock`) | **port**                                                                         |
+| Show model limits in title                      | **port**                                                                         |
+| Menu bar counts remaining, not used             | **port**                                                                         |
+| Popup layout (wide/stacked/hstack)              | **drop** — no popup                                                              |
+| Popup size                                      | **drop**                                                                         |
+| Popup transparency                              | **drop**                                                                         |
+| Compact popup                                   | **drop**                                                                         |
+| Hide popup actions                              | **drop**                                                                         |
+| Floating countdown panel                        | **drop**                                                                         |
+| Wall                                            | **drop**                                                                         |
+| Name unnamed sessions with Haiku                | **drop** — the namer shells `claude -p`; out of scope for wave 01, file an issue |
+| Show menu bar icon                              | **drop** — hiding the tray icon would strand the app                             |
+| Refresh interval (30/60/300)                    | **port**                                                                         |
+| Start at login                                  | **port** — `TrayAutostart` (moves here from Legacy)                              |
+| Keep Mac awake while sessions work              | **port** → "Keep Windows awake while sessions are working" (see below)           |
 
 New, Windows-only:
+
 - **Balloon notifications** on/off — the tray's `TrayNotify.transitions`
-  rules already decide *when*; this is the master switch. Show the two
+  rules already decide _when_; this is the master switch. Show the two
   rules underneath as help text so the user knows what they get:
   "a session starts waiting on you" and "a session stops while busy".
 - **Accounts panel sorts rows by headroom** — `sort_headroom`, the same
@@ -115,8 +116,8 @@ System
   (`refreshMilliseconds: UINT = 5000`, `main.swift:37`). Wire it: read
   `settings.refreshIntervalSeconds` at tray start, and on change call
   `KillTimer` + `SetTimer` with the new period. Note the two are different
-  clocks — the Mac's `refresh_interval` is the *engine snapshot* cadence
-  and the tray's 5 s timer is the *session* re-read. Keep the 5 s session
+  clocks — the Mac's `refresh_interval` is the _engine snapshot_ cadence
+  and the tray's 5 s timer is the _session_ re-read. Keep the 5 s session
   tick fixed (it is what drives balloons) and apply this setting to
   `TrayFleet`'s cache TTL instead: `TrayFleet.cacheSeconds` becomes a
   `var` defaulting to 30 and set from this preference. Document that in
@@ -135,7 +136,7 @@ System
 
 ## Title preview
 
-The Mac has no preview because the menu bar *is* the preview. The Windows
+The Mac has no preview because the menu bar _is_ the preview. The Windows
 tooltip is not visible while Settings is open, so add one: a read-only
 line under the title section rendering the **live** title through
 `TitleFormatter.format(account:prefs:now:icon:)`
@@ -169,7 +170,7 @@ Descriptor: `id: "themes"`, glyph `` (Color), tint
 
 - **15 built-ins**, not 14. `RowTheme.builtins` is
   `[off, rpg, movie, hades, mgs, agent, swe, scifi, west, cyber, gothic,
-  musical, earth, cosmo, ocean]` (`RowTheme.swift:461-464`). The brief's
+musical, earth, cosmo, ocean]` (`RowTheme.swift:461-464`). The brief's
   "14" omitted `agent` ("AI Agentic"). Render whatever `builtins`
   contains — never a hardcoded list.
 - **Custom themes** from `%APPDATA%\Infinitus\themes.json`.
@@ -198,7 +199,7 @@ public static func resolve(_ name: String) -> Color {
 ```
 
 The Mac's rendering must be **byte-identical** afterwards. The named
-colours it maps to SwiftUI system colours (`.red`, `.blue`, …) are *not*
+colours it maps to SwiftUI system colours (`.red`, `.blue`, …) are _not_
 fixed RGB — they are dynamic. So `ThemePalette` returns nil for every
 name SwiftUI resolves dynamically, and Windows supplies its own table for
 those names. Concretely:
@@ -237,6 +238,7 @@ mapped to `COLORREF`, falling back to `WinDark.dim` for
 `secondary`/`gray` and `WinDark.text` for `primary`/unknown.
 
 Tests (`Tests/InfinitusCoreTests/ThemePaletteTests.swift`):
+
 - `testHexParses` — `"#ff2d95"` → (255,45,149); `"#FF2D95"` too.
 - `testHexRejectsMalformed` — `"#fff"`, `"ff2d95"`, `"#gggggg"`, `""`.
 - `testEveryBuiltinThemeColourResolves` — iterate `RowTheme.builtins`,
@@ -284,6 +286,7 @@ compare like-for-like, exactly as the Mac does
 credit 74%, model "Fable" at 74%, $1,131**. Reuse those literals.
 
 Two render modes, matching `RowTheme.plain`:
+
 - `plain == true` (the Off theme): three text lines, no bars —
   `"5h 21% 4h 8m (22:09)"`, `"7d 68% 5d 9h (Sep 4 03:59)"`,
   `"$ 74% · Fable 74%"`.
@@ -301,6 +304,7 @@ shared helper rather than copy-pasting it.
 **Emoji.** Theme labels are emoji-heavy (`🎥`, `🗡`, `🦇`, `💰`). GDI's
 `DrawTextW` with Segoe UI renders these as monochrome glyphs at best and
 tofu at worst. Options, in order of preference:
+
 1. Select **Segoe UI Emoji** as the font for the label/icon runs
    specifically (create a second HFONT with face `"Segoe UI Emoji"`,
    select it for those `DrawTextW` calls only). This gives colour emoji
@@ -308,11 +312,12 @@ tofu at worst. Options, in order of preference:
 2. If a specific glyph still fails, it fails **visibly as tofu, not as a
    crash** — acceptable for a preview, and the theme name underneath
    always identifies the card.
-Do **not** pull in DirectWrite/Direct2D for this. Report which of the 15
-built-ins render their icons correctly; a table of "renders / tofu" is a
-useful artefact for the follow-up.
+   Do **not** pull in DirectWrite/Direct2D for this. Report which of the 15
+   built-ins render their icons correctly; a table of "renders / tofu" is a
+   useful artefact for the follow-up.
 
 Selection:
+
 - selected card → 2px border in `WinDark.sessionColor` + a filled radio
   glyph; unselected → 1px `WinDark.track` + hollow glyph.
 - hover → `WinDark.hover` plate behind the card.
@@ -338,6 +343,7 @@ This task therefore has a second half:
   build") rather than silently doing nothing. Report which you did.
 
 Custom themes:
+
 - Path: `RowTheme.customThemesURL(appSupport:)` takes the App Support dir
   as a parameter, so Windows passes `%APPDATA%\Infinitus` and gets
   `%APPDATA%\Infinitus\themes.json`. Add a small Windows helper rather
@@ -360,6 +366,7 @@ Custom themes:
 ## Tests
 
 Pure only, in `InfinitusWinUI` / Core:
+
 - `ThemePaletteTests` (above).
 - `testCardGridColumns` — width 980 → N columns; width 320 → 1; never 0.
 - `testCardGridContentHeight` — 15 built-ins at 2 columns → 8 rows.
@@ -394,6 +401,7 @@ Pure only, in `InfinitusWinUI` / Core:
 ## Report
 
 Status; files; tests; commit. Plus:
+
 - the emoji render table (15 themes × icons render/tofu);
 - whether theme consumption in `FleetWindow` landed in this task or was
   deferred (and if deferred, the issue number);

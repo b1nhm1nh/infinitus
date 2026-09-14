@@ -1,0 +1,61 @@
+import { createFileRoute, redirect, useNavigate } from "@tanstack/react-router";
+
+import { InfinitusPhoneLinkSurface } from "../components/auth/InfinitusPhoneLinkSurface";
+import {
+  HostedPairingRouteSurface,
+  PairingPendingSurface,
+  PairingRouteSurface,
+} from "../components/auth/PairingRouteSurface";
+import { isPhonePairingLink } from "../components/settings/infinitus/pairPhone.logic";
+
+export const Route = createFileRoute("/pair")({
+  beforeLoad: async ({ context }) => {
+    const { authGateState } = context;
+    if (authGateState.status === "hosted-pairing") {
+      return {
+        authGateState,
+      };
+    }
+
+    if (authGateState.status === "authenticated" || authGateState.status === "hosted-static") {
+      throw redirect({ to: "/", replace: true });
+    }
+    return {
+      authGateState,
+    };
+  },
+  component: PairRouteView,
+  pendingComponent: PairRoutePendingView,
+});
+
+function PairRouteView() {
+  const { authGateState } = Route.useRouteContext();
+  const navigate = useNavigate();
+
+  if (!authGateState) {
+    return null;
+  }
+
+  // A Devices-card link for the phone, opened in a browser: never spend it here (#724).
+  if (typeof window !== "undefined" && isPhonePairingLink(new URL(window.location.href))) {
+    return <InfinitusPhoneLinkSurface />;
+  }
+
+  if (authGateState.status === "hosted-pairing") {
+    return <HostedPairingRouteSurface />;
+  }
+
+  return (
+    <PairingRouteSurface
+      auth={authGateState.auth}
+      onAuthenticated={() => {
+        void navigate({ to: "/", replace: true });
+      }}
+      {...(authGateState.errorMessage ? { initialErrorMessage: authGateState.errorMessage } : {})}
+    />
+  );
+}
+
+function PairRoutePendingView() {
+  return <PairingPendingSurface />;
+}

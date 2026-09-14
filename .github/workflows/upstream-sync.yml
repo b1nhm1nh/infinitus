@@ -1,0 +1,88 @@
+# Daily merge of upstream T3 Code into the fork's main, as a PR (main is
+# PR-only). Our history is never rebased; a conflicting merge leaves a PR
+# with the conflict markers listed in its body for a person to finish.
+# Needs `workflow_dispatch:` on ci.yml (a registration point, INFINITUS.md).
+name: Upstream sync
+on:
+  schedule:
+    # 01:17 UTC = 08:17 GMT+7, before the day's work. An off-peak minute:
+    # GitHub delays scheduled runs under load, and at :30 the fork's runs
+    # landed ~5 h late two days running (2026-09-11/12) or not at all.
+    - cron: "17 1 * * *"
+  workflow_dispatch:
+permissions:
+  contents: write
+  pull-requests: write
+jobs:
+  sync:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          # A fine-grained PAT (contents + workflows + pull-requests: write) lets
+          # the sync push a branch that touches .github/workflows, which the
+          # default token refuses (#658). Without the secret the default token
+          # is used and such a sync fails at the push — then do it by hand.
+          token: ${{ secrets.UPSTREAM_SYNC_TOKEN || github.token }}
+          fetch-depth: 0
+          ref: main
+      - name: Merge upstream/main onto a sync branch
+        id: merge
+        env:
+          GH_TOKEN: ${{ secrets.UPSTREAM_SYNC_TOKEN || github.token }}
+          HAS_PAT: ${{ secrets.UPSTREAM_SYNC_TOKEN != '' }}
+        run: |
+          set -e
+          git config user.name "infinitus-sync[bot]"
+          git config user.email "noreply@infinitus.run"
+          git remote add upstream https://github.com/pingdotgg/t3code.git
+          git fetch upstream main
+          if git merge-base --is-ancestor upstream/main HEAD; then
+            echo "state=uptodate" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          # Named after the upstream sha, not the date: a second run on one
+          # day (or a redo after the first branch merged) must not collide.
+          branch="upstream-sync-$(git rev-parse --short upstream/main)"
+          if git ls-remote --exit-code --heads origin "$branch" >/dev/null; then
+            echo "branch $branch already exists; a sync for this upstream sha is pending"
+            echo "state=uptodate" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          git checkout -b "$branch"
+          if git merge --no-edit upstream/main; then
+            echo "state=clean" >> "$GITHUB_OUTPUT"
+          else
+            git diff --name-only --diff-filter=U > /tmp/conflicts.txt
+            git add -A && git -c core.editor=true commit --no-edit
+            echo "state=conflict" >> "$GITHUB_OUTPUT"
+          fi
+          # Fork rule: GitHub-hosted runners, never Blacksmith (INFINITUS.md).
+          if grep -rl "runs-on: blacksmith-" .github/workflows >/dev/null 2>&1; then
+            sed -i -E 's/runs-on: blacksmith-[0-9]+vcpu-ubuntu-2404/runs-on: ubuntu-24.04/; s/runs-on: blacksmith-[0-9]+vcpu-macos-26/runs-on: macos-latest/; s/runs-on: blacksmith-[0-9]+vcpu-windows-2025/runs-on: windows-2025/' .github/workflows/*.yml
+            git commit -am "ci: GitHub-hosted runners after the upstream merge" || true
+          fi
+          git push -u origin "$branch"
+          echo "branch=$branch" >> "$GITHUB_OUTPUT"
+          # A push made with GITHUB_TOKEN starts no push/pull_request run, but
+          # workflow_dispatch is exempt: start CI on the head so the PR's
+          # required checks (they attach to the sha) can go green. A PAT push
+          # starts CI by itself, so skip the extra run then.
+          if [ "$HAS_PAT" != "true" ]; then gh workflow run ci.yml --ref "$branch"; fi
+      - name: Open the PR
+        if: steps.merge.outputs.state != 'uptodate'
+        env:
+          GH_TOKEN: ${{ secrets.UPSTREAM_SYNC_TOKEN || github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          sha=$(git rev-parse --short upstream/main)
+          if [ "${{ steps.merge.outputs.state }}" = "clean" ]; then
+            gh pr create --base main --head "${{ steps.merge.outputs.branch }}" \
+              --title "chore: merge upstream T3 Code ($sha)" \
+              --body "Daily upstream sync, merged clean. Checks decide."
+            # A merge commit, never a squash: squashing #657 lost the
+            # merge-base and made the next sync conflict on every upstream file.
+            gh pr merge --merge --auto "${{ steps.merge.outputs.branch }}" || true
+          else
+            gh pr create --base main --head "${{ steps.merge.outputs.branch }}" \
+              --title "chore: merge upstream T3 Code ($sha) — CONFLICTS to resolve" \
+              --body "$(printf 'Daily upstream sync hit conflicts; the merge commit carries the markers. Files:\n\n```\n%s\n```\nResolve on this branch, then merge with a merge commit (never squash: it drops the merge-base).' "$(cat /tmp/conflicts.txt)")"
+          fi

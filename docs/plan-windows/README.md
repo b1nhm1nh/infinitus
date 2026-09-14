@@ -12,17 +12,17 @@ Written 2026-09-04 from the repo at `3fa96ea` and from the live box
 protocol detail below was read from code or probed on the box; nothing is
 guessed. Files:
 
-| file | covers |
-|---|---|
-| `README.md` | this: architecture decision, diagram, multi-host/token model |
-| `01-stack.md` | Swift-on-Windows stack, portable-vs-not file list, build/run |
-| `02-feed-readonly.md` | phase 1: sessions + transcript feed + images, read-only |
-| `03-input-injection.md` | phase 2: CC peer protocol over named pipes |
-| `04-phone.md` | iOS changes: multi-host fleet merge, per-host token, target UX |
-| `05-custom-api.md` | proxy-independence, verified |
-| `06-nudge-resume.md` | resume/nudge parity — what ports, what is deferred |
-| `07-testing.md` | tests + acceptance runnable on this box |
-| `TASKS.md` | numbered, dependency-ordered task list |
+| file                    | covers                                                         |
+| ----------------------- | -------------------------------------------------------------- |
+| `README.md`             | this: architecture decision, diagram, multi-host/token model   |
+| `01-stack.md`           | Swift-on-Windows stack, portable-vs-not file list, build/run   |
+| `02-feed-readonly.md`   | phase 1: sessions + transcript feed + images, read-only        |
+| `03-input-injection.md` | phase 2: CC peer protocol over named pipes                     |
+| `04-phone.md`           | iOS changes: multi-host fleet merge, per-host token, target UX |
+| `05-custom-api.md`      | proxy-independence, verified                                   |
+| `06-nudge-resume.md`    | resume/nudge parity — what ports, what is deferred             |
+| `07-testing.md`         | tests + acceptance runnable on this box                        |
+| `TASKS.md`              | numbered, dependency-ordered task list                         |
 
 ## Decision: a Windows mirror daemon speaking the phone's HTTP surface
 
@@ -44,21 +44,22 @@ auth: Authorization: Bearer <24×base32> or ?t=; 401 "pairing token required\n"
 ```
 
 The daemon reads only Claude Code's own files (`~/.claude/sessions/*.json`
-+ `.key`, `~/.claude/projects/<slug>/<sessionId>.jsonl`) and writes only to
-CC's peer pipe `\\.\pipe\LOCAL\cc-msg-<32hex>` — the Windows twin of the
-Mac's `PeerSocket.write` over the AF_UNIX `messagingSocketPath`. No engine
-(`cswap`) involvement at all: on Windows there is no cswap, so the snapshot
-carries one synthetic fleet with zero accounts and `liveSessions` populated
-(`04-phone.md` covers the phone's empty-accounts handling).
+
+- `.key`, `~/.claude/projects/<slug>/<sessionId>.jsonl`) and writes only to
+  CC's peer pipe `\\.\pipe\LOCAL\cc-msg-<32hex>` — the Windows twin of the
+  Mac's `PeerSocket.write` over the AF_UNIX `messagingSocketPath`. No engine
+  (`cswap`) involvement at all: on Windows there is no cswap, so the snapshot
+  carries one synthetic fleet with zero accounts and `liveSessions` populated
+  (`04-phone.md` covers the phone's empty-accounts handling).
 
 Why this and not the alternatives:
 
-| option | verdict | reason |
-|---|---|---|
-| **Windows daemon, same HTTP surface** (chosen) | do | phone wire contract already exists and is tested (`Tests/InfinitusCoreTests/MirrorTransportTests.swift`); InfinitusCore's feed/transcript/pairing code compiles on Windows with two fences (probed, `01-stack.md`); the Mac app stays untouched |
-| SSH `PtyHost` from the Mac app into Windows | reject | needs a Mac up 24/7 as a relay; `PtyHosts` is a PTY read/write surface (tmux/screen/iTerm) — Windows Terminal has no send-keys/read-screen CLI, so there is nothing for a PtyHost to drive; transcript reads over SSH would re-implement the feed reader remotely with 0.3 s polling over the wire |
-| full Windows port of the Infinitus app (tray UI, engines) | reject | AppKit/SwiftUI targets are `#if os(macOS)`-fenced in `Package.swift`; cswap is macOS-only; the phone only needs sessions + feed + input; a tray UI is a later, separate project |
-| Rust / Node daemon | reject | would re-implement `SessionFeed.parse` (≈600 lines of transcript semantics: tool collapse, agent attach, image ids, envelope stripping) and drift from the Mac; Swift is installed on the box and the core compiles |
+| option                                                    | verdict | reason                                                                                                                                                                                                                                                                                             |
+| --------------------------------------------------------- | ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Windows daemon, same HTTP surface** (chosen)            | do      | phone wire contract already exists and is tested (`Tests/InfinitusCoreTests/MirrorTransportTests.swift`); InfinitusCore's feed/transcript/pairing code compiles on Windows with two fences (probed, `01-stack.md`); the Mac app stays untouched                                                    |
+| SSH `PtyHost` from the Mac app into Windows               | reject  | needs a Mac up 24/7 as a relay; `PtyHosts` is a PTY read/write surface (tmux/screen/iTerm) — Windows Terminal has no send-keys/read-screen CLI, so there is nothing for a PtyHost to drive; transcript reads over SSH would re-implement the feed reader remotely with 0.3 s polling over the wire |
+| full Windows port of the Infinitus app (tray UI, engines) | reject  | AppKit/SwiftUI targets are `#if os(macOS)`-fenced in `Package.swift`; cswap is macOS-only; the phone only needs sessions + feed + input; a tray UI is a later, separate project                                                                                                                    |
+| Rust / Node daemon                                        | reject  | would re-implement `SessionFeed.parse` (≈600 lines of transcript semantics: tool collapse, agent attach, image ids, envelope stripping) and drift from the Mac; Swift is installed on the box and the core compiles                                                                                |
 
 ## Diagram
 

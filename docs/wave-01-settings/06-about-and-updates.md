@@ -16,16 +16,16 @@ Descriptor: `id: "about"`, glyph `` (Info), tint
 
 ## What ports
 
-| Mac | Windows |
-|---|---|
-| Hero card: app icon, version, build, build date, tagline | port |
-| Updates: current vs latest, check button | port (GitHub release only) |
-| Update channel stable/nightly picker | port — **as a read-only note**, see below |
-| "Update via Homebrew" | **drop** — no brew |
-| Channel switch buttons (`brew uninstall`/`install`) | **drop** |
-| Notifications delivery + the usernoted explanation | replace with a Windows equivalent, see below |
-| Links: GitHub, Website, Project | port |
-| MIT licence footer | port |
+| Mac                                                      | Windows                                      |
+| -------------------------------------------------------- | -------------------------------------------- |
+| Hero card: app icon, version, build, build date, tagline | port                                         |
+| Updates: current vs latest, check button                 | port (GitHub release only)                   |
+| Update channel stable/nightly picker                     | port — **as a read-only note**, see below    |
+| "Update via Homebrew"                                    | **drop** — no brew                           |
+| Channel switch buttons (`brew uninstall`/`install`)      | **drop**                                     |
+| Notifications delivery + the usernoted explanation       | replace with a Windows equivalent, see below |
+| Links: GitHub, Website, Project                          | port                                         |
+| MIT licence footer                                       | port                                         |
 
 ## Layout
 
@@ -81,6 +81,7 @@ There are **three** version strings in this repo and they disagree today:
 The tray has no version constant at all.
 
 Fix as part of this task:
+
 1. Add `let infinitusTrayWinVersion = "…"` next to the daemon's, or
    better, put **one** constant in `InfinitusCore` —
    `public enum InfinitusVersion { public static let current = "0.4.2" }`
@@ -205,6 +206,7 @@ already in `SettingsWindow.openNineRouterDashboard`
 and a trailing `↗`, owner-drawn like every other button.
 
 URLs, verbatim from the Mac:
+
 - `https://github.com/deathemperor`
 - `https://huuloc.com`
 - `https://github.com/deathemperor/infinitus`
@@ -213,10 +215,12 @@ URLs, verbatim from the Mac:
 ## Tests
 
 Core:
+
 - `InfinitusVersion.current` parses as a `PackageVersion`.
 - (`PackageVersion` itself is already tested — don't duplicate.)
 
 `InfinitusWinUI`:
+
 - `testReleaseTagStripsV` — `"v0.5.0"` → `"0.5.0"`; `"0.5.0"` unchanged.
 - `testUpdateAvailableComparison` — `0.4.2` vs `0.5.0` → available;
   `0.5.0` vs `0.4.2` → not; `0.5.0` vs `0.5.0` → not;
@@ -255,6 +259,7 @@ daemon/constant agreement assertion.
 ## Report
 
 Status; files; tests; commit. Plus:
+
 - the three version strings before and after;
 - whether `TrayIcon.make` was generalised or the rings redrawn;
 - confirmation that `docs/RELEASING.md` mentions bumping the shared

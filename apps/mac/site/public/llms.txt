@@ -1,0 +1,34 @@
+# Infinitus
+
+> Free, open-source mission control for a fleet of Claude Code accounts. A macOS menu bar app (plus a Linux tray daemon and Omarchy Quickshell panel plugin) that shows every account's 5-hour, weekly and per-model usage, and rotates to the freshest account the moment a limit hits, so a thread a limit stopped carries on by itself in Infinitus desktop.
+
+- Website: https://infinitus.run/
+- Source (MIT): https://github.com/deathemperor/infinitus
+- Releases: https://github.com/deathemperor/infinitus/releases
+- Issues / roadmap: https://github.com/deathemperor/infinitus/issues
+- Version: alpha; the current one answers at https://infinitus.run/download/version, downloads at https://infinitus.run/download/mac (standalone menu bar app), /download/dmg (desktop app, Apple silicon), /download/linux-x86_64, /download/linux-aarch64, /download/omarchy
+
+## What it does
+
+- Watches every Claude Code account's usage windows (5-hour, weekly, per-model / scoped) with live gauges and reset countdowns.
+- Rotates to the best candidate account automatically when a limit binds, via the `swapd` CLI. Infinitus never modifies Claude Code and never reads the engine's internal files; every engine touchpoint is a `swapd … --json` subprocess.
+- Thread resume: a thread a usage limit stopped carries on by itself in Infinitus desktop once an account is back, from the turn it was cut off on.
+- Infinitus desktop threads: every turn checkpoints the repository (restore a turn's files, rewind the chat, or fork the thread from that turn); Best of N sends one prompt to two to four models, each in its own worktree; a message typed while a turn runs queues on the server and goes when the thread is idle.
+- All-dead countdown: when every account is limited, the popup, the desktop app and the phone count down to the next recovery.
+- Usage history and utilization estimates (usage-cost figures are estimates, never billing truth).
+- 15 themes (Off, RPG, Cyber, MGS, Sci-fi, Cosmo, Ocean, Earth, Gothic, Hades, Movie, Musical, Agent, SWE, West) each renaming the windows and bringing its own intro, death and revival effects.
+- `infinitusctl environments | projects | threads | thread show|send|new|interrupt|release | desktop status|credential` drive Infinitus desktop's projects and threads from a shell, over the credential the desktop hands the Mac app.
+
+## Platforms
+
+- macOS 14+ (Apple silicon): `brew install --cask deathemperor/tap/infinitus`, or download `Infinitus.app` from the latest release — or the whole desktop app, `Infinitus-<version>-arm64.dmg`, which carries the menu bar app inside as a login item. One `v<version>` release ships all of them. Releases are Developer ID signed and notarized.
+- Linux: static `infinitus-tray` binaries for x86_64 and aarch64; Omarchy / Arch panel plugin for Quickshell and a Waybar module (`apps/mac/packaging/omarchy/`), also on the AUR.
+- Phone app (iOS and Android, `APP_VARIANT=infinitus`): the fleet mirror on Accounts, thread chat, and the lock-screen thread card the Mac keeps moving over push; device builds from the repo, not on the stores yet.
+
+## Requirements
+
+- Claude Code and the `swapd` CLI on PATH (`cargo install --git https://github.com/deathemperor/swapd swapd`). Infinitus walks you through first-account setup.
+
+## Pages
+
+- [Landing page](https://infinitus.run/): how it works, features, themes, install, FAQ.
