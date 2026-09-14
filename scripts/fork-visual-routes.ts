@@ -73,7 +73,16 @@ export const FORK_VISUAL_ROUTES: ReadonlyArray<ForkVisualRoute> = [
     // saw it. It is a number field's value, so this is the check that would.
     shows: ["[Server port: 3773]"],
   },
-  { route: "/settings/infinitus/engines", label: "Engines", marker: "swapd engine on" },
+  {
+    route: "/settings/infinitus/engines",
+    label: "Engines",
+    marker: "swapd engine on",
+    shows: [
+      "Management key",
+      "Dashboard password",
+      "[CLIProxyAPI base URL: http://127.0.0.1:8317]",
+    ],
+  },
   {
     route: "/accounts",
     label: "Accounts",
