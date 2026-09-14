@@ -12,7 +12,7 @@ public enum ClaudeCodeRouting {
     /// block or the key is missing — "unset" and "unparseable" are the
     /// same answer: Claude Code is on its own login.
     public static func anthropicBaseURL(configHome: URL? = nil) -> URL? {
-        let home = configHome ?? ClaudeSessions.configHome()
+        let home = configHome ?? TokenRateScanner.configHome()
         let url = home.appendingPathComponent("settings.json")
         guard let data = try? Data(contentsOf: url),
               let settings = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],

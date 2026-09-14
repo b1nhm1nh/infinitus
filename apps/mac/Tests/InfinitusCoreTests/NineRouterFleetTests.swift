@@ -30,13 +30,13 @@ final class NineRouterFleetTests: XCTestCase {
     func testRoutingDecidesThePrimaryEngine() {
         typealias S = NineRouterFleet.Selection
         // Routed: 9Router holds the traffic even with cswap installed.
-        XCTAssertTrue(S.shouldUseNineRouter(available: true, routed: true, cswapInstalled: true))
+        XCTAssertTrue(S.shouldUseNineRouter(available: true, routed: true, swapdInstalled: true))
         // Not routed but no cswap: 9Router is the only engine there is.
-        XCTAssertTrue(S.shouldUseNineRouter(available: true, routed: false, cswapInstalled: false))
+        XCTAssertTrue(S.shouldUseNineRouter(available: true, routed: false, swapdInstalled: false))
         // Not routed and cswap installed: cswap keeps the fleet.
-        XCTAssertFalse(S.shouldUseNineRouter(available: true, routed: false, cswapInstalled: true))
+        XCTAssertFalse(S.shouldUseNineRouter(available: true, routed: false, swapdInstalled: true))
         // Unavailable is never primary, whatever else is true.
-        XCTAssertFalse(S.shouldUseNineRouter(available: false, routed: true, cswapInstalled: false))
+        XCTAssertFalse(S.shouldUseNineRouter(available: false, routed: true, swapdInstalled: false))
     }
 
     /// The config file lives per-platform ($APPDATA on Windows, App

@@ -59,7 +59,7 @@ public enum NineRouterFleet {
     private nonisolated(unsafe) static var activeEngine: NineRouterEngine?
     private nonisolated(unsafe) static var activeConfig: (baseURL: URL, password: String)?
     private nonisolated(unsafe) static var availability: (available: Bool, routed: Bool,
-                                                          cswapInstalled: Bool, at: Date)?
+                                                          swapdInstalled: Bool, at: Date)?
 
     /// Location of persisted 9Router configuration ($APPDATA\Infinitus\9router.json).
     public static var configURL: URL {
@@ -95,20 +95,20 @@ public enum NineRouterFleet {
         /// a credential nobody uses. Without routing, an installed cswap
         /// keeps the fleet.
         public static func shouldUseNineRouter(available: Bool, routed: Bool,
-                                               cswapInstalled: Bool) -> Bool {
+                                               swapdInstalled: Bool) -> Bool {
             guard available else { return false }
-            return routed || !cswapInstalled
+            return routed || !swapdInstalled
         }
     }
 
     /// The three signals, re-read at most every `availabilityTTL`: each
     /// read is a settings.json parse, a stat, two token files and a
     /// SHA-256, and up to a dozen callers ask per tray tick.
-    private static func signals(now: Date = Date()) -> (available: Bool, routed: Bool, cswapInstalled: Bool) {
+    private static func signals(now: Date = Date()) -> (available: Bool, routed: Bool, swapdInstalled: Bool) {
         lock.lock()
         if let memo = availability, now.timeIntervalSince(memo.at) < availabilityTTL {
             lock.unlock()
-            return (memo.available, memo.routed, memo.cswapInstalled)
+            return (memo.available, memo.routed, memo.swapdInstalled)
         }
         lock.unlock()
         let env = ProcessInfo.processInfo.environment
@@ -118,11 +118,11 @@ public enum NineRouterFleet {
             configured: FileManager.default.fileExists(atPath: configURL.path),
             locallyAuthenticated: NineRouterLocalAuth.cliToken() != nil,
             pinnedOff: env["INFINITUS_9ROUTER"] == "" || env["INFINITUS_CSWAP"] == "")
-        let cswapInstalled = CswapLocator.locate() != nil
+        let swapdInstalled = SwapdLocator.locate() != nil
         lock.lock()
-        availability = (available, routed, cswapInstalled, now)
+        availability = (available, routed, swapdInstalled, now)
         lock.unlock()
-        return (available, routed, cswapInstalled)
+        return (available, routed, swapdInstalled)
     }
 
     /// True when 9Router is configured, routed, or locally authenticated.
@@ -136,7 +136,7 @@ public enum NineRouterFleet {
     public static func shouldUseNineRouter() -> Bool {
         let s = signals()
         return Selection.shouldUseNineRouter(available: s.available, routed: s.routed,
-                                             cswapInstalled: s.cswapInstalled)
+                                             swapdInstalled: s.swapdInstalled)
     }
 
     /// Resolves target base URL and password.
