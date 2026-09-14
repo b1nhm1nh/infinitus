@@ -1303,6 +1303,38 @@ source's Codex thread>, fork: true, lastTurnId: <the turn>}`
   workflows, pull requests — write), since the default token cannot push a
   branch that touches `.github/workflows` (#658); without it such a sync
   is done by hand.
+- **Oh My Pi as a provider driver** (phase 1). `omp` speaks ACP natively
+  (`omp acp`), so the driver is one more tenant of the existing ACP runtime
+  rather than a protocol of its own; its files are under "Fork-only files"
+  below. The registration points are the ones every driver has:
+  `packages/contracts/src/settings.ts` — `OmpSettings` / `OmpSettingsPatch`
+  and the `omp` key of the `providers` struct and its patch (`enabled`
+  defaults to false, so an upstream install never gains a provider it has
+  no binary for), with `settings.test.ts` covering the default;
+  `packages/contracts/src/model.ts` — `DEFAULT_MODEL_BY_PROVIDER.omp`
+  (`omp-default`, the sentinel meaning "whatever the session already
+  selected") and `PROVIDER_DISPLAY_NAMES.omp` ("Oh My Pi");
+  `apps/server/src/provider/builtInDrivers.ts` — the driver in the built-in
+  map; `apps/server/src/provider/providerStatusCache.ts` — its status entry;
+  `apps/server/src/serverSettings.ts` — the five opt-in sites, plus
+  `TEXT_GENERATION_INCAPABLE_DRIVERS`, which keeps
+  `fallbackTextGenerationProvider` from landing on a driver whose text
+  generation is a stub (omp has none: picking it would fail every title,
+  commit message, branch name and PR body instead of using another enabled
+  provider), with `serverSettings.test.ts` beside it;
+  `apps/server/src/textGeneration/TextGeneration.ts` — `omp` in the
+  provider union; `apps/server/scripts/acp-mock-agent.ts` — the
+  `T3_ACP_OMP=1` profile the adapter tests drive.
+  Web: `apps/web/src/components/Icons.tsx` (`OmpIcon`),
+  `chat/providerIconUtils.ts`, `settings/providerDriverMeta.ts`,
+  `settings/customModelEditor.logic.ts` and `settings/settingsSearch.ts`.
+  Mobile: `apps/mobile/src/components/ProviderIcon.tsx` — its own `omp`
+  branch, since the fallthrough draws the Codex mark and an unlisted driver
+  is mislabelled rather than merely unstyled.
+  Docs: `README.md`'s provider line, `docs/user/install.md`'s provider table
+  and `PATH` note, and `docs/user/permission-modes.md`'s provider
+  differences (Oh My Pi never prompts for a plain edit, so
+  **Auto-accept edits** reads as **Supervised** there).
 - Upstream workflows that deploy or publish (Release, Deploy T3 Connect
   relay, Forward to Cursor hygiene, Mobile EAS Preview/Production, Publish
   AUR, Issue Labels, Desktop macOS Preview, Web Preview, Mobile Showcase
@@ -1311,6 +1343,31 @@ source's Codex thread>, fork: true, lastTurnId: <the turn>}`
 
 ## Fork-only files
 
+- `apps/server/src/provider/Drivers/OmpDriver.ts`,
+  `Layers/OmpProvider.ts`, `Layers/OmpAdapter.ts`, `Services/OmpAdapter.ts`,
+  `acp/OmpAcpSupport.ts` and `textGeneration/OmpTextGeneration.ts` (each with
+  its test) — the Oh My Pi driver (registration points above). It templates on
+  Cursor, being another ACP tenant, and differs where `omp` does:
+  `buildOmpAcpSpawnInput` puts the launch flags before the `acp` subcommand
+  (omp hoists the subcommand and forwards leading flags) and passes `--yolo`
+  only in full access; `resumeMethod: "resume"`, since omp advertises
+  `sessionCapabilities.resume` and its `session/load` replays the whole
+  transcript first; `applyOmpAcpModelSelection` drives the session's
+  `configOptions` (`model`, `thinking`) rather than `session/set_model`, and
+  reads them live because omp pushes `config_option_update` unsolicited;
+  `isBareSlashCommand` keeps the runtime-instructions block off a turn that is
+  only a slash command, since omp joins a prompt's text blocks with a blank
+  line and reads everything after the command name as that command's arguments
+  — a `/compact` with a second block compacts toward the block's text.
+  Only full access auto-approves: omp gates `edit` solely when the payload
+  rewrites to a delete or a move, and stamps a permission `kind` on bash
+  alone, so there is nothing an auto-accept-edits branch could answer but the
+  destructive rewrites that mode is meant to keep asking about.
+  `OmpTextGeneration.ts` is a stub that fails every operation — omp has no
+  headless text generation — and `withOmpTextGeneration` in `OmpProvider.ts`
+  stamps `supportsTextGeneration: false` on the snapshot, as Antigravity does.
+  `setup.canAuthenticate` is left off because omp signs in only through its
+  own terminal UI, and the UI reads a missing value as "no button".
 - `apps/server/src/infinitus/Layers/InfinitusSlack.ts` (+
   `infinitusSlack.logic.ts`, `Services/InfinitusSlackClient.ts`, tests) —
   the Slack bridge's reactor (#574, PR 2 of 4). `SlackClient` is the

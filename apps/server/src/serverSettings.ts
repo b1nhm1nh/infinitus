@@ -285,6 +285,7 @@ const PersistedOptionalProviderSettings = Schema.Struct({
     Schema.Struct({
       cursor: Schema.optionalKey(Schema.Struct({ enabled: Schema.optionalKey(Schema.Boolean) })),
       grok: Schema.optionalKey(Schema.Struct({ enabled: Schema.optionalKey(Schema.Boolean) })),
+      omp: Schema.optionalKey(Schema.Struct({ enabled: Schema.optionalKey(Schema.Boolean) })),
       opencode: Schema.optionalKey(Schema.Struct({ enabled: Schema.optionalKey(Schema.Boolean) })),
     }),
   ),
@@ -313,6 +314,7 @@ function restoreUsedProviders(
       instance.enabled === undefined &&
       (instance.driver === "cursor" ||
         instance.driver === "grok" ||
+        instance.driver === "omp" ||
         instance.driver === "opencode") &&
       usedProviderInstances.has(instanceId)
         ? { ...instance, enabled: true }
@@ -332,6 +334,10 @@ function restoreUsedProviders(
         ...settings.providers.grok,
         enabled: persisted.providers?.grok?.enabled ?? usedProviders.has("grok"),
       },
+      omp: {
+        ...settings.providers.omp,
+        enabled: persisted.providers?.omp?.enabled ?? usedProviders.has("omp"),
+      },
       opencode: {
         ...settings.providers.opencode,
         enabled: persisted.providers?.opencode?.enabled ?? usedProviders.has("opencode"),
@@ -347,11 +353,19 @@ function resolveTextGenerationProvider(settings: ServerSettings): ServerSettings
     : fallbackTextGenerationProvider(settings);
 }
 
+// Drivers whose text generation is a stub that always fails. Falling back to
+// one makes every title, commit message, branch name and PR body fail instead
+// of quietly using another enabled provider.
+const TEXT_GENERATION_INCAPABLE_DRIVERS: ReadonlySet<string> = new Set(["omp"]);
+
 function fallbackTextGenerationProvider(settings: ServerSettings): ServerSettings {
   // Same precedence as isModelSelectionProviderEnabled: an explicit provider
   // instance wins over the legacy providers map, which decodes to defaults
   // (codex enabled) when the Providers UI has only written providerInstances.
   const fallbackEntry = Object.entries(settings.providers).find(([driver, provider]) => {
+    if (TEXT_GENERATION_INCAPABLE_DRIVERS.has(driver)) {
+      return false;
+    }
     const instance = settings.providerInstances[ProviderInstanceId.make(driver)];
     return instance === undefined ? provider.enabled : resolveProviderInstanceEnabled(instance);
   });
@@ -389,6 +403,7 @@ const PERSISTED_SERVER_SETTINGS_DEFAULTS = {
     ...DEFAULT_SERVER_SETTINGS.providers,
     cursor: { ...DEFAULT_SERVER_SETTINGS.providers.cursor, enabled: undefined },
     grok: { ...DEFAULT_SERVER_SETTINGS.providers.grok, enabled: undefined },
+    omp: { ...DEFAULT_SERVER_SETTINGS.providers.omp, enabled: undefined },
     opencode: { ...DEFAULT_SERVER_SETTINGS.providers.opencode, enabled: undefined },
   },
 };
@@ -614,13 +629,13 @@ const make = Effect.gen(function* () {
         provider_name AS "providerName",
         provider_instance_id AS "providerInstanceId"
       FROM projection_thread_sessions
-      WHERE provider_name IN ('cursor', 'grok', 'opencode')
+      WHERE provider_name IN ('cursor', 'grok', 'omp', 'opencode')
       UNION
       SELECT DISTINCT
         provider_name AS "providerName",
         provider_instance_id AS "providerInstanceId"
       FROM provider_session_runtime
-      WHERE provider_name IN ('cursor', 'grok', 'opencode')
+      WHERE provider_name IN ('cursor', 'grok', 'omp', 'opencode')
     `.pipe(
       Effect.mapError(
         (cause) =>
