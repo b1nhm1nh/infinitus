@@ -436,12 +436,9 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
       );
 
       assert.notProperty(preview, "publish");
-<<<<<<< HEAD
+      assert.notProperty(previewChannel, "publish");
       // A plain version is a full release on the stable feed (`latest-mac.yml`,
       // `releases/latest`), whatever repo it publishes to (#823, #924).
-=======
-      assert.notProperty(previewChannel, "publish");
->>>>>>> upstream/main
       assert.deepStrictEqual(release.publish, [
         {
           provider: "github",
@@ -2305,12 +2302,8 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
         verbose: Option.none(),
         mockUpdates: Option.none(),
         mockUpdateServerPort: Option.none(),
-<<<<<<< HEAD
-        wslPrebuild: Option.none(),
-        nativeHelper: Option.none(),
-=======
         wslRuntime: Option.none(),
->>>>>>> upstream/main
+        nativeHelper: Option.none(),
       }).pipe(
         Effect.provide(
           Layer.mergeAll(
@@ -2350,12 +2343,8 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
             verbose: Option.none(),
             mockUpdates: Option.none(),
             mockUpdateServerPort: Option.none(),
-<<<<<<< HEAD
-            wslPrebuild: Option.none(),
-            nativeHelper: Option.none(),
-=======
             wslRuntime: Option.none(),
->>>>>>> upstream/main
+            nativeHelper: Option.none(),
           }),
         );
 
@@ -2379,12 +2368,8 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
         verbose: Option.some(false),
         mockUpdates: Option.some(false),
         mockUpdateServerPort: Option.none(),
-<<<<<<< HEAD
-        wslPrebuild: Option.none(),
-        nativeHelper: Option.none(),
-=======
         wslRuntime: Option.none(),
->>>>>>> upstream/main
+        nativeHelper: Option.none(),
       }).pipe(
         Effect.provide(
           ConfigProvider.layer(

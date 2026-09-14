@@ -8,12 +8,8 @@ import {
   type ServerUpdateRunningTurnsPolicy,
   type ThreadId,
 } from "@t3tools/contracts";
-<<<<<<< HEAD
-import { HostProcessExecutablePath } from "@t3tools/shared/hostProcess";
-import { PRODUCT_NAME } from "@t3tools/shared/productName";
-=======
 import { HostProcessArchitecture, HostProcessPlatform } from "@t3tools/shared/hostProcess";
->>>>>>> upstream/main
+import { PRODUCT_NAME } from "@t3tools/shared/productName";
 import * as Cause from "effect/Cause";
 import * as Config from "effect/Config";
 import * as Context from "effect/Context";

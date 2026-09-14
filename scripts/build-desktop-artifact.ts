@@ -170,12 +170,8 @@ interface BuildCliInput {
   readonly verbose: Option.Option<boolean>;
   readonly mockUpdates: Option.Option<boolean>;
   readonly mockUpdateServerPort: Option.Option<number>;
-<<<<<<< HEAD
-  readonly wslPrebuild: Option.Option<string>;
-  readonly nativeHelper: Option.Option<string>;
-=======
   readonly wslRuntime: Option.Option<string>;
->>>>>>> upstream/main
+  readonly nativeHelper: Option.Option<string>;
 }
 
 function detectHostBuildPlatform(hostPlatform: string): typeof BuildPlatform.Type | undefined {
@@ -943,12 +939,8 @@ interface ResolvedBuildOptions {
   readonly verbose: boolean;
   readonly mockUpdates: boolean;
   readonly mockUpdateServerPort: number | undefined;
-<<<<<<< HEAD
-  readonly wslPrebuild: string | undefined;
-  readonly nativeHelper: string | undefined;
-=======
   readonly wslRuntime: string | undefined;
->>>>>>> upstream/main
+  readonly nativeHelper: string | undefined;
 }
 
 interface StagePackageJson {
@@ -1606,22 +1598,14 @@ const BuildEnvConfig = Config.all({
   verbose: Config.boolean("T3CODE_DESKTOP_VERBOSE").pipe(Config.withDefault(false)),
   mockUpdates: Config.boolean("T3CODE_DESKTOP_MOCK_UPDATES").pipe(Config.withDefault(false)),
   mockUpdateServerPort: Config.string("T3CODE_DESKTOP_MOCK_UPDATE_SERVER_PORT").pipe(Config.option),
-<<<<<<< HEAD
-  // Path to a prebuilt Linux node-pty binary (pty.node) for the target arch,
-  // produced by the Linux CI job and handed to the Windows packaging job. Placed
-  // into the staged node-pty so the WSL backend ships a ready binary and never
-  // compiles on the user's machine.
-  wslPrebuild: Config.string("T3CODE_DESKTOP_WSL_PREBUILD").pipe(Config.option),
-  // Path to a signed native Infinitus.app to nest as the desktop's login item
-  // (#777, macOS only). The release workflow downloads it from the pinned
-  // native release; local and upstream builds leave it unset and nest nothing.
-  nativeHelper: Config.string("T3CODE_DESKTOP_NATIVE_HELPER").pipe(Config.option),
-=======
   // Path to the Linux CLI release archive (t3-<version>-linux-x64.tar.gz) built
   // by the build_linux_cli CI job. The Windows build embeds it verbatim as the
   // WSL runtime.
   wslRuntime: Config.string("T3CODE_DESKTOP_WSL_RUNTIME").pipe(Config.option),
->>>>>>> upstream/main
+  // Path to a signed native Infinitus.app to nest as the desktop's login item
+  // (#777, macOS only). The release workflow downloads it from the pinned
+  // native release; local and upstream builds leave it unset and nest nothing.
+  nativeHelper: Config.string("T3CODE_DESKTOP_NATIVE_HELPER").pipe(Config.option),
 });
 
 const MockUpdateServerPortSchema = Schema.NumberFromString.check(
@@ -1713,18 +1697,13 @@ export const resolveBuildOptions = Effect.fn("resolveBuildOptions")(function* (
           ),
         ));
 
-<<<<<<< HEAD
-  const wslPrebuild =
-    Option.getOrUndefined(input.wslPrebuild) ?? Option.getOrUndefined(env.wslPrebuild);
+  const wslRuntime =
+    Option.getOrUndefined(input.wslRuntime) ?? Option.getOrUndefined(env.wslRuntime);
   // A workflow env line is always set, so an empty value means "none".
   const nativeHelper =
     (
       Option.getOrUndefined(input.nativeHelper) ?? Option.getOrUndefined(env.nativeHelper)
     )?.trim() || undefined;
-=======
-  const wslRuntime =
-    Option.getOrUndefined(input.wslRuntime) ?? Option.getOrUndefined(env.wslRuntime);
->>>>>>> upstream/main
 
   return {
     platform,
@@ -1738,12 +1717,8 @@ export const resolveBuildOptions = Effect.fn("resolveBuildOptions")(function* (
     verbose,
     mockUpdates,
     mockUpdateServerPort,
-<<<<<<< HEAD
-    wslPrebuild,
-    nativeHelper,
-=======
     wslRuntime,
->>>>>>> upstream/main
+    nativeHelper,
   } satisfies ResolvedBuildOptions;
 });
 
@@ -2800,20 +2775,16 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
     electronLanguages: [...DESKTOP_ELECTRON_LANGUAGES],
     files: [
       ...DESKTOP_FILE_EXCLUSIONS,
-<<<<<<< HEAD
-      ...(platform === "mac" ? resolveMacFileExclusions(arch) : []),
-      // The staged helper is nested by extraFiles below, never packed into
-      // app.asar as well.
-      ...(nativeHelperDir === undefined
-        ? []
-        : [`!${NATIVE_HELPER_STAGE_ROOT}`, `!${NATIVE_HELPER_STAGE_ROOT}/**/*`]),
-=======
       ...(platform === "mac"
         ? resolveMacFileExclusions(arch)
         : platform === "linux"
           ? LINUX_FILE_EXCLUSIONS
           : []),
->>>>>>> upstream/main
+      // The staged helper is nested by extraFiles below, never packed into
+      // app.asar as well.
+      ...(nativeHelperDir === undefined
+        ? []
+        : [`!${NATIVE_HELPER_STAGE_ROOT}`, `!${NATIVE_HELPER_STAGE_ROOT}/**/*`]),
     ],
     directories: {
       buildResources: "apps/desktop/resources",

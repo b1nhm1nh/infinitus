@@ -43,11 +43,8 @@ import {
   resolveEnvironmentMachineKind,
   RuntimeMode,
   TerminalOpenInput,
-<<<<<<< HEAD
   QueueId,
-=======
   type WorktreeSetupSnapshot,
->>>>>>> upstream/main
 } from "@t3tools/contracts";
 import { type EnvironmentConnectionPresentation } from "@t3tools/client-runtime/connection";
 import { wasBootstrapThreadDeleted } from "@t3tools/client-runtime/errors";
@@ -7531,24 +7528,22 @@ export default function ChatView(props: ChatViewProps) {
       );
       return;
     }
-<<<<<<< HEAD
+    // #270 F: a queued turn gets no optimistic row — the drain sends it later
+    // and the timeline echoes it then. The worktree-setup ref below is not a
+    // row and stays unguarded: a queue submission only happens on an existing
+    // running thread, so `baseBranchForWorktree` is null there and upstream's
+    // call clears the ref, which is what we want either way.
     if (!isQueueSubmission) {
       beginLocalDispatch({
         preparingWorktree: Boolean(baseBranchForWorktree),
         submissionIntent: resolvedSubmissionIntent,
       });
     }
-=======
-    beginLocalDispatch({
-      preparingWorktree: Boolean(baseBranchForWorktree),
-      submissionIntent: resolvedSubmissionIntent,
-    });
     setWorktreeSetupRef(
       baseBranchForWorktree
         ? { environmentId, threadId: threadIdForSend, ownerKey: worktreeSetupOwnerKey }
         : null,
     );
->>>>>>> upstream/main
 
     const messageIdForSend = newMessageId();
     const messageCreatedAt = new Date().toISOString();

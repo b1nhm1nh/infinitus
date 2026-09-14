@@ -23,11 +23,8 @@ import {
   unlockNotificationAudio,
 } from "../threadNotifications";
 import { resolveSidebarThreadStatus } from "./Sidebar.logic";
-<<<<<<< HEAD
 import { heldEntryFor } from "./sidebar/infinitusHeld.logic";
-=======
 import { toastManager } from "./ui/toast";
->>>>>>> upstream/main
 
 export function ThreadNotificationCoordinator() {
   const { environments } = useEnvironments();
@@ -106,61 +103,43 @@ function EnvironmentNotifications({
     (settings) => settings.inAppNotificationsEnabled,
   );
   const navigate = useNavigate();
-<<<<<<< HEAD
-  // Fork (#1032): held and failed threads notify too (the holds come from the
-  // server's stream), and the thread on screen stays quiet while the window
-  // has focus.
+  const { environmentId: activeEnvironmentId, threadId: activeThreadId } = useParams({
+    strict: false,
+  });
+  // Fork (#1032): held and limited threads notify too, from the server's own
+  // holds stream. Upstream has no such state, so it has no title for one.
   const supported =
     useEnvironment(environmentId)?.serverConfig?.environment.capabilities.infinitus === true;
   const holds = useEnvironmentQuery(
     supported ? infinitusEnvironment.holds({ environmentId, input: {} }) : null,
   ).data;
-  const viewedEnvironmentId = useParams({
-    strict: false,
-    select: (params) => params.environmentId,
-  });
-  const viewedThreadId = useParams({ strict: false, select: (params) => params.threadId });
   const viewedKey =
-    viewedEnvironmentId === undefined || viewedThreadId === undefined
+    activeEnvironmentId === undefined || activeThreadId === undefined
       ? null
-      : `${viewedEnvironmentId}:${viewedThreadId}`;
+      : `${activeEnvironmentId}:${activeThreadId}`;
   const previous = useRef(new Map<ThreadId, ThreadNotificationRecord>());
-=======
-  const { environmentId: activeEnvironmentId, threadId: activeThreadId } = useParams({
-    strict: false,
-  });
-  const previous = useRef(
-    new Map<ThreadId, { attention: string | null; completion: number | null }>(),
-  );
->>>>>>> upstream/main
 
   useEffect(() => {
     if (shell.status !== "live" || Option.isNone(shell.snapshot)) {
       previous.current.clear();
       return;
     }
-<<<<<<< HEAD
     const next = new Map<ThreadId, ThreadNotificationRecord>();
     for (const thread of shell.snapshot.value.threads) {
       const held = heldEntryFor(holds, thread.id);
-      const status = resolveSidebarThreadStatus(thread, {
+      let status = resolveSidebarThreadStatus(thread, {
         held: held?.kind === "held",
         limited: held?.kind === "limited",
       });
-      const prior = previous.current.get(thread.id);
-      const attention = attentionNotificationTitle(status);
-      const input = attention === null ? null : `${thread.latestTurn?.turnId ?? ""}:${status}`;
-=======
-    const next = new Map<ThreadId, { attention: string | null; completion: number | null }>();
-    for (const thread of shell.snapshot.value.threads) {
-      let status = resolveSidebarThreadStatus(thread);
+      // Upstream's own failure check reads the latest TURN; the fork's
+      // resolver reads the SESSION. They catch different rows, so both run.
       if (status === "ready" && thread.latestTurn?.state === "error") status = "failed";
       const prior = previous.current.get(thread.id);
-      const attention =
-        status === "input" || status === "approval" || status === "failed"
-          ? `${thread.latestTurn?.turnId ?? ""}:${status}`
-          : null;
->>>>>>> upstream/main
+      // `attention` is the banner TITLE here, not upstream's dedupe key —
+      // the fork titles `held`, which upstream has no word for. `input` is
+      // the key, and is what `ThreadNotificationRecord` compares.
+      const attention = attentionNotificationTitle(status);
+      const input = attention === null ? null : `${thread.latestTurn?.turnId ?? ""}:${status}`;
       const completedAt = Date.parse(thread.latestTurn?.completedAt ?? "");
       const completion =
         status === "ready" &&
@@ -168,32 +147,18 @@ function EnvironmentNotifications({
         Number.isFinite(completedAt)
           ? completedAt
           : (prior?.completion ?? null);
-<<<<<<< HEAD
       next.set(thread.id, { input, completion });
-      if (!prior || mode === "off" || thread.archivedAt !== null) continue;
-      // Fork (#270 B): a completion with turns still queued is not the end.
+      if (!prior || (mode === "off" && !inAppNotificationsEnabled) || thread.archivedAt !== null)
+        continue;
+      // Fork (#270 B): a completion with turns still queued is not the end —
+      // the drain sends the next row the moment the turn ends.
       const kind = notificationKind(prior, { input, completion }, thread.queuedTurns?.length ?? 0);
       if (!kind) continue;
+      // Fork (#1032): the thread on screen stays quiet — no toast, no banner
+      // and no bell — while the window has focus. Upstream silences only its
+      // banner and toast for it, and still rings.
       if (quietForViewer(viewedKey, `${environmentId}:${thread.id}`, document)) continue;
-=======
-      next.set(thread.id, { attention, completion });
-      if (!prior || thread.archivedAt !== null) continue;
-      const kind =
-        attention && attention !== prior.attention
-          ? "input"
-          : completion !== null && (prior.completion === null || completion > prior.completion)
-            ? "completion"
-            : null;
-      if (!kind) continue;
-      const title =
-        kind === "completion"
-          ? "Thread completed"
-          : status === "approval"
-            ? "Approval needed"
-            : status === "failed"
-              ? "Thread failed"
-              : "Input needed";
->>>>>>> upstream/main
+      const title = kind === "completion" ? "Thread completed" : (attention ?? "Input needed");
       if (hasNotificationSound(mode)) {
         void playNotificationSound(kind, () =>
           hasNotificationSound(getClientSettings().notificationMode),
@@ -231,19 +196,12 @@ function EnvironmentNotifications({
       )
         continue;
       try {
-<<<<<<< HEAD
-        const notification = new Notification(
-          kind === "completion" ? "Thread completed" : (attention ?? "Input needed"),
-          { body: thread.title, tag: `${environmentId}:${thread.id}`, silent: true },
-        );
-=======
         const notification = new Notification(title, {
           body: thread.title,
           tag: `${environmentId}:${thread.id}`,
           silent: true,
         });
         onNotification(environmentId, notification);
->>>>>>> upstream/main
         notification.addEventListener("click", () => {
           notification.close();
           window.focus();
@@ -257,20 +215,18 @@ function EnvironmentNotifications({
       }
     }
     previous.current = next;
-<<<<<<< HEAD
-  }, [environmentId, holds, mode, navigate, shell, viewedKey]);
-=======
   }, [
     activeEnvironmentId,
     activeThreadId,
     environmentId,
+    holds,
     inAppNotificationsEnabled,
     mode,
     navigate,
     onNotification,
     shell,
+    viewedKey,
   ]);
->>>>>>> upstream/main
 
   return null;
 }

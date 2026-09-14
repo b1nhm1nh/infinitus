@@ -4619,8 +4619,7 @@ export default function Sidebar() {
           </SidebarGroup>
         }
       >
-<<<<<<< HEAD
-        <SidebarGroup className="ps-[calc(var(--sidebar-content-inset)+1px)] pe-[var(--sidebar-content-inset)] pb-1 pt-0">
+        <SidebarGroup className="ps-[calc(var(--sidebar-content-inset)+1px)] pe-[var(--sidebar-content-inset)] pb-1 pt-0 flex-1">
           {!isSearchingThreads ? (
             <SidebarNeedsAttention
               threads={searchableThreads}
@@ -4633,9 +4632,6 @@ export default function Sidebar() {
               onThreadClick={handleThreadClick}
             />
           ) : null}
-=======
-        <SidebarGroup className="ps-[calc(var(--sidebar-content-inset)+1px)] pe-[var(--sidebar-content-inset)] pb-1 pt-0 flex-1">
->>>>>>> upstream/main
           {isSearchingThreads ? (
             threadSearchResults.length > 0 ? (
               <TooltipProvider

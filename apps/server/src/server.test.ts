@@ -12025,7 +12025,15 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
           projectionSnapshotQuery: {
             getWorktreeHolders: () => Effect.succeed({ count: 1, oldestArchived: [] }),
           },
+          // Upstream #11372 put two reads in front of `createWorktree`: the
+          // project has to be a repository and the base has to name a commit,
+          // or the bootstrap falls back to the project checkout and never
+          // creates one. Both must answer for this test to reach the worktree.
+          vcsDriver: {
+            isInsideWorkTree: () => Effect.succeed(true),
+          },
           gitVcsDriver: {
+            execute: () => Effect.succeed(SUCCESSFUL_GIT_EXECUTION),
             createWorktree: () =>
               Deferred.succeed(entered, undefined).pipe(
                 Effect.andThen(Deferred.await(gate)),

@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vite-plus/test";
 
-<<<<<<< HEAD
 import {
   isInfinitusDesktopVersion,
+  isNightlyDesktopVersion,
   resolveDefaultDesktopUpdateChannel,
   resolveEffectiveDesktopUpdateChannel,
   resolveElectronUpdaterFeed,
@@ -120,6 +120,25 @@ describe("resolveElectronUpdaterFeed", () => {
     });
   });
 
+  // Upstream's preview train (#11372), merged in: a preview brands as a
+  // nightly but follows no feed, so upstream defaults it to `latest`. Here it
+  // defaults to `infinitus` instead — this repo never defaults to `latest`,
+  // upstream's stable channel — and the strict nightly check keeps an
+  // upstream preview off the nightly track all the same.
+  it("brands an upstream preview as a nightly without putting it on that track", () => {
+    expect(isNightlyDesktopVersion("0.0.41-preview.20260911.7")).toBe(true);
+    expect(resolveDefaultDesktopUpdateChannel("0.0.41-preview.20260911.7")).toBe("infinitus");
+    expect(resolveDefaultDesktopUpdateChannel("0.0.41-nightly.20260911.7")).toBe("nightly");
+  });
+
+  // The fork reached upstream's rule independently (#924): the id has to be
+  // the FIRST one, or this repo's own `…-alpha.7-infinitus-nightly.…` would
+  // read as an upstream build.
+  it("only matches the first prerelease identifier", () => {
+    expect(isNightlyDesktopVersion("1.2.3-foo-preview.20260911.1")).toBe(false);
+    expect(isNightlyDesktopVersion("1.2.3")).toBe(false);
+  });
+
   it("keeps upstream's channels as they are", () => {
     expect(resolveElectronUpdaterFeed("0.0.40-nightly.20260911.7", "nightly")).toEqual({
       channel: "nightly",
@@ -131,19 +150,5 @@ describe("resolveElectronUpdaterFeed", () => {
       allowPrerelease: false,
       allowDowngrade: false,
     });
-=======
-import { isNightlyDesktopVersion, resolveDefaultDesktopUpdateChannel } from "./updateChannels.ts";
-
-describe("updateChannels", () => {
-  it("keeps preview builds branded as nightly but on the latest update channel", () => {
-    expect(isNightlyDesktopVersion("0.0.41-preview.20260911.7")).toBe(true);
-    expect(resolveDefaultDesktopUpdateChannel("0.0.41-preview.20260911.7")).toBe("latest");
-    expect(resolveDefaultDesktopUpdateChannel("0.0.41-nightly.20260911.7")).toBe("nightly");
-  });
-
-  it("only matches the first prerelease identifier", () => {
-    expect(isNightlyDesktopVersion("1.2.3-foo-preview.20260911.1")).toBe(false);
-    expect(isNightlyDesktopVersion("1.2.3")).toBe(false);
->>>>>>> upstream/main
   });
 });

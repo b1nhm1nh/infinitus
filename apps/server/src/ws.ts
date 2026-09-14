@@ -1246,7 +1246,6 @@ const makeWsRpcLayer = (
             });
 
           const bootstrapProgram = Effect.gen(function* () {
-<<<<<<< HEAD
             // Fork (#269 H): the worktree limit is checked before anything is
             // created, so an over-limit send costs no thread.
             if (bootstrap?.prepareWorktree) {
@@ -1260,7 +1259,6 @@ const makeWsRpcLayer = (
                 );
               }
             }
-=======
             const prepareWorktree = bootstrap?.prepareWorktree;
             let shouldPrepareWorktree = prepareWorktree
               ? yield* gitWorkflow.isRepository(prepareWorktree.projectCwd)
@@ -1345,7 +1343,6 @@ const makeWsRpcLayer = (
               );
             }
 
->>>>>>> upstream/main
             if (bootstrap?.createThread) {
               const created = yield* dispatchFromClient({
                 type: "thread.create",
@@ -1482,10 +1479,6 @@ const makeWsRpcLayer = (
             return started;
           });
 
-<<<<<<< HEAD
-          return yield* bootstrapProgram.pipe(
-            Effect.ensuring(Effect.sync(() => worktreesInFlight.delete(command.threadId))),
-=======
           const runBootstrap = tracked
             ? Effect.gen(function* () {
                 const fiber = yield* Effect.forkChild(bootstrapProgram);
@@ -1527,7 +1520,9 @@ const makeWsRpcLayer = (
             );
 
           return yield* runBootstrap.pipe(
->>>>>>> upstream/main
+            // #269 H: the slot reserved before the reads is released however
+            // this ends, so a refused or failed bootstrap never leaks one.
+            Effect.ensuring(Effect.sync(() => worktreesInFlight.delete(command.threadId))),
             Effect.catchCause((cause) => {
               const dispatchError = toBootstrapDispatchCommandCauseError(cause);
               if (Cause.hasInterruptsOnly(cause)) {
