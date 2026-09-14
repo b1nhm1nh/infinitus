@@ -162,7 +162,12 @@ origin/main HEAD || echo STALE`. A PR whose checks are green but whose
   mergeability sits at UNKNOWN for a quarter hour is GitHub's, not ours:
   `gh pr close` then `gh pr reopen` recomputes it and re-fires the PR event
   (auto-merge drops on reopen; arm it again). Never push empty commits for
-  either.
+  either. The stash stack is shared the same way, so **`git stash` is
+  off-limits in this repo** (ruling 2026-09-14): two sessions' push/pop pairs
+  interleaved and each popped the other's work — one baseline run swapped a
+  #1213 edit for another lane's uncommitted feature, recovered only because
+  the tree was diffed to a patch before anything else touched it. Commit to
+  the branch, or use a scratch worktree, for a baseline.
 - **Never install anything on the developer's Mac** (toolchains, brew,
   Xcode components, Docker). `vp i` inside the worktree is fine.
 - Secrets travel over stdin, never argv; shown masked only.
@@ -321,6 +326,19 @@ was deleted`, before the forced remove) and `deleteBranch` (`git branch -D`
   the menu's "Restore files only" between the full revert and the chat
   rewind, its own confirm text, and the mode skips the conversation-rollback
   check. Test beside the E1 one.
+- Bash description as the row's headline (#1231):
+  `apps/server/src/orchestration/ActivityPayloadProjection.ts` — the
+  client-bound projection rebuilds a tool row's `data` and drops `input`
+  whole, so for `command_execution` it now carries `data.description`
+  (Claude's Bash `input.description`, trimmed) beside `data.command`;
+  `apps/web/src/session-logic.ts` — `WorkLogEntry.commandDescription` from
+  it, merged forward like `command` (the started row can arrive before the
+  input finished streaming); `apps/web/src/components/chat/MessagesTimeline.logic.ts`
+  — `workEntryDisplayLabel`, `singleToolCallLabel` and `liveWorkEntryLabel`
+  prefer it over the command, and `buildToolCallExpandedBody` (unchanged)
+  then adds the command as the expanded row's first block, since it differs
+  from the visible label. Rows without a description are as before. The
+  phone's `threadActivity.ts` mirror is the issue's open half.
 - Turn footer (#952): `packages/client-runtime/src/turnFooter.ts` (+ test,
   exported as `@t3tools/client-runtime/turnFooter`) — `turnFooter(thread,
 turnId)` → `{durationMs, completedAt, runningShells, runningAgents}` for a
@@ -805,12 +823,15 @@ source's Codex thread>, fork: true, lastTurnId: <the turn>}`
   `DesktopUpdateChannel` / `DesktopUpdateChannelSchema` (#1042); the fork's
   optional `DesktopBridge` methods: `getInfinitusDesktopPrefs` / `setInfinitusQuitWithApp` (#654),
   `openInfinitusSignIn` / `closeInfinitusSignIn` /
-  `submitInfinitusSignInCode` (#677), and `setInfinitusCaptureGestureEnabled`
+  `submitInfinitusSignInCode` (#677), `beginInfinitusOAuthSignIn` /
+  `cancelInfinitusOAuthSignIn` (#1213), and `setInfinitusCaptureGestureEnabled`
   / `onCaptureGestureEvent` with the `DesktopCaptureGestureEvent` schema
   beside `DesktopSnapShotEvent` (#433 slice 2), and `consumePendingDeepLink`
   / `onDeepLinkPending` with the `DesktopDeepLink` schema after it (#270 D).
   `packages/contracts/src/infinitus.ts`
-  — `captureGestureEnabled` on `InfinitusDesktopPrefs`;
+  — `captureGestureEnabled` on `InfinitusDesktopPrefs`, and
+  `InfinitusOAuthSignInInput` / `InfinitusOAuthSignInResult` after
+  `InfinitusSignInCodeResult` (#1213);
   `packages/contracts/src/captures.ts` — `MAX_CAPTURE_TEXT_LENGTH`, the cap
   the desktop's selected-text helper cuts at.
 - `apps/desktop/src/ipc/channels.ts`, `apps/desktop/src/ipc/DesktopIpcHandlers.ts`,
@@ -1674,7 +1695,9 @@ registrations}`, never a token; each registration decoded alone) drawn as
   (`infinitusCapabilityOf`) gets the missing-adapter copy; a config that has not
   arrived waits like a missing snapshot, and Accounts folds every environment's
   answer together with `infinitusCapabilityAcross`. Add account and
-  re-login (#671): a fleet whose capabilities carry `addOAuth` gets "Add
+  re-login (#671): a fleet whose capabilities carry `addOAuth` or
+  `addCurrent` (swapd's CLI paste-code flow — it declares no `addOAuth`,
+  #1213) gets "Add
   account" in its header and "Sign in again" on a `relogin_required` row, both
   native's `add <fleet>` (the sign-in opens on the Mac), then the page polls
   `wait-add --timeout 5` until the app says the flow ended
@@ -1696,6 +1719,27 @@ registrations}`, never a token; each registration decoded alone) drawn as
   the form; the CLI's own `error` is shown; the submitted value is never
   interpolated into any message. Closing the OAuth window never cancels;
   the page's Cancel sends `signin-cancel`.
+  Ahead of both, the sign-in the desktop shell runs itself (#1213): the
+  engine is the OAuth client, so the shell spawns `swapd add-oauth` (below)
+  and the engine's own loopback listener catches the redirect — no code to
+  paste, no Mac build to wait for, and a fleet whose `addOAuth` capability
+  the app never advertised can still be signed into. Its two gates are the
+  only ones (`fleetSignInGate`): the engine binary is where this client is
+  (`shellOAuthSignIn`: the desktop bridge carries both methods and this is
+  the primary environment) and the fleet's engine is the one whose sign-in
+  is that flow (`fleetRunsShellOAuth`, `swapd`; the proxy engine declares
+  `addOAuth` too and is not one). Not the `addOAuth` capability — gating on
+  it once reproduced the very bug — and not the app's `signInRunning`, which
+  is its word about a flow of its own. For the same reason the row model's
+  `reloginNeeded` is the lapsed status alone; who may run a sign-in is the
+  page's to decide. `FleetSection` renders it
+  through the in-app branch — a shell flow has no `url` and no code field,
+  so the same markup reads "Sign in in the window." with a working Cancel —
+  and `signIn.logic.ts`'s `SignInKind` says which half a flow belongs to, so
+  start, cancel and end stay apart. Unlike #677, closing the window cancels:
+  a loopback redirect leaves nothing to paste. A cancelled run answers
+  `{ok: false}` with no `error`, and the page drops the flow rather than
+  showing a failure the user caused.
 - `apps/web/src/routes/settings.infinitus.{index,notifications,devices,engines}.tsx`
   — the four Settings › Infinitus routes, thin shells over the panes above.
   Profiles (#165, the Mac's "named way to start a session") left with the
@@ -2076,6 +2120,37 @@ fork_server_port`, on an app whose manifest lists `desktop-credential` with
   (`ipc/methods/infinitus.ts`), the events `onCaptureGestureEvent`
   (`preload.ts` guard). Both `osascript` scripts are spike-verified on the
   developer's Mac (the tests mock `spawn`).
+- `apps/desktop/src/infinitus/InfinitusOAuthSignIn.ts` (+
+  `InfinitusSwapdProcess.ts`, `infinitusSwapd.logic.ts`, test) — the sign-in
+  the shell runs itself (#1213). **This is the one place the fork runs an
+  engine's binary instead of talking to the Mac over the control socket**,
+  and it bends "One API" on purpose: the OAuth client has to be whoever
+  holds the PKCE verifier, and for a loopback redirect that is the engine.
+  Signed off by the developer (2026-09-14), who put the consumer in the
+  desktop app rather than `apps/mac`. `infinitusSwapd.logic.ts` is the pure
+  half: `resolveSwapdBinary` (the `INFINITUS_SWAPD_CLI` override answers
+  whole — a path only if it exists, empty meaning "no engine here" — then
+  `/opt/homebrew/bin`, `/usr/local/bin`, `~/.cargo/bin`, `~/.local/bin`,
+  then the menu-bar helper nested in the packaged bundle, #777) and
+  `parseAddOauthLine`, which reads the two-line protocol
+  `swapd --json --provider <p> add-oauth` streams: the URL line the loopback
+  listener flushes when it binds, then the `{slot, email, created}` envelope
+  the stored account prints, or the engine's own `{error:{code,message}}`.
+  `InfinitusSwapdProcess.ts` is the spawn boundary (one `SwapdAddOAuthRun`
+  with a `result` promise and a `stop`). `InfinitusOAuthSignIn.ts` is the
+  service: `begin` resolves the binary, spawns the run, opens the URL in a
+  child window with `signInWindowOptions` (#677's, so the two sign-ins look
+  alike) and races the announcement against a run that died before it, so a
+  failure before the listener bound can never hang the page; closing the
+  window, or `cancel`, kills the run. One promise for the whole flow. The
+  account is stored inactive (`slots::claim(activate = false)`), so a
+  sign-in never switches the live login. Merged into
+  `InfinitusDesktop.layer`; the methods are `beginInfinitusOAuthSignIn` /
+  `cancelInfinitusOAuthSignIn` (`ipc/methods/infinitus.ts`, `channels.ts`,
+  `DesktopIpcHandlers.ts`, `preload.ts`), their contracts
+  `InfinitusOAuthSignInInput` / `-Result` in `packages/contracts/src/infinitus.ts`
+  and the two optional `DesktopBridge` methods in `ipc.ts`. No token, no
+  code and no email reaches a log or a span.
 - `apps/desktop/src/infinitus/InfinitusKeepAwake.ts` — sleep held off while a
   turn runs (#1075), the desktop's replacement for the Mac app's retired
   `keep_awake` (#1041 d5). The renderer decides from the thread shells it
