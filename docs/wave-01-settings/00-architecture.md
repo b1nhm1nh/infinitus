@@ -24,22 +24,22 @@ has meaning on Windows.
 
 ## Parity table — Mac pane → Windows plan
 
-| Mac pane | Source | Windows | Spec |
-|---|---|---|---|
-| Display | `DisplayPane.swift` | port (subset: no popup/glass/menu-bar prefs; keeps title prefs, tray prefs, autostart, refresh interval) | `02` |
-| Accounts | `AccountsPane.swift` (1064 ln) | port (roster, alias, hold, switch, prefer, remove, backup; **no OAuth add** — no WebKit on Windows) | `03` |
-| Themes | `ThemesPane.swift` | port (14 built-ins + custom `themes.json`; GDI preview tiles) | `02` |
-| Push | `NotifyPane.swift` | port (Slack + Telegram via `cswap notify`, five trigger toggles, test button) | `04` |
-| Usage | `UsagePane.swift` | port (no Swift Charts — GDI bar chart + rows) | `05` |
-| Utilization | `UtilizationPane.swift` | port (subset: 5h windows, waste, run rate; forecast only when history exists) | `05` |
-| Stats | `StatsPane.swift` | port (tiles + heatmap; `StatsScanner` runs on Windows) | `05` |
-| Activity | `ActivityPane.swift` | port (switch history + event log; needs a Windows `EventStore`) | `05` |
-| Devices | `SyncPane.swift` | port (subset: pair QR, routes, token rotate; **no** iCloud, **no** cloudflared, **no** APNs) | `04` |
-| About | `AboutPane.swift` | port (subset: version, GitHub release check, links, license; **no** Homebrew) | `06` |
-| cswap engine | `ClaudeEnginePane.swift` | port (spec-driven `config list --json` rows, resume diagnostics, PyPI update check) | `03` |
-| CLIProxyAPI engine | `CLIProxyEnginePane.swift` | port (base URL, key, probe, routing strategy) | `03` |
-| 9Router engine | `NineRouterEnginePane.swift` | port (base URL, password, probe, dashboard link) | `03` |
-| Animations (debug) | `AnimationsDebugPane.swift` | **skip** — the effects it tunes are CAAnimations that do not exist here | — |
+| Mac pane           | Source                         | Windows                                                                                                  | Spec |
+| ------------------ | ------------------------------ | -------------------------------------------------------------------------------------------------------- | ---- |
+| Display            | `DisplayPane.swift`            | port (subset: no popup/glass/menu-bar prefs; keeps title prefs, tray prefs, autostart, refresh interval) | `02` |
+| Accounts           | `AccountsPane.swift` (1064 ln) | port (roster, alias, hold, switch, prefer, remove, backup; **no OAuth add** — no WebKit on Windows)      | `03` |
+| Themes             | `ThemesPane.swift`             | port (14 built-ins + custom `themes.json`; GDI preview tiles)                                            | `02` |
+| Push               | `NotifyPane.swift`             | port (Slack + Telegram via `cswap notify`, five trigger toggles, test button)                            | `04` |
+| Usage              | `UsagePane.swift`              | port (no Swift Charts — GDI bar chart + rows)                                                            | `05` |
+| Utilization        | `UtilizationPane.swift`        | port (subset: 5h windows, waste, run rate; forecast only when history exists)                            | `05` |
+| Stats              | `StatsPane.swift`              | port (tiles + heatmap; `StatsScanner` runs on Windows)                                                   | `05` |
+| Activity           | `ActivityPane.swift`           | port (switch history + event log; needs a Windows `EventStore`)                                          | `05` |
+| Devices            | `SyncPane.swift`               | port (subset: pair QR, routes, token rotate; **no** iCloud, **no** cloudflared, **no** APNs)             | `04` |
+| About              | `AboutPane.swift`              | port (subset: version, GitHub release check, links, license; **no** Homebrew)                            | `06` |
+| cswap engine       | `ClaudeEnginePane.swift`       | port (spec-driven `config list --json` rows, resume diagnostics, PyPI update check)                      | `03` |
+| CLIProxyAPI engine | `CLIProxyEnginePane.swift`     | port (base URL, key, probe, routing strategy)                                                            | `03` |
+| 9Router engine     | `NineRouterEnginePane.swift`   | port (base URL, password, probe, dashboard link)                                                         | `03` |
+| Animations (debug) | `AnimationsDebugPane.swift`    | **skip** — the effects it tunes are CAAnimations that do not exist here                                  | —    |
 
 ### What is deliberately dropped, and why
 
@@ -49,7 +49,7 @@ so a user is never left looking for a control that cannot exist.
 - **Popup layout / popup size / glass transparency / compact rows /
   menu-bar icon / pop-out / revival panel / wall.** These configure the
   macOS `NSPopover`/`NSPanel` presentation. Windows has an accounts
-  *window* (`FleetWindow.swift`), not a menu-bar popup. Any of these
+  _window_ (`FleetWindow.swift`), not a menu-bar popup. Any of these
   settings would write a key nothing reads.
 - **iCloud settings sync** (`SettingsSyncModel`). There is no iCloud Drive
   container on Windows. File export/import **is** ported — it is the same
@@ -76,7 +76,7 @@ so a user is never left looking for a control that cannot exist.
 ### Why child windows, not a redraw-everything owner-draw pane
 
 `FleetWindow` paints its whole client area by hand in `WM_PAINT` because
-it renders *data* (rows, gauges). Settings renders *controls* — EDIT,
+it renders _data_ (rows, gauges). Settings renders _controls_ — EDIT,
 BUTTON, COMBOBOX, LISTVIEW — which are real HWNDs. Recreating them on every
 tab switch would leak handles and lose focus/selection state.
 
@@ -191,7 +191,7 @@ enum PaneIDs {
 }
 ```
 
-Pane *n* owns `[base + n*512, base + (n+1)*512)`. Shell-level commands
+Pane _n_ owns `[base + n*512, base + (n+1)*512)`. Shell-level commands
 (search box, Close) live below `base`. A pane that needs a dynamic run of
 ids (one per account row) allocates from the top of its own block
 downwards and records the mapping in a dictionary, the way
@@ -231,8 +231,8 @@ downwards and records the mapping in a dictionary, the way
   pane container; then ask the visible pane to `layout(width:height:)`.
 - Panes taller than the content rect get `WS_VSCROLL` on their container.
   The container handles `WM_VSCROLL` and `WM_MOUSEWHEEL` by `ScrollWindowEx`
-  + `SetScrollInfo`; `contentHeight(width:)` sets `nMax`. Scroll in units
-  of `Metrics.px(20)` per wheel notch × `SPI_GETWHEELSCROLLLINES`.
+  - `SetScrollInfo`; `contentHeight(width:)` sets `nMax`. Scroll in units
+    of `Metrics.px(20)` per wheel notch × `SPI_GETWHEELSCROLLLINES`.
 - Keyboard, per Win32 convention:
   - `Ctrl+F` / `Ctrl+E` → focus the search box.
   - `Up`/`Down` in the sidebar moves the selection; `Tab` leaves it.
@@ -274,6 +274,7 @@ struct Metrics {
 ```
 
 Rules:
+
 - Every literal that reaches a `CreateWindowExW`/`MoveWindow`/`FillRect`
   goes through `px`. The current dialog hardcodes `20, y, 160, 18` and is
   therefore wrong on a 150% display.
@@ -339,38 +340,38 @@ Constraints carried over verbatim from `WinDark`'s header:
 
 ### Rule
 
-**Anything that decides *meaning* lives in `InfinitusCore` and is shared
-with the Mac. Only *presentation* is Windows-local.** This is the rule
+**Anything that decides _meaning_ lives in `InfinitusCore` and is shared
+with the Mac. Only _presentation_ is Windows-local.** This is the rule
 `FleetPanel.swift` already establishes for the accounts panel
 (`FleetLayout.swift:16-21`: "Only the arithmetic of PAINTING is local; the
 arithmetic of MEANING is shared"). Wave 01 does not weaken it.
 
 ### Already portable — use as-is, add nothing
 
-| What | Core file | Used by pane |
-|---|---|---|
-| `RowTheme` + 15 built-ins + `loadCustom`/`saveCustom` | `RowTheme.swift` | Themes |
-| `TitlePrefs`, `TitleFormatter`, `ResetLabel`, `AccountVitals` | `DisplayLogic.swift` | Display |
-| `SettingEntry`, `ConfigList`, `JSONValue` | `Models.swift:226-285` | cswap engine |
-| `SettingDraft.validate` | `SettingsLogic.swift:8-47` | cswap engine |
-| `ClaudeCodeConfig` (effective value, backup-then-write) | `SettingsLogic.swift:56-114` | cswap engine (resume diagnostics) |
-| `PushTriggers` + `Flags` | `PushTriggers.swift` | Push |
-| `Stats`, `Stats.Presentation`, `StatsScanner`, `StatsEvents`, `RepoStats` | `Stats*.swift` | Stats, Activity |
-| `UsageHistory`, `WindowTelemetry`, `WasteMath`, `UsageForecast`, `WindowPlanner` | `UsageHistory.swift`, `WindowTelemetry.swift`, `UsageForecast.swift`, `WindowPlanner.swift` | Utilization |
-| `TokenRates` / `TokenRateScanner` | `TokenRates.swift` | Utilization |
-| `UsageReport` | `Models.swift:287-345` | Usage |
-| `MirrorPairing` (token, mask, pair URL) | `MirrorPairing.swift` | Devices |
-| `SyncSnapshot` | `SettingsSync.swift` | Devices (export/import) |
-| `PackageVersion` | `UpdateCheck.swift` | About |
-| `EngineCapabilities`, `EngineFleet`, `AccountEngine` | `AccountEngine.swift` | Accounts, engines |
-| `CswapCLI` (all verbs), `CswapLocator` | `Engines/Cswap/CswapCLI.swift` — `#if !os(iOS)`, so Windows gets it, and `defaultCandidates` already has the Windows paths | every engine pane |
-| `NineRouterEngine`, `NineRouterFleet` (+ `StoredConfig`, `configURL`) | `Engines/NineRouter/` | 9Router, Accounts |
-| `CLIProxyEngine` | `Engines/CLIProxy/` | CLIProxyAPI, Accounts |
-| `FleetPanel` | `FleetPanel.swift` | Accounts |
+| What                                                                             | Core file                                                                                                                  | Used by pane                      |
+| -------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- | --------------------------------- |
+| `RowTheme` + 15 built-ins + `loadCustom`/`saveCustom`                            | `RowTheme.swift`                                                                                                           | Themes                            |
+| `TitlePrefs`, `TitleFormatter`, `ResetLabel`, `AccountVitals`                    | `DisplayLogic.swift`                                                                                                       | Display                           |
+| `SettingEntry`, `ConfigList`, `JSONValue`                                        | `Models.swift:226-285`                                                                                                     | cswap engine                      |
+| `SettingDraft.validate`                                                          | `SettingsLogic.swift:8-47`                                                                                                 | cswap engine                      |
+| `ClaudeCodeConfig` (effective value, backup-then-write)                          | `SettingsLogic.swift:56-114`                                                                                               | cswap engine (resume diagnostics) |
+| `PushTriggers` + `Flags`                                                         | `PushTriggers.swift`                                                                                                       | Push                              |
+| `Stats`, `Stats.Presentation`, `StatsScanner`, `StatsEvents`, `RepoStats`        | `Stats*.swift`                                                                                                             | Stats, Activity                   |
+| `UsageHistory`, `WindowTelemetry`, `WasteMath`, `UsageForecast`, `WindowPlanner` | `UsageHistory.swift`, `WindowTelemetry.swift`, `UsageForecast.swift`, `WindowPlanner.swift`                                | Utilization                       |
+| `TokenRates` / `TokenRateScanner`                                                | `TokenRates.swift`                                                                                                         | Utilization                       |
+| `UsageReport`                                                                    | `Models.swift:287-345`                                                                                                     | Usage                             |
+| `MirrorPairing` (token, mask, pair URL)                                          | `MirrorPairing.swift`                                                                                                      | Devices                           |
+| `SyncSnapshot`                                                                   | `SettingsSync.swift`                                                                                                       | Devices (export/import)           |
+| `PackageVersion`                                                                 | `UpdateCheck.swift`                                                                                                        | About                             |
+| `EngineCapabilities`, `EngineFleet`, `AccountEngine`                             | `AccountEngine.swift`                                                                                                      | Accounts, engines                 |
+| `CswapCLI` (all verbs), `CswapLocator`                                           | `Engines/Cswap/CswapCLI.swift` — `#if !os(iOS)`, so Windows gets it, and `defaultCandidates` already has the Windows paths | every engine pane                 |
+| `NineRouterEngine`, `NineRouterFleet` (+ `StoredConfig`, `configURL`)            | `Engines/NineRouter/`                                                                                                      | 9Router, Accounts                 |
+| `CLIProxyEngine`                                                                 | `Engines/CLIProxy/`                                                                                                        | CLIProxyAPI, Accounts             |
+| `FleetPanel`                                                                     | `FleetPanel.swift`                                                                                                         | Accounts                          |
 
 ### Core additions this wave needs
 
-Three small, testable, platform-free additions. Each is a *decision* the
+Three small, testable, platform-free additions. Each is a _decision_ the
 Mac already makes inline in SwiftUI and Windows would otherwise duplicate.
 Add them with tests in `Tests/InfinitusCoreTests/`; the Mac keeps working
 unchanged (nothing is removed).
@@ -380,6 +381,7 @@ unchanged (nothing is removed).
    its `[SettingsTab]` but reads titles/keywords from here, so the two
    platforms can never disagree about what "Devices" is called or what it
    matches on. Pure strings; no `Color`, no `AnyView`.
+
    ```swift
    public enum SettingsCatalog {
        public struct Entry: Sendable, Equatable {
@@ -398,11 +400,12 @@ unchanged (nothing is removed).
 
 2. **`ThemePalette.swift`** — `RowTheme`'s colour strings → RGB. The Mac's
    `ThemeColor.resolve` returns a SwiftUI `Color` and lives in
-   `InfinitusUI` (macOS-only). Move the *table* to Core as
+   `InfinitusUI` (macOS-only). Move the _table_ to Core as
    `(r, g, b)` triples; `InfinitusUI.ThemeColor.resolve` becomes a
    two-line wrapper over it, and Windows makes a `COLORREF`. Without this,
    the theme names in `RowTheme` ("#ff2d95", "indigo", "secondary") get a
    second, drifting interpretation on Windows.
+
    ```swift
    public enum ThemePalette {
        public struct RGB: Sendable, Equatable { public let r, g, b: UInt8 }
@@ -411,6 +414,7 @@ unchanged (nothing is removed).
        public static func rgb(_ name: String) -> RGB?
    }
    ```
+
    Note the two names that are **not** literal colours: `"secondary"` and
    `"gray"` both mean the platform's secondary label colour, and
    `"primary"` means the default foreground. Return nil for those and let
@@ -496,6 +500,7 @@ enum WinSettingsStore {
 ```
 
 Rules:
+
 - **Never** put a secret in `settings.json`. The 9Router password stays in
   `9router.json` (existing behaviour), the CLIProxy management key gets
   DPAPI (below), push webhooks stay inside `cswap notify`'s own store and
@@ -513,12 +518,12 @@ Rules:
 There is no keychain. The Mac's `Keychain.swift` has four services; two of
 them matter here.
 
-| Secret | Mac | Windows |
-|---|---|---|
-| 9Router dashboard password | keychain `…9router` | `%APPDATA%\Infinitus\9router.json`, **existing behaviour** — see the warning below |
+| Secret                     | Mac                  | Windows                                                                                                                                                                |
+| -------------------------- | -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 9Router dashboard password | keychain `…9router`  | `%APPDATA%\Infinitus\9router.json`, **existing behaviour** — see the warning below                                                                                     |
 | CLIProxyAPI management key | keychain `…cliproxy` | `%APPDATA%\Infinitus\cliproxy.json`, value **DPAPI-encrypted** (`CryptProtectData`, `CRYPTPROTECT_UI_FORBIDDEN`), file carries the same user-only DACL as `pair-token` |
-| pairing token | `UserDefaults` | `%APPDATA%\Infinitus\pair-token`, user-only DACL — **existing** |
-| APNs .p8 | keychain | not applicable |
+| pairing token              | `UserDefaults`       | `%APPDATA%\Infinitus\pair-token`, user-only DACL — **existing**                                                                                                        |
+| APNs .p8                   | keychain             | not applicable                                                                                                                                                         |
 
 > **Security note — read before implementing.**
 > `9router.json` today stores the dashboard password in **plaintext**
@@ -558,10 +563,11 @@ One rule, three consequences.
 runs on it.**
 
 Slow things, measured or documented in this repo:
+
 - `cswap list --json` — up to 20 s timeout (`TrayFleet.timeout`).
 - `cswap usage --days N --json` — "multi-second, streams ~GBs of
   transcripts" (`CswapCLI.swift:292-294`).
-- `StatsScanner.scan` — a cold backfill is *minutes*
+- `StatsScanner.scan` — a cold backfill is _minutes_
   (`StatsModel.swift:122-147`); it is chunked with a 64 MB byte budget for
   exactly this reason.
 - `NineRouterEngine.probe()` / `CLIProxyEngine.probe()` — network.
@@ -589,20 +595,21 @@ WM_APP_PANE_RESULT
 Note the existing `testNineRouterConnection` is **subtly wrong** and must
 be fixed as part of `03`: it hops `Thread.detachNewThread` → `Task` →
 `DispatchQueue.global().async` and then calls `setEditText` from a
-*background* thread (`SettingsWindow.swift:670-686`). `SendMessageW`
+_background_ thread (`SettingsWindow.swift:670-686`). `SendMessageW`
 across threads to another thread's window blocks on that thread's message
 pump; it happens to work here only because the target is on the pumping
 thread and the message is trivial. Route it through `PostMessageW` like
 everything else.
 
 Guards:
+
 - A pane that is deactivated before its worker returns must drop the
   result, not apply it to hidden controls. Give each request a monotonically
   increasing generation counter; compare on arrival (`StatsModel`'s
   `bundleGeneration` is the precedent).
 - Never two concurrent scans of the same kind. One `isRefreshing` flag per
   pane under the same lock as the queue (`TrayFleet.isRefreshing`).
-- Timers: only the *visible* pane may hold one, killed in `deactivate()`.
+- Timers: only the _visible_ pane may hold one, killed in `deactivate()`.
   CLAUDE.md's idle-CPU rule is not negotiable — the accounts panel idles
   at 0.13% and Settings must not be worse. Target: **< 0.5% CPU** with
   Settings open on any pane, measured over 15 s.
@@ -641,13 +648,13 @@ it"). So:
 target and, for `InfinitusTrayWin`, these linked libraries on top of
 what is there:
 
-| library | for |
-|---|---|
-| `comctl32` | already linked — `InitCommonControlsEx` for the up-down / progress / tooltip controls |
-| `crypt32` | `CryptProtectData` / `CryptUnprotectData` |
-| `msimg32` | `GradientFill` for the sidebar tiles (optional; a flat `FillRect` is acceptable) |
-| `ole32` | only if a shell file dialog (`IFileDialog`) is used for export/import; `GetOpenFileNameW` from `comdlg32` avoids COM entirely — prefer that |
-| `comdlg32` | `GetOpenFileNameW` / `GetSaveFileNameW` (Devices export/import, Themes file open) |
+| library    | for                                                                                                                                         |
+| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `comctl32` | already linked — `InitCommonControlsEx` for the up-down / progress / tooltip controls                                                       |
+| `crypt32`  | `CryptProtectData` / `CryptUnprotectData`                                                                                                   |
+| `msimg32`  | `GradientFill` for the sidebar tiles (optional; a flat `FillRect` is acceptable)                                                            |
+| `ole32`    | only if a shell file dialog (`IFileDialog`) is used for export/import; `GetOpenFileNameW` from `comdlg32` avoids COM entirely — prefer that |
+| `comdlg32` | `GetOpenFileNameW` / `GetSaveFileNameW` (Devices export/import, Themes file open)                                                           |
 
 `InitCommonControlsEx(ICC_STANDARD_CLASSES | ICC_UPDOWN_CLASS | ICC_PROGRESS_CLASS | ICC_LISTVIEW_CLASSES)`
 must run **once at startup** in `main.swift` before any control is

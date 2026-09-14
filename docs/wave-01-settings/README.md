@@ -10,15 +10,15 @@ the source file named; every Win32 constraint came from
 
 ## The documents
 
-| file | covers |
-|---|---|
-| [`00-architecture.md`](00-architecture.md) | **read first.** Parity table, what is dropped and why, the shell design, the `SettingsPane` protocol, DPI, dark theme, Core-vs-local data, persistence, secrets, threading, testing, build |
-| [`01-settings-shell-and-navigation.md`](01-settings-shell-and-navigation.md) | sidebar, search, pane host, scrolling, resize, keyboard, dark chrome, `WinSettings` store, `SettingsCatalog` |
-| [`02-display-and-themes.md`](02-display-and-themes.md) | Display pane (title prefs, tray, system) + Themes pane (15 built-ins, custom, GDI preview cards) + `ThemePalette` in Core |
-| [`03-accounts-and-engines.md`](03-accounts-and-engines.md) | Accounts roster across fleets + cswap / CLIProxyAPI / 9Router engine panes |
-| [`04-push-and-devices.md`](04-push-and-devices.md) | Push channels & triggers + phone pairing, QR, routes, export/import |
-| [`05-usage-utilization-stats-activity.md`](05-usage-utilization-stats-activity.md) | the four data panes, GDI charts, the usage-history recorder and the Windows event store |
-| [`06-about-and-updates.md`](06-about-and-updates.md) | About, version truth, GitHub release check, components diagnostics |
+| file                                                                               | covers                                                                                                                                                                                     |
+| ---------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| [`00-architecture.md`](00-architecture.md)                                         | **read first.** Parity table, what is dropped and why, the shell design, the `SettingsPane` protocol, DPI, dark theme, Core-vs-local data, persistence, secrets, threading, testing, build |
+| [`01-settings-shell-and-navigation.md`](01-settings-shell-and-navigation.md)       | sidebar, search, pane host, scrolling, resize, keyboard, dark chrome, `WinSettings` store, `SettingsCatalog`                                                                               |
+| [`02-display-and-themes.md`](02-display-and-themes.md)                             | Display pane (title prefs, tray, system) + Themes pane (15 built-ins, custom, GDI preview cards) + `ThemePalette` in Core                                                                  |
+| [`03-accounts-and-engines.md`](03-accounts-and-engines.md)                         | Accounts roster across fleets + cswap / CLIProxyAPI / 9Router engine panes                                                                                                                 |
+| [`04-push-and-devices.md`](04-push-and-devices.md)                                 | Push channels & triggers + phone pairing, QR, routes, export/import                                                                                                                        |
+| [`05-usage-utilization-stats-activity.md`](05-usage-utilization-stats-activity.md) | the four data panes, GDI charts, the usage-history recorder and the Windows event store                                                                                                    |
+| [`06-about-and-updates.md`](06-about-and-updates.md)                               | About, version truth, GitHub release check, components diagnostics                                                                                                                         |
 
 ## Dependency graph
 
@@ -52,7 +52,7 @@ serialise the work:
   it.
 - `04` and `05` both may touch `windows/Sources/InfinitusWin/` (the push
   tick; the event store's daemon-side writes). Coordinate: `04` owns
-  `serve`'s push tick, `05` owns the event store's *shape*. If both need
+  `serve`'s push tick, `05` owns the event store's _shape_. If both need
   a daemon change in the same file, `05` lands first and `04` rebases.
 - `02` and `03` each delete part of `01`'s temporary Legacy pane. Whoever
   lands second removes the file.
@@ -125,6 +125,7 @@ apart from the two documents it names.
 > Implement the Windows Settings shell and navigation.
 >
 > Read, in order:
+>
 > - `docs/wave-01-settings/00-architecture.md`
 > - `docs/wave-01-settings/01-settings-shell-and-navigation.md`
 >

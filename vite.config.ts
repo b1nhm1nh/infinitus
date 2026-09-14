@@ -46,6 +46,13 @@ export default defineConfig({
       "*.icon/**",
       // The Swift app (#823): its site, plugins and tools keep their own style.
       "apps/mac/**",
+      // The fork's Swift substrate: the Windows daemon/tray and the iOS
+      // companion keep their own style, fixtures included (some are
+      // deliberately malformed — the suite feeds them to the parser).
+      "windows/**",
+      "ios/**",
+      "Sources/**",
+      "Tests/**",
     ],
     sortPackageJson: {},
     overrides: [
@@ -71,6 +78,10 @@ export default defineConfig({
       "apps/mobile/ios/**",
       "apps/mobile/uniwind-types.d.ts",
       "apps/mac/**",
+      "windows/**",
+      "ios/**",
+      "Sources/**",
+      "Tests/**",
     ],
     plugins: ["eslint", "oxc", "react", "unicorn", "typescript"],
     jsPlugins: ["./oxlint-plugin-t3code/index.ts"],

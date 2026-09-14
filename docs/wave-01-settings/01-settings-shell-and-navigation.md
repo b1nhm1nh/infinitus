@@ -24,22 +24,22 @@ deletes the theme combo when it lands Themes.
 
 ## Files
 
-| action | path |
-|---|---|
-| create | `windows/Sources/InfinitusWinUI/SettingsCatalogWin.swift` — pane descriptors, search filter, ID blocks (**no `WinSDK` in signatures**) |
-| create | `windows/Sources/InfinitusWinUI/WinSettingsStore.swift` — `WinSettings` + load/save/update |
-| create | `windows/Sources/InfinitusTrayWin/Metrics.swift` — shared DPI metrics (moved out of `FleetWindow`) |
-| create | `windows/Sources/InfinitusTrayWin/SettingsShell.swift` — the window, sidebar, pane host, message routing |
-| create | `windows/Sources/InfinitusTrayWin/SettingsPane.swift` — the protocol, `PaneContext`, `PaneHost` scroll container, shared control helpers |
-| create | `windows/Sources/InfinitusTrayWin/Panes/LegacyPane.swift` — today's four controls, verbatim, until `02`/`03` replace them |
-| create | `Sources/InfinitusCore/SettingsCatalog.swift` — the shared pane list + `matches` |
-| modify | `windows/Sources/InfinitusTrayWin/SettingsWindow.swift` — becomes a ~20-line façade: `show()` forwards to `SettingsShell.show()` |
-| modify | `windows/Sources/InfinitusTrayWin/WinDark.swift` — add `selection`, `hover`, `separator`, `destructive`; add `drawTile` |
-| modify | `windows/Sources/InfinitusTrayWin/FleetWindow.swift` — use the shared `Metrics`, delete its private copy |
+| action | path                                                                                                                                           |
+| ------ | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| create | `windows/Sources/InfinitusWinUI/SettingsCatalogWin.swift` — pane descriptors, search filter, ID blocks (**no `WinSDK` in signatures**)         |
+| create | `windows/Sources/InfinitusWinUI/WinSettingsStore.swift` — `WinSettings` + load/save/update                                                     |
+| create | `windows/Sources/InfinitusTrayWin/Metrics.swift` — shared DPI metrics (moved out of `FleetWindow`)                                             |
+| create | `windows/Sources/InfinitusTrayWin/SettingsShell.swift` — the window, sidebar, pane host, message routing                                       |
+| create | `windows/Sources/InfinitusTrayWin/SettingsPane.swift` — the protocol, `PaneContext`, `PaneHost` scroll container, shared control helpers       |
+| create | `windows/Sources/InfinitusTrayWin/Panes/LegacyPane.swift` — today's four controls, verbatim, until `02`/`03` replace them                      |
+| create | `Sources/InfinitusCore/SettingsCatalog.swift` — the shared pane list + `matches`                                                               |
+| modify | `windows/Sources/InfinitusTrayWin/SettingsWindow.swift` — becomes a ~20-line façade: `show()` forwards to `SettingsShell.show()`               |
+| modify | `windows/Sources/InfinitusTrayWin/WinDark.swift` — add `selection`, `hover`, `separator`, `destructive`; add `drawTile`                        |
+| modify | `windows/Sources/InfinitusTrayWin/FleetWindow.swift` — use the shared `Metrics`, delete its private copy                                       |
 | modify | `windows/Sources/InfinitusTrayWin/main.swift` — `InitCommonControlsEx`, DPI awareness, `IsDialogMessageW` in both loops, `--settings [paneID]` |
-| modify | `Package.swift` — add `InfinitusWinUI` target; link `crypt32`, `comdlg32` |
-| create | `windows/Tests/InfinitusWinTests/SettingsShellTests.swift` |
-| create | `Tests/InfinitusCoreTests/SettingsCatalogTests.swift` |
+| modify | `Package.swift` — add `InfinitusWinUI` target; link `crypt32`, `comdlg32`                                                                      |
+| create | `windows/Tests/InfinitusWinTests/SettingsShellTests.swift`                                                                                     |
+| create | `Tests/InfinitusCoreTests/SettingsCatalogTests.swift`                                                                                          |
 
 ## Step 1 — Core: `SettingsCatalog`
 
@@ -121,6 +121,7 @@ The Mac's `settingsTabs(...)` is **not** rewritten in this wave (it builds
 future divergence fails loudly:
 
 `Tests/InfinitusCoreTests/SettingsCatalogTests.swift`
+
 - `testEveryEntryHasUniqueID`
 - `testEmptyQueryMatchesEverything` (`""`, `"   "`)
 - `testTitleMatchIsCaseInsensitive` — `"acc"`, `"ACCOUNTS"`, `"Accounts"`
@@ -169,11 +170,12 @@ public enum WinSettingsStore {
 ```
 
 Behaviour:
+
 - `load` with no file → defaults, no write, no error.
 - `load` with **unparseable** JSON → rename to
   `settings.json.bad-<yyyyMMdd-HHmmss>`, return defaults. Never silently
   overwrite: the user may want to see what broke. Log one line.
-- `load` with a *partially* valid file (extra keys, missing keys) →
+- `load` with a _partially_ valid file (extra keys, missing keys) →
   decode what is there, defaults for the rest, keep the file.
 - `save` writes `settings.json.tmp` then removes + moves onto the target.
   **Not `replaceItemAt`** — the same reason `UsageHistory.prune` avoids it
@@ -224,6 +226,7 @@ final class PaneContext {
 
 `PaneContext.async` is the **only** sanctioned way a pane leaves the UI
 thread. It:
+
 1. bumps a generation counter for that pane,
 2. `Thread.detachNewThread { let r = work(); … }`,
 3. stores `(generation, apply-thunk, result)` in a lock-guarded slot on
@@ -314,7 +317,7 @@ enum SettingsShell {
 - Raise the existing window if open (today's behaviour, keep it), and if
   `paneID` is given, select that pane on the way.
 - Style: `WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN`. **Not** `WS_POPUP |
-  WS_EX_TOPMOST` — today's dialog is always-on-top over every app, which
+WS_EX_TOPMOST` — today's dialog is always-on-top over every app, which
   is wrong for a window a user reads while working. Drop `WS_EX_TOPMOST`.
 - Size: `settings.windowWidth/Height` when non-zero, else
   `metrics.px(980) × metrics.px(680)`. Convert content→frame with
@@ -346,6 +349,7 @@ Layout, top to bottom, all through `metrics.px`:
 ```
 
 Row painting:
+
 - selected → `RoundRect`-ish fill with `WinDark.selection`, title in
   `WinDark.text`;
 - hovered (tracked via `WM_MOUSEMOVE` + `TrackMouseEvent(TME_LEAVE)`, the
@@ -367,6 +371,7 @@ the paint uses, in one shared function, so the two can never desync.
 Return `(section, index)` or nil.
 
 Search:
+
 - The EDIT sends `EN_CHANGE`; on it, re-filter with
   `SettingsCatalog.filter(query)`, repaint the sidebar.
 - If the current pane falls out of the filter, **do not switch panes** —
@@ -546,6 +551,7 @@ here is pure (`InfinitusWinUI`), no HWND:
 ## Report
 
 Status; files; test one-liner; commit sha + subject; and specifically:
+
 - which DPI-awareness route was taken (manifest or API call) and why;
 - whether comctl32 v6 activation worked;
 - the measured idle CPU;

@@ -5,14 +5,14 @@ to Anthropic directly or to a local swap proxy through `ANTHROPIC_BASE_URL`.
 
 ## What the daemon touches
 
-| surface | read/write | proxy involvement |
-|---|---|---|
-| `C:\Users\BM\.claude\sessions\<pid>.json` | read | none — written by `claude.exe` regardless of API endpoint |
-| `C:\Users\BM\.claude\sessions\<pid>.<hash>.key` | read | none |
-| `C:\Users\BM\.claude\projects\<slug>\<sessionId>.jsonl` | read | none — the transcript is written locally before/after each API call, whatever the base URL |
-| `\\.\pipe\LOCAL\cc-msg-<hex>` | write | none — CC's peer inbox is local IPC, independent of `--remote-control` and of the API endpoint |
-| `C:\Users\BM\.claude\settings.json` | **not read** | the daemon never needs `env.ANTHROPIC_BASE_URL`; it is listed here only to state that it is untouched |
-| HTTP 47824 | serve | the phone talks to the daemon, never to the proxy or to Anthropic |
+| surface                                                 | read/write   | proxy involvement                                                                                     |
+| ------------------------------------------------------- | ------------ | ----------------------------------------------------------------------------------------------------- |
+| `C:\Users\BM\.claude\sessions\<pid>.json`               | read         | none — written by `claude.exe` regardless of API endpoint                                             |
+| `C:\Users\BM\.claude\sessions\<pid>.<hash>.key`         | read         | none                                                                                                  |
+| `C:\Users\BM\.claude\projects\<slug>\<sessionId>.jsonl` | read         | none — the transcript is written locally before/after each API call, whatever the base URL            |
+| `\\.\pipe\LOCAL\cc-msg-<hex>`                           | write        | none — CC's peer inbox is local IPC, independent of `--remote-control` and of the API endpoint        |
+| `C:\Users\BM\.claude\settings.json`                     | **not read** | the daemon never needs `env.ANTHROPIC_BASE_URL`; it is listed here only to state that it is untouched |
+| HTTP 47824                                              | serve        | the phone talks to the daemon, never to the proxy or to Anthropic                                     |
 
 Verified on this box (2026-09-04): `settings.json` `env` carries
 `ANTHROPIC_BASE_URL` = `http://<host>/v1`, `ANTHROPIC_AUTH_TOKEN`, model

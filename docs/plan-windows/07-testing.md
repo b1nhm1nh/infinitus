@@ -17,17 +17,17 @@ run unchanged and prove the shared code.
 
 New `windows/Tests/InfinitusWinTests`:
 
-| test | proves |
-|---|---|
-| `SlugTests.testLiveProjectsResolve` | for every record in a fixture `sessions/` dir (copied from this box with pids/ids anonymised), `Transcript.path` exists under a fixture `projects/` dir — Windows drive-letter + backslash slugs |
-| `WinProcessTests.testSelfIsAlive` / `testDeadPidIsNotAlive` | `OpenProcess` liveness on `GetCurrentProcessId()` and on a just-exited `cmd /c exit` child |
-| `WinProcessTests.testProcStartMatchesFileTime` | `GetProcessTimes` creation FILETIME string equals what a record would carry (self-spawned child, read via `wmic`-free path: compare to `Process.launch` time within 2 s) |
-| `NamedPipeTests.testWriteRoundTrip` | test creates its own `\\.\pipe\LOCAL\infinitus-test-<uuid>` server (`CreateNamedPipeW`, byte mode), client writes `PeerSocket.frames(...)`, server reads back byte-equal NDJSON (two lines, sorted keys, envelope newlines exact) |
-| `NamedPipeTests.testMissingPipeIsFalse` | `WaitNamedPipeW` false + write false for a nonexistent pipe |
-| `WinHTTPServerTests.*` | port of `PosixHTTPServerTests` (no token 401, wrong token 401, right token 200, POST body whole, unauthorized head rejected before body, unknown route 404) over Winsock loopback |
-| `SnapshotTests.testDecodesOnPhoneShape` | the daemon's snapshot JSON decodes with `JSONDecoder` + `.iso8601` into `MirrorSnapshot`, `fleets[0].liveSessions.sessions` non-empty, `listJSON` decodes as `AccountList` |
-| `ImageIdTests.testBackslashAttachmentPath` | `attachedImageIds("… [attached: C:\\…\\attachments\\x.png]") == ["a:x.png"]`; `imageData` refuses `a:..\\x.png` and `a:C:x.png` — lives in core tests (`SessionFeedTests`) since the fix is in core |
-| `PairingStoreTests` | token file created once, normalised on read, reused |
+| test                                                        | proves                                                                                                                                                                                                                            |
+| ----------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `SlugTests.testLiveProjectsResolve`                         | for every record in a fixture `sessions/` dir (copied from this box with pids/ids anonymised), `Transcript.path` exists under a fixture `projects/` dir — Windows drive-letter + backslash slugs                                  |
+| `WinProcessTests.testSelfIsAlive` / `testDeadPidIsNotAlive` | `OpenProcess` liveness on `GetCurrentProcessId()` and on a just-exited `cmd /c exit` child                                                                                                                                        |
+| `WinProcessTests.testProcStartMatchesFileTime`              | `GetProcessTimes` creation FILETIME string equals what a record would carry (self-spawned child, read via `wmic`-free path: compare to `Process.launch` time within 2 s)                                                          |
+| `NamedPipeTests.testWriteRoundTrip`                         | test creates its own `\\.\pipe\LOCAL\infinitus-test-<uuid>` server (`CreateNamedPipeW`, byte mode), client writes `PeerSocket.frames(...)`, server reads back byte-equal NDJSON (two lines, sorted keys, envelope newlines exact) |
+| `NamedPipeTests.testMissingPipeIsFalse`                     | `WaitNamedPipeW` false + write false for a nonexistent pipe                                                                                                                                                                       |
+| `WinHTTPServerTests.*`                                      | port of `PosixHTTPServerTests` (no token 401, wrong token 401, right token 200, POST body whole, unauthorized head rejected before body, unknown route 404) over Winsock loopback                                                 |
+| `SnapshotTests.testDecodesOnPhoneShape`                     | the daemon's snapshot JSON decodes with `JSONDecoder` + `.iso8601` into `MirrorSnapshot`, `fleets[0].liveSessions.sessions` non-empty, `listJSON` decodes as `AccountList`                                                        |
+| `ImageIdTests.testBackslashAttachmentPath`                  | `attachedImageIds("… [attached: C:\\…\\attachments\\x.png]") == ["a:x.png"]`; `imageData` refuses `a:..\\x.png` and `a:C:x.png` — lives in core tests (`SessionFeedTests`) since the fix is in core                               |
+| `PairingStoreTests`                                         | token file created once, normalised on read, reused                                                                                                                                                                               |
 
 ## Integration on the live box (manual, scripted where possible)
 
