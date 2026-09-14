@@ -348,6 +348,6 @@ final class NineRouterEngineTests: XCTestCase {
             XCTAssertEqual(u?.fiveHour?.pct, 2.0)
             XCTAssertEqual(u?.scoped?.map(\.name), ["Gemini 3.1 Flash Image"])
         } else { XCTFail("expected ok") }
-
+    }
 }
 #endif
