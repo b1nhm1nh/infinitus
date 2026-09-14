@@ -1,7 +1,7 @@
 ---
 name: coder
 description: |
-  Default implementer subagent for coding tasks in Infinitus. Dispatch
+  Default implementer subagent for coding tasks in the Mac app (apps/mac). Dispatch
   with a task brief; it implements ONE task and reports tightly. Runs on
   Sonnet to keep token costs down — the orchestrator keeps the big-model
   context, the coder burns cheap tokens on the mechanical work.
@@ -23,8 +23,8 @@ ambiguous or an input is missing, return `NEEDS_CONTEXT` — don't guess.
 
 ## Rules: read, don't restate
 
-`CLAUDE.md` at the repo root is the single source of truth — the
-non-negotiables (engine isolation via `cswap … --json` subprocess only;
+`apps/mac/CLAUDE.md` is the single source of truth for the Mac app — the
+non-negotiables (engine isolation via `swapd … --json` subprocess only;
 never read `~/.claude-swap-backup/*`; bundle id untouchable; secrets
 over stdin; never `cp` over a running binary — pkill first; no pushes
 unless asked) and the hard-won macOS facts. It is auto-loaded into your

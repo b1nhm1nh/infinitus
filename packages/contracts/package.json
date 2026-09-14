@@ -1,0 +1,50 @@
+{
+  "name": "@t3tools/contracts",
+  "version": "0.0.40",
+  "private": true,
+  "files": [
+    "dist"
+  ],
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "import": "./src/index.ts"
+    },
+    "./settings": {
+      "types": "./src/settings.ts",
+      "import": "./src/settings.ts"
+    },
+    "./relay": {
+      "types": "./src/relay.ts",
+      "import": "./src/relay.ts"
+    },
+    "./infinitus": {
+      "types": "./src/infinitus.ts",
+      "import": "./src/infinitus.ts"
+    },
+    "./infinitusPairing": {
+      "types": "./src/infinitusPairing.ts",
+      "import": "./src/infinitusPairing.ts"
+    },
+    "./captures": {
+      "types": "./src/captures.ts",
+      "import": "./src/captures.ts"
+    },
+    "./productName": {
+      "types": "./src/productName.ts",
+      "import": "./src/productName.ts"
+    }
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vp test run"
+  },
+  "dependencies": {
+    "effect": "catalog:"
+  },
+  "devDependencies": {
+    "@effect/vitest": "catalog:",
+    "vite-plus": "catalog:"
+  }
+}
