@@ -20,11 +20,23 @@ vi.mock("@tanstack/react-router", () => ({
   useParams: () => ({}),
 }));
 vi.mock("./ui/toast", () => ({ toastManager: { add: state.toast } }));
+vi.mock("../state/infinitus", () => ({
+  infinitusEnvironment: { holds: vi.fn() },
+}));
+vi.mock("../state/query", () => ({
+  useEnvironmentQuery: () => ({ data: undefined }),
+}));
 vi.mock("../state/shell", () => ({ environmentShell: { stateValueAtom: (id: string) => id } }));
 vi.mock("../state/environments", () => ({
   useEnvironments: () => ({
     environments: state.environmentIds.map((environmentId) => ({ environmentId })),
   }),
+  // Fork registration point (#1032): the coordinator reads this environment's
+  // capabilities to decide whether to subscribe to the Infinitus holds stream
+  // for `held` / `limited` threads. Absent here, so that path stays inert and
+  // these tests exercise upstream's behaviour as written.
+  useEnvironment: () => undefined,
+
 }));
 vi.mock("../hooks/useSettings", () => ({
   useClientSettings: (

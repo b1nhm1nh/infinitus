@@ -65,6 +65,17 @@ vi.mock("../hooks/useSettings", () => ({
 }));
 vi.mock("../state/environments", () => ({
   useEnvironments: () => ({ environments: [{ environmentId: "env-1" }] }),
+  // Fork registration point (#1032): the coordinator reads this environment's
+  // capabilities to decide whether to subscribe to the Infinitus holds stream
+  // for `held` / `limited` threads. Absent here, so that path stays inert and
+  // these tests exercise upstream's behaviour as written.
+  useEnvironment: () => undefined,
+}));
+vi.mock("../state/infinitus", () => ({
+  infinitusEnvironment: { holds: vi.fn() },
+}));
+vi.mock("../state/query", () => ({
+  useEnvironmentQuery: () => ({ data: undefined }),
 }));
 vi.mock("../state/shell", () => ({
   environmentShell: { stateValueAtom: vi.fn() },

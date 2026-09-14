@@ -1125,7 +1125,12 @@ source's Codex thread>, fork: true, lastTurnId: <the turn>}`
   upstream file, one registration point): `held` and `limited` threads
   notify like input does — the holds come from the environment's
   `subscribeInfinitusHolds` stream, and `attentionNotificationTitle` is
-  what titles them, since upstream has no word for either. Upstream now
+  what titles them, since upstream has no word for either. `failed` now
+  reads "Thread failed", upstream's word, so the fork carries no second
+  vocabulary for one banner. Upstream's two coordinator tests mock
+  `../state/environments`, so they also stub `useEnvironment`,
+  `../state/infinitus` and `../state/query`: without the capability the
+  holds path stays inert and their assertions read upstream's behaviour. Upstream now
   notifies on `failed` itself (by the latest TURN's state; the fork's
   resolver reads the SESSION, so both checks run and catch different
   rows), and it now quiets its own banner while the window has focus,
