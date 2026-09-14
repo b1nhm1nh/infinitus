@@ -36,7 +36,6 @@ vi.mock("../state/environments", () => ({
   // for `held` / `limited` threads. Absent here, so that path stays inert and
   // these tests exercise upstream's behaviour as written.
   useEnvironment: () => undefined,
-
 }));
 vi.mock("../hooks/useSettings", () => ({
   useClientSettings: (
