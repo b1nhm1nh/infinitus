@@ -64,7 +64,10 @@ makes wrong, in its own PR.
   deployed by hand with wrangler from that directory.
 - **One release (#823 layer 3).** A `v<version>` tag on `main` runs
   `.github/workflows/infinitus-release.yml` (upstream's `release.yml` stays
-  disabled and untouched, hence the name): the `mac` job builds, signs,
+  disabled, hence the name; its CONTENT is still upstream's, taken whole at
+  every sync, but the sync's runner swap rewrites it like every other
+  workflow — a merge that takes upstream's file wholesale and skips the
+  swap silently reintroduces Blacksmith runners): the `mac` job builds, signs,
   notarizes and staples both Swift bundles on `macos-26`; `desktop` nests
   that run's `Infinitus-Menu-Bar-<v>.zip` and builds the DMG with
   `--build-version "$VERSION"`; `linux` builds the tray; `publish` creates
@@ -1119,11 +1122,24 @@ source's Codex thread>, fork: true, lastTurnId: <the turn>}`
   bundled sounds; ruling #1032, which retired the fork's #270 B banners over
   the Electron main process and the #270 H per-window completion sound).
   The fork layers a few things. In `ThreadNotificationCoordinator.tsx` (an
-  upstream file, one registration point): `held` and `failed` threads
-  notify like input does (the holds come from the environment's
-  `subscribeInfinitusHolds` stream; titles in `attentionNotificationTitle`),
-  and the thread on screen stays quiet while the window has focus
-  (`quietForViewer`) — upstream posts and rings for it. Next, #270 B's
+  upstream file, one registration point): `held` and `limited` threads
+  notify like input does — the holds come from the environment's
+  `subscribeInfinitusHolds` stream, and `attentionNotificationTitle` is
+  what titles them, since upstream has no word for either. `failed` now
+  reads "Thread failed", upstream's word, so the fork carries no second
+  vocabulary for one banner. Upstream's two coordinator tests mock
+  `../state/environments`, so they also stub `useEnvironment`,
+  `../state/infinitus` and `../state/query`: without the capability the
+  holds path stays inert and their assertions read upstream's behaviour. Upstream now
+  notifies on `failed` itself (by the latest TURN's state; the fork's
+  resolver reads the SESSION, so both checks run and catch different
+  rows), and it now quiets its own banner while the window has focus,
+  showing an in-app toast instead — so the fork's remaining focus rule is
+  narrower than it was: `quietForViewer` keeps the thread ON SCREEN
+  silent, toast and bell included, where upstream still rings for it.
+  Mind the naming when merging this file: both sides bind `attention`
+  and mean different things by it — the fork's is the banner title,
+  upstream's is the dedupe key the fork calls `input`. Next, #270 B's
   queue rule: a turn that completes while the thread still has
   `queuedTurns` neither posts nor rings
   (`notificationKind`), since the #806 drain sends the next row the moment
