@@ -941,6 +941,16 @@ source's Codex thread>, fork: true, lastTurnId: <the turn>}`
   `applinks` for `Q783W6B4FA.run.infinitus.mobile` and `assetlinks.json`);
   `extra.productVersion` is the root `VERSION` (#823 layer 3), which
   `SettingsRouteScreen` shows in place of the store version.
+- `apps/mobile/plugins/withWidgetLogoAsset.cjs` (+ its test) — the mark the
+  lock-screen card draws in its header comes from the variant
+  (`SOURCE_BY_VARIANT`, #941): the `infinitus` build gets
+  `assets/widget/InfinitusMark.svg`, every upstream variant keeps
+  `T3Mark.svg` — they build the real T3 Code side by side. Only the artwork
+  copied in changes; the catalog entry keeps the `T3Mark` name
+  `AgentActivity.tsx` asks for, and the Infinitus mark's viewBox is padded to
+  the 3:2 the widget's `renderLogo` frames it at, so the glyph is not
+  stretched and upstream's widget file needs no edit. The plugin's ordering
+  rule (listed BEFORE `expo-widgets`) is unchanged and still load-bearing.
 - `apps/mobile/src/Stack.tsx` — the `SettingsAccounts` route (Settings ›
   Accounts, the Infinitus fleet per paired Mac).
 - `apps/mobile/src/features/settings/components/settings-sheet-targets.ts` —
@@ -2003,6 +2013,13 @@ fork_server_port`, on an app whose manifest lists `desktop-credential` with
 
 - `apps/mobile/assets/infinitus-ios-1024.png` — the Infinitus phone icon
   (copied from the native phone's asset catalog).
+- `apps/mobile/assets/widget/InfinitusMark.svg` — the twin loop for the
+  lock-screen card's header (#941), monochrome so the widget's foreground
+  tint applies: the same geometry `apps/mac/make-icon.swift` draws (rings at
+  (6, 8) and (11, 8), radius 3.2, stroke 2, the right one broken between 10°
+  and 70° with the swap arrow on the break), hand-traced as filled paths and
+  checked against that renderer's own output. Redraw it from there if the
+  mark changes.
 - `assets/infinitus/` — the desktop and web artwork for fork builds: the
   native Mac app's 1024 icon master (`make-icon.swift` on `native`), the
   phone's full-bleed mark for Linux/apple-touch, and the `.ico`/favicon sizes
@@ -2169,14 +2186,27 @@ agent-activity` (the session cards' kinds retired with #1041).
   come from (`infinitusLiveActivityMac`). `pushRegistration.ts` logs a
   refused `activities-token` (`[infinitus-push]`) since the bridge sends
   with `reportFailure: false`.
+- `apps/mobile/src/features/infinitus/pushRetry.logic.ts` (+ test) — the
+  thread-card bridge's re-send rule (#941): ActivityKit vends the
+  push-to-start token as the bridge mounts, before the environment's socket
+  is up, so the first send failed with `EnvironmentRpcUnavailableError` and
+  nothing fired it again — the Mac held no start token and no card could
+  begin. The bridge now keeps the newest token per kind and re-sends it;
+  `nextRetry` backs a failed round off by `RETRY_DELAYS_MS` (5 s, 15 s,
+  1 min, then the 5 min cap) while the Mac is reachable, schedules nothing
+  while it is not — the environment connecting, or the app coming to the
+  foreground, sends at once — and stops as soon as every token is on file.
+  `isEnvironmentUnreachable` is the same tag check the web's legacy-queue
+  migration makes, and decides the row's wording above.
 - `apps/mobile/src/features/infinitus/pushDiagnostics.ts` (+
   `pushDiagnostics.logic.ts`, test) — what this phone's registrations have
   done, for the "Card push registration" row in Settings › Infinitus (#941):
   the thread-card bridge notes when it attaches and lets go of its listeners,
   `tokenSender` notes each kind's outcome, and `agentActivityPushSummary`
   folds the two into one line — not running / no token yet / card token only
-  / registered / refused — with the Mac's own refusal text, or the gates to
-  check, behind a tap. The lock-screen card's start token is vended by
+  / registered / refused / Mac unreachable — with the failure's own text, or
+  the gates to check, behind a tap. A send the RPC could not deliver is never
+  worded as a refusal: the Mac did not see that token. The lock-screen card's start token is vended by
   ActivityKit through an event that never fires when it declines (Live
   Activities off for the app, or iOS before 17.2), and a refusal is a
   `console.warn` a Release build shows nobody, so without this one silence
