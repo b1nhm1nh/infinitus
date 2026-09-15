@@ -9959,7 +9959,14 @@ export default function ChatView(props: ChatViewProps) {
                             }
                             onBestOf={
                               supportsBestOf
-                                ? (chips) => void onSend(undefined, "foreground", undefined, undefined, chips)
+                                ? (chips) =>
+                                    void onSend(
+                                      undefined,
+                                      "foreground",
+                                      undefined,
+                                      undefined,
+                                      chips,
+                                    )
                                 : undefined
                             }
                             onSend={onSend}

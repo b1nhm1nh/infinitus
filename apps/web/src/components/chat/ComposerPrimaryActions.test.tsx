@@ -44,10 +44,7 @@ function renderPendingActions(isRunning: boolean) {
   );
 }
 
-function renderRunningActions(
-  hasSendableContent: boolean,
-  runningSendMode?: "queue" | "steer",
-) {
+function renderRunningActions(hasSendableContent: boolean, runningSendMode?: "queue" | "steer") {
   return renderToStaticMarkup(
     createElement(ComposerPrimaryActions, {
       compact: true,
