@@ -12513,7 +12513,13 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
         assertTrue(result._tag === "Success");
         assert.deepEqual(
           dispatchedCommands.map((dispatched) => dispatched.type),
-          ["thread.create", "thread.turn.start"],
+          [
+            "thread.create",
+            "thread.message.user.append",
+            "thread.activity.append",
+            "thread.turn.start",
+            "thread.activity.append",
+          ],
         );
       }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
@@ -12642,7 +12648,15 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
       assertTrue(firstResult._tag === "Success");
       assert.deepEqual(
         dispatchedCommands.map((command) => command.type),
-        ["thread.create", "thread.session.set", "thread.meta.update", "thread.turn.start"],
+        [
+          "thread.create",
+          "thread.message.user.append",
+          "thread.activity.append",
+          "thread.session.set",
+          "thread.meta.update",
+          "thread.turn.start",
+          "thread.activity.append",
+        ],
       );
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );

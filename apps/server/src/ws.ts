@@ -1759,12 +1759,16 @@ const makeWsRpcLayer = (
                   ),
                 );
               }
+              // Fork (#269 H): a bootstrap refused over the worktree limit
+              // fails before `thread.create`, so there is no thread to hold
+              // the row; the tracker still finishes for whoever streams it.
+              const threadExists = !bootstrap?.createThread || createdThread;
               return track(
                 worktreeSetupTracker
                   .finish(threadId, "failed", dispatchError.message)
                   .pipe(
                     Effect.flatMap((snapshot) =>
-                      snapshot ? recordWorktreeSetup(snapshot) : Effect.void,
+                      snapshot && threadExists ? recordWorktreeSetup(snapshot) : Effect.void,
                     ),
                   ),
               ).pipe(Effect.andThen(cleanupAndFail(cause, dispatchError)));
