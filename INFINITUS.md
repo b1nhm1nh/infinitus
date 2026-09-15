@@ -39,7 +39,10 @@ contributor shorthand for this TypeScript tree and the Swift app.
   (upstream-channel tests start on a nightly feed via the harness `settings`
   option; the harness's `resourcesPath` option and the feed-swap test are
   the fork's, #1042; `DesktopShellEnvironment.test.ts`'s harness takes an
-  `existingPaths` fake filesystem for the known-CLI-dirs fallback, #1078)
+  `existingPaths` fake filesystem for the known-CLI-dirs fallback, #1078), and
+  `apps/desktop/src/updates/releaseNotes.test.ts` (the channel argument: the
+  notes are filtered by `resolveDefaultDesktopUpdateChannel`, which never
+  answers `latest` here)
   are re-flipped to `infinitus` after each merge, never the rule.
   An upstream migration whose number collides with the fork's own
   (`051`–`057` and `059`, #806 onward) is renumbered after them in the merge

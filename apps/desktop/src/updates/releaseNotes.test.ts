@@ -51,7 +51,7 @@ describe("normalizeDesktopUpdateReleaseNotes", () => {
         "<h2>New Contributors</h2><ul><li>@human made their first contribution</li></ul>" +
         "<h2>Full Changelog</h2>",
       "1.2.3",
-      "latest",
+      "infinitus",
     );
 
     expect(result).toEqual({
@@ -71,7 +71,7 @@ describe("normalizeDesktopUpdateReleaseNotes", () => {
         },
       ],
       "1.2.4",
-      "latest",
+      "infinitus",
     );
 
     expect(result.releaseNotes).toEqual([
@@ -88,7 +88,7 @@ describe("normalizeDesktopUpdateReleaseNotes", () => {
         { version: "1.2.1", note: "- Older release" },
       ],
       "1.2.3",
-      "latest",
+      "infinitus",
     );
 
     expect(result).toEqual({
@@ -130,7 +130,7 @@ describe("normalizeDesktopUpdateReleaseNotes", () => {
         { version: "0.0.42-nightly.20260915.1710", note: "- Nightly change" },
       ],
       "0.0.42",
-      "latest",
+      "infinitus",
     );
 
     expect(result.releaseNotes.map(({ version }) => version)).toEqual(["0.0.42"]);
@@ -148,7 +148,7 @@ describe("normalizeDesktopUpdateReleaseNotes", () => {
       { version: "1.3.2", note: "- Change 2" },
     ];
 
-    const result = normalizeDesktopUpdateReleaseNotes(releaseNotes, "1.3.9", "latest");
+    const result = normalizeDesktopUpdateReleaseNotes(releaseNotes, "1.3.9", "infinitus");
 
     expect(result.releaseNotes.map(({ version }) => version)).toEqual([
       "1.3.9",
@@ -165,7 +165,7 @@ describe("normalizeDesktopUpdateReleaseNotes", () => {
     const result = normalizeDesktopUpdateReleaseNotes(
       "- Fix &amp; polish &#128512;",
       "1.0.0",
-      "latest",
+      "infinitus",
     );
     expect(result).toEqual({
       releaseNotes: [{ version: "1.0.0", items: ["Fix & polish 😀"], totalItems: 1 }],
@@ -184,7 +184,7 @@ describe("normalizeDesktopUpdateReleaseNotes", () => {
         null,
       ],
       "1.2.3",
-      "latest",
+      "infinitus",
     );
 
     expect(result).toEqual({
@@ -194,7 +194,7 @@ describe("normalizeDesktopUpdateReleaseNotes", () => {
   });
 
   it("returns an empty result for an invalid payload", () => {
-    expect(normalizeDesktopUpdateReleaseNotes({ note: "- Invalid" }, "1.0.0", "latest")).toEqual({
+    expect(normalizeDesktopUpdateReleaseNotes({ note: "- Invalid" }, "1.0.0", "infinitus")).toEqual({
       releaseNotes: [],
       omittedReleaseCount: 0,
     });
@@ -204,7 +204,7 @@ describe("normalizeDesktopUpdateReleaseNotes", () => {
     const result = normalizeDesktopUpdateReleaseNotes(
       "- Broken entity &#9999999999;",
       "1.0.0",
-      "latest",
+      "infinitus",
     );
     expect(result).toEqual({
       releaseNotes: [{ version: "1.0.0", items: ["Broken entity &#9999999999;"], totalItems: 1 }],
