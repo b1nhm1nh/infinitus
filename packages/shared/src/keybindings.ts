@@ -61,7 +61,7 @@ export const DEFAULT_KEYBINDINGS: ReadonlyArray<KeybindingRule> = [
   // Fork (#840): the plain brackets too, the way browsers walk history.
   { key: "mod+[", command: "thread.previous" },
   { key: "mod+]", command: "thread.next" },
-  { key: "mod+shift+l", command: "thread.nextAttention", when: "!terminalFocus" },
+  { key: "mod+alt+n", command: "thread.nextAttention", when: "!terminalFocus" },
   { key: "mod+shift+c", command: "thread.copyReference", when: "!terminalFocus" },
   { key: "mod+shift+s", command: "thread.settle", when: "!terminalFocus" },
   { key: "mod+shift+p", command: "thread.pin", when: "!terminalFocus" },

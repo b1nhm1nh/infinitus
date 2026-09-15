@@ -172,7 +172,7 @@ was deleted`, before the forced remove) and `deleteBranch` (`git branch -D`
   — `captures.toggle` (`mod+alt+c`) and `captures.add` (`mod+alt+shift+c`),
   both `!terminalFocus`, in `STATIC_KEYBINDING_COMMANDS` and
   `DEFAULT_KEYBINDINGS` (#433); `accounts.open` the same way;
-  `thread.nextAttention` (`mod+shift+l`, `!terminalFocus`) in
+  `thread.nextAttention` (`mod+alt+n`, `!terminalFocus`; it was `mod+shift+l` until upstream's #11615 took that chord for `composer.previousWorktree` — the fork yields on a default-chord collision) in
   `THREAD_KEYBINDING_COMMANDS` (#270 C).
 - `apps/web/src/components/Sidebar.tsx` — `resolveNextAttentionThreadKey`
   (ranks the rendered list: approval, input, failed, held, unseen
