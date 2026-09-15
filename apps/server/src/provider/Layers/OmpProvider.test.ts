@@ -161,7 +161,7 @@ it.layer(NodeServices.layer)("checkOmpProviderStatus", (it) => {
         "google-antigravity/claude-sonnet-4-6",
       ]);
       expect(snapshot.models[0]?.name).toBe("Session default");
-      expect(snapshot.supportsTextGeneration).toBe(false);
+      expect(snapshot.supportsTextGeneration).toBeUndefined();
     }),
   );
 

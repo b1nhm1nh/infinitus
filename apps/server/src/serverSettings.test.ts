@@ -772,14 +772,13 @@ it.layer(NodeServices.layer)("server settings", (it) => {
     }).pipe(Effect.provide(makeServerSettingsLayer())),
   );
 
-  it.effect("never falls back to a provider whose text generation is a stub", () =>
+  it.effect("falls back to Oh My Pi when it is the first enabled text-generation provider", () =>
     Effect.gen(function* () {
       const serverConfig = yield* ServerConfig.ServerConfig;
       const fileSystem = yield* FileSystem.FileSystem;
       const serverSettings = yield* ServerSettingsModule.ServerSettingsService;
       // Only omp and opencode are enabled. omp comes first in the providers
-      // struct, but it has no text generation, so picking it would fail every
-      // title, commit message, branch name and PR body.
+      // struct and now generates text over `omp -p`, so the fallback lands on it.
       yield* fileSystem.writeFileString(
         serverConfig.settingsPath,
         JSON.stringify({
@@ -797,7 +796,7 @@ it.layer(NodeServices.layer)("server settings", (it) => {
 
       const settings = yield* serverSettings.getSettings;
 
-      assert.equal(settings.textGenerationModelSelection.instanceId, "opencode");
+      assert.equal(settings.textGenerationModelSelection.instanceId, "omp");
     }).pipe(Effect.provide(makeServerSettingsLayer())),
   );
 

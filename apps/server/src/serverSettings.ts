@@ -353,19 +353,11 @@ function resolveTextGenerationProvider(settings: ServerSettings): ServerSettings
     : fallbackTextGenerationProvider(settings);
 }
 
-// Drivers whose text generation is a stub that always fails. Falling back to
-// one makes every title, commit message, branch name and PR body fail instead
-// of quietly using another enabled provider.
-const TEXT_GENERATION_INCAPABLE_DRIVERS: ReadonlySet<string> = new Set(["omp"]);
-
 function fallbackTextGenerationProvider(settings: ServerSettings): ServerSettings {
   // Same precedence as isModelSelectionProviderEnabled: an explicit provider
   // instance wins over the legacy providers map, which decodes to defaults
   // (codex enabled) when the Providers UI has only written providerInstances.
   const fallbackEntry = Object.entries(settings.providers).find(([driver, provider]) => {
-    if (TEXT_GENERATION_INCAPABLE_DRIVERS.has(driver)) {
-      return false;
-    }
     const instance = settings.providerInstances[ProviderInstanceId.make(driver)];
     return instance === undefined ? provider.enabled : resolveProviderInstanceEnabled(instance);
   });

@@ -1316,12 +1316,8 @@ source's Codex thread>, fork: true, lastTurnId: <the turn>}`
   selected") and `PROVIDER_DISPLAY_NAMES.omp` ("Oh My Pi");
   `apps/server/src/provider/builtInDrivers.ts` — the driver in the built-in
   map; `apps/server/src/provider/providerStatusCache.ts` — its status entry;
-  `apps/server/src/serverSettings.ts` — the five opt-in sites, plus
-  `TEXT_GENERATION_INCAPABLE_DRIVERS`, which keeps
-  `fallbackTextGenerationProvider` from landing on a driver whose text
-  generation is a stub (omp has none: picking it would fail every title,
-  commit message, branch name and PR body instead of using another enabled
-  provider), with `serverSettings.test.ts` beside it;
+  `apps/server/src/serverSettings.ts` — the five opt-in sites, with
+  `serverSettings.test.ts` beside it;
   `apps/server/src/textGeneration/TextGeneration.ts` — `omp` in the
   provider union; `apps/server/scripts/acp-mock-agent.ts` — the
   `T3_ACP_OMP=1` profile the adapter tests drive.
@@ -1363,9 +1359,18 @@ source's Codex thread>, fork: true, lastTurnId: <the turn>}`
   rewrites to a delete or a move, and stamps a permission `kind` on bash
   alone, so there is nothing an auto-accept-edits branch could answer but the
   destructive rewrites that mode is meant to keep asking about.
-  `OmpTextGeneration.ts` is a stub that fails every operation — omp has no
-  headless text generation — and `withOmpTextGeneration` in `OmpProvider.ts`
-  stamps `supportsTextGeneration: false` on the snapshot, as Antigravity does.
+  `OmpTextGeneration.ts` generates titles, commit messages, branch names and
+  PR bodies over `omp -p` (`--no-tools --no-session --no-title --model`),
+  templating on OpenCode rather than Codex/Claude because omp has no schema
+  flag: structure rides in the shared prompt builders and
+  `extractJsonObject` pulls the JSON object out of free text. `omp -p`
+  writes `Working...\n` to stderr on a successful run, so a failing spawn
+  strips that spinner before using stderr as the error detail.
+  omp enumerates slash commands only inside an ACP session
+  (`acp-agent.ts` `#buildAvailableCommands`); its builtin set is ~85 and
+  TUI-heavy, and skills are filesystem-discovered, so the driver ships
+  `[COMPACT_SLASH_COMMAND]` like Grok and enumeration waits on an
+  upstream `--json` subcommand.
   `setup.canAuthenticate` is left off because omp signs in only through its
   own terminal UI, and the UI reads a missing value as "no button".
 - `apps/server/src/infinitus/Layers/InfinitusSlack.ts` (+

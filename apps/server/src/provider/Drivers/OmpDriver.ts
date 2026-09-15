@@ -85,7 +85,7 @@ export const OmpDriver: ProviderDriver<OmpSettings, OmpDriverEnv> = {
         ...(eventLoggers.native ? { nativeEventLogger: eventLoggers.native } : {}),
         instanceId,
       });
-      const textGeneration = yield* makeOmpTextGeneration;
+      const textGeneration = yield* makeOmpTextGeneration(effectiveConfig, processEnv);
 
       const checkProvider = checkOmpProviderStatus(effectiveConfig, processEnv).pipe(
         Effect.map(stampIdentity),

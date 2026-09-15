@@ -55,10 +55,6 @@ const OMP_BUILT_IN_MODELS: ReadonlyArray<ServerProviderModel> = [
   },
 ];
 
-function withOmpTextGeneration(draft: ServerProviderDraft): ServerProviderDraft {
-  return { ...draft, supportsTextGeneration: false };
-}
-
 export function buildInitialOmpProviderSnapshot(
   ompSettings: OmpSettings,
 ): Effect.Effect<ServerProviderDraft> {
@@ -67,38 +63,34 @@ export function buildInitialOmpProviderSnapshot(
     const models = ompModelsFromSettings(ompSettings.customModels);
 
     if (!ompSettings.enabled) {
-      return withOmpTextGeneration(
-        buildServerProvider({
-          presentation: OMP_PRESENTATION,
-          enabled: false,
-          checkedAt,
-          models,
-          probe: {
-            installed: false,
-            version: null,
-            status: "warning",
-            auth: { status: "unknown" },
-            message: `Oh My Pi is disabled in ${PRODUCT_NAME} settings.`,
-          },
-        }),
-      );
-    }
-
-    return withOmpTextGeneration(
-      buildServerProvider({
+      return buildServerProvider({
         presentation: OMP_PRESENTATION,
-        enabled: true,
+        enabled: false,
         checkedAt,
         models,
         probe: {
-          installed: true,
+          installed: false,
           version: null,
           status: "warning",
           auth: { status: "unknown" },
-          message: "Checking Oh My Pi CLI availability...",
+          message: `Oh My Pi is disabled in ${PRODUCT_NAME} settings.`,
         },
-      }),
-    );
+      });
+    }
+
+    return buildServerProvider({
+      presentation: OMP_PRESENTATION,
+      enabled: true,
+      checkedAt,
+      models,
+      probe: {
+        installed: true,
+        version: null,
+        status: "warning",
+        auth: { status: "unknown" },
+        message: "Checking Oh My Pi CLI availability...",
+      },
+    });
   });
 }
 
@@ -225,21 +217,19 @@ export const checkOmpProviderStatus = Effect.fn("checkOmpProviderStatus")(functi
   const fallbackModels = ompModelsFromSettings(ompSettings.customModels);
 
   if (!ompSettings.enabled) {
-    return withOmpTextGeneration(
-      buildServerProvider({
-        presentation: OMP_PRESENTATION,
-        enabled: false,
-        checkedAt,
-        models: fallbackModels,
-        probe: {
-          installed: false,
-          version: null,
-          status: "warning",
-          auth: { status: "unknown" },
-          message: `Oh My Pi is disabled in ${PRODUCT_NAME} settings.`,
-        },
-      }),
-    );
+    return buildServerProvider({
+      presentation: OMP_PRESENTATION,
+      enabled: false,
+      checkedAt,
+      models: fallbackModels,
+      probe: {
+        installed: false,
+        version: null,
+        status: "warning",
+        auth: { status: "unknown" },
+        message: `Oh My Pi is disabled in ${PRODUCT_NAME} settings.`,
+      },
+    });
   }
 
   const versionResult = yield* runOmpCliCommand(ompSettings, ["--version"], environment).pipe(
@@ -252,41 +242,37 @@ export const checkOmpProviderStatus = Effect.fn("checkOmpProviderStatus")(functi
     yield* Effect.logWarning("Oh My Pi CLI health check failed.", {
       errorTag: error._tag,
     });
-    return withOmpTextGeneration(
-      buildServerProvider({
-        presentation: OMP_PRESENTATION,
-        enabled: ompSettings.enabled,
-        checkedAt,
-        models: fallbackModels,
-        probe: {
-          installed: !isCommandMissingCause(error),
-          version: null,
-          status: "error",
-          auth: { status: "unknown" },
-          message: isCommandMissingCause(error)
-            ? "Oh My Pi CLI (`omp`) is not installed or not on PATH."
-            : "Failed to execute Oh My Pi CLI health check.",
-        },
-      }),
-    );
+    return buildServerProvider({
+      presentation: OMP_PRESENTATION,
+      enabled: ompSettings.enabled,
+      checkedAt,
+      models: fallbackModels,
+      probe: {
+        installed: !isCommandMissingCause(error),
+        version: null,
+        status: "error",
+        auth: { status: "unknown" },
+        message: isCommandMissingCause(error)
+          ? "Oh My Pi CLI (`omp`) is not installed or not on PATH."
+          : "Failed to execute Oh My Pi CLI health check.",
+      },
+    });
   }
 
   if (Option.isNone(versionResult.success)) {
-    return withOmpTextGeneration(
-      buildServerProvider({
-        presentation: OMP_PRESENTATION,
-        enabled: ompSettings.enabled,
-        checkedAt,
-        models: fallbackModels,
-        probe: {
-          installed: true,
-          version: null,
-          status: "error",
-          auth: { status: "unknown" },
-          message: "Oh My Pi CLI is installed but timed out while running `omp --version`.",
-        },
-      }),
-    );
+    return buildServerProvider({
+      presentation: OMP_PRESENTATION,
+      enabled: ompSettings.enabled,
+      checkedAt,
+      models: fallbackModels,
+      probe: {
+        installed: true,
+        version: null,
+        status: "error",
+        auth: { status: "unknown" },
+        message: "Oh My Pi CLI is installed but timed out while running `omp --version`.",
+      },
+    });
   }
 
   const versionOutput = versionResult.success.value;
@@ -297,21 +283,19 @@ export const checkOmpProviderStatus = Effect.fn("checkOmpProviderStatus")(functi
       stdoutLength: versionOutput.stdout.length,
       stderrLength: versionOutput.stderr.length,
     });
-    return withOmpTextGeneration(
-      buildServerProvider({
-        presentation: OMP_PRESENTATION,
-        enabled: ompSettings.enabled,
-        checkedAt,
-        models: fallbackModels,
-        probe: {
-          installed: true,
-          version,
-          status: "error",
-          auth: { status: "unknown" },
-          message: "Oh My Pi CLI is installed but failed to run.",
-        },
-      }),
-    );
+    return buildServerProvider({
+      presentation: OMP_PRESENTATION,
+      enabled: ompSettings.enabled,
+      checkedAt,
+      models: fallbackModels,
+      probe: {
+        installed: true,
+        version,
+        status: "error",
+        auth: { status: "unknown" },
+        message: "Oh My Pi CLI is installed but failed to run.",
+      },
+    });
   }
 
   const modelsResult = yield* runOmpCliCommand(ompSettings, ["models", "--json"], environment).pipe(
@@ -350,26 +334,7 @@ export const checkOmpProviderStatus = Effect.fn("checkOmpProviderStatus")(functi
       : fallbackModels;
 
   if (auth.status === "unauthenticated") {
-    return withOmpTextGeneration(
-      buildServerProvider({
-        presentation: OMP_PRESENTATION,
-        enabled: ompSettings.enabled,
-        checkedAt,
-        models,
-        slashCommands: [COMPACT_SLASH_COMMAND],
-        probe: {
-          installed: true,
-          version,
-          status: "warning",
-          auth,
-          message: OMP_UNAUTHENTICATED_MESSAGE,
-        },
-      }),
-    );
-  }
-
-  return withOmpTextGeneration(
-    buildServerProvider({
+    return buildServerProvider({
       presentation: OMP_PRESENTATION,
       enabled: ompSettings.enabled,
       checkedAt,
@@ -378,11 +343,26 @@ export const checkOmpProviderStatus = Effect.fn("checkOmpProviderStatus")(functi
       probe: {
         installed: true,
         version,
-        status: "ready",
+        status: "warning",
         auth,
+        message: OMP_UNAUTHENTICATED_MESSAGE,
       },
-    }),
-  );
+    });
+  }
+
+  return buildServerProvider({
+    presentation: OMP_PRESENTATION,
+    enabled: ompSettings.enabled,
+    checkedAt,
+    models,
+    slashCommands: [COMPACT_SLASH_COMMAND],
+    probe: {
+      installed: true,
+      version,
+      status: "ready",
+      auth,
+    },
+  });
 });
 
 export const enrichOmpSnapshot = (input: {
