@@ -781,6 +781,7 @@ it.layer(NodeServices.layer)("server settings", (it) => {
       // struct and now generates text over `omp -p`, so the fallback lands on it.
       yield* fileSystem.writeFileString(
         serverConfig.settingsPath,
+        // @effect-diagnostics-next-line preferSchemaOverJson:off
         JSON.stringify({
           providers: {
             codex: { enabled: false },
