@@ -901,7 +901,8 @@ was deleted`, before the forced remove) and `deleteBranch` (`git branch -D`
 - Upstream workflows that deploy or publish (Release, Deploy T3 Connect
   relay, Forward to Cursor hygiene, Mobile EAS Preview/Production, Publish
   AUR, Issue Labels, Desktop macOS Preview, Web Preview, Mobile Showcase
-  Screenshots, Thread Transfer Report) are disabled in the repository's
+  Screenshots, Thread Transfer Report, Desktop macOS Preview Publish — new
+  with the 0310cbf9 sync, `pull_request_target` on close/unlabel) are disabled in the repository's
   Actions settings, not deleted, so merges stay clean.
 
 ## Fork-only files
