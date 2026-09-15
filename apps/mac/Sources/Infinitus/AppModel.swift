@@ -234,12 +234,6 @@ final class AppModel: ObservableObject {
     // The bundle on disk was rebuilt since this instance launched (the
     // dev loop, or a manual make-app.sh) — surfaced as "restart to update".
     @Published var appUpdatePending = false
-    /// A newer Infinitus release than this build (About → Updates does
-    /// the check; the popup chip just points there).
-    @Published var appUpdateVersion: String?
-    /// The one BrewUpdater instance the About pane's button and the
-    /// phone's `POST /app/update` route both drive; set by InfinitusApp.
-    var brewUpdater: BrewUpdater?
     private let launchExecutableDate = AppModel.executableDate()
     private var swapdSupervisor: EngineSupervisor?
     private var refreshTask: Task<Void, Never>?
@@ -386,9 +380,10 @@ final class AppModel: ObservableObject {
     }()
 
     /// OAuth add / re-login for an engine that signs accounts in through
-    /// a browser (the proxy): the same in-app sign-in chooser as cswap
-    /// (system sheet or per-account private window — never the user's
-    /// default browser), polling the engine until the credential lands.
+    /// a browser (the proxy): the same native sign-in flow as swapd
+    /// (`TokenFlow`: the system sheet, or the default browser where the
+    /// sheet cannot present; the desktop's `signin-begin` path runs it
+    /// headless), polling the engine until the credential lands.
     func addOAuthAccount(engineID: String, provider: Provider, relogin: Account? = nil,
                          headless: Bool = false) {
         guard let engine = registry.engine(id: engineID),
@@ -459,6 +454,10 @@ final class AppModel: ObservableObject {
     // icon, so it no longer needs the popup to be reachable. Off, the app
     // runs headless — the socket, the mirror and the pinned window stay.
     @Published var menuBarIconShown: Bool { didSet { defaults.set(menuBarIconShown, forKey: "menu_bar_enabled") } }
+    // Off by default: the Dock icon only ever appeared while Settings was
+    // open, and a menu bar app in the Dock is what most asked to be rid of.
+    // On, Settings takes a Dock icon and a Cmd+Tab entry as it did before.
+    @Published var dockIconShown: Bool { didSet { defaults.set(dockIconShown, forKey: "dock_icon_enabled") } }
     // Pin holds the popover open (click-outside stops closing it).
     // Persisted by request — a pinned popup stays pinned across relaunches.
     @Published var popoverPinned: Bool { didSet { defaults.set(popoverPinned, forKey: "popover_pinned") } }
@@ -781,6 +780,7 @@ final class AppModel: ObservableObject {
         machineNameOverride = defaults.string(forKey: MachineName.overrideKey) ?? ""
         menuBarThemed = defaults.object(forKey: "menubar_themed") as? Bool ?? true
         menuBarIconShown = defaults.object(forKey: "menu_bar_enabled") as? Bool ?? true
+        dockIconShown = defaults.object(forKey: "dock_icon_enabled") as? Bool ?? false
         menuBarEffects = defaults.object(forKey: "menubar_effects") as? Bool ?? true
         if playground {
             // Isolation is the contract: no demo script, no data at all
@@ -843,6 +843,7 @@ final class AppModel: ObservableObject {
 
     /// App-side cache of our own subprocess output (never an engine
     /// internal file).
+    private var snapshotCacheWrite = WriteIfChanged()
     static let snapshotCacheURL: URL = {
         return AppSupport.root().appendingPathComponent("snapshot-cache.json")
     }()
@@ -886,6 +887,11 @@ final class AppModel: ObservableObject {
            let engine = Self.enginePrefs[key] {
             let changed = try setEngineEnabled(engine, on: on)
             return (PrefCatalog.pref(entry, in: defaults), changed)
+        }
+        if key == "mock_mode", case .bool(let on) = value {
+            guard mockMode != on else { return (PrefCatalog.pref(entry, in: defaults), false) }
+            mockMode = on   // didSet stores it and relaunches
+            return (PrefCatalog.pref(entry, in: defaults), true)
         }
         let pref = try PrefCatalog.write(value, key: key, to: defaults)
         reloadPrefs()
@@ -963,6 +969,7 @@ final class AppModel: ObservableObject {
         set(\.machineNameOverride, defaults.string(forKey: MachineName.overrideKey) ?? "")
         set(\.menuBarThemed, defaults.object(forKey: "menubar_themed") as? Bool ?? true)
         set(\.menuBarIconShown, defaults.object(forKey: "menu_bar_enabled") as? Bool ?? true)
+        set(\.dockIconShown, defaults.object(forKey: "dock_icon_enabled") as? Bool ?? false)
         set(\.menuBarEffects, defaults.object(forKey: "menubar_effects") as? Bool ?? true)
         set(\.forkTunnelEnabled, defaults.object(forKey: "fork_tunnel_enabled") as? Bool ?? false)
         set(\.forkServerPort, defaults.object(forKey: "fork_server_port") as? Int ?? ForkTunnelStatus.defaultPort)
@@ -1217,25 +1224,6 @@ final class AppModel: ObservableObject {
                 try? await Task.sleep(nanoseconds: UInt64(seconds) * 1_000_000_000)
             }
         }
-    }
-
-    /// `POST /app/update` (#121): the phone's own trigger for this Mac's
-    /// update, reusing the same BrewUpdater the About pane's button
-    /// drives so the two never run two upgrades at once.
-    private func triggerAppUpdate() -> AppUpdate.Reply {
-        guard BrewUpdater.channel != .nested else {
-            return AppUpdate.Reply(outcome: "unavailable", detail: "updates arrive with Infinitus desktop")
-        }
-        guard BrewUpdater.channel != .source else {
-            return AppUpdate.Reply(outcome: "unavailable",
-                                   detail: "this Mac runs a source build — rebuild from the repo")
-        }
-        guard appUpdateVersion != nil else {
-            return AppUpdate.Reply(outcome: "upToDate", detail: nil)
-        }
-        brewUpdater?.upgrade()
-        return AppUpdate.Reply(outcome: "started",
-                               detail: "brew is upgrading Infinitus; the Mac relaunches when it's done")
     }
 
     /// Every phone-injected input is logged, per #17 — success or not.
@@ -1687,7 +1675,16 @@ final class AppModel: ObservableObject {
     /// off the PRIMARY Claude fleet exactly as they did when swapd was
     /// the only engine. An engine that fails keeps its last good rows
     /// (the rumps menubar's _worker policy) and records its error.
+    /// One pass at a time (#1310): the timer, a control verb and the
+    /// revival probe all land here, and a request made mid-pass runs once
+    /// more after it instead of alongside it.
     func refreshSnapshot() async {
+        await refreshFlight.run { [weak self] in await self?.refreshSnapshotPass() }
+    }
+
+    private let refreshFlight = SingleFlight()
+
+    private func refreshSnapshotPass() async {
         let engines = registry.engines
         guard !engines.isEmpty else { return }
         var results: [(id: String, fleets: [EngineFleet]?, error: Error?)] = []
@@ -1796,7 +1793,11 @@ final class AppModel: ObservableObject {
         }
         if !isPlayground {
             let cache = fleets.compactMap(\.lastFleet)
-            if let data = try? JSONEncoder().encode(cache) {
+            // Sorted keys so two passes over the same state are the same
+            // bytes, and the write is skipped when they are (#1310).
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = .sortedKeys
+            if let data = try? encoder.encode(cache), snapshotCacheWrite.take(data) {
                 try? FileManager.default.createDirectory(
                     at: Self.snapshotCacheURL.deletingLastPathComponent(),
                     withIntermediateDirectories: true)
