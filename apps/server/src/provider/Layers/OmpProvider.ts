@@ -12,6 +12,7 @@ import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Result from "effect/Result";
+import * as Schema from "effect/Schema";
 import { HttpClient } from "effect/unstable/http";
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 import { createModelCapabilities } from "@t3tools/shared/model";
@@ -31,7 +32,9 @@ import {
   enrichProviderSnapshotWithVersionAdvisory,
   type ProviderMaintenanceCapabilities,
 } from "../providerMaintenance.ts";
+import { makeUnavailableUsageLimits } from "../providerUsageLimits.ts";
 import { OMP_DEFAULT_MODEL_SLUG, resolveOmpAcpBaseModelId } from "../acp/OmpAcpSupport.ts";
+import { ompCapacityToUsageLimits } from "./ompUsage.logic.ts";
 
 const OMP_PRESENTATION = {
   displayName: "Oh My Pi",
@@ -44,6 +47,8 @@ const EMPTY_CAPABILITIES: ModelCapabilities = createModelCapabilities({
 });
 
 const VERSION_PROBE_TIMEOUT_MS = 4_000;
+// `omp usage` hits provider quota endpoints; larger than the local `--version` probe.
+const USAGE_PROBE_TIMEOUT_MS = 15_000;
 const OMP_UNAUTHENTICATED_MESSAGE = "Run `omp` once to sign in to a provider.";
 
 const OMP_BUILT_IN_MODELS: ReadonlyArray<ServerProviderModel> = [
@@ -190,6 +195,15 @@ export function parseOmpModelsCliOutput(output: string): OmpModelsCliOutput {
   }
 
   return { authenticated: models.length > 0, models };
+}
+
+const decodeUnknownJson = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Unknown));
+
+function parseOmpUsageJson(output: string): unknown | undefined {
+  const trimmed = output.trim();
+  if (trimmed.length === 0) return undefined;
+  const decoded = decodeUnknownJson(trimmed);
+  return Option.isSome(decoded) ? decoded.value : undefined;
 }
 
 const runOmpCliCommand = (
@@ -350,6 +364,36 @@ export const checkOmpProviderStatus = Effect.fn("checkOmpProviderStatus")(functi
     });
   }
 
+  const usageResult = yield* runOmpCliCommand(
+    ompSettings,
+    ["usage", "--json", "--redact"],
+    environment,
+  ).pipe(Effect.timeoutOption(USAGE_PROBE_TIMEOUT_MS), Effect.result);
+
+  const usageOutput =
+    Result.isSuccess(usageResult) &&
+    Option.isSome(usageResult.success) &&
+    usageResult.success.value.code === 0
+      ? usageResult.success.value
+      : undefined;
+
+  const parsedUsage = usageOutput !== undefined ? parseOmpUsageJson(usageOutput.stdout) : undefined;
+  if (parsedUsage === undefined) {
+    const errorTag = Result.isFailure(usageResult)
+      ? usageResult.failure._tag
+      : Option.isNone(usageResult.success)
+        ? "Timeout"
+        : usageResult.success.value.code !== 0
+          ? `ExitCode${usageResult.success.value.code}`
+          : "UnparseableJson";
+    yield* Effect.logWarning("Oh My Pi CLI usage probe failed or timed out.", { errorTag });
+  }
+
+  const usageLimits =
+    parsedUsage === undefined
+      ? makeUnavailableUsageLimits({ checkedAt, reason: "probeFailed" })
+      : ompCapacityToUsageLimits(parsedUsage, checkedAt);
+
   return buildServerProvider({
     presentation: OMP_PRESENTATION,
     enabled: ompSettings.enabled,
@@ -361,6 +405,7 @@ export const checkOmpProviderStatus = Effect.fn("checkOmpProviderStatus")(functi
       version,
       status: "ready",
       auth,
+      usageLimits,
     },
   });
 });

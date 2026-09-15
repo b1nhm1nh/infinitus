@@ -1341,8 +1341,9 @@ source's Codex thread>, fork: true, lastTurnId: <the turn>}`
 
 - `apps/server/src/provider/Drivers/OmpDriver.ts`,
   `Layers/OmpProvider.ts`, `Layers/OmpAdapter.ts`, `Services/OmpAdapter.ts`,
-  `acp/OmpAcpSupport.ts` and `textGeneration/OmpTextGeneration.ts` (each with
-  its test) — the Oh My Pi driver (registration points above). It templates on
+  `acp/OmpAcpSupport.ts`, `Layers/ompUsage.logic.ts` and
+  `textGeneration/OmpTextGeneration.ts` (each with its test) — the Oh My Pi
+  driver (registration points above). It templates on
   Cursor, being another ACP tenant, and differs where `omp` does:
   `buildOmpAcpSpawnInput` puts the launch flags before the `acp` subcommand
   (omp hoists the subcommand and forwards leading flags) and passes `--yolo`
@@ -1366,6 +1367,9 @@ source's Codex thread>, fork: true, lastTurnId: <the turn>}`
   `extractJsonObject` pulls the JSON object out of free text. `omp -p`
   writes `Working...\n` to stderr on a successful run, so a failing spawn
   strips that spinner before using stderr as the error detail.
+  Quota comes from `omp usage --json --redact`'s `capacity` fold
+  (`ompUsage.logic.ts`), chosen over `limits[]` because it is pre-aggregated
+  across accounts and carries no email; `resetsAt` is absent as a consequence.
   omp enumerates slash commands only inside an ACP session
   (`acp-agent.ts` `#buildAvailableCommands`); its builtin set is ~85 and
   TUI-heavy, and skills are filesystem-discovered, so the driver ships

@@ -34,6 +34,40 @@ const AUTHENTICATED_MODELS_JSON = JSON.stringify({
   ],
 });
 
+const AUTHENTICATED_USAGE_JSON = JSON.stringify({
+  generatedAt: 1_726_400_000_000,
+  reports: [],
+  accountsWithoutUsage: [],
+  disabledCredentials: [],
+  capacity: {
+    "google-antigravity": [
+      {
+        window: "5h",
+        durationMs: 18_000_000,
+        accounts: 1,
+        usedAccounts: 0,
+        remainingAccounts: 1,
+      },
+      {
+        window: "7d",
+        durationMs: 604_800_000,
+        accounts: 1,
+        usedAccounts: 0.0355,
+        remainingAccounts: 0.9645,
+      },
+    ],
+    zai: [
+      {
+        window: "5h",
+        durationMs: 18_000_000,
+        accounts: 2,
+        usedAccounts: 1,
+        remainingAccounts: 1,
+      },
+    ],
+  },
+});
+
 describe("parseOmpModelsCliOutput", () => {
   it("reads model slugs, names, and thinking descriptors from JSON", () => {
     const parsed = parseOmpModelsCliOutput(AUTHENTICATED_MODELS_JSON);
@@ -100,6 +134,8 @@ it.layer(NodeServices.layer)("checkOmpProviderStatus", (it) => {
   const writeFakeOmpCli = (input: {
     readonly modelsOutput: string;
     readonly modelsExitCode?: number;
+    readonly usageOutput?: string;
+    readonly usageExitCode?: number;
   }) =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
@@ -121,6 +157,11 @@ it.layer(NodeServices.layer)("checkOmpProviderStatus", (it) => {
           // @effect-diagnostics-next-line preferSchemaOverJson:off
           `  process.stdout.write(${JSON.stringify(input.modelsOutput)});`,
           `  process.exit(${input.modelsExitCode ?? 0});`,
+          "}",
+          'if (process.argv[2] === "usage") {',
+          // @effect-diagnostics-next-line preferSchemaOverJson:off
+          `  process.stdout.write(${JSON.stringify(input.usageOutput ?? AUTHENTICATED_USAGE_JSON)});`,
+          `  process.exit(${input.usageExitCode ?? 0});`,
           "}",
           "process.exit(1);",
           "",
@@ -165,6 +206,81 @@ it.layer(NodeServices.layer)("checkOmpProviderStatus", (it) => {
     }),
   );
 
+  it.effect("surfaces usage limits from omp usage --json --redact", () =>
+    Effect.gen(function* () {
+      const snapshot = yield* Effect.scoped(
+        Effect.gen(function* () {
+          const { path: ompPath } = yield* writeFakeOmpCli({
+            modelsOutput: AUTHENTICATED_MODELS_JSON,
+            usageOutput: AUTHENTICATED_USAGE_JSON,
+          });
+          return yield* checkOmpProviderStatus(
+            decodeOmpSettings({ enabled: true, binaryPath: ompPath }),
+          );
+        }),
+      );
+
+      expect(snapshot.status).toBe("ready");
+      expect(snapshot.usageLimits?.unavailable).toBeUndefined();
+      expect(snapshot.usageLimits?.windows.map((window) => window.id).sort()).toEqual([
+        "google-antigravity:5h",
+        "google-antigravity:7d",
+        "zai:5h",
+      ]);
+      expect(
+        snapshot.usageLimits?.windows.find((window) => window.id === "google-antigravity:5h"),
+      ).toEqual({
+        id: "google-antigravity:5h",
+        kind: "session",
+        label: "google-antigravity · Session",
+        usedPercent: 0,
+        windowDurationMins: 300,
+      });
+    }),
+  );
+
+  it.effect("reports probeFailed when omp usage fails", () =>
+    Effect.gen(function* () {
+      const snapshot = yield* Effect.scoped(
+        Effect.gen(function* () {
+          const { path: ompPath } = yield* writeFakeOmpCli({
+            modelsOutput: AUTHENTICATED_MODELS_JSON,
+            usageExitCode: 1,
+          });
+          return yield* checkOmpProviderStatus(
+            decodeOmpSettings({ enabled: true, binaryPath: ompPath }),
+          );
+        }),
+      );
+
+      expect(snapshot.status).toBe("ready");
+      expect(snapshot.usageLimits).toEqual({
+        checkedAt: snapshot.checkedAt,
+        windows: [],
+        unavailable: { reason: "probeFailed" },
+      });
+    }),
+  );
+
+  it.effect("reports probeFailed when omp usage returns unparseable JSON", () =>
+    Effect.gen(function* () {
+      const snapshot = yield* Effect.scoped(
+        Effect.gen(function* () {
+          const { path: ompPath } = yield* writeFakeOmpCli({
+            modelsOutput: AUTHENTICATED_MODELS_JSON,
+            usageOutput: "not-json",
+          });
+          return yield* checkOmpProviderStatus(
+            decodeOmpSettings({ enabled: true, binaryPath: ompPath }),
+          );
+        }),
+      );
+
+      expect(snapshot.status).toBe("ready");
+      expect(snapshot.usageLimits?.unavailable).toEqual({ reason: "probeFailed" });
+    }),
+  );
+
   it.effect("reports unauthenticated from empty models --json as a warning", () =>
     Effect.gen(function* () {
       const snapshot = yield* Effect.scoped(
@@ -185,12 +301,13 @@ it.layer(NodeServices.layer)("checkOmpProviderStatus", (it) => {
     }),
   );
 
-  it.effect("probes with --version and models only, never starting ACP", () =>
+  it.effect("probes with --version, models, and usage, never starting ACP", () =>
     Effect.gen(function* () {
       const invocations = yield* Effect.scoped(
         Effect.gen(function* () {
           const { path: ompPath, readArgv } = yield* writeFakeOmpCli({
             modelsOutput: AUTHENTICATED_MODELS_JSON,
+            usageOutput: AUTHENTICATED_USAGE_JSON,
           });
           yield* checkOmpProviderStatus(decodeOmpSettings({ enabled: true, binaryPath: ompPath }));
           return yield* readArgv;
@@ -201,9 +318,14 @@ it.layer(NodeServices.layer)("checkOmpProviderStatus", (it) => {
       // A health probe that spawned `omp acp` would hold an agent session
       // open for every refresh.
       expect(invocations.some((argv) => argv.split(" ").includes("acp"))).toBe(false);
-      expect(invocations.every((argv) => argv === "--version" || argv.startsWith("models"))).toBe(
-        true,
-      );
+      expect(invocations).toContain("--version");
+      expect(invocations.some((argv) => argv.startsWith("models"))).toBe(true);
+      expect(invocations).toContain("usage --json --redact");
+      expect(
+        invocations.every(
+          (argv) => argv === "--version" || argv.startsWith("models") || argv.startsWith("usage"),
+        ),
+      ).toBe(true);
     }),
   );
 });
