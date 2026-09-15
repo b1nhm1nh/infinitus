@@ -1331,6 +1331,12 @@ source's Codex thread>, fork: true, lastTurnId: <the turn>}`
   and `PATH` note, and `docs/user/permission-modes.md`'s provider
   differences (Oh My Pi never prompts for a plain edit, so
   **Auto-accept edits** reads as **Supervised** there).
+  Session import: `packages/contracts/src/agentSessions.ts` (`"omp"` on
+  `AgentSessionSource`) and `apps/server/src/project/AgentSessionScanner.ts`
+  (`discoverOmpTranscripts` plus the parse / retain / home dispatch sites).
+  The session id is in the filename; the home is `PI_CODING_AGENT_DIR` then
+  `~/.omp/agent` — `OmpSettings` has no home field, so this commit does not
+  add one.
 - Upstream workflows that deploy or publish (Release, Deploy T3 Connect
   relay, Forward to Cursor hygiene, Mobile EAS Preview/Production, Publish
   AUR, Issue Labels, Desktop macOS Preview, Web Preview, Mobile Showcase
@@ -1377,6 +1383,8 @@ source's Codex thread>, fork: true, lastTurnId: <the turn>}`
   upstream `--json` subcommand.
   `setup.canAuthenticate` is left off because omp signs in only through its
   own terminal UI, and the UI reads a missing value as "no button".
+  Session import reads `~/.omp/agent/sessions` (or `PI_CODING_AGENT_DIR`);
+  the session id comes from the filename.
 - `apps/server/src/infinitus/Layers/InfinitusSlack.ts` (+
   `infinitusSlack.logic.ts`, `Services/InfinitusSlackClient.ts`, tests) —
   the Slack bridge's reactor (#574, PR 2 of 4). `SlackClient` is the
