@@ -12577,7 +12577,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
       assertTrue(firstResult._tag === "Success");
       assert.deepEqual(
         dispatchedCommands.map((command) => command.type),
-        ["thread.create", "thread.meta.update", "thread.turn.start"],
+        ["thread.create", "thread.session.set", "thread.meta.update", "thread.turn.start"],
       );
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );

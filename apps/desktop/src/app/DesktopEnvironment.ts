@@ -27,7 +27,6 @@ import {
   isInfinitusNightlyDesktopVersion,
   isNightlyDesktopVersion,
 } from "../updates/updateChannels.ts";
-import { isNightlyDesktopVersion } from "../updates/updateChannels.ts";
 import type { OtlpProtocol } from "@t3tools/shared/observability";
 
 export interface MakeDesktopEnvironmentInput {
