@@ -194,10 +194,12 @@ describe("normalizeDesktopUpdateReleaseNotes", () => {
   });
 
   it("returns an empty result for an invalid payload", () => {
-    expect(normalizeDesktopUpdateReleaseNotes({ note: "- Invalid" }, "1.0.0", "infinitus")).toEqual({
-      releaseNotes: [],
-      omittedReleaseCount: 0,
-    });
+    expect(normalizeDesktopUpdateReleaseNotes({ note: "- Invalid" }, "1.0.0", "infinitus")).toEqual(
+      {
+        releaseNotes: [],
+        omittedReleaseCount: 0,
+      },
+    );
   });
 
   it("does not throw on out-of-range numeric entities and keeps the literal", () => {
