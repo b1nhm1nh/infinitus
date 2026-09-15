@@ -601,6 +601,11 @@ function shouldRetainDecodedRecord(
  * there too. Callers check both the recorded spelling and its realpath so a
  * symlink into the worktrees directory cannot bypass the filter.
  */
+/** Realpath of a directory, falling back to its own spelling when it cannot be read. */
+function realPathOrSelf(fileSystem: FileSystem.FileSystem, target: string) {
+  return fileSystem.realPath(target).pipe(Effect.orElseSucceed(() => target));
+}
+
 function normalizeForWorktreeMatch(value: string, caseFold: boolean): string {
   const normalized = `${value.replaceAll("\\", "/")}/`;
   return caseFold ? normalized.toLowerCase() : normalized;
@@ -683,6 +688,12 @@ export const make = Effect.gen(function* () {
   const projectionSnapshotQuery = yield* ProjectionSnapshotQuery.ProjectionSnapshotQuery;
   const baseDir = path.resolve(serverConfig.baseDir);
   const worktreesDir = path.resolve(serverConfig.worktreesDir);
+  // Candidates are matched against these both as recorded and with links
+  // resolved, so the prefixes need a resolved spelling too: on macOS a home
+  // under `/var/...` realpaths to `/private/var/...`, and a prefix kept only
+  // in its `/var` spelling matches neither form of such a candidate.
+  const realBaseDir = yield* realPathOrSelf(fileSystem, baseDir);
+  const realWorktreesDir = yield* realPathOrSelf(fileSystem, worktreesDir);
   // Windows filesystems are case-insensitive, so path prefix checks there
   // must case fold.
   const foldWorktreeCase = (yield* HostProcessPlatform) === "win32";
@@ -712,7 +723,11 @@ export const make = Effect.gen(function* () {
     normalizeForWorktreeMatch(candidatePath, foldWorktreeCase).startsWith(
       normalizeForWorktreeMatch(baseDir, foldWorktreeCase),
     ) ||
-    isT3ManagedWorktree(candidatePath, worktreesDir, foldWorktreeCase);
+    normalizeForWorktreeMatch(candidatePath, foldWorktreeCase).startsWith(
+      normalizeForWorktreeMatch(realBaseDir, foldWorktreeCase),
+    ) ||
+    isT3ManagedWorktree(candidatePath, worktreesDir, foldWorktreeCase) ||
+    isT3ManagedWorktree(candidatePath, realWorktreesDir, foldWorktreeCase);
 
   const listDirectory = (directory: string) =>
     fileSystem.readDirectory(directory).pipe(Effect.orElseSucceed((): ReadonlyArray<string> => []));
