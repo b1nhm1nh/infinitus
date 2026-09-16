@@ -14,10 +14,12 @@
     },
     "scripts": {
       // Knip loads its preprocessor through a CLI option, not a source import;
-      // the fork's visual pass (harness, fixture, check) is run by hand and by
+      // native verification runs directly; the fork's visual pass (harness,
+      // fixture, check) is run by hand and by
       // .github/workflows/fork-visual-pass.yml (INFINITUS.md).
       "entry": [
         "knip-schemas.ts",
+        "mobile-native-client.ts",
         "fork-visual-pass.mjs",
         "fork-visual-fixture.mjs",
         "fork-visual-check.ts",
