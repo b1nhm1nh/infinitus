@@ -590,13 +590,8 @@ export function useSettingsRestore(onRestored?: () => void) {
       ...(settings.composerCollapseOnScroll !== DEFAULT_UNIFIED_SETTINGS.composerCollapseOnScroll
         ? ["Collapse composer on scroll"]
         : []),
-<<<<<<< HEAD
       ...(settings.composerSendMode !== DEFAULT_UNIFIED_SETTINGS.composerSendMode
         ? ["Sending while a turn runs"]
-=======
-      ...(settings.followUpBehavior !== DEFAULT_UNIFIED_SETTINGS.followUpBehavior
-        ? ["Follow-up behavior"]
->>>>>>> upstream/main
         : []),
       ...(settings.contextWindowMeterEnabled !== DEFAULT_UNIFIED_SETTINGS.contextWindowMeterEnabled
         ? ["Context window indicator"]
@@ -663,11 +658,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       settings.confirmThreadDelete,
       settings.confirmThreadUnpin,
       settings.composerCollapseOnScroll,
-<<<<<<< HEAD
       settings.composerSendMode,
-=======
-      settings.followUpBehavior,
->>>>>>> upstream/main
       settings.addProjectBaseDirectory,
       settings.defaultThreadEnvMode,
       settings.newWorktreesStartFromOrigin,
@@ -781,12 +772,8 @@ export function useSettingsRestore(onRestored?: () => void) {
       proactivePanelsEnabled: DEFAULT_UNIFIED_SETTINGS.proactivePanelsEnabled,
       showSkillsInSlashMenu: DEFAULT_UNIFIED_SETTINGS.showSkillsInSlashMenu,
       composerCollapseOnScroll: DEFAULT_UNIFIED_SETTINGS.composerCollapseOnScroll,
-<<<<<<< HEAD
       composerSendMode: DEFAULT_UNIFIED_SETTINGS.composerSendMode,
       desktopKeepAwake: DEFAULT_UNIFIED_SETTINGS.desktopKeepAwake,
-=======
-      followUpBehavior: DEFAULT_UNIFIED_SETTINGS.followUpBehavior,
->>>>>>> upstream/main
       contextWindowMeterEnabled: DEFAULT_UNIFIED_SETTINGS.contextWindowMeterEnabled,
       environmentIdentificationMode: DEFAULT_UNIFIED_SETTINGS.environmentIdentificationMode,
       glassOpacity: DEFAULT_UNIFIED_SETTINGS.glassOpacity,
@@ -2630,7 +2617,6 @@ export function GeneralSettingsPanel() {
         />
 
         <SettingsRow
-<<<<<<< HEAD
           {...searchableSetting("composer-send-mode")}
           description="What Enter does while a turn is running. Queued messages wait under the composer until the thread is idle; ⌘↩ submits with the other behavior."
           resetAction={
@@ -2639,25 +2625,12 @@ export function GeneralSettingsPanel() {
                 label="sending while a turn runs"
                 onClick={() =>
                   updateSettings({ composerSendMode: DEFAULT_UNIFIED_SETTINGS.composerSendMode })
-=======
-          {...searchableSetting("follow-up-behavior")}
-          description="Queue follow-ups while the agent runs or steer the current turn."
-          resetAction={
-            settings.followUpBehavior !== DEFAULT_UNIFIED_SETTINGS.followUpBehavior ? (
-              <SettingResetButton
-                label="follow-up behavior"
-                onClick={() =>
-                  updateSettings({
-                    followUpBehavior: DEFAULT_UNIFIED_SETTINGS.followUpBehavior,
-                  })
->>>>>>> upstream/main
                 }
               />
             ) : null
           }
           control={
             <Select
-<<<<<<< HEAD
               value={settings.composerSendMode}
               onValueChange={(value) => {
                 if (value === "queue" || value === "steer") {
@@ -2678,26 +2651,6 @@ export function GeneralSettingsPanel() {
                 </SelectItem>
                 <SelectItem hideIndicator value="steer">
                   {COMPOSER_SEND_MODE_LABELS.steer}
-=======
-              value={settings.followUpBehavior}
-              onValueChange={(value) => {
-                if (value === "queue" || value === "steer") {
-                  updateSettings({ followUpBehavior: value });
-                }
-              }}
-            >
-              <SelectTrigger size="sm" className="w-full sm:w-40" aria-label="Follow-up behavior">
-                <SelectValue>
-                  {settings.followUpBehavior === "queue" ? "Queue" : "Steer"}
-                </SelectValue>
-              </SelectTrigger>
-              <SelectPopup align="end" alignItemWithTrigger={false}>
-                <SelectItem hideIndicator value="queue">
-                  Queue
-                </SelectItem>
-                <SelectItem hideIndicator value="steer">
-                  Steer
->>>>>>> upstream/main
                 </SelectItem>
               </SelectPopup>
             </Select>

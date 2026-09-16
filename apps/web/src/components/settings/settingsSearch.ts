@@ -322,17 +322,10 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["composer rest resting scroll wheel conversation timeline shrink minimize"],
   },
   {
-<<<<<<< HEAD
     id: "composer-send-mode",
     title: "Sending while a turn runs",
     to: "/settings/general",
     searchTerms: ["queue steer send next step tool running turn enter composer follow-up"],
-=======
-    id: "follow-up-behavior",
-    title: "Follow-up behavior",
-    to: "/settings/general",
-    searchTerms: ["queue steer running turn send default behavior composer"],
->>>>>>> upstream/main
   },
   {
     id: "provider-update-checks",

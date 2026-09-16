@@ -7673,7 +7673,6 @@ export default function ChatView(props: ChatViewProps) {
       );
       return;
     }
-<<<<<<< HEAD
     // A send during a running turn waits in the queue. It leaves on the next
     // tool boundary, when the turn ends, or when the user clicks Steer. The
     // provider treats a mid-turn send as a steer of the active turn, so the
@@ -7682,19 +7681,14 @@ export default function ChatView(props: ChatViewProps) {
     // server's — `submissionIntent === "queue"` dispatches `thread.turn.queue`
     // below and the drain sends the row when the turn ends, while "steer"
     // sends into the running turn at once — so upstream's client-side queue
-    // never takes a message here; it would double the row.
-=======
->>>>>>> upstream/main
+    // never takes a message here; it would double the row. Upstream's
+    // `followUpBehavior` (#11964) is the fork's `composerSendMode` (#270 F).
     if (
       !queuedMessage &&
       !directAnnotation &&
       phase === "running" &&
       activeThreadKey &&
-<<<<<<< HEAD
       !isServerThread
-=======
-      settings.followUpBehavior === "queue"
->>>>>>> upstream/main
     ) {
       if (composerRef.current?.validateProviderInput(promptForSend) === false) {
         return;
@@ -8107,7 +8101,7 @@ export default function ChatView(props: ChatViewProps) {
     }
 
     let turnStartSucceeded = false;
-<<<<<<< HEAD
+    let backgroundDraftOpened = false;
     // The message's context records (upstream #11265) — or, for a server
     // from before inline context, their legacy text form — shared by the
     // queue (#969) and the start dispatches below.
@@ -8186,11 +8180,6 @@ export default function ChatView(props: ChatViewProps) {
           ctxSelectedModelSelection.options,
         );
       const buildBootstrap = (member: BestOfMember | null) =>
-=======
-    let backgroundDraftOpened = false;
-    if (failure === null && turnAttachmentsResult._tag === "Success") {
-      const bootstrap =
->>>>>>> upstream/main
         isLocalDraftThread || baseBranchForWorktree
           ? {
               ...(isLocalDraftThread
@@ -8241,85 +8230,42 @@ export default function ChatView(props: ChatViewProps) {
       if (backgroundThreadRef) {
         beginBackgroundDraftSubmissionByRef(backgroundThreadRef);
       }
-<<<<<<< HEAD
-      let startResult: AtomCommandResult<unknown, unknown> | null = null;
-      const startedThreadIds: ThreadId[] = [];
-      for (const start of starts) {
-        const bootstrap = buildBootstrap(start.member);
-        const result = await startThreadTurn({
-          environmentId,
-          input: {
-            threadId: start.threadId,
-            message: {
-              messageId: start.messageId,
-              role: "user",
-              text: outgoingMessageText,
-              attachments: turnAttachmentsResult.value,
-              ...messageContextFields(turnAttachmentsResult.value),
+      // Upstream (#12015): the fresh composer opens while the start is in
+      // flight, so a background send never waits on the server twice.
+      const startAll = (async () => {
+        let startResult: AtomCommandResult<unknown, unknown> | null = null;
+        const startedThreadIds: ThreadId[] = [];
+        for (const start of starts) {
+          const bootstrap = buildBootstrap(start.member);
+          const result = await startThreadTurn({
+            environmentId,
+            input: {
+              threadId: start.threadId,
+              message: {
+                messageId: start.messageId,
+                role: "user",
+                text: outgoingMessageText,
+                attachments: turnAttachmentsResult.value,
+                ...messageContextFields(turnAttachmentsResult.value),
+              },
+              modelSelection: start.member
+                ? memberModelSelection(start.member)
+                : ctxSelectedModelSelection,
+              ...(start.member ? {} : { titleSeed: title }),
+              runtimeMode,
+              interactionMode: sendInteractionMode,
+              ...(bootstrap ? { bootstrap } : {}),
+              createdAt: messageCreatedAt,
             },
-            modelSelection: start.member
-              ? memberModelSelection(start.member)
-              : ctxSelectedModelSelection,
-            ...(start.member ? {} : { titleSeed: title }),
-            runtimeMode,
-            interactionMode: sendInteractionMode,
-            ...(bootstrap ? { bootstrap } : {}),
-            createdAt: messageCreatedAt,
-          },
-        });
-        if (result._tag === "Failure") {
-          startResult = result;
-          break;
+          });
+          if (result._tag === "Failure") {
+            startResult = result;
+            break;
+          }
+          startedThreadIds.push(start.threadId);
         }
-        startedThreadIds.push(start.threadId);
-      }
-      if (startResult !== null && startedThreadIds.length === 0) {
-        if (backgroundThreadRef) {
-=======
-      const startPromise = startThreadTurn({
-        environmentId,
-        input: {
-          threadId: threadIdForSend,
-          message: {
-            messageId: messageIdForSend,
-            role: "user",
-            text: outgoingMessageText,
-            attachments: turnAttachmentsResult.value,
-            ...(() => {
-              const context = buildOutgoingMessageContext(
-                turnAttachmentsResult.value.map((attachment, index) =>
-                  "id" in attachment && attachment.id !== undefined
-                    ? attachment.id
-                    : composerAttachmentsSnapshot[index]!.id,
-                ),
-              );
-              if (context === undefined) return {};
-              // Read the capability at dispatch time: the upload and persistence
-              // awaits above can span a server reconnect that changes it. Servers
-              // from before inline context drop the records and forward the links
-              // as literal text, so their turns carry the payload the legacy way.
-              const supportsInlineMessageContext =
-                appAtomRegistry.get(environmentServerConfigsAtom).get(environmentId)?.environment
-                  .capabilities.inlineMessageContext === true;
-              if (!supportsInlineMessageContext) {
-                return {
-                  text: serializeLegacyContextMessage({
-                    text: outgoingMessageText,
-                    records: context.records,
-                  }),
-                };
-              }
-              return { context };
-            })(),
-          },
-          modelSelection: ctxSelectedModelSelection,
-          titleSeed: title,
-          runtimeMode,
-          interactionMode: sendInteractionMode,
-          ...(bootstrap ? { bootstrap } : {}),
-          createdAt: messageCreatedAt,
-        },
-      });
+        return { startResult, startedThreadIds };
+      })();
       if (backgroundThreadRef) {
         markPromotedDraftThreadByRef(backgroundThreadRef);
         try {
@@ -8334,7 +8280,6 @@ export default function ChatView(props: ChatViewProps) {
             ),
           );
         } catch (error) {
->>>>>>> upstream/main
           clearBackgroundDraftSubmissionByRef(backgroundThreadRef);
           toastManager.add(
             stackedThreadToast({
@@ -8345,8 +8290,8 @@ export default function ChatView(props: ChatViewProps) {
           );
         }
       }
-      const startResult = await startPromise;
-      if (startResult._tag === "Failure") {
+      const { startResult, startedThreadIds } = await startAll;
+      if (startResult !== null && startedThreadIds.length === 0) {
         failure = startResult;
       } else {
         turnStartSucceeded = true;

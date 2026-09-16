@@ -32,14 +32,11 @@ const CLIENT_PRESENTATION_LAYER = Layer.succeed(
 
 function pairingHttpLayer(
   calls: Array<{ readonly url: string; readonly init: RequestInit }>,
-<<<<<<< HEAD
   options?: {
     readonly failDescriptor?: boolean;
     readonly alternateHttpBaseUrls?: ReadonlyArray<string>;
+    readonly protocolVersion?: number;
   },
-=======
-  options?: { readonly failDescriptor?: boolean; readonly protocolVersion?: number },
->>>>>>> upstream/main
 ) {
   const fetchFn = ((input, init = {}) => {
     const url = String(input);
@@ -133,7 +130,6 @@ describe("connection onboarding", () => {
     }),
   );
 
-<<<<<<< HEAD
   it.effect(
     "keeps the server's other hosts from the pairing on, never the paired one (fork #663)",
     () =>
@@ -162,7 +158,8 @@ describe("connection onboarding", () => {
         });
         expect("lastGoodHttpBaseUrl" in registration.profile).toBe(false);
       }),
-=======
+  );
+
   it.effect("rejects an incompatible server without consuming the pairing credential", () =>
     Effect.gen(function* () {
       const calls: Array<{ readonly url: string; readonly init: RequestInit }> = [];
@@ -183,7 +180,6 @@ describe("connection onboarding", () => {
         "https://remote.example.test/.well-known/t3/environment",
       ]);
     }),
->>>>>>> upstream/main
   );
 
   it.effect("does not consume a pairing credential when descriptor discovery fails", () =>

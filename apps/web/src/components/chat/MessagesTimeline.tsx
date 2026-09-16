@@ -308,17 +308,14 @@ interface TimelineRowActivityState {
   /** Fork (#270 E2): the thread's provider records a fork point per turn. */
   supportsThreadFork: boolean;
   latestTurnId: TurnId | null;
-<<<<<<< HEAD
   /** Fork (#952): the completed turns' footers, drawn in place of the meta row's time. */
   turnFooters: TurnFooters;
-=======
   /**
    * A worktree setup whose script is still running after the agent took
    * over. The working header shows it as a chip with a popover; the stage
    * list itself has already left the timeline.
    */
   backgroundWorktreeSetup: WorktreeSetupSnapshot | null;
->>>>>>> upstream/main
 }
 
 const EMPTY_TURN_FOOTERS: TurnFooters = new Map();
@@ -1028,27 +1025,18 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       isRevertingCheckpoint,
       supportsThreadFork,
       latestTurnId: latestTurn?.turnId ?? null,
-<<<<<<< HEAD
       turnFooters,
-    }),
-    [
-=======
       backgroundWorktreeSetup,
     }),
     [
       backgroundWorktreeSetup,
->>>>>>> upstream/main
       isCompacting,
       isRevertingCheckpoint,
       isWorking,
       isPreparingWorktree,
-<<<<<<< HEAD
       supportsThreadFork,
       latestTurn?.turnId,
       turnFooters,
-=======
-      latestTurn?.turnId,
->>>>>>> upstream/main
     ],
   );
 

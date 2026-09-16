@@ -3,11 +3,8 @@ import { withRelayClientTracing } from "@t3tools/shared/relayTracing";
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
-<<<<<<< HEAD
 import * as Exit from "effect/Exit";
-=======
 import * as HttpClient from "effect/unstable/http/HttpClient";
->>>>>>> upstream/main
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
@@ -44,7 +41,6 @@ import type {
 import { ConnectionBlockedError, type ConnectionAttemptError } from "./model.ts";
 import * as ConnectionProfileStore from "./profileStore.ts";
 import {
-<<<<<<< HEAD
   bearerHostOrder,
   isPublicHost,
   learnedBearerProfile,
@@ -52,12 +48,11 @@ import {
   roamedWsBaseUrl,
   roamsPast,
 } from "./roaming.ts";
-=======
+import {
   appendOrchestrationProtocol,
   orchestrationProtocolCompatibilityError,
 } from "./compatibility.ts";
 import { fetchRemoteEnvironmentDescriptor } from "../environment/descriptor.ts";
->>>>>>> upstream/main
 
 export class ConnectionResolver extends Context.Service<
   ConnectionResolver,

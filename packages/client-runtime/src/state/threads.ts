@@ -469,13 +469,10 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
       // in the preserved history with no event left to remove it. The
       // epoch bump discards any older-page fetch racing this snapshot.
       yield* Ref.update(historyEpoch, (epoch) => epoch + 1);
-<<<<<<< HEAD
       yield* Ref.set(replay, null);
-=======
       // A parked response must not clear loadingOlder on a request started
       // from the replacement snapshot's cursor.
       yield* Ref.set(pendingOlderPage, null);
->>>>>>> upstream/main
       yield* SubscriptionRef.set(lastSequence, item.snapshot.snapshotSequence);
       yield* setThread(item.snapshot.thread, pageStateFromSnapshot(item.snapshot.page));
       return;

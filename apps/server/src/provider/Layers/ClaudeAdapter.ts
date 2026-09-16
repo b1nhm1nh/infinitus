@@ -6288,25 +6288,16 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
             detail: "Claude fork history did not preserve the retained turn boundaries.",
           });
         }
-<<<<<<< HEAD
-        // Native forks replace every UUID while preserving transcript order.
-        for (let index = 0; index < retainedBoundaries.length; index++) {
-          const messageIndex = messages.findIndex(
-            (message) => message.uuid === retainedBoundaries[index],
-          );
-          retainedBoundaries[index] = forkMessages[messageIndex]?.uuid ?? null;
-        }
-        // The same rewrite applies to the fork anchors; one that cannot be
-        // located in the fork is dropped rather than left pointing at a
-        // message the new session does not have.
-        retainedAnchors = retainedAnchors.flatMap((anchor) => {
-          const messageIndex = messages.findIndex((message) => message.uuid === anchor.at);
-          const forked = messageIndex < 0 ? undefined : forkMessages[messageIndex]?.uuid;
-          return forked === undefined ? [] : [{ ...anchor, at: forked }];
-        });
-=======
         retainedBoundaries.splice(0, retainedBoundaries.length, ...remappedBoundaries);
->>>>>>> upstream/main
+        // Fork (#270 E2): the anchors are remapped the same way, one at a
+        // time; one that cannot be located in the fork is dropped rather than
+        // left pointing at a message the new session does not have.
+        retainedAnchors = retainedAnchors.flatMap((anchor) => {
+          const forked = remapClaudeForkTurnBoundaries(messages, forkMessages, firstRemoved, [
+            anchor.at,
+          ])?.[0];
+          return forked == null ? [] : [{ ...anchor, at: forked }];
+        });
       }
       yield* stopSessionInternal(context, { emitExitEvent: false });
       yield* startSession({

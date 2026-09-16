@@ -320,32 +320,18 @@ const titleUpdated = (title: string, sequence = 2): OrchestrationThreadStreamIte
   },
 });
 
-<<<<<<< HEAD
 const activityAppended = (index: number, sequence: number): OrchestrationThreadStreamItem => ({
   kind: "event",
   event: {
     eventId: EventId.make(`event-activity-${index}`),
     sequence,
     occurredAt: "2026-04-01T01:00:00.000Z",
-=======
-const sessionSet = (
-  status: "ready" | "running",
-  turnId: string,
-  sequence: number,
-): OrchestrationThreadStreamItem => ({
-  kind: "event",
-  event: {
-    eventId: EventId.make(`event-session-${status}-${sequence}`),
-    sequence,
-    occurredAt: "2026-04-01T03:00:00.000Z",
->>>>>>> upstream/main
     commandId: null,
     causationEventId: null,
     correlationId: null,
     metadata: {},
     aggregateKind: "thread",
     aggregateId: THREAD_ID,
-<<<<<<< HEAD
     type: "thread.activity-appended",
     payload: {
       threadId: THREAD_ID,
@@ -357,7 +343,27 @@ const sessionSet = (
         payload: {},
         turnId: TurnId.make("turn-1"),
         createdAt: "2026-04-01T01:00:00.000Z",
-=======
+      },
+    },
+  },
+});
+
+const sessionSet = (
+  status: "ready" | "running",
+  turnId: string,
+  sequence: number,
+): OrchestrationThreadStreamItem => ({
+  kind: "event",
+  event: {
+    eventId: EventId.make(`event-session-${status}-${sequence}`),
+    sequence,
+    occurredAt: "2026-04-01T03:00:00.000Z",
+    commandId: null,
+    causationEventId: null,
+    correlationId: null,
+    metadata: {},
+    aggregateKind: "thread",
+    aggregateId: THREAD_ID,
     type: "thread.session-set",
     payload: {
       threadId: THREAD_ID,
@@ -369,7 +375,6 @@ const sessionSet = (
         activeTurnId: status === "running" ? TurnId.make(turnId) : null,
         lastError: null,
         updatedAt: "2026-04-01T03:00:00.000Z",
->>>>>>> upstream/main
       },
     },
   },
@@ -1059,7 +1064,6 @@ describe("EnvironmentThreads", () => {
     }),
   );
 
-<<<<<<< HEAD
   it.effect("writes a resume replay to the state once, when the completion marker arrives", () =>
     Effect.gen(function* () {
       // A resume can replay up to a thousand events in one burst. Each state
@@ -1092,7 +1096,8 @@ describe("EnvironmentThreads", () => {
       );
       expect(partial).toHaveLength(0);
     }),
-=======
+  );
+
   it.effect(
     "persists a turn that settles mid-batch when the next turn starts in the same batch",
     () =>
@@ -1123,6 +1128,5 @@ describe("EnvironmentThreads", () => {
         expect(saved?.thread.session?.status).toBe("ready");
         expect(saved?.snapshotSequence).toBe(CACHED_SNAPSHOT_SEQUENCE + 1);
       }),
->>>>>>> upstream/main
   );
 });

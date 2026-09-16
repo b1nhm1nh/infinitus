@@ -81,12 +81,9 @@ const makeDependencies = Effect.fn("TestConnectionResolver.makeDependencies")((o
   readonly authorizeDpop?: RemoteEnvironmentAuthorization.RemoteEnvironmentAuthorization["Service"]["authorizeDpop"];
   readonly primaryBearerToken?: string;
   readonly prepareSsh?: ClientCapabilities.SshEnvironmentGateway["Service"]["prepare"];
-<<<<<<< HEAD
   /** Fork (#663): every profile the broker writes back, in order. */
   readonly profilePuts?: Array<ConnectionProfile>;
-=======
   readonly descriptorProtocolVersion?: number | null | undefined;
->>>>>>> upstream/main
 }) => {
   const profiles = new Map(
     (options?.profiles ?? []).map((profile) => [profile.connectionId, profile]),
@@ -380,7 +377,9 @@ describe("ConnectionResolver", () => {
       );
 
       expect(prepared.httpBaseUrl).toBe(TUNNEL);
-      expect(prepared.socketUrl).toBe("wss://code.infinitus.run/ws?wsTicket=ticket");
+      expect(prepared.socketUrl).toBe(
+        `wss://code.infinitus.run/ws?wsTicket=ticket&orchestrationProtocol=${ORCHESTRATION_PROTOCOL_VERSION}`,
+      );
       const tried = yield* Ref.get(inputs);
       expect(tried.map((input) => [input.httpBaseUrl, input.descriptorTimeoutMs])).toEqual([
         [TUNNEL, undefined],

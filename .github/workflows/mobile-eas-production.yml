@@ -85,13 +85,8 @@ concurrency:
 
 jobs:
   production:
-<<<<<<< HEAD
-    name: EAS Production ${{ github.event_name == 'push' && 'auto' || inputs.mode }}
-    runs-on: ubuntu-24.04
-=======
     name: EAS ${{ inputs.profile || 'production' }} ${{ github.event_name == 'push' && 'auto' || inputs.mode }}
     runs-on: ubuntu-24.04
->>>>>>> upstream/main
     permissions:
       contents: read
     env:

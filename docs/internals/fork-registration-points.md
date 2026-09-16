@@ -180,7 +180,12 @@ pages under `docs/internals/` keep taking narratives out of these bullets.
   `proxyProvider.ts`), since the CLI adds the tool on first-party only.
 - `packages/contracts/src/settings.ts` — `ComposerSendMode` and
   `composerSendMode` (`queue` default, `steer`) on `ClientSettings` and its
-  patch (#270 F); `settings.test.ts` covers the default.
+  patch (#270 F); `settings.test.ts` covers the default. Upstream's
+  `followUpBehavior` (#11964, the same two literals driving its client-side
+  queue) is dropped at every sync — field, Settings › General row,
+  `settingsSearch.ts` item, test and `docs/user/composer.md` paragraphs —
+  since the fork's setting already decides it; its `thread.steerQueuedMessage`
+  keybinding (`mod+shift+enter`) stays, acting only on the client-side queue.
 - Queue vs steer (#270 F, #1318; the queue lives on the server since #806): `apps/web/src/composer-logic.ts` (`ComposerSubmissionIntent`, `composerSendModeForEnter`), `ChatComposer.tsx` (`submitComposer`), `ChatView.tsx` (`onSend`; upstream's client-side queue #11673 gated off on a server thread), `components/chat/useQueuedTurnActions.ts`, `ComposerSendQueue.tsx`, `composerSendQueue.logic.ts` (+ test), `hooks/useLegacyQueueMigration.ts`, `ComposerPrimaryActions.tsx` (`runningSendMode`), `SettingsPanels.tsx` + `settingsSearch.ts`; client-runtime `operations/commands.ts` + `state/threadCommands.ts`. Rules and traps: `docs/internals/turn-queue.md`.
 - `packages/contracts/src/ipc.ts` — `infinitus-nightly` in
   `DesktopUpdateChannel` / `DesktopUpdateChannelSchema` (#1042); the fork's
