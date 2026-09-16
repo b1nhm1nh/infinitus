@@ -25,8 +25,12 @@ these bullets.
 - `apps/web/src/hooks/useInfinitusEventToasts.ts`,
   `apps/web/src/hooks/infinitusEventToasts.logic.ts`,
   `apps/web/src/components/InfinitusEventToasts.tsx` — the host's new events
-  (an account switch, every account exhausted) as the app's toasts; nothing
-  from the first snapshot, deduped by the server's event id. Every toast has
+  (an account switch, every account exhausted, and the Mac's own `alert` /
+  `notice` announcements) as the app's toasts; nothing from the first
+  snapshot, deduped by the server's event id. An urgent one also rings and
+  raises a real `Notification` while the window is away, through the client's
+  `notificationMode` — this machine's only notifier for that news
+  (`docs/internals/notifications.md`). Every toast has
   one Open action to /accounts; nothing is sent to the Infinitus socket
   (the waiting-session toast left with the sessions sweep, #1041). Mounted
   once from `apps/web/src/routes/__root.tsx`
@@ -110,6 +114,7 @@ these bullets.
 - `apps/web/src/test/animationFrame.ts` — the `requestAnimationFrame` polyfill
   registered in `apps/web/vite.config.ts` test setup (an upstream test needs it
   under the fork's runner).
+- `packages/contracts/src/relayInfinitusAlert.ts`, `infra/relay/src/infinitusAlerts/` (`InfinitusAlertPublisher.ts`, `InfinitusAlertApi.ts`, tests) — the relay's thread-less account alert route (#1375): an environment-signed proof (`RELAY_INFINITUS_ALERT_TYP`, same registered claims as the activity proof, the alert in place of the state, the nonce in the DPoP replay table under `infinitus-alert:`) fanned out to every phone of every linked user with notifications on — iOS as an APNs notification job without `threadId`, Android as an FCM `alert` job whose `alert_id` is the proof's `jti`. Answers with the agent-activity publish errors so the server's relay client understands every status. Why it exists and what calls it: issue #1375.
 - `packages/contracts/src/productName.ts` — `PRODUCT_NAME`, the one constant
   every user-facing string routes through (#601 phase 2); contracts holds it
   because shared depends on contracts, and `packages/shared/src/productName.ts`
@@ -124,7 +129,13 @@ these bullets.
   (`productName.ts`, "Infinitus Connect", #1368 slice A) on every surface —
   web, mobile, server, `packages/*`, `docs/user` — and the web and desktop
   guard tests, `scripts/connect-name.guard.test.ts` (server, phone, packages,
-  relay) and the visual pass fail on a new literal.
+  relay) and the visual pass fail on a new literal. The same three guards
+  fail on a bare "T3" used as the product noun ("T3 Account", "Open T3",
+  "a T3 thread"; #1368 follow-up) — identifiers never match — with an
+  allowlist for the wordmark glyph, the relay's live column default and the
+  triage playbook that must stay byte-identical to upstream's file. The
+  lock-screen widgets say a literal "Infinitus": a widget body serializes
+  into the extension and cannot reach an imported constant.
 - `apps/mobile` — rule: screen copy, alerts, brand text, a11y labels,
   the auth device label and the `infinitus` variant's
   permission strings read `PRODUCT_NAME`; the `development`/`preview`/
@@ -246,7 +257,7 @@ these bullets.
   that file twice, in two formats. A sink that cannot write swallows it: a
   log file is never worth failing a turn over.
 - `apps/server/src/infinitus/Layers/InfinitusSignInLapse.ts` (+ `infinitusSignInLapse.logic.ts`, tests) — lapsed AWS / gcloud sign-ins read off the Claude driver's tool results (#1076): one `infinitus.signin.needed` row per hit and the Mac's `aws-login` / `gcloud-login` flow through `InfinitusService.command`. Rules and traps: `docs/internals/sign-in-lapse.md`.
-- `apps/server/src/infinitus/Layers/InfinitusAgentActivity.ts` (+ `infinitusAgentActivity.logic.ts`, tests) — the phone's lock-screen thread card, the server half (#1047 part 3): folds every live thread's `projectThreadAwareness` into the aggregate card and hands it to the Mac's `push` verb as `thread.activity`; `InfinitusAgentActivityLive` in `server.ts`. Rules and traps: `docs/internals/phone-thread-card.md`.
+- `apps/server/src/infinitus/Layers/InfinitusAlertRelay.ts` (+ `Services/InfinitusAlertRelay.ts`, test; `packages/contracts/src/infinitusAlert.ts`) — the server half of an account alert (#1375): `POST /api/infinitus/alert` on the desktop credential's operate scope, signed with the environment's relay link key for the relay's `infinitusAlert` route (`relayInfinitusAlert.ts`), deep link `/settings/accounts`. Unlinked answers 503 `InfinitusAlertRelayUnlinked` (the Mac keeps the notice local); a relay refusal is logged with its cause and answers 500. The link is read per call, as `AgentAwarenessRelay` reads it. It replaced the Mac-key thread-card fold (`InfinitusAgentActivity.ts`, #1047 part 3): the relay draws the card now.
 - `apps/desktop/src/infinitus/` — the shell's Infinitus side (#654 step 1):
   `InfinitusDesktopPrefs.ts` keeps `<stateDir>/infinitus-desktop.json`
   (`quitInfinitusWithApp`, default off; upstream's desktop-settings.json is
