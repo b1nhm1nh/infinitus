@@ -1,6 +1,8 @@
 import { expect, it } from "@effect/vitest";
 
 import { runServicePreflight } from "./servicePreflight.ts";
+import { PRODUCT_NAME } from "@t3tools/shared/productName";
+
 import { SERVICE_LAUNCHER_PROTOCOL } from "./serviceProtocol.ts";
 
 it.each([1, 2])("blocks legacy launcher protocol %i", (launcherProtocol) => {
@@ -13,8 +15,7 @@ it.each([1, 2])("blocks legacy launcher protocol %i", (launcherProtocol) => {
   ).toEqual({
     status: "blocked",
     version: "1.2.3",
-    reason:
-      "This release requires a newer T3 Code service launcher. Update it on the server machine.",
+    reason: `This release requires a newer ${PRODUCT_NAME} service launcher. Update it on the server machine.`,
   });
 });
 
