@@ -268,8 +268,9 @@ pages under `docs/internals/` keep taking narratives out of these bullets.
 - `apps/web/src/**` — every user-facing "T3 Code" (brand mark, first-run
   heading, copy, errors, labels, the boot-shell fallback) reads `PRODUCT_NAME`;
   `productName.guard.test.ts` fails on a new literal outside its allowlist (the
-  GNOME extension's shipped name). Comments, "T3 Connect" and the
-  `t3code/<version>` UA token stay (#601 slice A).
+  GNOME extension's shipped name), and on a "T3 Connect" since #1368: the
+  relay feature is `CONNECT_NAME` ("Infinitus Connect", user ruling
+  2026-09-16 — identifiers follow in #1368's later slices). Comments stay.
 - `apps/web/vite.config.ts` — `productNamePlugin` rewrites index.html's
   boot-shell title and splash labels, and `src/lib/bootError.ts`'s copy, to
   `PRODUCT_NAME` (that module is copied standalone by `bundledDev.test.ts`
@@ -309,6 +310,24 @@ pages under `docs/internals/` keep taking narratives out of these bullets.
   the artifact's package `description` say `DESKTOP_PRODUCT_NAME`, and
   `stageDesktopDmgBackground` re-letters the stable DMG artwork ("Drag T3 Code
   into Applications") for the `infinitus` channel before rasterizing (#601).
+- `infra/relay/src/db.ts`, `infra/relay/alchemy.run.ts`,
+  `.github/workflows/deploy-relay.yml` — the relay's Postgres is a Neon
+  project (`RelayNeonProject`, retained, `prod`; `RelayNeonBranch` on every
+  other stage) in place of upstream's PlanetScale database, branch and
+  runtime role (#1322: PlanetScale's cheapest cluster needs a card on file).
+  Same shape, Neon's owner role, Hyperdrive on the project's direct origin.
+  The workflow feeds `NEON_API_KEY` (repository secret) and `NEON_ORG_ID`
+  (repository variable). The PlanetScale provider and env are gone: the
+  deploy of #1366 dropped the two rows the first deploys had left `creating`
+  in the state store (Alchemy dies on a persisted row whose provider is not
+  registered, which is why they stayed for that one deploy).
+- `infra/relay/scripts/deploy.ts` — the `AlchemyContext` the deploy runs
+  under carries `updateStateStore: options.yes` beside `adopt` (#1322).
+  Upstream forwards only `adopt`, so on a Cloudflare account with no Alchemy
+  state store yet (ours; upstream's has had one for months) the CI deploy
+  died at `Cloudflare State store not found … or pass --yes` although the
+  workflow passes `--yes`. Alchemy's own `deploy --yes` sets the same field,
+  and with it the first deploy bootstraps the store itself.
 - `scripts/build-cli-archive.ts` — one call before the stage is copied:
   `applyWebBrandAssets(resolveWebAssetBrandForPackageVersion(version),
 "apps/server/dist/client")`, so a runtime unpacked from the archive serves
@@ -524,8 +543,8 @@ pages under `docs/internals/` keep taking narratives out of these bullets.
 - `docs/user/mobile-notifications.md` — the "Alerts from an Infinitus Mac"
   section appended at the end (#1178): Settings › Infinitus › Devices, the
   push key and the registered phones, and the lock-screen thread card with
-  its phone Settings rows (#1265). Upstream's T3 Connect text above it is
-  untouched.
+  its phone Settings rows (#1265). Upstream's text above it says Infinitus
+  Connect (#1368) and is otherwise untouched.
 - **The project file is `infinitus.json`** (#823 layer 1): `packages/contracts/src/t3ProjectFile.ts` (`T3_PROJECT_FILE_NAME`, `LEGACY_T3_PROJECT_FILE_NAME`, `T3_PROJECT_FILE_NAMES`, `T3_PROJECT_FILE_SCHEMA_URL`), the four read sites (`T3ProjectFileLoader.ts`, `useT3ProjectFileScripts.ts`, `t3ProjectFileDefaults.ts`, `new-task-flow-provider.tsx`), the copy, `scripts/build-project-file-schema.ts` → `apps/mac/site/public/schema/infinitus.json`, the repository's own `infinitus.json`. Rules and traps: `docs/internals/project-file.md`.
 - `.github/workflows/ci.yml` — `runs-on` swapped from Blacksmith runners to
   GitHub-hosted ones, timeouts widened, `workflow_dispatch:` added so the
@@ -535,9 +554,15 @@ pages under `docs/internals/` keep taking narratives out of these bullets.
   workflows, pull requests — write), since the default token cannot push a
   branch that touches `.github/workflows` (#658); without it such a sync
   is done by hand.
-- Upstream workflows that deploy or publish (Release, Deploy T3 Connect
-  relay, Forward to Cursor hygiene, Mobile EAS Preview/Production, Publish
-  AUR, Issue Labels, Desktop macOS Preview, Web Preview, Mobile Showcase
-  Screenshots, Thread Transfer Report, Desktop macOS Preview Publish — new
-  with the 0310cbf9 sync, `pull_request_target` on close/unlabel) are disabled in the repository's
-  Actions settings, not deleted, so merges stay clean.
+- Upstream workflows that deploy or publish (Release, Forward to Cursor
+  hygiene, Mobile EAS Preview/Production, Publish AUR, Issue Labels, Desktop
+  macOS Preview, Web Preview, Mobile Showcase Screenshots, Thread Transfer
+  Report, Desktop macOS Preview Publish — new with the 0310cbf9 sync,
+  `pull_request_target` on close/unlabel) are disabled in the repository's
+  Actions settings, not deleted, so merges stay clean. Upstream's Deploy T3
+  Connect relay (`deploy-relay.yml`) is the exception since #1322
+  (2026-09-16): enabled unchanged, it deploys `infra/relay` as the
+  Infinitus relay (`relay.infinitus.run`, the `production` environment's
+  vars and secrets) on every push to `main`, and
+  `infinitus-release.yml`'s `connect` job reads that environment so builds
+  carry the relay's Clerk config.

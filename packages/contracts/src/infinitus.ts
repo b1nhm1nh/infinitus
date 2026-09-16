@@ -515,8 +515,7 @@ export type InfinitusTeamRequest = typeof InfinitusTeamRequest.Type;
 /** The `team-status` reply: the team this Mac is in, or `null` when there is
     none. `remote` is masked by the Mac. `shares` maps a kind (stats, now,
     threads, transcripts, crashes, fleet) to its audience (off, leaders, team);
-    `exclusions` are project slugs kept private. `lockEnabled` gates minting a
-    code and approving a member on the Mac. */
+    `exclusions` are project slugs kept private. */
 export const InfinitusTeamSnapshot = Schema.Struct({
   id: Schema.String,
   name: Schema.String,
@@ -529,7 +528,6 @@ export const InfinitusTeamSnapshot = Schema.Struct({
   policy: Schema.optionalKey(Schema.NullOr(Schema.Struct({ requests: Schema.String }))),
   shares: Schema.optionalKey(Schema.Record(Schema.String, Schema.String)),
   exclusions: Schema.optionalKey(Schema.Array(Schema.String)),
-  lockEnabled: Schema.optionalKey(Schema.Boolean),
   lastFetch: Schema.optionalKey(Schema.NullOr(Schema.Number)),
   lastPublish: Schema.optionalKey(Schema.NullOr(Schema.Number)),
   lastError: Schema.optionalKey(Schema.NullOr(Schema.String)),
@@ -897,12 +895,16 @@ export type InfinitusSecretResult = typeof InfinitusSecretResult.Type;
 
 /** Why a secret call never reached the socket: the manifest has not been
     read, the verb takes no secret, an argument the verb does not name (or one
-    it needs is missing), or this session asked too often. */
+    it needs is missing), this session asked too often, or the session's scopes
+    do not reach the verb (`scope`: a standard client — a phone, a `t3 pair`
+    browser — may feed a sign-in code or callback, or a team invite code;
+    every other secret verb needs `access:write`). */
 export const InfinitusSecretRefusal = Schema.Literals([
   "no_manifest",
   "no_secret",
   "bad_args",
   "too_many_attempts",
+  "scope",
 ]);
 export class InfinitusSecretRefused extends Schema.TaggedError<InfinitusSecretRefused>()(
   "InfinitusSecretRefused",

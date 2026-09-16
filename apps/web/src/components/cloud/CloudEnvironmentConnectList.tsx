@@ -35,6 +35,7 @@ import { Skeleton } from "../ui/skeleton";
 import { toastManager } from "../ui/toast";
 import { Tooltip, TooltipTrigger, TooltipPopup } from "../ui/tooltip";
 import { presentSavedCloudEnvironmentConnection } from "./cloudEnvironmentConnectionPresentation";
+import { CONNECT_NAME } from "@t3tools/shared/productName";
 
 const EMPTY_DISCOVERY_REFRESH_INTERVAL_MS = 5_000;
 
@@ -154,7 +155,7 @@ export function CloudEnvironmentConnectRows({
       toastManager.add({
         type: "success",
         title: "Environment added",
-        description: `Connecting to ${environment.label} through T3 Connect.`,
+        description: `Connecting to ${environment.label} through ${CONNECT_NAME}.`,
       });
       return true;
     }
@@ -163,7 +164,7 @@ export function CloudEnvironmentConnectRows({
     }
     const cause = squashAtomCommandFailure(result);
     const message =
-      cause instanceof Error ? cause.message : "Could not connect the T3 Connect environment.";
+      cause instanceof Error ? cause.message : `Could not connect the ${CONNECT_NAME} environment.`;
     const traceId = findErrorTraceId(cause);
     console.error("[t3-connect] Could not connect environment", { message, traceId, cause });
     toastManager.add({
@@ -281,7 +282,7 @@ export function CloudEnvironmentConnectRows({
       return (
         <div className={ITEM_ROW_CLASSNAME}>
           <p className="text-sm font-medium text-destructive">
-            Could not load T3 Connect environments
+            Could not load {CONNECT_NAME} environments
           </p>
           <p className="mt-1 text-xs text-muted-foreground">{discoveryProblem}</p>
           <Button
@@ -339,17 +340,17 @@ export function CloudEnvironmentConnectRows({
             : "bg-muted-foreground/35";
     const statusText =
       unsupported && !savedEnvironment
-        ? "T3 Connect · Not added · Client not supported"
+        ? `${CONNECT_NAME} · Not added · Client not supported`
         : savedConnection
           ? savedConnection.statusText
           : availability === "online"
-            ? "T3 Connect · Not added · Relay online"
+            ? `${CONNECT_NAME} · Not added · Relay online`
             : availability === "offline"
-              ? "T3 Connect · Not added · Relay offline"
+              ? `${CONNECT_NAME} · Not added · Relay offline`
               : availability === "checking"
-                ? "T3 Connect · Not added · Checking relay status…"
+                ? `${CONNECT_NAME} · Not added · Checking relay status…`
                 : (Option.getOrNull(error)?.message ??
-                  "T3 Connect · Not added · Relay status unavailable");
+                  `${CONNECT_NAME} · Not added · Relay status unavailable`);
     if (selection) {
       return (
         <label

@@ -1,3 +1,4 @@
+import { AuthAccessWriteScope } from "@t3tools/contracts";
 import {
   type InfinitusManifestCommand,
   InfinitusSecretRefused,
@@ -23,6 +24,22 @@ import { isNotPolled } from "./Infinitus.ts";
     for a mistyped code or two, not for guessing. Counts, not a queue: a
     refused call holds nothing. */
 export const SECRET_ATTEMPTS_PER_MINUTE = 5;
+
+/** The secret verbs a standard client may reach: a code the user was handed
+    out of band and the Mac validates — a sign-in's code or callback, for a
+    login the client can start over `infinitus.command` anyway, and a team
+    invite code, since joining a team is the phone's own flow. Every other
+    secret verb (an engine key, the APNs key, the team's identity and inbox,
+    the desktop credential) is the Mac's configuration and keeps needing
+    `access:write` — the desktop app's own session, never a phone's or a
+    `t3 pair` browser's. */
+const STANDARD_CLIENT_SECRET_VERBS: ReadonlySet<string> = new Set([
+  "aws-login-code",
+  "gcloud-login-code",
+  "aws-login-callback",
+  "signin-code",
+  "team-join",
+]);
 const ATTEMPT_WINDOW_MS = 60_000;
 
 /** The manifest spells a positional `<flowId>` and an option as its usage
@@ -146,6 +163,16 @@ export const InfinitusSecretLive = Layer.effect(
       Effect.gen(function* () {
         // The verb only: never the args, never the value.
         yield* Effect.annotateCurrentSpan({ "infinitus.command": input.command });
+        if (
+          !STANDARD_CLIENT_SECRET_VERBS.has(input.command) &&
+          !input.scopes.includes(AuthAccessWriteScope)
+        ) {
+          return yield* new InfinitusSecretRefused({
+            command: input.command,
+            reason: "scope",
+            detail: `${input.command} needs the ${AuthAccessWriteScope} scope`,
+          });
+        }
         const entry = yield* manifestEntry(input.command);
         const request = requestFor(entry, input.args);
         if ("badKey" in request) {
