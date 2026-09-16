@@ -37,10 +37,12 @@ final class AppModel: ObservableObject {
     var activeNumber: Int? { primary?.activeNumber }
     var nextCandidate: Int? { primary?.nextCandidate }
     var nextRecovery: NextRecovery? { primary?.nextRecovery }
-    /// The desktop's thread card's own count of active threads (#1047),
-    /// nil until a card has ever arrived — the busy signal `WindowPlanner`
-    /// reads now that the terminal session tracker is gone (#1041 d6).
+    /// The desktop's running provider turns, read over its HTTP API once a
+    /// minute (#1375; the thread-card push carried it before) — nil until
+    /// the first answer, the busy signal `WindowPlanner` reads now that
+    /// the terminal session tracker is gone (#1041 d6).
     @Published var desktopActiveThreads: Int?
+    private var desktopActiveThreadsReadAt: Date?
     /// Session-list popover (brain chip click) — popup-wide state so the
     /// wide chip and the rail badge share one popover.
     @Published var sessionsShown = false
@@ -604,17 +606,40 @@ final class AppModel: ObservableObject {
     }()
     let namedTunnel = NamedTunnel()
     let forkTunnel = QuickTunnel(pidKey: "fork_tunnel_pid")
-    /// Live Activity pushes to the phone (APNs), LiveActivityPusher.swift.
-    let liveActivityPusher = LiveActivityPusher()
 
     /// Every app notification: Notification Center here, and the same
-    /// text to any phone that registered an alert token (issue #3).
-    /// Both push channels: the Mac notice (+ Live Activity alert) and the
-    /// phone (#756: the engine's own away-push channels went with cswap;
-    /// swapd's `notify` only reports).
-    @discardableResult
-    func push(_ msg: String) -> PushReach {
+    /// text to the phones (issue #3; #756: the engine's own away-push
+    /// channels went with cswap; swapd's `notify` only reports).
+    func push(_ msg: String) {
         notify(msg)
+    }
+
+    /// The desktop server's HTTP API with the credential it minted for
+    /// this Mac (#822), or nil while none is stored.
+    private var desktopAPI: DesktopAPI? {
+        guard let origin = desktopCredential.origin, let url = URL(string: origin),
+              let token = desktopCredential.token() else { return nil }
+        return DesktopAPI(origin: url, token: token)
+    }
+
+    /// The desktop calls run here, one at a time: `DesktopAPI` blocks a
+    /// thread per request (its transport is synchronous, like the CLI's),
+    /// so it stays off the cooperative pool, as TeamModel does.
+    private let desktopQueue = DispatchQueue(label: "run.infinitus.desktop-api", qos: .utility)
+
+    /// The busy-session count for the battle plan (#1375): the desktop's
+    /// running turns, asked at most once a minute, off the main actor. The
+    /// throttle runs before the keychain read the credential costs.
+    func refreshDesktopActiveThreads() {
+        guard !isPlayground else { return }
+        let now = Date()
+        if let last = desktopActiveThreadsReadAt, now.timeIntervalSince(last) < 60 { return }
+        guard let api = desktopAPI else { return }
+        desktopActiveThreadsReadAt = now
+        desktopQueue.async { [weak self] in
+            guard let count = try? api.runningTurns().count else { return }
+            Task { @MainActor in self?.desktopActiveThreads = count }
+        }
     }
 
     /// A line the app says out loud — the one call every banner site makes.
@@ -631,10 +656,9 @@ final class AppModel: ObservableObject {
     /// `urgent` is the difference between a banner that interrupts (every
     /// account dead, the last one nearly dead, a crash) and one that
     /// informs (a switch, an account back).
-    @discardableResult
-    func announce(_ body: String, icon: String, urgent: Bool = false) -> PushReach {
+    func announce(_ body: String, icon: String, urgent: Bool = false) {
         logEvent(urgent ? "alert" : "notice", icon: icon, body)
-        return notify(body)
+        notify(body)
     }
 
     /// The alias every live session runs on right now — one active
@@ -673,18 +697,26 @@ final class AppModel: ObservableObject {
     /// The pass a freshly surfaced AWS-login need starts (rebuildAwsLogins).
     private var awsNeedRefresh: Task<Void, Never>?
 
-    /// Answers the phones the line reached (the `push` verb reports it).
-    ///
-    /// One notifier per machine (#1032 finished): while a desktop holds a
-    /// `fleets` lease it shows this news itself, from `snapshot.events`
-    /// through its own `notificationMode` — so Notification Center here
-    /// would be the second banner for one event. The phone channel is
-    /// unaffected: a desktop on this Mac says nothing to a phone away
-    /// from it, so `pushAlert` always runs.
-    @discardableResult
-    func notify(_ body: String) -> PushReach {
+    /// Notification Center — only while no desktop is watching (#1032
+    /// finished: a desktop holding a `fleets` lease shows this news itself
+    /// from `snapshot.events` through its own `notificationMode`, so a
+    /// banner here would be the second one for one event) — then the
+    /// phones through the desktop server and the Infinitus Connect relay
+    /// (#1375; the Mac's own APNs key left with it), best-effort, off the
+    /// main actor. A desktop on this Mac says nothing to a phone away from
+    /// it, so the alert always goes. A desktop without a relay link answers
+    /// 503 and that is silent; any other failure is one Activity-log line,
+    /// never a retry.
+    func notify(_ body: String) {
         if !desktopIsWatching { Notifier.post(title: "Infinitus", body: body) }
-        return liveActivityPusher.pushAlert(title: "Infinitus", body: body)
+        guard !isPlayground, let api = desktopAPI else { return }
+        desktopQueue.async { [weak self] in
+            do { _ = try api.alert(title: "Infinitus", body: body) } catch {
+                Task { @MainActor in
+                    self?.logEvent("other", icon: "exclamationmark.triangle", "phone alert not sent: \(error)")
+                }
+            }
+        }
     }
 
     /// Is some client other than this app's own UI holding a `fleets`
@@ -1063,9 +1095,7 @@ final class AppModel: ObservableObject {
         set(\.forkServerPort, defaults.object(forKey: "fork_server_port") as? Int ?? ForkTunnelStatus.defaultPort)
         set(\.forkTunnelHostname, defaults.string(forKey: "fork_tunnel_hostname") ?? "")
         // #1178: the Devices page's prefs land on their owners; each didSet
-        // writes the same key back and re-reads the keychain for the key id.
-        set(\.liveActivityPusher.teamID, defaults.string(forKey: LiveActivityPusher.teamIDKey) ?? "")
-        set(\.liveActivityPusher.keyID, defaults.string(forKey: LiveActivityPusher.keyIDKey) ?? "")
+        // writes the same key back.
         set(\.sync.enabled, defaults.object(forKey: "icloud_sync") as? Bool ?? false)
     }
 
@@ -1100,8 +1130,9 @@ final class AppModel: ObservableObject {
         // fetches and snapped back on each new sample.
         let measuredAt = fresh.map(\.t).max() ?? now
         // The terminal session count is gone (#1041 d6); the desktop's
-        // thread card says whether threads are running, and before any
-        // card has ever arrived the plan is drawn as if busy.
+        // running turns (#1375, refreshDesktopActiveThreads) say whether
+        // threads are running, and before the first answer the plan is
+        // drawn as if busy.
         let plan = WindowPlanner.plan(accounts: states, burnPctPerHour: rates["5h"],
                                       busySessions: desktopActiveThreads ?? 1, now: now,
                                       measuredAt: measuredAt)
@@ -1290,7 +1321,6 @@ final class AppModel: ObservableObject {
         forkTunnel.log = { [weak self] icon, text in
             self?.logEvent("other", icon: icon, "fork server: " + text)
         }
-        liveActivityPusher.log = namedTunnel.log
         crashReports = crashStore.list()
         scanMacCrashReports()
         applyNamedTunnel()  // ends by applying the fork tunnel
@@ -1923,6 +1953,7 @@ final class AppModel: ObservableObject {
         let previous = change.previousActive
         let firstLoad = change.firstLoad
         if !isPlayground {
+            refreshDesktopActiveThreads()
             updateBattlePlan(list)
         }
         // Utilization history (todo 2026-09-01): every real snapshot
