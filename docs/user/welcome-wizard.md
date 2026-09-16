@@ -12,7 +12,6 @@ browser.
 
 You can add more computers before continuing:
 
-<<<<<<< HEAD
 - **Infinitus Connect** connects computers that are signed in to your account. On a
   Mac, sign in from the desktop app's **Settings → Connections** and keep the
   app running; on a Linux server, run the unpacked archive's `./t3 connect`
@@ -23,16 +22,6 @@ You can add more computers before continuing:
   `./t3 serve --host <address>` (or `--tailscale-serve`), then `./t3 pair`
   (or `./t3 pair --tailscale`) prints the link to paste. See
   [Remote access](./remote-access.md).
-=======
-- **T3 Connect** connects computers that are signed in to your account.
-  [Install the CLI](./install.md#command-line) and run `t3 connect` on each
-  computer you want to add, then start T3 Code or run `t3 serve` so the
-  computer stays available.
-- **Add a computer** connects directly to a server on your network or tailnet.
-  Start the server with `t3 serve`, then run `t3 pair --tailscale` and paste
-  the pairing link. You can also run `t3 serve --host <address>` and use
-  `t3 pair` when the server is already reachable on your network.
->>>>>>> upstream/main
 
 Saved computers and computers discovered through Infinitus Connect are selected by
 default. Uncheck any you do not want to set up; this does not disconnect them.

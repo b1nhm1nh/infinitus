@@ -13,23 +13,14 @@ For a Linux host without the desktop app, run the unpacked server archive's
 `t3` (see [Install](./install.md#headless-server-linux)):
 
 ```bash
-<<<<<<< HEAD
 ./t3 connect
-=======
-t3 connect
->>>>>>> upstream/main
 ```
 
 Follow the sign-in instructions. Setup offers a
 [background service](./background-service.md); if you decline it, start the
-<<<<<<< HEAD
 server with `./t3 serve`. Saving your sign-in alone does not make the machine
 reachable. Every `t3` command on this page is that executable; a Mac host runs
 the desktop app instead and does all of this from **Settings → Connections**.
-=======
-server with `t3 serve`. Saving your sign-in alone does not make the machine
-reachable.
->>>>>>> upstream/main
 
 On your other device, sign in to the same Infinitus Connect account and choose the
 environment. Over SSH, the CLI prints a browser link and a short code. Open the
@@ -53,21 +44,13 @@ For a command-line host, replace `<private-ip>` with the host's LAN or tailnet
 address:
 
 ```bash
-<<<<<<< HEAD
 ./t3 serve --host <private-ip>
-=======
-t3 serve --host <private-ip>
->>>>>>> upstream/main
 ```
 
 If a server is already running, generate a fresh link without restarting it:
 
 ```bash
-<<<<<<< HEAD
 ./t3 pair
-=======
-t3 pair
->>>>>>> upstream/main
 ```
 
 Scan the QR code on your phone or paste the pairing URL into **Add environment**
@@ -107,21 +90,13 @@ HTTPS** in **Settings → Connections**. Turn it off there to remove that route.
 To start a command-line server with Tailscale HTTPS:
 
 ```bash
-<<<<<<< HEAD
 ./t3 serve --tailscale-serve
-=======
-t3 serve --tailscale-serve
->>>>>>> upstream/main
 ```
 
 For an already-running server:
 
 ```bash
-<<<<<<< HEAD
 ./t3 pair --tailscale
-=======
-t3 pair --tailscale
->>>>>>> upstream/main
 ```
 
 The pairing link uses an address such as `https://machine.tailnet.ts.net/`.
@@ -133,11 +108,7 @@ tailscale serve --https=443 off
 ```
 
 If that port is already in use, choose another with
-<<<<<<< HEAD
 `--tailscale-serve-port`. See `./t3 pair --help` for other pairing options.
-=======
-`--tailscale-serve-port`. See `t3 pair --help` for other pairing options.
->>>>>>> upstream/main
 
 ### Web app
 
@@ -156,22 +127,9 @@ and opens the port forward for you. Projects, provider credentials, and agent
 work stay on the remote machine, which needs the
 [provider setup](./install.md#providers) but no Node.js.
 
-<<<<<<< HEAD
 The remote host must be Linux: no macOS server build is published yet, so a
 Mac cannot be added this way. A nightly desktop build ships no server archive
 and cannot set up a remote either.
-=======
-The remote host must be Linux or an Apple Silicon Mac with `curl` or `wget`,
-`tar`, `sha256sum` or `shasum`, and [provider setup](./install.md#providers).
-The first launch downloads T3 Code's server to `~/.t3/runtime` on the host, so
-it takes longer than later ones.
-Provider CLIs must be on the `PATH` of a non-interactive login shell there;
-check with:
-
-```bash
-ssh user@example.com 'sh -lc "command -v claude codex"'
-```
->>>>>>> upstream/main
 
 If SSH reconnecting fails after an app update, retry the launch once. Removing
 the connection stops a server that Infinitus launched; a server that was already
@@ -185,11 +143,7 @@ For Antigravity's Google callback on a remote host, see
 On the host, **Settings → Connections** lets authorized administrators create
 pairing links and revoke client sessions. Revoking an unused link prevents new
 pairings; revoke a device's session to remove its existing access. Command-line
-<<<<<<< HEAD
 management is available through `./t3 auth --help`.
-=======
-management is available through `t3 auth --help`.
->>>>>>> upstream/main
 
 A session with an open connection stays listed after its access credential
 expires.

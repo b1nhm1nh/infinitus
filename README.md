@@ -44,7 +44,6 @@ Every Infinitus build comes from one [GitHub release](https://github.com/deathem
 > - OpenCode: install [OpenCode](https://opencode.ai) and run `opencode auth login`
 > - Antigravity: enable it in Settings, then use **Install Antigravity** and **Sign in with Google**. No CLI is required.
 
-<<<<<<< HEAD
 ### Desktop app (macOS, Apple Silicon)
 
 `Infinitus-<version>-arm64.dmg` from the [latest release](https://github.com/deathemperor/infinitus/releases/latest). It bundles the server and the menu bar app (nested as a login item), updates itself from the releases, and can host your phone, a browser or another desktop. The menu bar app on its own: `brew install --cask deathemperor/tap/infinitus`, or `Infinitus-<version>.zip` from the same release.
@@ -54,23 +53,6 @@ Every Infinitus build comes from one [GitHub release](https://github.com/deathem
 `curl -fsSL https://infinitus.run/install.sh | sh` installs the newest release's `t3-<version>-linux-<arch>.tar.gz` — the server as one self-contained executable, no Node.js needed — verified against its `SHA256SUMS` (releases cut after 0.5.0-alpha.11 attach them). The desktop app installs the matching one onto a Linux SSH remote by itself. To run one by hand, see [Install](./docs/user/install.md#headless-server-linux) and [Running in the background](./docs/user/background-service.md).
 
 ### Not available yet
-=======
-### Command line
-
-```bash
-curl -fsSL https://t3.codes/install.sh | sh
-```
-
-On Windows, in PowerShell:
-
-```powershell
-irm https://t3.codes/install.ps1 | iex
-```
-
-Then run `t3` to start the server and open the local web app. `t3 service install` keeps it running in the background, `t3 update` moves to a newer release, and `t3 --help` has the full reference.
-
-To try it once without installing, run `npx t3@latest` instead.
->>>>>>> upstream/main
 
 - A macOS server archive. A Mac either runs the desktop app or a [build from source](./docs/user/install.md#build-from-source); for the same reason a Mac cannot yet be set up as an SSH remote from the desktop.
 - Windows server archives.
