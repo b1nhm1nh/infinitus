@@ -238,6 +238,27 @@ export const checkPiProviderStatus = Effect.fn("checkPiProviderStatus")(function
     ...cliModels.models,
   ]);
 
+  // A probe that could not run says nothing about auth. Pi's catalogue IS the
+  // auth signal (there is no auth verb to ask), so an empty one means "not
+  // signed in" only when the listing actually succeeded — otherwise the card
+  // would tell a signed-in user to sign in because their network was slow.
+  if (!modelsOutput) {
+    return buildServerProvider({
+      presentation: PI_PRESENTATION,
+      enabled: piSettings.enabled,
+      checkedAt,
+      models,
+      slashCommands: [COMPACT_SLASH_COMMAND],
+      probe: {
+        installed: true,
+        version,
+        status: "warning",
+        auth: { status: "unknown" },
+        message: "Pi is installed but listing its models failed.",
+      },
+    });
+  }
+
   return buildServerProvider({
     presentation: PI_PRESENTATION,
     enabled: piSettings.enabled,

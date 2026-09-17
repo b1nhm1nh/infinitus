@@ -95,7 +95,10 @@ real `~/.pi/agent`, which held eight "Generate a title…" transcripts.
 
 Auth has no verb to ask: Pi lists a model in `--list-models` only once its
 provider has usable credentials, so a non-empty catalogue **is** the auth
-signal.
+signal. The corollary is that an *empty* catalogue only means "signed out"
+when the listing actually ran — a probe that failed or timed out reports
+`auth: "unknown"`, the way the other providers do, rather than telling a
+signed-in user to sign in because their network was slow.
 
 ## Transcripts on disk
 
