@@ -49,7 +49,8 @@ terminal metadata while the terminal process can use them.
 
 ## Import your projects
 
-Infinitus finds directories that Claude Code or Codex has used. Git repositories
+Infinitus finds directories that Claude Code or Codex has used, and Pi's too
+once you enable it in Settings. Git repositories
 are listed first, newest activity on top. When the remote is on GitHub, the
 group shows the repository as `owner/name`. Clones with the same remote share
 one group. Directories that are not git repositories sit under "Other folders".

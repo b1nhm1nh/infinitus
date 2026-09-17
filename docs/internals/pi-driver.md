@@ -90,3 +90,24 @@ provider-side rollback.
 Auth has no verb to ask: Pi lists a model in `--list-models` only once its
 provider has usable credentials, so a non-empty catalogue **is** the auth
 signal.
+
+## Transcripts on disk
+
+Pi writes `sessions/<slug-of-cwd>/<timestamp>_<sessionId>.jsonl` under its
+home. Two things follow for the project scanner:
+
+- **The directory name is lossy**, so the real working directory has to come
+  from each transcript's own `session` header record, not from the slug.
+- **The filename is not a session id.** Unlike Claude, whose filenames _are_
+  ids, Pi's carry a leading timestamp — only the `session` header's `id` is
+  resumable.
+
+Records are `{type: "message", message: {role, content}}`, with `model_change`
+carrying the model as its own record. Assistant content mixes `text` and
+`thinking` blocks; only text-ish blocks are extracted, so the model's private
+reasoning never reaches an imported thread.
+
+The scanner resolves Pi's home from the instance's `homePath` setting alone,
+defaulting to `~/.pi/agent`. It deliberately consults no environment variable
+— see "Pi is not Oh My Pi" above. Pi also ships disabled, so a scan reads that
+home only once the user has turned the provider on.

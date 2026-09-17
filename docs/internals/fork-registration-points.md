@@ -21,8 +21,12 @@ pages under `docs/internals/` keep taking narratives out of these bullets.
   `components/chat/providerIconUtils.ts`,
   `components/settings/providerDriverMeta.ts`,
   `components/settings/settingsSearch.ts`;
-  `apps/mobile/src/components/ProviderIcon.tsx` (its own `pi` branch).
-  Rules and traps: `docs/internals/pi-driver.md`.
+  `apps/mobile/src/components/ProviderIcon.tsx` (its own `pi` branch);
+  `packages/contracts/src/agentSessions.ts` (`"pi"` on `AgentSessionSource`),
+  `apps/server/src/project/AgentSessionScanner.ts` (`discoverPiTranscripts`
+  plus the `pi` arms of the parse, retain and home-resolution paths) and
+  `apps/web/src/components/onboarding/WelcomeWizard.tsx` (the wizard's third
+  source-icon slot). Rules and traps: `docs/internals/pi-driver.md`.
 - `packages/contracts/src/rpc.ts` — `subscribeInfinitus` and
   `infinitus.command` in `WS_METHODS`, their two `Rpc.make`s, both in
   `WsRpcGroup`; `provider.proxyModels` (the add-instance wizard lists an
