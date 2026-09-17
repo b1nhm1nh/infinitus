@@ -196,6 +196,9 @@ export const makePiSessionRuntime = Effect.fn("makePiSessionRuntime")(function* 
     Stream.decodeText(),
     Stream.mapAccumArray(
       () => "",
+      // `chunk` is `mapAccumArray`'s array of decoded STRINGS, not one string
+      // being walked per character, so each `piece` is a whole decoded chunk
+      // and the framing stays linear in the bytes read.
       (carry: string, chunk) => {
         const decoded: Array<PiRpcRecord> = [];
         let nextCarry = carry;

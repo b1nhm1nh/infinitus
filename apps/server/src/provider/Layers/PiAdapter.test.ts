@@ -204,7 +204,7 @@ it.effect(
         )
         .map((event) => (event.type === "content.delta" ? event.payload.delta : ""))
         .join("");
-      assert.strictEqual(assistantText, "HEAD tail");
+      assert.strictEqual(assistantText, "HEAD\u2028tail");
     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
   { timeout: 30_000 },
 );

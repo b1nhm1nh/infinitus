@@ -23,11 +23,11 @@ describe("splitPiRpcLines", () => {
   it("keeps U+2028 and U+2029 inside a record", () => {
     // Pi's rpc.md names this as the reason not to use Node `readline`: both are
     // legal inside a JSON string, and splitting on them cuts a record in half.
-    const payload = JSON.stringify({ text: "before middle after" });
+    const payload = JSON.stringify({ text: "before\u2028middle\u2029after" });
     const { lines, carry } = splitPiRpcLines("", `${payload}\n`);
     expect(lines).toEqual([payload]);
     expect(carry).toBe("");
-    expect(JSON.parse(lines[0]!).text).toBe("before middle after");
+    expect(JSON.parse(lines[0]!).text).toBe("before\u2028middle\u2029after");
   });
 
   it("treats a lone CR as payload and strips only the CR of a CRLF pair", () => {
@@ -148,4 +148,21 @@ describe("piCanonicalItemType", () => {
   it("falls back to the generic bucket for an extension tool", () => {
     expect(piCanonicalItemType("some_extension_tool")).toBe("dynamic_tool_call");
   });
+});
+
+it("keeps the separator fixtures written as escapes, not raw characters", async () => {
+  // U+2028/U+2029 are invisible: pasted raw into a fixture they survive a run
+  // but not always an editor, a formatter or a review. The escapes above
+  // produce the identical runtime string, so this asserts the SOURCE spelling.
+  const NodeFSP = await import("node:fs/promises");
+  const NodeURL = await import("node:url");
+  const sources = await Promise.all(
+    ["./piRpcProtocol.test.ts", "./PiAdapter.test.ts", "../../../scripts/pi-rpc-mock-agent.ts"].map(
+      (relative) =>
+        NodeFSP.readFile(NodeURL.fileURLToPath(new URL(relative, import.meta.url)), "utf8"),
+    ),
+  );
+  for (const source of sources) {
+    expect(source).not.toMatch(/[\u2028\u2029]/u);
+  }
 });

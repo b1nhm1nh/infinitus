@@ -182,7 +182,7 @@ const runPrompt = (message: string) => {
     write({ type: "turn_start" });
   }
 
-  emitAssistantText(emitSeparatorText ? `${responseText} tail` : responseText);
+  emitAssistantText(emitSeparatorText ? `${responseText}\u2028tail` : responseText);
   write({ type: "turn_end" });
   write({ type: "agent_end", willRetry: false });
   write({ type: "agent_settled" });
