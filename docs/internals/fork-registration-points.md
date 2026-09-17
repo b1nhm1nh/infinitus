@@ -125,7 +125,10 @@ pages under `docs/internals/` keep taking narratives out of these bullets.
   the fresh-index path when the index is missing, corrupt, truncated or
   carries assume-unchanged / skip-worktree flags. Drops on the upstream
   sync that brings #10792 in; until then a sync conflict here is resolved
-  toward upstream.
+  toward upstream. Separately, `checkpoints.diffCheckpoints` restricts its
+  diff to the pathspec from `checkpointDiffPathspec.ts` (#1403): one call
+  before the command and the `--literal-pathspecs` / `-- <paths>` arguments;
+  this edit stays after that sync.
 - `apps/server/src/orchestration/Layers/ProviderCommandReactor.ts` — the turn
   start's session start + send run through `TurnStartGate.start` (#616);
   `serverRuntimeStartup.ts` — the post-update continuation's forked send does
@@ -309,37 +312,10 @@ pages under `docs/internals/` keep taking narratives out of these bullets.
   `resolveDesktopBuildIconAssets` / `resolveDesktopWebAssetBrand` return the
   `infinitus` artwork for fork versions; the Screen Recording usage text and
   the artifact's package `description` say `DESKTOP_PRODUCT_NAME`, and
-  `stageDesktopDmgBackground` re-letters the stable DMG artwork ("Drag T3 Code
-  into Applications") for the `infinitus` channel before rasterizing (#601).
-- `infra/relay/src/db.ts`, `infra/relay/alchemy.run.ts`,
-  `.github/workflows/deploy-relay.yml` — the relay's Postgres is a Neon
-  project (`RelayNeonProject`, retained, `prod`; `RelayNeonBranch` on every
-  other stage) in place of upstream's PlanetScale database, branch and
-  runtime role (#1322: PlanetScale's cheapest cluster needs a card on file).
-  Same shape, Neon's owner role, Hyperdrive on the project's direct origin.
-  The workflow feeds `NEON_API_KEY` (repository secret) and `NEON_ORG_ID`
-  (repository variable). The PlanetScale provider and env are gone: the
-  deploy of #1366 dropped the two rows the first deploys had left `creating`
-  in the state store (Alchemy dies on a persisted row whose provider is not
-  registered, which is why they stayed for that one deploy).
-- `infra/relay/package.json`, `infra/relay/README.md`, `infra/relay/.env.example`,
-  the root `.env.example` (its Clerk block is the fork's since #1322: no
-  upstream values, filled in once the Infinitus relay is deployed), every
-  `infra/relay/src` service tag, `docs/operations/connect-setup.md` —
-  the package is `infinitus-relay` (#1368 B): its name, the `--filter` in
-  `deploy-relay.yml` and the README, the `infinitus-relay/<dir>/<Name>`
-  service tags, and the Clerk template and audience (`infinitus-relay`) the
-  setup doc, example env and test fixtures name. The Alchemy stack stays
-  `T3CodeRelay`: state rows key on it and a fresh stack looks the retained
-  Neon project up by a generated name, so a rename orphans the database.
-  Axiom dataset and token names stay `t3-code-relay-*`: their tokens are
-  baked into shipped builds (the OTel `service.name` the worker reports is
-  `infinitus-relay-worker`). Upstream's `release.yml` (disabled),
-  `docs/operations/release.md` and `docs/operations/android-notifications.md`
-  still say `t3code-relay`; the codemod sync (#1368 C) renames them.
-  `infra/relay/src/http/Api.ts` — `CLERK_JWT_AUDIENCE` is a comma-separated
-  list (`expectedClerkAudiences`), so the deployed relay verifies tokens
-  minted from the old and the new Clerk template through the cutover.
+  `stageDesktopDmgBackground` rasterizes a per-channel SVG, so the `infinitus`
+  channel has artwork of its own (#601, #732; the file is in `fork-only-files.md`).
+- `infra/relay/src/db.ts`, `infra/relay/alchemy.run.ts`, `.github/workflows/deploy-relay.yml` — the relay's Postgres is a Neon project in place of upstream's PlanetScale database (#1322, #1366). Rules and traps: `docs/internals/release-and-updates.md`.
+- `infra/relay/package.json`, `infra/relay/README.md`, `infra/relay/.env.example`, the root `.env.example`, every `infra/relay/src` service tag, `infra/relay/src/http/Api.ts` (`expectedClerkAudiences`), `docs/operations/connect-setup.md` — the relay's fork-owned names are `infinitus-relay` (#1368 B, #1322); the Alchemy stack and the Axiom names stay. Rules and traps: `docs/internals/infinitus-rename.md`.
 - `packages/contracts/src/relay.ts`, `infra/relay/src/worker.ts` — the
   `infinitusAlert` group (`POST /v1/environments/:environmentId/alerts`,
   #1375) added to `RelayApi` beside upstream's server group, and its handler
@@ -397,17 +373,7 @@ pages under `docs/internals/` keep taking narratives out of these bullets.
 - `knip.jsonc` — `scripts/fork-visual-pass.mjs`, `fork-visual-fixture.mjs` and
   `fork-visual-check.ts` as scripts entries (run by hand and by the
   fork-visual-pass workflow; nothing imports them).
-- `patches/expo-widgets@57.0.15.patch` — upstream's patch (#11604, system
-  glass for Live Activities) plus the fork's hunk (#1277): `WidgetsModule.swift`
-  observes `Activity<LiveActivityAttributes>.activityUpdates` and each
-  activity's `activityStateUpdates` and emits `onExpoWidgetsActivityUpdate`
-  `{activityId, name, state}` (`started`, then ActivityKit's own state names);
-  `addActivityUpdateListener` and `ActivityUpdateEvent` on the JS side (src,
-  build and index). One patch file per package version is pnpm's rule, so
-  the two live together. Its one consumer, the thread-card bridge, left with
-  #1375: drop the hunk (`pnpm patch` / `pnpm patch-commit`, the lockfile's
-  `patch_hash` follows) the next time upstream bumps expo-widgets or
-  rewrites its patch, rather than re-applying it.
+- `patches/expo-widgets@57.0.15.patch` — upstream's patch (#11604) plus the fork's `onExpoWidgetsActivityUpdate` hunk (#1277), consumer gone with #1375: drop the hunk at the next expo-widgets bump, never re-apply it. Rules and traps: `docs/internals/phone-thread-card.md`.
 - `apps/mobile/package.json` — `expo-audio` pinned exact (`57.0.4`, not
   upstream's `~57.0.4`): `scripts/release-smoke.ts` deletes the lockfile and
   resolves afresh, and once npm carried 57.0.5 the range resolved past the
@@ -496,28 +462,8 @@ pages under `docs/internals/` keep taking narratives out of these bullets.
   `apps/mobile/src/features/archive/ArchivedThreadsRouteScreen.tsx` filters
   the archived snapshots the same way (`features/infinitus/sideQuestions.ts`,
   #863).
-- `apps/mobile/src/features/threads/ThreadRouteScreen.tsx` — a side question
-  from the phone (#269 C, #881): `useSideQuestionHeaderItem`'s `action` is
-  the thread menu's "Ask a side question" (above, #941) on a Claude Agent
-  thread of an `infinitus` server; a tap forks the session's latest completed turn (`infinitus.forkThread`
-  with `side: true`, no `turnCount`, #887) and opens `SideQuestionSheet`
-  (`apps/mobile/src/Stack.tsx`, a form sheet in `WORKSPACE_OVERLAY_ROUTES`,
-  no link): `apps/mobile/src/features/infinitus/InfinitusSideQuestionSheet.tsx`
-  subscribes to the side fork, asks in plan mode, and "Bring to main" appends
-  the latest answer to the main composer's draft (`sideQuestions.ts` carries
-  the web `SideQuestionPanel.logic.ts` helpers, kept local).
-- `apps/mobile/src/features/threads/ThreadRouteScreen.tsx` — the thread's
-  usage from the phone (#834): `useThreadUsageHeaderItem`'s `action` is the
-  thread menu's "Thread usage" (above, #941) once the shell carries `usage`
-  (a turn was recorded; no choice before, and none on a server without the
-  rollup); a tap opens `ThreadUsageSheet`
-  (`apps/mobile/src/Stack.tsx`, a form sheet in `WORKSPACE_OVERLAY_ROUTES`,
-  no link): `apps/mobile/src/features/infinitus/InfinitusThreadUsageSheet.tsx`
-  reads the live shell's rollup and draws `threadUsage.logic.ts`'s rows —
-  worded like the web popover (#907): turns (with the subagent count), tool
-  calls and duration when the server counted them (#927), each non-zero
-  token share, model(s), cost ("Cost not recorded" for null, never $0.00),
-  last turn — every estimate prefixed "≈", and the caveat lines under them.
+- `apps/mobile/src/features/threads/ThreadRouteScreen.tsx`, `apps/mobile/src/Stack.tsx` (+ the fork's `InfinitusSideQuestionSheet.tsx`, `sideQuestions.ts`) — a side question from the phone (#269 C, #881, #887). Rules and traps: `docs/internals/side-question.md`.
+- `apps/mobile/src/features/threads/ThreadRouteScreen.tsx`, `apps/mobile/src/Stack.tsx` (+ the fork's `InfinitusThreadUsageSheet.tsx`, `threadUsage.logic.ts`) — the thread's usage from the phone (#834, #907, #927). Rules and traps: `docs/internals/turn-usage.md`.
 - `apps/mobile/src/features/threads/NewTaskDraftScreen.tsx` (`InfinitusPinAtCreationControl`, #742), `apps/mobile/src/state/use-thread-outbox-drain.ts` (+ test) — `usePinAtCreation` after a delivered creation, `threadsByKey` (#1278), `queueBehindRunningTurn` around both `resolveThreadOutboxDeliveryAction` calls (#807) and its `thread.turn.queue` form on a `turnQueue` server (#812: `sendQueuedMessage` `via`, `completeQueuedMessageDelivery` `retainInFeed`). Rules and traps: `docs/internals/phone-outbox-drain.md`.
 - `apps/mobile/src/features/home/HomeScreen.tsx` — the thread list's header:
   `InfinitusSignIns` (lapsed AWS / gcloud sign-ins of paired Macs).
@@ -542,9 +488,6 @@ pages under `docs/internals/` keep taking narratives out of these bullets.
   fills `hasInfinitusEnvironment` from the environments' capabilities.
 - `apps/web/src/components/settings/settingsSearch.test.ts` — the availability
   records it builds gained that field.
-- `apps/web/src/routes/pair.tsx` — one early return: a link with the phone
-  marker (`isPhonePairingLink`, #724) renders `InfinitusPhoneLinkSurface`
-  instead of the pairing form, so the browser does not spend a phone's token.
 - `apps/web/src/routes/settings.infinitus*.tsx` (eight new files in upstream's
   routes directory; Themes and Animations are `InfinitusPrefsPanel` pages over
   the catalog's `themes` / `animations` sections, #747 step 1, and Priority
@@ -569,35 +512,8 @@ pages under `docs/internals/` keep taking narratives out of these bullets.
 - `apps/web/src/components/CommandPalette.tsx` — the "Open accounts" action and
   the `keydown` listener that turns `accounts.open` into a navigation, both
   behind the `infinitus` capability.
-- The server binary and its release archive are named `infinitus` (#1368 D):
-  `scripts/build-cli-archive.ts` (stem and executable), `scripts/smoke-cli-archive.ts`,
-  `scripts/build-desktop-artifact.ts` (`wslRuntimeArchiveStem`, the WSL
-  runtime's entry), `packages/shared/src/cliRelease.ts`
-  (`cliArchiveFileName`), `apps/server/src/cloud/pinnedRuntime.ts`
-  (`entryPath`), `packages/ssh/src/tunnel.ts` (the remote runner script),
-  `apps/desktop/src/wsl/DesktopWslEnvironment.ts` (the probe and install
-  scripts), `apps/server/src/cli/update.ts` (`infinitus.cmd`, and with
-  `service.ts`, `connect.ts`, `pair.ts`, `uninstall.ts`, `cloud/bootService.ts`,
-  `cloud/selfUpdate.ts` the command names in user-facing copy), the
-  installers below, and `infinitus-release.yml`'s `publish` job (0.5.0-alpha.20 alone also attached each archive under its old
-  name, with a `t3` symlink inside, for installs from before the rename). The `t3` package name and `bin` in
-  `apps/server/package.json` stay: they are the npm identity, and the Effect
-  service tags follow them. Re-applied on every sync with the fixtures
-  (`cliRelease.test.ts`, `pinnedRuntime.test.ts`, `selfUpdate.test.ts`,
-  `service.test.ts`, `tunnel.test.ts`, `DesktopWslEnvironment.test.ts`,
-  `build-desktop-artifact.test.ts`).
-- `scripts/install.sh`, `scripts/install.ps1` — `repo` is this repository and
-  the home `~/.infinitus`, the same flip as `CLI_RELEASE_REPOSITORY` (#1192);
-  the shell script installs on Linux only and says plainly that no macOS or
-  Windows archive exists (exit 1 before any fetch, never upstream's), resolves
-  only the release train (a `v…` tag without a nightly/preview suffix — the
-  fork's nightly is the rolling tag and ships no archive), and is served at
-  `https://infinitus.run/install.sh` as the checked-in copy
-  `apps/mac/site/public/install.sh`: `scripts/sync-install-script.ts` writes
-  it, `--check` and its test fail on drift, and the test fails while the
-  source names upstream's owner. The PowerShell script stops at once (no
-  Windows archive) and is not served. Regenerate the copy after any edit; the
-  site deploy is by hand from `apps/mac/site`.
+- `scripts/build-cli-archive.ts`, `scripts/smoke-cli-archive.ts`, `scripts/build-desktop-artifact.ts`, `packages/shared/src/cliRelease.ts`, `apps/server/src/cloud/pinnedRuntime.ts`, `packages/ssh/src/tunnel.ts`, `apps/desktop/src/wsl/DesktopWslEnvironment.ts`, `apps/server/src/cli/*.ts`, `apps/server/src/cloud/{bootService,selfUpdate}.ts`, `infinitus-release.yml`'s `publish` job — the server binary and its archive are named `infinitus` (#1368 D); re-applied on every sync with their seven fixtures. Rules and traps: `docs/internals/infinitus-rename.md`.
+- `scripts/install.sh`, `scripts/install.ps1` (+ `scripts/sync-install-script.ts` and the served copy `apps/mac/site/public/install.sh`) — this repository, `~/.infinitus`, Linux only, release train only (#1192). Rules and traps: `docs/internals/release-and-updates.md`.
 - `README.md` — the fork notice at the top, and the Installation section
   below the rule: this product's releases (the DMG, the Linux server archives,
   what is not published yet) in place of upstream's npm, winget, brew and AUR
@@ -627,16 +543,4 @@ pages under `docs/internals/` keep taking narratives out of these bullets.
   branch that touches `.github/workflows` (#658); without it such a sync
   is done by hand.
 - **Oh My Pi as a provider driver.** `omp` speaks ACP natively (`omp acp`), so the driver is one more tenant of the existing ACP runtime; its own files are in `fork-only-files.md`. The registration points are the ones every driver has: `packages/contracts/src/settings.ts` (`OmpSettings` / `OmpSettingsPatch`, the `omp` key of `providers` and its patch, `enabled` false by default), `packages/contracts/src/model.ts` (`DEFAULT_MODEL_BY_PROVIDER.omp`, `PROVIDER_DISPLAY_NAMES.omp`), `apps/server/src/provider/builtInDrivers.ts`, `providerStatusCache.ts`, `apps/server/src/serverSettings.ts`, `textGeneration/TextGeneration.ts`, `apps/server/scripts/acp-mock-agent.ts` (`T3_ACP_OMP=1`), `packages/contracts/src/agentSessions.ts` (`"omp"` on `AgentSessionSource`) and `apps/server/src/project/AgentSessionScanner.ts`; web `Icons.tsx`, `chat/providerIconUtils.ts`, `settings/providerDriverMeta.ts`, `settings/customModelEditor.logic.ts`, `settings/settingsSearch.ts` and `onboarding/WelcomeWizard.tsx`; mobile `ProviderIcon.tsx`; docs `README.md`, `docs/user/install.md`, `docs/user/permission-modes.md`. Rules and traps: `docs/internals/omp-driver.md`.
-- Upstream workflows that deploy or publish (Release, Forward to Cursor
-  hygiene, Mobile EAS Preview/Production, Publish AUR, Issue Labels, Desktop
-  macOS Preview, Web Preview, Mobile Showcase Screenshots, Thread Transfer
-  Report, Desktop macOS Preview Publish — new with the 0310cbf9 sync,
-  `pull_request_target` on close/unlabel) are disabled in the repository's
-  Actions settings, not deleted, so merges stay clean. Upstream's relay deploy
-  workflow (`deploy-relay.yml`, named "Deploy Infinitus Connect relay" and
-  filtering the `infinitus-relay` package since #1368 B) is the exception since #1322
-  (2026-09-16): enabled, it deploys `infra/relay` as the
-  Infinitus relay (`relay.infinitus.run`, the `production` environment's
-  vars and secrets) on every push to `main`, and
-  `infinitus-release.yml`'s `connect` job reads that environment so builds
-  carry the relay's Clerk config.
+- Upstream's deploy and publish workflows — disabled in the repository's Actions settings, never deleted; `deploy-relay.yml` is the one enabled (#1322). Rules and traps: `docs/internals/release-and-updates.md`.

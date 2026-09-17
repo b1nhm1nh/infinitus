@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 
+import { InfinitusCrashesCard } from "../components/settings/infinitus/InfinitusCrashesCard";
 import { InfinitusPairingRequestsCard } from "../components/settings/infinitus/InfinitusPairingRequestsCard";
-import { InfinitusPairPhoneCard } from "../components/settings/infinitus/InfinitusPairPhoneCard";
 import { InfinitusPrefsPanel } from "../components/settings/infinitus/InfinitusPrefsPanel";
 
 function SettingsInfinitusDevicesRoute() {
@@ -10,7 +10,7 @@ function SettingsInfinitusDevicesRoute() {
       sectionSlugs={["devices"]}
       title="Devices"
       lead={<InfinitusPairingRequestsCard />}
-      footer={<InfinitusPairPhoneCard />}
+      footer={<InfinitusCrashesCard />}
     />
   );
 }

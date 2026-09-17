@@ -9,7 +9,7 @@ these bullets.
 
 - `apps/server/src/provider/Drivers/OmpDriver.ts`, `Layers/OmpProvider.ts`, `Layers/OmpAdapter.ts`, `Services/OmpAdapter.ts`, `acp/OmpAcpSupport.ts`, `Layers/ompUsage.logic.ts` and `textGeneration/OmpTextGeneration.ts` (each with its test) — the Oh My Pi driver, one more tenant of the ACP runtime, templated on Cursor. Text generation rides `omp -p` (no schema flag, so OpenCode's decode path), quota comes from `omp usage --json --redact`'s `capacity` fold (no email, hence no `resetsAt`), and session import reads `~/.omp/agent/sessions`. Rules and traps: `docs/internals/omp-driver.md`.
 - `apps/server/src/infinitus/Layers/InfinitusSlack.ts` (+ `infinitusSlack.logic.ts`, `Services/InfinitusSlackClient.ts` — the `SlackClient` seam, tests) — the Slack bridge's reactor (#574, PR 2 of 4); state in `<stateDir>/infinitus-slack/threads.json`. Rules and traps: `docs/internals/slack-bridge.md`.
-- `apps/web/src/components/settings/infinitus/` — the Infinitus settings panes and their pure logic: Engines (`InfinitusEngineSecrets` + `engines.logic`, #1177; Routing, #1235), the Devices pane's "Pair a phone" (`InfinitusPairPhoneCard` + `pairPhone.logic`, #724) and "Pairing requests" (`InfinitusPairingRequestsCard` + `pairingRequests.logic`, #710) cards. Rules and traps: `docs/internals/infinitus-settings-panes.md`.
+- `apps/web/src/components/settings/infinitus/` — the Infinitus settings panes and their pure logic: Engines (`InfinitusEngineSecrets` + `engines.logic`, #1177; Routing, #1235), the Devices pane's "Pairing requests" (`InfinitusPairingRequestsCard` + `pairingRequests.logic`, #710) and "Crash reports" (`InfinitusCrashesCard` + `crashes.logic`, the Mac's own store over the `crashes` verb) cards; its "Pair a phone" QR card retired 2026-09-17 in favour of Connections' own pairing link. Rules and traps: `docs/internals/infinitus-settings-panes.md`.
 - `apps/web/src/state/infinitus.ts` — the web app's instance of the Infinitus
   snapshot and command atoms (`packages/client-runtime/src/state/infinitus.ts`,
   which also holds the pairing stream + decide command, #710, and the
@@ -120,23 +120,7 @@ these bullets.
   every user-facing string routes through (#601 phase 2); contracts holds it
   because shared depends on contracts, and `packages/shared/src/productName.ts`
   re-exports it so `@infinitus/shared/productName` imports keep working.
-- `apps/server` — rule: any string the user reads (CLI help and command
-  descriptions, log lines, errors, HTTP/HTML pages, pairing and service copy,
-  MCP tool descriptions, the git author name, the prompts and runtime
-  instructions the assistant echoes) says `${PRODUCT_NAME}`, never a literal
-  "T3 Code"; identifiers stay (`t3` binary and package, `T3CODE_*` env vars,
-  the `t3code/<version>` UA token, upstream URLs) until #1368's later
-  slices rename them (the MCP server id is `infinitus` since slice E); "T3 Connect" is `CONNECT_NAME`
-  (`productName.ts`, "Infinitus Connect", #1368 slice A) on every surface —
-  web, mobile, server, `packages/*`, `docs/user` — and the web and desktop
-  guard tests, `scripts/connect-name.guard.test.ts` (server, phone, packages,
-  relay) and the visual pass fail on a new literal. The same three guards
-  fail on a bare "T3" used as the product noun ("T3 Account", "Open T3",
-  "a T3 thread"; #1368 follow-up) — identifiers never match — with an
-  allowlist for the wordmark glyph, the relay's live column default and the
-  triage playbook that must stay byte-identical to upstream's file. The
-  lock-screen widgets say a literal "Infinitus": a widget body serializes
-  into the extension and cannot reach an imported constant.
+- `apps/server`, `apps/web`, `apps/mobile`, `packages/*`, `docs/user` — rule: every string a user reads says `${PRODUCT_NAME}` / `${CONNECT_NAME}` (`productName.ts`), guarded by the web and desktop guard tests, `scripts/connect-name.guard.test.ts` and the visual pass (#1368 A). Rules and traps: `docs/internals/infinitus-rename.md`.
 - `apps/mobile` — rule: screen copy, alerts, brand text, a11y labels,
   the auth device label and the `infinitus` variant's
   permission strings read `PRODUCT_NAME`; the `development`/`preview`/
@@ -259,6 +243,13 @@ these bullets.
   log file is never worth failing a turn over.
 - `apps/server/src/infinitus/Layers/InfinitusSignInLapse.ts` (+ `infinitusSignInLapse.logic.ts`, tests) — lapsed AWS / gcloud sign-ins read off the Claude driver's tool results (#1076): one `infinitus.signin.needed` row per hit and the Mac's `aws-login` / `gcloud-login` flow through `InfinitusService.command`. Rules and traps: `docs/internals/sign-in-lapse.md`.
 - `apps/server/src/infinitus/Layers/InfinitusAlertRelay.ts` (+ `Services/InfinitusAlertRelay.ts`, test; `packages/contracts/src/infinitusAlert.ts`) — the server half of an account alert (#1375): `POST /api/infinitus/alert` on the desktop credential's operate scope, signed with the environment's relay link key for the relay's `infinitusAlert` route (`relayInfinitusAlert.ts`), deep link `/settings/accounts`. Unlinked answers 503 `InfinitusAlertRelayUnlinked` (the Mac keeps the notice local); a relay refusal is logged with its cause and answers 500. The link is read per call, as `AgentAwarenessRelay` reads it. It replaced the Mac-key thread-card fold (`InfinitusAgentActivity.ts`, #1047 part 3): the relay draws the card now.
+- `apps/desktop/resources/dmg/dmg-background-infinitus.svg` — the DMG window's
+  artwork for the `infinitus` channel (#732), rasterized by sips at build time
+  (`stageDesktopDmgBackground`), so gradients, shapes and text only: no filters,
+  masks or CSS. Palette and the twin-loop geometry follow `apps/mac/make-icon.swift`
+  and `MenuBarGlyph.swift`; the icon positions and the empty bottom 32px follow
+  the `dmg` block in `scripts/build-desktop-artifact.ts`. Light base on
+  purpose: Finder draws the icon labels black and the builder cannot recolor them.
 - `apps/desktop/src/infinitus/` — the shell's Infinitus side (#654 step 1):
   `InfinitusDesktopPrefs.ts` keeps `<stateDir>/infinitus-desktop.json`
   (`quitInfinitusWithApp`, default off; upstream's desktop-settings.json is
@@ -404,3 +395,13 @@ these bullets.
   proxy" for a Claude instance: 9Router / CLIProxyAPI / custom presets, model
   slots picked from the proxy's `GET <baseUrl>/models`, everything stored on
   the ordinary instance (env vars + CLAUDE_CONFIG_DIR), no settings file written.
+- `apps/server/src/vcs/checkpointDiffPathspec.ts` (+ its test) — restricts a
+  checkpoint-to-checkpoint diff (turn cards, the panel's turn and full-thread
+  views) to the paths whose `to` content still differs from the base branch's
+  tip, re-resolved per call (#1403): a rebase inside a turn otherwise attributes
+  every commit that landed on main to the turn. Traps: `git diff` takes no
+  pathspec file, so the paths go on argv under a 400 KB budget and a larger
+  set leaves the diff unrestricted; a file both the base and the agent
+  touched keeps its whole from→to hunks; the base is resolved without
+  `GitVcsDriverCore` (its layer needs would leak into `vcsLayer`), so a
+  non-`origin` remote falls back to the local base branch.
