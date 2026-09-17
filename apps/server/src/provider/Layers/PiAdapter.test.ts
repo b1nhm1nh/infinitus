@@ -425,3 +425,35 @@ it.effect(
     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
   { timeout: 30_000 },
 );
+
+it.effect(
+  "does not stamp a settled turn's id onto records that arrive after it",
+  () =>
+    Effect.gen(function* () {
+      const binaryPath = yield* Effect.promise(() =>
+        makeMockPi({ T3_PI_RESPONSE_TEXT: "PONG", T3_PI_EMIT_TRAILING_TEXT: "1" }),
+      );
+      const { events, fiber, result } = yield* startAndPrompt({
+        binaryPath,
+        cwd: process.cwd(),
+      });
+
+      // Pi keeps the session alive between prompts and still emits records on
+      // it. A turn id left active after the turn settled attributes that
+      // chatter to a turn the orchestrator has already closed.
+      yield* Effect.promise(() => new Promise((resolve) => setTimeout(resolve, 200)));
+      yield* Fiber.interrupt(fiber);
+
+      const trailing = events.find(
+        (event) => event.type === "content.delta" && event.payload.delta === "TRAILING",
+      );
+      assert.isDefined(trailing);
+      assert.isUndefined(trailing?.turnId);
+
+      const inTurn = events.find(
+        (event) => event.type === "content.delta" && event.payload.delta === "PONG",
+      );
+      assert.strictEqual(inTurn?.turnId, result.turnId);
+    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+  { timeout: 30_000 },
+);

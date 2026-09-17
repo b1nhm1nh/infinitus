@@ -10,6 +10,19 @@ changes or leaves. Fork-owned files are listed in
 pages under `docs/internals/` keep taking narratives out of these bullets.
 
 - `CLAUDE.md` — adds `@INFINITUS.md`.
+- Pi provider (#1409 follow-on). Registration points only:
+  `packages/contracts/src/settings.ts` (`PiSettings`, the `pi` arm of the
+  provider-config union) and `src/model.ts` (`PI_DEFAULT_MODEL`);
+  `apps/server/src/provider/builtInDrivers.ts` (`PiDriver` + `PiDriverEnv`),
+  `provider/providerStatusCache.ts` (`"pi"` in `BUILT_IN_DRIVER_ORDER`),
+  `textGeneration/TextGeneration.ts` (`"pi"` in `TextGenerationProvider`),
+  `apps/server/src/serverSettings.ts` (the `pi` defaults);
+  `apps/web/src/components/Icons.tsx` (`PiIcon`),
+  `components/chat/providerIconUtils.ts`,
+  `components/settings/providerDriverMeta.ts`,
+  `components/settings/settingsSearch.ts`;
+  `apps/mobile/src/components/ProviderIcon.tsx` (its own `pi` branch).
+  Rules and traps: `docs/internals/pi-driver.md`.
 - `packages/contracts/src/rpc.ts` — `subscribeInfinitus` and
   `infinitus.command` in `WS_METHODS`, their two `Rpc.make`s, both in
   `WsRpcGroup`; `provider.proxyModels` (the add-instance wizard lists an

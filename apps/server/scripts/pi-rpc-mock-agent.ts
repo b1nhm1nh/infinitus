@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// @effect-diagnostics nodeBuiltinImport:off preferSchemaOverJson:off
+// @effect-diagnostics nodeBuiltinImport:off preferSchemaOverJson:off globalTimers:off - a plain Node script standing in for the `pi` binary; it runs outside any Effect runtime.
 /**
  * Mock `pi --mode rpc` agent.
  *
@@ -31,6 +31,9 @@ const stderrMessage = process.env.T3_PI_STDERR_MESSAGE;
 const responseText = process.env.T3_PI_RESPONSE_TEXT ?? "DONE";
 /** Emits a payload containing U+2028, which a non-LF-only reader corrupts. */
 const emitSeparatorText = process.env.T3_PI_EMIT_SEPARATOR_TEXT === "1";
+/** Emits one more assistant delta AFTER `agent_settled`, the way a real
+ * session does when an extension speaks once the turn has already closed. */
+const emitTrailingText = process.env.T3_PI_EMIT_TRAILING_TEXT === "1";
 
 if (argvLogPath) {
   NodeFS.appendFileSync(argvLogPath, `${process.argv.slice(2).join("\t")}\n`);
@@ -184,6 +187,15 @@ const runPrompt = (message: string) => {
   write({ type: "agent_end", willRetry: false });
   write({ type: "agent_settled" });
   running = false;
+  if (emitTrailingText) {
+    setTimeout(() => {
+      write({
+        type: "message_update",
+        usage,
+        assistantMessageEvent: { type: "text_delta", contentIndex: 0, delta: "TRAILING" },
+      });
+    }, 20);
+  }
 };
 
 let buffer = "";

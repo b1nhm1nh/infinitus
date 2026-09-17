@@ -89,8 +89,6 @@ interface PiSessionContext {
   activeTurnId: TurnId | undefined;
   /** Settles when Pi emits `agent_settled` for the turn in flight. */
   turnSettled: Deferred.Deferred<PiTurnOutcome> | undefined;
-  /** Assistant text of the in-flight turn, for error detail on a failure. */
-  assistantText: string;
   /** Live tool calls by Pi's `toolCallId`, so `_end` can close the right item. */
   readonly openToolCalls: Map<string, string>;
   readonly turns: Array<{ id: TurnId; items: Array<unknown> }>;
@@ -206,7 +204,6 @@ export const makePiAdapter = Effect.fn("makePiAdapter")(function* (
           const delta = event.delta ?? "";
           if (delta.length === 0) return;
           if (event.type === "text_delta") {
-            ctx.assistantText += delta;
             yield* offerRuntimeEvent({
               type: "content.delta",
               ...(yield* makeEventStamp()),
@@ -458,7 +455,6 @@ export const makePiAdapter = Effect.fn("makePiAdapter")(function* (
         recordFiber: undefined,
         activeTurnId: undefined,
         turnSettled: undefined,
-        assistantText: "",
         openToolCalls: new Map(),
         turns: [],
         stopped: false,
@@ -526,7 +522,6 @@ export const makePiAdapter = Effect.fn("makePiAdapter")(function* (
       const settled = yield* Deferred.make<PiTurnOutcome>();
       ctx.activeTurnId = turnId;
       ctx.turnSettled = settled;
-      ctx.assistantText = "";
       ctx.session = { ...ctx.session, activeTurnId: turnId, updatedAt: yield* nowIso };
 
       yield* offerRuntimeEvent({
@@ -546,7 +541,13 @@ export const makePiAdapter = Effect.fn("makePiAdapter")(function* (
       const outcome = yield* Deferred.await(settled);
       ctx.turnSettled = undefined;
       ctx.turns.push({ id: turnId, items: [{ prompt, outcome }] });
-      ctx.session = { ...ctx.session, updatedAt: yield* nowIso };
+      // Pi keeps the session alive between prompts and still emits records on
+      // it (a late `message_end`, an extension's chatter). Leaving the settled
+      // turn active would stamp those with a turn the orchestrator has already
+      // closed, so the id is dropped the moment the turn resolves.
+      if (ctx.activeTurnId === turnId) ctx.activeTurnId = undefined;
+      const { activeTurnId: _settledTurnId, ...idleSession } = ctx.session;
+      ctx.session = { ...idleSession, updatedAt: yield* nowIso };
 
       if (outcome.kind === "failed") {
         const stderr = (yield* ctx.runtime.stderr).trim();
