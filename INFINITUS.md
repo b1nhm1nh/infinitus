@@ -560,6 +560,15 @@ was deleted`, before the forced remove) and `deleteBranch` (`git branch -D`
   `applinks` for `Q783W6B4FA.run.infinitus.mobile` and `assetlinks.json`);
   `extra.productVersion` is the root `VERSION` (#823 layer 3), which
   `SettingsRouteScreen` shows in place of the store version.
+- `apps/mobile/eas.json` — the `infinitus` build profile, the only one that
+  selects that variant (`APP_VARIANT=infinitus`): `distribution: internal`
+  (this app is not shipped to the App Store) and its own `channel`, so a
+  fork build never takes an upstream channel's updates. No `environment`
+  key: upstream's `preview` / `production` profiles name EAS server-side
+  environments holding upstream's secrets, and the fork has none. The repo's
+  `owner` and EAS `projectId` in `app.config.ts` are still upstream's, so a
+  build needs an account with access to that project, or `eas init` under
+  one of ours.
 - `apps/mobile/plugins/withWidgetLogoAsset.cjs` (+ its test) — the mark the
   lock-screen card draws in its header comes from the variant
   (`SOURCE_BY_VARIANT`, #941): the `infinitus` build gets
