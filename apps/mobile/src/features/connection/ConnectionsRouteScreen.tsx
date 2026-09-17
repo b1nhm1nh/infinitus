@@ -2,7 +2,7 @@ import { ScreenScrollView as ScrollView } from "../../components/ScreenScrollVie
 import { NativeHeaderToolbar } from "../../native/StackHeader";
 import { useNavigation } from "@react-navigation/native";
 import { SymbolView } from "../../components/AppSymbol";
-import type { EnvironmentId } from "@t3tools/contracts";
+import type { EnvironmentId } from "@infinitus/contracts";
 import { useCallback, useState } from "react";
 import { Platform, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -95,7 +95,7 @@ export function ConnectionsRouteScreen() {
             </View>
             <Text className="text-center text-sm leading-normal text-foreground-muted">
               No environments connected yet.{"\n"}Tap{" "}
-              <Text className="font-t3-bold text-foreground">+</Text> to add one.
+              <Text className="font-infinitus-bold text-foreground">+</Text> to add one.
             </Text>
           </View>
         )}

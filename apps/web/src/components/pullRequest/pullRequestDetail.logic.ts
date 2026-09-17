@@ -22,7 +22,7 @@ import {
   type PullRequestUpdateMethod,
   type SourceControlProviderKind,
   type VcsRef,
-} from "@t3tools/contracts";
+} from "@infinitus/contracts";
 
 import { inferReviewCommentFenceLanguage, type ReviewCommentContext } from "~/reviewCommentContext";
 import { reviewCommentContextId } from "~/lib/composerContextRecords";
