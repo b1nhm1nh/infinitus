@@ -1,7 +1,7 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
-import { OmpSettings, ProviderInstanceId, TextGenerationError } from "@t3tools/contracts";
-import { createModelSelection } from "@t3tools/shared/model";
+import { OmpSettings, ProviderInstanceId, TextGenerationError } from "@infinitus/contracts";
+import { createModelSelection } from "@infinitus/shared/model";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";

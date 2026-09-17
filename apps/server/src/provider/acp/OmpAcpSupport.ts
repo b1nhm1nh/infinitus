@@ -3,8 +3,8 @@ import {
   ProviderDriverKind,
   type ProviderOptionSelection,
   type RuntimeMode,
-} from "@t3tools/contracts";
-import { getProviderOptionStringSelectionValue, normalizeModelSlug } from "@t3tools/shared/model";
+} from "@infinitus/contracts";
+import { getProviderOptionStringSelectionValue, normalizeModelSlug } from "@infinitus/shared/model";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";

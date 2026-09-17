@@ -4,10 +4,10 @@ import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 
-import { type ModelSelection, type OmpSettings, TextGenerationError } from "@t3tools/contracts";
-import { sanitizeBranchFragment, sanitizeFeatureBranchName } from "@t3tools/shared/git";
-import { extractJsonObject } from "@t3tools/shared/schemaJson";
-import { resolveSpawnCommand } from "@t3tools/shared/shell";
+import { type ModelSelection, type OmpSettings, TextGenerationError } from "@infinitus/contracts";
+import { sanitizeBranchFragment, sanitizeFeatureBranchName } from "@infinitus/shared/git";
+import { extractJsonObject } from "@infinitus/shared/schemaJson";
+import { resolveSpawnCommand } from "@infinitus/shared/shell";
 
 import { resolveOmpAcpBaseModelId } from "../provider/acp/OmpAcpSupport.ts";
 import * as TextGeneration from "./TextGeneration.ts";

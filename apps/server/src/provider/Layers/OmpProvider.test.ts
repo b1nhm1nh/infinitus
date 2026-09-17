@@ -4,7 +4,7 @@ import { describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Schema from "effect/Schema";
-import { OmpSettings } from "@t3tools/contracts";
+import { OmpSettings } from "@infinitus/contracts";
 
 import {
   buildInitialOmpProviderSnapshot,

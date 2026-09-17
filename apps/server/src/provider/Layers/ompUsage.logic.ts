@@ -11,7 +11,7 @@
  * never thrown on, so a future omp shape change degrades to fewer
  * windows / no quota rather than a broken probe.
  */
-import type { ServerProviderUsageLimits, ServerProviderUsageWindow } from "@t3tools/contracts";
+import type { ServerProviderUsageLimits, ServerProviderUsageWindow } from "@infinitus/contracts";
 
 import {
   clampPercent,
