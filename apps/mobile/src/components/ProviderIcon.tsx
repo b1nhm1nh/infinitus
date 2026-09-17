@@ -73,6 +73,21 @@ export function ProviderIcon(props: ProviderIconProps) {
     );
   }
 
+  if (props.provider === "omp") {
+    return (
+      <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+        <Path
+          d="M4.5 18.5c2.4-6.2 5.1-10.4 7.5-12.6 2.4 2.2 5.1 6.4 7.5 12.6"
+          stroke={mono}
+          strokeWidth={1.8}
+          strokeLinecap="round"
+          fill="none"
+        />
+        <Path d="M8.2 14.8h7.6" stroke={mono} strokeWidth={1.8} strokeLinecap="round" />
+      </Svg>
+    );
+  }
+
   if (props.provider === "pi") {
     // Matches `PiIcon` in the web `Icons.tsx`.
     return (

@@ -433,6 +433,15 @@ pages under `docs/internals/` keep taking narratives out of these bullets.
   `applinks` for `Q783W6B4FA.run.infinitus.mobile` and `assetlinks.json`);
   `extra.productVersion` is the root `VERSION` (#823 layer 3), which
   `SettingsRouteScreen` shows in place of the store version.
+- `apps/mobile/eas.json` — the `infinitus` build profile, the only one that
+  selects that variant (`APP_VARIANT=infinitus`): `distribution: internal`
+  (this app is not shipped to the App Store) and its own `channel`, so a fork
+  build never takes an upstream channel's updates. No `environment` key:
+  upstream's `preview` / `production` profiles name EAS server-side
+  environments holding upstream's secrets, and the fork has none. The repo's
+  `owner` and EAS `projectId` in `app.config.ts` are still upstream's, so a
+  build needs an account with access to that project, or `eas init` under one
+  of ours.
 - `apps/mobile/plugins/withWidgetLogoAsset.cjs` (+ its test) — the mark the
   lock-screen card draws in its header comes from the variant
   (`SOURCE_BY_VARIANT`, #941): the `infinitus` build gets
@@ -577,4 +586,5 @@ pages under `docs/internals/` keep taking narratives out of these bullets.
   workflows, pull requests — write), since the default token cannot push a
   branch that touches `.github/workflows` (#658); without it such a sync
   is done by hand.
+- **Oh My Pi as a provider driver.** `omp` speaks ACP natively (`omp acp`), so the driver is one more tenant of the existing ACP runtime; its own files are in `fork-only-files.md`. The registration points are the ones every driver has: `packages/contracts/src/settings.ts` (`OmpSettings` / `OmpSettingsPatch`, the `omp` key of `providers` and its patch, `enabled` false by default), `packages/contracts/src/model.ts` (`DEFAULT_MODEL_BY_PROVIDER.omp`, `PROVIDER_DISPLAY_NAMES.omp`), `apps/server/src/provider/builtInDrivers.ts`, `providerStatusCache.ts`, `apps/server/src/serverSettings.ts`, `textGeneration/TextGeneration.ts`, `apps/server/scripts/acp-mock-agent.ts` (`T3_ACP_OMP=1`), `packages/contracts/src/agentSessions.ts` (`"omp"` on `AgentSessionSource`) `apps/server/src/project/AgentSessionScanner.ts` and `AgentSessionImporter.ts` (the omp resume cursor, plus its test); web `Icons.tsx`, `chat/providerIconUtils.ts`, `settings/providerDriverMeta.ts`, `settings/customModelEditor.logic.ts`, `settings/settingsSearch.ts` and `onboarding/WelcomeWizard.tsx`; mobile `ProviderIcon.tsx`; docs `README.md`, `docs/user/install.md`, `docs/user/permission-modes.md`. Rules and traps: `docs/internals/omp-driver.md`.
 - Upstream's deploy and publish workflows — disabled in the repository's Actions settings, never deleted; `deploy-relay.yml` is the one enabled (#1322). Rules and traps: `docs/internals/release-and-updates.md`.
