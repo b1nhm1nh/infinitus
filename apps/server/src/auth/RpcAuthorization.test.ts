@@ -5,7 +5,7 @@ import {
   AuthRelayWriteScope,
   WS_METHODS,
   WsRpcGroup,
-} from "@t3tools/contracts";
+} from "@infinitus/contracts";
 import { describe, expect, it } from "@effect/vitest";
 
 import { RPC_REQUIRED_SCOPES, requiredScopeForRpcMethod } from "./RpcAuthorization.ts";
@@ -60,6 +60,14 @@ describe("RPC authorization scopes", () => {
     );
     expect(requiredScopeForRpcMethod(WS_METHODS.pullRequestsRequestReviewers)).toBe(
       requiredScopeForRpcMethod(WS_METHODS.pullRequestsComment),
+    );
+  });
+
+  it("lets a standard client feed a sign-in code over the secret channel", () => {
+    // A phone pairs with the standard scopes; the layer holds the other
+    // secret verbs to access:write per verb.
+    expect(requiredScopeForRpcMethod(WS_METHODS.infinitusSecret)).toBe(
+      AuthOrchestrationOperateScope,
     );
   });
 

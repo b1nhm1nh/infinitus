@@ -2,8 +2,8 @@ import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer";
 import * as NodeSocket from "@effect/platform-node/NodeSocket";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as NodeCrypto from "node:crypto";
-import { HostProcessEnvironment, HostProcessPlatform } from "@t3tools/shared/hostProcess";
-import { PRODUCT_NAME } from "@t3tools/shared/productName";
+import { HostProcessEnvironment, HostProcessPlatform } from "@infinitus/shared/hostProcess";
+import { PRODUCT_NAME } from "@infinitus/shared/productName";
 
 import {
   type DeviceServiceState,
@@ -48,14 +48,14 @@ import {
   EditorId,
   WorktreeSetupSnapshot,
   type WorktreeSetupStageId,
-} from "@t3tools/contracts";
+} from "@infinitus/contracts";
 import {
   computeDpopAccessTokenHash,
   computeDpopJwkThumbprint,
   type DpopPublicJwk,
-} from "@t3tools/shared/dpop";
-import { RELAY_HEALTH_REQUEST_TYP, RELAY_MINT_REQUEST_TYP } from "@t3tools/shared/relayJwt";
-import * as RelayClient from "@t3tools/shared/relayClient";
+} from "@infinitus/shared/dpop";
+import { RELAY_HEALTH_REQUEST_TYP, RELAY_MINT_REQUEST_TYP } from "@infinitus/shared/relayJwt";
+import * as RelayClient from "@infinitus/shared/relayClient";
 import { assert, it } from "@effect/vitest";
 import { assertFailure, assertInclude, assertTrue } from "@effect/vitest/utils";
 import * as Clock from "effect/Clock";
@@ -121,7 +121,6 @@ import * as CheckpointDiffQuery from "./checkpointing/CheckpointDiffQuery.ts";
 import * as GitManager from "./git/GitManager.ts";
 import * as EnvironmentTheme from "./environmentTheme.ts";
 import { InfinitusService } from "./infinitus/Services/Infinitus.ts";
-import type { InfinitusSnapshot } from "@t3tools/contracts/infinitus";
 import { InfinitusCompanion } from "./infinitus/Services/InfinitusCompanion.ts";
 import { InfinitusPairing } from "./infinitus/Services/InfinitusPairing.ts";
 import { CaptureStore } from "./captures/CaptureStore.ts";
@@ -232,8 +231,8 @@ import {
   type TransferBudgetRun,
   transferBudgetViolations,
 } from "../integration/TransferBudgetReport.integration.ts";
-import { symlinksSupported } from "@t3tools/shared/testing/symlinks";
-import { otlpSerializationLayer } from "@t3tools/shared/observability";
+import { symlinksSupported } from "@infinitus/shared/testing/symlinks";
+import { otlpSerializationLayer } from "@infinitus/shared/observability";
 
 const defaultProjectId = ProjectId.make("project-default");
 const defaultThreadId = ThreadId.make("thread-default");
@@ -1258,7 +1257,7 @@ const buildAppUnderTest = (options?: {
       ),
       Layer.provide(
         Layer.mock(CloudCliTokenManager.CloudCliTokenManager)({
-          get: Effect.die(new Error("Unexpected T3 Connect CLI authorization request.")),
+          get: Effect.die(new Error("Unexpected Infinitus Connect CLI authorization request.")),
           getExisting: Effect.succeed(Option.none()),
           hasCredential: Effect.succeed(false),
           clear: Effect.void,
@@ -2208,52 +2207,6 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
 
       assert.equal(response.status, 200);
       assert.deepEqual(body, testEnvironmentDescriptor);
-    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
-  );
-
-  // Fork (#663): the descriptor names the Mac's tunnel while it is up, so a
-  // phone paired on the LAN learns where else this environment answers.
-  it.effect("names the Infinitus tunnel as an alternate base URL in the descriptor", () =>
-    Effect.gen(function* () {
-      yield* buildAppUnderTest({
-        layers: {
-          infinitus: {
-            snapshot: Effect.succeed({
-              available: true,
-              status: {
-                version: "1",
-                sha: "test",
-                socket: "/tmp/test.sock",
-                badge: "",
-                playground: false,
-                signInRunning: false,
-                engines: {},
-                forkTunnel: {
-                  enabled: true,
-                  port: 3773,
-                  state: "up",
-                  url: "https://code.infinitus.run",
-                },
-              },
-              fleets: [],
-              sessions: [],
-              commands: [],
-            } as unknown as InfinitusSnapshot),
-          },
-        },
-      });
-
-      const url = yield* getHttpServerUrl("/.well-known/t3/environment");
-      const response = yield* fetchEffect(url);
-      const body = yield* responseJsonEffect<
-        typeof testEnvironmentDescriptor & { alternateHttpBaseUrls?: ReadonlyArray<string> }
-      >(response);
-
-      assert.equal(response.status, 200);
-      assert.deepEqual(body, {
-        ...testEnvironmentDescriptor,
-        alternateHttpBaseUrls: ["https://code.infinitus.run"],
-      });
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 
@@ -3560,7 +3513,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 
-  it.effect("serves the documented T3 Connect mint credential endpoint", () =>
+  it.effect("serves the documented Infinitus Connect mint credential endpoint", () =>
     Effect.gen(function* () {
       yield* buildAppUnderTest();
 
@@ -3619,7 +3572,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 
-  it.effect("serves signed T3 Connect environment health checks", () =>
+  it.effect("serves signed Infinitus Connect environment health checks", () =>
     Effect.gen(function* () {
       yield* buildAppUnderTest();
 

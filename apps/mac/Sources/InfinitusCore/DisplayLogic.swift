@@ -202,8 +202,13 @@ public enum SentinelNotes {
 
     /// nil for "ok" (rows render their usage windows); otherwise the note,
     /// falling back to the raw status for values this build doesn't know.
+    ///
+    /// "disabled" is nil too: a hold is policy, carried by `Account.disabled`
+    /// and worn as the row's pause button. An engine that still reports it as
+    /// a status must not cost the row its windows (user 2026-09-16 "paused
+    /// accounts must show session, 7d, fable limit").
     public static func note(for usageStatus: String) -> String? {
-        if usageStatus == "ok" { return nil }
+        if usageStatus == "ok" || usageStatus == "disabled" { return nil }
         return notes[usageStatus] ?? usageStatus.replacingOccurrences(of: "_", with: " ")
     }
 
@@ -359,6 +364,20 @@ public enum AccountVitals {
         public func blocks(scoped name: String?) -> Bool {
             kind == .scoped && self.name == name
         }
+    }
+
+    /// Whether a dead per-model window rolls with the account's weekly
+    /// one — Fable's quota IS a 7d window, so its dead line would repeat
+    /// the clock the weekly cell already counts down (user 2026-09-15:
+    /// "fable has reset time of 7d so when fable is down no needs to show
+    /// its reset time"). Sub-minute drift is the same instant; a model
+    /// window on a schedule of its own keeps its time.
+    public static func resetEchoesWeekly(_ cause: DeadCause, in usage: Usage?) -> Bool {
+        guard cause.kind == .scoped,
+              let scoped = WeeklyRoll.parse(cause.resetsAt),
+              let weekly = WeeklyRoll.parse(usage?.sevenDay?.resetsAt)
+        else { return false }
+        return abs(scoped.timeIntervalSince(weekly)) < 60
     }
 
     public static func cause(_ usage: Usage?) -> DeadCause? {

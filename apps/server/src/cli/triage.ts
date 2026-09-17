@@ -14,9 +14,9 @@ import * as NodeChildProcess from "node:child_process";
 import * as NodeOS from "node:os";
 import * as NodeReadlinePromises from "node:readline/promises";
 
-import { HostProcessArchitecture, HostProcessPlatform } from "@t3tools/shared/hostProcess";
-import { PRODUCT_NAME } from "@t3tools/shared/productName";
-import { isCommandAvailable, resolveSpawnCommand } from "@t3tools/shared/shell";
+import { HostProcessArchitecture, HostProcessPlatform } from "@infinitus/shared/hostProcess";
+import { PRODUCT_NAME } from "@infinitus/shared/productName";
+import { isCommandAvailable, resolveSpawnCommand } from "@infinitus/shared/shell";
 import * as Config from "effect/Config";
 import * as Console from "effect/Console";
 import * as DateTime from "effect/DateTime";
@@ -159,7 +159,7 @@ export const triageCommand = Command.make("triage", {
   model: modelFlag,
 }).pipe(
   Command.withDescription(
-    `Investigate a ${PRODUCT_NAME} problem on this machine with claude or codex, and help file a good issue.`,
+    `Investigate an ${PRODUCT_NAME} problem on this machine with claude or codex, and help file a good issue.`,
   ),
   Command.withHandler((flags) =>
     Effect.gen(function* () {

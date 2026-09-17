@@ -15,16 +15,16 @@ import {
   type ThreadPullRequestKey,
   type ThreadPullRequestLink,
   type OrchestrationThreadActivity,
-} from "@t3tools/contracts";
+} from "@infinitus/contracts";
 import {
   legacyLinkedPullRequestOf,
   legacyThreadPullRequestKey,
   normalizeThreadPullRequestKey,
   threadPullRequestKeysEqual,
-} from "@t3tools/shared/threadPullRequests";
-import { compareDateTimeStrings } from "@t3tools/shared/dateTime";
-import { isValidOrderKey, orderKeyBetween } from "@t3tools/shared/orderKeys";
-import { addTurnUsage } from "@t3tools/shared/threadUsage";
+} from "@infinitus/shared/threadPullRequests";
+import { compareDateTimeStrings } from "@infinitus/shared/dateTime";
+import { isValidOrderKey, orderKeyBetween } from "@infinitus/shared/orderKeys";
+import { addTurnUsage } from "@infinitus/shared/threadUsage";
 import * as DateTime from "effect/DateTime";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
@@ -50,6 +50,8 @@ import {
 } from "./commandInvariants.ts";
 import { projectEvent } from "./projector.ts";
 import { threadHasQueuedTurnStart } from "./ThreadSettlementPolicy.ts";
+
+const monogramSegmenter = new Intl.Segmenter(undefined, { granularity: "grapheme" });
 
 const isScriptRunCommand = Schema.is(SCRIPT_RUN_COMMAND_PATTERN);
 
@@ -294,6 +296,15 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         command,
         projectId: command.projectId,
       });
+      if (
+        command.projectIcon?.kind === "monogram" &&
+        Array.from(monogramSegmenter.segment(command.projectIcon.text)).length > 2
+      ) {
+        return yield* new OrchestrationCommandInvariantError({
+          commandType: command.type,
+          detail: "Project monograms must contain at most two characters.",
+        });
+      }
       if (command.scripts !== undefined) {
         // Persisted IDs predate shortcut validation. Let users edit or remove them
         // without allowing another invalid ID to enter the project.
@@ -1658,6 +1669,8 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
               ? { modelSelection: command.modelSelection }
               : {}),
             ...(command.message.context !== undefined ? { context: command.message.context } : {}),
+            // Only the non-default moment is stored (#1318).
+            ...(command.sendAt === "tool-boundary" ? { sendAt: command.sendAt } : {}),
             orderKey,
             createdAt: command.createdAt,
             updatedAt: command.createdAt,
@@ -1696,6 +1709,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
             ...(existing.modelSelection !== undefined
               ? { modelSelection: existing.modelSelection }
               : {}),
+            ...(existing.sendAt !== undefined ? { sendAt: existing.sendAt } : {}),
             orderKey: existing.orderKey,
             createdAt: existing.createdAt,
             messageId: command.message.messageId,

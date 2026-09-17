@@ -1,0 +1,23 @@
+# Thread notifications
+
+`apps/web/src/lib/infinitusNotifications.logic.ts`, `apps/web/src/components/desktop/DesktopBadgeCoordinator.tsx`, `apps/web/src/components/desktop/NotificationModeMigration.tsx`, `apps/web/src/components/settings/DesktopBadgeSettings.tsx`, `apps/desktop/src/electron/ElectronNotification.ts`, `apps/desktop/src/ipc/methods/notifications.ts` — thread notifications and sounds are upstream's (#11481: `notificationMode` on the client settings, `ThreadNotificationCoordinator`, the `Notification` API and two bundled sounds; ruling #1032, which retired the fork's #270 B banners over the Electron main process and the #270 H per-window completion sound). The fork layers a few things.
+
+## The coordinator
+
+In `ThreadNotificationCoordinator.tsx` (an upstream file, one registration point): `held` and `limited` threads notify like input does — the holds come from the environment's `subscribeInfinitusHolds` stream, and `attentionNotificationTitle` is what titles them, since upstream has no word for either. `failed` now reads "Thread failed", upstream's word, so the fork carries no second vocabulary for one banner. Upstream's two coordinator tests mock `../state/environments`, so they also stub `useEnvironment`, `../state/infinitus` and `../state/query`: without the capability the holds path stays inert and their assertions read upstream's behaviour. Upstream now notifies on `failed` itself (by the latest TURN's state; the fork's resolver reads the SESSION, so both checks run and catch different rows), and it now quiets its own banner while the window has focus, showing an in-app toast instead — so the fork's remaining focus rule is narrower than it was: `quietForViewer` keeps the thread ON SCREEN silent, toast and bell included, where upstream still rings for it. Mind the naming when merging this file: both sides bind `attention` and mean different things by it — the fork's is the banner title, upstream's is the dedupe key the fork calls `input`.
+
+## The queue rule and the Dock badge
+
+Next, #270 B's queue rule: a turn that completes while the thread still has `queuedTurns` neither posts nor rings (`notificationKind`), since the #806 drain sends the next row the moment the turn ends; the completion still counts as seen, so removing the queued row afterwards rings nothing for it, and an approval or question rings queued or not because the drain cannot pass it. The Dock badge (`desktopBadgeAttention`, on by default) counts the threads in approval or input through the `setBadgeCount` bridge method, the one IPC left (`SET_BADGE_COUNT_CHANNEL`), its switch the notifications route's `lead` and the `desktop-badge` search item.
+
+## The mode migration
+
+`NotificationModeMigration`, mounted from `__root.tsx`, maps a client's old settings onto `notificationMode` once (`legacyNotificationMode`: the four banner toggles — absent counts as on, and only on a desktop shell — and the old `infinitus:completion-sound:v1` switch), only while the mode still reads `off`, then marks `infinitus:notification-mode:migrated:v1`; the four toggles stay in `ClientSettingsSchema` as optional inputs and are never written again.
+
+## Account events: one notifier per machine
+
+The Mac app used to post the account news (a limit, every account dead, a revival, a crash) to its own Notification Center while a desktop on the same machine showed the same line — two banners for one event, the last piece of #1032 left undone. It now `announce`s instead (`AppModel.announce`): the line goes to the event log as an `alert` (interrupting) or `notice` (informing) row, and `notify` posts to Notification Center only while `AppModel.desktopIsWatching` is false — that is, while no client other than the app's own popup holds a `fleets` lease (`LeaseTable.holds(_:excluding:)`; the popup reports `.fleets` too, hence the exclusion). A Mac with no desktop beside it keeps every banner.
+
+The desktop reads those rows off `snapshot.events` where it already read `limit` and `switch`: `eventToast` maps `alert`/`notice` too and marks the interrupting ones `urgent`, and `useInfinitusEventToasts` gives an urgent one the `input` sound and a real `Notification` when the window is away, both through the client's own `notificationMode`. `alert` and `notice` are new kinds on purpose — `StatsEvents.days()` ignores what it does not know, so a new kind is free while reusing `death`/`limit`/`revival` would corrupt months of tallies.
+
+The phone channel is untouched: the relay alert (`DesktopAPI.alert`, #1375) goes either way, since a desktop on this Mac says nothing to a phone away from it. Which account events are worth saying at all is still the Mac's (`push_all_dead` / `push_last_alive` / `push_revived`); how they arrive is the client's.

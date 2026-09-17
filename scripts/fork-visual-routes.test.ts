@@ -39,6 +39,7 @@ describe("FORK_VISUAL_ROUTES", () => {
       "/settings/infinitus/animations",
       "/settings/infinitus/sessions",
       "/settings/infinitus/lock",
+      "/settings/infinitus/team",
       "/settings/infinitus/notifications",
       "/settings/infinitus/devices",
       "/settings/infinitus/engines",
@@ -118,8 +119,7 @@ describe("routeFailures", () => {
     const devices = FORK_VISUAL_ROUTES.find(
       (route) => route.route === "/settings/infinitus/devices",
     )!;
-    // #1178's card marker, present so only the switch is under test.
-    const port = "[Server port: 3773] No phones registered.";
+    const port = "[Server port: 3773]";
     const missing = 'missing "[Sync settings via iCloud Drive: on]"';
     // The label alone is what `innerText` captured, and what a switch that
     // never took its pref still draws.
@@ -152,7 +152,7 @@ describe("checkVisualPass", () => {
     ]);
     const results = checkVisualPass(
       (name) => captures.get(name) ?? null,
-      [FORK_VISUAL_ROUTES[4]!, FORK_VISUAL_ROUTES[11]!, FORK_VISUAL_ROUTES[10]!],
+      [FORK_VISUAL_ROUTES[4]!, FORK_VISUAL_ROUTES[12]!, FORK_VISUAL_ROUTES[11]!],
     );
     expect(results.map((result) => [result.route.label, result.failures])).toEqual([
       ["Lock", []],

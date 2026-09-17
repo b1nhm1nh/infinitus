@@ -13,15 +13,15 @@ import {
   AuthStandardClientScopes,
   ExecutionEnvironmentDescriptor,
   PortSchema,
-} from "@t3tools/contracts";
-import { resolveWorktreeT3Home } from "@t3tools/shared/devHome";
-import { PRODUCT_NAME } from "@t3tools/shared/productName";
+} from "@infinitus/contracts";
+import { resolveWorktreeT3Home } from "@infinitus/shared/devHome";
+import { CONNECT_NAME, PRODUCT_NAME } from "@infinitus/shared/productName";
 import {
   buildTailscaleHttpsBaseUrl,
   DEFAULT_TAILSCALE_SERVE_PORT,
   ensureTailscaleServe,
   readTailscaleStatus,
-} from "@t3tools/tailscale";
+} from "@infinitus/tailscale";
 import * as Config from "effect/Config";
 import * as Console from "effect/Console";
 import * as DateTime from "effect/DateTime";
@@ -80,7 +80,7 @@ export class NoRunningServerError extends Schema.TaggedError<NoRunningServerErro
     return [
       `No running ${PRODUCT_NAME} server found.`,
       ...this.checkedStatePaths.map((statePath) => `  checked ${statePath}`),
-      "Start one with `npx t3 serve`, or connect this machine with T3 Connect: `npx t3 connect`.",
+      `Start one with \`infinitus serve\`, or connect this machine with ${CONNECT_NAME}: \`infinitus connect\`.`,
     ].join("\n");
   }
 }
@@ -128,7 +128,7 @@ export class ServePortOccupiedError extends Schema.TaggedError<ServePortOccupied
   { servePort: Schema.Number },
 ) {
   override get message(): string {
-    return `HTTPS port ${String(this.servePort)} on the tailnet already serves something that is not a ${PRODUCT_NAME} server. Pass --tailscale-serve-port to publish this one on another port.`;
+    return `HTTPS port ${String(this.servePort)} on the tailnet already serves something that is not an ${PRODUCT_NAME} server. Pass --tailscale-serve-port to publish this one on another port.`;
   }
 }
 
@@ -435,7 +435,7 @@ const mintPairingLink = Effect.fn("pair.mintPairingLink")(function* (input: {
     return yield* environmentAuth.createPairingLink({
       scopes: AuthStandardClientScopes,
       subject: "one-time-token",
-      label: Option.getOrElse(input.label, () => "t3 pair"),
+      label: Option.getOrElse(input.label, () => "infinitus pair"),
       ...(Option.isSome(input.ttl) ? { ttl: input.ttl.value } : {}),
     });
   }).pipe(

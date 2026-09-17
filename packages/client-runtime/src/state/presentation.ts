@@ -1,4 +1,4 @@
-import type { EnvironmentId, ServerConfig } from "@t3tools/contracts";
+import type { EnvironmentId, ServerConfig } from "@infinitus/contracts";
 import * as Option from "effect/Option";
 import { AsyncResult, Atom } from "effect/unstable/reactivity";
 
@@ -41,7 +41,10 @@ export function createEnvironmentPresentationAtoms<E>(input: {
       );
       return {
         entry,
-        connection: presentEnvironmentConnection(state),
+        connection:
+          entry.unsupportedReason === undefined
+            ? presentEnvironmentConnection(state)
+            : { phase: "unsupported", error: entry.unsupportedReason, traceId: null },
         serverConfig: get(input.serverConfigValueAtom(environmentId)),
       } satisfies EnvironmentPresentation;
     }).pipe(Atom.withLabel(`environment-presentation:${environmentId}`)),

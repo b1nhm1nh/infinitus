@@ -41,6 +41,7 @@ ID="$(security find-identity -v -p codesigning 2>/dev/null | awk -F'"' '/Apple D
 SOCKDIR="/tmp/infinitus-e2e-$$"; mkdir -p "$SOCKDIR"
 export INFINITUS_CONTROL_SOCKET="$SOCKDIR/control.sock"
 export INFINITUS_APP_SUPPORT="$SOCKDIR/app-support"   # every file the instance writes stays out of the real Infinitus/ (#506)
+export INFINITUS_TEAM_DIR="$SOCKDIR/team-app"          # the app's team dir + file secrets (#1313: CI has no keychain)
 # An empty Claude home (#1204): the stats and token-rate scanners read
 # `$CLAUDE_CONFIG_DIR/projects`, and without this the run scanned the
 # developer's real transcript tree — 14 GB on one Mac, nothing on CI — so
@@ -396,39 +397,25 @@ echo "windows: ok (Settings open idle ${SPCT}%, hidden)"
 "$CTL" prefs set intro_speed 3 >/dev/null 2>&1 && fail "prefs set accepted a value outside the range"
 "$CTL" prefs set intro_style fade | expect "d['value']=='fade'" || fail "prefs set intro_style"
 "$CTL" prefs set intro_style top >/dev/null || fail "prefs set intro_style back"
-# The fork server's tunnel (#572): off by default on T3's port; a mock
-# instance named Infinitus is `blocked`, so enabling it here never runs
-# cloudflared — the gate is what this checks.
-"$CTL" status | expect "d['forkTunnel']['state']=='off' and d['forkTunnel']['port']==3773 and d['forkTunnel']['enabled'] is False and d['forkTunnel'].get('url') is None" || fail "fork tunnel must default to off on 3773"
 # #777: where the process runs from, and that a standalone one is not nested.
 "$CTL" status | expect "isinstance(d['bundlePath'], str) and d['bundlePath'] != '' and d['nested'] is False" || fail "status must carry bundlePath and nested"
-"$CTL" prefs set fork_tunnel_enabled true | expect "d['value'] is True" || fail "prefs set fork_tunnel_enabled"
-"$CTL" status | expect "d['forkTunnel']['state']=='blocked'" || fail "a mock instance must report the fork tunnel blocked, not run it"
-"$CTL" prefs set fork_server_port 70000 | expect "d['value']==70000" || fail "prefs set fork_server_port"
-"$CTL" status | expect "d['forkTunnel']['state']=='invalidPort'" || fail "an out-of-range fork port must report invalidPort"
+# The Cloudflare tunnels retired with Infinitus Connect: no tunnel in the
+# status reply, no tunnel prefs, and nothing spawns cloudflared.
+"$CTL" status | expect "'forkTunnel' not in d" || fail "status must not carry a tunnel any more"
+"$CTL" prefs set fork_tunnel_enabled true >/dev/null 2>&1 && fail "fork_tunnel_enabled must be gone from the catalog"
+"$CTL" prefs set fork_server_port 3841 | expect "d['value']==3841 and d['section']=='devices'" || fail "prefs set fork_server_port"
 "$CTL" prefs set fork_server_port 3773 >/dev/null || fail "prefs set fork_server_port back"
-"$CTL" prefs set fork_tunnel_enabled false | expect "d['value'] is False" || fail "prefs set fork_tunnel_enabled back"
-"$CTL" prefs set fork_tunnel_hostname code.e2e.invalid | expect "d['value']=='code.e2e.invalid'" || fail "prefs set fork_tunnel_hostname"
-"$CTL" prefs get fork_tunnel_hostname | expect "d['prefs'][0]['value']=='code.e2e.invalid'" || fail "prefs get fork_tunnel_hostname"
-# #1178: the Devices page's prefs and the push setup verbs.
+# #1178: the Devices page's prefs.
 "$CTL" prefs set machine_name "E2E Mac" | expect "d['value']=='E2E Mac' and d['section']=='devices'" || fail "prefs set machine_name"
 "$CTL" prefs set machine_name "" | expect "d['value']==''" || fail "prefs set machine_name back"
-"$CTL" prefs get apns_team_id apns_key_id icloud_sync | expect "[p['value'] for p in d['prefs']]==['','',False]" || fail "prefs get apns ids / icloud_sync"
-"$CTL" apns | expect "d['keyPresent'] is False and d['teamId']=='' and d['keyId']=='' and d['registrations']==[]" || fail "apns"
-printf 'x' | "$CTL" apns-key 2>&1 | grep -q "apns_key_id" || fail "apns-key must want a key id first"
-"$CTL" manifest | expect "next(c for c in d['commands'] if c['name']=='apns-key')['stdin']=='secret'" || fail "manifest: apns-key takes stdin"
-"$CTL" prefs set fork_tunnel_hostname '""' | expect "d['value']==''" || fail "prefs set fork_tunnel_hostname back"
-"$CTL" status | expect "d['forkTunnel']['state']=='off'" || fail "fork tunnel must be off again"
-pgrep -P "$APP_PID" -f cloudflared >/dev/null && fail "the e2e instance ran cloudflared for the fork port"
+"$CTL" prefs get icloud_sync | expect "[p['value'] for p in d['prefs']]==[False]" || fail "prefs get icloud_sync"
+pgrep -P "$APP_PID" -f cloudflared >/dev/null && fail "the e2e instance ran cloudflared"
 echo "prefs: ok"
 
 # JSON-body verbs (#572 N1): the socket takes a JSON body on stdin.
 "$CTL" client-activity --body '{"clientId":"e2e","visible":true,"focused":true,"recentlyInteracted":true,"scopes":[{"type":"fleets"}],"ttlMs":5000}' | expect "d['clientId']=='e2e'" || fail "client-activity"
 "$CTL" perf | expect "d['leaseScopes'].get('e2e')==['fleets']" || fail "perf must name the lease e2e just took (#499)"
 "$CTL" perf | expect "'stats' not in d['leaseScopes'].get('local', [])" || fail "the local client must not hold stats without the Stats pane (#499)"
-# #572 G6: a phone withdraws its own alert registration; a second withdrawal is a no-op, not an error.
-"$CTL" activities-token --body '{"kind":"alert","token":"00ff","deviceId":"e2e-phone","deviceName":"e2e phone","environment":"sandbox","registeredAt":"2026-09-11T00:00:00Z"}' | expect "d['slot']=='e2e-phone/alert'" || fail "activities-token register"
-"$CTL" activities-token --forget e2e-phone/alert | expect "d['forgotten'] is True" || fail "activities-token --forget"
 # #1177: the fork's "Test connection" against a port nothing serves — a
 # dev Mac's keychain may hold a real key (CI's never does), so the words
 # differ but the verdict and the shape do not; a bad target is a usage
@@ -436,23 +423,20 @@ echo "prefs: ok"
 "$CTL" test-connection cliproxy --url http://127.0.0.1:9 | expect "d['ok'] is False and isinstance(d['error'], str) and d['error'] and 'latencyMs' not in d" || fail "test-connection cliproxy against a dead port"
 "$CTL" test-connection 9router --url http://127.0.0.1:9 | expect "d['ok'] is False and isinstance(d['error'], str) and d['error']" || fail "test-connection 9router against a dead port"
 "$CTL" test-connection swapd >/dev/null 2>&1 && fail "test-connection must refuse an unknown engine"
-# #1047: the desktop's thread card on the push verb — a null state ends
-# it (no phone registered: a no-op that still answers), a stray shape is refused.
-# No phone is registered on this private instance, so the reply says so.
-printf '{"kind":"thread.activity","state":null}' | "$CTL" push | expect "d['pushed'] is True and d['card'] is True and d['targets'] == 0 and d['kinds'] == {}" || fail "push thread.activity end"
-printf '{"kind":"thread.activity","state":{"title":"x"}}' | "$CTL" push 2>&1 | grep -q "thread.activity" || fail "push thread.activity refuses a stray state"
-"$CTL" activities-token --forget e2e-phone/alert | expect "d['forgotten'] is False" || fail "activities-token --forget twice"
-# #835: --forget has no body, so a stdin pipe nobody closes must not hold it
-# (a fifo opened read-write never reaches EOF).
+# #1375: the thread card left the push verb with the Mac's APNs key; a
+# stray shape is still refused, never pushed.
+printf '{"kind":"thread.activity","state":null}' | "$CTL" push 2>&1 | grep -q "thread.phase" || fail "push refuses a stray shape"
+# #835: a body verb given --body must not wait on a stdin pipe nobody
+# closes (a fifo opened read-write never reaches EOF).
 mkfifo "$SOCKDIR/hold.fifo"; exec 7<>"$SOCKDIR/hold.fifo"
-"$CTL" activities-token --forget e2e-phone/alert <&7 >"$LOG.forget" 2>&1 &
-FORGET_PID=$!
-i=0; while /bin/kill -0 "$FORGET_PID" 2>/dev/null; do
-    i=$((i + 1)); [ "$i" -lt 100 ] || { kill "$FORGET_PID" 2>/dev/null; fail "activities-token --forget waited on stdin (#835)"; }
+"$CTL" client-activity --body '{"clientId":"e2e-hold","visible":true,"focused":false,"recentlyInteracted":false,"scopes":[{"type":"fleets"}],"ttlMs":5000}' <&7 >"$LOG.hold" 2>&1 &
+HOLD_PID=$!
+i=0; while /bin/kill -0 "$HOLD_PID" 2>/dev/null; do
+    i=$((i + 1)); [ "$i" -lt 100 ] || { kill "$HOLD_PID" 2>/dev/null; fail "client-activity --body waited on stdin (#835)"; }
     sleep 0.1
 done
 exec 7>&-
-expect "d['forgotten'] is False" <"$LOG.forget" || fail "activities-token --forget with an open stdin"
+expect "d['clientId']=='e2e-hold'" <"$LOG.hold" || fail "client-activity --body with an open stdin"
 echo '{"id":"e2e-crash","platform":"ios","device":"e2e","appVersion":"0","osVersion":"0","at":"2026-09-10T00:00:00Z","kind":"crash","reason":"e2e","frames":[]}' | "$CTL" crash-report | expect "d['id']=='e2e-crash'" || fail "crash-report (stdin body)"
 "$CTL" crashes | expect "any(c['id']=='e2e-crash' for c in d['crashes'])" || fail "crash-report not listed by crashes"
 # The #677 sign-in verbs are wired (the flow itself needs a human and the Claude CLI): a
@@ -575,6 +559,49 @@ done
 pgrep -f "$SOCKDIR/aws" >/dev/null && fail "stub aws CLI still running"
 echo "aws: rebind refused"
 
+# --- team (#1313) ----------------------------------------------------------
+# The app creates a team on a bare repo; a second identity — the CLI
+# in-process, its own INFINITUS_TEAM_DIR — joins with a team code and
+# publishes; the app approves and reads it back. No desktop answers here,
+# so the publish carries stats and now, and the index stays empty.
+"$CTL" team-status | expect "d is None" || fail "team-status must be null before a team exists"
+git init -q --bare "$SOCKDIR/team.git"
+git -C "$SOCKDIR/team.git" config uploadpack.allowFilter true
+"$CTL" team-create Papaya --remote "file://$SOCKDIR/team.git" --as Ann \
+    | expect "d['role']=='leader' and d['members'][0]['name']=='Ann' and d['members'][0]['founder'] and 'lockEnabled' not in d" || fail "team-create"
+# The lock never touches Team (ruling 2026-09-16): the app mints and approves outright.
+CODE="$("$CTL" team-code --days 1 | json "d['code']")"
+case "$CODE" in infinitus://join/*) ;; *) fail "team-code shape" ;; esac
+CLI_TEAM="$SOCKDIR/team-cli"
+printf '%s' "$CODE" | INFINITUS_TEAM_DIR="$CLI_TEAM" "$CTL" team request - --name Bo >/dev/null || fail "cli team request"
+KID="$(INFINITUS_TEAM_DIR="$CLI_TEAM" "$CTL" team status | json "d['kid']")"
+"$CTL" team-fetch | expect "len(d['requests'])==1 and d['requests'][0]['name']=='Bo'" || fail "the request did not reach the leader"
+"$CTL" team-approve "$KID" | expect "any(m['name']=='Bo' and m['role']=='member' for m in d['members'])" || fail "team-approve"
+"$CTL" team-fetch | expect "any(m['name']=='Bo' and m['role']=='member' for m in d['members']) and not d['requests']" || fail "the approval did not reach the app"
+INFINITUS_TEAM_DIR="$CLI_TEAM" "$CTL" team fetch >/dev/null || fail "cli team fetch"
+# #354: on a Mac with the app up and no INFINITUS_TEAM_DIR, `team status` is
+# the app's own view, and a subcommand the app has no verb for either refuses
+# to mint a second identity or says whose identity it is using.
+env -u INFINITUS_TEAM_DIR "$CTL" team status | expect "d['role']=='leader' and d['name']=='Papaya'" || fail "cli team status did not route to the app"
+env -u INFINITUS_TEAM_DIR "$CTL" team identity show 2>&1 | grep -q "owns this Mac's team identity\|infinitusctl's own identity" || fail "cli team identity neither refused nor named its own identity beside the app's"
+INFINITUS_TEAM_DIR="$CLI_TEAM" "$CTL" team publish | expect "'published' in d" || fail "cli team publish"
+INFINITUS_TEAM_DIR="$CLI_TEAM" "$CTL" team share transcripts off \
+    | expect "d['byKind']['transcripts']=='off'" || fail "team share transcripts off"
+# `now` is the one kind every publish carries; stats need a transcript corpus the CI runner has none of.
+"$CTL" team-fetch | expect "any(m['name']=='Bo' and 'now' in m['kinds'] for m in d['members'])" || fail "the member's files are not readable"
+"$CTL" team-publish | expect "'published' in d" || fail "team-publish"
+"$CTL" team-status | expect "d.get('lastPublish') is not None and d.get('lastError') is None" || fail "loop state after publish"
+"$CTL" team-share now team | expect "d['shares']['now']=='team'" || fail "team-share"
+"$CTL" team-exclude add secret-repo | expect "'secret-repo' in d['exclusions']" || fail "team-exclude add"
+"$CTL" team-exclude remove secret-repo | expect "'secret-repo' not in d['exclusions']" || fail "team-exclude remove"
+"$CTL" team-policy requests off | expect "d['policy']['requests']=='off'" || fail "team-policy"
+"$CTL" team-insights --period week | expect "d['period']=='week' and isinstance(d['blockers'], list)" || fail "team-insights"
+"$CTL" team-identity | expect "len(d['kid'])>8" || fail "team-identity"
+echo "team: ok (leader Ann, member Bo $KID)"
+# #747: the secret-carrying team verbs refuse an empty stdin by name.
+"$CTL" team-join Cy </dev/null 2>&1 | grep -q "needs the team code" || fail "team-join must ask for the code on stdin"
+"$CTL" team-leave 2>&1 | grep -q -- "--yes" || fail "team-leave must want --yes"
+
 # #822: the desktop verbs against a demo desktop (tools/demo-desktop): the
 # credential comes on stdin like every secret and stays in this run's own
 # keychain slot, the CLI reads it back over the socket and talks HTTP.
@@ -617,6 +644,43 @@ desk_get /api/demo/dispatches | expect "[c['type'] for c in d]==['thread.turn.st
 "$CTL" thread new --project "Demo project" "Bare model" --model haiku --wait | expect "d['text']=='echo: Bare model'" || fail "thread new --model model"
 "$CTL" thread new --project "Bare project" "x" --model /haiku 2>&1 | grep -q "wants <instanceId>/<model>" || fail "thread new must refuse a malformed --model"
 desk_get /api/demo/dispatches | expect "[c['bootstrap']['createThread']['modelSelection'] for c in d[4:7]]==[{'instanceId':'claude','model':'sonnet'},{'instanceId':'codex','model':'gpt-5'},{'instanceId':'claude','model':'haiku'}]" || fail "the new threads must carry the environment default, the explicit instance/model and the project's instance with the bare model"
+# #1313 spec §8, delegated control over the store lane: Ann (the app) grants
+# Bo (the CLI identity) send, view and new; Bo drives from his own team dir.
+# Ann's now.json predates the grant and carries no endpoints (and the app's
+# own httpBaseUrl is loopback, which a driver skips anyway), so the command
+# rides the store; the app's next fetch executes it against the demo desktop
+# and answers a sealed ack Bo reaps with `team acks`.
+ANN_KID="$("$CTL" team-identity | json "d['kid']")"
+"$CTL" team-grant "$KID" --cap send,view,new | expect "d['audience']==['$KID'] and d['threads']=='all' and sorted(d['capabilities'])==['new','send','view'] and 'preauthorized' not in d" || fail "team-grant"
+"$CTL" team-grants | expect "len(d['grants'])==1" || fail "team-grants"
+DRIVE="$(INFINITUS_TEAM_DIR="$CLI_TEAM" "$CTL" team drive "$ANN_KID" t-idle send "hello from Bo via the store")"
+printf '%s' "$DRIVE" | expect "d['lane']=='store' and d['outcome']=='queued'" || fail "team drive send must queue on the store (got $DRIVE)"
+SEND_ID="$(printf '%s' "$DRIVE" | json "d['id']")"
+"$CTL" team-fetch | expect "d['role']=='leader'" || fail "team-fetch after a queued command"
+desk_get /api/orchestration/threads/t-idle | expect "any(m.get('role')=='user' and 'hello from Bo via the store' in json.dumps(m) for m in d['messages'])" || fail "the store-lane send did not reach the desktop thread"
+INFINITUS_TEAM_DIR="$CLI_TEAM" "$CTL" team acks | expect "any(a['id']=='$SEND_ID' and a['outcome']=='delivered' and a['from']=='$ANN_KID' for a in d)" || fail "team acks after send"
+NEW_ID="$(INFINITUS_TEAM_DIR="$CLI_TEAM" "$CTL" team drive "$ANN_KID" - new "Fix the tests" --project "Demo project" | json "d['id'] if d['lane']=='store' and d['outcome']=='queued' else ''")"
+[ -n "$NEW_ID" ] || fail "team drive new must queue"
+"$CTL" team-fetch >/dev/null || fail "team-fetch after a queued new"
+PENDING_ID="$("$CTL" team-pending | json "d[0]['id']")"
+"$CTL" team-pending | expect "len(d)==1 and d[0]['name']=='Bo' and d[0]['action']=='new' and d[0]['project']=='Demo project' and d[0]['text']=='Fix the tests'" || fail "team-pending must list the new command waiting for a tap"
+"$CTL" team-allow "$PENDING_ID" | expect "d['outcome']=='done' and len(d['detail'])==36" || fail "team-allow must start the thread"
+"$CTL" team-pending | expect "d==[]" || fail "an allowed command leaves the wait list"
+"$CTL" threads --project p-demo | expect "any(t['title']=='Fix the tests' for t in d)" || fail "the allowed new thread must exist on the desktop"
+"$CTL" team-fetch >/dev/null || fail "team-fetch to push the ack"
+INFINITUS_TEAM_DIR="$CLI_TEAM" "$CTL" team acks | expect "any(a['id']=='$NEW_ID' and a['outcome']=='done' and len(a['detail'])==36 for a in d)" || fail "team acks after allow"
+VIEW_ID="$(INFINITUS_TEAM_DIR="$CLI_TEAM" "$CTL" team drive "$ANN_KID" t-idle view | json "d['id'] if d['lane']=='store' and d['outcome']=='queued' else ''")"
+[ -n "$VIEW_ID" ] || fail "team drive view must queue"
+"$CTL" team-fetch >/dev/null || fail "team-fetch after a queued view"
+INFINITUS_TEAM_DIR="$CLI_TEAM" "$CTL" team acks | expect "any(a['id']=='$VIEW_ID' and a['outcome']=='done' and 'echo: hello from Bo via the store' in a['detail'] for a in d)" || fail "team acks after view must carry the thread's transcript"
+"$CTL" team-fetch | expect "any(m['name']=='Bo' and m.get('controls') is None for m in d['members']) and len(d['grants'])==1 and d.get('pending') is None" || fail "team-status must carry the grant and no waits"
+GRANT_ID="$("$CTL" team-grants | json "d['grants'][0]['id']")"
+"$CTL" team-revoke "$GRANT_ID" | expect "d['removed'] is True" || fail "team-revoke"
+LATE_ID="$(INFINITUS_TEAM_DIR="$CLI_TEAM" "$CTL" team drive "$ANN_KID" t-idle send "after the revoke" | json "d['id'] if d['outcome']=='queued' else ''")"
+[ -n "$LATE_ID" ] || fail "team drive after revoke must still queue"
+"$CTL" team-fetch >/dev/null || fail "team-fetch after the revoke"
+INFINITUS_TEAM_DIR="$CLI_TEAM" "$CTL" team acks | expect "any(a['id']=='$LATE_ID' and a['outcome']=='noGrant' for a in d)" || fail "a revoked grant must answer noGrant"
+echo "team control: ok"
 printf 'wrong' | "$CTL" desktop-credential --origin "http://127.0.0.1:$DESK_PORT" >/dev/null || fail "desktop-credential replace"
 rc=0; "$CTL" threads >"$LOG.desk" 2>&1 || rc=$?
 [ "$rc" -eq 2 ] && grep -q "no longer accepts this credential" "$LOG.desk" || fail "a revoked credential must exit 2 with the relaunch hint (got $rc: $(head -c 200 "$LOG.desk"))"
@@ -666,8 +730,7 @@ idle_cpu_ok "idle CPU with no lease" "$PCT" "$WINDOW_S"
 "$CTL" show popout >/dev/null || fail "show popout (restore)"
 popout_visible || fail "pop-out not restored after the no-lease window"
 # #654: the fork's quit-with-window setting sends `quit`; the app answers,
-# then leaves on its own (tunnels stop first) — the wait below is bounded,
-# and the time is printed.
+# then leaves on its own — the wait below is bounded, and the time is printed.
 "$CTL" quit | expect "d['quitting'] is True" || fail "quit"
 # The app is this shell's child: until `wait` reaps it the pid lingers as
 # a zombie, so the exit shows as state Z, not as a missing pid.

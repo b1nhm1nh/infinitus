@@ -13,7 +13,7 @@ import {
   ThreadLinkedPullRequest,
   TurnId,
   ProviderInstanceId,
-} from "@t3tools/contracts";
+} from "@infinitus/contracts";
 import * as Option from "effect/Option";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
@@ -4507,6 +4507,50 @@ engineLayer("OrchestrationProjectionPipeline via engine dispatch", (it) => {
     }),
   );
 
+  it.effect("persists and clears a project monogram", () =>
+    Effect.gen(function* () {
+      const engine = yield* OrchestrationEngineService;
+      const sql = yield* SqlClient.SqlClient;
+      const projectId = ProjectId.make("project-monogram");
+      yield* engine.dispatch({
+        type: "project.create",
+        commandId: CommandId.make("cmd-monogram-create"),
+        projectId,
+        title: "Monogram",
+        workspaceRoot: "/tmp/project-monogram",
+        defaultModelSelection: null,
+        createdAt: "2026-01-01T00:00:00.000Z",
+      });
+      yield* engine.dispatch({
+        type: "project.meta.update",
+        commandId: CommandId.make("cmd-monogram-save"),
+        projectId,
+        projectIcon: { kind: "monogram", text: "T3", color: "violet" },
+      });
+      const saved = yield* sql<{
+        readonly icon: string | null;
+      }>`SELECT project_icon_json AS icon FROM projection_projects WHERE project_id = ${projectId}`;
+      assert.deepEqual(saved, [
+        { icon: '{"kind":"lucide","name":"folder-code","color":"violet","monogramText":"T3"}' },
+      ]);
+      const persisted = yield* sql<{ readonly icon: string }>`
+        SELECT json_extract(payload_json, '$.projectIcon') AS icon FROM orchestration_events
+        WHERE command_id = ${CommandId.make("cmd-monogram-save")}
+      `;
+      assert.deepEqual(persisted, saved);
+      yield* engine.dispatch({
+        type: "project.meta.update",
+        commandId: CommandId.make("cmd-monogram-clear"),
+        projectId,
+        projectIcon: null,
+      });
+      const cleared = yield* sql<{
+        readonly icon: string | null;
+      }>`SELECT project_icon_json AS icon FROM projection_projects WHERE project_id = ${projectId}`;
+      assert.deepEqual(cleared, [{ icon: null }]);
+    }),
+  );
+
   it.effect("re-creating a deleted thread id starts from an empty projection", () =>
     Effect.gen(function* () {
       const engine = yield* OrchestrationEngineService;
@@ -4941,8 +4985,15 @@ engineLayer("OrchestrationProjectionPipeline turn queue (#806)", (it) => {
         queueId: QueueId.make("q3"),
         message: message("m3", "third"),
         createdAt,
+        sendAt: "tool-boundary",
       });
       assert.strictEqual(yield* countRows(), 1);
+      // #1318: the steer moment survives the row and the shell read.
+      assert.strictEqual(
+        Option.getOrThrow(yield* snapshotQuery.getThreadShellById(threadId)).queuedTurns?.[0]
+          ?.sendAt,
+        "tool-boundary",
+      );
       yield* engine.dispatch({
         type: "thread.delete",
         commandId: CommandId.make("queue-delete"),

@@ -1,5 +1,5 @@
-import type { EnvironmentConnectionPhase } from "@t3tools/client-runtime/connection";
-import type { AssetUrlState as SharedAssetUrlState } from "@t3tools/client-runtime/state/assets";
+import type { EnvironmentConnectionPhase } from "@infinitus/client-runtime/connection";
+import type { AssetUrlState as SharedAssetUrlState } from "@infinitus/client-runtime/state/assets";
 
 export type AssetUrlFailureReason = "disconnected" | "failed";
 
@@ -21,7 +21,8 @@ export function deriveAssetUrlState(input: {
   if (
     input.connectionPhase === "offline" ||
     input.connectionPhase === "reconnecting" ||
-    input.connectionPhase === "error"
+    input.connectionPhase === "error" ||
+    input.connectionPhase === "unsupported"
   ) {
     return { _tag: "Failure", reason: "disconnected" };
   }

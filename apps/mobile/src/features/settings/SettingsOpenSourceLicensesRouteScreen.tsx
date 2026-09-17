@@ -6,7 +6,7 @@ import {
   formatLicenseBundles,
   thirdPartyLicenseEntryKey,
   type ThirdPartyLicenseEntry,
-} from "@t3tools/shared/thirdPartyLicenses";
+} from "@infinitus/shared/thirdPartyLicenses";
 import { useCallback, useMemo, useState } from "react";
 import { Linking, Platform, Pressable, ScrollView, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -14,7 +14,12 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AndroidScreenHeader } from "../../components/AndroidScreenHeader";
 import { SymbolView } from "../../components/AppSymbol";
 import { AppText as Text, AppTextInput as TextInput } from "../../components/AppText";
-import { NativeStackScreenOptions } from "../../native/StackHeader";
+import { NativeHeaderToolbar, NativeStackScreenOptions } from "../../native/StackHeader";
+import {
+  createNativeMailSearchToolbarItem,
+  NATIVE_MAIL_SEARCH_TOOLBAR_CONTENT_INSET,
+  NATIVE_MAIL_SEARCH_TOOLBAR_SUPPORTED,
+} from "../layout/native-mail-search-toolbar";
 import { getMobileThirdPartyLicenses } from "./mobileThirdPartyLicenses";
 
 function useMobileThirdPartyLicenses() {
@@ -41,7 +46,7 @@ function LicenseRow(props: {
     >
       <View className="flex-row items-start gap-3">
         <View className="min-w-0 flex-1 gap-1">
-          <Text className="text-base font-t3-medium text-foreground" numberOfLines={2}>
+          <Text className="text-base font-infinitus-medium text-foreground" numberOfLines={2}>
             {props.entry.name}
           </Text>
           <Text className="text-sm text-foreground-muted" numberOfLines={2}>
@@ -65,6 +70,7 @@ export function SettingsOpenSourceLicensesRouteScreen() {
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
   const [query, setQuery] = useState("");
+  const usesNativeMailSearchToolbar = Platform.OS === "ios" && NATIVE_MAIL_SEARCH_TOOLBAR_SUPPORTED;
   const manifest = useMobileThirdPartyLicenses();
   const entries = manifest?.entries ?? [];
   const filteredEntries = useMemo(
@@ -109,6 +115,39 @@ export function SettingsOpenSourceLicensesRouteScreen() {
 
   return (
     <View collapsable={false} className="flex-1 bg-sheet">
+      {Platform.OS === "ios" ? (
+        <NativeStackScreenOptions
+          options={{
+            unstable_headerToolbarItems: usesNativeMailSearchToolbar
+              ? () => [
+                  createNativeMailSearchToolbarItem({
+                    onSearchTextChange: setQuery,
+                    placeholder: "Search packages",
+                    searchTextChangeId: "open-source-licenses-search-text",
+                    showsSearchDismissButton: true,
+                  }),
+                ]
+              : undefined,
+            headerSearchBarOptions: usesNativeMailSearchToolbar
+              ? undefined
+              : {
+                  allowToolbarIntegration: true,
+                  autoCapitalize: "none",
+                  hideNavigationBar: false,
+                  hideWhenScrolling: false,
+                  obscureBackground: false,
+                  onCancelButtonPress: () => setQuery(""),
+                  onChangeText: (event) => setQuery(event.nativeEvent.text),
+                  placeholder: "Search packages",
+                },
+          }}
+        />
+      ) : null}
+      {Platform.OS === "ios" && !usesNativeMailSearchToolbar ? (
+        <NativeHeaderToolbar placement="bottom">
+          <NativeHeaderToolbar.SearchBarSlot />
+        </NativeHeaderToolbar>
+      ) : null}
       {Platform.OS === "android" ? (
         <>
           <NativeStackScreenOptions options={{ headerShown: false }} />
@@ -117,7 +156,13 @@ export function SettingsOpenSourceLicensesRouteScreen() {
       ) : null}
       <LegendList
         className="flex-1"
-        contentContainerStyle={{ paddingBottom: Math.max(insets.bottom, 18) + 18 }}
+        contentContainerStyle={{
+          paddingBottom: usesNativeMailSearchToolbar
+            ? NATIVE_MAIL_SEARCH_TOOLBAR_CONTENT_INSET + 18
+            : Platform.OS === "ios"
+              ? 18
+              : Math.max(insets.bottom, 18) + 18,
+        }}
         contentInsetAdjustmentBehavior="automatic"
         data={filteredEntries}
         estimatedItemSize={78}
@@ -132,26 +177,20 @@ export function SettingsOpenSourceLicensesRouteScreen() {
           </View>
         }
         ListHeaderComponent={
-          <View className="gap-4 px-5 pt-4 pb-5">
-            <Text className="text-base leading-normal text-foreground-muted">
-              Notices for dependencies, assets, and optional tools used by T3 Code Mobile.
-            </Text>
-            <TextInput
-              accessibilityLabel="Search open-source licenses"
-              autoCapitalize="none"
-              autoCorrect={false}
-              clearButtonMode="while-editing"
-              onChangeText={setQuery}
-              placeholder="Search packages"
-              returnKeyType="search"
-              value={query}
-            />
-            <Text className="tabular-nums text-sm text-foreground-muted">
-              {filteredEntries.length === entries.length
-                ? `${String(entries.length)} notices`
-                : `${String(filteredEntries.length)} of ${String(entries.length)} notices`}
-            </Text>
-          </View>
+          Platform.OS !== "ios" ? (
+            <View className="px-5 pt-4 pb-5">
+              <TextInput
+                accessibilityLabel="Search open-source licenses"
+                autoCapitalize="none"
+                autoCorrect={false}
+                clearButtonMode="while-editing"
+                onChangeText={setQuery}
+                placeholder="Search packages"
+                returnKeyType="search"
+                value={query}
+              />
+            </View>
+          ) : null
         }
         renderItem={renderItem}
         showsVerticalScrollIndicator={false}
@@ -205,7 +244,7 @@ export function SettingsOpenSourceLicenseRouteScreen({ route }: LicenseDetailPro
         showsVerticalScrollIndicator={false}
       >
         <View className="gap-2 px-1">
-          <Text className="text-2xl font-t3-bold text-foreground">{entry.name}</Text>
+          <Text className="text-2xl font-infinitus-bold text-foreground">{entry.name}</Text>
           <Text className="text-base leading-normal text-foreground-muted">
             {[entry.version, entry.license, formatLicenseBundles(entry.bundles)]
               .filter((value): value is string => Boolean(value))
@@ -218,7 +257,7 @@ export function SettingsOpenSourceLicenseRouteScreen({ route }: LicenseDetailPro
               onPress={() => void Linking.openURL(sourceUrl)}
               className="min-h-12 flex-row items-center gap-2 self-start py-2 active:opacity-60"
             >
-              <Text className="font-t3-medium text-primary">Project source</Text>
+              <Text className="font-infinitus-medium text-primary">Project source</Text>
               <SymbolView
                 name="arrow.up.right"
                 size={16}

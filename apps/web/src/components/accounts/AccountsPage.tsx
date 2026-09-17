@@ -9,16 +9,18 @@ import {
   infinitusCapabilityAcross,
   infinitusCapabilityOf,
   signInCommandArgs,
+  signInDismissCommandArgs,
+  signInDismissSupported,
   snapshotOffersAdd,
   snapshotSignInRunning,
   waitAddCommandArgs,
   type AccountAction,
   type AccountRowModel,
   type SignInRowModel,
-} from "@t3tools/client-runtime/state/infinitusAccounts";
-import { exhaustedBand } from "@t3tools/client-runtime/state/infinitusExhausted";
-import type { EnvironmentId } from "@t3tools/contracts";
-import type { InfinitusSnapshot } from "@t3tools/contracts/infinitus";
+} from "@infinitus/client-runtime/state/infinitusAccounts";
+import { exhaustedBand } from "@infinitus/client-runtime/state/infinitusExhausted";
+import type { EnvironmentId } from "@infinitus/contracts";
+import type { InfinitusSnapshot } from "@infinitus/contracts/infinitus";
 import { Link } from "@tanstack/react-router";
 import * as Cause from "effect/Cause";
 import * as Redacted from "effect/Redacted";
@@ -111,7 +113,7 @@ function commandErrorMessage(cause: Cause.Cause<unknown>): string {
 
 /**
  * Every account the selected environment's engines report, one section per
- * fleet. The row model does the deriving (`@t3tools/client-runtime/state/infinitusAccounts`);
+ * fleet. The row model does the deriving (`@infinitus/client-runtime/state/infinitusAccounts`);
  * this page only picks the environment, draws the models and forwards each
  * button to the control socket.
  */
@@ -239,6 +241,16 @@ export function AccountsPage() {
       return;
     }
     setPendingSignIn(null);
+    setSignInFailure({ key: row.key, message: commandErrorMessage(result.cause) });
+  };
+
+  const dismissSignIn = async (row: SignInRowModel) => {
+    if (environmentId === null) return;
+    const result = await runCommand({
+      environmentId,
+      input: signInDismissCommandArgs(row.tool, row.profile),
+    });
+    if (result._tag === "Success") return;
     setSignInFailure({ key: row.key, message: commandErrorMessage(result.cause) });
   };
 
@@ -598,6 +610,7 @@ export function AccountsPage() {
                 void dispatch(fleetKey, row, action, alias)
               }
               onSignIn={(row) => void signIn(row)}
+              onDismissSignIn={(row) => void dismissSignIn(row)}
               onAdd={(fleetKey, target) => void startAdd(fleetKey, target)}
             />
           </WorkspacePageContainer>
@@ -623,6 +636,7 @@ function AccountsBody({
   onRetry,
   onAction,
   onSignIn,
+  onDismissSignIn,
   onAdd,
 }: {
   readonly environmentId: EnvironmentId | null;
@@ -651,6 +665,7 @@ function AccountsBody({
     alias?: string,
   ) => void;
   readonly onSignIn: (row: SignInRowModel) => void;
+  readonly onDismissSignIn: (row: SignInRowModel) => void;
   readonly onAdd: (fleetKey: string, target: AccountRowModel | null) => void;
 }) {
   if (state === "unsupported") {
@@ -682,6 +697,7 @@ function AccountsBody({
         pendingKey={pendingSignIn}
         failure={signInFailure}
         onSignIn={onSignIn}
+        onDismiss={signInDismissSupported(snapshot) ? onDismissSignIn : null}
       />
     );
   if (state === "empty") {

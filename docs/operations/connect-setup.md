@@ -1,12 +1,12 @@
-# T3 Connect setup
+# Infinitus Connect setup
 
-Deployment and client configuration for T3 Connect. The [architecture note](../internals/t3-connect.md)
+Deployment and client configuration for Infinitus Connect. The [architecture note](../internals/t3-connect.md)
 explains the trust boundaries; the [relay README](../../infra/relay/README.md#deployment) owns relay
 provisioning instructions.
 
 ## Public application configuration
 
-T3 Connect is disabled in a fresh clone. To build against the production deployment, copy the
+Infinitus Connect is disabled in a fresh clone. To build against the production deployment, copy the
 repository-root example:
 
 ```sh
@@ -49,14 +49,15 @@ In Clerk's OAuth applications settings:
 
 ## JWT template
 
-Create a Clerk JWT template named `t3-relay` with claims:
+Create a Clerk JWT template named `infinitus-relay` with claims:
 
 ```json
-{ "aud": "t3-code-relay" }
+{ "aud": "infinitus-relay" }
 ```
 
-Set `T3CODE_CLERK_JWT_TEMPLATE=t3-relay` for clients and
-`CLERK_JWT_AUDIENCE=t3-code-relay` for the relay. The production relay deployment environment
+Set `T3CODE_CLERK_JWT_TEMPLATE=infinitus-relay` for clients and
+`CLERK_JWT_AUDIENCE=infinitus-relay` for the relay (a comma-separated list keeps
+an earlier template's tokens valid while clients move over). The production relay deployment environment
 also defines `CLERK_JWT_TEMPLATE`. The audience stays the same across relay stages; the relay
 URL selects the deployment.
 

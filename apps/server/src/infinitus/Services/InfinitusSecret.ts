@@ -5,13 +5,16 @@ import type {
   InfinitusSecretRefused,
   InfinitusSecretResult,
   InfinitusUnavailable,
-} from "@t3tools/contracts/infinitus";
+} from "@infinitus/contracts/infinitus";
+import type { AuthEnvironmentScope } from "@infinitus/contracts";
 import * as Context from "effect/Context";
 import type * as Effect from "effect/Effect";
 
 export interface InfinitusSecretForwardInput extends InfinitusSecretInput {
   /** The auth session asking; the attempt counter is per session. */
   readonly sessionId: string;
+  /** Its scopes: a sign-in or team-join verb takes a standard client, the rest `access:write`. */
+  readonly scopes: ReadonlyArray<AuthEnvironmentScope>;
 }
 
 export interface InfinitusSecretShape {

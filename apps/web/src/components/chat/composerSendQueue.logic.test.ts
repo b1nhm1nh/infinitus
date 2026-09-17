@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vite-plus/test";
-import { EnvironmentId, QueueId, ThreadId, type OrchestrationQueuedTurn } from "@t3tools/contracts";
-import { pinOrderKeyBetween } from "@t3tools/client-runtime/state/thread-sort";
+import {
+  EnvironmentId,
+  QueueId,
+  ThreadId,
+  type OrchestrationQueuedTurn,
+} from "@infinitus/contracts";
+import { pinOrderKeyBetween } from "@infinitus/client-runtime/state/thread-sort";
 
 import { formatInlineContextReference } from "../../lib/composerContextReferences";
 import type { PromptStashEntry } from "../../promptStashStore";
@@ -12,6 +17,8 @@ import {
   queuedTurnEditableText,
   queuedTurnMoveKey,
   queuedTurnSnippet,
+  queuedTurnTiming,
+  queuedTurnsHeader,
   restoredQueuedTurnText,
 } from "./composerSendQueue.logic";
 
@@ -56,6 +63,17 @@ describe("queuedTurnMoveKey (#806)", () => {
     expect(queuedTurnMoveKey(rows, QueueId.make("a"), "earlier")).toBeNull();
     expect(queuedTurnMoveKey(rows, QueueId.make("c"), "later")).toBeNull();
     expect(queuedTurnMoveKey(rows, QueueId.make("zzz"), "later")).toBeNull();
+  });
+});
+
+describe("queuedTurnTiming / queuedTurnsHeader (#1318)", () => {
+  it("labels a steer row and words the header by what the rows wait on", () => {
+    const steer = { ...row("s", "b0"), sendAt: "tool-boundary" as const };
+    expect(queuedTurnTiming(row("a", "a0"))).toBeNull();
+    expect(queuedTurnTiming(steer)).toBe("at next step");
+    expect(queuedTurnsHeader([steer], true)).toBe("Sends at this turn's next step");
+    expect(queuedTurnsHeader([row("a", "a0"), steer], true)).toBe("Sends when this turn finishes");
+    expect(queuedTurnsHeader([steer], false)).toBe("Sending when the thread is idle");
   });
 });
 

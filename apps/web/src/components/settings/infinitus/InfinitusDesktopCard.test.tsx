@@ -1,4 +1,4 @@
-import type { InfinitusDesktopPrefs } from "@t3tools/contracts/infinitus";
+import type { InfinitusDesktopPrefs } from "@infinitus/contracts/infinitus";
 import { act, StrictMode } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
@@ -16,7 +16,11 @@ type Bridge = {
   getClientPlatform: () => string;
 };
 
-const off: InfinitusDesktopPrefs = { quitInfinitusWithApp: false, captureGestureEnabled: false };
+const off: InfinitusDesktopPrefs = {
+  quitInfinitusWithApp: false,
+  captureGestureEnabled: false,
+  engines: [],
+};
 
 // The unit project runs in node: give the card the one window global it reads.
 function installBridge(bridge: Partial<Bridge> | undefined) {

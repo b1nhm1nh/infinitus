@@ -1,9 +1,10 @@
-import type { AuthClientPresentationMetadata } from "@t3tools/contracts";
-import { withRelayClientTracing } from "@t3tools/shared/relayTracing";
+import type { AuthClientPresentationMetadata } from "@infinitus/contracts";
+import { withRelayClientTracing } from "@infinitus/shared/relayTracing";
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
+import * as HttpClient from "effect/unstable/http/HttpClient";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
@@ -19,7 +20,12 @@ import {
   SshConnectionProfile,
 } from "./catalog.ts";
 import * as ConnectionCredentialStore from "./credentialStore.ts";
-import { credentialMissingError, environmentMismatchError, profileMissingError } from "./errors.ts";
+import {
+  credentialMissingError,
+  environmentMismatchError,
+  mapRemoteEnvironmentError,
+  profileMissingError,
+} from "./errors.ts";
 import {
   GitHubRoutingPermissions,
   gitHubRoutingConnectionKey,
@@ -36,11 +42,17 @@ import { ConnectionBlockedError, type ConnectionAttemptError } from "./model.ts"
 import * as ConnectionProfileStore from "./profileStore.ts";
 import {
   bearerHostOrder,
+  isPublicHost,
   learnedBearerProfile,
   ROAM_PROBE_TIMEOUT_MS,
   roamedWsBaseUrl,
   roamsPast,
 } from "./roaming.ts";
+import {
+  appendOrchestrationProtocol,
+  orchestrationProtocolCompatibilityError,
+} from "./compatibility.ts";
+import { fetchRemoteEnvironmentDescriptor } from "../environment/descriptor.ts";
 
 export class ConnectionResolver extends Context.Service<
   ConnectionResolver,
@@ -49,7 +61,7 @@ export class ConnectionResolver extends Context.Service<
       entry: ConnectionCatalogEntry,
     ) => Effect.Effect<PreparedConnection, ConnectionAttemptError>;
   }
->()("@t3tools/client-runtime/connection/resolver/ConnectionResolver") {}
+>()("@infinitus/client-runtime/connection/resolver/ConnectionResolver") {}
 
 const isBearerProfile = Schema.is(BearerConnectionProfile);
 const isSshProfile = Schema.is(SshConnectionProfile);
@@ -137,10 +149,11 @@ const makeBearerBroker = Effect.fn("clientRuntime.connection.broker.makeBearer")
     if (!isBearerCredential(credential)) {
       return yield* credentialMissingError(target.connectionId);
     }
-    // Fork (#663): the paired host first (or the one that worked last), then
-    // the server's alternates — its tunnel — when a host cannot be reached at
-    // all. A host that answers and refuses ends the walk. Every host but the
-    // last gets the short descriptor wait.
+    // Fork (#663): the Mac's public hosts — its tunnel — first, its LAN
+    // address only when none of them can be reached at all. A host that
+    // answers and refuses ends the walk. A LAN address gets the short
+    // descriptor wait wherever it stands: on the Wi‑Fi it answers at once,
+    // off it nothing ever does, and the default wait would hang the walk.
     const hosts = bearerHostOrder(profile);
     let authorized: AuthorizedRemoteEnvironment | undefined;
     for (const [index, httpBaseUrl] of hosts.entries()) {
@@ -153,7 +166,7 @@ const makeBearerBroker = Effect.fn("clientRuntime.connection.broker.makeBearer")
             httpBaseUrl === profile.httpBaseUrl ? profile.wsBaseUrl : roamedWsBaseUrl(httpBaseUrl),
           bearerToken: credential.token,
           connectionMethod: "direct",
-          ...(last ? {} : { descriptorTimeoutMs: ROAM_PROBE_TIMEOUT_MS }),
+          ...(isPublicHost(httpBaseUrl) ? {} : { descriptorTimeoutMs: ROAM_PROBE_TIMEOUT_MS }),
         }),
       );
       if (Exit.isSuccess(attempt)) {
@@ -269,6 +282,7 @@ export const make = Effect.gen(function* () {
   const bearer = yield* makeBearerBroker();
   const relay = yield* makeRelayBroker();
   const ssh = yield* makeSshBroker();
+  const httpClient = yield* HttpClient.HttpClient;
 
   const prepare = Effect.fn("clientRuntime.connection.broker.prepare")(function* (
     entry: ConnectionCatalogEntry,
@@ -278,16 +292,35 @@ export const make = Effect.gen(function* () {
       "connection.environment.id": target.environmentId,
       "connection.target.kind": target._tag,
     });
-    switch (target._tag) {
-      case "PrimaryConnectionTarget":
-        return yield* primary(target);
-      case "BearerConnectionTarget":
-        return yield* bearer({ ...entry, target });
-      case "RelayConnectionTarget":
-        return yield* relay(target);
-      case "SshConnectionTarget":
-        return yield* ssh({ ...entry, target });
+    const prepared = yield* (() => {
+      switch (target._tag) {
+        case "PrimaryConnectionTarget":
+          return primary(target);
+        case "BearerConnectionTarget":
+          return bearer({ ...entry, target });
+        case "RelayConnectionTarget":
+          return relay(target);
+        case "SshConnectionTarget":
+          return ssh({ ...entry, target });
+      }
+    })();
+    const descriptor = yield* fetchRemoteEnvironmentDescriptor({
+      httpBaseUrl: prepared.httpBaseUrl,
+    }).pipe(
+      Effect.mapError(mapRemoteEnvironmentError),
+      Effect.provideService(HttpClient.HttpClient, httpClient),
+    );
+    if (descriptor.environmentId !== target.environmentId) {
+      return yield* environmentMismatchError({
+        expected: target.environmentId,
+        actual: descriptor.environmentId,
+      });
     }
+    const compatibilityError = orchestrationProtocolCompatibilityError(descriptor);
+    if (compatibilityError !== null) {
+      return yield* compatibilityError;
+    }
+    return { ...prepared, socketUrl: appendOrchestrationProtocol(prepared.socketUrl) };
   });
 
   return ConnectionResolver.of({ prepare });

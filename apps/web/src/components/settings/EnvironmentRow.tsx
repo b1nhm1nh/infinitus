@@ -1,4 +1,4 @@
-import type { DesktopSshEnvironmentTarget, EnvironmentMachineKind } from "@t3tools/contracts";
+import type { DesktopSshEnvironmentTarget, EnvironmentMachineKind } from "@infinitus/contracts";
 import * as Option from "effect/Option";
 import type { ReactNode } from "react";
 
@@ -6,6 +6,7 @@ import { cn } from "~/lib/utils";
 import type { EnvironmentPresentation } from "~/state/environments";
 import { isDesktopLocalConnectionTarget } from "~/connection/desktopLocal";
 import { EnvironmentMachineIcon } from "../EnvironmentMachineIcon";
+import { CONNECT_NAME } from "@infinitus/shared/productName";
 
 export function formatDesktopSshTarget(target: DesktopSshEnvironmentTarget): string {
   const authority = target.username ? `${target.username}@${target.hostname}` : target.hostname;
@@ -19,7 +20,7 @@ export function formatDesktopSshTarget(target: DesktopSshEnvironmentTarget): str
 export function environmentTransportLabel(environment: EnvironmentPresentation): string {
   const { entry } = environment;
   if (entry.target._tag === "PrimaryConnectionTarget") return "This machine";
-  if (environment.relayManaged) return "T3 Connect";
+  if (environment.relayManaged) return CONNECT_NAME;
   if (isDesktopLocalConnectionTarget(entry.target)) return "WSL";
   if (
     entry.target._tag === "SshConnectionTarget" &&

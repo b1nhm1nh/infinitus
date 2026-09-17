@@ -5,9 +5,10 @@ import {
   ModelSelection,
   OrchestrationMessageContext,
   QueueId,
+  QueuedTurnSendAt,
   ThreadId,
   TrimmedNonEmptyString,
-} from "@t3tools/contracts";
+} from "@infinitus/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -20,7 +21,7 @@ import { toPersistenceSqlError, type ProjectionRepositoryError } from "./Errors.
 
 /**
  * Fork (#806): the server-side message queue's rows. One per message queued
- * on a thread; `orderKey` is a fractional key (`@t3tools/shared/orderKeys`)
+ * on a thread; `orderKey` is a fractional key (`@infinitus/shared/orderKeys`)
  * and rows sort by plain string comparison of it.
  */
 export const ProjectionThreadQueuedTurn = Schema.Struct({
@@ -31,6 +32,8 @@ export const ProjectionThreadQueuedTurn = Schema.Struct({
   attachments: Schema.Array(ChatAttachment),
   modelSelection: Schema.NullOr(ModelSelection),
   context: Schema.NullOr(OrchestrationMessageContext),
+  /** Null is `idle` (#1318, migration 062). */
+  sendAt: Schema.NullOr(QueuedTurnSendAt),
   orderKey: TrimmedNonEmptyString,
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
@@ -102,6 +105,7 @@ const make = Effect.gen(function* () {
         attachments_json,
         model_selection_json,
         context_json,
+        send_at,
         order_key,
         created_at,
         updated_at
@@ -114,6 +118,7 @@ const make = Effect.gen(function* () {
         ${JSON.stringify(row.attachments)},
         ${row.modelSelection === null ? null : JSON.stringify(row.modelSelection)},
         ${row.context === null ? null : JSON.stringify(row.context)},
+        ${row.sendAt},
         ${row.orderKey},
         ${row.createdAt},
         ${row.updatedAt}
@@ -126,6 +131,7 @@ const make = Effect.gen(function* () {
         attachments_json = excluded.attachments_json,
         model_selection_json = excluded.model_selection_json,
         context_json = excluded.context_json,
+        send_at = excluded.send_at,
         order_key = excluded.order_key,
         created_at = excluded.created_at,
         updated_at = excluded.updated_at
@@ -144,6 +150,7 @@ const make = Effect.gen(function* () {
         attachments_json AS "attachments",
         model_selection_json AS "modelSelection",
         context_json AS "context",
+        send_at AS "sendAt",
         order_key AS "orderKey",
         created_at AS "createdAt",
         updated_at AS "updatedAt"
@@ -165,6 +172,7 @@ const make = Effect.gen(function* () {
         attachments_json AS "attachments",
         model_selection_json AS "modelSelection",
         context_json AS "context",
+        send_at AS "sendAt",
         order_key AS "orderKey",
         created_at AS "createdAt",
         updated_at AS "updatedAt"

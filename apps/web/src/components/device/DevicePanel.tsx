@@ -3,7 +3,7 @@ import type {
   DeviceServiceState,
   DeviceSummary,
   ScopedThreadRef,
-} from "@t3tools/contracts";
+} from "@infinitus/contracts";
 import {
   ChevronLeft,
   Home,
@@ -389,7 +389,7 @@ export function DevicePanel(props: {
               ) : null}
               {loaded && !hostBusy ? (
                 <Button
-                  className="self-start"
+                  className={grouped.length > 0 ? "self-start" : "self-center"}
                   variant={grouped.length > 0 ? "ghost" : "outline"}
                   size="sm"
                   onClick={() => void list({ environmentId, input: {} })}

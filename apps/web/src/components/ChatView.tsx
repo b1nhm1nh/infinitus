@@ -1,14 +1,14 @@
 import { useLoadBalancedEnvironment } from "../hooks/useLoadBalancedEnvironment";
-import { visibleThreadPullRequests } from "@t3tools/shared/threadPullRequests";
-import type { UsageLimitSourceSnapshots } from "@t3tools/contracts";
+import { visibleThreadPullRequests } from "@infinitus/shared/threadPullRequests";
+import type { UsageLimitSourceSnapshots } from "@infinitus/contracts";
 import {
   collectProviderUsageLimits,
   hasProviderUsageLimits,
   isUsageLimitsCommand,
-} from "@t3tools/shared/usageLimits";
+} from "@infinitus/shared/usageLimits";
 import { feedbackBannerItem } from "./chat/ComposerFeedback";
 import { usageLimitsBannerItem } from "./chat/ComposerUsageLimits";
-import { derivePendingRequests } from "@t3tools/client-runtime/pending-requests";
+import { derivePendingRequests } from "@infinitus/client-runtime/pending-requests";
 import {
   questionAttachmentDraftId,
   questionAttachmentDraftPrefix,
@@ -45,44 +45,44 @@ import {
   TerminalOpenInput,
   QueueId,
   type WorktreeSetupSnapshot,
-} from "@t3tools/contracts";
-import { type EnvironmentConnectionPresentation } from "@t3tools/client-runtime/connection";
-import { wasBootstrapThreadDeleted } from "@t3tools/client-runtime/errors";
+} from "@infinitus/contracts";
+import { type EnvironmentConnectionPresentation } from "@infinitus/client-runtime/connection";
+import { wasBootstrapThreadDeleted } from "@infinitus/client-runtime/errors";
 import { readPastedComposerContext } from "./composerInlineTokenPaste";
-import { isPasteAsTextShortcut } from "@t3tools/client-runtime/text-paste";
-import { type CodexArtifactTemplate } from "@t3tools/client-runtime/codex-artifact-templates";
-import { effectiveSnoozed, threadWokeAt } from "@t3tools/client-runtime/state/thread-settled";
+import { isPasteAsTextShortcut } from "@infinitus/client-runtime/text-paste";
+import { type CodexArtifactTemplate } from "@infinitus/client-runtime/codex-artifact-templates";
+import { effectiveSnoozed, threadWokeAt } from "@infinitus/client-runtime/state/thread-settled";
 import { useInfinitusHoldBanner } from "./chat/useInfinitusHoldBanner";
 import { PinAtCreationToggle, usePinAtCreation } from "./chat/PinAtCreationToggle";
 import {
   parseCodexFeedbackCommand,
   submitCodexFeedback,
   type CodexFeedbackSubmission,
-} from "@t3tools/client-runtime/state/threads";
+} from "@infinitus/client-runtime/state/threads";
 import {
   parseScopedThreadKey,
   scopedThreadKey,
   scopeProjectRef,
   scopeThreadRef,
-} from "@t3tools/client-runtime/environment";
+} from "@infinitus/client-runtime/environment";
 import {
   applyClaudePromptEffortPrefix,
   createModelSelection,
   resolvePromptInjectedEffort,
-} from "@t3tools/shared/model";
+} from "@infinitus/shared/model";
 import {
   projectScriptCwd,
   projectScriptRuntimeEnv,
   resolveProjectScripts,
-} from "@t3tools/shared/projectScripts";
-import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
-import { truncate } from "@t3tools/shared/String";
-import { resolveThreadReferenceCopyTarget } from "@t3tools/shared/threadReference";
+} from "@infinitus/shared/projectScripts";
+import { resolveProjectSettings } from "@infinitus/shared/projectSettings";
+import { truncate } from "@infinitus/shared/String";
+import { resolveThreadReferenceCopyTarget } from "@infinitus/shared/threadReference";
 import {
   getTerminalLabel,
   nextTerminalId,
   resolveTerminalSessionLabel,
-} from "@t3tools/shared/terminalLabels";
+} from "@infinitus/shared/terminalLabels";
 import { Debouncer } from "@tanstack/react-pacer";
 import { useAtomValue } from "@effect/atom-react";
 import {
@@ -99,7 +99,7 @@ import {
 } from "react";
 import { flushSync } from "react-dom";
 import { useLocation, useNavigate } from "@tanstack/react-router";
-import { assistantCitationsToPlainText } from "@t3tools/shared/assistantCitations";
+import { assistantCitationsToPlainText } from "@infinitus/shared/assistantCitations";
 import { assistantCitationFromLocation } from "../lib/assistantCitationNavigation";
 import { isMacPlatform } from "../lib/utils";
 import type { AssistantCitationSourceAnchor } from "~/lib/assistantTextSelection";
@@ -110,7 +110,7 @@ import {
   settlePromise,
   squashAtomCommandFailure,
   type AtomCommandResult,
-} from "@t3tools/client-runtime/state/runtime";
+} from "@infinitus/client-runtime/state/runtime";
 import * as Cause from "effect/Cause";
 import * as Schema from "effect/Schema";
 import { AsyncResult } from "effect/unstable/reactivity";
@@ -172,7 +172,7 @@ import { useTheme } from "../hooks/useTheme";
 import { writeTextToClipboard } from "../hooks/useCopyToClipboard";
 import { isCommandPaletteOpen } from "../commandPaletteBus";
 import { subscribeSnapShotComposerFocus } from "../lib/desktopSnapShot";
-import { buildTemporaryWorktreeBranchName } from "@t3tools/shared/git";
+import { buildTemporaryWorktreeBranchName } from "@infinitus/shared/git";
 import { useMediaQuery } from "../hooks/useMediaQuery";
 import { RIGHT_PANEL_INLINE_LAYOUT_MEDIA_QUERY } from "../rightPanelLayout";
 import {
@@ -227,7 +227,7 @@ import { WizardPopup } from "./ui/wizard";
 import {
   deriveAgentPanelModel,
   foldSubagentActivities,
-} from "@t3tools/client-runtime/state/subagentRuntime";
+} from "@infinitus/client-runtime/state/subagentRuntime";
 import { BranchToolbar, type BranchToolbarHandle } from "./BranchToolbar";
 import { resolveShortcutCommand, shortcutLabelForCommand } from "../keybindings";
 import ThreadTerminalDrawer from "./ThreadTerminalDrawer";
@@ -297,6 +297,7 @@ import {
   type DraftThreadEnvMode,
   finalizePromotedDraftThreadByRef,
   markPromotedDraftThreadByRef,
+  restoreFailedBackgroundDraftThread,
   useComposerDraftStore,
   DraftId,
 } from "../composerDraftStore";
@@ -310,7 +311,7 @@ import {
   removeInlineContextReference,
   stripInlineContextReferences,
 } from "../lib/composerContextReferences";
-import { serializeLegacyContextMessage } from "@t3tools/shared/composerContextLegacySend";
+import { serializeLegacyContextMessage } from "@infinitus/shared/composerContextLegacySend";
 import {
   buildMessageContext,
   previewAnnotationContextLabel,
@@ -343,12 +344,12 @@ import { threadEnvironment, useEnvironmentThread } from "../state/threads";
 import {
   requestOlderThreadTurns,
   threadHasOlderTurns,
-} from "@t3tools/client-runtime/state/threads";
-import { resolveProviderSkillsForCwd } from "@t3tools/client-runtime/providerSkills";
+} from "@infinitus/client-runtime/state/threads";
+import { resolveProviderSkillsForCwd } from "@infinitus/client-runtime/providerSkills";
 import { vcsEnvironment } from "../state/vcs";
 import { sourceControlEnvironment } from "../state/sourceControl";
 import { useProjectClone } from "../state/projectClones";
-import { projectCloneDisplayName, projectCloneProgressSummary } from "@t3tools/contracts";
+import { projectCloneDisplayName, projectCloneProgressSummary } from "@infinitus/contracts";
 import { useEnvironments, usePrimaryEnvironment } from "../state/environments";
 import {
   readThreadShell,
@@ -488,7 +489,7 @@ import {
 import { sanitizeThreadErrorMessage } from "~/rpc/transportError";
 import { RightPanelSheet } from "./RightPanelSheet";
 import { previewEnvironment } from "../state/preview";
-import { clampFileAttachmentUploadBytes } from "@t3tools/client-runtime/state/attachments";
+import { clampFileAttachmentUploadBytes } from "@infinitus/client-runtime/state/attachments";
 import { appAtomRegistry } from "../rpc/atomRegistry";
 import { fileAttachmentCapabilityBlockReason } from "./chat/composerAttachmentFiles";
 import { assetEnvironment } from "../state/assets";
@@ -529,7 +530,7 @@ import {
   ATTACHMENT_ONLY_BOOTSTRAP_PROMPT,
   recallableComposerPrompt,
 } from "./chat/composerPromptHistory";
-import { PRODUCT_NAME } from "@t3tools/shared/productName";
+import { PRODUCT_NAME } from "@infinitus/shared/productName";
 
 const EMPTY_ACTIVITIES: OrchestrationThreadActivity[] = [];
 const EMPTY_QUEUED_MESSAGES: QueuedComposerMessage[] = [];
@@ -3557,7 +3558,9 @@ export default function ChatView(props: ChatViewProps) {
     live: liveWorktreeSetup,
     recorded: recordedWorktreeSetup,
     turnStarted: activeThread?.latestTurn?.startedAt != null,
-    isWorking,
+    // Counts the optimistic send too, so the row retires the moment the
+    // follow-up is on screen rather than when the server echoes it back.
+    followUpSent: timelineMessages.filter((message) => message.role === "user").length > 1,
   });
   // Sends wait for the agent handoff, not for the setup script: an async
   // script keeps the snapshot running while the agent already works, and a
@@ -6882,6 +6885,17 @@ export default function ChatView(props: ChatViewProps) {
         return;
       }
 
+      if (command === "thread.steerQueuedMessage") {
+        const message = activeThreadKey
+          ? useQueuedMessageStore.getState().queuesByThreadKey[activeThreadKey]?.[0]
+          : undefined;
+        if (!message) return;
+        event.preventDefault();
+        event.stopPropagation();
+        if (!event.repeat) queuedMessageActionsRef.current.steer(message.id);
+        return;
+      }
+
       if (command === "thread.stop") {
         // An unavailable command should not shadow contextual shortcuts such as Escape to close a dialog.
         if (!canInterruptRunningThread) return;
@@ -6911,6 +6925,7 @@ export default function ChatView(props: ChatViewProps) {
     activeThreadPinned,
     activeThreadSettled,
     canInterruptRunningThread,
+    activeThreadKey,
     terminalUiState.terminalOpen,
     terminalUiState.activeTerminalId,
     activeThreadId,
@@ -7666,7 +7681,8 @@ export default function ChatView(props: ChatViewProps) {
     // server's — `submissionIntent === "queue"` dispatches `thread.turn.queue`
     // below and the drain sends the row when the turn ends, while "steer"
     // sends into the running turn at once — so upstream's client-side queue
-    // never takes a message here; it would double the row.
+    // never takes a message here; it would double the row. Upstream's
+    // `followUpBehavior` (#11964) is the fork's `composerSendMode` (#270 F).
     if (
       !queuedMessage &&
       !directAnnotation &&
@@ -7860,9 +7876,13 @@ export default function ChatView(props: ChatViewProps) {
 
     const resolvedSubmissionIntent =
       submissionIntent === "background" && isLocalDraftThread ? "background" : "foreground";
-    // Fork (#806): the message waits on the server for the running turn to
-    // finish. Only a thread the server already has can hold a queue.
-    const isQueueSubmission = submissionIntent === "queue" && isServerThread && !isLocalDraftThread;
+    // Fork (#806, #1318): the message waits on the server — for the running
+    // turn to finish, or (steer) for its next tool call to. Only a thread
+    // the server already has can hold a queue.
+    const isQueueSubmission =
+      (submissionIntent === "queue" || submissionIntent === "steer") &&
+      isServerThread &&
+      !isLocalDraftThread;
     if (
       shouldDockDraftHeroForSubmission({
         isDraftHeroState,
@@ -8081,6 +8101,7 @@ export default function ChatView(props: ChatViewProps) {
     }
 
     let turnStartSucceeded = false;
+    let backgroundDraftOpened = false;
     // The message's context records (upstream #11265) — or, for a server
     // from before inline context, their legacy text form — shared by the
     // queue (#969) and the start dispatches below.
@@ -8124,6 +8145,7 @@ export default function ChatView(props: ChatViewProps) {
             ...messageContextFields(turnAttachmentsResult.value),
           },
           modelSelection: ctxSelectedModelSelection,
+          ...(submissionIntent === "steer" ? { sendAt: "tool-boundary" as const } : {}),
           createdAt: messageCreatedAt,
         },
       });
@@ -8208,41 +8230,68 @@ export default function ChatView(props: ChatViewProps) {
       if (backgroundThreadRef) {
         beginBackgroundDraftSubmissionByRef(backgroundThreadRef);
       }
-      let startResult: AtomCommandResult<unknown, unknown> | null = null;
-      const startedThreadIds: ThreadId[] = [];
-      for (const start of starts) {
-        const bootstrap = buildBootstrap(start.member);
-        const result = await startThreadTurn({
-          environmentId,
-          input: {
-            threadId: start.threadId,
-            message: {
-              messageId: start.messageId,
-              role: "user",
-              text: outgoingMessageText,
-              attachments: turnAttachmentsResult.value,
-              ...messageContextFields(turnAttachmentsResult.value),
+      // Upstream (#12015): the fresh composer opens while the start is in
+      // flight, so a background send never waits on the server twice.
+      const startAll = (async () => {
+        let startResult: AtomCommandResult<unknown, unknown> | null = null;
+        const startedThreadIds: ThreadId[] = [];
+        for (const start of starts) {
+          const bootstrap = buildBootstrap(start.member);
+          const result = await startThreadTurn({
+            environmentId,
+            input: {
+              threadId: start.threadId,
+              message: {
+                messageId: start.messageId,
+                role: "user",
+                text: outgoingMessageText,
+                attachments: turnAttachmentsResult.value,
+                ...messageContextFields(turnAttachmentsResult.value),
+              },
+              modelSelection: start.member
+                ? memberModelSelection(start.member)
+                : ctxSelectedModelSelection,
+              ...(start.member ? {} : { titleSeed: title }),
+              runtimeMode,
+              interactionMode: sendInteractionMode,
+              ...(bootstrap ? { bootstrap } : {}),
+              createdAt: messageCreatedAt,
             },
-            modelSelection: start.member
-              ? memberModelSelection(start.member)
-              : ctxSelectedModelSelection,
-            ...(start.member ? {} : { titleSeed: title }),
-            runtimeMode,
-            interactionMode: sendInteractionMode,
-            ...(bootstrap ? { bootstrap } : {}),
-            createdAt: messageCreatedAt,
-          },
-        });
-        if (result._tag === "Failure") {
-          startResult = result;
-          break;
+          });
+          if (result._tag === "Failure") {
+            startResult = result;
+            break;
+          }
+          startedThreadIds.push(start.threadId);
         }
-        startedThreadIds.push(start.threadId);
-      }
-      if (startResult !== null && startedThreadIds.length === 0) {
-        if (backgroundThreadRef) {
+        return { startResult, startedThreadIds };
+      })();
+      if (backgroundThreadRef) {
+        markPromotedDraftThreadByRef(backgroundThreadRef);
+        try {
+          backgroundDraftOpened = Boolean(
+            await handleNewThread(
+              scopeProjectRef(activeProject.environmentId, activeProject.id),
+              resolveBackgroundDraftWorkspaceOptions({
+                envMode: sendEnvMode,
+                branch: activeThreadBranch,
+                startFromOrigin,
+              }),
+            ),
+          );
+        } catch (error) {
           clearBackgroundDraftSubmissionByRef(backgroundThreadRef);
+          toastManager.add(
+            stackedThreadToast({
+              type: "warning",
+              title: "Could not open a fresh composer",
+              description: error instanceof Error ? error.message : undefined,
+            }),
+          );
         }
+      }
+      const { startResult, startedThreadIds } = await startAll;
+      if (startResult !== null && startedThreadIds.length === 0) {
         failure = startResult;
       } else {
         turnStartSucceeded = true;
@@ -8273,48 +8322,26 @@ export default function ChatView(props: ChatViewProps) {
         }
         acknowledgeActiveThreadWoke();
         if (backgroundThreadRef) {
-          markPromotedDraftThreadByRef(backgroundThreadRef);
-          try {
-            const nextDraft = await handleNewThread(
-              scopeProjectRef(activeProject.environmentId, activeProject.id),
-              resolveBackgroundDraftWorkspaceOptions({
-                envMode: sendEnvMode,
-                branch: activeThreadBranch,
-                startFromOrigin,
-              }),
-            );
-            if (nextDraft) {
-              finalizePromotedDraftThreadByRef(backgroundThreadRef);
-              toastManager.add(
-                stackedThreadToast({
-                  type: "success",
-                  title: "Started in background",
-                  timeout: 5_000,
-                  actionProps: {
-                    children: "Open",
-                    onClick: () => {
-                      void navigate({
-                        to: "/$environmentId/$threadId",
-                        params: buildThreadRouteParams(backgroundThreadRef),
-                      });
-                    },
-                  },
-                }),
-              );
-            } else {
-              clearBackgroundDraftSubmissionByRef(backgroundThreadRef);
-            }
-          } catch (error) {
+          if (backgroundDraftOpened || currentRouteThreadKeyRef.current !== routeThreadKey) {
+            finalizePromotedDraftThreadByRef(backgroundThreadRef);
+          } else {
             clearBackgroundDraftSubmissionByRef(backgroundThreadRef);
-            resetLocalDispatch();
+          }
+          if (backgroundDraftOpened) {
             toastManager.add(
               stackedThreadToast({
-                type: "warning",
-                title: "Task started in the background",
-                description:
-                  error instanceof Error
-                    ? `Could not open a fresh composer: ${error.message}`
-                    : "Could not open a fresh composer.",
+                type: "success",
+                title: "Started in background",
+                timeout: 5_000,
+                actionProps: {
+                  children: "Open",
+                  onClick: () => {
+                    void navigate({
+                      to: "/$environmentId/$threadId",
+                      params: buildThreadRouteParams(backgroundThreadRef),
+                    });
+                  },
+                },
               }),
             );
           }
@@ -8323,6 +8350,16 @@ export default function ChatView(props: ChatViewProps) {
     }
 
     if (failure !== null) {
+      if (resolvedSubmissionIntent === "background" && draftId && draftThread) {
+        restoreFailedBackgroundDraftThread(
+          draftId,
+          draftThread,
+          wasBootstrapThreadDeleted(squashAtomCommandFailure(failure))
+            ? newThreadId()
+            : threadIdForSend,
+        );
+        clearBackgroundDraftSubmissionByRef(scopeThreadRef(environmentId, threadIdForSend));
+      }
       if (queuedMessage) {
         setOptimisticUserMessages((existing) => {
           const removed = existing.filter((message) => message.id === messageIdForSend);
@@ -8341,14 +8378,18 @@ export default function ChatView(props: ChatViewProps) {
           });
         }
       } else if (
-        promptRef.current.length === 0 &&
-        composerImagesRef.current.length === 0 &&
-        composerFilesRef.current.length === 0 &&
-        composerTerminalContextsRef.current.length === 0 &&
-        (useComposerDraftStore.getState().getComposerDraft(composerDraftTarget)?.previewAnnotations
-          .length ?? 0) === 0 &&
-        (useComposerDraftStore.getState().getComposerDraft(composerDraftTarget)?.reviewComments
-          .length ?? 0) === 0
+        backgroundDraftOpened
+          ? !composerDraftHasUserContent(
+              useComposerDraftStore.getState().getComposerDraft(composerDraftTarget),
+            )
+          : promptRef.current.length === 0 &&
+            composerImagesRef.current.length === 0 &&
+            composerFilesRef.current.length === 0 &&
+            composerTerminalContextsRef.current.length === 0 &&
+            (useComposerDraftStore.getState().getComposerDraft(composerDraftTarget)
+              ?.previewAnnotations.length ?? 0) === 0 &&
+            (useComposerDraftStore.getState().getComposerDraft(composerDraftTarget)?.reviewComments
+              .length ?? 0) === 0
       ) {
         setOptimisticUserMessages((existing) => {
           const removed = existing.filter((message) => message.id === messageIdForSend);
@@ -8377,7 +8418,12 @@ export default function ChatView(props: ChatViewProps) {
       }
       if (!isAtomCommandInterrupted(failure)) {
         const error = squashAtomCommandFailure(failure);
-        if (isLocalDraftThread && draftId && wasBootstrapThreadDeleted(error)) {
+        if (
+          resolvedSubmissionIntent !== "background" &&
+          isLocalDraftThread &&
+          draftId &&
+          wasBootstrapThreadDeleted(error)
+        ) {
           const failedDraftSession = getDraftSession(draftId);
           if (failedDraftSession?.threadId === threadIdForSend) {
             setLogicalProjectDraftThreadId(
@@ -8395,6 +8441,21 @@ export default function ChatView(props: ChatViewProps) {
           threadIdForSend,
           error instanceof Error ? error.message : "Failed to send message.",
         );
+        if (backgroundDraftOpened && draftId) {
+          toastManager.add(
+            stackedThreadToast({
+              type: "error",
+              title: "Background task failed",
+              description: error instanceof Error ? error.message : "Failed to send message.",
+              actionProps: {
+                children: "Open draft",
+                onClick: () => {
+                  void navigate({ to: "/draft/$draftId", params: { draftId } });
+                },
+              },
+            }),
+          );
+        }
       }
     }
     sendInFlightRef.current = false;
@@ -8511,7 +8572,7 @@ export default function ChatView(props: ChatViewProps) {
       if (userInputResponsesInFlight.current.has(responseKey)) return;
       const attachmentsByQuestionId = new Map<
         string,
-        import("@t3tools/contracts").UserInputAttachments[string]
+        import("@infinitus/contracts").UserInputAttachments[string]
       >();
       for (const question of activePendingUserInput.questions) {
         const target = questionAttachmentDraftId(
@@ -8534,7 +8595,7 @@ export default function ChatView(props: ChatViewProps) {
         }
         attachmentsByQuestionId.set(
           question.id,
-          uploaded as import("@t3tools/contracts").UserInputAttachments[string],
+          uploaded as import("@infinitus/contracts").UserInputAttachments[string],
         );
       }
       userInputResponsesInFlight.current.add(responseKey);
@@ -9775,6 +9836,11 @@ export default function ChatView(props: ChatViewProps) {
                 loadEarlier={paintOnlyDisplayedTimeline ? null : loadEarlierTurns}
                 queuedMessages={paintOnlyDisplayedTimeline ? EMPTY_QUEUED_MESSAGES : queuedMessages}
                 onSteerQueuedMessage={onSteerQueuedMessage}
+                steerQueuedMessageShortcutLabel={shortcutLabelForCommand(
+                  keybindings,
+                  "thread.steerQueuedMessage",
+                  { context: { terminalFocus: false } },
+                )}
                 onRemoveQueuedMessage={onRemoveQueuedMessage}
               />
 

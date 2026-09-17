@@ -37,7 +37,13 @@ import {
   InfinitusReleaseThreadInput,
   InfinitusReleaseThreadResult,
 } from "./infinitus.ts";
+import {
+  InfinitusAlertInput,
+  InfinitusAlertRelayUnlinked,
+  InfinitusAlertResult,
+} from "./infinitusAlert.ts";
 import { InfinitusPairingHttpApi } from "./infinitusPairing.ts";
+import { InfinitusTeamControlHttpApi } from "./infinitusTeamControl.ts";
 import { ServerRunningTurn } from "./server.ts";
 import {
   ClientOrchestrationCommand,
@@ -359,7 +365,7 @@ export interface EnvironmentSessionPrincipalShape {
 export class EnvironmentAuthenticatedPrincipal extends Context.Service<
   EnvironmentAuthenticatedPrincipal,
   EnvironmentSessionPrincipalShape
->()("@t3tools/contracts/environmentHttp/EnvironmentAuthenticatedPrincipal") {}
+>()("@infinitus/contracts/environmentHttp/EnvironmentAuthenticatedPrincipal") {}
 
 export class EnvironmentAuthenticatedAuth extends HttpApiMiddleware.Service<
   EnvironmentAuthenticatedAuth,
@@ -683,6 +689,15 @@ class InfinitusHttpApi extends HttpApiGroup.make("infinitus")
       success: InfinitusReleaseThreadResult,
       error: EnvironmentScopedOperationErrors,
     }).middleware(EnvironmentAuthenticatedAuth),
+  )
+  .add(
+    // #1375: the Mac's account alert, signed here and pushed by the relay.
+    HttpApiEndpoint.post("alert", "/api/infinitus/alert", {
+      headers: OptionalBearerHeaders,
+      payload: InfinitusAlertInput,
+      success: InfinitusAlertResult,
+      error: [InfinitusAlertRelayUnlinked, ...EnvironmentScopedOperationErrors],
+    }).middleware(EnvironmentAuthenticatedAuth),
   ) {}
 
 export class EnvironmentHttpApi extends HttpApi.make("environment")
@@ -693,5 +708,7 @@ export class EnvironmentHttpApi extends HttpApi.make("environment")
   .add(EnvironmentConnectHttpApi)
   // Infinitus fork: the approve-on-Mac pairing routes (#710).
   .add(InfinitusPairingHttpApi)
+  // Infinitus fork: a teammate's sealed team command for the Mac (#1313).
+  .add(InfinitusTeamControlHttpApi)
   // Infinitus fork: infinitusctl's holds read and release (#822).
   .add(InfinitusHttpApi) {}

@@ -3,7 +3,6 @@ import { describe, expect, it } from "vite-plus/test";
 
 import { ExecutionEnvironmentCapabilities } from "./environment.ts";
 import {
-  InfinitusActivityPushRegistration,
   InfinitusAwsLogins,
   InfinitusClientActivityReport,
   InfinitusCommandInput,
@@ -18,6 +17,7 @@ import {
   InfinitusSnapshot,
   InfinitusThreadForkRefused,
   InfinitusStatus,
+  InfinitusTeamSnapshot,
 } from "./infinitus.ts";
 
 const decodeReply = Schema.decodeUnknownSync(InfinitusControlReply);
@@ -107,37 +107,14 @@ describe("InfinitusStatus", () => {
     expect(() => decodeStatus({ ...status, playground: "yes" })).toThrow();
   });
 
-  it("leaves the fork tunnel absent on a build before it", () => {
-    expect(decodeStatus(status).forkTunnel).toBeUndefined();
-  });
-
-  it("decodes the fork tunnel, with its url only while up", () => {
-    const up = decodeStatus({
-      ...status,
-      forkTunnel: {
-        enabled: true,
-        port: 3773,
-        state: "up",
-        url: "https://example-words.trycloudflare.com",
-        hostname: "example-words.trycloudflare.com",
-      },
-    });
-    expect(up.forkTunnel?.url).toBe("https://example-words.trycloudflare.com");
-
-    const off = decodeStatus({
-      ...status,
-      forkTunnel: { enabled: false, port: 3773, state: "off" },
-    });
-    expect(off.forkTunnel?.state).toBe("off");
-    expect(off.forkTunnel?.url).toBeUndefined();
-  });
-
-  it("keeps a tunnel state a newer build adds rather than dropping the status", () => {
+  it("drops a retired key an older native build still sends", () => {
     const decoded = decodeStatus({
       ...status,
-      forkTunnel: { enabled: true, port: 3773, state: "reconnecting" },
+      forkTunnel: { enabled: true, port: 3773, state: "up" },
     });
-    expect(decoded.forkTunnel?.state).toBe("reconnecting");
+
+    expect(decoded.version).toBe("0.4.3");
+    expect(decoded).not.toHaveProperty("forkTunnel");
   });
 });
 
@@ -471,43 +448,8 @@ describe("the infinitus capability", () => {
 });
 
 describe("the phone-only write bodies", () => {
-  const decodeRegistration = Schema.decodeUnknownSync(InfinitusActivityPushRegistration);
-  const encodeRegistration = Schema.encodeUnknownSync(InfinitusActivityPushRegistration);
   const decodeActivity = Schema.decodeUnknownSync(InfinitusClientActivityReport);
   const decodeCrash = Schema.decodeUnknownSync(InfinitusCrashReport);
-
-  // The keys the native phone sends today (NetworkFleetMirror, ISO 8601 dates).
-  const registration = {
-    kind: "agent-activity-start",
-    token: "8f3a…c1",
-    deviceId: "F3B1D2E4-0000-4000-8000-000000000001",
-    deviceName: "Loc's iPhone",
-    environment: "sandbox",
-    themeID: "rpg",
-    registeredAt: "2026-09-10T10:00:00Z",
-    macId: "env-7c2f",
-    layout: "expo",
-  } as const;
-
-  it("round-trips a token registration with every field", () => {
-    const decoded = decodeRegistration(registration);
-    expect(decoded.kind).toBe("agent-activity-start");
-    expect(decoded.macId).toBe("env-7c2f");
-    expect(encodeRegistration(decoded)).toEqual(registration);
-  });
-
-  it("accepts the null theme and the absent macId, layout and stamp an older phone sends", () => {
-    const { macId: _macId, layout: _layout, registeredAt: _at, ...older } = registration;
-    const decoded = decodeRegistration({ ...older, kind: "alert", themeID: null });
-    expect(decoded.themeID).toBeNull();
-    expect(decoded.macId).toBeUndefined();
-    expect(decoded.layout).toBeUndefined();
-    expect(decoded.registeredAt).toBeUndefined();
-  });
-
-  it("rejects a token kind the Mac has no slot for", () => {
-    expect(() => decodeRegistration({ ...registration, kind: "widget" })).toThrow();
-  });
 
   it("decodes the two scopes the server still sends", () => {
     const decoded = decodeActivity({
@@ -580,12 +522,18 @@ describe("InfinitusAwsLogins", () => {
             startedAt: 1_800_000_000,
             pid: 4243,
           },
-          account: { number: 1, email: "a@x.com" },
+          // `AwsLogin.Account`: the page's account id and IAM user name, off the
+          // profile's config; `userName` is omitted when the config names none.
+          account: { accountId: "123456789012", userName: "deathemperor" },
         },
         { profile: "default", provider: "gcloud", flow: "deviceCode", pid: null, state: null },
       ],
     });
     expect(decoded.logins[0]?.state?.userCode).toBe("ABCD-1234");
+    expect(decoded.logins[0]?.account).toEqual({
+      accountId: "123456789012",
+      userName: "deathemperor",
+    });
     expect(decoded.logins[1]?.provider).toBe("gcloud");
     expect(decoded.logins[1]?.state).toBeNull();
   });
@@ -661,3 +609,118 @@ describe("InfinitusThreadForkRefused", () => {
     expect(decoded.message).toBe("The thread was not found.");
   });
 });
+
+const decodeTeam = Schema.decodeUnknownSync(Schema.NullOr(InfinitusTeamSnapshot));
+
+describe("InfinitusTeamSnapshot", () => {
+  it("decodes the fixture's team-status reply", () => {
+    const team = decodeTeam(TEAM_STATUS);
+    expect(team?.members.map((m) => m.name)).toEqual(["Ann", "Bo"]);
+    expect(team?.shares?.transcripts).toBe("leaders");
+  });
+
+  it("decodes the grants, the waits and a member's controls (#1313, delegated control)", () => {
+    const team = decodeTeam({
+      ...TEAM_STATUS,
+      members: [
+        { kid: "k-bo", name: "Bo", role: "member", isMe: false, controls: ["send", "view"] },
+      ],
+      grants: [
+        { id: "g-1", audience: "leaders", threads: "all", capabilities: ["send"], since: 1 },
+        {
+          id: "g-2",
+          audience: ["k-bo"],
+          threads: ["t1"],
+          capabilities: ["interrupt", "new"],
+          since: 2,
+          preauthorized: ["new"],
+          expires: 99,
+        },
+      ],
+      pending: [
+        {
+          id: "c-1",
+          kid: "k-bo",
+          name: "Bo",
+          thread: "t1",
+          action: "interrupt",
+          text: null,
+          expires: 120,
+        },
+      ],
+    });
+    expect(team?.members[0]?.controls).toEqual(["send", "view"]);
+    expect(team?.grants?.map((g) => g.id)).toEqual(["g-1", "g-2"]);
+    expect(team?.grants?.[1]?.threads).toEqual(["t1"]);
+    expect(team?.pending?.[0]?.action).toBe("interrupt");
+    expect(decodeTeam(TEAM_STATUS)?.grants).toBeUndefined();
+  });
+
+  it("decodes null for a Mac in no team, and a member without a publish yet", () => {
+    expect(decodeTeam(null)).toBeNull();
+    const team = decodeTeam({
+      ...TEAM_STATUS,
+      members: [{ kid: "k", name: "New", role: "member", isMe: false }],
+    });
+    expect(team?.members[0]?.lastPublished).toBeUndefined();
+  });
+});
+
+const TEAM_STATUS = {
+  id: "papaya",
+  name: "Papaya",
+  remote: "https://github.com/…/team.git",
+  kid: "k-ann",
+  role: "leader",
+  rev: 4,
+  members: [
+    {
+      kid: "k-ann",
+      name: "Ann",
+      role: "leader",
+      isMe: true,
+      founder: true,
+      since: 1_757_900_000,
+      lastPublished: 1_757_950_000,
+      kinds: ["stats", "now", "threads"],
+      threadsNow: 2,
+      blockers: [],
+      crashes: 0,
+      todayUSD: 3.5,
+      todayMessages: 40,
+      todayCommits: 3,
+    },
+    {
+      kid: "k-bo",
+      name: "Bo",
+      role: "member",
+      isMe: false,
+      founder: false,
+      since: 1_757_910_000,
+      lastPublished: 1_757_940_000,
+      kinds: ["stats"],
+      threadsNow: 0,
+      blockers: ["aws: papaya"],
+      crashes: 1,
+      todayUSD: 0.2,
+      todayMessages: 5,
+      todayCommits: 0,
+    },
+  ],
+  requests: [
+    { kid: "k-cy", name: "Cy", platform: "macos", devices: ["Cy's Mac"], at: 1_757_960_000 },
+  ],
+  policy: { requests: "code" },
+  shares: {
+    stats: "team",
+    now: "team",
+    threads: "leaders",
+    transcripts: "leaders",
+    crashes: "leaders",
+    fleet: "off",
+  },
+  exclusions: ["secret-repo"],
+  lastFetch: 1_757_960_100,
+  lastPublish: 1_757_950_000,
+  lastError: null,
+};

@@ -37,8 +37,8 @@ import {
   ThreadPullRequestSnapshot,
   ThreadPullRequestStack,
   type ThreadPullRequestLink,
-} from "@t3tools/contracts";
-import { legacyLinkedPullRequestOf } from "@t3tools/shared/threadPullRequests";
+} from "@infinitus/contracts";
+import { legacyLinkedPullRequestOf } from "@infinitus/shared/threadPullRequests";
 import * as Arr from "effect/Array";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -479,6 +479,7 @@ function mapQueuedTurnRow(row: QueuedTurnDbRow): OrchestrationQueuedTurn {
     attachments: row.attachments,
     ...(row.modelSelection === null ? {} : { modelSelection: row.modelSelection }),
     ...(row.context === null ? {} : { context: row.context }),
+    ...(row.sendAt === null ? {} : { sendAt: row.sendAt }),
     orderKey: row.orderKey,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
@@ -847,6 +848,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           attachments_json AS "attachments",
           model_selection_json AS "modelSelection",
           context_json AS "context",
+          send_at AS "sendAt",
           order_key AS "orderKey",
           created_at AS "createdAt",
           updated_at AS "updatedAt"
@@ -1520,6 +1522,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           attachments_json AS "attachments",
           model_selection_json AS "modelSelection",
           context_json AS "context",
+          send_at AS "sendAt",
           order_key AS "orderKey",
           created_at AS "createdAt",
           updated_at AS "updatedAt"

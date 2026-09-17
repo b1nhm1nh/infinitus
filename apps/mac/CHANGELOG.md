@@ -10,6 +10,81 @@ release cut folds the fragments and `## Unreleased` into the new section.
 ## Unreleased
 
 
+## 0.5.0-alpha.21
+
+### Desktop
+- Releases no longer carry the server archive under its old `t3` name; an install older than 0.5.0-alpha.20 updates to that release first.
+
+### Phone
+- A failed sign-in card can be dismissed, and one left alone leaves by itself after ten minutes instead of staying until the Mac app relaunches.
+
+## 0.5.0-alpha.20
+
+### Mac
+- Phone alerts go out through Infinitus Connect with no push key of your own; the Mac no longer takes a Team ID, Key ID or .p8.
+- A sign-in for a profile that reads its credentials from a broker (`credential_process`) now runs for the login profile behind it instead of failing, and a failed sign-in shows its whole reason.
+
+### Desktop
+- The command-line server is `infinitus` now (`infinitus serve`, `infinitus update`, `infinitus service install`); the installer links that name, and a release still carries the archive under its old name for one version so an earlier install can update.
+- The Phone alerts card with its Team ID, Key ID and push key rows left Settings › Infinitus › Devices; alerts ride Infinitus Connect.
+
+## 0.5.0-alpha.19
+
+### Mac
+- Signing in to a gcloud account that still holds credentials no longer hangs at "starting"; gcloud's overwrite prompt is skipped.
+- A paused account wears one pause icon — press it to resume — and keeps its 5h, 7d and per-model limits.
+- Account alerts stop double-posting — the menu bar app stays quiet while the desktop app is open and shows them there instead.
+
+### Desktop
+- Account alerts land here now — a toast for every one, and a system notification when the fleet runs out while you are away.
+
+### Phone
+- Account alerts from a Mac now arrive through Infinitus Connect under the Device Notifications switch; the Alerts from Mac, Thread card and Card push registration rows left Settings › Infinitus.
+
+## 0.5.0-alpha.18
+
+### Mac
+- Team no longer involves the biometric lock — minting a code, approving a member and turning the lock off ask nothing extra.
+
+### Phone
+- Pasting a sign-in code back (and the no-code relay) now reaches the Mac; the server had refused every phone.
+- Joining a team with an invite code from the phone works; the server had refused it.
+
+## 0.5.0-alpha.17
+
+### Mac
+- Teammates you grant can send to, view, interrupt or start your threads (#1313).
+- Team publishes threads from Infinitus desktop and answers team-* over the control socket (#1313).
+
+### Desktop
+- A thread stopped on a usage limit now resumes on an account with headroom instead of the one that just ran out.
+- Builds and the phone take the Infinitus relay's public config, ready for a self-hosted T3 Connect (#1322).
+- Settings › Infinitus › Team is back — create or join a team, approve requests, mint invite links, choose what you share (#1313).
+
+### Phone
+- A paired phone dials your Mac's domain before its Wi-Fi address, so it connects off the LAN without the long wait.
+- A thread whose watch loops are still running shows Monitoring, as the desktop does.
+- An expired AWS or gcloud sign-in shows the account to copy and takes the code pasted back, as before.
+- Settings › Team joins a team from an invite link and approves requests on your Mac (#1313).
+
+## 0.5.0-alpha.16
+
+### Mac
+- a freshly installed engine now reports the provider it manages before its first account, so Accounts offers the first sign-in instead of telling you to install the engine you just installed.
+- A used-up model window (Fable) no longer repeats the reset time the weekly gauge beside it already counts down.
+- Infinitus stays out of the Dock by default — turn "Show a Dock icon while Settings is open" back on under Settings › Infinitus › Menu bar.
+- the Team crypto core, store and infinitusctl team CLI are back (#1313).
+
+### Desktop
+- A message sent while a turn runs in steer mode now waits for the agent's next tool call to finish instead of landing mid-tool.
+- ⌘[ / ⌘] and the mouse's back button move through history again.
+- A team invite link (infinitus.run/join, or infinitus://join on a Mac) opens the desktop app with the code ready for the Team page (#1313).
+
+### Phone
+- The queued messages card marks such a message "at next step".
+- With "Send into the running turn" on, a message sent during a turn now waits for the running tool call to finish before it goes in, on a Mac that supports it.
+- A working row on the lock-screen thread card shows its title again; the elapsed timer no longer takes the whole row.
+
 ## 0.5.0-alpha.15
 
 ### Mac

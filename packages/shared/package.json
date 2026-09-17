@@ -1,5 +1,5 @@
 {
-  "name": "@t3tools/shared",
+  "name": "@infinitus/shared",
   "private": true,
   "type": "module",
   "exports": {
@@ -275,6 +275,10 @@
       "types": "./src/chatList.ts",
       "import": "./src/chatList.ts"
     },
+    "./nodeRuntime": {
+      "types": "./src/nodeRuntime.ts",
+      "import": "./src/nodeRuntime.ts"
+    },
     "./hostProcess": {
       "types": "./src/hostProcess.ts",
       "import": "./src/hostProcess.ts"
@@ -365,9 +369,9 @@
     "test": "vp test run"
   },
   "dependencies": {
+    "@infinitus/contracts": "workspace:*",
     "@noble/curves": "catalog:",
     "@noble/hashes": "catalog:",
-    "@t3tools/contracts": "workspace:*",
     "effect": "catalog:",
     "jose": "catalog:",
     "yaml": "catalog:"

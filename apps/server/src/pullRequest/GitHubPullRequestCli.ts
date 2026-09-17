@@ -29,7 +29,7 @@ import {
   type PullRequestLabelCandidateList,
   type PullRequestThreadCommentsResult,
   type PullRequestUpdateMethod,
-} from "@t3tools/contracts";
+} from "@infinitus/contracts";
 
 import * as GitHubCli from "../sourceControl/GitHubCli.ts";
 import * as GitHubGraphQlBudget from "../sourceControl/githubGraphQlBudget.ts";
@@ -1106,6 +1106,7 @@ export const make = Effect.gen(function* () {
     captureVerifiedCredential(input).pipe(
       Effect.flatMap(({ host, token, accountId, viewer, credentialFingerprint }) =>
         use({ accountId, viewer, credentialFingerprint }).pipe(
+          Effect.provideService(SourceControlRateLimit.CredentialScope, credentialFingerprint),
           Effect.provideService(GitHubCli.PinnedGitHubCredential, {
             host,
             token,

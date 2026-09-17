@@ -6,15 +6,18 @@ import {
   PrimaryEnvironmentAuth,
   RelayDeviceIdentity,
   SshEnvironmentGateway,
-} from "@t3tools/client-runtime/platform";
+} from "@infinitus/client-runtime/platform";
 import {
   ConnectionBlockedError,
   ConnectionTransientError,
   Connectivity,
   Wakeups,
-} from "@t3tools/client-runtime/connection";
-import { managedRelayAccountChanges, managedRelaySessionAtom } from "@t3tools/client-runtime/relay";
-import { AuthStandardClientScopes } from "@t3tools/contracts";
+} from "@infinitus/client-runtime/connection";
+import {
+  managedRelayAccountChanges,
+  managedRelaySessionAtom,
+} from "@infinitus/client-runtime/relay";
+import { AuthStandardClientScopes } from "@infinitus/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -31,9 +34,9 @@ import * as MobileStorage from "../persistence/mobile-storage";
 import { appAtomRegistry } from "../state/atom-registry";
 import { clearThreadOutboxEnvironment } from "../state/thread-outbox-removal";
 import { clearComposerDraftsEnvironment } from "../state/use-composer-drafts";
-import { requestedConnectionWakeups } from "../features/infinitus/connectionWakeups";
 import { mobileApplicationActiveWakeup } from "./app-state-wakeups";
 import { connectionStorageLayer } from "./storage";
+import { CONNECT_NAME } from "@infinitus/shared/productName";
 
 function networkStatus(state: Network.NetworkState): "unknown" | "offline" | "online" {
   if (state.isConnected === false) {
@@ -107,12 +110,8 @@ const wakeupsLayer = Wakeups.layer({
         (subscription) => Effect.sync(() => subscription.remove()),
       ).pipe(Effect.asVoid),
     ),
-    Stream.merge(
-      managedRelayAccountChanges(appAtomRegistry).pipe(
-        Stream.map(() => "credentials-changed" as const),
-      ),
-      // Infinitus (fork, #1277): a wakeup a feature asks for, see the module.
-      requestedConnectionWakeups,
+    managedRelayAccountChanges(appAtomRegistry).pipe(
+      Stream.map(() => "credentials-changed" as const),
     ),
   ),
 });
@@ -131,7 +130,7 @@ const capabilitiesLayer = Layer.effectContext(
           if (session === null) {
             return yield* new ConnectionBlockedError({
               reason: "authentication",
-              detail: "Sign in to T3 Connect to connect this environment.",
+              detail: `Sign in to ${CONNECT_NAME} to connect this environment.`,
             });
           }
           const token = yield* session.readClerkToken().pipe(
@@ -146,7 +145,7 @@ const capabilitiesLayer = Layer.effectContext(
           if (token === null) {
             return yield* new ConnectionBlockedError({
               reason: "authentication",
-              detail: "The T3 Connect session is unavailable.",
+              detail: `The ${CONNECT_NAME} session is unavailable.`,
             });
           }
           return token;

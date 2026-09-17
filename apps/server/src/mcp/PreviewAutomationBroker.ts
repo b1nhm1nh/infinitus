@@ -24,7 +24,7 @@ import {
   type PreviewAutomationHostFocus,
   type PreviewAutomationResponse,
   type PreviewAutomationStreamEvent,
-} from "@t3tools/contracts";
+} from "@infinitus/contracts";
 import * as Context from "effect/Context";
 import * as Crypto from "effect/Crypto";
 import * as Deferred from "effect/Deferred";
@@ -575,7 +575,13 @@ export const make = Effect.gen(function* PreviewAutomationBrokerMake() {
       }
       const result = yield* Deferred.await(deferred).pipe(Effect.timeoutOption(timeoutMs));
       return yield* Option.match(result, {
-        onNone: () => Effect.fail(new PreviewAutomationTimeoutError(requestContext)),
+        onNone: () =>
+          Effect.gen(function* () {
+            // An unanswered request invalidates this connection. Do not replay
+            // actions: the client may have applied them before becoming unreachable.
+            yield* disconnect(connection.clientId, connection.queue);
+            return yield* new PreviewAutomationTimeoutError(requestContext);
+          }),
         onSome: (value) => Effect.succeed(value as A),
       });
     });

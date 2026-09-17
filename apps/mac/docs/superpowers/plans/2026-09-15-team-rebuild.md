@@ -20,7 +20,7 @@
 - Secrets travel on the request line's `secret` field (stdin for the CLI), never argv; never logged.
 - Bundle id `run.infinitus` never changes. Dev instances need `INFINITUS_CONTROL_SOCKET=/tmp/<short>.sock` and `INFINITUS_APP_SUPPORT`. Never `pkill -f`; kill only PIDs captured at spawn.
 - Swift builds: one `--product` per `swift build`; the Mac app is `Infinitus`, the CLI `infinitusctl`.
-- Spec §5.4: `team-code` and `team-approve` refuse while the lock is off; `lock off` in a team needs `--yes`; create/join are not gated.
+- Spec §5.4 (as amended 2026-09-16): the lock never touches Team; no verb checks it.
 
 ---
 
@@ -36,7 +36,7 @@ Files: the spec, this plan, `apps/mac/changelog.d/team-rebuild-plan.md` (`Mac: T
 
 **Files:**
 - Modify: `apps/mac/Package.swift` (the `targets` array head)
-- Restore: `apps/mac/Sources/CZlib/module.modulemap`, `apps/mac/Sources/CZlib/shim.h`
+- Restore: `apps/mac/Sources/CZlib/module.modulemap`, `apps/mac/Sources/CZlib/shim.h`, `apps/mac/Sources/InfinitusCore/ASCIIScan.swift` (`TeamRedaction` calls `ASCIIScan.lowered`; the helper left with #1155, not #1061 — review note on #1313) and `apps/mac/Tests/InfinitusCoreTests/SkipPOSIX.swift` (`skipOffPOSIX()`, which `TeamMembershipTests` calls; gone the same way)
 - Restore under `apps/mac/Sources/InfinitusCore/Team/`: `Base32.swift`, `CanonicalJSON.swift`, `Deflate.swift`, `DrainingPool.swift`, `Envelope.swift`, `PBKDF2.swift`, `RecoveryKey.swift`, `Signed.swift`, `TeamIdentity.swift`, `TeamIdentityExport.swift`, `TeamSecrets.swift`, `TeamPaths.swift`, `TeamCode.swift`, `TeamRequest.swift`, `TeamRoster.swift`, `TeamKinds.swift`, `TeamStore.swift`, `TeamChunker.swift`, `TeamRedaction.swift`, `TeamPublishState.swift`, `TeamShares.swift`, `TeamTranscriptChoices.swift`, `TeamExclusions.swift`, `TeamFleetDoc.swift`, `TeamDocs.swift`
 - Restore tests under `apps/mac/Tests/InfinitusCoreTests/`: `PBKDF2Tests.swift`, `RecoveryKeyTests.swift`, `TeamChunkerTests.swift`, `TeamDeflateTests.swift`, `TeamEnvelopeTests.swift`, `TeamIdentityTests.swift`, `TeamIdentityExportTests.swift`, `TeamRosterTests.swift`, `TeamSecretsTests.swift`, `TeamSettingsTests.swift`, `TeamSharesTests.swift`, `TeamTranscriptChoicesTests.swift`, `TeamRedactionTests.swift`, `TeamFleetDocTests.swift` (its `TeamSnapshot`/`TeamReader`/`TeamInsights` cases cut; they return in Task 2.2)
 
@@ -47,7 +47,7 @@ Files: the spec, this plan, `apps/mac/changelog.d/team-rebuild-plan.md` (`Mac: T
 
 ```bash
 cd apps/mac
-git checkout 4947e663df -- Sources/CZlib
+git checkout 4947e663df -- Sources/CZlib Sources/InfinitusCore/ASCIIScan.swift Tests/InfinitusCoreTests/SkipPOSIX.swift
 for f in Base32 CanonicalJSON Deflate DrainingPool Envelope PBKDF2 RecoveryKey Signed TeamIdentity TeamIdentityExport TeamSecrets TeamPaths TeamCode TeamRequest TeamRoster TeamKinds TeamStore TeamChunker TeamRedaction TeamPublishState TeamShares TeamTranscriptChoices TeamExclusions TeamFleetDoc TeamDocs; do
   git checkout 4947e663df -- "Sources/InfinitusCore/Team/$f.swift"
 done
@@ -82,7 +82,7 @@ In `TeamDocs.swift` delete the `GrantHint` struct and, in `Now`, the two lines `
 cd apps/mac && swift build --product InfinitusCore 2>&1 | tail -20
 swift test --parallel --filter 'PBKDF2Tests|RecoveryKeyTests|TeamChunkerTests|TeamDeflateTests|TeamEnvelopeTests|TeamIdentityTests|TeamIdentityExportTests|TeamRosterTests|TeamSecretsTests|TeamSettingsTests|TeamSharesTests|TeamTranscriptChoicesTests|TeamRedactionTests|TeamFleetDocTests' 2>&1 | tail -15
 ```
-Expected: build succeeds; every listed suite passes. A compile error naming a removed symbol (`TeamControl`, `MirrorSnapshot`, `ClaudeSessions`, `SessionInput`) means a file from the "not restored" list slipped in or a doc field was missed in Step 3: fix that, never add a shim.
+Expected: build succeeds; every listed suite passes. A compile error naming a removed symbol (`TeamControl`, `MirrorSnapshot`, `ClaudeSessions`, `SessionInput`; `ASCIIScan` and `skipOffPOSIX` mean Step 1 missed the two helper files) means a file from the "not restored" list slipped in or a doc field was missed in Step 3: fix that, never add a shim.
 
 - [ ] **Step 5: Commit**
 
@@ -384,11 +384,11 @@ public enum TeamThreadSources {
 ## Slice 3: web pane + desktop join link + site (PR "feat(web): Settings › Infinitus › Team")
 
 ### Task 3.1: `team.logic.ts` (restore and re-type)
-- Restore `apps/web/src/components/settings/infinitus/team.logic.ts` and `team.logic.test.ts` from `d587749289^`; replace the local `TeamStatus` schema with `InfinitusTeamSnapshot` from `@t3tools/contracts/infinitus`; delete `teamHostnameSupported`; add `TeamAction` cases `remove`, `promote`, `leave`, `share`, `exclude`, `policy`, `code`, and `teamCreateSecretArgs(name, remote, as)` → `{command: "team-create", args: {name}, options: {remote, as}}`. Test: each action's `InfinitusCommandInput`; `parseTeamStatus(null)` → `{team: null}`. Run `vp test run apps/web/src/components/settings/infinitus/team.logic.test.ts`.
+- Restore `apps/web/src/components/settings/infinitus/team.logic.ts` and `team.logic.test.ts` from `d587749289^`; replace the local `TeamStatus` schema with `InfinitusTeamSnapshot` from `@infinitus/contracts/infinitus`; delete `teamHostnameSupported`; add `TeamAction` cases `remove`, `promote`, `leave`, `share`, `exclude`, `policy`, `code`, and `teamCreateSecretArgs(name, remote, as)` → `{command: "team-create", args: {name}, options: {remote, as}}`. Test: each action's `InfinitusCommandInput`; `parseTeamStatus(null)` → `{team: null}`. Run `vp test run apps/web/src/components/settings/infinitus/team.logic.test.ts`.
 
 ### Task 3.2: `InfinitusTeamPanel.tsx` + route
 - Restore `InfinitusTeamPanel.tsx` and `apps/web/src/routes/settings.infinitus.team.tsx` from `d587749289^`; delete the Hostnames, Nearby, Grants and Sessions sections; keep Members, Requests, Invite, Sync, Join, Create; add Sharing (select per kind over `team-share`), Exclusions, Policy, Leave (confirm dialog → `team-leave --yes`). Invite button disabled with title "Turn the lock on in Settings › Infinitus › Lock" when `snapshot.lockEnabled` is false; the minted code shown once in a read-only password-style field with Copy and "Copy link" (`https://infinitus.run/join#${encodeURIComponent(code)}`).
-- Registration: `settingsSearch.ts` (`"/settings/infinitus/team"` in the union after `/lock`, label `"Team"`, search item `infinitus-team` with `infinitusOnly: true`, the `null` entry in the parent map), `SettingsSidebarNav.tsx` (`UsersIcon`, path in `INFINITUS_SETTINGS_PATHS`), `scripts/fork-visual-routes.ts` (`{ route: "/settings/infinitus/team", label: "Team", marker: "Members" }`), regenerate `routeTree.gen.ts` with `pnpm --filter @t3tools/web exec tsr generate` (never by hand).
+- Registration: `settingsSearch.ts` (`"/settings/infinitus/team"` in the union after `/lock`, label `"Team"`, search item `infinitus-team` with `infinitusOnly: true`, the `null` entry in the parent map), `SettingsSidebarNav.tsx` (`UsersIcon`, path in `INFINITUS_SETTINGS_PATHS`), `scripts/fork-visual-routes.ts` (`{ route: "/settings/infinitus/team", label: "Team", marker: "Members" }`), regenerate `routeTree.gen.ts` with `pnpm --filter @infinitus/web exec tsr generate` (never by hand).
 - Tests: `vp test run apps/web/src/components/settings/settingsSearch.test.ts scripts/fork-visual-routes.test.ts`.
 
 ### Task 3.3: desktop `join` deep link
@@ -418,7 +418,7 @@ public enum TeamThreadSources {
 ### Task 4.2: `TeamRouteScreen.tsx`
 - One `SettingsSection` per Mac: `useAtomValue(infinitusEnvironment.snapshot(...))` for the manifest gate, `useAtomCommand(infinitusEnvironment.command)` for `team-status`/`team-fetch`/`team-approve`/`team-decline`, `useAtomCommand(infinitusEnvironment.secret)` for `team-join`. Members list (name · role · last seen), Requests with Approve/Deny (leaders), Join form (name + code, `secureTextEntry`), Fetch now. Route param `code?: string` prefills the code.
 - Registration: `Stack.tsx` (`SettingsTeam: createNativeStackScreen(...)` after `SettingsAccounts`, link `settings/team`), `settings-sheet-targets.ts` (`"SettingsTeam"`), `SettingsInfinitusSection.tsx` (`<SettingsRow icon="person.3" label="Team" target="SettingsTeam" />` after Accounts), `App.tsx` `rewriteIncomingUrl`: `const teamCode = teamJoinLinkCode(url); if (teamCode !== null) return Linking.createURL("settings/team", { queryParams: { code: teamCode } });` before the pair rewrite, `app.config.ts` intent filter: a second `data` entry with `pathPrefix: "/join"`.
-- Tests: `vp test run apps/mobile/src/features/team/team.logic.test.ts`; typecheck `pnpm --filter @t3tools/mobile exec tsc --noEmit`.
+- Tests: `vp test run apps/mobile/src/features/team/team.logic.test.ts`; typecheck `pnpm --filter @infinitus/mobile exec tsc --noEmit`.
 
 ### Task 4.3: Fragment + PR — `apps/mac/changelog.d/team-phone.md`: `Phone: Settings › Team joins a team from an invite link and approves requests on your Mac (#1313).` PR body names the site deploy (AASA `/join`) as the prerequisite for the universal link.
 
@@ -430,6 +430,32 @@ public enum TeamThreadSources {
 
 ---
 
-## Slice 6: delegated control (PR "feat: Team delegated control over threads") — expanded into steps after slices 1–5 merge
+## Slice 6: delegated control (PR "feat: Team delegated control over threads")
 
-Files: restore `TeamControl.swift`, `TeamControlStore.swift`, `TeamGrants.swift`, `TeamGrantsRouting.swift` + tests from `4947e663df`, re-typed: `sessions` → `threads`, capabilities `view|send|interrupt|new`; `TeamKinds.controlKinds` back; `TeamDocs.Now.endpoints` (`httpBaseUrl`, `lanHttpBaseUrls`, `tunnel`) and `grantsTo` back. Server: `packages/contracts/src/environmentHttp.ts` `POST /api/infinitus/team/command` (`{envelope: string}` → `{ack: string}`, unauthenticated like `InfinitusPairingHttpApi`), `apps/server/src/infinitus/Layers/InfinitusHttp.ts` forwarding to the Mac's `team-inbox` verb (`stdin: "secret"`). Mac: `team-inbox`, `team-grants`, `team-grant`, `team-revoke`, `team-pending`, `team-allow`, `team-deny`, `team-drive <kid> <thread|-> <send|interrupt|new> [text]`; execution via `DesktopAPI.dispatch`. Web: Grants and Pending sections. e2e: the old store-lane round (`git show 4947e663df:apps/mac/tools/e2e.sh | sed -n 902,961p`) on a thread id from `tools/demo-desktop`. Fragment: `Mac: teammates you grant can send to your threads (#1313).`
+Expanded after slices 1–5 merged (#1327, #1348, #1351, #1352). Spec §8. One PR, several commits, in this order.
+
+**Decisions the spec leaves open, settled here:**
+- Capabilities `view | send | interrupt | new`. `view` and `send` never ask (the drive set); `interrupt` and `new` ask unless the grant pre-authorises them. Nothing is `neverPreauthorized`.
+- `new` is machine-scoped: `Command.thread` is `-`, `Command.project` names the project (title or id), the grant's thread list is not consulted. The others name a thread.
+- "Live" = the thread id is in the desktop's shell right now (`Endpoint.threads()`); `interrupt` on a thread with no running turn is `refused` by the executor, not `notLive` by verify. `view` and `send` need the thread to exist. `new` skips the check.
+- `view` answers through the ack's `detail`: the thread's last turn, redacted with `TeamRedaction`, capped at 4 KB. No second reply shape.
+- `new` with no default model (`DesktopRows.NoModel`) is `refused` with the message; never a crash.
+- Rate: `send`/`view` in the 5-per-10-s bucket, `interrupt`/`new` in the 6-per-minute one.
+- Lanes: LAN base URLs (2 s each), then the tunnel (5 s), then the store. The old subnet pre-check is dropped with `MirrorPairing` — a LAN URL is dialed and times out. The desktop's own `httpBaseUrl` is published only when it is not loopback.
+
+### Task 6.1: core restored and re-typed
+**Files:** `Sources/InfinitusCore/Team/{TeamGrants,TeamGrantsRouting,TeamControl,TeamControlStore,TeamControlDrive}.swift` from `4947e663df`, re-typed: `sessions`→`threads`, `Sessions`→`Threads`, `Command{id,to,thread,action,text,project?,at,ttl}`, own `Reply{outcome,detail}` (no `SessionInput`), `Endpoint.threads: () -> Set<String>`, `execute: (Command) -> Reply`, `Endpoints{httpBaseUrl?, lanHttpBaseUrls, tunnel?}`, `Deliver` without interfaces/rendezvous, `Drive.network` posting `{envelope: base64}` to `/api/infinitus/team/command` and reading `{ack: base64|null}`. Dropped: `Hostname`, `rendezvousKey`, `LocalVerb`, `verbReply`, `request(action:text:)`, tiers/meanings/expiry choices, `Drive.tail`. `TeamKinds`: `command`, `ack`, `controlKinds`, path shape `control/(commands|acks)/<id>.json`. `TeamDocs`: `GrantHint{audience, threads?, capabilities, approval?, expires?}`, `Now.endpoints?`, `Now.grantsTo?`. `TeamReader.Member`: `commands`, `acks`, `ackIDs`. `TeamSnapshot`: `controls(hints:roster:me:thread:)`, `Member.controls` filled, `grants?`, `pending?`.
+**Tests:** `TeamGrantsTests`, `TeamControlTests` (incl. `testEveryRefusalInOrder`, `testOrderIsProvenByACommandFailingTwoRules`), `TeamControlStoreTests`, `TeamControlDriveTests`, `TeamGrantsRoutingTests`, `TeamSnapshotControlsTests`. `swift test --filter 'TeamGrants|TeamControl|TeamSnapshotControls'`.
+
+### Task 6.2: Mac — verbs, endpoint state, executor, publisher
+**Files:** `Sources/Infinitus/TeamModel.swift` (control state per team: `seen`/`outbox`/`handled` on disk, `pending` + rate buckets in memory, all touched inside `run {}`; `inbox(_:)`, `grantorPass` after every fetch, `driverReap`, `drive(...)`, `addGrant`/`revokeGrant`, `pending`/`decide`), `Sources/Infinitus/AppModel.swift` (`team.tunnelURL`, endpoints + grant hints into `teamSources()`), `Sources/InfinitusCore/Desktop/DesktopAPI.swift` (`Descriptor.lanHttpBaseUrls`, `alternateHttpBaseUrls`), `Sources/InfinitusCore/Team/TeamPublisher.swift` (`Sources.endpoints`, `Sources.grantsTo`), `Sources/InfinitusCore/ControlProtocol.swift` (`team-inbox` stdin secret, `team-grants`, `team-grant`, `team-revoke`, `team-pending`, `team-allow`, `team-deny`, `team-drive`, `team-acks`), `Sources/Infinitus/ControlServer.swift`, `Sources/InfinitusCLI/main.swift:83` (`team-inbox` in the stdin allowlist), `Sources/InfinitusCLI/TeamCommand.swift` (in-process `grant | grants | revoke | drive | acks`; `pending | allow | deny` app-only; routing through `TeamGrantsRouting`).
+`team-inbox` never fails on an unverifiable envelope: `{ack: null}`; a stranger learns nothing.
+
+### Task 6.3: server route + contracts
+**Files:** `packages/contracts/src/infinitusTeamControl.ts` (`InfinitusTeamControlHttpApi`, `POST /api/infinitus/team/command`, `{envelope}` ≤ 64 KB → `{ack}`; unauthenticated like `InfinitusPairingHttpApi`), `packages/contracts/package.json` export, `packages/contracts/src/environmentHttp.ts` (`.add`), `packages/contracts/src/infinitus.ts` (`controls`, `grants`, `pending` on the snapshot, all `optionalKey`), `apps/server/src/infinitus/Layers/InfinitusTeamControlHttp.ts` (`control.request({command: "team-inbox", secret: envelope})`; unavailable → 503 with no detail), `apps/server/src/server.ts`, test `InfinitusTeamControlHttp.test.ts` with `Layer.mock(InfinitusControlClient)`.
+
+### Task 6.4: web Grants and Pending
+**Files:** `apps/web/src/components/settings/infinitus/team.logic.ts` (`grant`, `revoke`, `allow`, `deny` actions; `teamGrantDraft`), `InfinitusTeamPanel.tsx` (Grants: list + revoke + add form; Pending: allow/deny; `controls` on member rows). No drive UI (spec §8: the phone's "Send to" waits for the lane to work from the web).
+
+### Task 6.5: e2e, docs, fragment, PR
+**Files:** `tools/e2e.sh` (store-lane round after the desktop verbs' dispatch assertions, before the credential is replaced: grant send+new → drive send → fetch executes onto `t-idle` (asserted on the demo desktop) → acks `delivered`; `new` → `pending` → `team-allow` → `done`; revoke → `noGrant`; `view` → `done` with the redacted echo), `docs/internals/fork-registration-points.md`, `docs/internals/fork-only-files.md`, `apps/mac/changelog.d/team-control.md`: `Mac: teammates you grant can send to your threads (#1313).`

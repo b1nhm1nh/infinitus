@@ -1,4 +1,4 @@
-import type { RelayAgentActivityAggregateState } from "@t3tools/contracts/relay";
+import type { RelayAgentActivityAggregateState } from "@infinitus/contracts/relay";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -189,7 +189,9 @@ function makePushNotificationRequest(input: {
         sound: "default",
       },
       environmentId: input.notification.environmentId,
-      threadId: input.notification.threadId,
+      ...(input.notification.threadId === undefined
+        ? {}
+        : { threadId: input.notification.threadId }),
       deepLink: input.notification.deepLink,
     },
   };
@@ -221,7 +223,7 @@ export class ApnsClient extends Context.Service<
       readonly issuedAtUnixSeconds: number;
     }) => Effect.Effect<ApnsDeliveryResult, ApnsError>;
   }
->()("t3code-relay/agentActivity/ApnsClient") {}
+>()("infinitus-relay/agentActivity/ApnsClient") {}
 
 export const make = Effect.gen(function* () {
   const httpClient = yield* HttpClient.HttpClient;

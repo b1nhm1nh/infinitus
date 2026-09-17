@@ -40,12 +40,12 @@ import {
   type DesktopWslState,
   type EnvironmentId,
   resolveEnvironmentMachineKind,
-} from "@t3tools/contracts";
-import { connectionStatusText } from "@t3tools/client-runtime/connection";
+} from "@infinitus/contracts";
+import { connectionStatusText } from "@infinitus/client-runtime/connection";
 import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
-} from "@t3tools/client-runtime/state/runtime";
+} from "@infinitus/client-runtime/state/runtime";
 import * as DateTime from "effect/DateTime";
 import * as Option from "effect/Option";
 
@@ -161,6 +161,7 @@ import {
   type EnvironmentPresentation,
   useEnvironments,
   usePrimaryEnvironment,
+  useRelayEnvironmentDiscovery,
 } from "~/state/environments";
 import { requestConfirmDialog } from "~/confirmDialog";
 import { useAtomCommand } from "../../state/use-atom-command";
@@ -180,7 +181,7 @@ import {
   threadJumpCommandForIndex,
   threadJumpIndexFromCommand,
 } from "../../keybindings";
-import { PRODUCT_NAME } from "@t3tools/shared/productName";
+import { CONNECT_NAME, PRODUCT_NAME } from "@infinitus/shared/productName";
 
 const DEFAULT_TAILSCALE_SERVE_PORT = 443;
 const EMPTY_ADVERTISED_ENDPOINTS: ReadonlyArray<AdvertisedEndpoint> = [];
@@ -1445,7 +1446,8 @@ function savedBackendStatus(environment: EnvironmentPresentation): {
   readonly text: string;
   readonly tone: "muted" | "error";
 } {
-  if (!environment.entry.enabled) return { text: "Off", tone: "muted" };
+  if (!environment.entry.enabled && environment.connection.phase !== "unsupported")
+    return { text: "Off", tone: "muted" };
   const { connection } = environment;
   switch (connection.phase) {
     case "connected":
@@ -1457,6 +1459,9 @@ function savedBackendStatus(environment: EnvironmentPresentation): {
         text: connection.error ? `Reconnecting: ${connection.error}` : "Reconnecting",
         tone: "error",
       };
+    // Not a failure: the machine is fine, this build just cannot talk to it.
+    case "unsupported":
+      return { text: "Client not supported", tone: "muted" };
     case "error":
       return {
         text: connection.error ? `Connection failed: ${connection.error}` : "Connection failed",
@@ -1481,7 +1486,8 @@ function SavedBackendListRow({
   onRemove,
 }: SavedBackendListRowProps) {
   const environmentId = environment.environmentId;
-  const enabled = environment.entry.enabled;
+  const unsupported = environment.connection.phase === "unsupported";
+  const enabled = environment.entry.enabled && !unsupported;
   const isConnected = environment.connection.phase === "connected";
   const isRemoving = removingEnvironmentId === environmentId;
   const errorTraceId = environment.connection.traceId;
@@ -1516,6 +1522,23 @@ function SavedBackendListRow({
     serverUpdateState.status === "running" && serverUpdateState.stage === "resuming";
   const status = savedBackendStatus(environment);
   const serverVersion = environment.serverConfig?.environment.serverVersion ?? null;
+  // A saved T3 Connect machine this device has never reached (unsupported,
+  // or not yet connected) still has a descriptor from relay discovery, so
+  // it can wear its detected glyph instead of the generic server. Discovery
+  // empties its map on every refresh, so hold the last descriptor seen or
+  // the glyph would blink back to the generic one each time.
+  const relayDiscovery = useRelayEnvironmentDiscovery();
+  const discoveredDescriptor = Option.getOrNull(
+    relayDiscovery.environments.get(environmentId)?.status ?? Option.none(),
+  )?.descriptor;
+  const [lastDescriptor, setLastDescriptor] = useState(discoveredDescriptor);
+  if (discoveredDescriptor !== undefined && discoveredDescriptor !== lastDescriptor) {
+    setLastDescriptor(discoveredDescriptor);
+  }
+  const machineKind = resolveEnvironmentMachineKind(
+    environment.serverConfig ??
+      (lastDescriptor === undefined ? null : { environment: lastDescriptor }),
+  );
   const subtitleText = [
     environmentTransportLabel(environment),
     resumingServerUpdate ? "Restarting" : status.text,
@@ -1534,7 +1557,7 @@ function SavedBackendListRow({
 
   return (
     <EnvironmentRow
-      kind={resolveEnvironmentMachineKind(environment.serverConfig)}
+      kind={machineKind}
       label={environment.label}
       dimmed={!enabled}
       subtitle={
@@ -1552,7 +1575,11 @@ function SavedBackendListRow({
             {subtitleText}
           </TooltipTrigger>
           <TooltipPopup side="top" className="max-w-80 whitespace-pre-wrap leading-tight">
-            {enabled ? connectionStatusText(environment.connection) : "Switched off"}
+            {unsupported
+              ? (environment.connection.error ?? connectionStatusText(environment.connection))
+              : enabled
+                ? connectionStatusText(environment.connection)
+                : "Switched off"}
             {versionMismatch
               ? `\nUpdate available: ${versionMismatch.serverVersion} → ${versionMismatch.clientVersion}`
               : ""}
@@ -1585,13 +1612,15 @@ function SavedBackendListRow({
             <Switch
               size="sm"
               checked={enabled}
-              disabled={isRemoving}
+              disabled={isRemoving || unsupported}
               aria-label={`${enabled ? "Switch off" : "Switch on"} ${environment.label}`}
               onCheckedChange={(checked) => onSetEnabled(environmentId, checked)}
             />
           }
         />
-        <TooltipPopup side="top">{enabled ? "Switch off" : "Switch on"}</TooltipPopup>
+        <TooltipPopup side="top">
+          {unsupported ? "Client not supported" : enabled ? "Switch off" : "Switch on"}
+        </TooltipPopup>
       </Tooltip>
       <Menu>
         <MenuTrigger
@@ -1631,7 +1660,7 @@ function CloudLinkSwitch({
   disabled,
   disabledReason,
   onCheckedChange,
-  ariaLabel = "Enable T3 Connect",
+  ariaLabel = `Enable ${CONNECT_NAME}`,
 }: {
   readonly checked: boolean;
   readonly disabled: boolean;
@@ -1670,9 +1699,9 @@ function ConfiguredCloudLinkRow({ canManageRelay }: { readonly canManageRelay: b
   const [isUpdatingPreference, setIsUpdatingPreference] = useState(false);
 
   const disabledReason = !isSignedIn
-    ? "Sign in to T3 Connect to manage this environment."
+    ? `Sign in to ${CONNECT_NAME} to manage this environment.`
     : !canManageRelay
-      ? "Your session does not have permission to manage T3 Connect access."
+      ? `Your session does not have permission to manage ${CONNECT_NAME} access.`
       : null;
   const isBusy = isUpdating || isUpdatingPreference;
 
@@ -1685,15 +1714,15 @@ function ConfiguredCloudLinkRow({ canManageRelay }: { readonly canManageRelay: b
       toastManager.add({
         type: "success",
         title: enabled
-          ? "T3 Connect linked"
+          ? `${CONNECT_NAME} linked`
           : publishAgentActivity
-            ? "T3 Connect tunnel disabled"
-            : "T3 Connect unlinked",
+            ? `${CONNECT_NAME} tunnel disabled`
+            : `${CONNECT_NAME} unlinked`,
         description: enabled
-          ? "This environment is available through T3 Connect."
+          ? `This environment is available through ${CONNECT_NAME}.`
           : publishAgentActivity
             ? "The managed tunnel was removed. Agent activity publishing stays on."
-            : "This environment is no longer available through T3 Connect.",
+            : `This environment is no longer available through ${CONNECT_NAME}.`,
       });
     }
     setIsUpdating(false);
@@ -1721,8 +1750,8 @@ function ConfiguredCloudLinkRow({ canManageRelay }: { readonly canManageRelay: b
           title={searchableSetting("t3-connect").title}
           description={
             managedTunnelActive
-              ? "This environment is available to your other devices through T3 Connect."
-              : "Make this environment available to your other devices through T3 Connect."
+              ? `This environment is available to your other devices through ${CONNECT_NAME}.`
+              : `Make this environment available to your other devices through ${CONNECT_NAME}.`
           }
           status={operationError ?? primaryCloudLinkState.error}
           control={
@@ -1737,7 +1766,7 @@ function ConfiguredCloudLinkRow({ canManageRelay }: { readonly canManageRelay: b
       ) : null}
       <SettingsRow
         title={searchableSetting("publish-agent-activity").title}
-        description="Send activity to mobile notifications and Live Activities without T3 Connect."
+        description={`Send activity to mobile notifications and Live Activities without ${CONNECT_NAME}.`}
         control={
           <CloudLinkSwitch
             ariaLabel="Publish agent activity to mobile clients"
@@ -1766,7 +1795,7 @@ function EmptyRemoteEnvironments({ cloudEnabled = true }: { readonly cloudEnable
         <EmptyTitle>No saved remote environments</EmptyTitle>
         <EmptyDescription>
           {cloudEnabled
-            ? "Click “Add environment” to pair another environment, or connect one from T3 Connect."
+            ? `Click “Add environment” to pair another environment, or connect one from ${CONNECT_NAME}.`
             : "Click “Add environment” to pair another environment."}
         </EmptyDescription>
       </EmptyHeader>

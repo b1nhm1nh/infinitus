@@ -1,11 +1,11 @@
-import { EnvironmentId, USAGE_CONTRACT_VERSION } from "@t3tools/contracts";
-import { type RouteProp, useNavigation, useRoute } from "@react-navigation/native";
+import { EnvironmentId, USAGE_CONTRACT_VERSION } from "@infinitus/contracts";
+import { type RouteProp, useIsFocused, useNavigation, useRoute } from "@react-navigation/native";
 import {
   isCompatibleUsageContractVersion,
   isModelCostUnknown,
   type DailyTotals,
   type MergedUsage,
-} from "@t3tools/shared/usageMerge";
+} from "@infinitus/shared/usageMerge";
 import {
   enumerateDays,
   enumerateHourStarts,
@@ -16,7 +16,7 @@ import {
   formatTokens,
   formatUsd,
   makeWindow,
-} from "@t3tools/shared/usageFormat";
+} from "@infinitus/shared/usageFormat";
 import { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Platform, Pressable, RefreshControl, ScrollView, View } from "react-native";
 import Animated, { FadeIn, ReduceMotion } from "react-native-reanimated";
@@ -95,7 +95,8 @@ export function UsageRouteScreen() {
     window,
     selectedEnvironmentIds,
   );
-  const limits = useRefreshLimits(selectedEnvironmentIds);
+  const isFocused = useIsFocused();
+  const limits = useRefreshLimits(selectedEnvironmentIds, isFocused && tab === "limits");
 
   const days = useMemo(
     () => enumerateDays(window.sinceDay, window.untilDay),
@@ -354,7 +355,7 @@ function ChartCard(props: {
         <Text className="text-sm text-foreground-muted">
           {metric === "cost" ? "Raw token cost" : "Processed tokens"}
         </Text>
-        <Text className="text-4xl font-t3-bold tabular-nums text-foreground">
+        <Text className="text-4xl font-infinitus-bold tabular-nums text-foreground">
           {metric === "cost" ? `${formatUsd(merged.costUsd)}*` : formatTokens(merged.totalTokens)}
         </Text>
         <Text className="text-sm text-foreground-muted">
@@ -521,7 +522,9 @@ function MetricCell(props: {
   return (
     <View className="w-1/2 gap-0.5 p-4">
       <Text className="text-sm text-foreground-muted">{props.label}</Text>
-      <Text className="text-xl font-t3-medium tabular-nums text-foreground">{props.value}</Text>
+      <Text className="text-xl font-infinitus-medium tabular-nums text-foreground">
+        {props.value}
+      </Text>
       <Text className="text-xs text-foreground-tertiary">{props.detail}</Text>
     </View>
   );

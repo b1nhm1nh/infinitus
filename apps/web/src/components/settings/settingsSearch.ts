@@ -1,12 +1,13 @@
 import { isElectron } from "~/env";
 import { isMacPlatform, isWindowsPlatform, normalizeSearchText } from "~/lib/utils";
-import type { EnvironmentId } from "@t3tools/contracts";
-import type { EnvironmentConnectionPhase } from "@t3tools/client-runtime/connection";
+import type { EnvironmentId } from "@infinitus/contracts";
+import type { EnvironmentConnectionPhase } from "@infinitus/client-runtime/connection";
 import {
   validateSettingsScopeSearch,
   type ResolvedSettingsScope,
   type SettingsScopeSearch,
 } from "./settingsScope";
+import { CONNECT_NAME } from "@infinitus/shared/productName";
 
 export type SettingsPath =
   | "/settings/projects"
@@ -23,6 +24,7 @@ export type SettingsPath =
   | "/settings/infinitus/animations"
   | "/settings/infinitus/sessions"
   | "/settings/infinitus/lock"
+  | "/settings/infinitus/team"
   | "/settings/infinitus/notifications"
   | "/settings/infinitus/devices"
   | "/settings/infinitus/engines"
@@ -99,6 +101,7 @@ export const SETTINGS_SECTION_LABELS: Readonly<Record<SettingsPath, string>> = {
   "/settings/infinitus/animations": "Animations",
   "/settings/infinitus/sessions": "Priority",
   "/settings/infinitus/lock": "Lock",
+  "/settings/infinitus/team": "Team",
   "/settings/infinitus/notifications": "Notifications",
   "/settings/infinitus/devices": "Devices",
   "/settings/infinitus/engines": "Engines",
@@ -323,7 +326,7 @@ export const SETTINGS_SEARCH_ITEMS = [
     id: "composer-send-mode",
     title: "Sending while a turn runs",
     to: "/settings/general",
-    searchTerms: ["queue steer send now interrupt running turn enter composer follow-up"],
+    searchTerms: ["queue steer send next step tool running turn enter composer follow-up"],
   },
   {
     id: "provider-update-checks",
@@ -713,7 +716,7 @@ export const SETTINGS_SEARCH_ITEMS = [
   {
     id: "t3-connect",
     localEnvironmentOnly: true,
-    title: "T3 Connect",
+    title: CONNECT_NAME,
     to: "/settings/connections",
     targetId: "connections-environment",
     searchTerms: ["managed tunnel cloud other devices remote"],
@@ -819,6 +822,14 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["biometric touch id face id password unlock relock privacy lock now"],
   },
   {
+    id: "infinitus-team",
+    title: "Infinitus team",
+    to: "/settings/infinitus/team",
+    targetId: "infinitus-team",
+    infinitusOnly: true,
+    searchTerms: ["team members invite code join create share transcripts leader roster"],
+  },
+  {
     id: "infinitus-push",
     title: "Infinitus notifications",
     to: "/settings/infinitus/notifications",
@@ -836,12 +847,10 @@ export const SETTINGS_SEARCH_ITEMS = [
     targetId: "infinitus-devices",
     infinitusOnly: true,
     // "live activity" went with the Mac's cards and the phone mirror with its
-    // server (#1041); the page is this Mac's name, the tunnel fronting this
-    // server, its push key and iCloud sync, and the pairing cards under it.
-    searchTerms: [
-      "phone tunnel cloudflare pair qr port hostname name apns icloud",
-      "machine push key p8 team sync registered phones alerts",
-    ],
+    // server (#1041), the push key with #1375, the Cloudflare tunnel with
+    // Infinitus Connect; the page is this Mac's name, the server's port,
+    // iCloud sync, and the pairing cards.
+    searchTerms: ["phone pair qr port name icloud", "machine sync"],
   },
   {
     id: "infinitus-engines",
@@ -894,6 +903,7 @@ const SETTINGS_CATEGORY_SCOPES: Readonly<Record<SettingsPath, SettingsSearchScop
   "/settings/infinitus/animations": null,
   "/settings/infinitus/sessions": null,
   "/settings/infinitus/lock": null,
+  "/settings/infinitus/team": null,
   "/settings/infinitus/notifications": null,
   "/settings/infinitus/devices": null,
   "/settings/infinitus/engines": null,

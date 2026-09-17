@@ -1,4 +1,4 @@
-import { planPinnedMove } from "@t3tools/client-runtime/state/thread-sort";
+import { planPinnedMove } from "@infinitus/client-runtime/state/thread-sort";
 import {
   createPendingThreadOrder,
   createThreadMovePlanner,
@@ -7,9 +7,9 @@ import {
   reconcilePendingThreadOrder,
   type PendingThreadOrder,
 } from "./threadOrder";
-import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
-import { threadSearchMatchKey } from "@t3tools/client-runtime/state/thread-search";
-import { resolveSnoozePresets } from "@t3tools/client-runtime/state/thread-settled";
+import type { EnvironmentThreadShell } from "@infinitus/client-runtime/state/shell";
+import { threadSearchMatchKey } from "@infinitus/client-runtime/state/thread-search";
+import { resolveSnoozePresets } from "@infinitus/client-runtime/state/thread-settled";
 import {
   CommandId,
   EnvironmentId,
@@ -18,7 +18,7 @@ import {
   ProviderInstanceId,
   ThreadId,
   TurnId,
-} from "@t3tools/contracts";
+} from "@infinitus/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import type { PendingNewTask } from "../../state/use-pending-new-tasks";
@@ -167,6 +167,43 @@ describe("resolveThreadListV2Status", () => {
     expect(resolveThreadListV2Status(makeThread({ id: ThreadId.make("t"), title: "t" }))).toBe(
       "ready",
     );
+  });
+
+  it("reads watch loops left after the turn as monitoring", () => {
+    const thread = makeThread({
+      id: ThreadId.make("t"),
+      title: "t",
+      backgroundLiveness: "monitoring",
+    });
+    expect(resolveThreadListV2Status(thread)).toBe("monitoring");
+  });
+
+  it("reads live subagents left after the turn as working", () => {
+    const thread = makeThread({
+      id: ThreadId.make("t"),
+      title: "t",
+      backgroundLiveness: "working",
+    });
+    expect(resolveThreadListV2Status(thread)).toBe("working");
+  });
+
+  it("keeps a failed session ahead of lingering background work", () => {
+    const thread = makeThread({
+      id: ThreadId.make("t"),
+      title: "t",
+      backgroundLiveness: "monitoring",
+      session: {
+        threadId: ThreadId.make("t"),
+        status: "error",
+        providerName: "Codex",
+        providerInstanceId: ProviderInstanceId.make("codex"),
+        runtimeMode: "full-access",
+        activeTurnId: null,
+        lastError: "boom",
+        updatedAt: NOW,
+      },
+    });
+    expect(resolveThreadListV2Status(thread)).toBe("failed");
   });
 });
 

@@ -13,13 +13,12 @@ import {
   pairingUrlFromUniversalLink,
   UNIVERSAL_PAIR_HOST,
 } from "./features/connection/universalPairLink.logic";
+import { teamJoinLinkCode } from "./features/team/team.logic";
 import { ThreadArrangementHost } from "./features/threads/ThreadArrangementSheet";
 import { ConfirmDialogHost } from "./components/ConfirmDialogHost";
 import { InfinitusAlarmsBridge } from "./features/infinitus/InfinitusAlarmsBridge";
-import { InfinitusAlertPushBridge } from "./features/infinitus/InfinitusAlertPushBridge";
 import { InfinitusHoldsBridge } from "./features/infinitus/InfinitusHoldsBridge";
 import { InfinitusNotificationPresenter } from "./features/infinitus/InfinitusNotificationPresenter";
-import { InfinitusThreadCardBridge } from "./features/infinitus/InfinitusThreadCardBridge";
 import { CloudAuthProvider } from "./features/cloud/CloudAuthProvider";
 import { prepareNativeShowcaseCapture } from "./features/showcase/nativeShowcaseScene";
 import { IncomingShareProvider } from "./features/sharing/IncomingShareProvider";
@@ -31,6 +30,7 @@ import { RootStack } from "./Stack";
 import { appAtomRegistry } from "./state/atom-registry";
 import { OverlayPortalHost } from "./components/OverlayPortal";
 import { appBlurTargetRef } from "./lib/appBlurTarget";
+import { shouldHandleAppLink } from "./lib/appLinking";
 import { useMobileNavigationTheme } from "./lib/useMobileNavigationTheme";
 
 import { SubscriptionUsageCoordinator } from "./widgets/SubscriptionUsageCoordinator";
@@ -51,6 +51,9 @@ void SplashScreen.preventAutoHideAsync().catch(() => {
     scanned QR takes (#746); any other URL passes through untouched. */
 const rewriteIncomingUrl = (url: string | null): string | null => {
   if (url === null) return null;
+  // #1313: a team invite (`https://infinitus.run/join#<code>`) opens Settings › Team with the code.
+  const teamCode = teamJoinLinkCode(url);
+  if (teamCode !== null) return Linking.createURL("team", { queryParams: { code: teamCode } });
   const pairingUrl = pairingUrlFromUniversalLink(url);
   return pairingUrl === null
     ? url
@@ -76,14 +79,7 @@ const appLinking = {
   },
   // Keep the compact thread list available beneath a directly opened thread.
   config: { initialRouteName: "Home" },
-  // The Expo dev client launches the app via
-  // <scheme>://expo-development-client/?url=<packager> — that URL addresses
-  // the launcher, not app navigation. Without this filter it falls through
-  // to the NotFound wildcard route on every dev launch.
-  // expo-sharing uses a private lifecycle URL only to wake the app. The
-  // persisted share inbox below owns navigation once the payload is durable.
-  filter: (url: string) =>
-    !url.includes("expo-development-client") && !url.includes("://expo-sharing"),
+  filter: shouldHandleAppLink,
 };
 
 const Navigation = createStaticNavigation(RootStack);
@@ -138,8 +134,6 @@ function AppContent() {
               <ConfirmDialogHost />
               <ThreadArrangementHost />
               <InfinitusAlarmsBridge />
-              <InfinitusAlertPushBridge />
-              <InfinitusThreadCardBridge />
               <InfinitusHoldsBridge />
               <InfinitusNotificationPresenter />
             </BlurTargetView>

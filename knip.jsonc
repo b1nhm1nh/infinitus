@@ -14,15 +14,18 @@
     },
     "scripts": {
       // Knip loads its preprocessor through a CLI option, not a source import;
-      // the fork's visual pass (harness, fixture, check) is run by hand and by
+      // native verification runs directly; the fork's visual pass (harness,
+      // fixture, check) is run by hand and by
       // .github/workflows/fork-visual-pass.yml (INFINITUS.md).
       "entry": [
         "knip-schemas.ts",
+        "mobile-native-client.ts",
         "fork-visual-pass.mjs",
         "fork-visual-fixture.mjs",
         "fork-visual-check.ts",
         "fold-changelog.mjs",
         "fold-changelog.d.mts",
+        "infinitus-rename.ts",
       ],
     },
     "apps/server": {
@@ -36,7 +39,7 @@
       ],
       // Keep the transitive Effect runtime pinned for standalone npm installs.
       // Native msgpack acceleration and the Vite+ web build prerequisite.
-      "ignoreDependencies": ["@effect/platform-node-shared", "msgpackr-extract", "@t3tools/web"],
+      "ignoreDependencies": ["@effect/platform-node-shared", "msgpackr-extract", "@infinitus/web"],
     },
     "apps/desktop": {
       // Electron loads these bundles by filename rather than importing them.
@@ -71,8 +74,8 @@
       // Fonts are configured as asset paths; Expo autolinks the native packages.
       "ignoreDependencies": [
         "@expo-google-fonts/dm-sans",
-        "@t3tools/mobile-review-diff-native",
-        "@t3tools/mobile-terminal-native",
+        "@infinitus/mobile-review-diff-native",
+        "@infinitus/mobile-terminal-native",
       ],
     },
     "apps/mobile/modules/t3-markdown-text": {

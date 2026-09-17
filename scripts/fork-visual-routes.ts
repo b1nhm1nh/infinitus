@@ -31,6 +31,8 @@ export const ALWAYS_ABSENT: ReadonlyArray<string> = [
   "not answering",
   // #823: the product is Infinitus on every screen; the upstream name never shows.
   "T3 Code",
+  // #1368: the relay feature is Infinitus Connect on every screen.
+  "T3 Connect",
   // #823 too: a Mac pref key starting `fork_` humanises to "Fork …" when the
   // web has no copy for it, which puts the contributor's word on screen.
   "Fork ",
@@ -55,6 +57,7 @@ export const FORK_VISUAL_ROUTES: ReadonlyArray<ForkVisualRoute> = [
   },
   { route: "/settings/infinitus/sessions", label: "Priority", marker: "Thread priority" },
   { route: "/settings/infinitus/lock", label: "Lock", marker: "Re-lock" },
+  { route: "/settings/infinitus/team", label: "Team", marker: "Whole team" },
   {
     route: "/settings/infinitus/notifications",
     label: "Notifications",
@@ -71,9 +74,7 @@ export const FORK_VISUAL_ROUTES: ReadonlyArray<ForkVisualRoute> = [
     // The port the fixture sets, unformatted. #1110 shipped a port that read
     // "3,773" — the label and the description were on screen, so nothing here
     // saw it. It is a number field's value, so this is the check that would.
-    // #1178: the APNs card read the fixture's empty setup; the key itself is a
-    // file input, never text.
-    shows: ["[Server port: 3773]", "No phones registered."],
+    shows: ["[Server port: 3773]"],
   },
   {
     route: "/settings/infinitus/engines",

@@ -2,15 +2,16 @@ import * as NodeOS from "node:os";
 
 import {
   EnvironmentId,
+  ORCHESTRATION_PROTOCOL_VERSION,
   PROVIDER_SEND_TURN_MAX_FILE_BYTES,
   type ExecutionEnvironmentDescriptor,
-} from "@t3tools/contracts";
+} from "@infinitus/contracts";
 import {
   HostProcessArchitecture,
   HostProcessEnvironment,
   HostProcessPlatform,
-} from "@t3tools/shared/hostProcess";
-import { resolveInfinitusControlSocketPath } from "@t3tools/shared/infinitusControl";
+} from "@infinitus/shared/hostProcess";
+import { resolveInfinitusControlSocketPath } from "@infinitus/shared/infinitusControl";
 import { lanHttpBaseUrls } from "../infinitus/Layers/LanBaseUrls.ts";
 import * as Context from "effect/Context";
 import * as Crypto from "effect/Crypto";
@@ -233,6 +234,7 @@ export const make = Effect.gen(function* () {
       ...(machine === null ? {} : { machine }),
     },
     serverVersion: packageJson.version,
+    orchestrationProtocolVersion: ORCHESTRATION_PROTOCOL_VERSION,
     capabilities: {
       repositoryIdentity: true,
       connectionProbe: true,
@@ -268,6 +270,7 @@ export const make = Effect.gen(function* () {
       ...(desktopAppUpdate ? { desktopAppUpdate: true } : {}),
       infinitus: infinitusSocketPath !== null,
       turnQueue: true,
+      turnQueueSendAt: true,
     },
     ...(lanBaseUrls.length === 0 ? {} : { lanHttpBaseUrls: lanBaseUrls }),
   };

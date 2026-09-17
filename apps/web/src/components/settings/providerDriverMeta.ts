@@ -7,7 +7,7 @@ import {
   OmpSettings,
   OpenCodeSettings,
   ProviderDriverKind,
-} from "@t3tools/contracts";
+} from "@infinitus/contracts";
 import type * as Schema from "effect/Schema";
 import {
   AntigravityIcon,

@@ -10,8 +10,8 @@ import {
   type OrchestrationEvent,
   type OrchestrationQueuedTurn,
   type OrchestrationThreadShell,
-} from "@t3tools/contracts";
-import type { InfinitusHeldThread } from "@t3tools/contracts/infinitus";
+} from "@infinitus/contracts";
+import type { InfinitusHeldThread } from "@infinitus/contracts/infinitus";
 import { it as effectIt } from "@effect/vitest";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
@@ -22,7 +22,7 @@ import * as Queue from "effect/Queue";
 import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
-import { orderKeyBetween } from "@t3tools/shared/orderKeys";
+import { orderKeyBetween } from "@infinitus/shared/orderKeys";
 import { describe, expect } from "vite-plus/test";
 
 import { OrchestrationCommandInvariantError } from "../../orchestration/Errors.ts";
@@ -96,6 +96,12 @@ const domainEvent = (
 const startFailed = (threadId: ThreadId, requestId: string) =>
   domainEvent("thread.activity-appended", threadId, {
     activity: { kind: "provider.turn.start.failed", payload: { requestId } },
+  });
+
+/** The ingestion's activity for a tool call of `turnId` that finished. */
+const toolCompleted = (threadId: ThreadId, turnId: string) =>
+  domainEvent("thread.activity-appended", threadId, {
+    activity: { kind: "tool.completed", turnId, payload: { itemType: "tool" } },
   });
 
 const refusal = (detail: string) =>
@@ -272,6 +278,38 @@ describe("InfinitusTurnQueueLive (#806)", () => {
         });
       }),
     ),
+  );
+
+  effectIt.effect(
+    "sends a tool-boundary row into the running turn when one of its tools finishes (#1318)",
+    () =>
+      Effect.scoped(
+        Effect.gen(function* () {
+          const steer = { ...row("q2", "t"), sendAt: "tool-boundary" as const };
+          const h = yield* makeHarness([
+            shellFor(one, { ...running(one), queuedTurns: [row("q1", "m"), steer] }),
+          ]);
+          // A tool of some other turn (a stale event, or the next turn's)
+          // is not this turn's step; a tool with no turn is nobody's.
+          yield* h.emit(toolCompleted(one, "turn-0"));
+          yield* h.emit(
+            domainEvent("thread.activity-appended", one, {
+              activity: { kind: "tool.completed", turnId: null, payload: {} },
+            }),
+          );
+          yield* nothingYet(h.starts);
+
+          yield* h.emit(toolCompleted(one, "turn-1"));
+          yield* settle(h.starts, (list) => list.length === 1);
+          expect(yield* h.starts).toEqual([{ threadId: one, queuedFrom: "q2", text: "queued q2" }]);
+
+          // The idle row ahead of it still waits for the turn to end.
+          yield* h.setShell(shellFor(one, { ...running(one), queuedTurns: [row("q1", "m")] }));
+          yield* h.emit(domainEvent("thread.turn-queue-removed", one));
+          yield* h.emit(toolCompleted(one, "turn-1"));
+          yield* nothingYet(h.starts.pipe(Effect.map((list) => list.slice(1))));
+        }),
+      ),
   );
 
   effectIt.effect("waits while the thread is held or paused, and sends when it is let go", () =>

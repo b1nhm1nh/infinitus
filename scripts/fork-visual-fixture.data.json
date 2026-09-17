@@ -14,8 +14,8 @@
         "effect": "read",
         "name": "status",
         "options": [],
-        "replyShape": "{version, sha, engines:{swapd:{enabled,registered}, cliproxy:{enabled,registered,keyPresent}, 9router:{enabled,registered,keyPresent}}, badge, signInRunning, playground, forkTunnel:{enabled, port, state, url?, hostname?}}",
-        "summary": "App version, which engines are on, engine badge, whether a sign-in is running, the fork server's tunnel (Mac only; state off|invalidPort|blocked|unavailable|starting|up|stopped, url while up — the stable fork_tunnel_hostname on the named tunnel when set, else a quick tunnel)."
+        "replyShape": "{version, sha, engines:{swapd:{enabled,registered}, cliproxy:{enabled,registered,keyPresent}, 9router:{enabled,registered,keyPresent}}, badge, signInRunning, playground}",
+        "summary": "App version, which engines are on, engine badge, whether a sign-in is running."
       },
       {
         "args": [],
@@ -340,14 +340,6 @@
       {
         "args": [],
         "effect": "write",
-        "name": "activities-token",
-        "options": ["--body <json>", "--forget <deviceId>/<kind>"],
-        "replyShape": "{slot} | with --forget {slot, forgotten}",
-        "summary": "Register a phone's push token — the body `POST /activities/token` takes: {kind, token, deviceId, deviceName, environment, themeID?, macId?}. Without --body the CLI reads the JSON from stdin. `--forget <deviceId>/<kind>` withdraws that one registration instead (the phone's alerts switched off); forgotten is false when none was held."
-      },
-      {
-        "args": [],
-        "effect": "write",
         "name": "client-activity",
         "options": ["--body <json>"],
         "replyShape": "{clientId}",
@@ -420,23 +412,6 @@
         "summary": "Store the 9Router dashboard password read from stdin in the keychain. Empty stdin clears it. The app relaunches."
       },
       {
-        "args": [],
-        "effect": "read",
-        "name": "apns",
-        "options": [],
-        "replyShape": "{keyPresent, teamId, keyId, registrations: [{deviceId, deviceName, kind, environment, registeredAt}]}",
-        "summary": "The phone-alert push setup (#1178): the APNs key id and team id (prefs apns_key_id / apns_team_id), whether the .p8 is in the keychain, and every registered phone by device and kind — never a token."
-      },
-      {
-        "args": [],
-        "effect": "write",
-        "name": "apns-key",
-        "options": [],
-        "replyShape": "{stored}",
-        "stdin": "secret",
-        "summary": "Keep the APNs .p8 (PEM on stdin, never argv) in the keychain under apns_key_id, once it proves to sign; empty stdin forgets it. A dev instance's write evicts the installed app's key (#845)."
-      },
-      {
         "args": ["cliproxy|9router"],
         "effect": "read",
         "name": "test-connection",
@@ -459,6 +434,14 @@
         "options": [],
         "replyShape": "{sessionAffinity}",
         "summary": "PUT the proxy's session affinity (a conversation stays on one credential). Refused on a proxy without the route."
+      },
+      {
+        "args": [],
+        "effect": "read",
+        "name": "team-status",
+        "options": [],
+        "replyShape": "{id, name, remote (masked), kid, role: leader|member|pending, rev, members: [{kid, name, role, isMe, founder, since, lastPublished, kinds, threadsNow, blockers, crashes, todayUSD, todayMessages, todayCommits, fleet}], requests: [{kid, name, platform, devices, at}], policy: {requests}, shares: {kind: audience}, exclusions: [slug], lockEnabled, lastFetch, lastPublish, lastError} | null",
+        "summary": "Settings › Team: the team this Mac is in — members with what they last published, pending requests, shares, exclusions, the loop's last fetch/publish — or null when there is none."
       }
     ],
     "schemaVersion": 1
@@ -747,14 +730,6 @@
         "value": 10
       },
       {
-        "default": false,
-        "effect": "live",
-        "key": "fork_tunnel_enabled",
-        "section": "devices",
-        "type": "bool",
-        "value": false
-      },
-      {
         "default": 3773,
         "effect": "live",
         "key": "fork_server_port",
@@ -765,31 +740,7 @@
       {
         "default": "",
         "effect": "live",
-        "key": "fork_tunnel_hostname",
-        "section": "devices",
-        "type": "string",
-        "value": ""
-      },
-      {
-        "default": "",
-        "effect": "live",
         "key": "machine_name",
-        "section": "devices",
-        "type": "string",
-        "value": ""
-      },
-      {
-        "default": "",
-        "effect": "live",
-        "key": "apns_team_id",
-        "section": "devices",
-        "type": "string",
-        "value": ""
-      },
-      {
-        "default": "",
-        "effect": "live",
-        "key": "apns_key_id",
         "section": "devices",
         "type": "string",
         "value": ""

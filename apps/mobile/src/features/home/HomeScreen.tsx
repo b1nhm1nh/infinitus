@@ -8,17 +8,17 @@ import {
 import {
   type EnvironmentProject,
   type EnvironmentThreadShell,
-} from "@t3tools/client-runtime/state/shell";
+} from "@infinitus/client-runtime/state/shell";
 import {
   threadSearchMatchKey,
   type EnvironmentThreadSearchMatch,
-} from "@t3tools/client-runtime/state/thread-search";
+} from "@infinitus/client-runtime/state/thread-search";
 import {
   type EnvironmentId,
   resolveEnvironmentMachineKind,
   type SidebarProjectGroupingMode,
   type SidebarThreadSortOrder,
-} from "@t3tools/contracts";
+} from "@infinitus/contracts";
 import { useAtomSet, useAtomValue } from "@effect/atom-react";
 import { AsyncResult } from "effect/unstable/reactivity";
 import { useFocusEffect } from "@react-navigation/native";
@@ -127,6 +127,7 @@ interface HomeScreenProps {
     thread: EnvironmentThreadShell,
     direction: ThreadMoveDestination,
   ) => Promise<boolean>;
+  readonly onRenameThread: (thread: EnvironmentThreadShell) => void;
   readonly onRegenerateThreadTitle: (thread: EnvironmentThreadShell) => Promise<boolean>;
   readonly onSelectPendingTask: (pendingTask: PendingNewTask) => void;
   readonly onDeletePendingTask: (pendingTask: PendingNewTask) => void;
@@ -169,11 +170,15 @@ function deriveEmptyState(props: {
   if (
     (catalogState.connectionState === "available" ||
       catalogState.connectionState === "offline" ||
-      catalogState.connectionState === "error") &&
+      catalogState.connectionState === "error" ||
+      catalogState.connectionState === "unsupported") &&
     !catalogState.hasLoadedShellSnapshot
   ) {
     return {
-      title: "Environment unavailable",
+      title:
+        catalogState.connectionState === "unsupported"
+          ? "Client not supported"
+          : "Environment unavailable",
       detail:
         catalogState.connectionError ??
         "The saved environment is offline. Check the URL or start the environment, then retry.",
@@ -539,6 +544,10 @@ export function HomeScreen(props: HomeScreenProps) {
     },
     [props.onRegenerateThreadTitle],
   );
+  const handleRenameThread = useCallback(
+    (thread: EnvironmentThreadShell) => props.onRenameThread(thread),
+    [props.onRenameThread],
+  );
   const handleDeleteThread = props.onDeleteThread;
   const handleUnsettleThread = props.onUnsettleThread;
   // The settled tail renders in pages; expansion resets when the filter
@@ -869,6 +878,7 @@ export function HomeScreen(props: HomeScreenProps) {
           onSelectThread={props.onSelectThread}
           onDeleteThread={handleDeleteThread}
           onArchiveThread={props.onArchiveThread}
+          onRenameThread={handleRenameThread}
           onRegenerateThreadTitle={handleRegenerateThreadTitle}
           titleRegenerationSupported={titleRegenerationEnvironmentIds.has(thread.environmentId)}
           settlementSupported={settlementEnvironmentIds.has(thread.environmentId)}
@@ -902,6 +912,7 @@ export function HomeScreen(props: HomeScreenProps) {
       handleMoveThread,
       handlePinThread,
       handleRegenerateThreadTitle,
+      handleRenameThread,
       handleSettleThread,
       handleSnoozeThread,
       handleUnpinThread,
@@ -1026,6 +1037,7 @@ export function HomeScreen(props: HomeScreenProps) {
               searchQuery={props.searchQuery}
               onArchiveThread={props.onArchiveThread}
               onDeleteThread={props.onDeleteThread}
+              onRenameThread={handleRenameThread}
               onRegenerateThreadTitle={handleRegenerateThreadTitle}
               titleRegenerationSupported={titleRegenerationEnvironmentIds.has(thread.environmentId)}
               onSelectThread={props.onSelectThread}
@@ -1050,6 +1062,7 @@ export function HomeScreen(props: HomeScreenProps) {
       handleSwipeableClose,
       handleSwipeableWillOpen,
       handleRegenerateThreadTitle,
+      handleRenameThread,
       machineByEnvironmentId,
       queuedThreadKeys,
       props.onArchiveThread,
@@ -1192,7 +1205,7 @@ export function HomeScreen(props: HomeScreenProps) {
                     className="mx-4 mt-2 items-center rounded-lg border border-dashed border-border py-2.5"
                     style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}
                   >
-                    <Text className="text-xs font-t3-medium text-foreground-muted">
+                    <Text className="text-xs font-infinitus-medium text-foreground-muted">
                       Show more ({threadListV2Layout.hiddenSettledCount} settled hidden)
                     </Text>
                   </Pressable>

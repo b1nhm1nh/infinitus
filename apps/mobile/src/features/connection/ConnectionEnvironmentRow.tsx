@@ -1,7 +1,7 @@
 import { SymbolView } from "../../components/AppSymbol";
-import { connectionStatusText } from "@t3tools/client-runtime/connection";
-import type { AtomCommandResult } from "@t3tools/client-runtime/state/runtime";
-import { type EnvironmentId, resolveEnvironmentMachineKind } from "@t3tools/contracts";
+import { connectionStatusText } from "@infinitus/client-runtime/connection";
+import type { AtomCommandResult } from "@infinitus/client-runtime/state/runtime";
+import { type EnvironmentId, resolveEnvironmentMachineKind } from "@infinitus/contracts";
 import { useAtomValue } from "@effect/atom-react";
 import * as Cause from "effect/Cause";
 import { AsyncResult } from "effect/unstable/reactivity";
@@ -19,9 +19,10 @@ import { roamingHostsLine } from "./roamingHosts";
 import type { ConnectedEnvironmentSummary } from "../../state/remote-runtime-types";
 import { serverEnvironment } from "../../state/server";
 import { ConnectionStatusDot } from "./ConnectionStatusDot";
+import { CONNECT_NAME } from "@infinitus/shared/productName";
 
 function connectionStatusLabel(environment: ConnectedEnvironmentSummary): string | null {
-  if (!environment.isEnabled) {
+  if (!environment.isEnabled && environment.connectionState !== "unsupported") {
     return "Off";
   }
   return connectionStatusText({
@@ -48,7 +49,8 @@ export function ConnectionEnvironmentRow(props: {
   const serverConfig = useAtomValue(
     serverEnvironment.configValueAtom(props.environment.environmentId),
   );
-  const enabled = props.environment.isEnabled;
+  const unsupported = props.environment.connectionState === "unsupported";
+  const enabled = props.environment.isEnabled && !unsupported;
   const statusLabel = connectionStatusLabel(props.environment);
   // Fork (#663): where this connect got through, or the host it also answers
   // on; nothing for a connection switched off, which reads "Off" instead.
@@ -56,6 +58,7 @@ export function ConnectionEnvironmentRow(props: {
     useEnvironmentPresentation(props.environment.environmentId).presentation?.entry ?? null,
   );
   const statusTraceId = enabled ? props.environment.connectionErrorTraceId : null;
+  // Unsupported is a compatibility note, not a failure, so it stays muted.
   const hasConnectionFailure = enabled && props.environment.connectionError !== null;
   const isRetrying =
     enabled &&
@@ -84,7 +87,7 @@ export function ConnectionEnvironmentRow(props: {
         onPress={props.onToggle}
       >
         <ConnectionStatusDot
-          state={enabled ? props.environment.connectionState : "available"}
+          state={enabled || unsupported ? props.environment.connectionState : "available"}
           pulse={isRetrying}
           size={8}
         />
@@ -97,7 +100,7 @@ export function ConnectionEnvironmentRow(props: {
               tintColorClassName="accent-foreground-muted"
             />
             <Text
-              className="min-w-0 flex-shrink text-base font-t3-bold leading-snug text-foreground"
+              className="min-w-0 flex-shrink text-base font-infinitus-bold leading-snug text-foreground"
               numberOfLines={1}
             >
               {props.environment.environmentLabel}
@@ -145,6 +148,7 @@ export function ConnectionEnvironmentRow(props: {
         </View>
 
         <ThemedSwitch
+          disabled={unsupported}
           onValueChange={(next) => props.onSetEnabled(props.environment.environmentId, next)}
           value={enabled}
         />
@@ -167,12 +171,12 @@ export function ConnectionEnvironmentRow(props: {
         >
           {props.environment.isRelayManaged ? (
             <Text className="text-sm text-foreground-muted">
-              Managed by T3 Connect. Tunnel details update automatically.
+              Managed by {CONNECT_NAME}. Tunnel details update automatically.
             </Text>
           ) : (
             <>
               <View className="gap-1.5">
-                <Text className="text-2xs font-t3-bold tracking-[0.8px] uppercase text-foreground-muted">
+                <Text className="text-2xs font-infinitus-bold tracking-[0.8px] uppercase text-foreground-muted">
                   Label
                 </Text>
                 <TextInput
@@ -186,7 +190,7 @@ export function ConnectionEnvironmentRow(props: {
               </View>
 
               <View className="gap-1.5">
-                <Text className="text-2xs font-t3-bold tracking-[0.8px] uppercase text-foreground-muted">
+                <Text className="text-2xs font-infinitus-bold tracking-[0.8px] uppercase text-foreground-muted">
                   URL
                 </Text>
                 <TextInput
@@ -214,7 +218,7 @@ export function ConnectionEnvironmentRow(props: {
                   tintColorClassName={"accent-primary-foreground"}
                   type="monochrome"
                 />
-                <Text className="text-xs font-t3-bold tracking-[0.8px] uppercase text-primary-foreground">
+                <Text className="text-xs font-infinitus-bold tracking-[0.8px] uppercase text-primary-foreground">
                   Save
                 </Text>
               </Pressable>

@@ -460,17 +460,62 @@ const ProjectLucideIconName = TrimmedNonEmptyString.check(
 
 const ProjectEmoji = TrimmedNonEmptyString.check(Schema.isMaxLength(32));
 
+// Grapheme-count validation belongs to the server command boundary, not snapshot decoding.
+export const ProjectMonogramText = TrimmedNonEmptyString.check(
+  Schema.isMaxLength(32),
+  Schema.isPattern(/^[\p{L}\p{N}][\p{L}\p{N}\p{M}\u200c\u200d]*$/u),
+);
+
+const ProjectLucideIcon = Schema.Struct({
+  kind: Schema.Literal("lucide"),
+  name: ProjectLucideIconName,
+  color: ProjectIconColor,
+});
+const ProjectEmojiIcon = Schema.Struct({
+  kind: Schema.Literal("emoji"),
+  emoji: ProjectEmoji,
+});
+const ProjectMonogramIcon = Schema.Struct({
+  kind: Schema.Literal("monogram"),
+  text: ProjectMonogramText,
+  color: ProjectIconColor,
+});
+const ProjectIcon = Schema.Union([ProjectLucideIcon, ProjectEmojiIcon, ProjectMonogramIcon]);
+const ProjectLucideIconWire = Schema.Struct({
+  ...ProjectLucideIcon.fields,
+  monogramText: Schema.optional(ProjectMonogramText),
+  monogram: Schema.optional(ProjectMonogramText),
+});
+
+// Older peers only know lucide/emoji. Keep monograms out of their validated
+// `monogram` field too: old grapheme counters can reject otherwise valid text.
 export const ProjectIconOverride = Schema.Union([
-  Schema.Struct({
-    kind: Schema.Literal("lucide"),
-    name: ProjectLucideIconName,
-    color: ProjectIconColor,
-  }),
-  Schema.Struct({
-    kind: Schema.Literal("emoji"),
-    emoji: ProjectEmoji,
-  }),
-]);
+  ProjectLucideIconWire,
+  ProjectEmojiIcon,
+  ProjectMonogramIcon,
+]).pipe(
+  Schema.decodeTo(
+    ProjectIcon,
+    SchemaTransformation.transform({
+      decode: (icon): typeof ProjectIcon.Type => {
+        if (icon.kind !== "lucide") return icon;
+        const text = icon.monogramText ?? icon.monogram;
+        return text === undefined
+          ? { kind: "lucide", name: icon.name, color: icon.color }
+          : { kind: "monogram", text, color: icon.color };
+      },
+      encode: (icon) =>
+        icon.kind === "monogram"
+          ? {
+              kind: "lucide" as const,
+              name: "folder-code",
+              color: icon.color,
+              monogramText: icon.text,
+            }
+          : icon,
+    }),
+  ),
+);
 export type ProjectIconOverride = typeof ProjectIconOverride.Type;
 
 export const OrchestrationProject = Schema.Struct({
@@ -638,7 +683,7 @@ export type ThreadTitleRegeneration = typeof ThreadTitleRegeneration.Type;
 
 /**
  * Legacy single-PR link. Still emitted as the thread's derived current pull
- * request (see `@t3tools/shared/threadPullRequests`) so clients from before
+ * request (see `@infinitus/shared/threadPullRequests`) so clients from before
  * `pullRequests` keep working independently of their release schedule.
  */
 export const ThreadLinkedPullRequest = Schema.Struct({
@@ -727,8 +772,13 @@ export type ThreadPullRequestLink = typeof ThreadPullRequestLink.Type;
  * Fork (#806): a message queued on the server for a thread. Not a timeline
  * message: nothing of it shows as sent until the queue drain dispatches
  * `thread.turn.start` for it (with `queuedFrom`), which removes the row in
- * the same event batch. Rows sort by `orderKey` (`@t3tools/shared/orderKeys`).
+ * the same event batch. Rows sort by `orderKey` (`@infinitus/shared/orderKeys`).
  */
+/** Fork (#1318): the moment a queued row is due. The default, `idle`, is
+    the absent field so older rows and clients decode. */
+export const QueuedTurnSendAt = Schema.Literals(["idle", "tool-boundary"]);
+export type QueuedTurnSendAt = typeof QueuedTurnSendAt.Type;
+
 export const OrchestrationQueuedTurn = Schema.Struct({
   queueId: QueueId,
   messageId: MessageId,
@@ -737,6 +787,10 @@ export const OrchestrationQueuedTurn = Schema.Struct({
   modelSelection: Schema.optional(ModelSelection),
   /** The message's context records (upstream #11265), sent with it by the drain (#969). */
   context: Schema.optional(OrchestrationMessageContext),
+  /** When the drain sends it (#1318): absent or `idle` once the thread is
+      idle; `tool-boundary` also at the next tool call of the running turn
+      to finish, whichever comes first. */
+  sendAt: Schema.optional(QueuedTurnSendAt),
   orderKey: TrimmedNonEmptyString,
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
@@ -806,7 +860,7 @@ export const ThreadTurnUsage = Schema.Struct({
 export type ThreadTurnUsage = typeof ThreadTurnUsage.Type;
 
 /**
- * Fork (#834): a thread's completed turns summed (`@t3tools/shared/threadUsage`
+ * Fork (#834): a thread's completed turns summed (`@infinitus/shared/threadUsage`
  * folds them). `runtime` rollups come from the turns this server ran;
  * `transcript` ones are estimated from the provider's transcript after the
  * fact. Estimates, never billing truth — show them as such.
@@ -1469,6 +1523,7 @@ export const ThreadTurnQueueCommand = Schema.Struct({
   modelSelection: Schema.optional(ModelSelection),
   // Fractional index; absent means "after the last row".
   orderKey: Schema.optional(TrimmedNonEmptyString),
+  sendAt: Schema.optional(QueuedTurnSendAt),
   createdAt: IsoDateTime,
 });
 const ClientThreadTurnQueueCommand = Schema.Struct({
@@ -1479,6 +1534,7 @@ const ClientThreadTurnQueueCommand = Schema.Struct({
   message: ClientQueuedTurnMessage,
   modelSelection: Schema.optional(ModelSelection),
   orderKey: Schema.optional(TrimmedNonEmptyString),
+  sendAt: Schema.optional(QueuedTurnSendAt),
   createdAt: IsoDateTime,
 });
 

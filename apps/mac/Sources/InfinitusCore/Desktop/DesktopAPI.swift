@@ -49,6 +49,12 @@ public struct DesktopAPI {
         public var label: String
         public var platform: Platform?
         public var serverVersion: String?
+        /// The fork's other doors (`packages/contracts/src/environment.ts`):
+        /// the host's LAN base URLs while it listens beyond loopback, and
+        /// the base URLs it also answers on (a tunnel). Team control
+        /// publishes them as the grantor's endpoints (spec §8).
+        public var lanHttpBaseUrls: [String]?
+        public var alternateHttpBaseUrls: [String]?
     }
     public struct Project: Decodable, Equatable {
         public var id: String
@@ -60,9 +66,19 @@ public struct DesktopAPI {
         public var turnId: String
         public var state: String
         public var assistantMessageId: String?
+        public var startedAt: String?
     }
     public struct Session: Decodable, Equatable {
         public var status: String
+    }
+    /// The fork's usage rollup on a thread shell (#834); every field
+    /// optional so a server without it still decodes.
+    public struct Usage: Decodable, Equatable {
+        public var turns: Int?
+        public var inputTokens: Int?
+        public var outputTokens: Int?
+        public var costUsd: Double?
+        public var models: [String]?
     }
     public struct ThreadShell: Decodable, Equatable {
         public var id: String
@@ -70,7 +86,9 @@ public struct DesktopAPI {
         public var title: String
         public var latestTurn: Turn?
         public var session: Session?
+        public var createdAt: String?
         public var updatedAt: String?
+        public var usage: Usage?
         public var archivedAt: String?
         public var branch: String?
         public var worktreePath: String?
@@ -171,6 +189,24 @@ public struct DesktopAPI {
     /// `POST /api/infinitus/release-thread`: Run now for a held thread (#616).
     public func releaseThread(_ id: String) throws -> Release {
         try decode(post("/api/infinitus/release-thread", body: .object(["threadId": .string(id)])))
+    }
+    /// `GET /api/infinitus/running-turns` (#829): the provider turns running
+    /// now — the Mac's busy-session count since the thread card left (#1375).
+    public struct RunningTurn: Decodable, Equatable {
+        public var threadId: String
+        public var turnId: String
+    }
+    public func runningTurns() throws -> [RunningTurn] { try decode(get("/api/infinitus/running-turns")) }
+    /// `POST /api/infinitus/alert` (#1375): one account alert for the relay
+    /// to push to the phones. `nil` when the desktop holds no relay link
+    /// (its 503): nothing to push, nothing to report.
+    public struct AlertResult: Decodable, Equatable {
+        public var deliveries: Int
+    }
+    public func alert(title: String, body: String) throws -> AlertResult? {
+        do {
+            return try decode(post("/api/infinitus/alert", body: .object(["title": .string(title), "body": .string(body)])))
+        } catch let failure as Failure where failure.status == 503 { return nil }
     }
 
     // MARK: plumbing

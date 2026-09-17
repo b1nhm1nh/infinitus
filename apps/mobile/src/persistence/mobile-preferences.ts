@@ -5,7 +5,7 @@ import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
-import type { SidebarProjectGroupingMode } from "@t3tools/contracts";
+import type { SidebarProjectGroupingMode } from "@infinitus/contracts";
 import type { ComposerEnterBehavior } from "../lib/composerEnterBehavior";
 import { MOBILE_THEME_IDS, type MobileThemeId, type MobileThemeMode } from "../lib/mobileTheme";
 
@@ -48,15 +48,8 @@ export interface Preferences {
   /** Fresh keys reset both shelves to collapsed when users update. */
   readonly threadListSettledShelfExpanded?: boolean;
   readonly threadListSnoozedShelfExpanded?: boolean;
-  /** Infinitus (fork): which paired Mac (an environment id) sends this
-      phone's alerts when several run it. */
-  readonly infinitusLiveActivityMac?: string;
   /** Infinitus (fork): local reset / swap alarms planned from the Mac's fleet. */
   readonly infinitusAlarmsEnabled?: boolean;
-  readonly infinitusPushAlertsEnabled?: boolean;
-  /** Infinitus (fork, #1047): the Mac keeps a lock-screen card of the
-      threads moving over push; absent reads on. */
-  readonly infinitusThreadCardEnabled?: boolean;
   /** Infinitus (fork, #742): pin each new task as the server creates it. */
   readonly infinitusPinAtCreation?: boolean;
   /** Infinitus (fork, #807): what a follow-up does while the thread's turn
@@ -100,7 +93,7 @@ export class MobilePreferencesStore extends Context.Service<
       transform: (current: Preferences) => Partial<Preferences>,
     ) => Effect.Effect<Preferences, MobilePreferencesSaveError>;
   }
->()("@t3tools/mobile/persistence/MobilePreferencesStore") {}
+>()("@infinitus/mobile/persistence/MobilePreferencesStore") {}
 
 function sanitizePreferences(parsed: Preferences): Preferences {
   const preferences: {
@@ -124,10 +117,7 @@ function sanitizePreferences(parsed: Preferences): Preferences {
     planModeEnabled?: boolean;
     threadListSettledShelfExpanded?: boolean;
     threadListSnoozedShelfExpanded?: boolean;
-    infinitusLiveActivityMac?: string;
     infinitusAlarmsEnabled?: boolean;
-    infinitusPushAlertsEnabled?: boolean;
-    infinitusThreadCardEnabled?: boolean;
     infinitusPinAtCreation?: boolean;
     infinitusComposerSendMode?: "queue" | "steer";
   } = {};
@@ -209,17 +199,8 @@ function sanitizePreferences(parsed: Preferences): Preferences {
   if (typeof parsed.threadListSnoozedShelfExpanded === "boolean") {
     preferences.threadListSnoozedShelfExpanded = parsed.threadListSnoozedShelfExpanded;
   }
-  if (typeof parsed.infinitusLiveActivityMac === "string") {
-    preferences.infinitusLiveActivityMac = parsed.infinitusLiveActivityMac;
-  }
   if (typeof parsed.infinitusAlarmsEnabled === "boolean") {
     preferences.infinitusAlarmsEnabled = parsed.infinitusAlarmsEnabled;
-  }
-  if (typeof parsed.infinitusPushAlertsEnabled === "boolean") {
-    preferences.infinitusPushAlertsEnabled = parsed.infinitusPushAlertsEnabled;
-  }
-  if (typeof parsed.infinitusThreadCardEnabled === "boolean") {
-    preferences.infinitusThreadCardEnabled = parsed.infinitusThreadCardEnabled;
   }
   if (typeof parsed.infinitusPinAtCreation === "boolean") {
     preferences.infinitusPinAtCreation = parsed.infinitusPinAtCreation;

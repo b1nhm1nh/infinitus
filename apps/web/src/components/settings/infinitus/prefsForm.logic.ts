@@ -1,4 +1,4 @@
-import type { InfinitusPref, InfinitusPrefs } from "@t3tools/contracts/infinitus";
+import type { InfinitusPref, InfinitusPrefs } from "@infinitus/contracts/infinitus";
 import * as Equal from "effect/Equal";
 import * as Schema from "effect/Schema";
 
@@ -167,44 +167,21 @@ export const PREF_COPY: Readonly<
   push_last_alive: { label: "The last alive account nears its limit" },
   push_revived: { label: "An account comes back" },
   revive_lead_minutes: { label: "Revive countdown lead (minutes)" },
-  // Devices: the tunnel fronting this server's own port, which the "Pair a
-  // phone" card below hands the QR when the phone is off the Wi‑Fi. The keys
-  // are the Mac's (#572) and say "fork"; the screen never does (#823).
-  fork_tunnel_enabled: {
-    label: "Reach this server through a Cloudflare tunnel",
-    description: "Lets a phone pair and connect from outside your network.",
-  },
+  // Devices: where this server listens. The key is the Mac's (#572) and says
+  // "fork"; the screen never does (#823).
   fork_server_port: {
     label: "Server port",
     description: "The port this server listens on. Infinitus writes it at startup.",
   },
-  fork_tunnel_hostname: {
-    label: "Tunnel hostname",
-    description:
-      "A named tunnel's hostname, so the URL survives a restart. Empty takes a fresh quick-tunnel URL each time.",
-  },
-  // Devices: this Mac's name, the APNs key ids and iCloud sync (#1178). The
-  // .p8 itself goes over `apns-key`, never a pref, so no row for it here.
+  // Devices: this Mac's name and iCloud sync (#1178).
   machine_name: {
     label: "This Mac's name",
     description: "How the phone and this server name the Mac. Empty follows the computer name.",
   },
-  // "Team ID" / "Key ID" as the Mac's Sync pane words them: the rows sit under
-  // the page's Phone alerts card, whose file input stays off until the key id
-  // is set (the Mac stores the key under it).
-  apns_team_id: {
-    label: "Team ID",
-    description: "The Apple Developer team the push key belongs to, like ABCDE12345.",
-  },
-  apns_key_id: {
-    label: "Key ID",
-    description:
-      "The push key's 10-character id. Set it before uploading the .p8 below; the key is stored under it.",
-  },
   icloud_sync: {
     label: "Sync settings via iCloud Drive",
     description:
-      "Display preferences, custom themes and engine settings travel through one file in your iCloud Drive. Never credentials, never push secrets.",
+      "Display preferences, custom themes and engine settings travel through one file in your iCloud Drive. Never credentials.",
   },
   // Engines.
   engine_swapd_enabled: { label: "swapd engine on (swaps the login under each provider's CLI)" },

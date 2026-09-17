@@ -8,7 +8,7 @@ import type {
   PullRequestCheck,
   PullRequestReaction,
   PullRequestViewerPermissions,
-} from "@t3tools/contracts";
+} from "@infinitus/contracts";
 
 import * as GitHubPullRequestCli from "./GitHubPullRequestCli.ts";
 import { PinnedGitHubCredential } from "../sourceControl/GitHubCli.ts";
@@ -109,7 +109,11 @@ export function gitHubProviderFailure(
 ): PullRequestProviderFailure {
   if (error._tag === "GitHubCliUnavailableError") return { reason: "missing-tool" };
   if (error._tag === "GitHubCliAuthenticationError") return { reason: "unauthenticated" };
-  if (error._tag === "GitHubCliRateLimitError") return { reason: "rate-limited" };
+  if (error._tag === "GitHubCliRateLimitError")
+    return {
+      reason: "rate-limited",
+      ...(error.retryAt === undefined ? {} : { retryAt: error.retryAt }),
+    };
   if (error._tag === "SourceControlRateLimitPausedError") {
     return { reason: "rate-limited", retryAt: error.retryAt };
   }

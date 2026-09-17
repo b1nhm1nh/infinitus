@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vite-plus/test";
-import type { OrchestrationThreadActivity } from "@t3tools/contracts";
+import type { OrchestrationThreadActivity } from "@infinitus/contracts";
 import { projectActivityPayload } from "./ActivityPayloadProjection.ts";
 
 function activity(payload: Record<string, unknown>): OrchestrationThreadActivity {
@@ -275,6 +275,14 @@ describe("projectActivityPayload", () => {
   });
 
   it.each([
+    {
+      item: {
+        server: "infinitus",
+        tool: "preview_open",
+        result: { structuredContent: { url: "https://example.com/" } },
+      },
+    },
+    // The id before #1368 E, as a thread's history still spells it.
     {
       item: {
         server: "t3-code",

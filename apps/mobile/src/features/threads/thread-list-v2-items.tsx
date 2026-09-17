@@ -7,11 +7,11 @@ import type { ThreadMoveDestination } from "./threadOrder";
 import type {
   EnvironmentProject,
   EnvironmentThreadShell,
-} from "@t3tools/client-runtime/state/shell";
-import type { EnvironmentThreadSearchMatch } from "@t3tools/client-runtime/state/thread-search";
-import type { EnvironmentMachineKind } from "@t3tools/contracts";
-import { canSnooze, resolveSnoozePresets } from "@t3tools/client-runtime/state/thread-settled";
-import { resolveSettledThreadTimestamp } from "@t3tools/client-runtime/state/thread-sort";
+} from "@infinitus/client-runtime/state/shell";
+import type { EnvironmentThreadSearchMatch } from "@infinitus/client-runtime/state/thread-search";
+import type { EnvironmentMachineKind } from "@infinitus/contracts";
+import { canSnooze, resolveSnoozePresets } from "@infinitus/client-runtime/state/thread-settled";
+import { resolveSettledThreadTimestamp } from "@infinitus/client-runtime/state/thread-sort";
 import type { MenuAction } from "@react-native-menu/menu";
 import { memo, useCallback, useEffect, useMemo, useState, type ComponentProps } from "react";
 import { Alert, Platform, Pressable, useWindowDimensions, View } from "react-native";
@@ -66,6 +66,9 @@ const STATUS_LABEL_BY_STATUS: Partial<
   approval: { label: "Approval", className: "text-warning-foreground" },
   input: { label: "Input", className: "text-foreground-secondary" },
   working: { label: "Working", className: "text-adaptive-sky-600-400" },
+  // Monitoring is calm background presence, not active progress, so it takes
+  // no motion hue and keeps the label at full strength (web sidebar v2).
+  monitoring: { label: "Monitoring", className: "text-foreground" },
   failed: { label: "Failed", className: "text-danger-foreground" },
 };
 
@@ -116,7 +119,7 @@ export const ThreadListV2SectionDivider = memo(function ThreadListV2SectionDivid
         props.pane === "sidebar" ? "px-3" : "px-5",
       )}
     >
-      <Text className="text-xs font-t3-medium text-foreground-tertiary">{props.label}</Text>
+      <Text className="text-xs font-infinitus-medium text-foreground-tertiary">{props.label}</Text>
       <View className="h-px flex-1 bg-border" />
     </View>
   );
@@ -145,7 +148,7 @@ export const ThreadListV2SnoozedShelfHeader = memo(function ThreadListV2SnoozedS
       onPress={props.onToggle}
       style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}
     >
-      <Text className="text-xs font-t3-medium text-foreground-secondary">
+      <Text className="text-xs font-infinitus-medium text-foreground-secondary">
         {props.expanded ? "Snoozed" : `Snoozed (${props.count})`}
       </Text>
       <View className="h-px flex-1 bg-primary/20" />
@@ -183,7 +186,7 @@ export const ThreadListV2SettledShelfHeader = memo(function ThreadListV2SettledS
       onPress={props.onToggle}
       style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}
     >
-      <Text className="text-xs font-t3-medium text-foreground-tertiary">
+      <Text className="text-xs font-infinitus-medium text-foreground-tertiary">
         {props.expanded ? "Settled" : `Settled (${props.count})`}
       </Text>
       <View className="h-px flex-1 bg-border" />
@@ -253,7 +256,10 @@ export const ThreadListV2PendingRow = memo(function ThreadListV2PendingRow(props
             workspaceRoot={props.project.workspaceRoot}
           />
         ) : null}
-        <Text className="flex-1 text-sm font-t3-medium text-foreground-muted" numberOfLines={1}>
+        <Text
+          className="flex-1 text-sm font-infinitus-medium text-foreground-muted"
+          numberOfLines={1}
+        >
           {projectTitle}
         </Text>
         {isDraft ? (
@@ -273,7 +279,7 @@ export const ThreadListV2PendingRow = memo(function ThreadListV2PendingRow(props
       {/* One line, unlike the two an active row allows: a queued title is
           derived from the whole prompt rather than written as a title, so the
           second line is usually a stray word or emoji rather than meaning. */}
-      <Text className="mt-1 text-base font-t3-medium text-foreground" numberOfLines={1}>
+      <Text className="mt-1 text-base font-infinitus-medium text-foreground" numberOfLines={1}>
         {pendingTask.title}
       </Text>
       {branch || props.environmentLabel ? (
@@ -390,6 +396,7 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
   readonly onSelectThread: (thread: EnvironmentThreadShell) => void;
   readonly onDeleteThread: (thread: EnvironmentThreadShell) => void;
   readonly onNewThreadOnBranch: (thread: EnvironmentThreadShell) => void;
+  readonly onRenameThread: (thread: EnvironmentThreadShell) => void;
   readonly onRegenerateThreadTitle: (thread: EnvironmentThreadShell) => void;
   readonly onSettleThread: (thread: EnvironmentThreadShell) => Promise<boolean>;
   readonly onSnoozeThread: (thread: EnvironmentThreadShell, snoozedUntil: string) => void;
@@ -431,6 +438,7 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
     variant,
     onSelectThread,
     onDeleteThread,
+    onRenameThread,
     onRegenerateThreadTitle,
     onNewThreadOnBranch,
     onSettleThread,
@@ -473,10 +481,13 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
   const babysitting = babysitLabel(thread.babysit);
   // Infinitus (#832): a working row whose turn waits for the network says so.
   const reconnecting = status === "working" ? reconnectingRowLabel(thread.session) : null;
+  // A babysat row outranks "Monitoring": both say watch loops are live, and
+  // the babysit label carries the round count too.
+  const idleOrMonitoring = status === "ready" || status === "monitoring";
   const statusLabel =
     reconnecting !== null
       ? { label: reconnecting, className: "text-warning-foreground" }
-      : status === "ready" && variant === "card" && babysitting !== null
+      : idleOrMonitoring && variant === "card" && babysitting !== null
         ? { label: babysitting, className: "text-adaptive-sky-600-400" }
         : status === "ready" && variant === "card" && readyForReview
           ? READY_FOR_REVIEW_LABEL
@@ -490,6 +501,7 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
     settledTimestamp !== null ? relativeTime(settledTimestamp) : threadTimeLabel(thread);
 
   const handleDelete = useCallback(() => onDeleteThread(thread), [onDeleteThread, thread]);
+  const handleRename = useCallback(() => onRenameThread(thread), [onRenameThread, thread]);
   const handleRegenerateTitle = useCallback(
     () => onRegenerateThreadTitle(thread),
     [onRegenerateThreadTitle, thread],
@@ -582,12 +594,14 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
       variant,
     ],
   );
-  const titleRegenerationMenuItems = useMemo<MenuAction[]>(
-    () =>
-      buildThreadTitleRegenerationMenuItems({
+  const titleMenuItems = useMemo<MenuAction[]>(
+    () => [
+      { id: "rename", title: "Rename", image: "square.and.pencil" },
+      ...buildThreadTitleRegenerationMenuItems({
         supported: props.titleRegenerationSupported,
         isRegenerating: thread.titleRegeneration != null,
       }),
+    ],
     [props.titleRegenerationSupported, thread.titleRegeneration],
   );
   const snoozableCardMenuActions = useMemo<MenuAction[]>(
@@ -600,19 +614,19 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
         subactions: snoozePresetActions,
       },
       ...arrangementMenuItems,
-      ...titleRegenerationMenuItems,
+      ...titleMenuItems,
       { id: "delete", title: "Delete", image: "trash", attributes: { destructive: true } },
     ],
-    [arrangementMenuItems, snoozePresetActions, titleRegenerationMenuItems],
+    [arrangementMenuItems, snoozePresetActions, titleMenuItems],
   );
   const cardMenuActions = useMemo<MenuAction[]>(
     () => [
       CARD_MENU_ACTIONS[0]!,
       ...arrangementMenuItems,
-      ...titleRegenerationMenuItems,
+      ...titleMenuItems,
       ...CARD_MENU_ACTIONS.slice(1),
     ],
-    [arrangementMenuItems, titleRegenerationMenuItems],
+    [arrangementMenuItems, titleMenuItems],
   );
   const slimMenuActions = useMemo<MenuAction[]>(
     () => [
@@ -620,23 +634,23 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
       ...arrangementMenuItems.filter(
         (action) => action.id !== "move-up" && action.id !== "move-down",
       ),
-      ...titleRegenerationMenuItems,
+      ...titleMenuItems,
       SLIM_MENU_ACTIONS[1]!,
     ],
-    [arrangementMenuItems, titleRegenerationMenuItems],
+    [arrangementMenuItems, titleMenuItems],
   );
   const snoozedMenuActions = useMemo<MenuAction[]>(
-    () => [SNOOZED_MENU_ACTIONS[0]!, ...titleRegenerationMenuItems, SNOOZED_MENU_ACTIONS[1]!],
-    [titleRegenerationMenuItems],
+    () => [SNOOZED_MENU_ACTIONS[0]!, ...titleMenuItems, SNOOZED_MENU_ACTIONS[1]!],
+    [titleMenuItems],
   );
   const legacyMenuActions = useMemo<MenuAction[]>(
     () => [
       LEGACY_MENU_ACTIONS[0]!,
       ...arrangementMenuItems,
-      ...titleRegenerationMenuItems,
+      ...titleMenuItems,
       LEGACY_MENU_ACTIONS[1]!,
     ],
-    [arrangementMenuItems, titleRegenerationMenuItems],
+    [arrangementMenuItems, titleMenuItems],
   );
   const handleMenuAction = useCallback(
     ({ nativeEvent }: { readonly nativeEvent: { readonly event: string } }) => {
@@ -650,6 +664,7 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
       if (nativeEvent.event === "move-up") handleMoveUp();
       if (nativeEvent.event === "move-down") handleMoveDown();
       if (nativeEvent.event === "archive") handleArchive();
+      if (nativeEvent.event === "rename") handleRename();
       if (nativeEvent.event === "regenerate-title") handleRegenerateTitle();
       if (nativeEvent.event === "delete") handleDelete();
       if (nativeEvent.event === "snooze:custom") {
@@ -673,6 +688,7 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
       handleArchive,
       handleDelete,
       handleRegenerateTitle,
+      handleRename,
       handleMoveDown,
       handleMoveUp,
       handlePin,
@@ -763,7 +779,7 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
         ) : null}
         <Text
           className={cn(
-            "flex-1 text-sm font-t3-medium",
+            "flex-1 text-sm font-infinitus-medium",
             selected
               ? materialYouStyleLayoutActive
                 ? "text-thread-selected-foreground-muted"
@@ -798,7 +814,7 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
       </View>
       <Text
         className={cn(
-          "mt-1 text-base font-t3-medium",
+          "mt-1 text-base font-infinitus-medium",
           selected
             ? materialYouStyleLayoutActive
               ? "text-thread-selected-foreground"

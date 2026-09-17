@@ -10,13 +10,13 @@ import {
 import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
-} from "@t3tools/client-runtime/state/runtime";
+} from "@infinitus/client-runtime/state/runtime";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type {
   ServerProcessDiagnosticsEntry,
   ServerProcessResourceHistorySummary,
   ServerProcessSignal,
-} from "@t3tools/contracts";
+} from "@infinitus/contracts";
 import * as DateTime from "effect/DateTime";
 import * as Option from "effect/Option";
 
@@ -38,6 +38,7 @@ import { ResourceTelemetryDiagnostics } from "./ResourceTelemetryDiagnostics";
 import { SettingsPageContainer, SettingsSection, useRelativeTimeTick } from "./settingsLayout";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { useSettingsScope } from "./SettingsScopeContext";
+import { PRODUCT_NAME } from "@infinitus/shared/productName";
 
 const NUMBER_FORMAT = new Intl.NumberFormat();
 
@@ -938,8 +939,7 @@ export function DiagnosticsSettingsPanel() {
             toastManager.add({
               type: "info",
               title: "Process already exited",
-              description:
-                "The process is not a child of the T3 Server. It might already have exited.",
+              description: `The process is not a child of the ${PRODUCT_NAME} Server. It might already have exited.`,
             });
             return;
           }
@@ -1052,7 +1052,7 @@ export function DiagnosticsSettingsPanel() {
           <StatBlock
             label="CPU Time"
             value={resourceData ? formatCpuTime(resourceData.totalCpuSecondsApprox) : "..."}
-            tooltip="Approximate active CPU time for the T3 server root process and its descendants during the selected window. It grows only while sampled processes use CPU and older samples leave as the window moves."
+            tooltip={`Approximate active CPU time for the ${PRODUCT_NAME} server root process and its descendants during the selected window. It grows only while sampled processes use CPU and older samples leave as the window moves.`}
           />
           <StatBlock
             label="Samples"

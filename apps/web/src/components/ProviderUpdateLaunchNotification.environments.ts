@@ -1,5 +1,5 @@
-import type { ConnectionCatalogEntry } from "@t3tools/client-runtime/connection";
-import type { ServerConfig } from "@t3tools/contracts";
+import type { ConnectionCatalogEntry } from "@infinitus/client-runtime/connection";
+import type { ServerConfig } from "@infinitus/contracts";
 import { useMemo } from "react";
 
 import { useEnvironments, usePrimaryEnvironmentId } from "~/state/environments";
@@ -29,6 +29,7 @@ function normalizeConnectionState(phase: string | undefined): EnvironmentUpdateC
     case "connecting":
     case "reconnecting":
       return "connecting";
+    case "unsupported":
     case "error":
       return "error";
     case "offline":

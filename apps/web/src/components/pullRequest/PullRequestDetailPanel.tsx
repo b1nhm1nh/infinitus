@@ -1,9 +1,9 @@
-import { parseChangeRequestUrl } from "@t3tools/shared/changeRequestUrl";
+import { parseChangeRequestUrl } from "@infinitus/shared/changeRequestUrl";
 import { useAtomValue } from "@effect/atom-react";
 import { usePullRequestStack } from "~/state/usePullRequestStack";
 import { RefreshIcon } from "~/components/ui/refresh-icon";
-import { scopedThreadKey, scopeProjectRef } from "@t3tools/client-runtime/environment";
-import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
+import { scopedThreadKey, scopeProjectRef } from "@infinitus/client-runtime/environment";
+import { squashAtomCommandFailure } from "@infinitus/client-runtime/state/runtime";
 import {
   type EnvironmentId,
   DEFAULT_SERVER_SETTINGS,
@@ -14,8 +14,8 @@ import {
   type PullRequestRef,
   resolveEnvironmentMachineKind,
   type ScopedThreadRef,
-} from "@t3tools/contracts";
-import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
+} from "@infinitus/contracts";
+import { resolveProjectSettings } from "@infinitus/shared/projectSettings";
 import {
   ArrowDownUpIcon,
   ArrowLeftIcon,
@@ -2459,10 +2459,11 @@ export function PullRequestDetailPanel({
 
         {detail ? (
           <nav
-            className="col-span-2 flex min-w-0 items-center gap-1 overflow-x-auto border-t border-border/60 px-4 py-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+            className="col-span-2 flex min-w-0 flex-wrap items-center gap-2 border-t border-border/60 px-4 py-2"
             aria-label="Pull request tabs"
           >
             <ToggleGroup
+              className="shrink-0"
               size="segmented"
               variant="segmented"
               value={[tab]}

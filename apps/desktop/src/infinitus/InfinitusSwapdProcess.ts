@@ -3,7 +3,7 @@
 import * as NodeChildProcess from "node:child_process";
 import * as NodeFS from "node:fs";
 
-import type { InfinitusOAuthSignInResult } from "@t3tools/contracts/infinitus";
+import type { InfinitusOAuthSignInResult } from "@infinitus/contracts/infinitus";
 
 import { parseAddOauthLine } from "./infinitusSwapd.logic.ts";
 
@@ -11,6 +11,26 @@ import { parseAddOauthLine } from "./infinitusSwapd.logic.ts";
 export function isExecutableFile(path: string): boolean {
   try {
     NodeFS.accessSync(path, NodeFS.constants.X_OK);
+    return NodeFS.statSync(path).isFile();
+  } catch {
+    return false;
+  }
+}
+
+/** A directory's entries, empty when it is missing — the engine locator's way
+    of walking nvm's per-version bins without caring whether nvm is installed. */
+export function listDirectoryNames(path: string): ReadonlyArray<string> {
+  try {
+    return NodeFS.readdirSync(path);
+  } catch {
+    return [];
+  }
+}
+
+/** Any file, executable or not: a launch agent plist says a service manager
+    already owns an engine. */
+export function fileExists(path: string): boolean {
+  try {
     return NodeFS.statSync(path).isFile();
   } catch {
     return false;

@@ -19,7 +19,7 @@
  * bundleDependencies needs an arborist tree these flattened installs are
  * not), whereas `npm publish <tarball>` uploads the bytes as given.
  */
-import { legacyCliLauncherScript } from "@t3tools/shared/legacyCliLauncher";
+import { legacyCliLauncherScript } from "@infinitus/shared/legacyCliLauncher";
 import * as NodeRuntime from "@effect/platform-node/NodeRuntime";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Effect from "effect/Effect";
@@ -35,10 +35,10 @@ import {
   CLI_ARCHIVE_PLATFORM_KEYS,
   cliArchiveFileName,
   type CliArchivePlatformKey,
-} from "@t3tools/shared/cliRelease";
-import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
-import { fromJsonStringPretty } from "@t3tools/shared/schemaJson";
-import { isCommandAvailable } from "@t3tools/shared/shell";
+} from "@infinitus/shared/cliRelease";
+import { HostProcessPlatform } from "@infinitus/shared/hostProcess";
+import { fromJsonStringPretty } from "@infinitus/shared/schemaJson";
+import { isCommandAvailable } from "@infinitus/shared/shell";
 import serverPackageJson from "../apps/server/package.json" with { type: "json" };
 
 import { windowsSystemTar } from "./build-cli-archive.ts";
@@ -112,7 +112,7 @@ export function npmPlatformPackageManifest(
     repository: serverPackageJson.repository,
     os: [os],
     cpu: [cpu],
-    files: ["t3", "t3.exe", "client", "resource-monitor", "node_modules"],
+    files: ["infinitus", "infinitus.exe", "client", "resource-monitor", "node_modules"],
     preferUnplugged: true,
     dependencies: Object.fromEntries(bundleDependencies.map((name) => [name, bundled[name]])),
     bundleDependencies,
@@ -217,7 +217,7 @@ try {
   process.exit(1);
 }
 
-const executable = join(packageDir, process.platform === "win32" ? "t3.exe" : "t3");
+const executable = join(packageDir, process.platform === "win32" ? "infinitus.exe" : "infinitus");
 const result = spawnSync(executable, process.argv.slice(2), { stdio: "inherit" });
 if (result.error) {
   process.stderr.write("t3: failed to start " + executable + ": " + result.error.message + "\\n");
@@ -332,7 +332,7 @@ const stagePlatformPackage = Effect.fn("stagePlatformPackage")(function* (input:
   const extractDir = path.join(scratch, "extract");
   yield* fs.makeDirectory(extractDir);
   const contentDir = yield* extractArchive(input.archive, extractDir);
-  const executableName = input.key.startsWith("win32") ? "t3.exe" : "t3";
+  const executableName = input.key.startsWith("win32") ? "infinitus.exe" : "infinitus";
   const executable = path.join(contentDir, executableName);
   if (!(yield* fs.exists(executable))) {
     return yield* new NpmPackagesArchiveLayoutError({
@@ -341,7 +341,7 @@ const stagePlatformPackage = Effect.fn("stagePlatformPackage")(function* (input:
     });
   }
   // The tarball carries the on-disk mode, so the bit must be set before packing.
-  if (executableName === "t3") {
+  if (executableName === "infinitus") {
     yield* fs.chmod(executable, 0o755);
   }
   const bundled = yield* readBundledPackages(path.join(contentDir, "node_modules"));
@@ -463,7 +463,9 @@ const command = Command.make(
   "build-npm-platform-packages",
   {
     archivesDir: Flag.string("archives-dir").pipe(
-      Flag.withDescription("Directory holding the release's t3-<version>-<platform> archives."),
+      Flag.withDescription(
+        "Directory holding the release's infinitus-<version>-<platform> archives.",
+      ),
     ),
     version: Flag.string("version").pipe(
       Flag.withDescription(

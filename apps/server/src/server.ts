@@ -7,7 +7,7 @@ import {
   EnvironmentHttpApi,
   ProviderDriverKind,
   type RepositoryIdentity,
-} from "@t3tools/contracts";
+} from "@infinitus/contracts";
 import * as Cause from "effect/Cause";
 import * as Duration from "effect/Duration";
 import * as Deferred from "effect/Deferred";
@@ -86,8 +86,9 @@ import { InfinitusSecretLive } from "./infinitus/Layers/InfinitusSecret.ts";
 import { InfinitusUsageAttributionLive } from "./infinitus/Layers/InfinitusUsageAttribution.ts";
 import { infinitusHttpApiLayer } from "./infinitus/Layers/InfinitusHttp.ts";
 import { infinitusPairingHttpApiLayer } from "./infinitus/Layers/InfinitusPairingHttp.ts";
+import { infinitusTeamControlHttpApiLayer } from "./infinitus/Layers/InfinitusTeamControlHttp.ts";
 import { InfinitusResumeOnLimitLive } from "./infinitus/Layers/InfinitusResumeOnLimit.ts";
-import { InfinitusAgentActivityLive } from "./infinitus/Layers/InfinitusAgentActivity.ts";
+import { InfinitusAlertRelayLive } from "./infinitus/Layers/InfinitusAlertRelay.ts";
 import { InfinitusSignInLapseLive } from "./infinitus/Layers/InfinitusSignInLapse.ts";
 import { InfinitusSlackLive } from "./infinitus/Layers/InfinitusSlack.ts";
 import { SlackClientLive } from "./infinitus/Layers/InfinitusSlackSocket.ts";
@@ -175,10 +176,11 @@ import {
   persistServerRuntimeState,
 } from "./serverRuntimeState.ts";
 import { orchestrationHttpApiLayer } from "./orchestration/http.ts";
-import * as NetService from "@t3tools/shared/Net";
-import * as RelayClient from "@t3tools/shared/relayClient";
-import { disableTailscaleServe, ensureTailscaleServe } from "@t3tools/tailscale";
+import * as NetService from "@infinitus/shared/Net";
+import * as RelayClient from "@infinitus/shared/relayClient";
+import { disableTailscaleServe, ensureTailscaleServe } from "@infinitus/tailscale";
 import { forkParked, ServerActivation } from "./serverActivation.ts";
+import { CONNECT_NAME } from "@infinitus/shared/productName";
 
 // MCP handoff thread IDs include escaped provenance and can exceed find-my-way's
 // 100-character default for one path segment.
@@ -301,12 +303,11 @@ const ReactorLayerLive = ReactorCoreLayerLive.pipe(
   // Fork (#648): resumes a thread's turn on the account Infinitus swapped to.
   Layer.provideMerge(InfinitusResumeOnLimitLive),
   // Fork (#1076): a lapsed AWS / gcloud sign-in in a tool result leaves a
-  // work-log row and starts the Mac's login; and (#1047) the phone's
-  // lock-screen thread card, folded from the shell snapshot and handed to the
-  // Mac's `push` verb. The activity layer gets its own control client, since
-  // InfinitusLayerLive's is private.
+  // work-log row and starts the Mac's login. The layer gets its own control
+  // client, since InfinitusLayerLive's is private. (The phone's lock-screen
+  // thread card left with #1375: the relay draws it.)
   Layer.provideMerge(
-    Layer.mergeAll(InfinitusSignInLapseLive, InfinitusAgentActivityLive).pipe(
+    InfinitusSignInLapseLive.pipe(
       Layer.provide(
         InfinitusControlClientLive.pipe(Layer.provide(InfinitusControlClientConfigLive)),
       ),
@@ -686,7 +687,27 @@ export const makeRoutesLayer = Layer.mergeAll(
       Layer.provide(pullRequestHttpApiLayer),
       Layer.provide(serverEnvironmentHttpApiLayer),
       Layer.provide(infinitusPairingHttpApiLayer),
-      Layer.provide(infinitusHttpApiLayer),
+      // Fork (#1313): the team command route gets its own control client, as
+      // the sign-in lapse layer does — InfinitusLayerLive's is private.
+      Layer.provide(
+        infinitusTeamControlHttpApiLayer.pipe(
+          Layer.provide(
+            InfinitusControlClientLive.pipe(Layer.provide(InfinitusControlClientConfigLive)),
+          ),
+        ),
+      ),
+      // Fork (#1375): the Mac's account alerts, signed with the relay link's
+      // key and posted to the relay over fetch.
+      Layer.provide(
+        infinitusHttpApiLayer.pipe(
+          Layer.provide(
+            InfinitusAlertRelayLive.pipe(
+              Layer.provide(ServerSecretStore.layer),
+              Layer.provide(FetchHttpClient.layer),
+            ),
+          ),
+        ),
+      ),
       Layer.provide(environmentAuthenticatedAuthLayer),
     ),
     otlpTracesProxyRouteLayer,
@@ -870,9 +891,11 @@ const makeServerLayer = Layer.unwrap(
                   Schedule.upTo({ duration: "10 minutes" }),
                 ),
               }),
-              Effect.tap(() => Effect.logInfo("T3 Connect desired link reconciled on startup")),
+              Effect.tap(() =>
+                Effect.logInfo(`${CONNECT_NAME} desired link reconciled on startup`),
+              ),
               Effect.catch((cause) =>
-                Effect.logWarning("Failed to reconcile T3 Connect desired link on startup", {
+                Effect.logWarning(`Failed to reconcile ${CONNECT_NAME} desired link on startup`, {
                   message: cause.message,
                 }),
               ),

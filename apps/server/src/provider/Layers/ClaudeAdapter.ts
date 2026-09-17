@@ -8,6 +8,7 @@
  * @module ClaudeAdapterLive
  */
 
+import * as NodeUtil from "node:util";
 import {
   type CanUseTool,
   query,
@@ -24,8 +25,8 @@ import {
   type SDKUserMessage,
   type ModelUsage,
 } from "@anthropic-ai/claude-agent-sdk";
-import { parseCliArgs } from "@t3tools/shared/cliArgs";
-import { isWorkspaceImagePreviewPath } from "@t3tools/shared/filePreview";
+import { parseCliArgs } from "@infinitus/shared/cliArgs";
+import { isWorkspaceImagePreviewPath } from "@infinitus/shared/filePreview";
 import { type ClaudeScopedLimitNames, claudeRateLimitEventToUpdate } from "./claudeUsageLimits.ts";
 import {
   claudeTurnUsageDelta,
@@ -81,19 +82,19 @@ import {
   ThreadId,
   TurnId,
   type UserInputQuestion,
-} from "@t3tools/contracts";
+} from "@infinitus/contracts";
 import {
   applyClaudePromptEffortPrefix,
   getModelSelectionBooleanOptionValue,
   getModelSelectionStringOptionValue,
   getProviderOptionDescriptors,
   resolvePromptInjectedEffort,
-} from "@t3tools/shared/model";
+} from "@infinitus/shared/model";
 import {
   CLAUDE_RESUME_COMPACTION_NEVER_ANSWER,
   formatClaudeResumeCompactionQuestion,
-} from "@t3tools/shared/claudeCompaction";
-import { HostProcessIsExecutable } from "@t3tools/shared/hostProcess";
+} from "@infinitus/shared/claudeCompaction";
+import { HostProcessIsExecutable } from "@infinitus/shared/hostProcess";
 import * as Cause from "effect/Cause";
 import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
@@ -123,6 +124,7 @@ import { discoverClaudeSkills } from "../Drivers/ClaudeSkills.ts";
 import { buildRuntimeInstructions } from "../RuntimeInstructions.ts";
 import {
   BUNDLED_CLAUDE_MODEL_CATALOG,
+  type ClaudeCatalogApiModelIdOptions,
   type ClaudeModelCatalog,
   getClaudeCatalogModelCapabilities,
   isClaudeCatalogUltracodeEffort,
@@ -163,6 +165,94 @@ const decodeSessionMessages = Schema.decodeSync(
     ),
   ),
 );
+
+type ClaudeHistoryMessage = {
+  readonly type: string;
+  readonly uuid: string;
+  readonly parent_tool_use_id: string | null;
+  readonly message: unknown;
+};
+
+const isClaudeConversationMessage = (message: ClaudeHistoryMessage): boolean =>
+  message.type === "user" || message.type === "assistant";
+
+const isClaudeHumanTurnStart = (message: ClaudeHistoryMessage): boolean => {
+  if (message.type !== "user" || message.parent_tool_use_id !== null) return false;
+  const body = message.message;
+  if (typeof body !== "object" || body === null || !("content" in body)) return false;
+  const content = body.content;
+  return (
+    typeof content === "string" ||
+    (Array.isArray(content) &&
+      content.some(
+        (part: unknown) =>
+          typeof part === "object" &&
+          part !== null &&
+          "type" in part &&
+          part.type !== "tool_result",
+      ))
+  );
+};
+
+const conversationIndexForUuid = (
+  messages: ReadonlyArray<ClaudeHistoryMessage>,
+  uuid: string,
+): number => {
+  let index = -1;
+  for (const message of messages) {
+    if (!isClaudeConversationMessage(message)) continue;
+    index += 1;
+    if (message.uuid === uuid) return index;
+  }
+  return -1;
+};
+
+// Native forks rewrite every UUID. getSessionMessages then rebuilds the
+// parentUuid chain, so system notices and compact metadata can change the
+// raw length without dropping retained user/assistant turns. Align those
+// conversation messages from the truncated end, then remap T3 turn starts.
+const remapClaudeForkTurnBoundaries = (
+  messages: ReadonlyArray<ClaudeHistoryMessage>,
+  forkMessages: ReadonlyArray<ClaudeHistoryMessage>,
+  firstRemoved: number,
+  retainedBoundaries: ReadonlyArray<string | null>,
+): Array<string | null> | undefined => {
+  const retainedConversation = messages.slice(0, firstRemoved).filter(isClaudeConversationMessage);
+  const forkConversation = forkMessages.filter(isClaudeConversationMessage);
+  if (retainedConversation.length === 0) {
+    return retainedBoundaries.every((id) => id === null) ? [...retainedBoundaries] : undefined;
+  }
+  const offset = forkConversation.length - retainedConversation.length;
+  // Forks preserve message bodies. Matching roles alone can mistake a restored
+  // steering message for a retained turn when compaction changes the chain.
+  if (
+    offset < 0 ||
+    retainedConversation.some((message, index) => {
+      const forkMessage = forkConversation[index + offset];
+      return (
+        forkMessage === undefined ||
+        forkMessage.type !== message.type ||
+        !NodeUtil.isDeepStrictEqual(forkMessage.message, message.message)
+      );
+    })
+  ) {
+    return undefined;
+  }
+  const remapped = retainedBoundaries.map((originalId) => {
+    if (originalId === null) return null;
+    const originalIndex = conversationIndexForUuid(messages, originalId);
+    const forkIndex = originalIndex + offset;
+    const forkMessage =
+      originalIndex >= 0 && forkIndex >= 0 ? forkConversation[forkIndex] : undefined;
+    const originalMessage = messages.find((message) => message.uuid === originalId);
+    return forkMessage !== undefined &&
+      originalMessage !== undefined &&
+      forkMessage.type === originalMessage.type
+      ? forkMessage.uuid
+      : null;
+  });
+  return remapped.some((id) => id === null) ? undefined : remapped;
+};
 
 const PROVIDER = ProviderDriverKind.make("claudeAgent");
 type ClaudeTextStreamKind = Extract<RuntimeContentStreamKind, "assistant_text" | "reasoning_text">;
@@ -400,6 +490,13 @@ interface ClaudeSessionContext {
   readonly startedAt: string;
   readonly basePermissionMode: PermissionMode | undefined;
   currentApiModelId: string | undefined;
+  /**
+   * The betas the query was opened with (`claudeQueryBetas`). The CLI reads
+   * them once at launch, so a model set mid-session cannot gain or lose the
+   * 1M window — `setModel` says so rather than leaving the meter lying.
+   */
+  readonly queryBetas: ClaudeQueryOptions["betas"] | undefined;
+  betaMismatchWarned: boolean;
   /** Effective effort for the session's turns; subagents without an explicit
    * effort override inherit this. */
   currentEffort: string | undefined;
@@ -718,6 +815,30 @@ function selectedClaudeContextWindow(
   modelSelection: ModelSelection | undefined,
 ): number | undefined {
   return resolveClaudeCatalogContextWindowTokens(catalog, modelSelection);
+}
+
+/** The window the long-context beta buys, as the catalog counts it. */
+const LONG_CONTEXT_WINDOW_TOKENS = 1_000_000;
+
+/**
+ * Fork (#1088 follow-up): the betas a query opens with. The `[1m]` suffix a
+ * proxied instance leaves off the model name is also what buys the CLI its 1M
+ * context window — without it the CLI plans against 200k and refuses a longer
+ * prompt before the API sees it. The long-context beta buys the same window,
+ * and travels as a header the proxy forwards rather than a model name it
+ * answers 400 to. Sent only when the selection resolves the 1M window, so a
+ * 200k pick still gets 200k, and only for a proxied instance — the CLI drops
+ * caller-supplied betas for an OAuth login, which is every unproxied one.
+ */
+function claudeQueryBetas(
+  catalog: ClaudeModelCatalog,
+  modelSelection: ModelSelection | undefined,
+  options: ClaudeCatalogApiModelIdOptions,
+): ClaudeQueryOptions["betas"] | undefined {
+  if (options.modelSuffixes !== false) return undefined;
+  return selectedClaudeContextWindow(catalog, modelSelection) === LONG_CONTEXT_WINDOW_TOKENS
+    ? ["context-1m-2025-08-07"]
+    : undefined;
 }
 
 function finiteNonNegativeInteger(value: unknown): number | undefined {
@@ -5218,7 +5339,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
           return { behavior: "cancelled" as const };
         }
 
-        // The question copy lives in @t3tools/shared/claudeCompaction because
+        // The question copy lives in @infinitus/shared/claudeCompaction because
         // the web client recognizes this exact text (and the "never" answer)
         // to mirror a permanent dismissal.
         const question = formatClaudeResumeCompactionQuestion({
@@ -5464,6 +5585,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
       const apiModelId = modelSelection
         ? resolveClaudeCatalogApiModelId(modelCatalog, modelSelection, apiModelIdOptions)
         : undefined;
+      const queryBetas = claudeQueryBetas(modelCatalog, modelSelection, apiModelIdOptions);
       const initialContextWindow = selectedClaudeContextWindow(modelCatalog, modelSelection);
       const rawEffort = getModelSelectionStringOptionValue(modelSelection, "effort");
       const effort =
@@ -5529,6 +5651,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
           append: buildRuntimeInstructions({ harness: "Claude Code" }),
         },
         settingSources: [...CLAUDE_SETTING_SOURCES],
+        ...(queryBetas ? { betas: queryBetas } : {}),
         // `ultracode` is a Claude Code setting, not an API effort level. It is
         // normalized to `xhigh` above and paired with `settings.ultracode`.
         ...(effectiveEffort
@@ -5567,7 +5690,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         ...(mcpSession
           ? {
               mcpServers: {
-                "t3-code": {
+                infinitus: {
                   type: "http",
                   url: mcpSession.endpoint,
                   headers: {
@@ -5717,6 +5840,8 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         startedAt,
         basePermissionMode: permissionMode,
         currentApiModelId: apiModelId,
+        queryBetas,
+        betaMismatchWarned: false,
         currentEffort: effectiveEffort ?? undefined,
         resumeSessionId: sessionId,
         pendingApprovals,
@@ -5842,6 +5967,23 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
       if (context.currentApiModelId !== apiModelId) {
         yield* onSessionQuery(context, "turn/setModel", (query) => query.setModel(apiModelId));
         context.currentApiModelId = apiModelId;
+      }
+      // The window the CLI plans against was fixed by the betas this query
+      // opened with, so a selection that now wants a different one is not
+      // honored until the thread starts a new session.
+      const wantedBetas = claudeQueryBetas(modelCatalog, modelSelection, apiModelIdOptions);
+      if ((wantedBetas !== undefined) !== (context.queryBetas !== undefined)) {
+        if (!context.betaMismatchWarned) {
+          context.betaMismatchWarned = true;
+          yield* emitRuntimeWarning(
+            context,
+            wantedBetas
+              ? "This session runs with a 200K context window. The 1M window applies from the next session on this thread."
+              : "This session runs with a 1M context window. The 200K window applies from the next session on this thread.",
+          );
+        }
+      } else {
+        context.betaMismatchWarned = false;
       }
       context.session = {
         ...context.session,
@@ -6071,23 +6213,9 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         });
       const messages = yield* readHistory(sessionId);
       // Tool results are user-role messages too. Only human prompts begin a turn.
-      const turnStarts = messages.flatMap((message, index) => {
-        if (message.type !== "user" || message.parent_tool_use_id !== null) return [];
-        const body = message.message;
-        if (typeof body !== "object" || body === null || !("content" in body)) return [];
-        const content = body.content;
-        return typeof content === "string" ||
-          (Array.isArray(content) &&
-            content.some(
-              (part: unknown) =>
-                typeof part === "object" &&
-                part !== null &&
-                "type" in part &&
-                part.type !== "tool_result",
-            ))
-          ? [index]
-          : [];
-      });
+      const turnStarts = messages.flatMap((message, index) =>
+        isClaudeHumanTurnStart(message) ? [index] : [],
+      );
       if (messages.length === 0) {
         return yield* new ProviderAdapterRequestError({
           provider: PROVIDER,
@@ -6147,27 +6275,28 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
       const retainedBoundaries = boundaries.slice(0, retainedCount);
       if (fork) {
         const forkMessages = yield* readHistory(fork.sessionId);
-        if (forkMessages.length !== firstRemoved) {
+        const remappedBoundaries = remapClaudeForkTurnBoundaries(
+          messages,
+          forkMessages,
+          firstRemoved,
+          retainedBoundaries,
+        );
+        if (!remappedBoundaries) {
           return yield* new ProviderAdapterRequestError({
             provider: PROVIDER,
             method: "thread/rollback",
             detail: "Claude fork history did not preserve the retained turn boundaries.",
           });
         }
-        // Native forks replace every UUID while preserving transcript order.
-        for (let index = 0; index < retainedBoundaries.length; index++) {
-          const messageIndex = messages.findIndex(
-            (message) => message.uuid === retainedBoundaries[index],
-          );
-          retainedBoundaries[index] = forkMessages[messageIndex]?.uuid ?? null;
-        }
-        // The same rewrite applies to the fork anchors; one that cannot be
-        // located in the fork is dropped rather than left pointing at a
-        // message the new session does not have.
+        retainedBoundaries.splice(0, retainedBoundaries.length, ...remappedBoundaries);
+        // Fork (#270 E2): the anchors are remapped the same way, one at a
+        // time; one that cannot be located in the fork is dropped rather than
+        // left pointing at a message the new session does not have.
         retainedAnchors = retainedAnchors.flatMap((anchor) => {
-          const messageIndex = messages.findIndex((message) => message.uuid === anchor.at);
-          const forked = messageIndex < 0 ? undefined : forkMessages[messageIndex]?.uuid;
-          return forked === undefined ? [] : [{ ...anchor, at: forked }];
+          const forked = remapClaudeForkTurnBoundaries(messages, forkMessages, firstRemoved, [
+            anchor.at,
+          ])?.[0];
+          return forked == null ? [] : [{ ...anchor, at: forked }];
         });
       }
       yield* stopSessionInternal(context, { emitExitEvent: false });

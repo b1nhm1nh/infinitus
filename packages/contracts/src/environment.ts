@@ -9,6 +9,10 @@ import {
   TrimmedNonEmptyString,
 } from "./baseSchemas.ts";
 
+/** Wire version for orchestration snapshots, streams, commands, and RPC payloads. */
+export const ORCHESTRATION_PROTOCOL_VERSION = 1;
+export const ORCHESTRATION_PROTOCOL_QUERY_PARAM = "orchestrationProtocol";
+
 export const ExecutionEnvironmentPlatformOs = Schema.Literals([
   "darwin",
   "linux",
@@ -175,6 +179,10 @@ export const ExecutionEnvironmentCapabilities = Schema.Struct({
       (`thread.turn.queue`) and starts them itself once it is idle. Absent on
       builds that predate the queue, where the phone's outbox waits instead. */
   turnQueue: Schema.optionalKey(Schema.Boolean),
+  /** Fork (#1318): `thread.turn.queue` takes `sendAt: "tool-boundary"` and
+      the drain honours it. A server without this flag decodes the field and
+      silently sends the row at idle, so a steer client must gate on it. */
+  turnQueueSendAt: Schema.optionalKey(Schema.Boolean),
 });
 export type ExecutionEnvironmentCapabilities = typeof ExecutionEnvironmentCapabilities.Type;
 
@@ -183,6 +191,8 @@ export const ExecutionEnvironmentDescriptor = Schema.Struct({
   label: TrimmedNonEmptyString,
   platform: ExecutionEnvironmentPlatform,
   serverVersion: TrimmedNonEmptyString,
+  /** Missing metadata denotes protocol 1. Bump this for breaking wire changes. */
+  orchestrationProtocolVersion: Schema.optionalKey(Schema.Int),
   capabilities: ExecutionEnvironmentCapabilities,
   /** Fork (#663): other base URLs this same server answers on — the Mac app's
       tunnel while it is up. A phone paired over the LAN keeps them and roams

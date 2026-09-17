@@ -1,4 +1,4 @@
-import { KeybindingCommand, KeybindingRule, KeybindingsConfig } from "@t3tools/contracts";
+import { KeybindingCommand, KeybindingRule, KeybindingsConfig } from "@infinitus/contracts";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import { assertFailure } from "@effect/vitest/utils";
@@ -11,8 +11,8 @@ import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 import * as ServerConfig from "./config.ts";
 import * as Keybindings from "./keybindings.ts";
-import { KeybindingsConfigError } from "@t3tools/contracts";
-import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
+import { KeybindingsConfigError } from "@infinitus/contracts";
+import { HostProcessPlatform } from "@infinitus/shared/hostProcess";
 
 const KeybindingsConfigJson = Schema.fromJsonString(KeybindingsConfig);
 const encodeKeybindingsConfigJson = Schema.encodeEffect(KeybindingsConfigJson);
@@ -281,6 +281,51 @@ it.layer(NodeServices.layer)("keybindings", (it) => {
         }
         assert.isTrue(byCommand.has("script.run-tests.run"));
       }).pipe(Effect.provide(makeKeybindingsLayer())),
+  );
+
+  it.effect("backfills a newly shipped default key alongside a snapshotted older one", () =>
+    Effect.gen(function* () {
+      const { keybindingsConfigPath } = yield* ServerConfig.ServerConfig;
+      // Mirrors a config written before #840 added `mod+[`: it already names
+      // thread.previous, under the default key that shipped at the time.
+      yield* writeKeybindingsConfig(keybindingsConfigPath, [
+        { key: "mod+shift+[", command: "thread.previous" },
+        { key: "mod+shift+]", command: "thread.next" },
+      ]);
+
+      yield* Effect.gen(function* () {
+        const keybindings = yield* Keybindings.Keybindings;
+        yield* keybindings.syncDefaultKeybindingsOnStartup;
+      });
+
+      const persisted = yield* readKeybindingsConfig(keybindingsConfigPath);
+      const hasRule = (key: string, command: KeybindingCommand) =>
+        persisted.some((entry) => entry.key === key && entry.command === command);
+      assert.isTrue(hasRule("mod+shift+[", "thread.previous"));
+      assert.isTrue(hasRule("mod+[", "thread.previous"));
+      assert.isTrue(hasRule("mod+shift+]", "thread.next"));
+      assert.isTrue(hasRule("mod+]", "thread.next"));
+    }).pipe(Effect.provide(makeKeybindingsLayer())),
+  );
+
+  it.effect("leaves a remapped command's defaults out of the backfill", () =>
+    Effect.gen(function* () {
+      const { keybindingsConfigPath } = yield* ServerConfig.ServerConfig;
+      yield* writeKeybindingsConfig(keybindingsConfigPath, [
+        { key: "mod+alt+p", command: "thread.previous" },
+      ]);
+
+      yield* Effect.gen(function* () {
+        const keybindings = yield* Keybindings.Keybindings;
+        yield* keybindings.syncDefaultKeybindingsOnStartup;
+      });
+
+      const persisted = yield* readKeybindingsConfig(keybindingsConfigPath);
+      const previousKeys = persisted
+        .filter((entry) => entry.command === "thread.previous")
+        .map((entry) => entry.key);
+      assert.deepEqual(previousKeys, ["mod+alt+p"]);
+    }).pipe(Effect.provide(makeKeybindingsLayer())),
   );
 
   it.effect("skips conflicting default keybindings on startup and logs a detailed warning", () => {

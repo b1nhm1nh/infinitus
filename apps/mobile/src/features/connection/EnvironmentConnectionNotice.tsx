@@ -1,7 +1,7 @@
 import {
   type EnvironmentConnectionPhase,
   type EnvironmentConnectionPresentation,
-} from "@t3tools/client-runtime/connection";
+} from "@infinitus/client-runtime/connection";
 import { SymbolView } from "../../components/AppSymbol";
 import { ActivityIndicator, Pressable, View } from "react-native";
 
@@ -16,6 +16,8 @@ function noticeTitle(phase: EnvironmentConnectionPhase, environmentLabel: string
       return `Connecting to ${environmentLabel}...`;
     case "reconnecting":
       return `Reconnecting to ${environmentLabel}...`;
+    case "unsupported":
+      return "Client not supported";
     case "error":
       return `${environmentLabel} is unavailable`;
     case "available":
@@ -31,7 +33,7 @@ function noticeDetail(
   error: string | null,
 ): string {
   if (error) {
-    return `The app will keep retrying automatically. ${error}`;
+    return phase === "reconnecting" ? `The app will keep retrying automatically. ${error}` : error;
   }
 
   switch (phase) {
@@ -40,6 +42,8 @@ function noticeDetail(
     case "connecting":
     case "reconnecting":
       return `The ${resourceName} will load as soon as the environment is ready.`;
+    case "unsupported":
+      return "Use compatible versions of the app and server to connect.";
     case "available":
     case "error":
       return `Reconnect the environment to load the ${resourceName}.`;
@@ -71,7 +75,7 @@ export function EnvironmentConnectionNotice(props: {
           />
         )}
 
-        <Text className="text-center text-lg font-t3-bold text-foreground">
+        <Text className="text-center text-lg font-infinitus-bold text-foreground">
           {noticeTitle(props.connection.phase, props.environmentLabel)}
         </Text>
         <Text className="text-center text-sm leading-normal text-foreground-muted">
@@ -95,13 +99,13 @@ export function EnvironmentConnectionNotice(props: {
           ) : null}
         </Text>
 
-        {props.connection.phase !== "offline" ? (
+        {props.connection.phase !== "offline" && props.connection.phase !== "unsupported" ? (
           <Pressable
             accessibilityRole="button"
             className="mt-1 rounded-full bg-subtle px-4 py-2.5 active:opacity-70"
             onPress={props.onRetry}
           >
-            <Text className="text-sm font-t3-bold text-foreground">Retry now</Text>
+            <Text className="text-sm font-infinitus-bold text-foreground">Retry now</Text>
           </Pressable>
         ) : null}
       </View>
