@@ -22,7 +22,6 @@ import { expandHomePath } from "../../pathExpansion.ts";
 import { ServerSettingsService } from "../../serverSettings.ts";
 import { ProviderDriverError } from "../Errors.ts";
 import { makePiAdapter } from "../Layers/PiAdapter.ts";
-import { piRpcEnvironment } from "../Layers/PiSessionRuntime.ts";
 import {
   buildInitialPiProviderSnapshot,
   checkPiProviderStatus,
@@ -78,11 +77,7 @@ export const PiDriver: ProviderDriver<PiSettings, PiDriverEnv> = {
       const serverSettings = yield* ServerSettingsService;
       const eventLoggers = yield* ProviderEventLoggers;
       const serverConfig = yield* ServerConfig;
-      // Every Pi process — session, probe, one-shot — gets the same home.
-      const processEnv = piRpcEnvironment(
-        mergeProviderInstanceEnvironment(environment),
-        config.homePath || undefined,
-      );
+      const processEnv = mergeProviderInstanceEnvironment(environment);
       const continuationIdentity = defaultProviderContinuationIdentity({
         driverKind: DRIVER_KIND,
         instanceId,
