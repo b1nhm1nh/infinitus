@@ -352,6 +352,22 @@ export const makePiAdapter = Effect.fn("makePiAdapter")(function* (
    * not — interrupting the running fiber from inside itself would never
    * return, and the stream has already ended anyway.
    */
+  /**
+   * Drops a turn's bookkeeping from the session.
+   *
+   * Pi keeps the session alive between prompts and still emits records on it
+   * (a late `message_end`, an extension's chatter). Leaving the turn active
+   * would stamp those with a turn the orchestrator has already closed — or,
+   * when the prompt never reached the child at all, with one that never ran.
+   */
+  const clearActiveTurn = (ctx: PiSessionContext, turnId: TurnId) =>
+    Effect.gen(function* () {
+      ctx.turnSettled = undefined;
+      if (ctx.activeTurnId === turnId) ctx.activeTurnId = undefined;
+      const { activeTurnId: _cleared, ...idleSession } = ctx.session;
+      ctx.session = { ...idleSession, updatedAt: yield* nowIso };
+    });
+
   const stopSessionInternal = (
     ctx: PiSessionContext,
     options?: {
@@ -563,20 +579,30 @@ export const makePiAdapter = Effect.fn("makePiAdapter")(function* (
         ...(ctx.session.model ? { payload: { model: ctx.session.model } } : { payload: {} }),
       });
 
-      yield* ctx.runtime
-        .send({ id: turnId, type: "prompt", message: prompt })
-        .pipe(Effect.mapError(mapTransportError(input.threadId, "prompt")));
+      // The turn is announced before the prompt goes out, so a send that
+      // fails has to retire it again — and tell anyone listening, who would
+      // otherwise be left waiting on a `turn.started` that never completes.
+      yield* ctx.runtime.send({ id: turnId, type: "prompt", message: prompt }).pipe(
+        Effect.mapError(mapTransportError(input.threadId, "prompt")),
+        Effect.tapError((error) =>
+          Effect.gen(function* () {
+            yield* clearActiveTurn(ctx, turnId);
+            yield* offerRuntimeEvent({
+              type: "turn.completed",
+              ...(yield* makeEventStamp()),
+              provider: PROVIDER,
+              providerInstanceId: boundInstanceId,
+              threadId: input.threadId,
+              turnId,
+              payload: { state: "failed", errorMessage: error.message },
+            });
+          }),
+        ),
+      );
 
       const outcome = yield* Deferred.await(settled);
-      ctx.turnSettled = undefined;
+      yield* clearActiveTurn(ctx, turnId);
       ctx.turns.push({ id: turnId, items: [{ prompt, outcome }] });
-      // Pi keeps the session alive between prompts and still emits records on
-      // it (a late `message_end`, an extension's chatter). Leaving the settled
-      // turn active would stamp those with a turn the orchestrator has already
-      // closed, so the id is dropped the moment the turn resolves.
-      if (ctx.activeTurnId === turnId) ctx.activeTurnId = undefined;
-      const { activeTurnId: _settledTurnId, ...idleSession } = ctx.session;
-      ctx.session = { ...idleSession, updatedAt: yield* nowIso };
 
       if (outcome.kind === "failed") {
         const stderr = (yield* ctx.runtime.stderr).trim();
