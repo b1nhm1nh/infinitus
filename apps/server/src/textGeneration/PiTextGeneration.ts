@@ -49,6 +49,9 @@ type PiTextGenerationOperation =
  * like a real conversation, and the project scanner then offers our own
  * internal prompts back to the user as importable history.
  *
+ * `--no-tools`: the prompt carries a diff nobody vetted, Pi has no permission
+ * gate, and writing a title needs no tool.
+ *
  * `pi-default` is our sentinel for "whatever Pi is configured to use", not a
  * slug Pi knows — passing it through fails the process with
  * `Model "pi-default" not found`, so the flag is omitted instead.
@@ -56,8 +59,8 @@ type PiTextGenerationOperation =
 export function piTextGenerationArgs(model: string | null | undefined): ReadonlyArray<string> {
   const trimmed = model?.trim();
   return trimmed && trimmed !== PI_DEFAULT_MODEL
-    ? ["-p", "--no-session", "--model", trimmed]
-    : ["-p", "--no-session"];
+    ? ["-p", "--no-session", "--no-tools", "--model", trimmed]
+    : ["-p", "--no-session", "--no-tools"];
 }
 
 /**

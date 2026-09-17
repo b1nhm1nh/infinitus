@@ -311,6 +311,82 @@ it.effect(
 );
 
 it.effect(
+  "fails the turn when the assistant message ends in an error",
+  () =>
+    Effect.gen(function* () {
+      const binaryPath = yield* Effect.promise(() => makeMockPi({ T3_PI_ERROR_STOP: "1" }));
+      const adapter = yield* makePiAdapter(decodePiSettings({ enabled: true, binaryPath }), {
+        instanceId: INSTANCE_ID,
+        environment: process.env,
+      });
+      const threadId = ThreadId.make("thread-error-stop");
+      const { events } = yield* collectEvents(adapter.streamEvents);
+      yield* adapter.startSession({
+        threadId,
+        provider: undefined,
+        cwd: process.cwd(),
+        runtimeMode: "full-access",
+      });
+      const result = yield* Effect.result(adapter.sendTurn({ threadId, input: "hello" }));
+      assert.strictEqual(result._tag, "Failure");
+      const completed = events.find((event) => event.type === "turn.completed");
+      assert.deepStrictEqual(completed?.payload, {
+        state: "failed",
+        errorMessage: "401 invalid api key",
+      });
+    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+  { timeout: 30_000 },
+);
+
+it.effect(
+  "sends an image-only turn with the image beside the text",
+  () =>
+    Effect.gen(function* () {
+      const binaryPath = yield* Effect.promise(() => makeMockPi());
+      const attachmentsDir = yield* Effect.promise(() =>
+        NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "pi-attachments-")),
+      );
+      yield* Effect.promise(() =>
+        NodeFSP.writeFile(NodePath.join(attachmentsDir, "shot-1.png"), "not really a png"),
+      );
+      const adapter = yield* makePiAdapter(decodePiSettings({ enabled: true, binaryPath }), {
+        instanceId: INSTANCE_ID,
+        environment: process.env,
+        attachmentsDir,
+      });
+      const threadId = ThreadId.make("thread-image");
+      const { events } = yield* collectEvents(adapter.streamEvents);
+      yield* adapter.startSession({
+        threadId,
+        provider: undefined,
+        cwd: process.cwd(),
+        runtimeMode: "full-access",
+      });
+      yield* adapter.sendTurn({
+        threadId,
+        attachments: [
+          {
+            type: "image",
+            id: "shot-1",
+            name: "shot.png",
+            mimeType: "image/png",
+            sizeBytes: 16,
+          },
+        ],
+      });
+      const message = events.find(
+        (event) =>
+          event.type === "item.completed" && event.payload.itemType === "assistant_message",
+      );
+      assert.strictEqual(
+        message?.type === "item.completed" ? message.payload.detail : undefined,
+        "IMAGES:1",
+      );
+    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+  { timeout: 30_000 },
+);
+
+it.effect(
   "surfaces a rejected prompt as a turn failure",
   () =>
     Effect.gen(function* () {

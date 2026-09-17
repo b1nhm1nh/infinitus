@@ -27,6 +27,9 @@ const emitThinking = process.env.T3_PI_EMIT_THINKING === "1";
 const failPrompt = process.env.T3_PI_FAIL_PROMPT === "1";
 const exitOnPrompt = process.env.T3_PI_EXIT_ON_PROMPT === "1";
 const hangPrompt = process.env.T3_PI_HANG_PROMPT === "1";
+/** Ends the assistant message with `stopReason: "error"`, the way a model
+ * API failure does; `agent_settled` still follows. */
+const errorStop = process.env.T3_PI_ERROR_STOP === "1";
 const stderrMessage = process.env.T3_PI_STDERR_MESSAGE;
 const responseText = process.env.T3_PI_RESPONSE_TEXT ?? "DONE";
 /** Emits a payload containing U+2028, which a non-LF-only reader corrupts. */
@@ -121,12 +124,13 @@ const emitAssistantText = (text: string) => {
     message: {
       ...assistantHeader(),
       content: [{ type: "text", text }],
-      stopReason: aborted ? "aborted" : "stop",
+      stopReason: aborted ? "aborted" : errorStop ? "error" : "stop",
+      ...(errorStop && !aborted ? { errorMessage: "401 invalid api key" } : {}),
     },
   });
 };
 
-const runPrompt = (message: string) => {
+const runPrompt = (message: string, imageCount: number) => {
   running = true;
   write({ type: "agent_start" });
   write({ type: "turn_start" });
@@ -182,7 +186,13 @@ const runPrompt = (message: string) => {
     write({ type: "turn_start" });
   }
 
-  emitAssistantText(emitSeparatorText ? `${responseText}\u2028tail` : responseText);
+  emitAssistantText(
+    emitSeparatorText
+      ? `${responseText}\u2028tail`
+      : imageCount > 0
+        ? `IMAGES:${imageCount}`
+        : responseText,
+  );
   write({ type: "turn_end" });
   write({ type: "agent_end", willRetry: false });
   write({ type: "agent_settled" });
@@ -211,7 +221,7 @@ process.stdin.on("data", (chunk: Buffer) => {
 });
 
 function handleLine(line: string) {
-  let command: { id?: string; type?: string; message?: string };
+  let command: { id?: string; type?: string; message?: string; images?: Array<unknown> };
   try {
     command = JSON.parse(line);
   } catch (error) {
@@ -244,7 +254,7 @@ function handleLine(line: string) {
         running = true;
         return;
       }
-      runPrompt(command.message ?? "");
+      runPrompt(command.message ?? "", command.images?.length ?? 0);
       return;
     }
     case "abort": {

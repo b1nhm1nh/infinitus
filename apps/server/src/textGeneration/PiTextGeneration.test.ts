@@ -13,14 +13,15 @@ describe("piTextGenerationArgs", () => {
   });
 
   it("omits the sentinel default model, which Pi does not know", () => {
-    expect(piTextGenerationArgs(PI_DEFAULT_MODEL)).toEqual(["-p", "--no-session"]);
-    expect(piTextGenerationArgs("  ")).toEqual(["-p", "--no-session"]);
+    expect(piTextGenerationArgs(PI_DEFAULT_MODEL)).toEqual(["-p", "--no-session", "--no-tools"]);
+    expect(piTextGenerationArgs("  ")).toEqual(["-p", "--no-session", "--no-tools"]);
   });
 
   it("passes a real model through", () => {
     expect(piTextGenerationArgs("zai/glm-5.3")).toEqual([
       "-p",
       "--no-session",
+      "--no-tools",
       "--model",
       "zai/glm-5.3",
     ]);

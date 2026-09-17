@@ -27,6 +27,7 @@ import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Fiber from "effect/Fiber";
+import * as FileSystem from "effect/FileSystem";
 import * as Option from "effect/Option";
 import * as PubSub from "effect/PubSub";
 import * as Schema from "effect/Schema";
@@ -34,6 +35,7 @@ import * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
 import { ChildProcessSpawner } from "effect/unstable/process";
 
+import { resolveAttachmentPath } from "../../attachmentStore.ts";
 import {
   ProviderAdapterProcessError,
   ProviderAdapterRequestError,
@@ -77,6 +79,8 @@ export interface PiAdapterOptions {
   readonly instanceId?: ProviderInstanceId;
   readonly environment?: NodeJS.ProcessEnv;
   readonly nativeEventLogger?: EventNdjsonLogger;
+  /** Where chat attachments live. Without it image attachments are not sent. */
+  readonly attachmentsDir?: string;
 }
 
 interface PiSessionContext {
@@ -89,6 +93,12 @@ interface PiSessionContext {
   activeTurnId: TurnId | undefined;
   /** Settles when Pi emits `agent_settled` for the turn in flight. */
   turnSettled: Deferred.Deferred<PiTurnOutcome> | undefined;
+  /**
+   * How the latest assistant message of the run ended. Read only at
+   * `agent_settled`: an errored message may still be retried, and an aborted
+   * one leaves Pi busy until it settles.
+   */
+  lastAssistantStop: PiTurnOutcome;
   /** Live tool calls by Pi's `toolCallId`, so `_end` can close the right item. */
   readonly openToolCalls: Map<string, string>;
   readonly turns: Array<{ id: TurnId; items: Array<unknown> }>;
@@ -107,6 +117,7 @@ export const makePiAdapter = Effect.fn("makePiAdapter")(function* (
   const boundInstanceId = options?.instanceId ?? ProviderInstanceId.make("pi");
   const childProcessSpawner = yield* ChildProcessSpawner.ChildProcessSpawner;
   const crypto = yield* Crypto.Crypto;
+  const fileSystem = yield* FileSystem.FileSystem;
   const nativeEventLogger = options?.nativeEventLogger;
   const sessions = new Map<ThreadId, PiSessionContext>();
   const runtimeEventPubSub = yield* PubSub.unbounded<ProviderRuntimeEvent>();
@@ -302,9 +313,15 @@ export const makePiAdapter = Effect.fn("makePiAdapter")(function* (
               payload: { itemType: "assistant_message", status: "completed", detail: text },
             });
           }
-          if (record.message.stopReason === "aborted") {
-            yield* settleTurn(ctx, { kind: "aborted" });
-          }
+          ctx.lastAssistantStop =
+            record.message.stopReason === "aborted"
+              ? { kind: "aborted" }
+              : record.message.stopReason === "error"
+                ? {
+                    kind: "failed",
+                    message: record.message.errorMessage ?? "Pi reported a model error.",
+                  }
+                : { kind: "completed" };
           return;
         }
 
@@ -324,9 +341,11 @@ export const makePiAdapter = Effect.fn("makePiAdapter")(function* (
         // that fires per low-level agent run and may still be followed by an
         // automatic retry, a compaction retry, or a queued message. A
         // tool-using turn emits two `turn_end`s for one prompt, so keying on
-        // either would settle the turn while work was still running.
+        // either would settle the turn while work was still running. An
+        // aborted `message_end` does not settle it either: Pi refuses the
+        // next prompt until this event, which always follows.
         case "agent_settled": {
-          yield* settleTurn(ctx, { kind: "completed" });
+          yield* settleTurn(ctx, ctx.lastAssistantStop);
           return;
         }
 
@@ -472,6 +491,7 @@ export const makePiAdapter = Effect.fn("makePiAdapter")(function* (
         recordFiber: undefined,
         activeTurnId: undefined,
         turnSettled: undefined,
+        lastAssistantStop: { kind: "completed" },
         openToolCalls: new Map(),
         turns: [],
         stopped: false,
@@ -539,11 +559,44 @@ export const makePiAdapter = Effect.fn("makePiAdapter")(function* (
     Effect.gen(function* () {
       const ctx = yield* requireSession(input.threadId);
       const prompt = input.input?.trim() ?? "";
-      if (prompt.length === 0) {
+      // Pi's `prompt` takes images beside the text. Other files reach it
+      // through the path line ProviderService puts in the prompt.
+      const images: Array<{ type: "image"; data: string; mimeType: string }> = [];
+      for (const attachment of options?.attachmentsDir ? (input.attachments ?? []) : []) {
+        if (attachment.type !== "image") continue;
+        const attachmentPath = resolveAttachmentPath({
+          attachmentsDir: options?.attachmentsDir ?? "",
+          attachment,
+        });
+        if (!attachmentPath) {
+          return yield* new ProviderAdapterRequestError({
+            provider: PROVIDER,
+            method: "prompt",
+            detail: `Invalid attachment id '${attachment.id}'.`,
+          });
+        }
+        const bytes = yield* fileSystem.readFile(attachmentPath).pipe(
+          Effect.mapError(
+            (cause) =>
+              new ProviderAdapterRequestError({
+                provider: PROVIDER,
+                method: "prompt",
+                detail: cause.message,
+                cause,
+              }),
+          ),
+        );
+        images.push({
+          type: "image",
+          data: Buffer.from(bytes).toString("base64"),
+          mimeType: attachment.mimeType,
+        });
+      }
+      if (prompt.length === 0 && images.length === 0) {
         return yield* new ProviderAdapterValidationError({
           provider: PROVIDER,
           operation: "sendTurn",
-          issue: "Turn requires non-empty text.",
+          issue: "Turn requires non-empty text or an image.",
         });
       }
 
@@ -551,6 +604,7 @@ export const makePiAdapter = Effect.fn("makePiAdapter")(function* (
       const settled = yield* Deferred.make<PiTurnOutcome>();
       ctx.activeTurnId = turnId;
       ctx.turnSettled = settled;
+      ctx.lastAssistantStop = { kind: "completed" };
       ctx.session = { ...ctx.session, activeTurnId: turnId, updatedAt: yield* nowIso };
 
       yield* offerRuntimeEvent({
@@ -564,7 +618,12 @@ export const makePiAdapter = Effect.fn("makePiAdapter")(function* (
       });
 
       yield* ctx.runtime
-        .send({ id: turnId, type: "prompt", message: prompt })
+        .send({
+          id: turnId,
+          type: "prompt",
+          message: prompt,
+          ...(images.length > 0 ? { images } : {}),
+        })
         .pipe(Effect.mapError(mapTransportError(input.threadId, "prompt")));
 
       const outcome = yield* Deferred.await(settled);
@@ -630,7 +689,7 @@ export const makePiAdapter = Effect.fn("makePiAdapter")(function* (
    * that: `send` only enqueues the command onto the unbounded stdin queue and
    * returns, so the caller is never blocked. Streaming stops on Pi's side and
    * the turn's `message_end` carries `stopReason: "aborted"`, so the turn
-   * settles through the record stream like any other outcome.
+   * settles as aborted at `agent_settled`, like any other outcome.
    */
   const interruptTurn: PiAdapterShape["interruptTurn"] = (threadId) =>
     Effect.gen(function* () {

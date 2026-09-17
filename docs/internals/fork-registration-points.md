@@ -24,7 +24,8 @@ pages under `docs/internals/` keep taking narratives out of these bullets.
   `apps/mobile/src/components/ProviderIcon.tsx` (its own `pi` branch);
   `packages/contracts/src/agentSessions.ts` (`"pi"` on `AgentSessionSource`),
   `apps/server/src/project/AgentSessionScanner.ts` (`discoverPiTranscripts`
-  plus the `pi` arms of the parse, retain and home-resolution paths) and
+  plus the `pi` arms of the parse, retain and home-resolution paths),
+  `AgentSessionImporter.ts` (Pi's resume cursor shape, with omp's) and
   `apps/web/src/components/onboarding/WelcomeWizard.tsx` (the wizard's third
   source-icon slot); `apps/server/src/provider/Layers/ProviderRegistry.test.ts`
   (its list of every built-in instance id — a new driver fails the suite until

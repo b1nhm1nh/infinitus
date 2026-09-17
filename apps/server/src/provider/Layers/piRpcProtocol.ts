@@ -74,6 +74,7 @@ const PiMessage = Schema.Struct({
   model: Schema.optional(Schema.String),
   usage: Schema.optional(PiUsage),
   stopReason: Schema.optional(Schema.String),
+  errorMessage: Schema.optional(Schema.String),
   toolCallId: Schema.optional(Schema.String),
   toolName: Schema.optional(Schema.String),
   isError: Schema.optional(Schema.Boolean),

@@ -33,6 +33,14 @@ describe("parsePiModelsCliOutput", () => {
     });
   });
 
+  it("reads Pi's signed-out message as unauthenticated, not as a model", () => {
+    expect(
+      parsePiModelsCliOutput(
+        "No models available. Use /login to log into a provider via OAuth or API key.",
+      ),
+    ).toEqual({ authenticated: false, models: [] });
+  });
+
   it("drops a short or malformed row without losing the rest", () => {
     const parsed = parsePiModelsCliOutput(
       ["provider  model", "anthropic  claude-opus-5  1M", "garbage", "zai  glm-5.3  200K"].join(

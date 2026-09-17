@@ -8,7 +8,8 @@ const EMPTY_CAPABILITIES: ModelCapabilities = createModelCapabilities({ optionDe
  *
  * Pi prints a fixed-width table rather than JSON — there is no `--json` on this
  * subcommand — so the header names the columns and every later line is one
- * model. Only `provider` and `model` are read; the remaining columns
+ * model. Nothing before the header is a row: signed out, Pi exits 0 and
+ * prints only "No models available. Use /login …". Only `provider` and `model` are read; the remaining columns
  * (`context`, `max-out`, `thinking`, `images`) are display detail T3 gets from
  * the session instead.
  *
@@ -30,9 +31,13 @@ export function parsePiModelsCliOutput(output: string): PiModelsCliOutput {
 
   const models: ServerProviderModel[] = [];
   const seen = new Set<string>();
+  let headerSeen = false;
   for (const line of lines) {
-    // Skip the header and any prose the CLI prints around the table.
-    if (line.toLowerCase().startsWith(HEADER_PREFIX)) continue;
+    if (line.toLowerCase().startsWith(HEADER_PREFIX)) {
+      headerSeen = true;
+      continue;
+    }
+    if (!headerSeen) continue;
     const columns = line.split(/\s+/);
     if (columns.length < 2) continue;
     const [provider, model] = columns;

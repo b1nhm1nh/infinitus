@@ -14,7 +14,8 @@ variable and, left alone, the same `~/.pi/agent` session store. Nothing about
 the ACP adapters transfers here, and an ambient `PI_CODING_AGENT_DIR` set for
 one of the two would silently redirect the other — `piRpcEnvironment` strips
 the inherited variable and re-sets it only from the instance's own configured
-home.
+home. The driver applies it once to the environment every Pi process gets, so
+the probe and the one-shot runs read the same home as the session.
 
 ## Framing: LF and nothing else
 
@@ -64,9 +65,15 @@ Pi answers `abort` only once the session has gone idle — its own docs say the
 command waits for that, and a live run took 14 seconds. The abort itself
 works immediately: streaming stops and the turn's `message_end` carries
 `stopReason: "aborted"`. So `interruptTurn` fires the command and does not
-await the acknowledgement; the turn settles through the record stream like
-any other outcome. Awaiting it would block the caller for the rest of the
-turn, which is the opposite of interrupting.
+await the acknowledgement. Awaiting it would block the caller for the rest of
+the turn, which is the opposite of interrupting.
+
+No `message_end` settles a turn, only `agent_settled`, which Pi always emits
+last. After an aborted message Pi is still busy and refuses the next prompt;
+after an errored one (`stopReason: "error"`, with `errorMessage`) it may
+retry. The adapter remembers how the latest assistant message ended and reads
+that at `agent_settled`, so a model or auth failure is a failed turn instead
+of an empty completed one.
 
 ## No permission system
 
@@ -91,11 +98,15 @@ One-shot runs (`pi -p`, used for commit messages and thread titles) pass
 `--no-session`. Pi otherwise writes them into `sessions/<cwd>/` exactly like a
 real conversation, and the project scanner then offers our own internal
 prompts back to the user as importable history — found by scanning a copy of a
-real `~/.pi/agent`, which held eight "Generate a title…" transcripts.
+real `~/.pi/agent`, which held eight "Generate a title…" transcripts. They
+also pass `--no-tools`: the prompt carries an unvetted diff and Pi has no
+permission gate.
 
 Auth has no verb to ask: Pi lists a model in `--list-models` only once its
 provider has usable credentials, so a non-empty catalogue **is** the auth
-signal. The corollary is that an _empty_ catalogue only means "signed out"
+signal. Signed out, Pi still exits 0 and prints one line of prose ("No models
+available. Use /login …"), so the parser reads rows only below the table
+header. The corollary is that an _empty_ catalogue only means "signed out"
 when the listing actually ran — a probe that failed or timed out reports
 `auth: "unknown"`, the way the other providers do, rather than telling a
 signed-in user to sign in because their network was slow.
