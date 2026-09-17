@@ -292,7 +292,7 @@ function applyRequestedSessionConfiguration<E>(input: {
   });
 }
 
-export function selectOmpPermissionOptionId(
+function selectOmpPermissionOptionId(
   request: EffectAcpSchema.RequestPermissionRequest,
   decision: Exclude<ProviderApprovalDecision, "cancel">,
 ): string | undefined {
