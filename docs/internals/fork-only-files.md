@@ -397,7 +397,7 @@ these bullets.
   slots picked from the proxy's `GET <baseUrl>/models`, everything stored on
   the ordinary instance (env vars + CLAUDE_CONFIG_DIR), no settings file written.
 - `apps/server/src/provider/Drivers/PiDriver.ts`,
-  `provider/Services/PiAdapter.ts`, `provider/Layers/{PiAdapter,PiProvider,PiSessionRuntime,piRpcProtocol,piModels.logic}.ts`
+  `provider/Services/PiAdapter.ts`, `provider/Layers/{PiAdapter,PiProvider,PiSessionRuntime,piRpcProtocol,piHomeEnvironment,piModels.logic}.ts`
   (+ tests), `apps/server/src/textGeneration/PiTextGeneration.ts`,
   `apps/server/scripts/pi-rpc-mock-agent.ts` — the Pi provider: the one
   shipped driver speaking neither ACP nor an app-server protocol, but Pi's
