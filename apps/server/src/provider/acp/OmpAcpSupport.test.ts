@@ -149,6 +149,36 @@ describe("applyOmpAcpModelSelection", () => {
       expect(calls).toEqual([{ configId: "thinking", value: "high" }]);
     }),
   );
+
+  it.effect("sets thinking again when the model switch reset it", () =>
+    Effect.gen(function* () {
+      const calls: Array<{ readonly configId: string; readonly value: string | boolean }> = [];
+      let options = ompConfigOptions;
+      yield* applyOmpAcpModelSelection({
+        runtime: {
+          getConfigOptions: Effect.sync(() => options),
+          setConfigOption: (configId: string, value: string | boolean) =>
+            Effect.sync(() => {
+              calls.push({ configId, value });
+              if (configId === "model") {
+                options = options.map((option) =>
+                  option.type === "select" && option.id === "thinking"
+                    ? { ...option, currentValue: "low" }
+                    : option,
+                );
+              }
+            }),
+        },
+        model: "google-antigravity/claude-sonnet-4-6",
+        selections: [{ id: "thinking", value: "medium" }],
+        mapError: ({ cause }) => cause.message,
+      });
+      expect(calls).toEqual([
+        { configId: "model", value: "google-antigravity/claude-sonnet-4-6" },
+        { configId: "thinking", value: "medium" },
+      ]);
+    }),
+  );
 });
 
 describe("isBareSlashCommand", () => {

@@ -151,9 +151,12 @@ export function applyOmpAcpModelSelection<E>(input: {
     }
 
     const requestedThinking = getProviderOptionStringSelectionValue(input.selections, "thinking");
+    // Read again: a model switch answers with fresh options, and the new
+    // model may not keep the thinking level the old one had.
+    const currentOptions = yield* input.runtime.getConfigOptions;
     const thinkingOption =
-      configOptions.find((option) => option.id.trim() === "thinking") ??
-      configOptions.find((option) => option.category === "thought_level");
+      currentOptions.find((option) => option.id.trim() === "thinking") ??
+      currentOptions.find((option) => option.category === "thought_level");
     if (
       requestedThinking !== undefined &&
       thinkingOption &&
