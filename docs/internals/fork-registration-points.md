@@ -26,7 +26,11 @@ pages under `docs/internals/` keep taking narratives out of these bullets.
   `apps/server/src/project/AgentSessionScanner.ts` (`discoverPiTranscripts`
   plus the `pi` arms of the parse, retain and home-resolution paths) and
   `apps/web/src/components/onboarding/WelcomeWizard.tsx` (the wizard's third
-  source-icon slot). Rules and traps: `docs/internals/pi-driver.md`.
+  source-icon slot); `apps/server/src/provider/Layers/ProviderRegistry.test.ts`
+  (its list of every built-in instance id — a new driver fails the suite until
+  it is listed) and `knip.jsonc` (`scripts/pi-rpc-mock-agent.ts` as an
+  `apps/server` entry: its test spawns it by path, so nothing reaches it
+  statically). Rules and traps: `docs/internals/pi-driver.md`.
 - `packages/contracts/src/rpc.ts` — `subscribeInfinitus` and
   `infinitus.command` in `WS_METHODS`, their two `Rpc.make`s, both in
   `WsRpcGroup`; `provider.proxyModels` (the add-instance wizard lists an
