@@ -74,6 +74,8 @@ const makeProjectionSnapshotQueryLayer = (importedWorkspaceRoots: ReadonlyArray<
 interface ScannerTestInput {
   readonly claudeHomePath: string;
   readonly codexHomePath: string;
+  /** Enables the omp instance and points it at this `PI_CODING_AGENT_DIR`. */
+  readonly ompHomePath?: string;
   readonly importedWorkspaceRoots?: ReadonlyArray<string>;
   /** Base dir for the test ServerConfig; worktreesDir derives from it. */
   readonly configBaseDir?: string;
@@ -88,9 +90,26 @@ const makeScannerTestLayer = (input: ScannerTestInput) =>
           providers: {
             claudeAgent: { homePath: input.claudeHomePath },
             codex: { homePath: input.codexHomePath },
+            ...(input.ompHomePath === undefined ? {} : { omp: { enabled: true } }),
           },
           ...(input.providerInstances === undefined
-            ? {}
+            ? input.ompHomePath === undefined
+              ? {}
+              : {
+                  providerInstances: {
+                    [ProviderInstanceId.make("omp")]: {
+                      driver: ProviderDriverKind.make("omp"),
+                      environment: [
+                        {
+                          name: "PI_CODING_AGENT_DIR",
+                          value: input.ompHomePath,
+                          sensitive: false,
+                        },
+                      ],
+                      config: { enabled: true },
+                    },
+                  },
+                }
             : { providerInstances: input.providerInstances }),
         }),
         ServerConfig.layerTest(
@@ -151,6 +170,10 @@ const claudeSessionLine = (cwd: string) =>
 /** Codex rollout line: session metadata is nested under `payload`. */
 const codexRolloutLine = (cwd: string) =>
   `${JSON.stringify({ timestamp: "2026-01-01T00:00:00.000Z", type: "session_meta", payload: { id: "r1", cwd } })}\n`;
+
+const OMP_SESSION_ID = "01a09f4b-0797-707f-9201-691a923d8fa1";
+const ompTranscriptFilename = (sessionId = OMP_SESSION_ID) =>
+  `2026-09-14T09-41-29-623Z_${sessionId}.jsonl`;
 
 const encodeTranscriptRecord = Schema.encodeUnknownSync(Schema.fromJsonString(Schema.Unknown));
 
@@ -280,6 +303,72 @@ it.layer(NodeServices.layer)("AgentSessionScanner", (it) => {
             git: null,
           },
         ]);
+      }),
+    );
+
+    it.effect("groups Oh My Pi transcripts by cwd from the session record", () =>
+      Effect.gen(function* () {
+        const path = yield* Path.Path;
+        const claudeHomePath = yield* makeTempDir("t3code-claude-home-");
+        const codexHomePath = yield* makeTempDir("t3code-codex-home-");
+        const ompHomePath = yield* makeTempDir("t3code-omp-home-");
+        const workspace = yield* makeTempDir("t3code-workspace-omp-");
+
+        yield* writeTranscript({
+          filePath: path.join(
+            ompHomePath,
+            "sessions",
+            "--Volumes-work-git-test--",
+            ompTranscriptFilename(),
+          ),
+          contents: [
+            encodeTranscriptRecord({
+              type: "title",
+              v: 1,
+              title: "Setup Vaultwarden and TOTP Guide",
+            }),
+            encodeTranscriptRecord({
+              type: "session",
+              version: 3,
+              id: OMP_SESSION_ID,
+              timestamp: "2026-09-14T09:41:29.623Z",
+              cwd: workspace,
+              title: "Setup Vaultwarden and TOTP Guide",
+            }),
+          ].join("\n"),
+          mtimeMs: Date.parse("2026-09-14T09:41:29.000Z"),
+        });
+
+        const result = yield* runScan({ claudeHomePath, codexHomePath, ompHomePath });
+
+        expect(result.candidates).toEqual([
+          {
+            path: workspace,
+            title: path.basename(workspace),
+            sources: ["omp"],
+            threadCount: 1,
+            lastActiveAt: "2026-09-14T09:41:29.000Z",
+            alreadyImported: false,
+            git: null,
+          },
+        ]);
+      }),
+    );
+
+    it.effect("does not produce a candidate from an empty Oh My Pi bucket", () =>
+      Effect.gen(function* () {
+        const path = yield* Path.Path;
+        const fileSystem = yield* FileSystem.FileSystem;
+        const claudeHomePath = yield* makeTempDir("t3code-claude-home-");
+        const codexHomePath = yield* makeTempDir("t3code-codex-home-");
+        const ompHomePath = yield* makeTempDir("t3code-omp-empty-");
+        yield* fileSystem.makeDirectory(path.join(ompHomePath, "sessions", "--empty--"), {
+          recursive: true,
+        });
+
+        const result = yield* runScan({ claudeHomePath, codexHomePath, ompHomePath });
+
+        expect(result.candidates).toEqual([]);
       }),
     );
 
@@ -1374,6 +1463,102 @@ it.layer(NodeServices.layer)("AgentSessionScanner", (it) => {
   });
 
   describe("recentThreads", () => {
+    it.effect("imports Oh My Pi session id, later title, and visible messages only", () =>
+      Effect.gen(function* () {
+        const path = yield* Path.Path;
+        const nowMs = Date.parse("2026-09-14T12:00:00.000Z");
+        yield* TestClock.setTime(nowMs);
+        const claudeHomePath = yield* makeTempDir("t3code-claude-home-");
+        const codexHomePath = yield* makeTempDir("t3code-codex-home-");
+        const ompHomePath = yield* makeTempDir("t3code-omp-home-");
+        const workspace = yield* makeTempDir("t3code-workspace-omp-");
+        yield* writeTranscript({
+          filePath: path.join(
+            ompHomePath,
+            "sessions",
+            "--Volumes-work-git-test--",
+            ompTranscriptFilename(),
+          ),
+          contents: [
+            encodeTranscriptRecord({
+              type: "title",
+              v: 1,
+              title: "Setup Vaultwarden and TOTP Guide",
+            }),
+            encodeTranscriptRecord({
+              type: "session",
+              version: 3,
+              timestamp: "2026-09-14T09:41:29.623Z",
+              cwd: workspace,
+              title: "Setup Vaultwarden and TOTP Guide",
+            }),
+            encodeTranscriptRecord({
+              type: "model_change",
+              model: "google-antigravity/gemini-3.1-pro",
+            }),
+            encodeTranscriptRecord({
+              type: "title_change",
+              title: "Install and test DonutBrowser sync",
+            }),
+            encodeTranscriptRecord({
+              type: "custom_message",
+              customType: "system",
+              display: false,
+              content: "Injected system reminder",
+            }),
+            encodeTranscriptRecord({
+              type: "message",
+              timestamp: "2026-09-14T09:42:00.000Z",
+              message: {
+                role: "user",
+                attribution: "user",
+                content: [{ type: "text", text: "Set up Vaultwarden" }],
+              },
+            }),
+            encodeTranscriptRecord({
+              type: "message",
+              timestamp: "2026-09-14T09:42:05.000Z",
+              message: { role: "toolResult", content: [{ type: "text", text: "tool output" }] },
+            }),
+            encodeTranscriptRecord({
+              type: "message",
+              timestamp: "2026-09-14T09:42:10.000Z",
+              message: {
+                role: "assistant",
+                model: "gemini-3.1-pro",
+                content: [{ type: "text", text: "Vaultwarden is ready" }],
+              },
+            }),
+          ].join("\n"),
+          mtimeMs: nowMs,
+        });
+
+        const threads = yield* runRecentThreads({
+          claudeHomePath,
+          codexHomePath,
+          ompHomePath,
+          workspaceRoot: workspace,
+        });
+
+        expect(threads).toMatchObject([
+          {
+            source: "omp",
+            providerSessionId: OMP_SESSION_ID,
+            title: "Install and test DonutBrowser sync",
+            model: "google-antigravity/gemini-3.1-pro",
+            messages: [
+              { role: "user", text: "Set up Vaultwarden" },
+              { role: "assistant", text: "Vaultwarden is ready" },
+            ],
+          },
+        ]);
+        expect(threads[0]?.messages.some((message) => message.text.includes("Injected"))).toBe(
+          false,
+        );
+        expect(threads[0]?.messages.some((message) => message.text === "tool output")).toBe(false);
+      }),
+    );
+
     it.effect.each([false, true])(
       "counts terminal newlines correctly with record overflow=%s",
       (overflow) =>
@@ -2687,6 +2872,71 @@ describe("parseAgentSessionTranscript", () => {
         { role: "user", text: "Fix authentication" },
         { role: "assistant", text: "Updated the login flow" },
         { role: "assistant", text: "The provider request failed" },
+      ],
+    });
+  });
+
+  it("keeps Oh My Pi user and assistant text while dropping custom_message and toolResult", () => {
+    const thread = AgentSessionScanner.parseAgentSessionTranscript({
+      contents: [
+        encodeTranscriptRecord({
+          type: "title",
+          title: "Setup Vaultwarden and TOTP Guide",
+        }),
+        encodeTranscriptRecord({
+          type: "session",
+          id: OMP_SESSION_ID,
+          cwd: "/Volumes/work/git/test",
+          title: "Setup Vaultwarden and TOTP Guide",
+        }),
+        encodeTranscriptRecord({
+          type: "model_change",
+          model: "google-antigravity/gemini-3.1-pro",
+        }),
+        encodeTranscriptRecord({
+          type: "title_change",
+          title: "Install and test DonutBrowser sync",
+        }),
+        encodeTranscriptRecord({
+          type: "custom_message",
+          customType: "system",
+          display: false,
+          content: "Injected system reminder",
+        }),
+        encodeTranscriptRecord({
+          type: "message",
+          timestamp: "2026-09-14T09:42:00.000Z",
+          message: {
+            role: "user",
+            content: [{ type: "text", text: "Set up Vaultwarden" }],
+          },
+        }),
+        encodeTranscriptRecord({
+          type: "message",
+          message: { role: "toolResult", content: [{ type: "text", text: "tool output" }] },
+        }),
+        encodeTranscriptRecord({
+          type: "message",
+          timestamp: "2026-09-14T09:42:10.000Z",
+          message: {
+            role: "assistant",
+            content: [{ type: "text", text: "Vaultwarden is ready" }],
+          },
+        }),
+      ].join("\n"),
+      source: "omp",
+      providerInstanceId: ProviderInstanceId.make("omp"),
+      fallbackSessionId: OMP_SESSION_ID,
+      lastActiveAtMs: Date.parse("2026-09-14T12:00:00.000Z"),
+    });
+
+    expect(thread).toMatchObject({
+      providerSessionId: OMP_SESSION_ID,
+      title: "Install and test DonutBrowser sync",
+      model: "google-antigravity/gemini-3.1-pro",
+      messages: [
+        { role: "user", text: "Set up Vaultwarden" },
+        { role: "assistant", text: "Vaultwarden is ready" },
       ],
     });
   });

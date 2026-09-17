@@ -98,12 +98,15 @@ computer.
 | Cursor      | Install [Cursor CLI](https://cursor.com/cli), then run `agent login`.                        |
 | Grok Build  | Install [Grok Build CLI](https://x.ai/cli), then run `grok login`.                           |
 | OpenCode    | Install [OpenCode](https://opencode.ai), then run `opencode auth login`.                     |
+| Oh My Pi    | Install [Oh My Pi](https://github.com/oh-my-pi/oh-my-pi), then run `omp` once to sign in.    |
 | Antigravity | Install and sign in with Google from the provider settings.                                  |
 
 Provider CLIs must be on the server's `PATH`. If Infinitus cannot find one, set its
 **Binary path** in provider settings, especially when using a version manager.
 Cursor's executable is `cursor-agent`, although its login command is
 `agent login`. Antigravity can use its managed runtime without a `PATH` entry.
+Oh My Pi's executable is `omp`; it signs in through its own terminal UI, so run
+it once by hand before enabling the provider.
 
 When a provider CLI is behind its latest release, its provider card shows the
 available version. **Update now** appears only when Infinitus can tell which
