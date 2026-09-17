@@ -77,7 +77,9 @@ last. After an aborted message Pi is still busy and refuses the next prompt;
 after an errored one (`stopReason: "error"`, with `errorMessage`) it may
 retry. The adapter remembers how the latest assistant message ended and reads
 that at `agent_settled`, so a model or auth failure is a failed turn instead
-of an empty completed one.
+of an empty completed one. The cost is that `turn.aborted` waits for Pi's
+wind-down too; reporting it earlier would let the user send a prompt Pi
+refuses.
 
 ## No permission system
 

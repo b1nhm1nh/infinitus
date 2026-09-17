@@ -17,7 +17,8 @@
  *     tool results, not only for assistant output.
  *   - a tool-using prompt emits TWO `turn_start`/`turn_end` pairs.
  *   - `agent_end` precedes `agent_settled`; only the latter means Pi stopped.
- *   - `abort` is acknowledged only after the turn has wound down.
+ *   - `abort` is acknowledged only after the turn has wound down, and a
+ *     prompt sent before `agent_settled` is refused as already processing.
  */
 import * as NodeFS from "node:fs";
 
@@ -132,6 +133,7 @@ const emitAssistantText = (text: string) => {
 
 const runPrompt = (message: string, imageCount: number) => {
   running = true;
+  aborted = false;
   write({ type: "agent_start" });
   write({ type: "turn_start" });
   write({ type: "message_start", message: userMessage(message) });
@@ -249,8 +251,19 @@ function handleLine(line: string) {
       if (exitOnPrompt) {
         process.exit(3);
       }
+      if (running) {
+        write({
+          id: command.id,
+          type: "response",
+          command: "prompt",
+          success: false,
+          error: "Agent is already processing.",
+        });
+        return;
+      }
       write({ id: command.id, type: "response", command: "prompt", success: true });
-      if (hangPrompt) {
+      // Only the first prompt hangs, so a test can prompt again after aborting it.
+      if (hangPrompt && !aborted) {
         running = true;
         return;
       }
@@ -260,13 +273,17 @@ function handleLine(line: string) {
     case "abort": {
       aborted = true;
       if (running) {
-        // Pi acknowledges `abort` only once the session is idle, so the wind-down
-        // is emitted first and the response comes last.
+        // Streaming stops at once, but Pi stays busy until `agent_settled`
+        // and acknowledges `abort` only after it, so the response comes last.
         emitAssistantText("");
-        write({ type: "turn_end" });
-        write({ type: "agent_end", willRetry: false });
-        write({ type: "agent_settled" });
-        running = false;
+        setTimeout(() => {
+          write({ type: "turn_end" });
+          write({ type: "agent_end", willRetry: false });
+          write({ type: "agent_settled" });
+          running = false;
+          write({ id: command.id, type: "response", command: "abort", success: true });
+        }, 150);
+        return;
       }
       write({ id: command.id, type: "response", command: "abort", success: true });
       return;

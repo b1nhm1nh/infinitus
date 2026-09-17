@@ -570,6 +570,41 @@ it.effect(
 );
 
 it.effect(
+  "keeps an aborted turn open until Pi settles, so the next prompt is accepted",
+  () =>
+    Effect.gen(function* () {
+      // Pi refuses a prompt until `agent_settled`, which trails the aborted
+      // `message_end`. Settling on the message would send the follow-up early.
+      const binaryPath = yield* Effect.promise(() => makeMockPi({ T3_PI_HANG_PROMPT: "1" }));
+      const adapter = yield* makePiAdapter(decodePiSettings({ enabled: true, binaryPath }), {
+        instanceId: INSTANCE_ID,
+        environment: process.env,
+      });
+      const threadId = ThreadId.make("thread-pi-abort-then-prompt");
+      const { events, fiber } = yield* collectEvents(adapter.streamEvents);
+      yield* adapter.startSession({
+        threadId,
+        provider: undefined,
+        cwd: process.cwd(),
+        runtimeMode: "full-access",
+      });
+      const turnFiber = yield* Effect.forkChild(adapter.sendTurn({ threadId, input: "hello" }));
+      yield* Effect.promise(() => new Promise((resolve) => setTimeout(resolve, 300)));
+      yield* adapter.interruptTurn(threadId);
+      yield* Fiber.join(turnFiber);
+
+      const second = yield* adapter.sendTurn({ threadId, input: "again" });
+      yield* Fiber.interrupt(fiber);
+
+      const completed = events.find(
+        (event) => event.type === "turn.completed" && event.turnId === second.turnId,
+      );
+      assert.deepStrictEqual(completed?.payload, { state: "completed" });
+    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+  { timeout: 30_000 },
+);
+
+it.effect(
   "does not stamp a settled turn's id onto records that arrive after it",
   () =>
     Effect.gen(function* () {
