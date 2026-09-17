@@ -59,7 +59,10 @@ Grok and enumeration waits on an upstream `--json` subcommand.
 `<ISO-ts>_<sessionId>.jsonl` — the id is the suffix after `_`, not the whole
 stem, which would carry the timestamp into the resume cursor. `custom_message`
 records are injected system reminders (`display: false`) and are not imported
-as user prose. `OmpSettings` has no home field, so the driver adds none.
+as user prose. `OmpSettings` has no home field, so the driver adds none. The
+importer writes the binding's cursor in the adapter's own shape
+(`{ schemaVersion, sessionId }`): every adapter parses only its own, and a
+cursor it cannot read starts a blank session without an error.
 
 ## Where the pieces live
 
