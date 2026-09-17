@@ -347,6 +347,28 @@ export const checkOmpProviderStatus = Effect.fn("checkOmpProviderStatus")(functi
         ])
       : fallbackModels;
 
+  // A probe that could not run says nothing about auth. `omp models --json`
+  // answers only once a provider has credentials, so an empty catalogue means
+  // "signed out" ONLY when the listing succeeded — otherwise the card would
+  // tell a signed-in user to sign in because their network was slow. The usage
+  // probe is skipped too: it would fail the same way.
+  if (!modelsOutput) {
+    return buildServerProvider({
+      presentation: OMP_PRESENTATION,
+      enabled: ompSettings.enabled,
+      checkedAt,
+      models,
+      slashCommands: [COMPACT_SLASH_COMMAND],
+      probe: {
+        installed: true,
+        version,
+        status: "warning",
+        auth: { status: "unknown" },
+        message: "Oh My Pi is installed but listing its models failed.",
+      },
+    });
+  }
+
   if (auth.status === "unauthenticated") {
     return buildServerProvider({
       presentation: OMP_PRESENTATION,

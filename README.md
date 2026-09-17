@@ -35,13 +35,14 @@ We wanted something performant, remote-ready, and truly open. If we ever go the 
 Every Infinitus build comes from one [GitHub release](https://github.com/deathemperor/infinitus/releases) of this repository. There is no npm package, Homebrew cask, winget or AUR package for the desktop app; `npx t3` installs upstream's T3 Code, not Infinitus.
 
 > [!WARNING]
-> Infinitus drives Codex, Claude, Cursor, Grok Build, OpenCode and Antigravity. Install and sign in to at least one before starting a thread:
+> Infinitus drives Codex, Claude, Cursor, Grok Build, OpenCode, Oh My Pi and Antigravity. Install and sign in to at least one before starting a thread:
 >
 > - Codex: install [Codex CLI](https://developers.openai.com/codex/cli) and run `codex login`
 > - Claude: install [Claude Code](https://claude.com/product/claude-code) and run `claude auth login`
 > - Cursor: install [Cursor CLI](https://cursor.com/cli) and run `agent login`
 > - Grok Build: install [Grok Build CLI](https://x.ai/cli) and run `grok login`
 > - OpenCode: install [OpenCode](https://opencode.ai) and run `opencode auth login`
+> - Oh My Pi: install [Oh My Pi](https://github.com/oh-my-pi/oh-my-pi) and run `omp` once to sign in
 > - Antigravity: enable it in Settings, then use **Install Antigravity** and **Sign in with Google**. No CLI is required.
 
 ### Desktop app (macOS, Apple Silicon)

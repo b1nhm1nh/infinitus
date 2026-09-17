@@ -37,6 +37,16 @@ stderr on a successful run, so a failing spawn strips that spinner before
 using stderr as the error detail. `omp-default` is a T3 sentinel, not a real
 omp model id, so the model goes through `resolveOmpAcpBaseModelId` first.
 
+## Auth
+
+omp has no auth verb: `omp models --json` answers only once a provider has
+usable credentials, so a non-empty catalogue **is** the auth signal. The
+corollary is that an _empty_ catalogue means "signed out" only when the
+listing actually ran — a probe that failed or timed out reports
+`auth: "unknown"` (and skips the usage probe, which would fail the same way)
+rather than telling a signed-in user to sign in because their network was
+slow.
+
 ## Quota
 
 `omp usage --json --redact`'s `capacity` fold (`ompUsage.logic.ts`), chosen
