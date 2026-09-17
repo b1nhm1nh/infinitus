@@ -8,6 +8,7 @@
  *
  * @module provider/Layers/piRpcProtocol
  */
+import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
 /**
@@ -103,12 +104,12 @@ const PiToolResult = Schema.Struct({
 });
 
 /**
- * One record read off Pi's stdout.
+ * The records the adapter reads by name.
  *
  * `response` is the command acknowledgement and always arrives before the
  * events its command triggers. Everything else is an event.
  */
-export const PiRpcRecord = Schema.Union([
+const PiKnownRecord = Schema.Union([
   Schema.Struct({
     type: Schema.Literal("response"),
     id: Schema.optional(Schema.String),
@@ -170,25 +171,40 @@ export const PiRpcRecord = Schema.Union([
     type: Schema.Literal("extension_error"),
     error: Schema.optional(Schema.String),
   }),
-  // Everything with no payload the adapter reads: agent_start, turn_start,
-  // agent_settled, queue_update, the retry chatter. Kept in the union so an
-  // unrecognized event is still a decoded record rather than a parse failure.
+  // Lifecycle events that carry nothing the adapter reads beyond their name.
   Schema.Struct({
-    type: Schema.String,
+    type: Schema.Literals(["agent_start", "agent_settled", "turn_start"]),
   }),
 ]);
-export type PiRpcRecord = typeof PiRpcRecord.Type;
-
-export const decodePiRpcRecord = Schema.decodeUnknownOption(PiRpcRecord);
+export type PiKnownRecord = typeof PiKnownRecord.Type;
 
 /**
- * Pi's terminal event for one prompt.
+ * A record whose `type` this build does not know.
  *
- * Not `agent_end`: that fires per low-level agent run and may be followed by
- * an automatic retry, a compaction retry, or a queued continuation.
- * `agent_settled` means Pi will not continue on its own.
+ * Pi is pre-1.0 and adds events between releases, so an unknown one must
+ * decode rather than fail the stream — dropping the line would take the
+ * turn's own completion event with it. The name is deliberately NOT `type`:
+ * an arm typed `{ type: string }` overlaps every literal arm and silently
+ * defeats discriminated narrowing on the union, so the compiler stops
+ * catching a misread field.
  */
-export const PI_TURN_SETTLED_EVENT = "agent_settled";
+export interface PiUnrecognizedRecord {
+  readonly unrecognizedType: string;
+}
+
+export type PiRpcRecord = PiKnownRecord | PiUnrecognizedRecord;
+
+const decodeKnownRecord = Schema.decodeUnknownOption(PiKnownRecord);
+const decodeUnrecognizedRecord = Schema.decodeUnknownOption(Schema.Struct({ type: Schema.String }));
+
+/** Decodes one record, falling back to {@link PiUnrecognizedRecord}. */
+export function decodePiRpcRecord(value: unknown): Option.Option<PiRpcRecord> {
+  const known = decodeKnownRecord(value);
+  if (Option.isSome(known)) return known;
+  return Option.map(decodeUnrecognizedRecord(value), (record): PiRpcRecord => ({
+    unrecognizedType: record.type,
+  }));
+}
 
 /**
  * Text content of a Pi message, ignoring thinking and tool-call blocks.
