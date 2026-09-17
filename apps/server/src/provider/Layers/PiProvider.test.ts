@@ -46,6 +46,31 @@ const makeFakePi = Effect.fn("PiProvider.test.makeFakePi")(function* (
   });
 });
 
+/** A `pi` that writes whatever `PI_CODING_AGENT_DIR` it was given to a file. */
+const makeHomeReportingPi = Effect.fn("PiProvider.test.makeHomeReportingPi")(function* () {
+  const fileSystem = yield* FileSystem.FileSystem;
+  const directory = yield* fileSystem.makeTempDirectoryScoped({ prefix: "pi-provider-home-" });
+  const homeLogPath = NodePath.join(directory, "home.txt");
+  const binaryPath = writeFakeCli({
+    directory,
+    name: "pi",
+    // The log path rides in the stub's own env sidecar rather than being
+    // quoted into its source.
+    env: { PI_HOME_LOG_PATH: homeLogPath },
+    source: [
+      'import { writeFileSync as writeHomeLog } from "node:fs";',
+      'writeHomeLog(process.env.PI_HOME_LOG_PATH, process.env.PI_CODING_AGENT_DIR ?? "");',
+      'if (process.argv.includes("--version")) {',
+      '  process.stdout.write("0.85.1\\n");',
+      "  process.exit(0);",
+      "}",
+      'process.stdout.write("\\n");',
+      "process.exit(0);",
+    ].join("\n"),
+  });
+  return { binaryPath, homeLogPath };
+});
+
 it.layer(NodeServices.layer)("checkPiProviderStatus", (it) => {
   it.effect("does not claim a signed-in user is signed out when the model probe fails", () =>
     Effect.gen(function* () {
@@ -74,6 +99,31 @@ it.layer(NodeServices.layer)("checkPiProviderStatus", (it) => {
 
       expect(snapshot.auth.status).toBe("unauthenticated");
       expect(snapshot.message).toMatch(/sign in/i);
+    }),
+  );
+
+  it.effect("probes the instance's own home, never an ambient Oh My Pi one", () =>
+    Effect.gen(function* () {
+      // The probe has to read the same config the session will. Oh My Pi is a
+      // fork of Pi that kept `APP_NAME = "pi"`, so a `PI_CODING_AGENT_DIR` set
+      // for `omp` would otherwise have Pi report `omp`'s auth and models.
+      const { binaryPath, homeLogPath } = yield* makeHomeReportingPi();
+      const fileSystem = yield* FileSystem.FileSystem;
+
+      yield* checkPiProviderStatus(
+        decodePiSettings({ enabled: true, binaryPath, homePath: "/pi/home" }),
+        { ...process.env, PI_CODING_AGENT_DIR: "/omp/home" },
+      );
+      expect((yield* fileSystem.readFileString(homeLogPath)).trim()).toBe("/pi/home");
+
+      yield* fileSystem.remove(homeLogPath);
+      yield* checkPiProviderStatus(decodePiSettings({ enabled: true, binaryPath }), {
+        ...process.env,
+        PI_CODING_AGENT_DIR: "/omp/home",
+      });
+      // No home configured is NOT "inherit whatever is set": it means Pi's own
+      // default, which it picks when the variable is absent.
+      expect((yield* fileSystem.readFileString(homeLogPath)).trim()).toBe("");
     }),
   );
 });

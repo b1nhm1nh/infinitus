@@ -12,10 +12,15 @@ the ones the other adapters were written against; the code carries the rest.
 `APP_NAME = "pi"`, so it reads the same `PI_CODING_AGENT_DIR` environment
 variable and, left alone, the same `~/.pi/agent` session store. Nothing about
 the ACP adapters transfers here, and an ambient `PI_CODING_AGENT_DIR` set for
-one of the two would silently redirect the other — `piRpcEnvironment` strips
+one of the two would silently redirect the other — `piHomeEnvironment` strips
 the inherited variable and re-sets it only from the instance's own configured
 home. The driver applies it once to the environment every Pi process gets, so
 the probe and the one-shot runs read the same home as the session.
+
+Every way we spawn the binary goes through that one helper: the RPC session,
+the status probe, and the one-shot `pi -p` runs behind commit messages and
+thread titles. A path that skips it does not merely miss a setting — it reads
+Oh My Pi's credentials and models and reports them as Pi's.
 
 ## Framing: LF and nothing else
 

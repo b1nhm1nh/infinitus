@@ -31,6 +31,7 @@ import {
   type ServerProviderDraft,
 } from "../providerSnapshot.ts";
 import { parsePiModelsCliOutput } from "./piModels.logic.ts";
+import { piHomeEnvironment } from "./piHomeEnvironment.ts";
 
 /**
  * Pi runs every tool ungated — it ships no permission system at all (its own
@@ -74,11 +75,14 @@ const runPiCliCommand = (
 ) =>
   Effect.gen(function* () {
     const command = piSettings.binaryPath || "pi";
-    const spawnCommand = yield* resolveSpawnCommand(command, args, { env: environment });
+    // A probe has to read the same config the session will: see
+    // `piHomeEnvironment`, which also keeps an ambient Oh My Pi value out.
+    const env = piHomeEnvironment(environment, piSettings.homePath);
+    const spawnCommand = yield* resolveSpawnCommand(command, args, { env });
     return yield* spawnAndCollect(
       command,
       ChildProcess.make(spawnCommand.command, spawnCommand.args, {
-        env: environment,
+        env,
         shell: spawnCommand.shell,
       }),
     );

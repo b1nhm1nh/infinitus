@@ -19,6 +19,7 @@ import * as Stream from "effect/Stream";
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 
 import { expandHomePath } from "../../pathExpansion.ts";
+import { piHomeEnvironment } from "./piHomeEnvironment.ts";
 import {
   decodePiRpcRecord,
   serializePiRpcCommand,
@@ -39,17 +40,6 @@ function readPiRpcLine(line: string): PiRpcRecord | undefined {
 
 /** SIGTERM first, then SIGKILL, matching the other CLI-backed runtimes. */
 const PI_FORCE_KILL_AFTER = "2 seconds" as const;
-
-/**
- * Pi's config directory environment variable.
- *
- * Set only when the instance configures a `homePath`. It is deliberately NOT
- * read from the ambient environment: Oh My Pi is a fork of Pi that kept
- * `APP_NAME = "pi"`, so `omp` derives and reads this very same name. Letting
- * an ambient value through would point both agents at one directory and have
- * each import the other's transcripts.
- */
-const PI_HOME_ENV_VAR = "PI_CODING_AGENT_DIR";
 
 export interface PiSessionRuntimeOptions {
   readonly cwd: string;
@@ -102,22 +92,6 @@ export function piRpcArgs(options: {
   ];
 }
 
-/**
- * Environment for the child.
- *
- * See {@link PI_HOME_ENV_VAR}: an ambient value is stripped so a user who set
- * it for Oh My Pi does not silently redirect Pi at the same directory. An
- * explicit instance `homePath` wins and is `~`-expanded, because a value set
- * through `spawn` is not shell-expanded.
- */
-export function piRpcEnvironment(
-  environment: NodeJS.ProcessEnv,
-  homePath: string | undefined,
-): NodeJS.ProcessEnv {
-  const { [PI_HOME_ENV_VAR]: _ambient, ...rest } = environment;
-  return homePath ? { ...rest, [PI_HOME_ENV_VAR]: expandHomePath(homePath) } : rest;
-}
-
 export const makePiSessionRuntime = Effect.fn("makePiSessionRuntime")(function* (
   piSettings: PiSettings,
   options: PiSessionRuntimeOptions,
@@ -130,7 +104,7 @@ export const makePiSessionRuntime = Effect.fn("makePiSessionRuntime")(function* 
   const runtimeScope = yield* Scope.Scope;
   const binaryPath = expandHomePath(piSettings.binaryPath || "pi");
   const args = piRpcArgs(options);
-  const env = piRpcEnvironment(options.environment, options.homePath);
+  const env = piHomeEnvironment(options.environment, options.homePath);
 
   const spawnCommand = yield* resolveSpawnCommand(binaryPath, args, { env }).pipe(
     Effect.mapError(

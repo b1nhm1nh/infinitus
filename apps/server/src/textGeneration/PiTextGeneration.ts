@@ -19,6 +19,7 @@ import { extractJsonObject } from "@infinitus/shared/schemaJson";
 import { resolveSpawnCommand } from "@infinitus/shared/shell";
 
 import { expandHomePath } from "../pathExpansion.ts";
+import { piHomeEnvironment } from "../provider/Layers/piHomeEnvironment.ts";
 import { spawnAndCollect } from "../provider/providerSnapshot.ts";
 import * as TextGeneration from "./TextGeneration.ts";
 import {
@@ -83,6 +84,10 @@ export const makePiTextGeneration = Effect.fn("makePiTextGeneration")(function* 
   environment: NodeJS.ProcessEnv = process.env,
 ) {
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
+  // One-shot runs read the same config and credentials a session does, so
+  // they get the same home treatment: see `piHomeEnvironment`, which also
+  // keeps an ambient Oh My Pi value from redirecting Pi at its directory.
+  const env = piHomeEnvironment(environment, piSettings.homePath);
 
   const runPiJson = <S extends Schema.Top>({
     operation,
@@ -100,7 +105,7 @@ export const makePiTextGeneration = Effect.fn("makePiTextGeneration")(function* 
     Effect.gen(function* () {
       const binaryPath = expandHomePath(piSettings.binaryPath || "pi");
       const args = piTextGenerationArgs(model);
-      const spawnCommand = yield* resolveSpawnCommand(binaryPath, args, { env: environment }).pipe(
+      const spawnCommand = yield* resolveSpawnCommand(binaryPath, args, { env }).pipe(
         Effect.mapError(
           (cause) =>
             new TextGenerationError({
@@ -115,7 +120,7 @@ export const makePiTextGeneration = Effect.fn("makePiTextGeneration")(function* 
         binaryPath,
         ChildProcess.make(spawnCommand.command, spawnCommand.args, {
           cwd,
-          env: environment,
+          env,
           shell: spawnCommand.shell,
           // The prompt goes over stdin, never argv: it carries a diff, and a
           // long or quoted argv is neither portable nor safe to log.
