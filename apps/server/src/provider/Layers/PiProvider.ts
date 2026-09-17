@@ -3,6 +3,7 @@ import {
   type ModelCapabilities,
   type PiSettings,
   PI_DEFAULT_MODEL,
+  type ServerProvider,
   type ServerProviderModel,
 } from "@infinitus/contracts";
 import { causeErrorTag } from "@infinitus/shared/observability";
@@ -261,12 +262,12 @@ export const checkPiProviderStatus = Effect.fn("checkPiProviderStatus")(function
 });
 
 export const enrichPiSnapshot = (input: {
-  readonly snapshot: ServerProviderDraft;
+  readonly snapshot: ServerProvider;
   readonly maintenanceCapabilities: ProviderMaintenanceCapabilities;
-  readonly enableProviderUpdateChecks: boolean;
-  readonly publishSnapshot: (snapshot: ServerProviderDraft) => Effect.Effect<void>;
-  readonly httpClient: HttpClient.HttpClient["Service"];
-}) => {
+  readonly enableProviderUpdateChecks?: boolean;
+  readonly publishSnapshot: (snapshot: ServerProvider) => Effect.Effect<void>;
+  readonly httpClient: HttpClient.HttpClient;
+}): Effect.Effect<void> => {
   const { snapshot, publishSnapshot } = input;
 
   return enrichProviderSnapshotWithVersionAdvisory(snapshot, input.maintenanceCapabilities, {
