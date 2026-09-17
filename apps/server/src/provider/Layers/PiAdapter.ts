@@ -413,7 +413,6 @@ export const makePiAdapter = Effect.fn("makePiAdapter")(function* (
 
       const runtime = yield* makePiSessionRuntime(piSettings, {
         cwd: input.cwd.trim(),
-        binaryPath: piSettings.binaryPath,
         ...(piSettings.homePath ? { homePath: piSettings.homePath } : {}),
         environment: options?.environment ?? process.env,
         ...(piModel ? { model: piModel } : {}),
@@ -597,18 +596,18 @@ export const makePiAdapter = Effect.fn("makePiAdapter")(function* (
    *
    * Pi answers `abort` only once the session has gone idle — its own docs say
    * the command "wait[s] for the session to become idle before responding",
-   * and a live run took 14 seconds to acknowledge one. Streaming does stop and
-   * the turn's `message_end` carries `stopReason: "aborted"`, so the command
-   * is fired and not awaited; the turn settles through the record stream like
-   * any other outcome. Awaiting the acknowledgement here would block the
-   * caller for the rest of the turn, which is the opposite of interrupting.
+   * and a live run took 14 seconds to acknowledge one. Nothing here waits for
+   * that: `send` only enqueues the command onto the unbounded stdin queue and
+   * returns, so the caller is never blocked. Streaming stops on Pi's side and
+   * the turn's `message_end` carries `stopReason: "aborted"`, so the turn
+   * settles through the record stream like any other outcome.
    */
   const interruptTurn: PiAdapterShape["interruptTurn"] = (threadId) =>
     Effect.gen(function* () {
       const ctx = yield* requireSession(threadId);
       yield* ctx.runtime
         .send({ type: "abort" })
-        .pipe(Effect.mapError(mapTransportError(threadId, "abort")), Effect.forkChild);
+        .pipe(Effect.mapError(mapTransportError(threadId, "abort")));
     });
 
   const compactThread = (threadId: ThreadId) =>

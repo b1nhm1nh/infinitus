@@ -427,6 +427,44 @@ it.effect(
 );
 
 it.effect(
+  "interrupts a running turn without waiting for Pi's deferred acknowledgement",
+  () =>
+    Effect.gen(function* () {
+      // The prompt hangs, so the turn ends only because `abort` reaches the
+      // child: this covers the whole interrupt path, from the command going
+      // out to `turn.aborted` coming back on the event stream.
+      const binaryPath = yield* Effect.promise(() => makeMockPi({ T3_PI_HANG_PROMPT: "1" }));
+      const adapter = yield* makePiAdapter(decodePiSettings({ enabled: true, binaryPath }), {
+        instanceId: INSTANCE_ID,
+        environment: process.env,
+      });
+      const threadId = ThreadId.make("thread-pi-interrupt");
+      const { events, fiber } = yield* collectEvents(adapter.streamEvents);
+      yield* adapter.startSession({
+        threadId,
+        provider: undefined,
+        cwd: process.cwd(),
+        runtimeMode: "full-access",
+      });
+
+      // `sendTurn` resolves only once the turn settles, which for a hanging
+      // prompt is the abort itself, so it runs on its own fiber.
+      const turnFiber = yield* Effect.forkChild(adapter.sendTurn({ threadId, input: "hello" }));
+      yield* Effect.promise(() => new Promise((resolve) => setTimeout(resolve, 300)));
+
+      yield* adapter.interruptTurn(threadId);
+
+      const result = yield* Fiber.join(turnFiber);
+      yield* Fiber.interrupt(fiber);
+
+      const aborted = events.find((event) => event.type === "turn.aborted");
+      assert.isDefined(aborted);
+      assert.strictEqual(aborted?.turnId, result.turnId);
+    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+  { timeout: 30_000 },
+);
+
+it.effect(
   "does not stamp a settled turn's id onto records that arrive after it",
   () =>
     Effect.gen(function* () {

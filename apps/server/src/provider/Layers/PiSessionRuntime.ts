@@ -53,7 +53,6 @@ const PI_HOME_ENV_VAR = "PI_CODING_AGENT_DIR";
 
 export interface PiSessionRuntimeOptions {
   readonly cwd: string;
-  readonly binaryPath: string;
   readonly homePath?: string;
   readonly environment: NodeJS.ProcessEnv;
   /** `provider/model`; omitted for the `pi-default` sentinel. */
