@@ -87,6 +87,12 @@ session and a resumed one take the identical code path — the resume cursor is
 just that id. Pi forks a session rather than rewinding one, so there is no
 provider-side rollback.
 
+One-shot runs (`pi -p`, used for commit messages and thread titles) pass
+`--no-session`. Pi otherwise writes them into `sessions/<cwd>/` exactly like a
+real conversation, and the project scanner then offers our own internal
+prompts back to the user as importable history — found by scanning a copy of a
+real `~/.pi/agent`, which held eight "Generate a title…" transcripts.
+
 Auth has no verb to ask: Pi lists a model in `--list-models` only once its
 provider has usable credentials, so a non-empty catalogue **is** the auth
 signal.

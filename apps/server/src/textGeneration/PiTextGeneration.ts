@@ -42,7 +42,12 @@ type PiTextGenerationOperation =
   | "generateThreadTitle";
 
 /**
- * Model flag for a one-shot run.
+ * Flags for a one-shot run.
+ *
+ * `--no-session` keeps these off Pi's session store. Without it every commit
+ * message and thread title we generate is written to `sessions/<cwd>/` exactly
+ * like a real conversation, and the project scanner then offers our own
+ * internal prompts back to the user as importable history.
  *
  * `pi-default` is our sentinel for "whatever Pi is configured to use", not a
  * slug Pi knows — passing it through fails the process with
@@ -50,7 +55,9 @@ type PiTextGenerationOperation =
  */
 export function piTextGenerationArgs(model: string | null | undefined): ReadonlyArray<string> {
   const trimmed = model?.trim();
-  return trimmed && trimmed !== PI_DEFAULT_MODEL ? ["-p", "--model", trimmed] : ["-p"];
+  return trimmed && trimmed !== PI_DEFAULT_MODEL
+    ? ["-p", "--no-session", "--model", trimmed]
+    : ["-p", "--no-session"];
 }
 
 /**
