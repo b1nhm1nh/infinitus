@@ -274,7 +274,7 @@ export const GrokIcon: Icon = ({ className, ...props }) => (
 );
 
 export const OmpIcon: Icon = (props) => (
-  <svg {...props} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+  <svg viewBox="0 0 24 24" fill="none" aria-hidden="true" {...props}>
     <path
       d="M4.5 18.5c2.4-6.2 5.1-10.4 7.5-12.6 2.4 2.2 5.1 6.4 7.5 12.6"
       stroke="currentColor"

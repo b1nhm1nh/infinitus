@@ -206,6 +206,34 @@ it.layer(NodeServices.layer)("checkOmpProviderStatus", (it) => {
     }),
   );
 
+  it.effect("does not claim a signed-in user is signed out when the model probe fails", () =>
+    Effect.gen(function* () {
+      const { snapshot, argv } = yield* Effect.scoped(
+        Effect.gen(function* () {
+          const { path: ompPath, readArgv } = yield* writeFakeOmpCli({
+            modelsOutput: "",
+            modelsExitCode: 3,
+          });
+          const result = yield* checkOmpProviderStatus(
+            decodeOmpSettings({ enabled: true, binaryPath: ompPath }),
+          );
+          return { snapshot: result, argv: yield* readArgv };
+        }),
+      );
+
+      // `omp models --json` answers only once a provider has credentials, so
+      // an empty catalogue reads as "signed out" — but only when the listing
+      // actually ran. Telling a signed-in user to sign in because their
+      // network was slow sends them round a pointless loop.
+      expect(snapshot.installed).toBe(true);
+      expect(snapshot.version).toBe("18.1.21");
+      expect(snapshot.auth).toEqual({ status: "unknown" });
+      expect(snapshot.message).not.toMatch(/sign in/i);
+      // The usage probe would fail the same way, so it is not attempted.
+      expect(argv.some((line) => line.startsWith("usage"))).toBe(false);
+    }),
+  );
+
   it.effect("surfaces usage limits from omp usage --json --redact", () =>
     Effect.gen(function* () {
       const snapshot = yield* Effect.scoped(
