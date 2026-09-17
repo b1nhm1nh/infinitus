@@ -251,7 +251,7 @@ it.effect(
 );
 
 it.effect(
-  "fails the turn when the Pi process exits mid-prompt",
+  "fails the turn and retires the session when the Pi process exits mid-prompt",
   () =>
     Effect.gen(function* () {
       const binaryPath = yield* Effect.promise(() =>
@@ -262,6 +262,7 @@ it.effect(
         environment: process.env,
       });
       const threadId = ThreadId.make("thread-exit");
+      const { events, fiber } = yield* collectEvents(adapter.streamEvents);
       yield* adapter.startSession({
         threadId,
         provider: undefined,
@@ -277,6 +278,34 @@ it.effect(
         assert.include(result.failure.message, "Pi process exited");
         assert.include(result.failure.message, "boom from pi");
       }
+
+      // The child is gone, so the session must go with it. Left in the map it
+      // would still answer `hasSession` and be handed to the next caller,
+      // holding its scope open until the whole adapter is torn down.
+      assert.isFalse(yield* adapter.hasSession(threadId));
+      assert.deepStrictEqual(yield* adapter.listSessions(), []);
+
+      // The turn settles before the teardown's own events reach the stream,
+      // so the exit notice is waited for rather than read straight off.
+      const exited = yield* Effect.promise(
+        () =>
+          new Promise<ProviderRuntimeEvent | undefined>((resolve) => {
+            // Bounded by a tick count rather than a deadline: the effect
+            // diagnostics reserve wall-clock reads for Effect's own `Clock`,
+            // and the enclosing `timeout` is the real backstop anyway.
+            let ticksLeft = 500;
+            const poll = setInterval(() => {
+              const hit = events.find((event) => event.type === "session.exited");
+              if (hit || --ticksLeft <= 0) {
+                clearInterval(poll);
+                resolve(hit);
+              }
+            }, 20);
+          }),
+      );
+      yield* Fiber.interrupt(fiber);
+      assert.isDefined(exited);
+      assert.strictEqual(exited?.type === "session.exited" && exited.payload.exitKind, "error");
     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
   { timeout: 30_000 },
 );

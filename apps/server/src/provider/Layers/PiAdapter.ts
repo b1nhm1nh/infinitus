@@ -343,14 +343,32 @@ export const makePiAdapter = Effect.fn("makePiAdapter")(function* (
       yield* Deferred.succeed(pending, outcome).pipe(Effect.ignore);
     });
 
-  const stopSessionInternal = (ctx: PiSessionContext) =>
+  /**
+   * Tears a session down once.
+   *
+   * `interruptRecordFiber` is the one thing the two callers disagree on:
+   * {@link stopSession} is interrupting a live child and must stop the fiber
+   * reading it, while the record fiber tearing ITSELF down on child exit must
+   * not — interrupting the running fiber from inside itself would never
+   * return, and the stream has already ended anyway.
+   */
+  const stopSessionInternal = (
+    ctx: PiSessionContext,
+    options?: {
+      readonly exitKind?: "graceful" | "error";
+      readonly turnOutcome?: PiTurnOutcome;
+      readonly interruptRecordFiber?: boolean;
+    },
+  ) =>
     Effect.gen(function* () {
       if (ctx.stopped) return;
       ctx.stopped = true;
       sessions.delete(ctx.threadId);
       // A turn still waiting would otherwise hang forever on a killed child.
-      yield* settleTurn(ctx, { kind: "aborted" });
-      if (ctx.recordFiber) yield* Fiber.interrupt(ctx.recordFiber).pipe(Effect.ignore);
+      yield* settleTurn(ctx, options?.turnOutcome ?? { kind: "aborted" });
+      if (ctx.recordFiber && options?.interruptRecordFiber !== false) {
+        yield* Fiber.interrupt(ctx.recordFiber).pipe(Effect.ignore);
+      }
       yield* Effect.ignore(Scope.close(ctx.scope, Exit.void));
       yield* offerRuntimeEvent({
         type: "session.exited",
@@ -358,7 +376,7 @@ export const makePiAdapter = Effect.fn("makePiAdapter")(function* (
         provider: PROVIDER,
         providerInstanceId: boundInstanceId,
         threadId: ctx.threadId,
-        payload: { exitKind: "graceful" },
+        payload: { exitKind: options?.exitKind ?? "graceful" },
       });
     });
 
@@ -468,8 +486,20 @@ export const makePiAdapter = Effect.fn("makePiAdapter")(function* (
           Effect.logError("Failed to process a Pi runtime record.", { cause }),
         ),
         Effect.andThen(
-          // The child exited: nothing more will settle a waiting turn.
-          settleTurn(ctx, { kind: "failed", message: "The Pi process exited." }),
+          // The child exited, so the session is gone whether or not anyone
+          // asked for it. Tearing it down here settles a waiting turn, drops
+          // the context (a later `requireSession` would otherwise hand out a
+          // session whose child is dead) and closes the scope. The record
+          // fiber is this fiber, so it is not interrupted.
+          stopSessionInternal(ctx, {
+            exitKind: "error",
+            turnOutcome: { kind: "failed", message: "The Pi process exited." },
+            interruptRecordFiber: false,
+          }).pipe(
+            Effect.catchCause((cause) =>
+              Effect.logError("Failed to tear down an exited Pi session.", { cause }),
+            ),
+          ),
         ),
         Effect.forkIn(sessionScope),
       );
@@ -686,7 +716,9 @@ export const makePiAdapter = Effect.fn("makePiAdapter")(function* (
     });
 
   const stopAll: PiAdapterShape["stopAll"] = () =>
-    Effect.forEach(Array.from(sessions.values()), stopSessionInternal, { discard: true });
+    Effect.forEach(Array.from(sessions.values()), (ctx) => stopSessionInternal(ctx), {
+      discard: true,
+    });
 
   yield* Effect.addFinalizer(() =>
     Effect.ignore(stopAll()).pipe(Effect.tap(() => PubSub.shutdown(runtimeEventPubSub))),
