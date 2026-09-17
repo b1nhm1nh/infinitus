@@ -9,7 +9,7 @@ import { sanitizeBranchFragment, sanitizeFeatureBranchName } from "@infinitus/sh
 import { extractJsonObject } from "@infinitus/shared/schemaJson";
 import { resolveSpawnCommand } from "@infinitus/shared/shell";
 
-import { resolveOmpAcpBaseModelId } from "../provider/acp/OmpAcpSupport.ts";
+import { OMP_DEFAULT_MODEL_SLUG, resolveOmpAcpBaseModelId } from "../provider/acp/OmpAcpSupport.ts";
 import * as TextGeneration from "./TextGeneration.ts";
 import {
   buildBranchNamePrompt,
@@ -44,6 +44,21 @@ function ompStderrDetail(stderr: string): string {
     .filter((line) => line.trim() !== OMP_SPINNER_TOKEN)
     .join("\n")
     .trim();
+}
+
+/**
+ * `--model` for a one-shot `omp -p` run, or nothing.
+ *
+ * `resolveOmpAcpBaseModelId` answers the `omp-default` sentinel when no real
+ * model is chosen. That is right for ACP, where it means "leave the session on
+ * whatever it already selected", but `omp -p` has no session to read it from
+ * and rejects it as a model name ("Model \"omp-default\" not found"), failing
+ * every title and commit message. Omitting the flag is what the sentinel means
+ * here: omp picks its own default.
+ */
+function ompModelArgs(model: string | null | undefined): ReadonlyArray<string> {
+  const resolved = resolveOmpAcpBaseModelId(model);
+  return resolved === OMP_DEFAULT_MODEL_SLUG ? [] : ["--model", resolved];
 }
 
 export const makeOmpTextGeneration = Effect.fn("makeOmpTextGeneration")(function* (
@@ -84,14 +99,7 @@ export const makeOmpTextGeneration = Effect.fn("makeOmpTextGeneration")(function
     const runOmpCommand = Effect.fn("runOmpJson.runOmpCommand")(function* () {
       const spawnCommand = yield* resolveSpawnCommand(
         ompSettings.binaryPath || "omp",
-        [
-          "-p",
-          "--no-tools",
-          "--no-session",
-          "--no-title",
-          "--model",
-          resolveOmpAcpBaseModelId(modelSelection.model),
-        ],
+        ["-p", "--no-tools", "--no-session", "--no-title", ...ompModelArgs(modelSelection.model)],
         { env: resolvedEnvironment },
       );
       const command = ChildProcess.make(spawnCommand.command, spawnCommand.args, {

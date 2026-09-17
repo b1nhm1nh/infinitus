@@ -15,6 +15,7 @@ import * as TextGeneration from "./TextGeneration.ts";
 import { makeOmpTextGeneration } from "./OmpTextGeneration.ts";
 
 const decodeOmpSettings = Schema.decodeSync(OmpSettings);
+const decodeArgv = Schema.decodeEffect(Schema.fromJsonString(Schema.Array(Schema.String)));
 
 const DEFAULT_TEST_MODEL_SELECTION = createModelSelection(
   ProviderInstanceId.make("omp"),
@@ -67,6 +68,40 @@ function makeFakeOmpBinary(dir: string, input: FakeOmpInput) {
   });
 }
 
+/**
+ * A fake omp that refuses `--model omp-default` the way the real binary does
+ * ("Model \"omp-default\" not found") and writes its argv where the test can
+ * read it. `makeFakeOmpBinary` REQUIRES `--model`, so it cannot catch a run
+ * that should omit the flag.
+ */
+function makeModelRecordingOmpBinary(dir: string, argvPath: string) {
+  return Effect.gen(function* () {
+    const path = yield* Path.Path;
+    return writeFakeCli({
+      directory: path.join(dir, "bin"),
+      name: "omp",
+      source: [
+        "import * as fs from 'node:fs';",
+        "const args = process.argv.slice(2);",
+        // Generated stub source, not Effect runtime code; the file it writes is
+        // read back through Schema below.
+        // @effect-diagnostics-next-line preferSchemaOverJson:off
+        `fs.writeFileSync(${JSON.stringify(argvPath)}, JSON.stringify(args));`,
+        "const i = args.indexOf('--model');",
+        "if (i !== -1 && args[i + 1] === 'omp-default') {",
+        "  process.stderr.write('Model \"omp-default\" not found\\n');",
+        "  process.exit(1);",
+        "}",
+        "const chunks = [];",
+        "for await (const chunk of process.stdin) chunks.push(chunk);",
+        "process.stderr.write('Working...\\n');",
+        "process.stdout.write(JSON.stringify({ title: 'Ok' }));",
+        "",
+      ].join("\n"),
+    });
+  });
+}
+
 function withFakeOmpEnv<A, E, R>(
   input: FakeOmpInput,
   effectFn: (textGeneration: TextGeneration.TextGeneration["Service"]) => Effect.Effect<A, E, R>,
@@ -82,6 +117,57 @@ function withFakeOmpEnv<A, E, R>(
 }
 
 it.layer(OmpTextGenerationTestLayer)("OmpTextGeneration", (it) => {
+  // Found by running the real binary: `resolveOmpAcpBaseModelId` answers the
+  // `omp-default` sentinel when nothing is chosen, and `omp -p` has no session
+  // to read it from, so passing it as `--model` failed every generation.
+  it.effect("omits --model when the selection is the omp-default sentinel", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const tempDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3code-omp-model-" });
+      const argvPath = path.join(tempDir, "argv.json");
+      const ompPath = yield* makeModelRecordingOmpBinary(tempDir, argvPath);
+      const textGeneration = yield* makeOmpTextGeneration(
+        decodeOmpSettings({ binaryPath: ompPath }),
+      );
+
+      const generated = yield* textGeneration.generateThreadTitle({
+        cwd: process.cwd(),
+        message: "a thread about nothing in particular",
+        modelSelection: createModelSelection(ProviderInstanceId.make("omp"), "omp-default"),
+      });
+      expect(generated.title).toBe("Ok");
+
+      const argv = yield* decodeArgv(yield* fs.readFileString(argvPath));
+      expect(argv).not.toContain("--model");
+      expect(argv).toContain("-p");
+    }).pipe(Effect.scoped),
+  );
+
+  it.effect("passes --model through when a real model is selected", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const tempDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3code-omp-model-" });
+      const argvPath = path.join(tempDir, "argv.json");
+      const ompPath = yield* makeModelRecordingOmpBinary(tempDir, argvPath);
+      const textGeneration = yield* makeOmpTextGeneration(
+        decodeOmpSettings({ binaryPath: ompPath }),
+      );
+
+      yield* textGeneration.generateThreadTitle({
+        cwd: process.cwd(),
+        message: "a thread about nothing in particular",
+        modelSelection: DEFAULT_TEST_MODEL_SELECTION,
+      });
+
+      const argv = yield* decodeArgv(yield* fs.readFileString(argvPath));
+      const modelIndex = argv.indexOf("--model");
+      expect(modelIndex).toBeGreaterThanOrEqual(0);
+      expect(argv[modelIndex + 1]).toBe("google-antigravity/gemini-3.1-pro");
+    }).pipe(Effect.scoped),
+  );
+
   it.effect("decodes a well-formed commit message JSON answer", () =>
     withFakeOmpEnv(
       {
