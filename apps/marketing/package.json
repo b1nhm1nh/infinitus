@@ -12,11 +12,16 @@
   },
   "dependencies": {
     "@infinitus/shared": "workspace:*",
+<<<<<<< HEAD
     "astro": "^7.0.3",
     "sharp": "0.34.5"
+=======
+    "astro": "^7.2.8",
+    "sharp": "0.35.4"
+>>>>>>> upstream-sync-52e4b4429-upstream-renamed
   },
   "devDependencies": {
-    "@astrojs/check": "^0.9.7",
+    "@astrojs/check": "^0.9.10",
     "@vercel/config": "^0.3.0",
     "typescript": "~6.0.3"
   }

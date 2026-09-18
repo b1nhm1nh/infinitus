@@ -3,7 +3,10 @@
 import * as NodeRuntime from "@effect/platform-node/NodeRuntime";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as NodeOS from "node:os";
+<<<<<<< HEAD
 import { DEFAULT_HOME_DIR_NAME } from "@infinitus/shared/homeDir";
+=======
+>>>>>>> upstream-sync-52e4b4429-upstream-renamed
 import { fromJsonStringPretty } from "@infinitus/shared/schemaJson";
 import * as Console from "effect/Console";
 import * as DateTime from "effect/DateTime";
@@ -251,17 +254,17 @@ export const runSqliteState = Effect.fn("runSqliteState")(function* (
 const t3SqliteStateCommand = Command.make(
   "t3-sqlite-state",
   {
-    operation: Argument.choice("operation", SqliteStateOperation.literals).pipe(
+    operation: Argument.Literals("operation", SqliteStateOperation.literals).pipe(
       Argument.withDescription("Run a read-only query or a backed-up fixture mutation."),
     ),
-    baseDir: Flag.string("base-dir").pipe(
+    baseDir: Flag.String("base-dir").pipe(
       Flag.withDescription("Explicit T3 base directory containing userdata/state.sqlite."),
     ),
-    sql: Flag.string("sql").pipe(
+    sql: Flag.String("sql").pipe(
       Flag.optional,
       Flag.withDescription("SQL source supplied directly on the command line."),
     ),
-    file: Flag.string("file").pipe(
+    file: Flag.String("file").pipe(
       Flag.optional,
       Flag.withDescription("Path to a SQL source file."),
     ),

@@ -14,7 +14,11 @@ import {
   type SourceControlRepositoryVisibility,
 } from "@infinitus/contracts";
 import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/unstable/http";
+<<<<<<< HEAD
 import { sanitizeBranchFragment, WORKTREE_BRANCH_PREFIX } from "@infinitus/shared/git";
+=======
+import { sanitizeBranchFragment } from "@infinitus/shared/git";
+>>>>>>> upstream-sync-52e4b4429-upstream-renamed
 import {
   detectSourceControlProviderFromRemoteUrl,
   isSshRemoteUrl,
@@ -39,12 +43,12 @@ const DEFAULT_MAX_RESPONSE_BYTES = 8 * 1024 * 1024;
 const MAX_REDIRECTS = 3;
 
 const BitbucketApiEnvConfig = Config.all({
-  baseUrl: Config.string("T3CODE_BITBUCKET_API_BASE_URL").pipe(
+  baseUrl: Config.String("T3CODE_BITBUCKET_API_BASE_URL").pipe(
     Config.withDefault(DEFAULT_API_BASE_URL),
   ),
-  accessToken: Config.string("T3CODE_BITBUCKET_ACCESS_TOKEN").pipe(Config.option),
-  email: Config.string("T3CODE_BITBUCKET_EMAIL").pipe(Config.option),
-  apiToken: Config.string("T3CODE_BITBUCKET_API_TOKEN").pipe(Config.option),
+  accessToken: Config.String("T3CODE_BITBUCKET_ACCESS_TOKEN").pipe(Config.option),
+  email: Config.String("T3CODE_BITBUCKET_EMAIL").pipe(Config.option),
+  apiToken: Config.String("T3CODE_BITBUCKET_API_TOKEN").pipe(Config.option),
 });
 
 const BitbucketApiOperation = Schema.Literals([

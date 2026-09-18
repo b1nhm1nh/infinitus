@@ -82,12 +82,16 @@ import {
   type WorktreeSetupSnapshot,
 } from "@infinitus/contracts";
 import { resolveServerBackgroundActivitySettings } from "@infinitus/shared/backgroundActivitySettings";
+<<<<<<< HEAD
 import {
   HttpClient,
   HttpRouter,
   HttpServerRequest,
   HttpServerRespondable,
 } from "effect/unstable/http";
+=======
+import { HttpRouter, HttpServerRequest, HttpServerRespondable } from "effect/unstable/http";
+>>>>>>> upstream-sync-52e4b4429-upstream-renamed
 import { RpcSerialization, RpcServer } from "effect/unstable/rpc";
 
 import * as CheckpointDiffQuery from "./checkpointing/CheckpointDiffQuery.ts";
@@ -199,11 +203,14 @@ import * as PairingGrantStore from "./auth/PairingGrantStore.ts";
 import * as SessionStore from "./auth/SessionStore.ts";
 import { failEnvironmentAuthInvalid, failEnvironmentInternal } from "./auth/http.ts";
 import * as RelayClient from "@infinitus/shared/relayClient";
+<<<<<<< HEAD
 
 // Fork (#269 H): worktree bootstraps that passed the limit check but whose
 // worktree the projection may not hold yet — one set per process, since
 // Best-of starts its members together and clients hold their own connections.
 const worktreesInFlight = new Set<string>();
+=======
+>>>>>>> upstream-sync-52e4b4429-upstream-renamed
 const isOrchestrationDispatchCommandError = Schema.is(OrchestrationDispatchCommandError);
 
 const nowIso = Effect.map(DateTime.now, DateTime.formatIso);

@@ -32,7 +32,10 @@ import {
 import { resolveAssetUrl } from "@infinitus/client-runtime/state/assets";
 import { formatAttachmentSize } from "@infinitus/client-runtime/state/attachments";
 import { squashAtomCommandFailure } from "@infinitus/client-runtime/state/runtime";
+<<<<<<< HEAD
 import { turnFooterLabel } from "@infinitus/client-runtime/turnFooter";
+=======
+>>>>>>> upstream-sync-52e4b4429-upstream-renamed
 import {
   classifyMarkdownImageSource,
   markdownImageSourceFragment,
@@ -1787,7 +1790,11 @@ function renderFeedEntry(
               iconSize={13}
             />
             <Text className="font-infinitus-medium text-xs tabular-nums text-adaptive-neutral-600-400">
+<<<<<<< HEAD
               {assistantMetaLabel}
+=======
+              {timestampLabel}
+>>>>>>> upstream-sync-52e4b4429-upstream-renamed
             </Text>
           </View>
         ) : null}

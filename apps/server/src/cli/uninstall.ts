@@ -9,7 +9,10 @@ import {
   HostProcessIsExecutable,
   HostProcessPlatform,
 } from "@infinitus/shared/hostProcess";
+<<<<<<< HEAD
 import { PRODUCT_NAME } from "@infinitus/shared/productName";
+=======
+>>>>>>> upstream-sync-52e4b4429-upstream-renamed
 import * as Console from "effect/Console";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -102,7 +105,7 @@ const planUninstall = Effect.fn("cli.uninstall.plan")(function* (input: {
 
 export const uninstallCommand = Command.make("uninstall", {
   ...projectLocationFlags,
-  yes: Flag.boolean("yes").pipe(
+  yes: Flag.Boolean("yes").pipe(
     Flag.withAlias("y"),
     Flag.withDescription(
       "Remove everything without asking. Required from a script, where there is no prompt.",
@@ -162,7 +165,11 @@ const runUninstall = Effect.fn("cli.uninstall.run")(function* (input: {
       });
     }
     const confirmed = yield* Prompt.run(
+<<<<<<< HEAD
       Prompt.confirm({ message: "Remove infinitus from this machine?", initial: false }),
+=======
+      Prompt.Confirm({ message: "Remove t3 from this machine?", initial: false }),
+>>>>>>> upstream-sync-52e4b4429-upstream-renamed
     ).pipe(Effect.catchTag("QuitError", () => Effect.succeed(false)));
     if (!confirmed) {
       yield* Console.log("Left as is.");
