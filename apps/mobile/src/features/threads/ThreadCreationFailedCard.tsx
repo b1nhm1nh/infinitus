@@ -14,7 +14,7 @@ export function ThreadCreationFailedCard(props: {
 }) {
   return (
     <View className="gap-2.5 rounded-[20px] border border-adaptive-neutral-200-white-a6 bg-adaptive-neutral-100-900 p-4">
-      <Text className="font-t3-bold text-2xs uppercase tracking-[1.1px] text-adaptive-rose-700-300">
+      <Text className="font-infinitus-bold text-2xs uppercase tracking-[1.1px] text-adaptive-rose-700-300">
         Could not start task
       </Text>
       <Text className="font-sans text-sm leading-normal text-adaptive-neutral-600-400">

@@ -6,11 +6,11 @@ import type { ThreadMoveDestination } from "./threadOrder";
 import type {
   EnvironmentProject,
   EnvironmentThreadShell,
-} from "@t3tools/client-runtime/state/shell";
-import type { EnvironmentThreadSearchMatch } from "@t3tools/client-runtime/state/thread-search";
-import type { EnvironmentMachineKind } from "@t3tools/contracts";
-import { canSnooze, resolveSnoozePresets } from "@t3tools/client-runtime/state/thread-settled";
-import { resolveSettledThreadTimestamp } from "@t3tools/client-runtime/state/thread-sort";
+} from "@infinitus/client-runtime/state/shell";
+import type { EnvironmentThreadSearchMatch } from "@infinitus/client-runtime/state/thread-search";
+import type { EnvironmentMachineKind } from "@infinitus/contracts";
+import { canSnooze, resolveSnoozePresets } from "@infinitus/client-runtime/state/thread-settled";
+import { resolveSettledThreadTimestamp } from "@infinitus/client-runtime/state/thread-sort";
 import type { MenuAction } from "@react-native-menu/menu";
 import { memo, useCallback, useEffect, useMemo, useState, type ComponentProps } from "react";
 import { Alert, Platform, Pressable, useWindowDimensions, View } from "react-native";
@@ -118,7 +118,7 @@ function ThreadListV2Section(props: {
     <>
       <Text
         className={cn(
-          "text-xs font-t3-medium",
+          "text-xs font-infinitus-medium",
           snoozed ? "text-foreground-secondary" : "text-foreground-tertiary",
         )}
       >
@@ -218,7 +218,7 @@ export const ThreadListV2ShowMoreRow = memo(function ThreadListV2ShowMoreRow(pro
       className="mx-4 mt-2 items-center rounded-lg border border-dashed border-border py-2.5"
       style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}
     >
-      <Text className="text-xs font-t3-medium text-foreground-muted">
+      <Text className="text-xs font-infinitus-medium text-foreground-muted">
         Show more ({props.hiddenCount} settled hidden)
       </Text>
     </Pressable>
@@ -280,7 +280,10 @@ export const ThreadListV2PendingRow = memo(function ThreadListV2PendingRow(props
             workspaceRoot={props.project.workspaceRoot}
           />
         ) : null}
-        <Text className="flex-1 text-sm font-t3-medium text-foreground-muted" numberOfLines={1}>
+        <Text
+          className="flex-1 text-sm font-infinitus-medium text-foreground-muted"
+          numberOfLines={1}
+        >
           {projectTitle}
         </Text>
         {isDraft ? (
@@ -300,7 +303,7 @@ export const ThreadListV2PendingRow = memo(function ThreadListV2PendingRow(props
       {/* One line, unlike the two an active row allows: a queued title is
           derived from the whole prompt rather than written as a title, so the
           second line is usually a stray word or emoji rather than meaning. */}
-      <Text className="mt-1 text-base font-t3-medium text-foreground" numberOfLines={1}>
+      <Text className="mt-1 text-base font-infinitus-medium text-foreground" numberOfLines={1}>
         {pendingTask.title}
       </Text>
       {branch || props.environmentLabel ? (
@@ -787,7 +790,7 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
         ) : null}
         <Text
           className={cn(
-            "flex-1 text-sm font-t3-medium",
+            "flex-1 text-sm font-infinitus-medium",
             selected
               ? Platform.OS === "android"
                 ? "text-thread-selected-foreground-muted"
@@ -822,7 +825,7 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
       </View>
       <Text
         className={cn(
-          "mt-1 text-base font-t3-medium",
+          "mt-1 text-base font-infinitus-medium",
           selected
             ? Platform.OS === "android"
               ? "text-thread-selected-foreground"
