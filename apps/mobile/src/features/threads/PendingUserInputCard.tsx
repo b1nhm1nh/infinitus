@@ -332,20 +332,7 @@ export function PendingUserInputCard(props: PendingUserInputCardProps) {
           props.answers === null || props.respondingUserInputId === props.pendingUserInput.requestId
         }
         onPress={() => void props.onSubmit()}
-<<<<<<< HEAD
-      >
-        <Text
-          className={cn(
-            "font-infinitus-extrabold text-sm",
-            props.answers ? "text-primary-foreground" : "text-foreground-muted",
-          )}
-        >
-          Submit answers
-        </Text>
-      </Pressable>
-=======
       />
->>>>>>> upstream-sync-243e94470-upstream-renamed
       {props.pendingUserInput.dismissible ? (
         <Pressable
           accessibilityRole="button"

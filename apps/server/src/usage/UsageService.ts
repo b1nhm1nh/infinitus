@@ -619,19 +619,13 @@ export const make = Effect.gen(function* () {
     // Pricing only matters once records are aggregated, so the rate table
     // loads while transcripts stream instead of gating them: a cold rates
     // fetch on a slow network no longer delays the scan by its own timeout.
-<<<<<<< HEAD
     const [, scannedDirs, timeline] = yield* Effect.all(
       [
         ensureRates(false),
-        collectDirs(windowStartMs, settings),
+        collectDirs(windowStartMs, settings, retentionCutoffMs),
         attribution._tag === "Some" ? attribution.value.resolve : Effect.succeed(null),
       ],
       { concurrency: 3 },
-=======
-    const [, scannedDirs] = yield* Effect.all(
-      [ensureRates(false), collectDirs(windowStartMs, settings, retentionCutoffMs)],
-      { concurrency: 2 },
->>>>>>> upstream-sync-243e94470-upstream-renamed
     );
 
     const aggregator = new UsageAggregator({

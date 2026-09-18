@@ -8,10 +8,7 @@ import {
   type PullRequestDetail,
   type PullRequestDetailView,
   type PullRequestReviewThread,
-<<<<<<< HEAD
-=======
   type ThreadPullRequestLink,
->>>>>>> upstream-sync-243e94470-upstream-renamed
 } from "@infinitus/contracts";
 import { describe, expect, it } from "vite-plus/test";
 import { formatInlineContextReference } from "~/lib/composerContextReferences";

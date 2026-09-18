@@ -31,10 +31,7 @@ import type {
   PullRequestState,
   PullRequestThreadComment,
 } from "@infinitus/contracts";
-<<<<<<< HEAD
-=======
 import { quoteGitPatchPath } from "@infinitus/shared/gitPatchPath";
->>>>>>> upstream-sync-243e94470-upstream-renamed
 import { decodeJsonResult } from "@infinitus/shared/schemaJson";
 
 import { dedupeChecks } from "./pullRequestChecks.ts";

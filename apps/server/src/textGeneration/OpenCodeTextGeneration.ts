@@ -10,10 +10,7 @@ import {
 } from "@infinitus/contracts";
 import { sanitizeBranchFragment, sanitizeFeatureBranchName } from "@infinitus/shared/git";
 import { getModelSelectionStringOptionValue } from "@infinitus/shared/model";
-<<<<<<< HEAD
 import { PRODUCT_NAME } from "@infinitus/shared/productName";
-=======
->>>>>>> upstream-sync-243e94470-upstream-renamed
 import { extractJsonObject } from "@infinitus/shared/schemaJson";
 
 import * as ServerConfig from "../config.ts";

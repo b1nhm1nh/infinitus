@@ -1,8 +1,4 @@
-<<<<<<< HEAD
-import { DEFAULT_SERVER_SETTINGS, EnvironmentId } from "@infinitus/contracts";
-=======
 import { DEFAULT_SERVER_SETTINGS, EnvironmentId, ProjectId } from "@infinitus/contracts";
->>>>>>> upstream-sync-243e94470-upstream-renamed
 import { describe, expect, it } from "vite-plus/test";
 
 import { planAutoSettleSettingsSync } from "./autoSettleSettingsSync";

@@ -1,8 +1,5 @@
 import * as Effect from "effect/Effect";
-<<<<<<< HEAD
-=======
 import * as Semaphore from "effect/Semaphore";
->>>>>>> upstream-sync-243e94470-upstream-renamed
 import type { PullRequestCapabilities, PullRequestViewerPermissions } from "@infinitus/contracts";
 
 import * as AzureDevOpsPullRequestCli from "./AzureDevOpsPullRequestCli.ts";

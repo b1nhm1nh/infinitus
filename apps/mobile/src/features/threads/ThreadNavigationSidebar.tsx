@@ -991,21 +991,7 @@ function ThreadNavigationSidebarPane(
           );
         case "v2-show-more":
           return (
-<<<<<<< HEAD
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel={`Show ${Math.min(item.hiddenCount, THREAD_LIST_V2_SETTLED_PAGE_COUNT)} more settled threads`}
-              onPress={showMoreSettled}
-              className="mx-4 mt-2 items-center rounded-lg border border-dashed border-border py-2.5"
-              style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}
-            >
-              <Text className="text-xs font-infinitus-medium text-foreground-muted">
-                Show more ({item.hiddenCount} settled hidden)
-              </Text>
-            </Pressable>
-=======
             <ThreadListV2ShowMoreRow hiddenCount={item.hiddenCount} onPress={showMoreSettled} />
->>>>>>> upstream-sync-243e94470-upstream-renamed
           );
         case "header":
           return (

@@ -55,11 +55,8 @@ import { readPastedComposerContext } from "./composerInlineTokenPaste";
 import { isPasteAsTextShortcut } from "@infinitus/client-runtime/text-paste";
 import { type CodexArtifactTemplate } from "@infinitus/client-runtime/codex-artifact-templates";
 import { effectiveSnoozed, threadWokeAt } from "@infinitus/client-runtime/state/thread-settled";
-<<<<<<< HEAD
 import { useInfinitusHoldBanner } from "./chat/useInfinitusHoldBanner";
 import { PinAtCreationToggle, usePinAtCreation } from "./chat/PinAtCreationToggle";
-=======
->>>>>>> upstream-sync-243e94470-upstream-renamed
 import {
   parseCodexFeedbackCommand,
   submitCodexFeedback,
@@ -82,10 +79,7 @@ import {
   resolveProjectScripts,
 } from "@infinitus/shared/projectScripts";
 import { resolveProjectSettings } from "@infinitus/shared/projectSettings";
-<<<<<<< HEAD
-=======
 import { sourceControlRepositorySelector } from "@infinitus/shared/sourceControl";
->>>>>>> upstream-sync-243e94470-upstream-renamed
 import { truncate } from "@infinitus/shared/String";
 import { resolveThreadReferenceCopyTarget } from "@infinitus/shared/threadReference";
 import {
@@ -10746,52 +10740,6 @@ export default function ChatView(props: ChatViewProps) {
         </RightPanelSheet>
       ) : null}
 
-<<<<<<< HEAD
-=======
-      <AlertDialog
-        open={pendingRevert !== null && pendingRevert.routeThreadKey === routeThreadKey}
-        onOpenChange={(open) => {
-          if (!open) setPendingRevert(null);
-        }}
-      >
-        <AlertDialogPopup>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Edit from here?</AlertDialogTitle>
-            <AlertDialogDescription>
-              Rewind chat to before this message. Your prompt and attachments return to the
-              composer.
-              {activeWorktreePath === null
-                ? " Files stay as they are because this thread shares the project directory."
-                : null}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogClose render={<Button variant="outline" />}>Cancel</AlertDialogClose>
-            {activeWorktreePath !== null ? (
-              <Button
-                variant="destructive"
-                onClick={() => {
-                  if (!pendingRevert || pendingRevert.routeThreadKey !== routeThreadKey) return;
-                  setPendingRevert(null);
-                  void onRevertToTurnCount(pendingRevert.turnCount, pendingRevert.messageId, true);
-                }}
-              >
-                Revert files too
-              </Button>
-            ) : null}
-            <Button
-              onClick={() => {
-                if (!pendingRevert || pendingRevert.routeThreadKey !== routeThreadKey) return;
-                setPendingRevert(null);
-                void onRevertToTurnCount(pendingRevert.turnCount, pendingRevert.messageId, false);
-              }}
-            >
-              Revert and keep changes
-            </Button>
-          </AlertDialogFooter>
-        </AlertDialogPopup>
-      </AlertDialog>
->>>>>>> upstream-sync-243e94470-upstream-renamed
       <LinkPullRequestDialogHost />
       {expandedImage && (
         <ExpandedImageDialog

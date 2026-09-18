@@ -4,10 +4,7 @@ import {
   HostProcessPlatform,
   HostProcessUserId,
 } from "@infinitus/shared/hostProcess";
-<<<<<<< HEAD
 import { PRODUCT_NAME } from "@infinitus/shared/productName";
-=======
->>>>>>> upstream-sync-243e94470-upstream-renamed
 import * as Config from "effect/Config";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";

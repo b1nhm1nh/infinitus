@@ -14,12 +14,6 @@
  *
  * @module usageScanCache
  */
-<<<<<<< HEAD
-// @effect-diagnostics nodeBuiltinImport:off
-import * as NodePath from "node:path";
-
-=======
->>>>>>> upstream-sync-243e94470-upstream-renamed
 import type { UsageProviderKind } from "@infinitus/contracts";
 
 import { GUARD_LENGTH, type TranscriptParsePosition } from "./usageTranscriptReader.ts";

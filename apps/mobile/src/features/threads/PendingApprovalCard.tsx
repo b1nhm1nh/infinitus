@@ -4,11 +4,7 @@ import type {
   ProviderApprovalDecision,
   ProviderApprovalOption,
 } from "@infinitus/contracts";
-<<<<<<< HEAD
-import { Pressable, View } from "react-native";
-=======
 import { View } from "react-native";
->>>>>>> upstream-sync-243e94470-upstream-renamed
 
 import { AppText as Text } from "../../components/AppText";
 import type { PendingApproval } from "../../lib/threadActivity";
@@ -64,23 +60,7 @@ export function PendingApprovalCard(props: PendingApprovalCardProps) {
             }
             disabled={props.respondingApprovalId === props.approval.requestId}
             onPress={() => void props.onRespond(props.approval.requestId, option.decision)}
-<<<<<<< HEAD
-          >
-            <Text
-              className={`text-sm ${
-                option.decision === "accept"
-                  ? "font-infinitus-extrabold text-primary-foreground"
-                  : option.decision === "decline"
-                    ? "font-infinitus-bold text-danger-foreground"
-                    : "font-infinitus-bold text-foreground"
-              }`}
-            >
-              {option.label}
-            </Text>
-          </Pressable>
-=======
           />
->>>>>>> upstream-sync-243e94470-upstream-renamed
         ))}
       </View>
     </View>

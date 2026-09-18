@@ -3,10 +3,7 @@ import {
   isSshRemoteUrl,
   sourceControlRepositorySelector,
 } from "@infinitus/shared/sourceControl";
-<<<<<<< HEAD
-=======
 import { normalizeGitRemoteUrl } from "@infinitus/shared/git";
->>>>>>> upstream-sync-243e94470-upstream-renamed
 import * as Cache from "effect/Cache";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";

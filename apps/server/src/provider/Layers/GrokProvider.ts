@@ -9,10 +9,7 @@ import {
 } from "@infinitus/contracts";
 import * as EffectAcpSchema from "effect-acp/schema";
 import { causeErrorTag } from "@infinitus/shared/observability";
-<<<<<<< HEAD
 import { PRODUCT_NAME } from "@infinitus/shared/productName";
-=======
->>>>>>> upstream-sync-243e94470-upstream-renamed
 import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";

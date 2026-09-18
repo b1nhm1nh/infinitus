@@ -1,9 +1,5 @@
 import type { EnvironmentMachineKind } from "@infinitus/contracts";
-<<<<<<< HEAD
-import type { SFSymbol } from "expo-symbols";
-=======
 import { SymbolView, type AppSymbolName } from "./AppSymbol";
->>>>>>> upstream-sync-243e94470-upstream-renamed
 
 const SYMBOL_BY_KIND: Record<EnvironmentMachineKind, AppSymbolName> = {
   server: "server.rack",

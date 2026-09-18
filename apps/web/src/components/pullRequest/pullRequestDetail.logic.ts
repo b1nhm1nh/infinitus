@@ -25,13 +25,10 @@ import {
   type ThreadPullRequestLink,
   type VcsRef,
 } from "@infinitus/contracts";
-<<<<<<< HEAD
-=======
 import {
   threadPullRequestKeysEqual,
   visibleThreadPullRequests,
 } from "@infinitus/shared/threadPullRequests";
->>>>>>> upstream-sync-243e94470-upstream-renamed
 
 import { inferReviewCommentFenceLanguage, type ReviewCommentContext } from "~/reviewCommentContext";
 import { reviewCommentContextId } from "~/lib/composerContextRecords";

@@ -199,20 +199,9 @@ function FileContent(props: {
   return (
     <View className="flex-1 bg-sheet">
       {props.truncated ? (
-<<<<<<< HEAD
-        <View className="border-b border-warning-border bg-warning px-4 py-2">
-          <Text className="text-2xs font-infinitus-bold uppercase text-warning-foreground">
-            Partial file
-          </Text>
-          <Text className="text-xs leading-snug text-warning-foreground">
-            Preview limited to the first 1 MB of a truncated file.
-          </Text>
-        </View>
-=======
         <FilePreviewNotice title="Partial file">
           Preview limited to the first 1 MB of a truncated file.
         </FilePreviewNotice>
->>>>>>> upstream-sync-243e94470-upstream-renamed
       ) : null}
       {props.activeMode === "preview" && isMarkdown ? (
         <FileMarkdownPreview

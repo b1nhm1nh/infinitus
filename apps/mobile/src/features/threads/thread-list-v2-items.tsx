@@ -174,21 +174,7 @@ export const ThreadListV2SectionDivider = memo(function ThreadListV2SectionDivid
   readonly label: string;
   readonly pane?: "screen" | "sidebar";
 }) {
-<<<<<<< HEAD
-  return (
-    <View
-      className={cn(
-        "mb-1.5 mt-4 flex-row items-center gap-2.5",
-        props.pane === "sidebar" ? "px-3" : "px-5",
-      )}
-    >
-      <Text className="text-xs font-infinitus-medium text-foreground-tertiary">{props.label}</Text>
-      <View className="h-px flex-1 bg-border" />
-    </View>
-  );
-=======
   return <ThreadListV2Section {...props} />;
->>>>>>> upstream-sync-243e94470-upstream-renamed
 });
 
 type ThreadListV2ShelfHeaderProps = {
@@ -204,35 +190,6 @@ function ThreadListV2ShelfHeader(
 ) {
   const label = props.kind === "snoozed" ? "Snoozed" : "Settled";
   return (
-<<<<<<< HEAD
-    <Pressable
-      accessibilityHint={
-        props.expanded ? "Collapses the snoozed threads." : "Expands the snoozed threads."
-      }
-      accessibilityLabel={props.count === 1 ? "1 snoozed thread" : `${props.count} snoozed threads`}
-      accessibilityRole="button"
-      accessibilityState={{ disabled: props.disabled, expanded: props.expanded }}
-      className={cn(
-        "mb-1.5 mt-4 flex-row items-center gap-2.5",
-        props.pane === "sidebar" ? "px-3" : "px-5",
-      )}
-      disabled={props.disabled}
-      onPress={props.onToggle}
-      style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}
-    >
-      <Text className="text-xs font-infinitus-medium text-foreground-secondary">
-        {props.expanded ? "Snoozed" : `Snoozed (${props.count})`}
-      </Text>
-      <View className="h-px flex-1 bg-primary/20" />
-      <SymbolView
-        name="chevron.down"
-        size={10}
-        tintColorClassName="accent-icon-muted"
-        type="monochrome"
-        style={{ transform: [{ rotate: props.expanded ? "180deg" : "0deg" }] }}
-      />
-    </Pressable>
-=======
     <ThreadListV2Section
       label={props.expanded ? label : `${label} (${props.count})`}
       pane={props.pane}
@@ -245,7 +202,6 @@ function ThreadListV2ShelfHeader(
         accessibilityHint: `${props.expanded ? "Collapses" : "Expands"} the ${props.kind} threads.`,
       }}
     />
->>>>>>> upstream-sync-243e94470-upstream-renamed
   );
 }
 
@@ -273,13 +229,8 @@ export const ThreadListV2ShowMoreRow = memo(function ThreadListV2ShowMoreRow(pro
       className="mx-4 mt-2 items-center rounded-lg border border-dashed border-border py-2.5"
       style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}
     >
-<<<<<<< HEAD
-      <Text className="text-xs font-infinitus-medium text-foreground-tertiary">
-        {props.expanded ? "Settled" : `Settled (${props.count})`}
-=======
       <Text className="text-xs font-infinitus-medium text-foreground-muted">
         Show more ({props.hiddenCount} settled hidden)
->>>>>>> upstream-sync-243e94470-upstream-renamed
       </Text>
     </Pressable>
   );

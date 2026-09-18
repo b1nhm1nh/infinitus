@@ -19,10 +19,7 @@ import type {
   PullRequestState,
 } from "@infinitus/contracts";
 import { TrimmedNonEmptyString } from "@infinitus/contracts";
-<<<<<<< HEAD
-=======
 import { quoteGitPatchPath } from "@infinitus/shared/gitPatchPath";
->>>>>>> upstream-sync-243e94470-upstream-renamed
 import { decodeJsonResult } from "@infinitus/shared/schemaJson";
 
 /**

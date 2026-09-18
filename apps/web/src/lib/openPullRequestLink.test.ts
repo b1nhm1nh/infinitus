@@ -11,10 +11,7 @@ import {
   shouldOpenPullRequestExternally,
 } from "./openPullRequestLink";
 import { ProjectId, type RepositoryIdentity } from "@infinitus/contracts";
-<<<<<<< HEAD
-=======
 import { normalizeGitRemoteUrl } from "@infinitus/shared/git";
->>>>>>> upstream-sync-243e94470-upstream-renamed
 
 function repositoryIdentity(
   provider: string,

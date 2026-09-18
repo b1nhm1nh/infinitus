@@ -8,10 +8,7 @@ import {
   type ModelPickerJumpKeybindingCommand,
   type ThreadJumpKeybindingCommand,
 } from "@infinitus/contracts";
-<<<<<<< HEAD
-=======
 import { isElectron } from "./env";
->>>>>>> upstream-sync-243e94470-upstream-renamed
 import { isMacPlatform } from "./lib/utils";
 
 export interface ShortcutEventLike {

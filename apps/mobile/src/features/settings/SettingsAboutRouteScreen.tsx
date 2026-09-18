@@ -15,12 +15,13 @@ import {
 import { SettingsRow } from "./components/SettingsRow";
 import { SettingsSection } from "./components/SettingsSection";
 import { SettingsScreen } from "./components/SettingsScreen";
+import { PRODUCT_NAME } from "@infinitus/shared/productName";
 
 export function SettingsAboutRouteScreen() {
   const insets = useSafeAreaInsets();
 
   return (
-    <SettingsScreen title="About T3 Code">
+    <SettingsScreen title={`About ${PRODUCT_NAME}`}>
       <ScrollView
         contentInsetAdjustmentBehavior="automatic"
         showsVerticalScrollIndicator={false}
@@ -39,7 +40,12 @@ function AppSettingsSection() {
   const updateInFlight = useRef(false);
   const hiddenUpdateTapCount = useRef(0);
 
-  const version = Constants.expoConfig?.version ?? "0.0.0";
+  // The product version (root VERSION, #823) when the build carries it; the
+  // store's marketing version otherwise.
+  const version =
+    (Constants.expoConfig?.extra?.productVersion as string | undefined) ??
+    Constants.expoConfig?.version ??
+    "0.0.0";
   // Fall back to "production" to match resolveAppVariant in app.config.ts, so a
   // missing variant never mislabels a production build as development.
   const variant = (Constants.expoConfig?.extra?.appVariant as string | undefined) ?? "production";

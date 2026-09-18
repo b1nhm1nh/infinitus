@@ -1,10 +1,6 @@
 import { ScreenScrollView as ScrollView } from "../../components/ScreenScrollView";
 import { NativeHeaderToolbar } from "../../native/StackHeader";
 import { useNavigation } from "@react-navigation/native";
-<<<<<<< HEAD
-import { SymbolView } from "../../components/AppSymbol";
-=======
->>>>>>> upstream-sync-243e94470-upstream-renamed
 import type { EnvironmentId } from "@infinitus/contracts";
 import { useCallback, useState } from "react";
 import { Platform } from "react-native";
@@ -118,44 +114,6 @@ export function SettingsEnvironmentsRouteScreen() {
           paddingBottom: Math.max(insets.bottom, 18) + 18,
         }}
       >
-<<<<<<< HEAD
-        {hasLocalEnvironments ? (
-          <View collapsable={false} className="overflow-hidden rounded-[24px] bg-card">
-            {localEnvironments.map((environment, index) => (
-              <View
-                key={environment.environmentId}
-                collapsable={false}
-                className={cn(index !== 0 && "border-t border-border")}
-              >
-                <ConnectionEnvironmentRow
-                  environment={environment}
-                  expanded={expandedId === environment.environmentId}
-                  onToggle={() => handleToggle(environment.environmentId)}
-                  onReconnect={onReconnectEnvironment}
-                  onRemove={onRemoveEnvironmentPress}
-                  onSetEnabled={onSetEnvironmentEnabled}
-                  onUpdate={handleUpdateEnvironment}
-                />
-              </View>
-            ))}
-          </View>
-        ) : (
-          <View collapsable={false} className="items-center gap-3 rounded-[24px] bg-card px-6 py-8">
-            <View className="h-12 w-12 items-center justify-center rounded-[16px] bg-subtle">
-              <SymbolView
-                name="point.3.connected.trianglepath.dotted"
-                size={20}
-                tintColorClassName={"accent-icon-muted"}
-                type="monochrome"
-              />
-            </View>
-            <Text className="text-center text-sm leading-normal text-foreground-muted">
-              No environments connected yet.{"\n"}Tap{" "}
-              <Text className="font-infinitus-bold text-foreground">+</Text> to add one.
-            </Text>
-          </View>
-        )}
-=======
         <LocalEnvironmentList
           environments={localEnvironments}
           expandedId={expandedId}
@@ -165,7 +123,6 @@ export function SettingsEnvironmentsRouteScreen() {
           onSetEnabled={onSetEnvironmentEnabled}
           onUpdate={handleUpdateEnvironment}
         />
->>>>>>> upstream-sync-243e94470-upstream-renamed
 
         {/* Always mounted: already-connected relay environments must stay
             visible (and removable) even when cloud config is missing or the

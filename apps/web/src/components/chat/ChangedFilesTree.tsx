@@ -1,9 +1,5 @@
 import { type TurnId } from "@infinitus/contracts";
-<<<<<<< HEAD
-import { memo, useCallback, useMemo, useState } from "react";
-=======
 import { type MouseEvent, memo, useCallback, useMemo, useState } from "react";
->>>>>>> upstream-sync-243e94470-upstream-renamed
 import { type TurnDiffFileChange } from "../../types";
 import {
   buildTurnDiffTree,

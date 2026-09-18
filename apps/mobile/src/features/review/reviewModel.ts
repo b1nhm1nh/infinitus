@@ -1,10 +1,7 @@
 import { parsePatchFiles } from "@pierre/diffs/utils/parsePatchFiles";
 import type { ChangeTypes, FileDiffMetadata } from "@pierre/diffs/types";
 import type { OrchestrationCheckpointSummary, ReviewDiffPreviewSource } from "@infinitus/contracts";
-<<<<<<< HEAD
-=======
 import { unquoteGitPatchPath } from "@infinitus/shared/gitPatchPath";
->>>>>>> upstream-sync-243e94470-upstream-renamed
 import * as Arr from "effect/Array";
 import { pipe } from "effect/Function";
 import * as Order from "effect/Order";

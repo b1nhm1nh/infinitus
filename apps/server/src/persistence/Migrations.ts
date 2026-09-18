@@ -62,7 +62,6 @@ import Migration0047 from "./Migrations/047_ProjectionProjectIcon.ts";
 import Migration0048 from "./Migrations/048_ProjectionThreadBranchPullRequest.ts";
 import Migration0049 from "./Migrations/049_ProjectionThreadsActiveOrderKey.ts";
 import Migration0050 from "./Migrations/050_ProjectionThreadPullRequests.ts";
-<<<<<<< HEAD
 import Migration0051 from "./Migrations/051_ProjectionThreadQueuedTurns.ts";
 import Migration0052 from "./Migrations/052_ProjectionThreadsBabysit.ts";
 import Migration0053 from "./Migrations/053_ProjectionThreadsSideOf.ts";
@@ -75,11 +74,7 @@ import Migration0059 from "./Migrations/059_ProjectionThreadQueuedTurnsContext.t
 import Migration0060 from "./Migrations/060_ProjectionTurnUsageCompletedAtIndex.ts";
 import Migration0061 from "./Migrations/061_ProjectionThreadTitleState.ts";
 import Migration0062 from "./Migrations/062_ProjectionThreadQueuedTurnsSendAt.ts";
-=======
-import Migration0051 from "./Migrations/051_ProjectionThreadMessageContext.ts";
-import Migration0052 from "./Migrations/052_ProjectionThreadTitleState.ts";
-import Migration0053 from "./Migrations/053_PullRequestFilesViewed.ts";
->>>>>>> upstream-sync-243e94470-upstream-renamed
+import Migration0063 from "./Migrations/063_PullRequestFilesViewed.ts";
 
 /**
  * Migration loader with all migrations defined inline.
@@ -142,7 +137,6 @@ const migrationEntries = [
   [48, "ProjectionThreadBranchPullRequest", Migration0048],
   [49, "ProjectionThreadsActiveOrderKey", Migration0049],
   [50, "ProjectionThreadPullRequests", Migration0050],
-<<<<<<< HEAD
   [51, "ProjectionThreadQueuedTurns", Migration0051],
   [52, "ProjectionThreadsBabysit", Migration0052],
   [53, "ProjectionThreadsSideOf", Migration0053],
@@ -155,11 +149,7 @@ const migrationEntries = [
   [60, "ProjectionTurnUsageCompletedAtIndex", Migration0060],
   [61, "ProjectionThreadTitleState", Migration0061],
   [62, "ProjectionThreadQueuedTurnsSendAt", Migration0062],
-=======
-  [51, "ProjectionThreadMessageContext", Migration0051],
-  [52, "ProjectionThreadTitleState", Migration0052],
-  [53, "PullRequestFilesViewed", Migration0053],
->>>>>>> upstream-sync-243e94470-upstream-renamed
+  [63, "PullRequestFilesViewed", Migration0063],
 ] as const;
 
 export const migrationManifest = migrationEntries.map(([id, name]) => [id, name] as const);

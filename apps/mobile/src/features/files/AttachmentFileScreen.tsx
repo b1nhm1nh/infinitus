@@ -82,20 +82,9 @@ function AttachmentDocumentBody(props: {
     return (
       <View className="flex-1 bg-sheet">
         {content.truncated ? (
-<<<<<<< HEAD
-          <View className="border-b border-warning-border bg-warning px-4 py-2">
-            <Text className="text-2xs font-infinitus-bold uppercase text-warning-foreground">
-              Partial file
-            </Text>
-            <Text className="text-xs leading-snug text-warning-foreground">
-              Preview limited to the first 1 MB. Save or share the file to read it in full.
-            </Text>
-          </View>
-=======
           <FilePreviewNotice title="Partial file">
             Preview limited to the first 1 MB. Save or share the file to read it in full.
           </FilePreviewNotice>
->>>>>>> upstream-sync-243e94470-upstream-renamed
         ) : null}
         {table && document.activeMode === "table" ? (
           <ScrollView className="flex-1">

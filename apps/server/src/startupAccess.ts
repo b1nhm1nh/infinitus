@@ -1,9 +1,6 @@
 import * as NodeOS from "node:os";
 
-<<<<<<< HEAD
 import { PRODUCT_NAME } from "@infinitus/shared/productName";
-=======
->>>>>>> upstream-sync-243e94470-upstream-renamed
 import { QrCode } from "@infinitus/shared/qrCode";
 import * as Effect from "effect/Effect";
 import { HttpServer } from "effect/unstable/http";

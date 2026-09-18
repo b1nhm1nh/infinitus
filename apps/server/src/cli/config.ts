@@ -1,8 +1,5 @@
 import * as NetService from "@infinitus/shared/Net";
-<<<<<<< HEAD
 import { PRODUCT_NAME } from "@infinitus/shared/productName";
-=======
->>>>>>> upstream-sync-243e94470-upstream-renamed
 import { OtlpHeadersFromString, OtlpProtocol } from "@infinitus/shared/observability";
 import { parsePersistedServerObservabilitySettings } from "@infinitus/shared/serverSettings";
 import { DesktopBackendBootstrap, PortSchema } from "@infinitus/contracts";

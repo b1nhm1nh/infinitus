@@ -1,8 +1,4 @@
-<<<<<<< HEAD
-import type { EnvironmentId, ServerSettings } from "@infinitus/contracts";
-=======
 import type { EnvironmentId, ProjectId, ServerSettings } from "@infinitus/contracts";
->>>>>>> upstream-sync-243e94470-upstream-renamed
 
 export type AutoSettleSettings = Pick<
   ServerSettings,

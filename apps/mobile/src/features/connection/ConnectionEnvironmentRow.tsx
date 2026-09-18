@@ -16,12 +16,8 @@ import { MaterialButton } from "../../components/MaterialButton";
 import { MaterialIconButton } from "../../components/MaterialIconButton";
 import { ThemedSwitch } from "../../components/ThemedSwitch";
 import { cn } from "../../lib/cn";
-<<<<<<< HEAD
-import { copyTextWithHaptic } from "../../lib/copyTextWithHaptic";
 import { useEnvironmentPresentation } from "../../state/presentation";
 import { roamingHostsLine } from "./roamingHosts";
-=======
->>>>>>> upstream-sync-243e94470-upstream-renamed
 import type { ConnectedEnvironmentSummary } from "../../state/remote-runtime-types";
 import { serverEnvironment } from "../../state/server";
 import { ConnectionFormField } from "./ConnectionFormField";
@@ -170,36 +166,6 @@ export function ConnectionEnvironmentRow(props: {
             </Text>
           ) : (
             <>
-<<<<<<< HEAD
-              <View className="gap-1.5">
-                <Text className="text-2xs font-infinitus-bold tracking-[0.8px] uppercase text-foreground-muted">
-                  Label
-                </Text>
-                <TextInput
-                  autoCapitalize="words"
-                  autoCorrect={false}
-                  placeholder="My MacBook"
-                  value={label}
-                  onChangeText={setLabel}
-                  className="rounded-[14px] border border-input-border bg-input px-4 py-3 text-base text-foreground"
-                />
-              </View>
-
-              <View className="gap-1.5">
-                <Text className="text-2xs font-infinitus-bold tracking-[0.8px] uppercase text-foreground-muted">
-                  URL
-                </Text>
-                <TextInput
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  keyboardType="url"
-                  placeholder="192.168.1.100:8080"
-                  value={url}
-                  onChangeText={setUrl}
-                  className="rounded-[14px] border border-input-border bg-input px-4 py-3 text-base text-foreground"
-                />
-              </View>
-=======
               <ConnectionFormField
                 label="Label"
                 autoCapitalize="words"
@@ -218,7 +184,6 @@ export function ConnectionEnvironmentRow(props: {
                 value={url}
                 onChangeText={setUrl}
               />
->>>>>>> upstream-sync-243e94470-upstream-renamed
             </>
           )}
 
