@@ -4089,7 +4089,7 @@ const buildDesktopArtifactCli = Command.make("build-desktop-artifact", {
     ),
     Flag.optional,
   ),
-  nativeHelper: Flag.string("native-helper").pipe(
+  nativeHelper: Flag.String("native-helper").pipe(
     Flag.withDescription(
       "Path to a signed native Infinitus.app to nest as the macOS login item (env: T3CODE_DESKTOP_NATIVE_HELPER).",
     ),
