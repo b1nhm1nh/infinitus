@@ -1,3 +1,4 @@
+import { RequestActionButton } from "./RequestActionButton";
 import { QuestionAttachments } from "./QuestionAttachments";
 import type { ApprovalRequestId, UserInputQuestion } from "@infinitus/contracts";
 import { useCallback, useRef } from "react";
@@ -323,15 +324,15 @@ export function PendingUserInputCard(props: PendingUserInputCardProps) {
           );
         })}
       </ScrollView>
-      <Pressable
-        className={cn(
-          "items-center justify-center rounded-2xl px-4 py-3.5",
-          props.answers ? "bg-primary" : "bg-subtle-strong",
-        )}
+      <RequestActionButton
+        label="Submit answers"
+        size="large"
+        tone={props.answers ? "primary" : "secondary"}
         disabled={
           props.answers === null || props.respondingUserInputId === props.pendingUserInput.requestId
         }
         onPress={() => void props.onSubmit()}
+<<<<<<< HEAD
       >
         <Text
           className={cn(
@@ -342,6 +343,9 @@ export function PendingUserInputCard(props: PendingUserInputCardProps) {
           Submit answers
         </Text>
       </Pressable>
+=======
+      />
+>>>>>>> upstream-sync-243e94470-upstream-renamed
       {props.pendingUserInput.dismissible ? (
         <Pressable
           accessibilityRole="button"

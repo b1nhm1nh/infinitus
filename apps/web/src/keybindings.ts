@@ -8,6 +8,10 @@ import {
   type ModelPickerJumpKeybindingCommand,
   type ThreadJumpKeybindingCommand,
 } from "@infinitus/contracts";
+<<<<<<< HEAD
+=======
+import { isElectron } from "./env";
+>>>>>>> upstream-sync-243e94470-upstream-renamed
 import { isMacPlatform } from "./lib/utils";
 
 export interface ShortcutEventLike {
@@ -33,6 +37,8 @@ export interface ShortcutMatchContext {
   terminalOpen: boolean;
   previewFocus: boolean;
   previewOpen: boolean;
+  isWeb: boolean;
+  isDesktop: boolean;
   [key: string]: boolean;
 }
 
@@ -144,6 +150,8 @@ function resolveContext(options: ShortcutMatchOptions | undefined): ShortcutMatc
     terminalOpen: false,
     previewFocus: false,
     previewOpen: false,
+    isWeb: !isElectron,
+    isDesktop: isElectron,
     ...options?.context,
   };
 }

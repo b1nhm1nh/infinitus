@@ -1,9 +1,14 @@
+import { RequestActionButton } from "./RequestActionButton";
 import type {
   ApprovalRequestId,
   ProviderApprovalDecision,
   ProviderApprovalOption,
 } from "@infinitus/contracts";
+<<<<<<< HEAD
 import { Pressable, View } from "react-native";
+=======
+import { View } from "react-native";
+>>>>>>> upstream-sync-243e94470-upstream-renamed
 
 import { AppText as Text } from "../../components/AppText";
 import type { PendingApproval } from "../../lib/threadActivity";
@@ -47,17 +52,19 @@ export function PendingApprovalCard(props: PendingApprovalCardProps) {
       ) : null}
       <View className="flex-row flex-wrap gap-2.5">
         {options.map((option) => (
-          <Pressable
+          <RequestActionButton
             key={option.decision}
-            className={`items-center justify-center rounded-[14px] px-3.5 py-3 ${
+            label={option.label}
+            tone={
               option.decision === "accept"
-                ? "bg-primary"
+                ? "primary"
                 : option.decision === "decline"
-                  ? "bg-danger"
-                  : "bg-subtle-strong"
-            }`}
+                  ? "danger"
+                  : "secondary"
+            }
             disabled={props.respondingApprovalId === props.approval.requestId}
             onPress={() => void props.onRespond(props.approval.requestId, option.decision)}
+<<<<<<< HEAD
           >
             <Text
               className={`text-sm ${
@@ -71,6 +78,9 @@ export function PendingApprovalCard(props: PendingApprovalCardProps) {
               {option.label}
             </Text>
           </Pressable>
+=======
+          />
+>>>>>>> upstream-sync-243e94470-upstream-renamed
         ))}
       </View>
     </View>

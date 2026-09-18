@@ -1,10 +1,14 @@
 import { describe, expect, it } from "vite-plus/test";
+<<<<<<< HEAD
 import {
   type DesktopUpdateActionResult,
   type DesktopUpdateState,
   EnvironmentId,
   TurnId,
 } from "@infinitus/contracts";
+=======
+import type { DesktopUpdateActionResult, DesktopUpdateState } from "@infinitus/contracts";
+>>>>>>> upstream-sync-243e94470-upstream-renamed
 
 import {
   canCheckForUpdate,

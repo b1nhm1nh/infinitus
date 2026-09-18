@@ -53,6 +53,7 @@ import { inlineCodeFilePathCandidate } from "@infinitus/client-runtime/markdown-
 import { mediaFileReference, mediaUrlReference } from "@infinitus/client-runtime/media-reference";
 import { mediaKindFromPath, mediaMimeTypeFromExtension } from "@infinitus/shared/filePreview";
 import * as Cause from "effect/Cause";
+import { sourceControlRepositorySelector } from "@infinitus/shared/sourceControl";
 import { AsyncResult } from "effect/unstable/reactivity";
 import React, {
   Children,
@@ -2905,7 +2906,7 @@ const CHAT_MARKDOWN_COMPONENTS = {
               input: {
                 projectId: pullRequestProject.id,
                 repository:
-                  pullRequestProject.repositoryIdentity?.displayName ??
+                  sourceControlRepositorySelector(pullRequestProject.repositoryIdentity) ??
                   pullRequestCandidate.repository,
                 number: pullRequestCandidate.number,
               },

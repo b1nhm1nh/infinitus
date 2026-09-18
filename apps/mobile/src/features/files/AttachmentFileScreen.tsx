@@ -5,7 +5,7 @@ import type { MenuAction } from "@react-native-menu/menu";
 import { EnvironmentId } from "@infinitus/contracts";
 import { formatAttachmentSize } from "@infinitus/client-runtime/state/attachments";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, Alert, Platform, ScrollView, View } from "react-native";
+import { Alert, Platform, ScrollView, View } from "react-native";
 
 import { AndroidHeaderIconButton, AndroidScreenHeader } from "../../components/AndroidScreenHeader";
 import { AppText as Text } from "../../components/AppText";
@@ -19,6 +19,7 @@ import { isFileBackedComposerAttachment } from "../../lib/composerImages";
 import { copyTextWithHaptic } from "../../lib/copyTextWithHaptic";
 import { useUniwindTheme } from "../../lib/useUniwindTheme";
 import { removeComposerDraftAttachment, useComposerDraft } from "../../state/use-composer-drafts";
+import { FilePreviewLoading, FilePreviewNotice } from "./FilePreviewFeedback";
 import { FileMarkdownPreview } from "./FileMarkdownPreview";
 import { useAppearancePreferences } from "../settings/appearance/AppearancePreferencesProvider";
 import { SourceFileSurface } from "./SourceFileSurface";
@@ -71,26 +72,17 @@ function AttachmentDocumentBody(props: {
     );
   }
   if (props.nativeViewer !== null && props.nativeViewer !== "unavailable") {
-    return (
-      <View className="flex-1 items-center justify-center gap-3 bg-sheet px-6">
-        <ActivityIndicator />
-        <Text className="text-center text-sm text-foreground-muted">Opening in file viewer...</Text>
-      </View>
-    );
+    return <FilePreviewLoading message="Opening in file viewer..." />;
   }
   if (!document.uri || (document.needsText && !document.content)) {
-    return (
-      <View className="flex-1 items-center justify-center gap-3 bg-sheet px-6">
-        <ActivityIndicator />
-        <Text className="text-center text-sm text-foreground-muted">Loading file...</Text>
-      </View>
-    );
+    return <FilePreviewLoading message="Loading file..." />;
   }
   if (document.needsText && document.content) {
     const { content, table } = document;
     return (
       <View className="flex-1 bg-sheet">
         {content.truncated ? (
+<<<<<<< HEAD
           <View className="border-b border-warning-border bg-warning px-4 py-2">
             <Text className="text-2xs font-infinitus-bold uppercase text-warning-foreground">
               Partial file
@@ -99,15 +91,18 @@ function AttachmentDocumentBody(props: {
               Preview limited to the first 1 MB. Save or share the file to read it in full.
             </Text>
           </View>
+=======
+          <FilePreviewNotice title="Partial file">
+            Preview limited to the first 1 MB. Save or share the file to read it in full.
+          </FilePreviewNotice>
+>>>>>>> upstream-sync-243e94470-upstream-renamed
         ) : null}
         {table && document.activeMode === "table" ? (
           <ScrollView className="flex-1">
             {table.truncated ? (
-              <View className="border-b border-warning-border bg-warning px-4 py-2">
-                <Text className="text-xs leading-snug text-warning-foreground">
-                  Table limited to the first 100 rows and 30 columns. Source shows the rest.
-                </Text>
-              </View>
+              <FilePreviewNotice>
+                Table limited to the first 100 rows and 30 columns. Source shows the rest.
+              </FilePreviewNotice>
             ) : null}
             <ScrollView horizontal>
               <View>

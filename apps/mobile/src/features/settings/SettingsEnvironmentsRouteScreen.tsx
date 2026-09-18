@@ -1,19 +1,20 @@
 import { ScreenScrollView as ScrollView } from "../../components/ScreenScrollView";
 import { NativeHeaderToolbar } from "../../native/StackHeader";
 import { useNavigation } from "@react-navigation/native";
+<<<<<<< HEAD
 import { SymbolView } from "../../components/AppSymbol";
+=======
+>>>>>>> upstream-sync-243e94470-upstream-renamed
 import type { EnvironmentId } from "@infinitus/contracts";
 import { useCallback, useState } from "react";
-import { Platform, View } from "react-native";
+import { Platform } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { AppText as Text } from "../../components/AppText";
 import { SettingsScreen } from "./components/SettingsScreen";
 import { CloudEnvironmentRows } from "../connection/CloudEnvironmentRows";
-import { ConnectionEnvironmentRow } from "../connection/ConnectionEnvironmentRow";
+import { LocalEnvironmentList } from "../connection/LocalEnvironmentList";
 import { GitHubRoutingSettings } from "../connection/GitHubRoutingSettings";
 import { splitEnvironmentSections } from "../connection/environmentSections";
-import { cn } from "../../lib/cn";
 import { useUniwindTheme } from "../../lib/useUniwindTheme";
 import { useRemoteConnections } from "../../state/use-remote-environment-registry";
 import {
@@ -45,7 +46,6 @@ export function SettingsEnvironmentsRouteScreen() {
   const connectedCloudEnvironments = SHOWCASE_ENABLED
     ? SHOWCASE_CONNECTED_CLOUD_ENVIRONMENTS
     : environmentSections.connectedCloudEnvironments;
-  const hasLocalEnvironments = localEnvironments.length > 0;
   const [expandedId, setExpandedId] = useState<EnvironmentId | null>(null);
   const headerIconColor = useUniwindTheme()["--color-icon"];
 
@@ -118,6 +118,7 @@ export function SettingsEnvironmentsRouteScreen() {
           paddingBottom: Math.max(insets.bottom, 18) + 18,
         }}
       >
+<<<<<<< HEAD
         {hasLocalEnvironments ? (
           <View collapsable={false} className="overflow-hidden rounded-[24px] bg-card">
             {localEnvironments.map((environment, index) => (
@@ -154,6 +155,17 @@ export function SettingsEnvironmentsRouteScreen() {
             </Text>
           </View>
         )}
+=======
+        <LocalEnvironmentList
+          environments={localEnvironments}
+          expandedId={expandedId}
+          onToggle={handleToggle}
+          onReconnect={onReconnectEnvironment}
+          onRemove={onRemoveEnvironmentPress}
+          onSetEnabled={onSetEnvironmentEnabled}
+          onUpdate={handleUpdateEnvironment}
+        />
+>>>>>>> upstream-sync-243e94470-upstream-renamed
 
         {/* Always mounted: already-connected relay environments must stay
             visible (and removable) even when cloud config is missing or the

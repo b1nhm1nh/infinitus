@@ -1,17 +1,18 @@
 import { ScreenScrollView as ScrollView } from "../../components/ScreenScrollView";
 import { NativeHeaderToolbar } from "../../native/StackHeader";
 import { useNavigation } from "@react-navigation/native";
+<<<<<<< HEAD
 import { SymbolView } from "../../components/AppSymbol";
+=======
+>>>>>>> upstream-sync-243e94470-upstream-renamed
 import type { EnvironmentId } from "@infinitus/contracts";
 import { useCallback, useState } from "react";
 import { Platform, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { AndroidScreenHeader } from "../../components/AndroidScreenHeader";
-import { AppText as Text } from "../../components/AppText";
-import { cn } from "../../lib/cn";
 import { useRemoteConnections } from "../../state/use-remote-environment-registry";
-import { ConnectionEnvironmentRow } from "./ConnectionEnvironmentRow";
+import { LocalEnvironmentList } from "./LocalEnvironmentList";
 import { GitHubRoutingSettings } from "./GitHubRoutingSettings";
 
 export function ConnectionsRouteScreen() {
@@ -24,7 +25,6 @@ export function ConnectionsRouteScreen() {
   } = useRemoteConnections();
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
-  const hasEnvironments = connectedEnvironments.length > 0;
   const [expandedId, setExpandedId] = useState<EnvironmentId | null>(null);
   const handleToggle = useCallback((environmentId: EnvironmentId) => {
     setExpandedId((prev) => (prev === environmentId ? null : environmentId));
@@ -63,6 +63,7 @@ export function ConnectionsRouteScreen() {
           paddingTop: 16,
         }}
       >
+<<<<<<< HEAD
         {hasEnvironments ? (
           <View collapsable={false} className="overflow-hidden rounded-[24px] bg-card">
             {connectedEnvironments.map((environment, index) => (
@@ -99,6 +100,17 @@ export function ConnectionsRouteScreen() {
             </Text>
           </View>
         )}
+=======
+        <LocalEnvironmentList
+          environments={connectedEnvironments}
+          expandedId={expandedId}
+          onToggle={handleToggle}
+          onReconnect={onReconnectEnvironment}
+          onRemove={onRemoveEnvironmentPress}
+          onSetEnabled={onSetEnvironmentEnabled}
+          onUpdate={onUpdateEnvironment}
+        />
+>>>>>>> upstream-sync-243e94470-upstream-renamed
         <GitHubRoutingSettings />
       </ScrollView>
     </View>

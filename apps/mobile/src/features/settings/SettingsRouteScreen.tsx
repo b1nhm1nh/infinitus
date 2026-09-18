@@ -1,18 +1,11 @@
-import { AutoSettleDaysField } from "./components/AutoSettleDaysField";
 import { ScreenScrollView as ScrollView } from "../../components/ScreenScrollView";
 import { useAuth, useUser } from "@clerk/expo";
-import { useAtomSet, useAtomValue } from "@effect/atom-react";
-import Constants from "expo-constants";
-import * as Notifications from "expo-notifications";
 import { useNavigation } from "@react-navigation/native";
-import { NativeStackScreenOptions } from "../../native/StackHeader";
-import { SymbolView } from "../../components/AppSymbol";
-import * as Effect from "effect/Effect";
-import { AsyncResult } from "effect/unstable/reactivity";
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
-import { Alert, Linking, Platform, Pressable, View } from "react-native";
+import { Platform, View } from "react-native";
+import { deriveProjectGroupLabel } from "@infinitus/client-runtime/state/project-grouping";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+<<<<<<< HEAD
 import {
   isAtomCommandInterrupted,
   reportAtomCommandResult,
@@ -81,9 +74,21 @@ function useDeviceRegistered(): boolean {
   );
   return status === "registered";
 }
+=======
+import { hasCloudPublicConfig } from "../cloud/publicConfig";
+import { WorkspaceSidebarToolbar } from "../layout/workspace-sidebar-toolbar";
+import { useSavedRemoteConnections } from "../../state/use-remote-environment-registry";
+import { SettingsRow } from "./components/SettingsRow";
+import { SettingsSection } from "./components/SettingsSection";
+import { SettingsScreen } from "./components/SettingsScreen";
+import {
+  AndroidSettingsEnvironmentFilter,
+  SettingsEnvironmentFilterHeader,
+} from "./components/SettingsEnvironmentFilterHeader";
+import { useSettingsEnvironmentFilter } from "./settings-environment-filter";
+>>>>>>> upstream-sync-243e94470-upstream-renamed
 
 export function SettingsRouteScreen() {
-  const navigation = useNavigation();
   const content = hasCloudPublicConfig() ? (
     <ConfiguredSettingsRouteScreen />
   ) : (
@@ -93,31 +98,60 @@ export function SettingsRouteScreen() {
   return (
     <>
       <WorkspaceSidebarToolbar />
-      {Platform.OS !== "android" ? (
-        <NativeStackScreenOptions
-          options={{
-            unstable_headerRightItems:
-              Platform.OS === "ios"
-                ? () => [
-                    withNativeGlassHeaderItem({
-                      accessibilityLabel: "Close settings",
-                      icon: { name: "xmark", type: "sfSymbol" } as const,
-                      identifier: "settings-close",
-                      label: "",
-                      onPress: () => navigation.goBack(),
-                      type: "button",
-                    }),
-                  ]
-                : undefined,
-          }}
-        />
-      ) : null}
+      <SettingsEnvironmentFilterHeader closeSettings />
       {Platform.OS === "android" ? (
-        <SettingsScreen title="Settings">{content}</SettingsScreen>
+        <SettingsScreen title="Settings" trailing={<AndroidSettingsEnvironmentFilter />}>
+          {content}
+        </SettingsScreen>
       ) : (
         content
       )}
     </>
+  );
+}
+
+function ConfiguredSettingsRouteScreen() {
+  const insets = useSafeAreaInsets();
+  const navigation = useNavigation();
+  const { isLoaded, isSignedIn } = useAuth({ treatPendingAsSignedOut: false });
+  const { user } = useUser();
+  const { savedConnectionsById } = useSavedRemoteConnections();
+  const accountLabel = !isLoaded
+    ? "Checking"
+    : !isSignedIn
+      ? "Sign in"
+      : (user?.primaryEmailAddress?.emailAddress ?? "Signed in");
+
+  return (
+    <View collapsable={false} className="flex-1 bg-sheet">
+      <ScrollView
+        contentInsetAdjustmentBehavior="automatic"
+        showsVerticalScrollIndicator={false}
+        className="flex-1"
+        contentContainerClassName="gap-4 px-5 pt-4"
+        contentContainerStyle={{ paddingBottom: Math.max(insets.bottom, 18) + 18 }}
+      >
+        <SettingsSection title="Connections">
+          <SettingsRow
+            icon="person.crop.circle"
+            label="T3 Account"
+            value={accountLabel}
+            disabled={!isLoaded}
+            onPress={() => navigation.navigate("SettingsSheet", { screen: "SettingsAuth" })}
+          />
+          <SettingsRow
+            icon="desktopcomputer"
+            label="Environments"
+            value={`${Object.keys(savedConnectionsById).length}`}
+            valuePosition="trailing"
+            target="SettingsEnvironments"
+          />
+          <SettingsRow icon="bell.badge" label="Notifications" target="SettingsNotifications" />
+        </SettingsSection>
+
+        <SettingsIndexSections />
+      </ScrollView>
+    </View>
   );
 }
 
@@ -132,12 +166,12 @@ function LocalSettingsRouteScreen() {
         contentInsetAdjustmentBehavior="automatic"
         showsVerticalScrollIndicator={false}
         className="flex-1"
-        contentContainerClassName="gap-6 px-5 pt-4"
+        contentContainerClassName="gap-4 px-5 pt-4"
         contentContainerStyle={{
           paddingBottom: Math.max(insets.bottom, 18) + 18,
         }}
       >
-        <SettingsSection title="Configuration">
+        <SettingsSection title="Connections">
           <SettingsRow
             icon="desktopcomputer"
             label="Environments"
@@ -149,22 +183,13 @@ function LocalSettingsRouteScreen() {
           <InfinitusAlarmsRow />
         </SettingsSection>
 
-        <GeneralSettingsSection />
-
-        <SettingsSection title="Appearance">
-          <SettingsRow icon="paintbrush" label="Appearance" target="SettingsAppearance" />
-        </SettingsSection>
-
-        <LegacySettingsSection />
-
-        <ArchivedThreadsSettingsSection />
-
-        <AppSettingsSection />
+        <SettingsIndexSections />
       </ScrollView>
     </View>
   );
 }
 
+<<<<<<< HEAD
 function ConfiguredSettingsRouteScreen() {
   const preferencesResult = useAtomValue(mobilePreferencesAtom);
   const savePreferences = useAtomSet(updateMobilePreferencesAtom);
@@ -665,42 +690,43 @@ function AutoSettleSettingsRows() {
 
   const afterDays = referenceSettings.sidebarAutoSettleAfterDays;
 
+=======
+function SettingsIndexSections() {
+  const { selectedTargets, projectGroups, selectedProjectKey } = useSettingsEnvironmentFilter();
+  const noServerTargets = selectedTargets.length === 0;
+  const selectedProject = projectGroups.find((group) => group.key === selectedProjectKey);
+  const scopedProjectMembers =
+    selectedProject?.members
+      .map((member) => member.project)
+      .filter((project) =>
+        selectedTargets.some((target) => target.environmentId === project.environmentId),
+      ) ?? [];
+  const projectLabel =
+    scopedProjectMembers.length > 0
+      ? deriveProjectGroupLabel({
+          representative: scopedProjectMembers[0]!,
+          members: scopedProjectMembers,
+        })
+      : (selectedProject?.label ?? "Unavailable project");
+>>>>>>> upstream-sync-243e94470-upstream-renamed
   return (
     <>
-      <SettingsSwitchRow
-        icon="arrow.triangle.branch"
-        label="Auto-settle merged threads"
-        value={referenceSettings.sidebarAutoSettleOnMerge}
-        onValueChange={(value) => writeToAll({ sidebarAutoSettleOnMerge: value })}
-      />
-      <SettingsSwitchRow
-        icon="clock"
-        label="Auto-settle inactive threads"
-        value={afterDays !== null}
-        onValueChange={(value) =>
-          writeToAll({ sidebarAutoSettleAfterDays: value ? AUTO_SETTLE_DEFAULT_DAYS : null })
-        }
-      />
-      {afterDays !== null ? (
-        <View
-          className={cn(
-            "flex-row items-center gap-4 px-4",
-            Platform.OS === "android" ? "min-h-14 py-3" : "py-4",
-          )}
-        >
-          <View style={{ width: Platform.OS === "android" ? 24 : 22 }} />
-          <Text
-            className={cn(
-              "flex-1 text-foreground",
-              Platform.OS === "android" ? "text-base" : "text-lg",
-            )}
-          >
-            Inactive days
-          </Text>
-          <AutoSettleDaysField
-            value={afterDays}
-            onValueChange={(value) => writeToAll({ sidebarAutoSettleAfterDays: value })}
+      <SettingsSection title="Interface">
+        <SettingsRow icon="paintbrush" label="Appearance" target="SettingsAppearance" />
+        {Platform.OS === "ios" ? (
+          <SettingsRow icon="keyboard" label="Keyboard" target="SettingsKeyboard" />
+        ) : null}
+      </SettingsSection>
+
+      <SettingsSection title="Projects & threads">
+        {selectedProjectKey !== null ? (
+          <SettingsRow
+            icon="folder"
+            label="Overview"
+            value={projectLabel}
+            target="SettingsProjectOverview"
           />
+<<<<<<< HEAD
         </View>
       ) : null}
       {pendingWrites === 0 && mismatches.length > 0 ? (
@@ -888,3 +914,45 @@ function ArchivedThreadsSettingsSection() {
     </SettingsSection>
   );
 }
+=======
+        ) : null}
+        <SettingsRow icon="folder" label="Organization" target="SettingsOrganization" />
+        <SettingsRow icon="text.bubble" label="Thread behavior" target="SettingsThreads" />
+        <SettingsRow icon="archivebox" label="Archived Threads" target="SettingsArchive" />
+      </SettingsSection>
+
+      <SettingsSection title="Server settings">
+        <SettingsRow
+          icon="text.bubble"
+          label="New threads"
+          target="SettingsEnvironmentNewThreads"
+          disabled={noServerTargets}
+        />
+        <SettingsRow
+          icon="arrow.triangle.branch"
+          label="Source control"
+          target="SettingsEnvironmentSourceControl"
+          disabled={noServerTargets}
+        />
+        <SettingsRow
+          icon="text.alignleft"
+          label="Agent behavior"
+          target="SettingsEnvironmentAgentBehavior"
+          disabled={noServerTargets}
+        />
+        <SettingsRow
+          icon="arrow.clockwise"
+          label="Maintenance"
+          target="SettingsEnvironmentMaintenance"
+          disabled={noServerTargets}
+        />
+      </SettingsSection>
+
+      <SettingsSection title="App">
+        <SettingsRow icon="chart.bar.xaxis" label="Usage" target="SettingsUsage" />
+        <SettingsRow icon="info.circle" label="About T3 Code" target="SettingsAbout" />
+      </SettingsSection>
+    </>
+  );
+}
+>>>>>>> upstream-sync-243e94470-upstream-renamed

@@ -1,3 +1,4 @@
+import { ConnectionTraceId } from "./ConnectionTraceId";
 import { useAuth } from "@clerk/expo";
 import { SymbolView } from "../../components/AppSymbol";
 import {
@@ -122,7 +123,11 @@ function CloudEnvironmentRowsContent(
       {showHeader ? (
         <View className="flex-row items-center justify-between px-1">
           <Text className="text-sm font-infinitus-bold uppercase text-foreground-muted">
+<<<<<<< HEAD
             {CONNECT_NAME}
+=======
+            T3 Connect
+>>>>>>> upstream-sync-243e94470-upstream-renamed
           </Text>
           {discoveryAvailable ? (
             <Pressable
@@ -197,7 +202,11 @@ function CloudEnvironmentRowsContent(
       !controller.relayDiscovery.isRefreshing ? (
         <View collapsable={false} className="gap-3 rounded-[24px] bg-card p-5">
           <Text className="text-base font-infinitus-bold text-foreground">
+<<<<<<< HEAD
             Could not load {CONNECT_NAME} environments
+=======
+            Could not load T3 Connect environments
+>>>>>>> upstream-sync-243e94470-upstream-renamed
           </Text>
           <Text className="text-sm text-foreground-muted">{controller.relayDiscovery.error}</Text>
           {controller.relayDiscovery.errorTraceId ? (
@@ -408,23 +417,15 @@ function CloudEnvironmentRowShell(props: {
           >
             {statusText}
             {errorTraceId ? (
-              <>
-                {" Trace ID: "}
-                <Text
-                  accessibilityHint="Copies the trace ID"
-                  accessibilityRole="button"
-                  className={cn("text-xs underline decoration-dotted", statusClassName)}
-                  onLongPress={(event) => {
-                    event.stopPropagation();
-                    copyTextWithHaptic(errorTraceId, { target: "connection-trace-id" });
-                  }}
-                  onPress={(event) => {
-                    event.stopPropagation();
-                  }}
-                >
-                  {errorTraceId}
-                </Text>
-              </>
+              <ConnectionTraceId
+                traceId={errorTraceId}
+                tone={
+                  props.connectionError && props.connectionState !== "unsupported"
+                    ? "danger"
+                    : "muted"
+                }
+                activation="longPress"
+              />
             ) : null}
           </Text>
           {errorCanExpand ? (

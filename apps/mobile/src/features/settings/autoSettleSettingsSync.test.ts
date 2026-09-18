@@ -1,4 +1,8 @@
+<<<<<<< HEAD
 import { DEFAULT_SERVER_SETTINGS, EnvironmentId } from "@infinitus/contracts";
+=======
+import { DEFAULT_SERVER_SETTINGS, EnvironmentId, ProjectId } from "@infinitus/contracts";
+>>>>>>> upstream-sync-243e94470-upstream-renamed
 import { describe, expect, it } from "vite-plus/test";
 
 import { planAutoSettleSettingsSync } from "./autoSettleSettingsSync";
@@ -74,5 +78,19 @@ describe("auto-settle settings sync", () => {
     ]);
 
     expect(plan.mismatches).toEqual([]);
+  });
+
+  it("notices different project checkouts on the same environment", () => {
+    const projectReference = { ...reference, projectId: ProjectId.make("one") };
+    const otherCheckout = {
+      environmentId: reference.environmentId,
+      projectId: ProjectId.make("two"),
+      label: "Other checkout",
+      settings: { ...reference.settings, sidebarAutoSettleAfterDays: null },
+    };
+
+    expect(planAutoSettleSettingsSync(projectReference, [otherCheckout]).mismatches).toEqual([
+      otherCheckout,
+    ]);
   });
 });
