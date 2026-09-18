@@ -69,10 +69,10 @@ pages under `docs/internals/` keep taking narratives out of these bullets.
 - `packages/client-runtime/src/state/server.ts` — `serverEnvironment.proxyModels`
   command (single-flight per base URL).
 - `apps/web/src/components/settings/AddProviderInstanceDialog.tsx` — the Claude
-  Config step renders `ProxyProviderFields` ("Route through a proxy"); on save
-  `applyProxyDraft` adds the ANTHROPIC_* environment variables (the key marked
-  sensitive), a dedicated `homePath` (`~/.claude-proxy/<instanceId>` unless one
-  was typed) and every picked model as a custom model (the loaded list is
+  and Pi Config steps render `ProxyProviderFields` ("Route through a proxy"); on save
+  `applyProxyDraft` adds the ANTHROPIC_* (Claude) or PI_PROXY_* (Pi) environment
+  variables (the key marked sensitive), a dedicated `homePath`
+  (`~/.<driver>-proxy/<instanceId>` unless one was typed) and every picked model as a custom model (the loaded list is
   checkboxes with Select all, so the proxy's models populate the picker in one
   click; models already on the instance, by slug or `{slug}`, are not doubled).
 - `packages/contracts/src/keybindings.ts` + `packages/shared/src/keybindings.ts`
@@ -258,7 +258,7 @@ pages under `docs/internals/` keep taking narratives out of these bullets.
   harness's stub stack, since the routes layer now needs the service; a
   `Layer.mock(InfinitusPairing)` and a `Layer.mock(CaptureStore)` beside it.
 - `apps/server/src/serverLogger.ts` — `ServerLoggerLive` adds the fork's file
-  logger (`infinitus/serverLogFile.ts`, below) beside `consolePretty` and
+  logger (`infinitus/serverLogFile.ts`, in `fork-only-files.md`) beside `consolePretty` and
   `tracerLogger` (#1182); `apps/server/src/config.ts` — `serverLogNdjsonPath`
   (`<logsDir>/server.log.ndjson`) on `ServerDerivedPaths` beside upstream's
   `serverLogPath`; `apps/server/src/cli/triage.ts` and `triagePrompt.ts` —
@@ -474,6 +474,11 @@ pages under `docs/internals/` keep taking narratives out of these bullets.
   `DesktopLinuxUrlHandler`, `DesktopPreReadyPlatform`, `server.test.ts`,
   `build-desktop-artifact.test.ts`, and the web fixtures that stub a desktop
   origin) use the fork's scheme.
+- `scripts/build-desktop-artifact.test.ts` — the cross-architecture Windows
+  probe test asserts on the probe's executable, not on `ELECTRON_RUN_AS_NODE`
+  in any spawned env: the bundle self-check inherits the host's env, and a
+  runner hosted by the desktop app (an agent inside Infinitus) carries that
+  variable, so the upstream assertion failed there.
 - `apps/server/src/usage/UsageService.test.ts` — the fixture home is the
   temp directory's real path: the service canonicalises transcript roots,
   and macOS keeps its temp directory behind a symlink (`/var` → `/private/var`),
@@ -492,8 +497,8 @@ pages under `docs/internals/` keep taking narratives out of these bullets.
   `run.infinitus.mobile`, the Infinitus Apple team, the native phone's icon;
   `appleTeamId` per variant), selected with `APP_VARIANT=infinitus`; its
   `universalLinkHost` (`infinitus.run`, #724) adds `applinks:infinitus.run`
-  to the iOS associated domains and `autoVerify` intent filters for
-  `https://infinitus.run/pair` and `/join` (#1313) on Android (the site serves the AASA
+  to the iOS associated domains and an `autoVerify` intent filter for
+  `https://infinitus.run/join` (#1313) on Android (the site serves the AASA
   `applinks` for `Q783W6B4FA.run.infinitus.mobile` and `assetlinks.json`);
   `extra.productVersion` is the root `VERSION` (#823 layer 3), which
   `SettingsAboutRouteScreen` shows in place of the store version.
@@ -557,7 +562,7 @@ pages under `docs/internals/` keep taking narratives out of these bullets.
   fork's build fell through to upstream's T3 mark and drew the T3 logo
   beside the Infinitus wordmark on every loading screen. Any new
   variant-keyed asset needs an `infinitus` branch for the same reason.
-- `apps/mobile/src/App.tsx` — `appLinking`'s universal pair-link rewrite (`features/connection/universalPairLink.logic.ts`, #724, #746), the team invite-link rewrite (`features/team/team.logic.ts`, #1313: `infinitus.run/join#<code>` → `team?code=`) and the mounted bridges: `InfinitusAlarmsBridge`, `InfinitusNotificationPresenter`, `InfinitusHoldsBridge` (#1278). Rules and traps: `docs/internals/phone-app-bridges.md`.
+- `apps/mobile/src/App.tsx` — `appLinking`'s team invite-link rewrite (`features/team/team.logic.ts`, #1313: `infinitus.run/join#<code>` → `team?code=`) and the mounted bridges: `InfinitusAlarmsBridge`, `InfinitusNotificationPresenter`, `InfinitusHoldsBridge` (#1278). Rules and traps: `docs/internals/phone-app-bridges.md`.
 - `apps/mobile/src/persistence/mobile-preferences.ts` — the
   `infinitusAlarmsEnabled` / `infinitusPinAtCreation` (#742) /
   `infinitusComposerSendMode` (#807, `"queue" | "steer"`) keys (interface

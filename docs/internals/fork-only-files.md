@@ -381,7 +381,7 @@ these bullets.
 - `scripts/fork-visual-routes.ts` (+ `.test.ts`), `scripts/fork-visual-check.ts` — the route table the pass asserts (one marker per populated page, `ALWAYS_ABSENT` phrases) and the checker that applies it. Rules and traps: `docs/internals/fork-visual-pass.md`.
 - `.github/workflows/fork-visual-pass.yml` — "Fork visual pass", on every PR to `main` and by hand: fixture, server from source, `fork-visual-pass.mjs`, `fork-visual-check.ts`; artifact `fork-visual-pass` (#825, #831). Rules and traps: `docs/internals/fork-visual-pass.md`.
 - `.github/workflows/infinitus-nightly.yml` — the nightly (#1042, "One
-  release" above): a `version` job dates the root `VERSION`, `build` is
+  release" in `INFINITUS.md`): a `version` job dates the root `VERSION`, `build` is
   `infinitus-release.yml` through `workflow_call` with that version
   (`secrets: inherit`, so the Mac job signs and notarizes as for a release),
   `publish` — `main` only, on the schedule or a dispatch with `publish` —
@@ -390,10 +390,14 @@ these bullets.
 - `.github/workflows/infinitus-release.yml` — the one release (INFINITUS.md "One release"): the `desktop` job nests the `mac` job's `Infinitus-Menu-Bar-<version>.zip` as a login item (#777, `--native-helper`), the `cli` job builds the Linux CLI archives and `SHA256SUMS` (#1192, upstream's `cli_archive` steps copied). Rules and traps: `docs/internals/release-and-updates.md`.
 - `packages/contracts/src/providerProxy.ts`, `apps/server/src/provider/proxyModels.ts`,
   `apps/web/src/components/settings/proxyProvider.ts`,
-  `apps/web/src/components/settings/ProxyProviderFields.tsx` — "Route through a
-  proxy" for a Claude instance: 9Router / CLIProxyAPI / custom presets, model
-  slots picked from the proxy's `GET <baseUrl>/models`, everything stored on
-  the ordinary instance (env vars + CLAUDE_CONFIG_DIR), no settings file written.
+  `apps/web/src/components/settings/ProxyProviderFields.tsx`,
+  `apps/server/src/provider/Layers/piProxyHome.ts` — "Route through a
+  proxy" for a Claude or Pi instance: 9Router / CLIProxyAPI / custom presets,
+  models picked from the proxy's `GET <baseUrl>/models`, everything stored on
+  the ordinary instance (env vars + its own config dir). Claude reads its env
+  vars itself; Pi reads only `<home>/models.json`, which `piProxyHome.ts`
+  derives from the `PI_PROXY_*` vars and the `proxy/<id>` custom models on
+  every driver build, with the key as `$PI_PROXY_API_KEY` so it stays off disk.
 - `apps/server/src/provider/Drivers/PiDriver.ts`,
   `provider/Services/PiAdapter.ts`, `provider/Layers/{PiAdapter,PiProvider,PiSessionRuntime,piRpcProtocol,piHomeEnvironment,piModels.logic}.ts`
   (+ tests), `apps/server/src/textGeneration/PiTextGeneration.ts`,
