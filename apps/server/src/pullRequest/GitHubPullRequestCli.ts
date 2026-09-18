@@ -30,7 +30,7 @@ import {
   type PullRequestLabelCandidateList,
   type PullRequestThreadCommentsResult,
   type PullRequestUpdateMethod,
-} from "@t3tools/contracts";
+} from "@infinitus/contracts";
 
 import * as GitHubCli from "../sourceControl/GitHubCli.ts";
 import * as GitHubGraphQlBudget from "../sourceControl/githubGraphQlBudget.ts";
