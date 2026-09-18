@@ -10217,6 +10217,7 @@ export default function ChatView(props: ChatViewProps) {
                   !paintOnlyDisplayedTimeline && supportsConversationRollback
                 }
                 supportsThreadFork={!paintOnlyDisplayedTimeline && supportsThreadFork}
+                supportsFileRewind={activeWorktreePath !== null}
                 onRevertToTurnCount={
                   paintOnlyDisplayedTimeline ? noopHeldRevert : onRevertTimelineTurn
                 }

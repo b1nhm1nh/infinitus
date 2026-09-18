@@ -319,6 +319,8 @@ interface TimelineRowActivityState {
   isRevertingCheckpoint: boolean;
   /** Fork (#270 E2): the thread's provider records a fork point per turn. */
   supportsThreadFork: boolean;
+  /** The server restores files only into an isolated worktree (upstream #12306). */
+  supportsFileRewind: boolean;
   latestTurnId: TurnId | null;
   /** Fork (#952): the completed turns' footers, drawn in place of the meta row's time. */
   turnFooters: TurnFooters;
@@ -442,6 +444,7 @@ interface MessagesTimelineProps {
   onOpenTurnDiff: (turnId: TurnId, filePath?: string) => void;
   supportsConversationRollback: boolean;
   supportsThreadFork?: boolean;
+  supportsFileRewind?: boolean;
   onRevertToTurnCount: (
     targetTurnCount: number,
     messageId: MessageId,
@@ -517,6 +520,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
   onOpenTurnDiff,
   supportsConversationRollback,
   supportsThreadFork = false,
+  supportsFileRewind = true,
   onRevertToTurnCount,
   onUseArtifactTemplate = NOOP_USE_ARTIFACT_TEMPLATE,
   isRevertingCheckpoint,
@@ -1235,6 +1239,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       isCompacting,
       isRevertingCheckpoint,
       supportsThreadFork,
+      supportsFileRewind,
       latestTurnId: latestTurn?.turnId ?? null,
       turnFooters,
       // The same value the row-derivation uses, so a block and the placeholder
@@ -1249,6 +1254,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       isWorking,
       isPreparingWorktree,
       supportsThreadFork,
+      supportsFileRewind,
       // Deliberately the fields `deriveUnsettledTurnId` reads, not the object:
       // its identity changes on every thread-shell patch.
       latestTurn?.turnId,
@@ -2328,12 +2334,18 @@ function RevertUserMessageButton({
         <TooltipPopup side="top">Revert to this message</TooltipPopup>
       </Tooltip>
       <MenuPopup align="end">
-        <MenuItem onClick={() => ctx.onRevertToTurnCount(turnCount, messageId, "files")}>
-          Edit from here
-        </MenuItem>
-        <MenuItem onClick={() => ctx.onRevertToTurnCount(turnCount, messageId, "restore-files")}>
-          Restore files only
-        </MenuItem>
+        {activity.supportsFileRewind ? (
+          <>
+            <MenuItem onClick={() => ctx.onRevertToTurnCount(turnCount, messageId, "files")}>
+              Edit from here
+            </MenuItem>
+            <MenuItem
+              onClick={() => ctx.onRevertToTurnCount(turnCount, messageId, "restore-files")}
+            >
+              Restore files only
+            </MenuItem>
+          </>
+        ) : null}
         <MenuItem onClick={() => ctx.onRevertToTurnCount(turnCount, messageId, "chat")}>
           Rewind chat only
         </MenuItem>
