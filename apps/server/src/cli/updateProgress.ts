@@ -1,3 +1,5 @@
+import { PRODUCT_NAME } from "@infinitus/shared/productName";
+
 import type { PinnedRuntimeProgress } from "../cloud/pinnedRuntime.ts";
 
 /** A single status line below the download bar; redirected output remains plain. */
@@ -40,7 +42,7 @@ export function createUpdateProgress(
         const labels = {
           download: "Downloading...",
           verify: "Verifying the download...",
-          extract: "Extracting T3 Code...",
+          extract: `Extracting ${PRODUCT_NAME}...`,
           validate: "Checking the new executable...",
           cached: "Using the downloaded release...",
         };

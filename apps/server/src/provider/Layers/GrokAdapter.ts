@@ -86,6 +86,7 @@ import {
 } from "../acp/XAiAcpExtension.ts";
 import { type GrokAdapterShape } from "../Services/GrokAdapter.ts";
 import { type EventNdjsonLogger, makeEventNdjsonLogger } from "./EventNdjsonLogger.ts";
+import { PRODUCT_NAME } from "@infinitus/shared/productName";
 
 const encodeUnknownJsonStringExit = Schema.encodeUnknownExit(Schema.fromJsonString(Schema.Unknown));
 
@@ -1529,7 +1530,7 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
           return yield* new ProviderAdapterRequestError({
             provider: PROVIDER,
             method: "session/prompt",
-            detail: "Change permissions with T3's permission selector instead of /always-approve.",
+            detail: `Change permissions with ${PRODUCT_NAME}'s permission selector instead of /always-approve.`,
           });
         }
         const prepared = yield* withThreadLock(
