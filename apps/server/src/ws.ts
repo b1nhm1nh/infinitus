@@ -1346,6 +1346,11 @@ const makeWsRpcLayer = (
               return completionFiber;
             });
 
+          // Fork (#269 H): set when the cap refuses this bootstrap, so the
+          // failure handler below can tell the fork's refusal (which records no
+          // row) from every other pre-create failure (which records one).
+          let worktreeCapRefused = false;
+
           const bootstrapProgram = Effect.gen(function* () {
             // Fork (#269 H): the slot is reserved before the reads, so members
             // started together see each other. Reserving is not yet refusing:
@@ -1458,6 +1463,7 @@ const makeWsRpcLayer = (
               const refusal = yield* worktreeCapRefusalNow(1);
               if (refusal !== null) {
                 worktreesInFlight.delete(command.threadId);
+                worktreeCapRefused = true;
                 return yield* Effect.fail(
                   new OrchestrationDispatchCommandError({ message: refusal }),
                 );
@@ -1770,15 +1776,19 @@ const makeWsRpcLayer = (
                 );
               }
               // Fork (#269 H): a bootstrap refused over the worktree limit
-              // fails before `thread.create`, so there is no thread to hold
-              // the row; the tracker still finishes for whoever streams it.
-              const threadExists = !bootstrap?.createThread || createdThread;
+              // records nothing — the refusal costs no thread, so a row would
+              // go to a thread that never existed, and the refusal's contract
+              // is that it dispatches no command at all. Every other failure
+              // records the row, including upstream's `requireWorktree`
+              // refusal, which also fails before the create: the append is
+              // best effort (`recordWorktreeSetup` ignores its cause), so a
+              // missing thread costs a log line, not the caller's error.
               return track(
                 worktreeSetupTracker
                   .finish(threadId, "failed", dispatchError.message)
                   .pipe(
                     Effect.flatMap((snapshot) =>
-                      snapshot && threadExists ? recordWorktreeSetup(snapshot) : Effect.void,
+                      snapshot && !worktreeCapRefused ? recordWorktreeSetup(snapshot) : Effect.void,
                     ),
                   ),
               ).pipe(Effect.andThen(cleanupAndFail(cause, dispatchError)));
