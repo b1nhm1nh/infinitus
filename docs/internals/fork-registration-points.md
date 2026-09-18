@@ -426,13 +426,6 @@ pages under `docs/internals/` keep taking narratives out of these bullets.
   `null`. `FcmDeliveries.ts` — the queue job's optional `alert`
   (`FcmAlertData`): a ready-made alert with a null state, sent over the card
   the consumer computes anyway and never acknowledged as a card delivery.
-- `infra/relay/scripts/deploy.ts` — the `AlchemyContext` the deploy runs
-  under carries `updateStateStore: options.yes` beside `adopt` (#1322).
-  Upstream forwards only `adopt`, so on a Cloudflare account with no Alchemy
-  state store yet (ours; upstream's has had one for months) the CI deploy
-  died at `Cloudflare State store not found … or pass --yes` although the
-  workflow passes `--yes`. Alchemy's own `deploy --yes` sets the same field,
-  and with it the first deploy bootstraps the store itself.
 - `scripts/build-cli-archive.ts` — one call before the stage is copied:
   `applyWebBrandAssets(resolveWebAssetBrandForPackageVersion(version),
 "apps/server/dist/client")`, so a runtime unpacked from the archive serves
