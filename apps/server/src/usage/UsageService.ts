@@ -806,7 +806,9 @@ export const make = Effect.gen(function* () {
     const found = new Map<string, SessionUsage>();
     if (wanted.size === 0) return found;
     const settings = yield* readSettings;
-    const dirs = yield* resolveTranscriptDirs(settings).pipe(
+    const retentionCutoffMs =
+      (yield* Clock.currentTimeMillis) - CACHE_RETENTION_DAYS * 24 * 60 * 60 * 1000;
+    const dirs = yield* resolveTranscriptDirs(settings, retentionCutoffMs).pipe(
       Effect.provideService(Path.Path, path),
     );
     const claudeDirs: string[] = [];

@@ -272,6 +272,10 @@ pages under `docs/internals/` keep taking narratives out of these bullets.
   `connectionCatalogRoamedHost`; `authorization/service.ts` —
   `authorizeBearer` takes `descriptorTimeoutMs` and returns the descriptor's
   alternates (#663).
+- `apps/mobile/src/components/AppSymbol.tsx` — the Android icons for the
+  symbols only the fork's surfaces use (`alarm`, `checkmark.shield`,
+  `pencil.tip`, `person.2`, `person.3`, `push_pin`); upstream's
+  `AppSymbolName` admits no symbol without one.
 - `apps/mobile/src/components/AndroidScreenHeader.tsx` — `AndroidHeaderAction`
   gains an optional `menu` (`AndroidAnchoredMenuProps`' actions, title and
   `onPressAction`); an action carrying one renders the icon button inside

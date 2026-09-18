@@ -4,6 +4,7 @@ import type { Icon } from "@tabler/icons-react-native/types";
  * the entire Tabler icon set in Metro.
  */
 import IconAdjustmentsHorizontal from "@tabler/icons-react-native/IconAdjustmentsHorizontal";
+import IconAlarm from "@tabler/icons-react-native/IconAlarm";
 import IconAlignLeft from "@tabler/icons-react-native/IconAlignLeft";
 import IconAlertCircle from "@tabler/icons-react-native/IconAlertCircle";
 import IconAlertTriangle from "@tabler/icons-react-native/IconAlertTriangle";
@@ -101,6 +102,9 @@ import IconTrash from "@tabler/icons-react-native/IconTrash";
 import IconTypography from "@tabler/icons-react-native/IconTypography";
 import IconUpload from "@tabler/icons-react-native/IconUpload";
 import IconUserCircle from "@tabler/icons-react-native/IconUserCircle";
+import IconUsers from "@tabler/icons-react-native/IconUsers";
+import IconUsersGroup from "@tabler/icons-react-native/IconUsersGroup";
+import IconShieldCheck from "@tabler/icons-react-native/IconShieldCheck";
 import IconWifiOff from "@tabler/icons-react-native/IconWifiOff";
 import IconWorld from "@tabler/icons-react-native/IconWorld";
 import IconX from "@tabler/icons-react-native/IconX";
@@ -108,6 +112,12 @@ import type { AndroidSymbol, SFSymbol, SymbolViewProps } from "expo-symbols";
 import { withUniwind } from "uniwind";
 
 const ANDROID_ICON_BY_SF_SYMBOL = {
+  // Fork: the symbols only the Infinitus surfaces use.
+  alarm: IconAlarm,
+  "checkmark.shield": IconShieldCheck,
+  "pencil.tip": IconPencil,
+  "person.2": IconUsers,
+  "person.3": IconUsersGroup,
   "arrow.branch": IconGitBranch,
   "arrow.left": IconArrowLeft,
   "arrow.clockwise": IconRefresh,
@@ -220,6 +230,7 @@ const SF_ICON_LOOKUP: Partial<Record<SFSymbol, Icon>> = ANDROID_ICON_BY_SF_SYMBO
 // android key keeps working through this wrapper — it wins over the SF map
 // when both match (e.g. folder vs folder_open for expanded project groups).
 const ANDROID_ICON_BY_MATERIAL_NAME = {
+  push_pin: IconPin,
   auto_awesome: IconSparkles,
   bolt: IconBolt,
   build: IconTool,
