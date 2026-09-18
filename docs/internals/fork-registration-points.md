@@ -499,7 +499,7 @@ pages under `docs/internals/` keep taking narratives out of these bullets.
   `https://infinitus.run/pair` and `/join` (#1313) on Android (the site serves the AASA
   `applinks` for `Q783W6B4FA.run.infinitus.mobile` and `assetlinks.json`);
   `extra.productVersion` is the root `VERSION` (#823 layer 3), which
-  `SettingsRouteScreen` shows in place of the store version.
+  `SettingsAboutRouteScreen` shows in place of the store version.
 - `apps/mobile/eas.json` — the `infinitus` build profile, the only one that
   selects that variant (`APP_VARIANT=infinitus`): `distribution: internal`
   (this app is not shipped to the App Store) and its own `channel`, so a fork
@@ -526,10 +526,12 @@ pages under `docs/internals/` keep taking narratives out of these bullets.
   `SettingsAccounts` and `SettingsTeam` in the settings target union.
 - `apps/mobile/src/features/settings/SettingsRouteScreen.tsx` — the rows of
   `SettingsInfinitusRows.tsx`, spread over upstream's sections (no
-  "Infinitus" section: the whole app is Infinitus): Accounts and Team after
-  Environments and the reset alarms toggle at the end of Configuration, the
-  sending mode at the end of General, in both the local and the configured
-  screen.
+  "Infinitus" section: the whole app is Infinitus): Accounts, Team and the
+  reset alarms toggle at the end of Connections in both the local and the
+  configured screen, the sending mode after Thread behavior. The Account
+  and About rows say the product name; `SettingsAboutRouteScreen.tsx` and
+  `SettingsNotificationsRouteScreen.tsx` (upstream's split of this screen)
+  carry the product-name strings and the product version.
 - `apps/mobile/src/features/settings/lib/legal-document-url.ts` and its
   test — the marketing-site base is `infinitus.run`, not `t3.codes`:
   Settings › App › Legal is the one client surface that shows a legal
