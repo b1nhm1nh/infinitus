@@ -14,12 +14,13 @@ import { Alert, Linking, Platform, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useUniwindTheme } from "../../lib/useUniwindTheme";
 import { SettingsScreen } from "../settings/components/SettingsScreen";
-import { AppText as Text, AppTextInput as TextInput } from "../../components/AppText";
+import { AppText as Text } from "../../components/AppText";
 import { ErrorBanner } from "../../components/ErrorBanner";
 import { InfinitusAskToApprove } from "../infinitus/InfinitusAskToApprove";
 import { InfinitusNearbyServers } from "../infinitus/InfinitusNearbyServers";
 import { resolvePairingLink } from "./universalPairLink.logic";
 import { PICKED_HOST_HINT, pickedHostNeedsCode } from "../infinitus/lanDiscovery.logic";
+import { ConnectionFormField } from "./ConnectionFormField";
 import { ConnectionSheetButton } from "./ConnectionSheetButton";
 import {
   buildPairingUrl,
@@ -303,32 +304,24 @@ export function ConnectionsNewRouteScreen({
           ) : (
             <View collapsable={false} className="gap-4 rounded-[24px] bg-card p-4">
               <InfinitusNearbyServers onPick={handleNearbyPick} />
-              <View collapsable={false} className="gap-1.5">
-                <Text className="text-2xs font-infinitus-bold tracking-[0.8px] uppercase text-foreground-muted">
-                  Host
-                </Text>
-                <TextInput
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  keyboardType="url"
-                  placeholder="192.168.1.100:8080"
-                  value={hostInput}
-                  onChangeText={handleHostChange}
-                  className="rounded-[14px] border border-input-border bg-input px-4 py-3.5 text-base text-foreground"
-                />
-              </View>
+              <ConnectionFormField
+                label="Host"
+                autoCapitalize="none"
+                autoCorrect={false}
+                keyboardType="url"
+                placeholder="192.168.1.100:8080"
+                value={hostInput}
+                onChangeText={handleHostChange}
+              />
 
-              <View collapsable={false} className="gap-1.5">
-                <Text className="text-2xs font-infinitus-bold tracking-[0.8px] uppercase text-foreground-muted">
-                  Pairing code
-                </Text>
-                <TextInput
+              <View className="gap-1.5">
+                <ConnectionFormField
+                  label="Pairing code"
                   autoCapitalize="none"
                   autoCorrect={false}
                   placeholder="abc-123-xyz"
                   value={codeInput}
                   onChangeText={handleCodeChange}
-                  className="rounded-[14px] border border-input-border bg-input px-4 py-3.5 text-base text-foreground"
                 />
                 {needsCode ? (
                   <Text accessibilityLiveRegion="polite" className="text-xs text-foreground-muted">

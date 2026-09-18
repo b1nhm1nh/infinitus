@@ -1,3 +1,4 @@
+import { ConnectionTraceId } from "./ConnectionTraceId";
 import { SymbolView } from "../../components/AppSymbol";
 import { connectionStatusText } from "@infinitus/client-runtime/connection";
 import type { AtomCommandResult } from "@infinitus/client-runtime/state/runtime";
@@ -9,17 +10,17 @@ import { useCallback, useState } from "react";
 import { Platform, Alert, Pressable, View } from "react-native";
 import Animated, { FadeIn, FadeOut, LinearTransition } from "react-native-reanimated";
 
-import { AppText as Text, AppTextInput as TextInput } from "../../components/AppText";
+import { AppText as Text } from "../../components/AppText";
 import { EnvironmentMachineSymbol } from "../../components/EnvironmentMachineSymbol";
 import { MaterialButton } from "../../components/MaterialButton";
 import { MaterialIconButton } from "../../components/MaterialIconButton";
 import { ThemedSwitch } from "../../components/ThemedSwitch";
 import { cn } from "../../lib/cn";
-import { copyTextWithHaptic } from "../../lib/copyTextWithHaptic";
 import { useEnvironmentPresentation } from "../../state/presentation";
 import { roamingHostsLine } from "./roamingHosts";
 import type { ConnectedEnvironmentSummary } from "../../state/remote-runtime-types";
 import { serverEnvironment } from "../../state/server";
+import { ConnectionFormField } from "./ConnectionFormField";
 import { ConnectionStatusDot } from "./ConnectionStatusDot";
 import { CONNECT_NAME } from "@infinitus/shared/productName";
 
@@ -127,23 +128,11 @@ export function ConnectionEnvironmentRow(props: {
             >
               {statusLabel}
               {statusTraceId ? (
-                <>
-                  {" Trace ID: "}
-                  <Text
-                    accessibilityHint="Copies the trace ID"
-                    accessibilityRole="button"
-                    className="underline decoration-dotted"
-                    onLongPress={(event) => {
-                      event.stopPropagation();
-                      copyTextWithHaptic(statusTraceId, { target: "connection-trace-id" });
-                    }}
-                    onPress={(event) => {
-                      event.stopPropagation();
-                    }}
-                  >
-                    {statusTraceId}
-                  </Text>
-                </>
+                <ConnectionTraceId
+                  traceId={statusTraceId}
+                  tone={hasConnectionFailure ? "danger" : "muted"}
+                  activation="longPress"
+                />
               ) : null}
             </Text>
           ) : null}
@@ -177,34 +166,24 @@ export function ConnectionEnvironmentRow(props: {
             </Text>
           ) : (
             <>
-              <View className="gap-1.5">
-                <Text className="text-2xs font-infinitus-bold tracking-[0.8px] uppercase text-foreground-muted">
-                  Label
-                </Text>
-                <TextInput
-                  autoCapitalize="words"
-                  autoCorrect={false}
-                  placeholder="My MacBook"
-                  value={label}
-                  onChangeText={setLabel}
-                  className="rounded-[14px] border border-input-border bg-input px-4 py-3 text-base text-foreground"
-                />
-              </View>
+              <ConnectionFormField
+                label="Label"
+                autoCapitalize="words"
+                autoCorrect={false}
+                placeholder="My MacBook"
+                value={label}
+                onChangeText={setLabel}
+              />
 
-              <View className="gap-1.5">
-                <Text className="text-2xs font-infinitus-bold tracking-[0.8px] uppercase text-foreground-muted">
-                  URL
-                </Text>
-                <TextInput
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  keyboardType="url"
-                  placeholder="192.168.1.100:8080"
-                  value={url}
-                  onChangeText={setUrl}
-                  className="rounded-[14px] border border-input-border bg-input px-4 py-3 text-base text-foreground"
-                />
-              </View>
+              <ConnectionFormField
+                label="URL"
+                autoCapitalize="none"
+                autoCorrect={false}
+                keyboardType="url"
+                placeholder="192.168.1.100:8080"
+                value={url}
+                onChangeText={setUrl}
+              />
             </>
           )}
 
