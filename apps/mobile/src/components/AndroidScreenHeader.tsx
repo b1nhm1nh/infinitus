@@ -131,7 +131,7 @@ export function AndroidScreenHeader(props: {
                 disabled: Boolean(action.disabled),
                 state: action.selected ? "on" : undefined,
               },
-              ...(action.menu === undefined ? {} : { subactions: action.menu.actions }),
+              ...(action.menu === undefined ? {} : { subactions: [...action.menu.actions] }),
             }))}
             onPressAction={(event) => {
               // A submenu row reports its own id, not the parent's index, so

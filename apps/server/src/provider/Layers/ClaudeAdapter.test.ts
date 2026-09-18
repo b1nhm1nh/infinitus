@@ -594,6 +594,7 @@ describe("ClaudeAdapterLive", () => {
       });
 
       assert.deepEqual(harness.getLastCreateQueryInput()?.options?.settings, {
+        showThinkingSummaries: true,
         advisorModel: "fable",
       });
     }).pipe(

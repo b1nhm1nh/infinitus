@@ -1832,7 +1832,12 @@ describe("storage cleanup", () => {
                   removeWorktree: (input) => {
                     assert.strictEqual(input.force, false);
                     removals.push(input.path);
-                    return fs.remove(input.path, { recursive: true }).pipe(Effect.orDie);
+                    return fs
+                      .remove(input.path, { recursive: true })
+                      .pipe(
+                        Effect.orDie,
+                        Effect.as({ branch: null, savedWorkCommit: null, branchDeleted: false }),
+                      );
                   },
                 }),
                 Layer.mock(TerminalManager)({

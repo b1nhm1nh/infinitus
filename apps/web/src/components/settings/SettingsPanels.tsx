@@ -2732,7 +2732,11 @@ export function GeneralSettingsPanel() {
                 }
               }}
             >
-              <SelectTrigger size="sm" className="w-auto min-w-0" aria-label="Sending while a turn runs">
+              <SelectTrigger
+                size="sm"
+                className="w-auto min-w-0"
+                aria-label="Sending while a turn runs"
+              >
                 <SelectValue>{COMPOSER_SEND_MODE_LABELS[settings.composerSendMode]}</SelectValue>
               </SelectTrigger>
               <SelectPopup align="end" alignItemWithTrigger={false}>

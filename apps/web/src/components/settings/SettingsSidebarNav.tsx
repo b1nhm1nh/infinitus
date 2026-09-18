@@ -20,7 +20,6 @@ import {
   GitBranchIcon,
   HardDriveIcon,
   InfinityIcon,
-  PanelsTopLeftIcon,
   KeyboardIcon,
   Link2Icon,
   LockIcon,
