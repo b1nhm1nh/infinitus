@@ -4,10 +4,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import { EnvironmentId } from "@infinitus/contracts";
 import { RelayMobileClientId } from "@infinitus/contracts/relay";
-<<<<<<< HEAD
 import { PRODUCT_NAME } from "@infinitus/shared/productName";
-=======
->>>>>>> upstream-sync-52e4b4429-upstream-renamed
 import { DPOP_UNKNOWN_HINT, ManagedRelay } from "@infinitus/client-runtime/relay";
 import { remoteHttpClientLayer } from "@infinitus/client-runtime/rpc";
 import { HttpClient } from "effect/unstable/http";

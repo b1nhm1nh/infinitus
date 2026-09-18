@@ -13,10 +13,7 @@ import {
   type DirectoryRecord,
 } from "@electron/asar";
 
-<<<<<<< HEAD
 import { DESKTOP_DEV_URL_SCHEME, DESKTOP_URL_SCHEME } from "@infinitus/shared/desktopIdentity";
-=======
->>>>>>> upstream-sync-52e4b4429-upstream-renamed
 import { fromYaml } from "@infinitus/shared/schemaYaml";
 import { HostProcessArchitecture, HostProcessPlatform } from "@infinitus/shared/hostProcess";
 import { clerkFrontendApiHostnameFromPublishableKey } from "@infinitus/shared/relayAuth";
@@ -1593,24 +1590,6 @@ const BuildEnvConfig = Config.all({
   platform: Config.schema(BuildPlatform, "T3CODE_DESKTOP_PLATFORM").pipe(Config.option),
   target: Config.String("T3CODE_DESKTOP_TARGET").pipe(Config.option),
   arch: Config.schema(BuildArch, "T3CODE_DESKTOP_ARCH").pipe(Config.option),
-<<<<<<< HEAD
-  version: Config.string("T3CODE_DESKTOP_VERSION").pipe(Config.option),
-  outputDir: Config.string("T3CODE_DESKTOP_OUTPUT_DIR").pipe(Config.option),
-  skipBuild: Config.boolean("T3CODE_DESKTOP_SKIP_BUILD").pipe(Config.withDefault(false)),
-  keepStage: Config.boolean("T3CODE_DESKTOP_KEEP_STAGE").pipe(Config.withDefault(false)),
-  signed: Config.boolean("T3CODE_DESKTOP_SIGNED").pipe(Config.withDefault(false)),
-  verbose: Config.boolean("T3CODE_DESKTOP_VERBOSE").pipe(Config.withDefault(false)),
-  mockUpdates: Config.boolean("T3CODE_DESKTOP_MOCK_UPDATES").pipe(Config.withDefault(false)),
-  mockUpdateServerPort: Config.string("T3CODE_DESKTOP_MOCK_UPDATE_SERVER_PORT").pipe(Config.option),
-  // Path to the Linux CLI release archive (infinitus-<version>-linux-x64.tar.gz) built
-  // by the build_linux_cli CI job. The Windows build embeds it verbatim as the
-  // WSL runtime.
-  wslRuntime: Config.string("T3CODE_DESKTOP_WSL_RUNTIME").pipe(Config.option),
-  // Path to a signed native Infinitus.app to nest as the desktop's login item
-  // (#777, macOS only). The release workflow downloads it from the pinned
-  // native release; local and upstream builds leave it unset and nest nothing.
-  nativeHelper: Config.string("T3CODE_DESKTOP_NATIVE_HELPER").pipe(Config.option),
-=======
   version: Config.String("T3CODE_DESKTOP_VERSION").pipe(Config.option),
   outputDir: Config.String("T3CODE_DESKTOP_OUTPUT_DIR").pipe(Config.option),
   skipBuild: Config.Boolean("T3CODE_DESKTOP_SKIP_BUILD").pipe(Config.withDefault(false)),
@@ -1619,11 +1598,14 @@ const BuildEnvConfig = Config.all({
   verbose: Config.Boolean("T3CODE_DESKTOP_VERBOSE").pipe(Config.withDefault(false)),
   mockUpdates: Config.Boolean("T3CODE_DESKTOP_MOCK_UPDATES").pipe(Config.withDefault(false)),
   mockUpdateServerPort: Config.String("T3CODE_DESKTOP_MOCK_UPDATE_SERVER_PORT").pipe(Config.option),
-  // Path to the Linux CLI release archive (t3-<version>-linux-x64.tar.gz) built
+  // Path to the Linux CLI release archive (infinitus-<version>-linux-x64.tar.gz) built
   // by the build_linux_cli CI job. The Windows build embeds it verbatim as the
   // WSL runtime.
   wslRuntime: Config.String("T3CODE_DESKTOP_WSL_RUNTIME").pipe(Config.option),
->>>>>>> upstream-sync-52e4b4429-upstream-renamed
+  // Path to a signed native Infinitus.app to nest as the desktop's login item
+  // (#777, macOS only). The release workflow downloads it from the pinned
+  // native release; local and upstream builds leave it unset and nest nothing.
+  nativeHelper: Config.String("T3CODE_DESKTOP_NATIVE_HELPER").pipe(Config.option),
 });
 
 const MockUpdateServerPortSchema = Schema.NumberFromString.check(

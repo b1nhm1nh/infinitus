@@ -6,10 +6,7 @@ import {
 } from "@infinitus/contracts";
 import { RelayOkResponse } from "@infinitus/contracts/relay";
 import { HostProcessPlatform } from "@infinitus/shared/hostProcess";
-<<<<<<< HEAD
 import { CONNECT_NAME, PRODUCT_NAME } from "@infinitus/shared/productName";
-=======
->>>>>>> upstream-sync-52e4b4429-upstream-renamed
 import * as RelayClient from "@infinitus/shared/relayClient";
 import { withRelayClientTracing } from "@infinitus/shared/relayTracing";
 import * as Cause from "effect/Cause";
@@ -218,13 +215,8 @@ const CLOUD_CLI_LIVE_SERVER_TIMEOUT = Duration.seconds(5);
 
 const confirmRelayClientInstall = (version: string) =>
   Prompt.run(
-<<<<<<< HEAD
-    Prompt.confirm({
-      message: `The ${PRODUCT_NAME} relay client is required for ${CONNECT_NAME}. Download and install version ${version}?`,
-=======
     Prompt.Confirm({
-      message: `The T3 relay client is required for T3 Connect. Download and install version ${version}?`,
->>>>>>> upstream-sync-52e4b4429-upstream-renamed
+      message: `The ${PRODUCT_NAME} relay client is required for ${CONNECT_NAME}. Download and install version ${version}?`,
       initial: false,
     }),
   );

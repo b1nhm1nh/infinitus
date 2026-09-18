@@ -24,10 +24,7 @@ import {
   environmentThemeFileHasColors,
 } from "@infinitus/contracts";
 import { fromJsonStringPretty, fromLenientJson } from "@infinitus/shared/schemaJson";
-<<<<<<< HEAD
 import { PRODUCT_NAME } from "@infinitus/shared/productName";
-=======
->>>>>>> upstream-sync-52e4b4429-upstream-renamed
 import { BUILT_IN_THEME_IDS, UNPUBLISHABLE_THEME_IDS } from "@infinitus/shared/themePalettes";
 import * as Config from "effect/Config";
 import * as Console from "effect/Console";

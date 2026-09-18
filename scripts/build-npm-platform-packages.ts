@@ -462,15 +462,10 @@ export const buildNpmPlatformPackages = Effect.fn("buildNpmPlatformPackages")(fu
 const command = Command.make(
   "build-npm-platform-packages",
   {
-<<<<<<< HEAD
-    archivesDir: Flag.string("archives-dir").pipe(
+    archivesDir: Flag.String("archives-dir").pipe(
       Flag.withDescription(
         "Directory holding the release's infinitus-<version>-<platform> archives.",
       ),
-=======
-    archivesDir: Flag.String("archives-dir").pipe(
-      Flag.withDescription("Directory holding the release's t3-<version>-<platform> archives."),
->>>>>>> upstream-sync-52e4b4429-upstream-renamed
     ),
     version: Flag.String("version").pipe(
       Flag.withDescription(

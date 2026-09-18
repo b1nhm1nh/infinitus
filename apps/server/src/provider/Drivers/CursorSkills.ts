@@ -11,10 +11,7 @@
 import * as NodeOS from "node:os";
 
 import type { ServerProviderSkill } from "@infinitus/contracts";
-<<<<<<< HEAD
-=======
 import * as ByteSize from "effect/ByteSize";
->>>>>>> upstream-sync-52e4b4429-upstream-renamed
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";

@@ -14,7 +14,6 @@ import {
   ProjectionThreadRepository,
   type ProjectionThreadRepositoryShape,
 } from "../Services/ProjectionThreads.ts";
-<<<<<<< HEAD
 import {
   ModelSelection,
   ThreadBabysit,
@@ -23,9 +22,6 @@ import {
   ThreadTitleState,
   ThreadLinkedPullRequest,
 } from "@infinitus/contracts";
-=======
-import { ModelSelection, ThreadLinkedPullRequest, ThreadTitleState } from "@infinitus/contracts";
->>>>>>> upstream-sync-52e4b4429-upstream-renamed
 
 const ProjectionThreadDbRow = ProjectionThread.mapFields(
   Struct.assign({

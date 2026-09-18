@@ -9,10 +9,7 @@ import {
   HostProcessIsExecutable,
   HostProcessPlatform,
 } from "@infinitus/shared/hostProcess";
-<<<<<<< HEAD
 import { PRODUCT_NAME } from "@infinitus/shared/productName";
-=======
->>>>>>> upstream-sync-52e4b4429-upstream-renamed
 import * as Console from "effect/Console";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -165,11 +162,7 @@ const runUninstall = Effect.fn("cli.uninstall.run")(function* (input: {
       });
     }
     const confirmed = yield* Prompt.run(
-<<<<<<< HEAD
-      Prompt.confirm({ message: "Remove infinitus from this machine?", initial: false }),
-=======
-      Prompt.Confirm({ message: "Remove t3 from this machine?", initial: false }),
->>>>>>> upstream-sync-52e4b4429-upstream-renamed
+      Prompt.Confirm({ message: "Remove infinitus from this machine?", initial: false }),
     ).pipe(Effect.catchTag("QuitError", () => Effect.succeed(false)));
     if (!confirmed) {
       yield* Console.log("Left as is.");

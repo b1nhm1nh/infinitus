@@ -18,11 +18,7 @@
     "@infinitus/shared": "workspace:*",
     "@noble/curves": "catalog:",
     "@noble/hashes": "catalog:",
-<<<<<<< HEAD
-    "alchemy": "2.0.0-beta.76",
-=======
     "alchemy": "2.0.0-beta.79",
->>>>>>> upstream-sync-52e4b4429-upstream-renamed
     "drizzle-orm": "1.0.0-rc.5-ab785fc",
     "effect": "catalog:"
   },

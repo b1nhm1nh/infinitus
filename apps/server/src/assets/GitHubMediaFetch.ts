@@ -1,8 +1,4 @@
-<<<<<<< HEAD
-import Mime from "@effect/platform-node/Mime";
-=======
 import * as Mime from "effect/unstable/http/Mime";
->>>>>>> upstream-sync-52e4b4429-upstream-renamed
 import { githubMediaFileName } from "@infinitus/shared/githubMedia";
 import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";

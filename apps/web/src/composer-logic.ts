@@ -1,9 +1,5 @@
 import type { ClientSettings } from "@infinitus/contracts/settings";
-<<<<<<< HEAD
 import type { AssistantCitation, ComposerSendMode } from "@infinitus/contracts";
-=======
-import type { AssistantCitation } from "@infinitus/contracts";
->>>>>>> upstream-sync-52e4b4429-upstream-renamed
 import {
   serializeAssistantCitation,
   withAssistantCitationComment,

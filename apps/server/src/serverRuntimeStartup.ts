@@ -15,10 +15,7 @@ import {
   WorktreeSetupSnapshot,
   worktreeSetupActivityId,
 } from "@infinitus/contracts";
-<<<<<<< HEAD
 import { PRODUCT_NAME } from "@infinitus/shared/productName";
-=======
->>>>>>> upstream-sync-52e4b4429-upstream-renamed
 import { resolveProjectSettings } from "@infinitus/shared/projectSettings";
 import * as Cause from "effect/Cause";
 import * as Console from "effect/Console";

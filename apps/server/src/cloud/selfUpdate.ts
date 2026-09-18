@@ -9,10 +9,7 @@ import {
   type ThreadId,
 } from "@infinitus/contracts";
 import { HostProcessArchitecture, HostProcessPlatform } from "@infinitus/shared/hostProcess";
-<<<<<<< HEAD
 import { PRODUCT_NAME } from "@infinitus/shared/productName";
-=======
->>>>>>> upstream-sync-52e4b4429-upstream-renamed
 import * as Cause from "effect/Cause";
 import * as Config from "effect/Config";
 import * as Context from "effect/Context";
