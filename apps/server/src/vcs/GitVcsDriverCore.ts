@@ -25,7 +25,10 @@ import {
   type ReviewDiffFileStat,
   type ReviewDiffPreviewSource,
   type VcsRef,
+<<<<<<< HEAD
   type VcsRemoveWorktreeInput,
+=======
+>>>>>>> upstream-sync-1de563c14-upstream-renamed
 } from "@infinitus/contracts";
 import { dedupeRemoteBranchesWithLocalMatches, normalizeGitRemoteUrl } from "@infinitus/shared/git";
 import { HostProcessPlatform } from "@infinitus/shared/hostProcess";
