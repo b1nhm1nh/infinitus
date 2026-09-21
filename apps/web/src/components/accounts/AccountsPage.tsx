@@ -441,10 +441,17 @@ export function AccountsPage() {
     };
     setSignInFlow(base);
     shellFlowIdRef.current = flowId;
-    const result = await shellOAuthSignIn.begin({ flowId, provider }).catch((cause: unknown) => ({
-      ok: false as const,
-      error: cause instanceof Error ? cause.message : String(cause),
-    }));
+    const result = await shellOAuthSignIn
+      .begin({
+        flowId,
+        provider,
+        fleet: fleetKey,
+        ...(target?.email === undefined ? {} : { relogin: target.email }),
+      })
+      .catch((cause: unknown) => ({
+        ok: false as const,
+        error: cause instanceof Error ? cause.message : String(cause),
+      }));
     if (shellFlowIdRef.current === flowId) shellFlowIdRef.current = null;
     if (!live()) return;
     if (result.ok) {
