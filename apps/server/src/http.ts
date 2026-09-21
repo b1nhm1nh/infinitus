@@ -4,7 +4,10 @@ import {
   AuthOrchestrationReadScope,
   EnvironmentHttpApi,
 } from "@infinitus/contracts";
+<<<<<<< HEAD
 import { DESKTOP_DEV_URL_SCHEME, DESKTOP_URL_SCHEME } from "@infinitus/shared/desktopIdentity";
+=======
+>>>>>>> upstream-sync-b379b5b14-upstream-renamed
 import { isDevProxiedPath } from "@infinitus/shared/devProxy";
 import { decodeOtlpTraceRecords } from "@infinitus/shared/observability";
 import * as Data from "effect/Data";
@@ -323,7 +326,7 @@ export const otlpTracesProxyRouteLayer = HttpRouter.add(
     const request = yield* HttpServerRequest.HttpServerRequest;
     const config = yield* ServerConfig.ServerConfig;
     const otlpTracesUrl = config.otlpTracesUrl;
-    const otlpHeaders = config.otlpHeaders;
+    const otlpHeaders = config.otlpTracesExport.headers;
     const browserTraceCollector = yield* BrowserTraceCollector.BrowserTraceCollector;
     const httpClient = yield* HttpClient.HttpClient;
     const serialization = yield* OtlpSerialization.OtlpSerialization;

@@ -451,6 +451,7 @@ describe("resolveScrollToEndClearance", () => {
   });
 });
 
+<<<<<<< HEAD
 describe("createRestingComposerControlsLayoutGuard (#821)", () => {
   const shown = { hiddenCount: 0, visible: true };
   const overflowed = { hiddenCount: 1, visible: true };
@@ -502,5 +503,80 @@ describe("createRestingComposerControlsLayoutGuard (#821)", () => {
     guard.next(overflowed, shown, 340);
     guard.reset();
     expect(guard.next(overflowed, shown, 340)).toBe(shown);
+=======
+describe("progressive composer controls", () => {
+  const measurement = {
+    gap: 4,
+    naturalFixedWidth: 140,
+    minimumFixedWidth: 80,
+    blockWidths: [80, 140],
+    iconOnlyBlockWidths: [40, 60],
+    overflowWidth: 24,
+  };
+
+  it("keeps labels while they fit and removes trailing labels before controls", () => {
+    for (const [hostWidth, iconOnlyCount, hiddenCount] of [
+      [368, 0, 0],
+      [367, 1, 0],
+      [288, 1, 0],
+      [287, 2, 0],
+      [248, 2, 0],
+      [247, 2, 1],
+      [211, 2, 2],
+    ] as const) {
+      expect(resolveRestingComposerControlsLayout({ ...measurement, hostWidth })).toEqual({
+        hiddenCount,
+        iconOnlyCount,
+        visible: true,
+      });
+    }
+  });
+
+  it("requires slack to restore labels and controls", () => {
+    for (const [hostWidth, previous, promoted] of [
+      [
+        368,
+        { hiddenCount: 0, iconOnlyCount: 1, visible: true },
+        { hiddenCount: 0, iconOnlyCount: 0, visible: true },
+      ],
+      [
+        288,
+        { hiddenCount: 0, iconOnlyCount: 2, visible: true },
+        { hiddenCount: 0, iconOnlyCount: 1, visible: true },
+      ],
+      [
+        248,
+        { hiddenCount: 1, iconOnlyCount: 2, visible: true },
+        { hiddenCount: 0, iconOnlyCount: 2, visible: true },
+      ],
+    ] as const) {
+      expect(resolveRestingComposerControlsLayout({ ...measurement, hostWidth, previous })).toEqual(
+        previous,
+      );
+      expect(
+        resolveRestingComposerControlsLayout({
+          ...measurement,
+          hostWidth: hostWidth + 1,
+          previous,
+        }),
+      ).toEqual(promoted);
+    }
+  });
+
+  it("settles through fractional label-width changes at each threshold", () => {
+    for (const hostWidth of [368, 288, 248]) {
+      let previous = resolveRestingComposerControlsLayout({ ...measurement, hostWidth });
+      for (let index = 0; index < 10; index += 1) {
+        const next = resolveRestingComposerControlsLayout({
+          ...measurement,
+          hostWidth,
+          previous,
+          naturalFixedWidth: 140 + (index % 2) * 0.5,
+        });
+        if (index > 1) expect(next).toEqual(previous);
+        previous = next;
+      }
+    }
+>>>>>>> upstream-sync-b379b5b14-upstream-renamed
   });
 });

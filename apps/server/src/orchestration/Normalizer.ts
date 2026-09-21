@@ -5,7 +5,7 @@ import * as Path from "effect/Path";
 import {
   type ClientOrchestrationCommand,
   type UserInputAttachments,
-  PROVIDER_SEND_TURN_MAX_ATTACHMENTS,
+  getProviderAttachmentLimitError,
   type IsoDateTime,
   type OrchestrationCommand,
   OrchestrationDispatchCommandError,
@@ -143,6 +143,7 @@ export const normalizeDispatchCommand = (command: ClientOrchestrationCommand) =>
     // A queued message (#806) stores its uploads the way a sent one does, so
     // the drain's turn start carries plain stored attachments.
     const attachments =
+<<<<<<< HEAD
       canonicalCommand.type === "thread.user-input.respond"
         ? Object.values(canonicalCommand.attachmentsByQuestionId ?? {}).flat()
         : canonicalCommand.message.attachments;
@@ -153,6 +154,14 @@ export const normalizeDispatchCommand = (command: ClientOrchestrationCommand) =>
       return yield* new OrchestrationDispatchCommandError({
         message: `You can attach up to ${PROVIDER_SEND_TURN_MAX_ATTACHMENTS} files per question response.`,
       });
+=======
+      canonicalCommand.type === "thread.turn.start"
+        ? canonicalCommand.message.attachments
+        : Object.values(canonicalCommand.attachmentsByQuestionId ?? {}).flat();
+    const attachmentLimitError = getProviderAttachmentLimitError(attachments);
+    if (attachmentLimitError) {
+      return yield* new OrchestrationDispatchCommandError({ message: attachmentLimitError });
+>>>>>>> upstream-sync-b379b5b14-upstream-renamed
     }
     if (canonicalCommand.type === "thread.turn.start") {
       const clientAttachmentIds = new Set<string>();
@@ -167,11 +176,12 @@ export const normalizeDispatchCommand = (command: ClientOrchestrationCommand) =>
       }
     }
     const claimedAttachmentPaths: string[] = [];
+    const attachmentsWithDecodedSizes = [...attachments];
     // Context records bind to attachments by the id the client knew; they follow the rename.
     const finalAttachmentIdByClientId = new Map<string, string>();
     const normalizedAttachments = yield* Effect.forEach(
       attachments,
-      (attachment) =>
+      (attachment, index) =>
         Effect.gen(function* () {
           if (!("dataUrl" in attachment)) {
             const claim = planAttachmentClaim({
@@ -263,6 +273,11 @@ export const normalizeDispatchCommand = (command: ClientOrchestrationCommand) =>
             sizeBytes: bytes.byteLength,
             ...(attachment.source ? { source: attachment.source } : {}),
           };
+          attachmentsWithDecodedSizes[index] = persistedAttachment;
+          const decodedLimitError = getProviderAttachmentLimitError(attachmentsWithDecodedSizes);
+          if (decodedLimitError) {
+            return yield* new OrchestrationDispatchCommandError({ message: decodedLimitError });
+          }
 
           const attachmentPath = resolveAttachmentPath({
             attachmentsDir: serverConfig.attachmentsDir,
@@ -290,6 +305,7 @@ export const normalizeDispatchCommand = (command: ClientOrchestrationCommand) =>
                 }),
             ),
           );
+          claimedAttachmentPaths.push(attachmentPath);
           if (attachment.id !== undefined) {
             finalAttachmentIdByClientId.set(attachment.id, attachmentId);
           }

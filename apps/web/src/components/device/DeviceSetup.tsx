@@ -1,3 +1,7 @@
+<<<<<<< HEAD
+=======
+import { DeviceHostUpdates } from "./DeviceHostUpdates";
+>>>>>>> upstream-sync-b379b5b14-upstream-renamed
 import type { DevicePlatform, DeviceServiceState, EnvironmentId } from "@infinitus/contracts";
 import { Check, CircleAlert } from "lucide-react";
 import { useState } from "react";
@@ -89,6 +93,7 @@ export function DeviceSetup(props: {
       </WizardHeader>
 
       <WizardPanel>
+        <DeviceHostUpdates state={props.state} environmentId={props.environmentId} />
         {step === 0 ? (
           <section className="space-y-3 text-sm">
             <h3 className="font-medium">Enable the device hub</h3>

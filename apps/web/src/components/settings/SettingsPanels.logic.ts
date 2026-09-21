@@ -9,7 +9,10 @@ import type {
   SidebarProjectGroupingMode,
   UnifiedSettings,
 } from "@infinitus/contracts";
+<<<<<<< HEAD
 import type { DesktopUpdateChannel } from "@infinitus/contracts";
+=======
+>>>>>>> upstream-sync-b379b5b14-upstream-renamed
 import { DEFAULT_UNIFIED_SETTINGS } from "@infinitus/contracts/settings";
 import {
   getBackgroundActivityBaseProfile,
@@ -17,7 +20,10 @@ import {
   normalizeServerBackgroundActivitySettings,
   resolveServerBackgroundActivitySettings,
 } from "@infinitus/shared/backgroundActivitySettings";
+<<<<<<< HEAD
 import { PRODUCT_NAME } from "@infinitus/shared/productName";
+=======
+>>>>>>> upstream-sync-b379b5b14-upstream-renamed
 import * as Duration from "effect/Duration";
 import * as Equal from "effect/Equal";
 
@@ -117,6 +123,8 @@ export type BrowserDefaultSettings = Pick<
   | "browserDefaultZoomFactor"
   | "browserDefaultAppearance"
   | "browserRecordingFrameRate"
+  | "browserRecordingShowKeyPresses"
+  | "browserRecordingShowMousePresses"
   | "browserLinkTarget"
   | "browserAutoShowFloatingPreview"
 >;
@@ -158,6 +166,8 @@ export function getChangedBrowserSettingLabels(settings: BrowserDefaultSettings)
     ...(settings.browserRecordingFrameRate !== DEFAULT_UNIFIED_SETTINGS.browserRecordingFrameRate
       ? ["Recording frame rate"]
       : []),
+    ...(settings.browserRecordingShowKeyPresses ? ["Recording key presses"] : []),
+    ...(settings.browserRecordingShowMousePresses ? ["Recording mouse presses"] : []),
     ...(settings.browserLinkTarget !== DEFAULT_UNIFIED_SETTINGS.browserLinkTarget
       ? ["Open links in"]
       : []),
