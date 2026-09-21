@@ -5,12 +5,9 @@ import * as Option from "effect/Option";
 import { AsyncResult, Atom, AtomRegistry } from "effect/unstable/reactivity";
 import { vi } from "vite-plus/test";
 import { ProviderInstanceId } from "@infinitus/contracts";
-<<<<<<< HEAD
-=======
 import { RegistryContext, useAtomSet } from "@effect/atom-react";
 import { createElement } from "react";
 import { renderToString } from "react-dom/server";
->>>>>>> upstream-sync-b379b5b14-upstream-renamed
 
 vi.mock("expo-secure-store", () => ({
   getItemAsync: vi.fn(),

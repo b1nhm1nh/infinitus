@@ -1,14 +1,5 @@
 import {
-<<<<<<< HEAD
-  BUILT_IN_THEMES,
-  T3_CHAT_THEME,
-  getThemeColorsForAppearance,
-} from "@infinitus/shared/themePalettes";
-
-import {
-=======
   getMobileThemeColors,
->>>>>>> upstream-sync-b379b5b14-upstream-renamed
   getMobileThemeVariables,
   themeColorToNativeColor,
   type MobileThemeId,

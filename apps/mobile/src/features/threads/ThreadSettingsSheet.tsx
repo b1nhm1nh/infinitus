@@ -120,104 +120,6 @@ const EMPTY_MODEL_FAVORITES: ReadonlyArray<{
   readonly model: string;
 }> = [];
 const FAVORITES_PROVIDER_FILTER = "@favorites";
-<<<<<<< HEAD
-function ModelRow(props: {
-  readonly option: ModelOption;
-  readonly selected: boolean;
-  readonly onPress: () => void;
-  readonly isFavorite: boolean;
-  readonly favoritesLoaded: boolean;
-  readonly onToggleFavorite: () => void;
-  readonly isFirst: boolean;
-  readonly isLast: boolean;
-}) {
-  const selectedMaterialRow = Platform.OS === "android" && props.selected;
-  return (
-    <View
-      style={Platform.OS === "android" ? { minHeight: 56 } : undefined}
-      className={cn(
-        "mx-4 min-h-11 flex-row items-center gap-2 bg-card px-4",
-        selectedMaterialRow && "bg-thread-selected",
-        props.isFirst && "rounded-t-2xl",
-        props.isLast ? "rounded-b-2xl" : "border-b border-border-subtle",
-      )}
-    >
-      <Pressable
-        accessibilityLabel={[props.option.label, props.option.subtitle].filter(Boolean).join(", ")}
-        accessibilityRole="radio"
-        accessibilityState={{
-          checked: props.selected,
-          disabled: props.option.isUnavailable === true,
-        }}
-        className="min-h-11 min-w-0 flex-1 flex-row items-center gap-2 active:opacity-70"
-        disabled={props.option.isUnavailable}
-        onPress={props.onPress}
-      >
-        {Platform.OS === "android" ? <MaterialRadioIndicator selected={props.selected} /> : null}
-        <View className="min-w-0 flex-1">
-          <View className="flex-row items-center gap-2">
-            <Text
-              className="min-w-0 shrink text-base font-infinitus-medium text-foreground"
-              numberOfLines={Platform.OS === "android" ? 2 : 1}
-            >
-              {props.option.label}
-            </Text>
-            {props.option.isDefault ? (
-              <View className="rounded-md bg-subtle-strong px-1.5 py-0.5">
-                <Text className="text-3xs font-infinitus-bold text-foreground-muted">Default</Text>
-              </View>
-            ) : null}
-            {props.option.isLegacy ? (
-              <View className="rounded-md bg-subtle px-1.5 py-0.5">
-                <Text className="text-3xs font-infinitus-bold text-foreground-muted">Legacy</Text>
-              </View>
-            ) : null}
-            {props.option.isUnavailable ? (
-              <Text className="text-xs text-foreground">Unavailable</Text>
-            ) : null}
-          </View>
-          {props.option.subtitle ? (
-            <Text
-              className="text-xs text-foreground-muted"
-              numberOfLines={Platform.OS === "android" ? 2 : 1}
-            >
-              {props.option.subtitle}
-            </Text>
-          ) : null}
-        </View>
-        {props.selected && Platform.OS !== "android" ? (
-          <SymbolView
-            name="checkmark"
-            size={16}
-            tintColorClassName="accent-icon"
-            type="monochrome"
-            weight="semibold"
-          />
-        ) : null}
-      </Pressable>
-      <Pressable
-        accessibilityLabel={`${props.isFavorite ? "Remove from" : "Add to"} favorites: ${
-          props.option.providerLabel
-        }, ${props.option.label}`}
-        accessibilityRole="button"
-        accessibilityState={{ disabled: !props.favoritesLoaded, selected: props.isFavorite }}
-        className="min-h-11 min-w-11 items-center justify-center"
-        disabled={!props.favoritesLoaded}
-        onPress={props.onToggleFavorite}
-      >
-        <SymbolView
-          name={props.isFavorite ? "star.fill" : "star"}
-          size={18}
-          tintColorClassName={props.isFavorite ? "accent-icon" : "accent-icon-subtle"}
-          type="monochrome"
-        />
-      </Pressable>
-    </View>
-  );
-}
-
-=======
->>>>>>> upstream-sync-b379b5b14-upstream-renamed
 /** Provider catalog header with its harness logo and disclosure state. */
 function ProviderHeader(props: {
   readonly driver: string | undefined;
@@ -306,49 +208,6 @@ function DisclosureRow(props: {
   );
 }
 
-<<<<<<< HEAD
-/** Single option inside a submenu panel. */
-function ChoiceRow(props: {
-  readonly label: string;
-  readonly description?: string;
-  readonly selected: boolean;
-  readonly onPress: () => void;
-  readonly isLast: boolean;
-}) {
-  return (
-    <Pressable
-      accessibilityLabel={props.description ? `${props.label}. ${props.description}` : props.label}
-      accessibilityRole="radio"
-      accessibilityState={{ checked: props.selected }}
-      onPress={props.onPress}
-      style={Platform.OS === "android" ? { minHeight: 56 } : undefined}
-      className={cn(
-        "min-h-14 flex-row items-center gap-3 bg-card px-4 py-3 active:bg-subtle",
-        !props.isLast && "border-b border-border-subtle",
-      )}
-    >
-      {Platform.OS === "android" ? <MaterialRadioIndicator selected={props.selected} /> : null}
-      <View className="min-w-0 flex-1 gap-0.5">
-        <Text className="text-base font-infinitus-medium text-foreground">{props.label}</Text>
-        {props.description ? (
-          <Text className="text-sm leading-5 text-foreground-muted">{props.description}</Text>
-        ) : null}
-      </View>
-      {props.selected && Platform.OS !== "android" ? (
-        <SymbolView
-          name="checkmark"
-          size={16}
-          tintColorClassName="accent-icon"
-          type="monochrome"
-          weight="semibold"
-        />
-      ) : null}
-    </Pressable>
-  );
-}
-
-=======
->>>>>>> upstream-sync-b379b5b14-upstream-renamed
 function SwitchRow(props: {
   readonly label: string;
   readonly value: boolean;
@@ -1052,41 +911,6 @@ function ThreadSettingsMainContent(props: {
                   />
                 ) : null}
               </View>
-<<<<<<< HEAD
-              <View className="flex-row gap-2 pt-3">
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityState={{
-                    selected: session.providerFilter !== FAVORITES_PROVIDER_FILTER,
-                  }}
-                  className={cn(
-                    "rounded-full px-4 py-2",
-                    session.providerFilter !== FAVORITES_PROVIDER_FILTER
-                      ? "bg-subtle-strong"
-                      : "bg-subtle",
-                  )}
-                  onPress={() => session.setProviderFilter(null)}
-                >
-                  <Text className="text-sm font-infinitus-medium text-foreground">All</Text>
-                </Pressable>
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityState={{
-                    selected: session.providerFilter === FAVORITES_PROVIDER_FILTER,
-                  }}
-                  className={cn(
-                    "rounded-full px-4 py-2",
-                    session.providerFilter === FAVORITES_PROVIDER_FILTER
-                      ? "bg-subtle-strong"
-                      : "bg-subtle",
-                  )}
-                  onPress={() => session.setProviderFilter(FAVORITES_PROVIDER_FILTER)}
-                >
-                  <Text className="text-sm font-infinitus-medium text-foreground">Favorites</Text>
-                </Pressable>
-              </View>
-=======
->>>>>>> upstream-sync-b379b5b14-upstream-renamed
             </View>
           ) : null}
         </>

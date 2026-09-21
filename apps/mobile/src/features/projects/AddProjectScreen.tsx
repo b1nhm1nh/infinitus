@@ -129,11 +129,7 @@ function SectionTitle(props: { readonly children: string }) {
     <Text
       className={
         Platform.OS === "android"
-<<<<<<< HEAD
-          ? "px-4 text-sm font-infinitus-medium text-primary"
-=======
           ? "px-4 text-sm font-infinitus-medium text-primary-text"
->>>>>>> upstream-sync-b379b5b14-upstream-renamed
           : "px-1 text-2xs font-infinitus-bold tracking-[0.7px] uppercase text-foreground-muted"
       }
     >

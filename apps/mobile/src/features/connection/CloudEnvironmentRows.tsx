@@ -119,38 +119,10 @@ function CloudEnvironmentRowsContent(
   return (
     <View collapsable={false} className={cn("gap-3", showHeader && "mt-5")}>
       {showHeader ? (
-<<<<<<< HEAD
-        <View className="flex-row items-center justify-between px-1">
+        <View className="px-1">
           <Text className="text-sm font-infinitus-bold uppercase text-foreground-muted">
             {CONNECT_NAME}
           </Text>
-          {discoveryAvailable ? (
-            <Pressable
-              accessibilityRole="button"
-              disabled={controller.relayDiscovery.isRefreshing}
-              onPress={() => {
-                void controller.refreshRelayEnvironments();
-              }}
-              className="h-9 w-9 items-center justify-center rounded-full bg-subtle active:opacity-70 disabled:opacity-50"
-            >
-              {controller.relayDiscovery.isRefreshing ? (
-                <ActivityIndicator colorClassName={"accent-icon"} size="small" />
-              ) : (
-                <SymbolView
-                  name="arrow.clockwise"
-                  size={14}
-                  tintColorClassName={"accent-icon"}
-                  type="monochrome"
-                />
-              )}
-            </Pressable>
-          ) : null}
-=======
-        <View className="px-1">
-          <Text className="text-sm font-infinitus-bold uppercase text-foreground-muted">
-            T3 Connect
-          </Text>
->>>>>>> upstream-sync-b379b5b14-upstream-renamed
         </View>
       ) : null}
 
@@ -203,11 +175,7 @@ function CloudEnvironmentRowsContent(
       !controller.relayDiscovery.isRefreshing ? (
         <View collapsable={false} className="gap-3 rounded-[24px] bg-card p-5">
           <Text className="text-base font-infinitus-bold text-foreground">
-<<<<<<< HEAD
             Could not load {CONNECT_NAME} environments
-=======
-            Could not load T3 Connect environments
->>>>>>> upstream-sync-b379b5b14-upstream-renamed
           </Text>
           <Text className="text-sm text-foreground-muted">{controller.relayDiscovery.error}</Text>
           {controller.relayDiscovery.errorTraceId ? (

@@ -15,11 +15,7 @@ export function SettingsSection(props: {
           <Text
             className={
               Platform.OS === "android"
-<<<<<<< HEAD
-                ? "px-4 text-sm font-infinitus-medium text-primary"
-=======
                 ? "px-4 text-sm font-infinitus-medium text-primary-text"
->>>>>>> upstream-sync-b379b5b14-upstream-renamed
                 : "px-2 text-sm font-infinitus-medium text-foreground-muted"
             }
           >

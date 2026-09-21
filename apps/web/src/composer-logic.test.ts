@@ -10,11 +10,8 @@ import { describe, expect, it } from "vite-plus/test";
 import {
   clampCollapsedComposerCursor,
   collapseExpandedComposerCursor,
-<<<<<<< HEAD
   composerSendModeForEnter,
-=======
   composerStateAtPromptEnd,
->>>>>>> upstream-sync-b379b5b14-upstream-renamed
   composerSubmissionIntentForEnter,
   detectComposerTrigger,
   expandCollapsedComposerCursor,

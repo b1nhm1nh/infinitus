@@ -133,15 +133,11 @@ function ThreadListV2Section(props: {
       <Text
         className={cn(
           "text-xs font-infinitus-medium",
-<<<<<<< HEAD
-          snoozed ? "text-foreground-secondary" : "text-foreground-tertiary",
-=======
           sidebarPane
             ? "text-drawer-foreground-muted"
             : snoozed
               ? "text-foreground-secondary"
               : "text-foreground-tertiary",
->>>>>>> upstream-sync-b379b5b14-upstream-renamed
         )}
       >
         {props.label}
@@ -252,9 +248,6 @@ export const ThreadListV2ShowMoreRow = memo(function ThreadListV2ShowMoreRow(pro
       className="mx-4 mt-2 items-center rounded-lg border border-dashed border-border py-2.5"
       style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}
     >
-<<<<<<< HEAD
-      <Text className="text-xs font-infinitus-medium text-foreground-muted">
-=======
       <Text
         className={
           props.pane === "sidebar"
@@ -262,7 +255,6 @@ export const ThreadListV2ShowMoreRow = memo(function ThreadListV2ShowMoreRow(pro
             : "text-xs font-infinitus-medium text-foreground-muted"
         }
       >
->>>>>>> upstream-sync-b379b5b14-upstream-renamed
         Show more ({props.hiddenCount} settled hidden)
       </Text>
     </Pressable>
@@ -325,14 +317,10 @@ export const ThreadListV2PendingRow = memo(function ThreadListV2PendingRow(props
           />
         ) : null}
         <Text
-<<<<<<< HEAD
-          className="flex-1 text-sm font-infinitus-medium text-foreground-muted"
-=======
           className={cn(
             "flex-1 text-sm font-infinitus-medium text-foreground-muted",
             sidebarPane && "text-drawer-foreground-muted",
           )}
->>>>>>> upstream-sync-b379b5b14-upstream-renamed
           numberOfLines={1}
         >
           {projectTitle}
@@ -361,9 +349,6 @@ export const ThreadListV2PendingRow = memo(function ThreadListV2PendingRow(props
       {/* One line, unlike the two an active row allows: a queued title is
           derived from the whole prompt rather than written as a title, so the
           second line is usually a stray word or emoji rather than meaning. */}
-<<<<<<< HEAD
-      <Text className="mt-1 text-base font-infinitus-medium text-foreground" numberOfLines={1}>
-=======
       <Text
         className={cn(
           "mt-1 text-base font-infinitus-medium text-foreground",
@@ -371,7 +356,6 @@ export const ThreadListV2PendingRow = memo(function ThreadListV2PendingRow(props
         )}
         numberOfLines={1}
       >
->>>>>>> upstream-sync-b379b5b14-upstream-renamed
         {pendingTask.title}
       </Text>
       {branch || props.environmentLabel ? (

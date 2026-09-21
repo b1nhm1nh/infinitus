@@ -1,11 +1,7 @@
 import { act, useSyncExternalStore } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { EnvironmentId } from "@infinitus/contracts";
-<<<<<<< HEAD
-import { afterEach, expect, it, vi } from "vite-plus/test";
-=======
 import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
->>>>>>> upstream-sync-b379b5b14-upstream-renamed
 
 // Like the real atom, a refresh yields a new access object and re-renders subscribers.
 const accessStore = {

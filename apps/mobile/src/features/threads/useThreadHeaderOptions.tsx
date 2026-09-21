@@ -18,11 +18,25 @@ export function useThreadHeaderOptions(props: {
   readonly usesNativeHeaderGlass: boolean;
   readonly gitControls: Parameters<typeof ThreadGitControls>[0];
   readonly onReturnToThread?: () => void;
+  /** Infinitus (#941): the thread menu button, leading the git controls in both layouts. */
+  readonly infinitusHeaderItem?: Record<string, unknown> | null;
 }) {
   const navigation = useNavigation();
   const { layout, panes, togglePrimarySidebar } = useAdaptiveWorkspaceLayout();
-  const threadCenterHeaderItems = useThreadGitCenterHeaderItems(props.gitControls);
-  const compactRightHeaderItems = useThreadGitRightHeaderItems(props.gitControls);
+  const gitCenterHeaderItems = useThreadGitCenterHeaderItems(props.gitControls);
+  const gitRightHeaderItems = useThreadGitRightHeaderItems(props.gitControls);
+  const infinitusHeaderItems = useMemo<NativeHeaderItems>(
+    () => (props.infinitusHeaderItem ? [props.infinitusHeaderItem] : []),
+    [props.infinitusHeaderItem],
+  );
+  const threadCenterHeaderItems = useMemo<NativeHeaderItems>(
+    () => [...infinitusHeaderItems, ...gitCenterHeaderItems],
+    [gitCenterHeaderItems, infinitusHeaderItems],
+  );
+  const compactRightHeaderItems = useMemo<NativeHeaderItems>(
+    () => [...infinitusHeaderItems, ...gitRightHeaderItems],
+    [gitRightHeaderItems, infinitusHeaderItems],
+  );
   const splitLeftHeaderItems = useMemo<NativeHeaderItems>(
     () => [
       {

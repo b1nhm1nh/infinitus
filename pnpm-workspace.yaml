@@ -15,10 +15,6 @@ allowBuilds:
   electron: true
   electron-winstaller: false
   esbuild: true
-<<<<<<< HEAD
-  msgpackr-extract: true
-=======
->>>>>>> upstream-sync-b379b5b14-upstream-renamed
   msw: false
   node-pty: true
   sharp: true

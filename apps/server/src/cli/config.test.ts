@@ -17,10 +17,7 @@ import {
   type DesktopBackendBootstrap as DesktopBackendBootstrapValue,
 } from "@infinitus/contracts";
 import * as NetService from "@infinitus/shared/Net";
-<<<<<<< HEAD
-=======
 import { DEFAULT_SIGNAL_EXPORT } from "@infinitus/shared/observability";
->>>>>>> upstream-sync-b379b5b14-upstream-renamed
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { deriveServerPaths } from "../config.ts";
 import { resolveServerConfig } from "./config.ts";

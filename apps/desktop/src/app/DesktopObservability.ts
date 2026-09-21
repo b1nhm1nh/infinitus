@@ -4,14 +4,10 @@ import {
   makeTraceSink,
   otlpSerializationLayer,
 } from "@infinitus/shared/observability";
-<<<<<<< HEAD
-import { parsePersistedServerObservabilitySettings } from "@infinitus/shared/serverSettings";
-=======
 import {
   parsePersistedServerObservabilitySettings,
   type PersistedServerObservabilitySettings,
 } from "@infinitus/shared/serverSettings";
->>>>>>> upstream-sync-b379b5b14-upstream-renamed
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";

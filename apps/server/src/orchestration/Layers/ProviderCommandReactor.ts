@@ -15,15 +15,11 @@ import {
 } from "@infinitus/contracts";
 import { assistantCitationsToPlainText } from "@infinitus/shared/assistantCitations";
 import { projectComposerContextForProvider } from "@infinitus/shared/composerContextReferences";
-<<<<<<< HEAD
 import {
   isTemporaryWorktreeBranch,
   LEGACY_WORKTREE_BRANCH_PREFIX,
   WORKTREE_BRANCH_PREFIX,
 } from "@infinitus/shared/git";
-=======
-import { isTemporaryWorktreeBranch, WORKTREE_BRANCH_PREFIX } from "@infinitus/shared/git";
->>>>>>> upstream-sync-b379b5b14-upstream-renamed
 import * as Cache from "effect/Cache";
 import * as Cause from "effect/Cause";
 import * as Crypto from "effect/Crypto";

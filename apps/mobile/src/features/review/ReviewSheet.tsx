@@ -1,8 +1,4 @@
 import type { EnvironmentId, ThreadId } from "@infinitus/contracts";
-<<<<<<< HEAD
-import type { MenuAction } from "@react-native-menu/menu";
-=======
->>>>>>> upstream-sync-b379b5b14-upstream-renamed
 import { useNavigation, type StaticScreenProps } from "@react-navigation/native";
 import { nativeHeaderScrollEdgeEffects } from "../../native/StackHeader";
 import { ScreenHeader } from "../../components/ScreenHeader";
@@ -287,17 +283,12 @@ const ReviewFileNavigatorRow = memo(function ReviewFileNavigatorRow(props: {
         {file.path}
       </Text>
       <View className="mt-1 flex-row gap-2">
-<<<<<<< HEAD
-        <Text className="text-2xs font-infinitus-bold text-emerald-600">+{file.additions}</Text>
-        <Text className="text-2xs font-infinitus-bold text-rose-600">-{file.deletions}</Text>
-=======
         <Text className="text-2xs font-infinitus-bold text-adaptive-emerald-700-300">
           +{file.additions}
         </Text>
         <Text className="text-2xs font-infinitus-bold text-adaptive-rose-700-300">
           -{file.deletions}
         </Text>
->>>>>>> upstream-sync-b379b5b14-upstream-renamed
       </View>
     </Pressable>
   );

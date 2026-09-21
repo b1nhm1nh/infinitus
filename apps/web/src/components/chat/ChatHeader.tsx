@@ -4,10 +4,7 @@ import {
   type ProjectScript,
   type ResolvedKeybindingsConfig,
   type ThreadId,
-<<<<<<< HEAD
   type ThreadUsageRollup,
-=======
->>>>>>> upstream-sync-b379b5b14-upstream-renamed
 } from "@infinitus/contracts";
 import { scopeThreadRef } from "@infinitus/client-runtime/environment";
 import type { EnvironmentProject } from "@infinitus/client-runtime/state/shell";
@@ -15,11 +12,7 @@ import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
 } from "@infinitus/client-runtime/state/runtime";
-<<<<<<< HEAD
-import { ChevronDownIcon } from "lucide-react";
-=======
 import { ChevronDownIcon, EllipsisIcon } from "lucide-react";
->>>>>>> upstream-sync-b379b5b14-upstream-renamed
 import {
   memo,
   useCallback,
@@ -398,7 +391,6 @@ export const ChatHeader = memo(function ChatHeader({
             presentation={actionsCollapsed ? "menu" : "toolbar"}
             gitCwd={gitCwd}
             activeThreadRef={scopeThreadRef(activeThreadEnvironmentId, activeThreadId)}
-            onOpenPullRequest={onOpenPullRequest}
             {...(draftId ? { draftId } : {})}
           />
         </>
@@ -508,36 +500,7 @@ export const ChatHeader = memo(function ChatHeader({
           "[[data-panel-animations=true]_&]:motion-safe:transition-[padding-right] [[data-panel-animations=true]_&]:motion-safe:[transition-duration:var(--panel-animation-duration)] [[data-panel-animations=true]_&]:motion-safe:ease-out",
         )}
       >
-<<<<<<< HEAD
         {usage ? <ThreadUsagePopover usage={usage} /> : null}
-        {activeProjectScripts && (
-          <ProjectScriptsControl
-            scripts={activeProjectScripts}
-            fileScripts={fileScripts}
-            keybindings={keybindings}
-            preferredScriptId={preferredScriptId}
-            onRunScript={onRunProjectScript}
-            onAddScript={onAddProjectScript}
-            onUpdateScript={onUpdateProjectScript}
-            onDeleteScript={onDeleteProjectScript}
-          />
-        )}
-        {showOpenInPicker && (
-          <OpenInPicker
-            environmentId={activeThreadEnvironmentId}
-            keybindings={keybindings}
-            availableEditors={availableEditors}
-            openInCwd={openInCwd}
-          />
-        )}
-        {activeProjectName && (
-          <GitActionsControl
-            gitCwd={gitCwd}
-            activeThreadRef={scopeThreadRef(activeThreadEnvironmentId, activeThreadId)}
-            {...(draftId ? { draftId } : {})}
-          />
-        )}
-=======
         <Menu open={actionsCollapsed && actionsOpen} onOpenChange={setActionsOpen}>
           <MenuTrigger
             className={
@@ -563,7 +526,6 @@ export const ChatHeader = memo(function ChatHeader({
             {createPortal(headerActions, actionsContainer)}
           </MenuPopup>
         </Menu>
->>>>>>> upstream-sync-b379b5b14-upstream-renamed
       </div>
     </div>
   );

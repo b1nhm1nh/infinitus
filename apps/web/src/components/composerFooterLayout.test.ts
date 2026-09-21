@@ -3,7 +3,6 @@ import { describe, expect, it } from "vite-plus/test";
 import { resolveContextStripLabelsCompact } from "./BranchToolbar.logic";
 import {
   COMPOSER_FOOTER_COMPACT_BREAKPOINT_PX,
-  createRestingComposerControlsLayoutGuard,
   COMPOSER_FOOTER_WIDE_ACTIONS_COMPACT_BREAKPOINT_PX,
   COMPOSER_RESTING_EXPANSION_MIN_PX,
   getRestingComposerImagePreviewCounts,
@@ -451,59 +450,6 @@ describe("resolveScrollToEndClearance", () => {
   });
 });
 
-<<<<<<< HEAD
-describe("createRestingComposerControlsLayoutGuard (#821)", () => {
-  const shown = { hiddenCount: 0, visible: true };
-  const overflowed = { hiddenCount: 1, visible: true };
-  const hidden = { hiddenCount: 1, visible: false };
-
-  it("holds the current layout when a burst comes back to an earlier one", () => {
-    const guard = createRestingComposerControlsLayoutGuard();
-    expect(guard.next(shown, overflowed, 300)).toBe(overflowed);
-    // Hiding a block widened the host; the next measure wants the block back.
-    expect(guard.next(overflowed, shown, 340)).toBe(overflowed);
-    expect(guard.holding).toBe(true);
-    // Every further pass over the same widths keeps the held layout.
-    expect(guard.next(overflowed, shown, 340)).toBe(overflowed);
-    expect(guard.next(overflowed, shown, 300)).toBe(overflowed);
-    guard.settle();
-    expect(guard.next(overflowed, shown, 340)).toBe(overflowed);
-  });
-
-  it("releases the hold when the host reports a width the loop never saw", () => {
-    const guard = createRestingComposerControlsLayoutGuard();
-    guard.next(shown, overflowed, 300);
-    guard.next(overflowed, shown, 340);
-    expect(guard.next(overflowed, shown, 420)).toBe(shown);
-    expect(guard.holding).toBe(false);
-  });
-
-  it("lets the same layouts alternate across frames", () => {
-    const guard = createRestingComposerControlsLayoutGuard();
-    expect(guard.next(shown, overflowed, 300)).toBe(overflowed);
-    guard.settle();
-    expect(guard.next(overflowed, shown, 340)).toBe(shown);
-    guard.settle();
-    expect(guard.next(shown, overflowed, 300)).toBe(overflowed);
-    expect(guard.holding).toBe(false);
-  });
-
-  it("catches a longer cycle and an unchanged layout costs nothing", () => {
-    const guard = createRestingComposerControlsLayoutGuard();
-    expect(guard.next(shown, shown, 300)).toBe(shown);
-    expect(guard.next(shown, overflowed, 300)).toBe(overflowed);
-    expect(guard.next(overflowed, hidden, 280)).toBe(hidden);
-    expect(guard.next(hidden, shown, 340)).toBe(hidden);
-    expect(guard.holding).toBe(true);
-  });
-
-  it("forgets a hold on reset", () => {
-    const guard = createRestingComposerControlsLayoutGuard();
-    guard.next(shown, overflowed, 300);
-    guard.next(overflowed, shown, 340);
-    guard.reset();
-    expect(guard.next(overflowed, shown, 340)).toBe(shown);
-=======
 describe("progressive composer controls", () => {
   const measurement = {
     gap: 4,
@@ -577,6 +523,5 @@ describe("progressive composer controls", () => {
         previous = next;
       }
     }
->>>>>>> upstream-sync-b379b5b14-upstream-renamed
   });
 });

@@ -28,19 +28,12 @@ import * as HttpRouter from "effect/unstable/http/HttpRouter";
 import * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 import * as HttpApi from "effect/unstable/httpapi/HttpApi";
-<<<<<<< HEAD
-=======
 import * as HttpApiBuilder from "effect/unstable/httpapi/HttpApiBuilder";
->>>>>>> upstream-sync-b379b5b14-upstream-renamed
 import { EnvironmentId } from "@infinitus/contracts";
 import {
   RelayEnvironmentAuth,
-<<<<<<< HEAD
-  type RelayClientDeviceRecord,
-=======
   RelayEnvironmentPrincipal,
   RelayApi,
->>>>>>> upstream-sync-b379b5b14-upstream-renamed
 } from "@infinitus/contracts/relay";
 
 import {

@@ -70,13 +70,9 @@ export function SegmentedControl<Value extends number | string>(
             <Text
               className={cn(
                 compact ? "text-xs" : "text-sm",
-<<<<<<< HEAD
-                active ? "font-infinitus-medium text-foreground" : "text-foreground-muted",
-=======
                 active
                   ? "font-infinitus-medium text-secondary-foreground"
                   : "text-foreground-muted",
->>>>>>> upstream-sync-b379b5b14-upstream-renamed
               )}
             >
               {option.label}

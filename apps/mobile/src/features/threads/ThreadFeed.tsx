@@ -32,10 +32,7 @@ import {
 import { resolveAssetUrl } from "@infinitus/client-runtime/state/assets";
 import { formatAttachmentSize } from "@infinitus/client-runtime/state/attachments";
 import { squashAtomCommandFailure } from "@infinitus/client-runtime/state/runtime";
-<<<<<<< HEAD
 import { turnFooterLabel } from "@infinitus/client-runtime/turnFooter";
-=======
->>>>>>> upstream-sync-b379b5b14-upstream-renamed
 import {
   classifyMarkdownImageSource,
   markdownImageSourceFragment,
@@ -1633,8 +1630,8 @@ function renderFeedEntry(
                     mimeType={attachment.mimeType}
                     className={
                       inlineAttachmentIds.size
-                        ? "h-24 w-24 rounded-[14px] bg-white/15"
-                        : "aspect-[1.3] w-full rounded-[14px] bg-white/15"
+                        ? "h-24 w-24 rounded-[14px] bg-user-bubble-foreground/15"
+                        : "aspect-[1.3] w-full rounded-[14px] bg-user-bubble-foreground/15"
                     }
                     onPressPreview={props.onPressPreview}
                   />
@@ -1672,7 +1669,6 @@ function renderFeedEntry(
       );
       return (
         <View className="mb-5 items-end">
-<<<<<<< HEAD
           {messageMenu ? (
             <ControlPillMenu
               actions={[...messageMenu.actions]}
@@ -1683,77 +1679,6 @@ function renderFeedEntry(
                 accessibilityHint="Long press for message actions"
                 className="min-w-0 gap-2 rounded-[20px] px-3.5 py-2.5"
                 style={bubbleStyle}
-=======
-          <View
-            className="min-w-0 gap-2 rounded-[20px] px-3.5 py-2.5"
-            style={{
-              backgroundColor: userBubbleColor,
-              maxWidth: props.userBubbleMaxWidth,
-              ...(hasReviewCommentContext
-                ? { width: props.reviewCommentBubbleWidth }
-                : hasWideBlock
-                  ? { width: props.userBubbleMaxWidth }
-                  : null),
-            }}
-          >
-            {entry.pendingMessage?.attachments.map((attachment) =>
-              attachment.type === "image" && attachment.uploadedAttachmentId ? (
-                <MessageAttachmentImage
-                  key={attachment.id}
-                  environmentId={props.environmentId}
-                  attachmentId={attachment.uploadedAttachmentId}
-                  name={attachment.name}
-                  mimeType={attachment.mimeType}
-                  className="h-[140px] w-[180px] rounded-[14px]"
-                  onPressPreview={props.onPressPreview}
-                />
-              ) : attachment.type === "image" ? (
-                <Image
-                  key={attachment.id}
-                  source={{ uri: attachment.previewUri }}
-                  accessibilityLabel={attachment.name}
-                  style={{ width: 180, height: 140, borderRadius: 14 }}
-                />
-              ) : (
-                <MessageAttachmentUnknown key={attachment.id} name={attachment.name} />
-              ),
-            )}
-            {/* An empty container still takes a gap, which pads every attachment-free bubble. */}
-            {visibleAttachments.length > 0 ? (
-              <View className={inlineAttachmentIds.size ? "flex-row flex-wrap gap-2" : "gap-2"}>
-                {visibleAttachments.map((attachment) => {
-                  return isImageAttachment(attachment) ? (
-                    <MessageAttachmentImage
-                      key={attachment.id}
-                      environmentId={props.environmentId}
-                      attachmentId={attachment.id}
-                      name={attachment.name}
-                      mimeType={attachment.mimeType}
-                      className={
-                        inlineAttachmentIds.size
-                          ? "h-24 w-24 rounded-[14px] bg-user-bubble-foreground/15"
-                          : "aspect-[1.3] w-full rounded-[14px] bg-user-bubble-foreground/15"
-                      }
-                      onPressPreview={props.onPressPreview}
-                    />
-                  ) : isFileAttachment(attachment) ? (
-                    <MessageAttachmentFile
-                      key={attachment.id}
-                      environmentId={props.environmentId}
-                      attachment={attachment}
-                      onPressPreview={props.onPressPreview}
-                      onPressVideo={props.onPressVideo}
-                    />
-                  ) : (
-                    <MessageAttachmentUnknown key={attachment.id} name={attachment.name} />
-                  );
-                })}
-              </View>
-            ) : null}
-            {message.text.trim().length > 0 ? (
-              <MarkdownImageAvailableWidthContext
-                value={props.userBubbleMaxWidth - USER_BUBBLE_HORIZONTAL_PADDING * 2}
->>>>>>> upstream-sync-b379b5b14-upstream-renamed
               >
                 {bubbleContent}
               </Pressable>
@@ -1764,11 +1689,7 @@ function renderFeedEntry(
             </View>
           )}
           <View className="mt-1 flex-row items-center justify-end gap-1 pr-0.5">
-<<<<<<< HEAD
-            <Text className="font-infinitus-medium text-xs tabular-nums text-adaptive-neutral-600-400">
-=======
             <Text className="font-infinitus-medium text-xs tabular-nums text-foreground-secondary">
->>>>>>> upstream-sync-b379b5b14-upstream-renamed
               {entry.pendingMessage && !entry.acknowledged ? "Pending" : timestampLabel}
             </Text>
             {entry.pendingMessage &&
@@ -1871,13 +1792,8 @@ function renderFeedEntry(
               buttonSize={28}
               iconSize={13}
             />
-<<<<<<< HEAD
-            <Text className="font-infinitus-medium text-xs tabular-nums text-adaptive-neutral-600-400">
-              {assistantMetaLabel}
-=======
             <Text className="font-infinitus-medium text-xs tabular-nums text-foreground-secondary">
-              {timestampLabel}
->>>>>>> upstream-sync-b379b5b14-upstream-renamed
+              {assistantMetaLabel}
             </Text>
           </View>
         ) : null}

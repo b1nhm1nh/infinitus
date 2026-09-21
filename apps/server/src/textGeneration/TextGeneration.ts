@@ -10,18 +10,6 @@ import * as SourceControlProviderRegistry from "../sourceControl/SourceControlPr
 import * as ThreadTitleLinks from "./ThreadTitleLinks.ts";
 import type { TextGenerationPolicy } from "./TextGenerationPolicy.ts";
 
-<<<<<<< HEAD
-export type TextGenerationProvider =
-  | "codex"
-  | "claudeAgent"
-  | "cursor"
-  | "grok"
-  | "omp"
-  | "opencode"
-  | "pi";
-
-=======
->>>>>>> upstream-sync-b379b5b14-upstream-renamed
 export interface CommitMessageGenerationInput {
   cwd: string;
   branch: string | null;

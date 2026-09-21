@@ -22,13 +22,10 @@ import {
   threadWokeAt,
 } from "@infinitus/client-runtime/state/thread-settled";
 import { resolveSettledThreadTimestamp } from "@infinitus/client-runtime/state/thread-sort";
-<<<<<<< HEAD
-=======
 import {
   threadSearchMatchKey,
   type EnvironmentThreadSearchMatch,
 } from "@infinitus/client-runtime/state/thread-search";
->>>>>>> upstream-sync-b379b5b14-upstream-renamed
 import type { EnvironmentThreadShell } from "@infinitus/client-runtime/state/models";
 import {
   parseScopedThreadKey,
@@ -146,15 +143,12 @@ import { AsyncResult } from "effect/unstable/reactivity";
 import type { InfinitusHeldThread } from "@infinitus/contracts/infinitus";
 import { infinitusEnvironment } from "../state/infinitus";
 import { useEnvironmentQuery } from "../state/query";
-<<<<<<< HEAD
 import { useInfinitusHeldSummary } from "./sidebar/useInfinitusHeldSummary";
 import { heldEntryFor } from "./sidebar/infinitusHeld.logic";
 import { HeldTooltipText } from "./sidebar/HeldTooltipText";
 import { onNextAttentionThreadRequest } from "./sidebar/nextAttentionBus";
 import { SidebarNeedsAttention } from "./sidebar/SidebarNeedsAttention";
-=======
 import { useThreadSearch } from "../state/queries";
->>>>>>> upstream-sync-b379b5b14-upstream-renamed
 import { useAtomCommand } from "../state/use-atom-command";
 import {
   buildThreadRouteParams,

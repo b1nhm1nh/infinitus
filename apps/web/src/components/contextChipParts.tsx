@@ -1,8 +1,4 @@
-<<<<<<< HEAD
-import type { PullRequestContextMetadata } from "@infinitus/contracts";
-=======
 import type { EnvironmentId, PullRequestContextMetadata } from "@infinitus/contracts";
->>>>>>> upstream-sync-b379b5b14-upstream-renamed
 import { CircleDashedIcon, FilmIcon, ImageIcon } from "lucide-react";
 import {
   useState,

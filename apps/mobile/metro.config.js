@@ -47,10 +47,7 @@ config.resolver = {
   extraNodeModules: {
     ...config.resolver?.extraNodeModules,
     "@infinitus/mobile-third-party-licenses": generatedLicenseModuleRoot,
-<<<<<<< HEAD
-=======
     "@infinitus/mobile-device-stream": generatedDeviceStreamRoot,
->>>>>>> upstream-sync-b379b5b14-upstream-renamed
     shiki: mobileShikiRoot,
     "@shikijs/core": resolveShikiDependencyRoot("@shikijs/core"),
     "@shikijs/engine-javascript": resolveShikiDependencyRoot("@shikijs/engine-javascript"),

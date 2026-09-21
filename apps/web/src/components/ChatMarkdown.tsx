@@ -53,10 +53,6 @@ import { inlineCodeFilePathCandidate } from "@infinitus/client-runtime/markdown-
 import { mediaFileReference, mediaUrlReference } from "@infinitus/client-runtime/media-reference";
 import { mediaKindFromPath, mediaMimeTypeFromExtension } from "@infinitus/shared/filePreview";
 import * as Cause from "effect/Cause";
-<<<<<<< HEAD
-import { sourceControlRepositorySelector } from "@infinitus/shared/sourceControl";
-=======
->>>>>>> upstream-sync-b379b5b14-upstream-renamed
 import { AsyncResult } from "effect/unstable/reactivity";
 import React, {
   Children,

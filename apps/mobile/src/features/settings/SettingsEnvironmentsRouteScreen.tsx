@@ -1,16 +1,10 @@
 import { ScreenScrollView as ScrollView } from "../../components/ScreenScrollView";
 import { useNavigation } from "@react-navigation/native";
-<<<<<<< HEAD
-import type { EnvironmentId } from "@infinitus/contracts";
-import { useCallback, useState } from "react";
-import { Platform } from "react-native";
-=======
 import { useAtomValue } from "@effect/atom-react";
 import { managedRelaySessionAtom } from "@infinitus/client-runtime/relay";
 import type { EnvironmentId } from "@infinitus/contracts";
 import { useCallback, useRef, useState } from "react";
 import { Platform, RefreshControl } from "react-native";
->>>>>>> upstream-sync-b379b5b14-upstream-renamed
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { SettingsScreen } from "./components/SettingsScreen";

@@ -8,12 +8,6 @@ import {
   type EnvironmentMachineKind,
   resolveEnvironmentMachineKind,
 } from "@infinitus/contracts";
-<<<<<<< HEAD
-import type { MenuAction } from "@react-native-menu/menu";
-import { NativeHeaderToolbar, NativeStackScreenOptions } from "../../native/StackHeader";
-import { SymbolView } from "../../components/AppSymbol";
-=======
->>>>>>> upstream-sync-b379b5b14-upstream-renamed
 import { useNavigation } from "@react-navigation/native";
 import { ScreenHeader } from "../../components/ScreenHeader";
 import { SymbolView } from "../../components/AppSymbol";

@@ -143,25 +143,12 @@ export const normalizeDispatchCommand = (command: ClientOrchestrationCommand) =>
     // A queued message (#806) stores its uploads the way a sent one does, so
     // the drain's turn start carries plain stored attachments.
     const attachments =
-<<<<<<< HEAD
       canonicalCommand.type === "thread.user-input.respond"
         ? Object.values(canonicalCommand.attachmentsByQuestionId ?? {}).flat()
         : canonicalCommand.message.attachments;
-    if (
-      canonicalCommand.type === "thread.user-input.respond" &&
-      attachments.length > PROVIDER_SEND_TURN_MAX_ATTACHMENTS
-    ) {
-      return yield* new OrchestrationDispatchCommandError({
-        message: `You can attach up to ${PROVIDER_SEND_TURN_MAX_ATTACHMENTS} files per question response.`,
-      });
-=======
-      canonicalCommand.type === "thread.turn.start"
-        ? canonicalCommand.message.attachments
-        : Object.values(canonicalCommand.attachmentsByQuestionId ?? {}).flat();
     const attachmentLimitError = getProviderAttachmentLimitError(attachments);
     if (attachmentLimitError) {
       return yield* new OrchestrationDispatchCommandError({ message: attachmentLimitError });
->>>>>>> upstream-sync-b379b5b14-upstream-renamed
     }
     if (canonicalCommand.type === "thread.turn.start") {
       const clientAttachmentIds = new Set<string>();

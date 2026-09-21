@@ -8,10 +8,7 @@ import {
   ThreadId,
 } from "@infinitus/contracts";
 import { compareDateTimeStrings } from "@infinitus/shared/dateTime";
-<<<<<<< HEAD
 import { foldTurnUsage } from "@infinitus/shared/threadUsage";
-=======
->>>>>>> upstream-sync-b379b5b14-upstream-renamed
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";

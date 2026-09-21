@@ -74,11 +74,8 @@ import {
   type ComposerSubmissionIntent,
   type ComposerTrigger,
   collapseExpandedComposerCursor,
-<<<<<<< HEAD
   composerSendModeForEnter,
-=======
   composerStateAtPromptEnd,
->>>>>>> upstream-sync-b379b5b14-upstream-renamed
   composerSubmissionIntentForEnter,
   detectComposerTrigger,
   expandCollapsedComposerCursor,
@@ -207,15 +204,8 @@ import {
 import { useComposerPathSearch } from "../../lib/composerPathSearchState";
 import { replaceComposerContextReferences } from "@infinitus/shared/composerContextReferences";
 import {
-<<<<<<< HEAD
-  COMPOSER_FOOTER_COMPACT_BREAKPOINT_PX,
-  COMPOSER_FOOTER_WIDE_ACTIONS_COMPACT_BREAKPOINT_PX,
-  createRestingComposerControlsLayoutGuard,
-=======
->>>>>>> upstream-sync-b379b5b14-upstream-renamed
   getRestingComposerImagePreviewCounts,
   resolveRestingComposerControlsLayout,
-  type RestingComposerControlsLayout,
   shouldAnimateComposerRestingTransition,
   shouldUseCompactComposerPrimaryActions,
   shouldUseCompactComposerFooter,
@@ -1032,23 +1022,11 @@ function useRestingComposerControlsLayout(host: HTMLDivElement | null, useContro
   }, []);
   const hostRef = useRef(host);
   hostRef.current = host;
-<<<<<<< HEAD
-  const [layout, setLayout] = useState<RestingComposerControlsLayout>({
-    hiddenCount: 0,
-    visible: true,
-  });
-  // The guard's bookkeeping runs in `measure` against this mirror, never in
-  // the state updater: StrictMode calls updaters twice.
-  const layoutRef = useRef(layout);
-  const guardRef = useRef(createRestingComposerControlsLayoutGuard());
-  const settleFrameRef = useRef<number | null>(null);
-=======
   const [layout, setLayout] = useState<{
     hiddenCount: number;
     iconOnlyCount?: number;
     visible: boolean;
   }>({ hiddenCount: 0, visible: true });
->>>>>>> upstream-sync-b379b5b14-upstream-renamed
 
   const measure = useCallback(() => {
     const currentHost = useControlsAsHost ? controls : hostRef.current;
@@ -1062,27 +1040,12 @@ function useRestingComposerControlsLayout(host: HTMLDivElement | null, useContro
       (Number.parseFloat(style.paddingInlineStart) || 0) -
       (Number.parseFloat(style.paddingInlineEnd) || 0);
 
-    const current = layoutRef.current;
-    const next = guardRef.current.next(
-      current,
-      resolveRestingComposerControlsLayout({ ...measurement, hostWidth, previous: current }),
-      hostWidth,
-    );
-    if (next === current) return;
-    // A layout applied before the next paint that reappears in the same
-    // frame is the loop from #821; the guard holds it off. The frame
-    // callback tells the guard when a paint has separated two layouts.
-    if (settleFrameRef.current === null) {
-      settleFrameRef.current = requestAnimationFrame(() => {
-        settleFrameRef.current = null;
-        guardRef.current.settle();
+    setLayout((current) => {
+      const next = resolveRestingComposerControlsLayout({
+        ...measurement,
+        hostWidth,
+        previous: current,
       });
-<<<<<<< HEAD
-    }
-    layoutRef.current = next;
-    setLayout(next);
-  }, []);
-=======
       return next.hiddenCount === current.hiddenCount &&
         next.iconOnlyCount === current.iconOnlyCount &&
         next.visible === current.visible
@@ -1090,17 +1053,11 @@ function useRestingComposerControlsLayout(host: HTMLDivElement | null, useContro
         : next;
     });
   }, [controls, useControlsAsHost]);
->>>>>>> upstream-sync-b379b5b14-upstream-renamed
 
   useLayoutEffect(measure, [measure, host]);
   useEffect(() => {
-<<<<<<< HEAD
-    if (!host) return;
-    const guard = guardRef.current;
-=======
     const currentHost = useControlsAsHost ? controls : host;
     if (!currentHost || !controls) return;
->>>>>>> upstream-sync-b379b5b14-upstream-renamed
     const observer = new ResizeObserver(measure);
     const observeControls = () => {
       observer.disconnect();
@@ -1121,12 +1078,6 @@ function useRestingComposerControlsLayout(host: HTMLDivElement | null, useContro
       observer.disconnect();
       mutations.disconnect();
       document.fonts.removeEventListener("loadingdone", measure);
-      if (settleFrameRef.current !== null) {
-        cancelAnimationFrame(settleFrameRef.current);
-        settleFrameRef.current = null;
-      }
-      // A new host has new widths; a loop seen in the old one says nothing.
-      guard.reset();
     };
   }, [host, controls, useControlsAsHost, measure]);
 
@@ -1236,13 +1187,12 @@ const ComposerFooterModeControls = memo(function ComposerFooterModeControls(prop
             }
           >
             <ComposerControlIcon icon={RuntimeModeIcon} size={size} />
-<<<<<<< HEAD
-            <SelectValue className={runtimeModeLabelCollapsed ? "sr-only" : undefined}>
+            <SelectValue
+              data-composer-control-label
+              className={runtimeModeLabelCollapsed ? "sr-only" : undefined}
+            >
               {runtimeModeOption.label}
             </SelectValue>
-=======
-            <SelectValue data-composer-control-label>{runtimeModeOption.label}</SelectValue>
->>>>>>> upstream-sync-b379b5b14-upstream-renamed
           </TooltipTrigger>
           <SelectPopup alignItemWithTrigger={false} {...composerFloatingLayerProps}>
             {runtimeModeOptions.map((mode) => {
@@ -5376,47 +5326,10 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         />
       ) : null}
 
-<<<<<<< HEAD
-      {composerControlsCompact ? (
-        <CompactComposerControlsMenu
-          interactionMode={interactionMode}
-          runtimeMode={runtimeMode}
-          showInteractionModeToggle={planModeUiEnabled}
-          traitsMenuContent={providerTraitsMenuContent}
-          onToggleInteractionMode={toggleInteractionMode}
-          onRuntimeModeChange={handleRuntimeModeChange}
-          onAskSideQuestion={onAskSideQuestion}
-          sideQuestionUnavailable={sideQuestionUnavailable}
-        />
-      ) : (
-        <>
-          {restingBlockDefs.map((def, index) => {
-            if (!composerControlsInStrip) {
-              return <Fragment key={def.id}>{def.content}</Fragment>;
-            }
-            const hidden = index >= restingBlockDefs.length - restingHiddenBlockCount;
-            return (
-              <div
-                key={def.id}
-                data-resting-block={def.id}
-                aria-hidden={hidden || undefined}
-                inert={hidden || undefined}
-                className={cn(
-                  "flex w-max min-w-max shrink-0 items-center gap-1",
-                  hidden && "pointer-events-none invisible absolute",
-                )}
-              >
-                {def.content}
-              </div>
-            );
-          })}
-          {composerControlsInStrip ? (
-=======
       <>
         {restingBlockDefs.map((def, index) => {
           const hidden = index >= restingBlockDefs.length - restingHiddenBlockCount;
           return (
->>>>>>> upstream-sync-b379b5b14-upstream-renamed
             <div
               key={def.id}
               data-resting-block={def.id}
@@ -5432,28 +5345,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                   "[&_[data-composer-control-label]]:pointer-events-none [&_[data-composer-control-label]]:invisible [&_[data-composer-control-label]]:absolute [&_[data-composer-control-label]]:w-max [&_[data-composer-control-label]]:max-w-none [&_[data-composer-control-compact-icon]]:[visibility:inherit] [&_[data-composer-control-compact-icon]]:relative",
               )}
             >
-<<<<<<< HEAD
-              <CompactComposerControlsMenu
-                interactionMode={interactionMode}
-                runtimeMode={runtimeMode}
-                size="xs"
-                hidden={composerControlsHidden || hiddenRestingBlockIds.length === 0}
-                showInteractionModeToggle={
-                  planModeUiEnabled && hiddenRestingBlockIds.includes("mode")
-                }
-                traitsMenuContent={
-                  hiddenRestingBlockIds.includes("traits") ? providerTraitsMenuContent : undefined
-                }
-                onToggleInteractionMode={toggleInteractionMode}
-                onRuntimeModeChange={handleRuntimeModeChange}
-                onAskSideQuestion={
-                  hiddenRestingBlockIds.includes("mode") ? onAskSideQuestion : undefined
-                }
-                sideQuestionUnavailable={sideQuestionUnavailable}
-              />
-=======
               {def.content}
->>>>>>> upstream-sync-b379b5b14-upstream-renamed
             </div>
           );
         })}
@@ -5477,6 +5369,10 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
             }
             onToggleInteractionMode={toggleInteractionMode}
             onRuntimeModeChange={handleRuntimeModeChange}
+            onAskSideQuestion={
+              hiddenRestingBlockIds.includes("mode") ? onAskSideQuestion : undefined
+            }
+            sideQuestionUnavailable={sideQuestionUnavailable}
           />
         </div>
       </>

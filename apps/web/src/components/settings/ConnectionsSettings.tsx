@@ -3418,13 +3418,8 @@ export function ConnectionsSettings() {
                 </AlertDialogTitle>
                 <AlertDialogDescription>
                   {pendingDesktopServerExposureMode === "network-accessible"
-<<<<<<< HEAD
-                    ? `${PRODUCT_NAME} will restart to expose this environment over the network.`
-                    : `${PRODUCT_NAME} will restart and limit this environment back to this machine.`}
-=======
-                    ? "Let your other devices connect to T3 Code over the network. Pair devices to give them access. T3 Code will restart."
-                    : "Devices connected over your local network will disconnect. Existing tunnels, such as T3 Connect or Tailscale HTTPS, keep working. T3 Code will restart."}
->>>>>>> upstream-sync-b379b5b14-upstream-renamed
+                    ? `Let your other devices connect to ${PRODUCT_NAME} over the network. Pair devices to give them access. ${PRODUCT_NAME} will restart.`
+                    : `Devices connected over your local network will disconnect. Existing tunnels, such as ${CONNECT_NAME} or Tailscale HTTPS, keep working. ${PRODUCT_NAME} will restart.`}
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>

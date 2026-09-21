@@ -8,11 +8,7 @@ import {
 } from "@react-navigation/native";
 import { SymbolView } from "../../components/AppSymbol";
 import type { EnvironmentProject } from "@infinitus/client-runtime/state/shell";
-<<<<<<< HEAD
-import { useEffect, useRef } from "react";
-=======
 import { useEffect, useRef, useState } from "react";
->>>>>>> upstream-sync-b379b5b14-upstream-renamed
 import { ActivityIndicator, Alert, Platform, Pressable, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { cn } from "../../lib/cn";

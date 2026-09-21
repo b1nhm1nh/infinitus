@@ -1,9 +1,5 @@
 import { DEFAULT_TERMINAL_ID, EnvironmentId, ThreadId } from "@infinitus/contracts";
 import { type KnownTerminalSession } from "@infinitus/client-runtime/state/terminal";
-<<<<<<< HEAD
-import type { MenuAction } from "@react-native-menu/menu";
-=======
->>>>>>> upstream-sync-b379b5b14-upstream-renamed
 import { SymbolView } from "../../components/AppSymbol";
 import { ScreenHeader } from "../../components/ScreenHeader";
 import { StackActions, useNavigation, type StaticScreenProps } from "@react-navigation/native";

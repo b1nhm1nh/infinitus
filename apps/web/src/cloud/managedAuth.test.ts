@@ -1,8 +1,5 @@
 import { managedRelaySessionAtom, setManagedRelaySession } from "@infinitus/client-runtime/relay";
-<<<<<<< HEAD
-=======
 import * as Effect from "effect/Effect";
->>>>>>> upstream-sync-b379b5b14-upstream-renamed
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
 import { appAtomRegistry } from "../rpc/atomRegistry";

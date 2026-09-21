@@ -19,12 +19,7 @@
  * The decoder only runs while frames arrive and the viewer is attached; a
  * hidden panel calls `stop()` so an idle device costs nothing on the GPU.
  */
-<<<<<<< HEAD:apps/web/src/components/device/deviceStream.ts
-import type { DeviceHubAccess } from "@infinitus/client-runtime/state/deviceHubAccess";
-import { withDeviceHubQuery } from "@infinitus/client-runtime/state/deviceHubAccess";
-=======
 import { type DeviceHubAccess, withDeviceHubQuery } from "./hubAccess.ts";
->>>>>>> upstream-sync-b379b5b14-upstream-renamed:packages/client-runtime/src/device/stream.ts
 import type { DevicePlatform } from "@infinitus/contracts";
 
 export type DeviceStreamStatus = "connecting" | "streaming" | "error";

@@ -7,11 +7,7 @@ import {
   FILL_PREVIEW_VIEWPORT,
   ThreadId,
 } from "@infinitus/contracts";
-<<<<<<< HEAD
-import { act, Profiler } from "react";
-=======
 import { act, createElement, Profiler } from "react";
->>>>>>> upstream-sync-b379b5b14-upstream-renamed
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vite-plus/test";
 

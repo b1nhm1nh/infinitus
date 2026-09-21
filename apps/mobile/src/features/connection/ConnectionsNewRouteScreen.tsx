@@ -1,10 +1,6 @@
 import { ScreenScrollView as ScrollView } from "../../components/ScreenScrollView";
 import { CameraView, useCameraPermissions } from "expo-camera";
-<<<<<<< HEAD
 import Constants from "expo-constants";
-import { NativeHeaderToolbar, NativeStackScreenOptions } from "../../native/StackHeader";
-=======
->>>>>>> upstream-sync-b379b5b14-upstream-renamed
 import {
   StackActions,
   useNavigation,

@@ -23,11 +23,8 @@ import {
   type WorktreeSetupSnapshot,
 } from "@infinitus/contracts";
 import { parseScopedThreadKey } from "@infinitus/client-runtime/environment";
-<<<<<<< HEAD
 import { turnFooterLabel } from "@infinitus/client-runtime/turnFooter";
 import type { TurnFooters } from "./useTurnFooters";
-=======
->>>>>>> upstream-sync-b379b5b14-upstream-renamed
 import { replaceComposerContextReferences } from "@infinitus/shared/composerContextReferences";
 import type { CodexArtifactTemplate } from "@infinitus/client-runtime/codex-artifact-templates";
 import {
@@ -60,10 +57,7 @@ const NOOP_OPEN_ATTACHMENT = (_attachment: ChatFileAttachment) => {};
 import { resolveChatListAnchoredEndSpace } from "@infinitus/shared/chatList";
 import { toolActivityFaviconUrl } from "@infinitus/shared/favicon";
 import { formatDuration } from "@infinitus/shared/orchestrationTiming";
-<<<<<<< HEAD
 import { PRODUCT_NAME } from "@infinitus/shared/productName";
-=======
->>>>>>> upstream-sync-b379b5b14-upstream-renamed
 import { getProjectFaviconCacheKey } from "@infinitus/shared/projectFavicon";
 import { observeVisibleAnimation } from "../../lib/visibleAnimation";
 import {
@@ -112,12 +106,9 @@ import {
 } from "../../lib/diffRendering";
 import { PREFERRED_HIGHLIGHTER } from "../../lib/syntaxHighlighting";
 import ChatMarkdown, { ChatMarkdownAssetImage } from "../ChatMarkdown";
-<<<<<<< HEAD
-=======
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { Root, RootContent } from "mdast";
->>>>>>> upstream-sync-b379b5b14-upstream-renamed
 import { InfinitusWordmark } from "../InfinitusWordmark";
 import {
   BotIcon,

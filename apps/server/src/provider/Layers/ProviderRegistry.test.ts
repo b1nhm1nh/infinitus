@@ -31,10 +31,7 @@ import { HttpClient, HttpClientResponse } from "effect/unstable/http";
 import { ChildProcessSpawner } from "effect/unstable/process";
 import { deepMerge } from "@infinitus/shared/Struct";
 import { createModelCapabilities } from "@infinitus/shared/model";
-<<<<<<< HEAD
 import { PRODUCT_NAME } from "@infinitus/shared/productName";
-=======
->>>>>>> upstream-sync-b379b5b14-upstream-renamed
 import { applyServerSettingsPatch } from "@infinitus/shared/serverSettings";
 
 import { checkCodexProviderStatus, type CodexAppServerProviderSnapshot } from "./CodexProvider.ts";

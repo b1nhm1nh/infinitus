@@ -1,8 +1,5 @@
 import { isAtomCommandInterrupted } from "@infinitus/client-runtime/state/runtime";
 import type { EnvironmentId, PullRequestRef } from "@infinitus/contracts";
-<<<<<<< HEAD
-import { cloneElement, useState, type ComponentPropsWithoutRef, type ReactElement } from "react";
-=======
 import {
   cloneElement,
   useState,
@@ -11,7 +8,6 @@ import {
   type ReactElement,
   type ReactNode,
 } from "react";
->>>>>>> upstream-sync-b379b5b14-upstream-renamed
 
 import { formatRelativeTimeLabel } from "~/timestampFormat";
 import { pullRequestEnvironment } from "~/state/pullRequests";

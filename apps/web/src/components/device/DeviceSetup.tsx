@@ -1,7 +1,4 @@
-<<<<<<< HEAD
-=======
 import { DeviceHostUpdates } from "./DeviceHostUpdates";
->>>>>>> upstream-sync-b379b5b14-upstream-renamed
 import type { DevicePlatform, DeviceServiceState, EnvironmentId } from "@infinitus/contracts";
 import { Check, CircleAlert } from "lucide-react";
 import { useState } from "react";

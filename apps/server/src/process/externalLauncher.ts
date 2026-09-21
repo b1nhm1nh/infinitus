@@ -18,10 +18,7 @@ import {
   type FileManagerRevealKind,
   type LaunchEditorInput,
 } from "@infinitus/contracts";
-<<<<<<< HEAD
-=======
 import { resolveEditorCommand } from "@infinitus/shared/editor";
->>>>>>> upstream-sync-b379b5b14-upstream-renamed
 import { HostProcessPlatform } from "@infinitus/shared/hostProcess";
 import { isCommandAvailable, resolveSpawnCommand } from "@infinitus/shared/shell";
 import * as Clock from "effect/Clock";

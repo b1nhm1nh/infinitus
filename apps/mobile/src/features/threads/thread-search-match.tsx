@@ -1,7 +1,3 @@
-<<<<<<< HEAD
-import { Platform } from "react-native";
-=======
->>>>>>> upstream-sync-b379b5b14-upstream-renamed
 import type { EnvironmentThreadSearchMatch } from "@infinitus/client-runtime/state/thread-search";
 
 import { AppText as Text } from "../../components/AppText";

@@ -1,14 +1,10 @@
 import * as NodeVM from "node:vm";
 import { it as effectIt } from "@effect/vitest";
 import { DESKTOP_PREVIEW_RECORDING_CAPTURE_TRIGGER } from "@infinitus/contracts";
-<<<<<<< HEAD
-import type { DesktopPreviewRecordingFrame } from "@infinitus/contracts";
-=======
 import type {
   DesktopPreviewRecordingFrame,
   DesktopPreviewRecordingInputEvent,
 } from "@infinitus/contracts";
->>>>>>> upstream-sync-b379b5b14-upstream-renamed
 import { HostProcessPlatform } from "@infinitus/shared/hostProcess";
 import * as Cause from "effect/Cause";
 import * as Deferred from "effect/Deferred";

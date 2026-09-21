@@ -9,10 +9,7 @@ import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import { AppState, Platform } from "react-native";
 import type { EnvironmentId } from "@infinitus/contracts";
-<<<<<<< HEAD
 import { PRODUCT_NAME } from "@infinitus/shared/productName";
-=======
->>>>>>> upstream-sync-b379b5b14-upstream-renamed
 import {
   type RelayDeviceRegistrationRequest,
   type RelayAgentActivitySnapshotResponse,
@@ -531,13 +528,8 @@ function armAgentAwarenessLiveActivityForLocalWorkNow(input: {
       return;
     }
     const nowIso = new Date(Date.now()).toISOString();
-<<<<<<< HEAD
-    const activity = AgentActivity.start({
-      title: PRODUCT_NAME,
-=======
     const activity = startAgentLiveActivity({
-      title: "T3 Code",
->>>>>>> upstream-sync-b379b5b14-upstream-renamed
+      title: PRODUCT_NAME,
       subtitle: "Agent work in progress",
       activeCount: 1,
       updatedAt: nowIso,

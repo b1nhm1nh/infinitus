@@ -30,10 +30,7 @@ import {
   type PullRequestLabelCandidateList,
   type PullRequestThreadCommentsResult,
   type PullRequestUpdateMethod,
-<<<<<<< HEAD
-=======
   type PullRequestPreview,
->>>>>>> upstream-sync-b379b5b14-upstream-renamed
 } from "@infinitus/contracts";
 
 import * as GitHubCli from "../sourceControl/GitHubCli.ts";

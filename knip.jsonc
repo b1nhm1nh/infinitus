@@ -38,11 +38,8 @@
         "src/claude-history-worker.ts!",
         "scripts/cli.ts",
         "scripts/evaluate-thread-titles.ts",
-<<<<<<< HEAD
         "scripts/pi-rpc-mock-agent.ts",
-=======
         "scripts/measure-pr-preview.ts",
->>>>>>> upstream-sync-b379b5b14-upstream-renamed
         "src/provider/testFixtures/*.mjs",
       ],
       // Keep the transitive Effect runtime pinned for standalone npm installs.

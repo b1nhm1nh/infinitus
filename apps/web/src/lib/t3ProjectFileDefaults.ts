@@ -1,12 +1,8 @@
-<<<<<<< HEAD
 import {
   T3_PROJECT_FILE_NAMES,
   type EnvironmentId,
   type ThreadEnvMode,
 } from "@infinitus/contracts";
-=======
-import { T3_PROJECT_FILE_NAME, type EnvironmentId, type ThreadEnvMode } from "@infinitus/contracts";
->>>>>>> upstream-sync-b379b5b14-upstream-renamed
 import { parseT3ProjectFile } from "@infinitus/shared/t3ProjectFile";
 import { executeAtomQuery } from "@infinitus/client-runtime/state/runtime";
 

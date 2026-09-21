@@ -234,18 +234,6 @@ export function FileTreeBrowser(props: {
     ],
   );
 
-<<<<<<< HEAD
-  if (props.error && props.entries.length === 0) {
-    return (
-      <View className="flex-1 bg-sheet px-4 py-5">
-        <Text className="text-sm font-infinitus-bold text-foreground">Files unavailable</Text>
-        <Text className="mt-1 text-xs leading-normal text-foreground-muted">{props.error}</Text>
-      </View>
-    );
-  }
-
-=======
->>>>>>> upstream-sync-b379b5b14-upstream-renamed
   // SPIKE: render the FlatList as the screen's DIRECT content (no wrapping View), and
   // mirror the Home ScrollView exactly — `contentInsetAdjustmentBehavior: "automatic"`
   // with NO manual contentInset. iOS only applies the nav-bar top inset + scroll-edge

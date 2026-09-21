@@ -157,11 +157,7 @@ export const ThreadListGroupHeader = memo(function ThreadListGroupHeader(props: 
           className={
             compact
               ? "flex-shrink text-base font-infinitus-bold tracking-[0.2px] text-foreground-muted"
-<<<<<<< HEAD
-              : "flex-shrink text-sm font-infinitus-bold tracking-[0.2px] text-foreground-muted"
-=======
               : "flex-shrink text-sm font-infinitus-bold tracking-[0.2px] text-drawer-foreground-muted"
->>>>>>> upstream-sync-b379b5b14-upstream-renamed
           }
           numberOfLines={1}
         >
@@ -171,11 +167,7 @@ export const ThreadListGroupHeader = memo(function ThreadListGroupHeader(props: 
           className={
             compact
               ? "flex-1 text-sm font-infinitus-medium text-foreground-tertiary"
-<<<<<<< HEAD
-              : "flex-1 text-xs font-infinitus-medium text-foreground-tertiary"
-=======
               : "flex-1 text-xs font-infinitus-medium text-drawer-foreground-muted"
->>>>>>> upstream-sync-b379b5b14-upstream-renamed
           }
         >
           {props.threadCount}
@@ -249,11 +241,7 @@ export const ThreadListShowMoreRow = memo(function ThreadListShowMoreRow(props: 
           className={
             compact
               ? "text-sm font-infinitus-medium text-foreground-muted"
-<<<<<<< HEAD
-              : "text-xs font-infinitus-medium text-foreground-muted"
-=======
               : "text-xs font-infinitus-medium text-drawer-foreground-muted"
->>>>>>> upstream-sync-b379b5b14-upstream-renamed
           }
         >
           {label}
@@ -332,9 +320,6 @@ export const PendingTaskListRow = memo(function PendingTaskListRow(props: {
     </View>
   ) : (
     <View className="rounded-full bg-subtle px-1.5 py-0.5">
-<<<<<<< HEAD
-      <Text className="text-3xs font-infinitus-bold text-foreground-muted">Pending</Text>
-=======
       <Text
         className={cn(
           "text-3xs font-infinitus-bold text-foreground-muted",
@@ -343,7 +328,6 @@ export const PendingTaskListRow = memo(function PendingTaskListRow(props: {
       >
         Pending
       </Text>
->>>>>>> upstream-sync-b379b5b14-upstream-renamed
     </View>
   );
 
@@ -392,9 +376,6 @@ export const PendingTaskListRow = memo(function PendingTaskListRow(props: {
       <View className="pr-[18px] pt-[10px]" style={{ paddingLeft: THREAD_LIST_COMPACT_INSET }}>
         <View className={cn("gap-[3px] pb-[10px]", !props.isLast && "border-b border-separator")}>
           <View className="flex-row items-center justify-between gap-2">
-<<<<<<< HEAD
-            <Text className="flex-1 text-lg font-infinitus-bold text-foreground" numberOfLines={1}>
-=======
             <Text
               className={cn(
                 "flex-1 text-lg font-infinitus-bold text-foreground",
@@ -402,7 +383,6 @@ export const PendingTaskListRow = memo(function PendingTaskListRow(props: {
               )}
               numberOfLines={1}
             >
->>>>>>> upstream-sync-b379b5b14-upstream-renamed
               {pendingTask.title}
             </Text>
             <View className="flex-row items-center gap-2">
@@ -448,11 +428,7 @@ export const PendingTaskListRow = memo(function PendingTaskListRow(props: {
       <View className="gap-[3px]">
         <View className="flex-row items-center justify-between gap-2">
           <Text
-<<<<<<< HEAD
-            className="flex-1 text-base font-infinitus-medium text-foreground"
-=======
             className="flex-1 text-base font-infinitus-medium text-drawer-foreground"
->>>>>>> upstream-sync-b379b5b14-upstream-renamed
             numberOfLines={1}
           >
             {pendingTask.title}
@@ -613,17 +589,9 @@ export const ThreadListRow = memo(function ThreadListRow(props: {
     [handleArchive, handleDelete, handleRegenerateTitle, handleRename, onNewThreadOnBranch, thread],
   );
 
-<<<<<<< HEAD
-  const statusPill = effectiveStatus ? (
-    <View className={`${effectiveStatus.pillClassName} rounded-full px-1.5 py-0.5`}>
-      <Text className={`text-3xs font-infinitus-bold ${effectiveStatus.textClassName}`}>
-        {effectiveStatus.label}
-      </Text>
-=======
   const statusPill = status ? (
     <View className={`${status.pillClassName} rounded-full px-1.5 py-0.5`}>
       <Text className={`text-3xs font-infinitus-bold ${status.textClassName}`}>{status.label}</Text>
->>>>>>> upstream-sync-b379b5b14-upstream-renamed
     </View>
   ) : null;
 
@@ -679,17 +647,7 @@ export const ThreadListRow = memo(function ThreadListRow(props: {
               />
             )}
             <Text
-<<<<<<< HEAD
-              className={`${compact ? "text-sm" : "text-xs"} font-infinitus-medium ${
-                visuallySelected
-                  ? Platform.OS === "android"
-                    ? "text-thread-selected-foreground"
-                    : "text-user-bubble-foreground"
-                  : pr.textClassName
-              }`}
-=======
               className={`${compact ? "text-sm" : "text-xs"} font-infinitus-medium ${pr.textClassName}`}
->>>>>>> upstream-sync-b379b5b14-upstream-renamed
             >
               {pr.label}
             </Text>

@@ -1,9 +1,5 @@
 import type { DevicePlatform, EnvironmentId } from "@infinitus/contracts";
-<<<<<<< HEAD
-import { useEffect, useMemo, useRef, useState } from "react";
-=======
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
->>>>>>> upstream-sync-b379b5b14-upstream-renamed
 
 import { cn } from "~/lib/utils";
 import { Button } from "~/components/ui/button";

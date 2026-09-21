@@ -14,12 +14,8 @@ import {
   type PickedThemeFile,
 } from "@infinitus/contracts";
 import { WORKSPACE_IMAGE_PREVIEW_EXTENSIONS } from "@infinitus/shared/filePreview";
-<<<<<<< HEAD
-import { isCommandAvailable } from "@infinitus/shared/shell";
-=======
 import { resolveEditorCommand } from "@infinitus/shared/editor";
 import * as HostProcess from "@infinitus/shared/hostProcess";
->>>>>>> upstream-sync-b379b5b14-upstream-renamed
 import * as NodeOS from "node:os";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";

@@ -6,14 +6,10 @@ import {
 } from "../../state/use-composer-drafts";
 import { useWorktreeSetup } from "./use-worktree-setup";
 import { worktreeSetupAgentStarted } from "@infinitus/client-runtime/worktree-setup";
-<<<<<<< HEAD
-import { NativeStackScreenOptions } from "../../native/StackHeader";
-=======
 import { ScreenHeader } from "../../components/ScreenHeader";
 import { ScreenHeaderButton } from "../../components/ScreenHeaderButton";
 import type { ScreenHeaderAction } from "../../components/ScreenHeader.types";
 import { useThreadHeaderOptions } from "./useThreadHeaderOptions";
->>>>>>> upstream-sync-b379b5b14-upstream-renamed
 import {
   StackActions,
   useFocusEffect,
@@ -77,7 +73,7 @@ import { ThreadDetailScreen, type ThreadDetailScreenProps } from "./ThreadDetail
 import { GitOverviewSheet } from "./git/GitOverviewSheet";
 import { usePullRequestHeaderItem } from "../infinitus/usePullRequestHeaderItem";
 import { useSideQuestionHeaderItem } from "../infinitus/useSideQuestionHeaderItem";
-import { useThreadHeaderMenu } from "../infinitus/useThreadHeaderMenu";
+import { useThreadHeaderMenu, type ThreadHeaderMenu } from "../infinitus/useThreadHeaderMenu";
 import { useThreadUsageHeaderItem } from "../infinitus/useThreadUsageHeaderItem";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { useSelectedThreadGitActions } from "../../state/use-selected-thread-git-actions";
@@ -108,7 +104,9 @@ import {
 import { threadRouteIsHydrating } from "./thread-route-hydration";
 
 function ThreadHeader(
-  props: Parameters<typeof useThreadHeaderOptions>[0] & {
+  props: Omit<Parameters<typeof useThreadHeaderOptions>[0], "infinitusHeaderItem"> & {
+    /** Infinitus (#941): the pull request, side question and usage as one menu button. */
+    readonly infinitusMenu: ThreadHeaderMenu;
     readonly hasThreadCwd: boolean;
     readonly hasWorkspaceRoot: boolean;
     readonly fileInspectorSupported: boolean;
@@ -121,7 +119,10 @@ function ThreadHeader(
   const navigation = useNavigation();
   const { layout, panes, toggleAuxiliaryPane } = useAdaptiveWorkspaceLayout();
   const { onOpenTerminal } = props.gitControls;
-  const native = useThreadHeaderOptions(props);
+  const native = useThreadHeaderOptions({
+    ...props,
+    infinitusHeaderItem: props.infinitusMenu.item,
+  });
   const androidHeaderActions = useMemo<ReadonlyArray<ScreenHeaderAction>>(() => {
     const actions: ScreenHeaderAction[] = [];
     if (props.onReturnToThread) {
@@ -147,6 +148,10 @@ function ThreadHeader(
         onPress: () => onOpenTerminal(null),
       });
     }
+    // Infinitus (#269 F, #941): the thread menu leads the git controls, as on iOS.
+    if (props.infinitusMenu.androidAction !== null) {
+      actions.push(props.infinitusMenu.androidAction);
+    }
     actions.push({
       accessibilityLabel: "Open git controls",
       icon: "point.topleft.down.curvedto.point.bottomright.up",
@@ -154,6 +159,7 @@ function ThreadHeader(
     });
     return actions;
   }, [
+    props.infinitusMenu.androidAction,
     props.inspectorMode,
     panes.auxiliaryPaneVisible,
     props.onOpenFilesInspector,
@@ -172,7 +178,7 @@ function ThreadHeader(
         subtitle={props.subtitle}
         sidebar={native.sidebar}
         options={native.options}
-        optionsVersion={props.gitControls.projectScripts}
+        optionsVersion={[props.gitControls.projectScripts, props.infinitusMenu.version]}
         trailing={
           props.fileInspectorSupported && props.hasThreadCwd ? (
             <ScreenHeaderButton
@@ -797,9 +803,6 @@ function ThreadRouteContent(
     onPull: gitActions.onPullSelectedThreadBranch,
     onRunAction: gitActions.onRunSelectedThreadGitAction,
   };
-<<<<<<< HEAD
-  const gitCenterHeaderItems = useThreadGitCenterHeaderItems(threadGitControlProps);
-  const gitRightHeaderItems = useThreadGitRightHeaderItems(threadGitControlProps);
   // Infinitus (#269): the thread's pull request leads the header when it has one.
   const pullRequestHeader = usePullRequestHeaderItem(selectedThread);
   // Infinitus (#832): the turn is still running while the server reconnects.
@@ -818,111 +821,7 @@ function ThreadRouteContent(
     sideQuestion: sideQuestionHeader,
     usage: usageHeader,
   });
-  const infinitusHeaderItems = useMemo<NativeHeaderItems>(
-    () => (threadHeaderMenu.item === null ? [] : [threadHeaderMenu.item]),
-    [threadHeaderMenu.item],
-  );
-  const threadCenterHeaderItems = useMemo<NativeHeaderItems>(
-    () => [...infinitusHeaderItems, ...gitCenterHeaderItems],
-    [gitCenterHeaderItems, infinitusHeaderItems],
-  );
-  const compactRightHeaderItems = useMemo<NativeHeaderItems>(
-    () => [...infinitusHeaderItems, ...gitRightHeaderItems],
-    [gitRightHeaderItems, infinitusHeaderItems],
-  );
-  const splitLeftHeaderItems = useMemo<NativeHeaderItems>(
-    () => [
-      {
-        // Match Mail's split-view detail toolbar: the first detail action sits
-        // inside the content pane, not flush against the sidebar divider.
-        spacing: 18,
-        type: "spacing" as const,
-      },
-      ...(props.onReturnToThread
-        ? [
-            withNativeGlassHeaderItem({
-              accessibilityLabel: "Return to chat",
-              icon: { name: "chevron.left", type: "sfSymbol" as const },
-              identifier: "thread-left-return",
-              onPress: props.onReturnToThread,
-              type: "button" as const,
-            }),
-          ]
-        : []),
-      withNativeGlassHeaderItem({
-        accessibilityLabel: panes.primarySidebarVisible
-          ? "Maximize content"
-          : "Show thread sidebar",
-        icon: {
-          name: panes.primarySidebarVisible ? "arrow.up.left.and.arrow.down.right" : "sidebar.left",
-          type: "sfSymbol" as const,
-        },
-        identifier: "thread-left-sidebar",
-        onPress: togglePrimarySidebar,
-        type: "button" as const,
-      }),
-      withNativeGlassHeaderItem({
-        accessibilityLabel: "New task",
-        icon: { name: "square.and.pencil", type: "sfSymbol" as const },
-        identifier: "thread-left-new-task",
-        onPress: () => navigation.navigate("NewTaskSheet", { screen: "NewTask" }),
-        type: "button" as const,
-      }),
-    ],
-    [panes.primarySidebarVisible, props.onReturnToThread, navigation, togglePrimarySidebar],
-  );
-  const androidHeaderActions = useMemo<ReadonlyArray<AndroidHeaderAction>>(() => {
-    if (Platform.OS !== "android") return [];
 
-    const actions: AndroidHeaderAction[] = [];
-    if (props.onReturnToThread) {
-      actions.push({
-        accessibilityLabel: "Return to chat",
-        icon: "chevron.left",
-        onPress: props.onReturnToThread,
-      });
-    }
-    if (selectedThreadCwd !== null) {
-      const filesVisible = inspectorMode === "files" && panes.auxiliaryPaneVisible;
-      actions.push({
-        accessibilityLabel: filesVisible ? "Close files" : "Open files",
-        selected: filesVisible,
-        icon: "folder",
-        onPress: filesVisible ? toggleAuxiliaryPane : handleOpenFilesInspector,
-      });
-    }
-    if (selectedThreadProject?.workspaceRoot) {
-      actions.push({
-        accessibilityLabel: "Open terminal",
-        icon: "terminal",
-        onPress: () => handleOpenTerminal(null),
-      });
-    }
-    // Infinitus (#269 F, #941): the thread menu leads the git controls, as on iOS.
-    if (threadHeaderMenu.androidAction !== null) {
-      actions.push(threadHeaderMenu.androidAction);
-    }
-    actions.push({
-      accessibilityLabel: "Open git controls",
-      icon: "point.topleft.down.curvedto.point.bottomright.up",
-      onPress: handleOpenGitInspector,
-    });
-    return actions;
-  }, [
-    inspectorMode,
-    panes.auxiliaryPaneVisible,
-    handleOpenFilesInspector,
-    handleOpenTerminal,
-    handleOpenGitInspector,
-    toggleAuxiliaryPane,
-    props.onReturnToThread,
-    selectedThreadCwd,
-    selectedThreadProject?.workspaceRoot,
-    threadHeaderMenu.androidAction,
-  ]);
-
-=======
->>>>>>> upstream-sync-b379b5b14-upstream-renamed
   const handleEditFailedCreation = useCallback(async () => {
     const creation = selectedThreadCreation?.message;
     if (!creation?.creation || routeThreadIdentity === null) {
@@ -1211,51 +1110,13 @@ function ThreadRouteContent(
   return (
     <>
       {activeInspectorRenderer ? <InspectorPaneRoleActivation /> : null}
-<<<<<<< HEAD
-      <NativeStackScreenOptions
-        optionsVersion={[threadGitControlProps.projectScripts, threadHeaderMenu.version]}
-        options={{
-          // Android draws its own in-flow header (AndroidScreenHeader below);
-          // the native stack header stays iOS-only.
-          headerShown: Platform.OS !== "android",
-          headerTitle: selectedThread.title,
-          headerTitleStyle: usesNativeHeaderGlass
-            ? {
-                fontSize: 17,
-                fontWeight: "800",
-              }
-            : undefined,
-          title: selectedThread.title,
-          headerBackVisible: !layout.usesSplitView,
-          // Compact uses the NATIVE back button when a previous route exists;
-          // deep links / cold starts get an explicit Home button instead.
-          // Split view always uses its custom left items.
-          unstable_headerLeftItems:
-            Platform.OS === "ios"
-              ? layout.usesSplitView
-                ? () => splitLeftHeaderItems
-                : canGoBack
-                  ? undefined
-                  : () => compactHomeHeaderItems
-              : undefined,
-          // Search lives in the persistent sidebar, so the split header keeps
-          // the git controls on the RIGHT (no center items — center space is
-          // reserved for future breadcrumbs/status).
-          unstable_headerRightItems:
-            Platform.OS === "ios"
-              ? () => (layout.usesSplitView ? threadCenterHeaderItems : compactRightHeaderItems)
-              : undefined,
-          unstable_headerSubtitle: usesNativeHeaderGlass ? headerSubtitle : undefined,
-          contentStyle:
-            Platform.OS === "android" && true ? { backgroundColor: headerColor } : undefined,
-        }}
-=======
       <ThreadHeader
         title={selectedThread.title}
         subtitle={headerSubtitle}
         headerColor={headerColor}
         usesNativeHeaderGlass={usesNativeHeaderGlass}
         gitControls={threadGitControlProps}
+        infinitusMenu={threadHeaderMenu}
         hasThreadCwd={selectedThreadCwd !== null}
         hasWorkspaceRoot={Boolean(selectedThreadProject?.workspaceRoot)}
         fileInspectorSupported={fileInspector.supported}
@@ -1264,7 +1125,6 @@ function ThreadRouteContent(
         onOpenGitInspector={handleOpenGitInspector}
         onOpenFilesInspector={handleOpenFilesInspector}
         onReturnToThread={props.onReturnToThread}
->>>>>>> upstream-sync-b379b5b14-upstream-renamed
       />
 
       {renderThreadRouteBody()}

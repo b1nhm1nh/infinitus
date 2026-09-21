@@ -17,11 +17,7 @@ import type * as Redacted from "effect/Redacted";
 import * as Schema from "effect/Schema";
 
 import { sweepStalePendingAttachments } from "./attachmentStore.ts";
-<<<<<<< HEAD
-import { OtlpProtocol } from "@infinitus/shared/observability";
-=======
 import { DEFAULT_SIGNAL_EXPORT, type SignalExport } from "@infinitus/shared/observability";
->>>>>>> upstream-sync-b379b5b14-upstream-renamed
 
 export const DEFAULT_PORT = 3773;
 

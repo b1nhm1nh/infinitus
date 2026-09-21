@@ -487,11 +487,8 @@ const WORKSPACE_OVERLAY_ROUTES = new Set([
   "SettingsSheet",
   "SideQuestionSheet",
   "ThreadReviewComment",
-<<<<<<< HEAD
-  "ThreadUsageSheet",
-=======
   "ThreadDevicePreview",
->>>>>>> upstream-sync-b379b5b14-upstream-renamed
+  "ThreadUsageSheet",
   "ThreadSettingsSheet",
 ]);
 

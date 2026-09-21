@@ -6,14 +6,10 @@
  * here). Single layer-scoped browser session partition.
  */
 import * as NodeCrypto from "node:crypto";
-<<<<<<< HEAD
-import { DESKTOP_PREVIEW_RECORDING_CAPTURE_TRIGGER } from "@infinitus/contracts";
-=======
 import {
   DesktopPreviewRecordingInputSchema,
   DESKTOP_PREVIEW_RECORDING_CAPTURE_TRIGGER,
 } from "@infinitus/contracts";
->>>>>>> upstream-sync-b379b5b14-upstream-renamed
 import type {
   DesktopPreviewAnnotationTheme,
   DesktopPreviewAutomationStatus,

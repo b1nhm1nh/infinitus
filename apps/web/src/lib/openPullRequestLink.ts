@@ -1,9 +1,5 @@
-<<<<<<< HEAD
-import type { EnvironmentId, ScopedThreadRef } from "@infinitus/contracts";
-=======
 import type { EnvironmentId, PullRequestRef, ScopedThreadRef } from "@infinitus/contracts";
 import { useAtomValue } from "@effect/atom-react";
->>>>>>> upstream-sync-b379b5b14-upstream-renamed
 import { useNavigate } from "@tanstack/react-router";
 import { type MouseEvent, useCallback, useMemo } from "react";
 

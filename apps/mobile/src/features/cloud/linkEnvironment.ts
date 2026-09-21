@@ -10,27 +10,12 @@ import {
   EnvironmentHttpInternalServerError,
   EnvironmentHttpUnauthorizedError,
 } from "@infinitus/contracts";
-<<<<<<< HEAD
-import { stripPairingTokenFromUrl } from "@infinitus/shared/remote";
-=======
->>>>>>> upstream-sync-b379b5b14-upstream-renamed
 import {
   type RelayEnvironmentLinkResponse as RelayEnvironmentLinkResponseType,
   type RelayManagedEndpointProviderKind,
 } from "@infinitus/contracts/relay";
-<<<<<<< HEAD
-import { exchangeRemoteDpopAccessToken } from "@infinitus/client-runtime/authorization";
-import { fetchRemoteEnvironmentDescriptor } from "@infinitus/client-runtime/environment";
-import { findErrorTraceId } from "@infinitus/client-runtime/errors";
-import {
-  dpopFailureMessage,
-  ManagedRelay,
-  relayProtectedErrorMessage,
-} from "@infinitus/client-runtime/relay";
-=======
 import { findErrorTraceId } from "@infinitus/client-runtime/errors";
 import { ManagedRelay, relayProtectedErrorMessage } from "@infinitus/client-runtime/relay";
->>>>>>> upstream-sync-b379b5b14-upstream-renamed
 import { makeEnvironmentHttpApiClient } from "@infinitus/client-runtime/rpc";
 
 import type { SavedRemoteConnection } from "../../lib/connection";

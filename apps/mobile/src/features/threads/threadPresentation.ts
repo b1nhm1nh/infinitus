@@ -107,10 +107,8 @@ export function resolveThreadStatus(
     return {
       kind: "working",
       label: "Working",
-      pillClassName: "bg-primary/10",
+      pillClassName: "bg-adaptive-sky-500-a12-a16",
       textClassName: "text-adaptive-sky-600-400",
-      iconColor: "#0a84ff",
-      iconBackground: "rgba(10,132,255,0.22)",
       pulse: true,
     };
   }
@@ -119,10 +117,8 @@ export function resolveThreadStatus(
     return {
       kind: "monitoring",
       label: "Monitoring",
-      pillClassName: "bg-primary/10",
+      pillClassName: "bg-adaptive-sky-500-a12-a16",
       textClassName: "text-adaptive-sky-600-400",
-      iconColor: "#0a84ff",
-      iconBackground: "rgba(10,132,255,0.22)",
       pulse: false,
     };
   }

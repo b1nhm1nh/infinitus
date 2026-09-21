@@ -5,12 +5,8 @@ import {
   isAtomCommandInterrupted,
   type AtomCommandResult,
 } from "@infinitus/client-runtime/state/runtime";
-<<<<<<< HEAD
-import type { ContextMenuItem } from "@infinitus/contracts";
-=======
 import { threadSearchMatchKey } from "@infinitus/client-runtime/state/thread-search";
 import type { ContextMenuItem, EnvironmentId, ThreadId } from "@infinitus/contracts";
->>>>>>> upstream-sync-b379b5b14-upstream-renamed
 import type {
   SidebarProjectSortOrder,
   SidebarThreadSortOrder,
@@ -976,11 +972,8 @@ export { sortActiveThreadsByOrderKey as sortThreadsForSidebar } from "@infinitus
 // (state/thread-sort) so web and mobile compute identical pinned orders.
 export { pinOrderKeyBetween, planPinnedReorder } from "@infinitus/client-runtime/state/thread-sort";
 export { sortPinnedThreadsByOrderKey as sortPinnedThreadsForSidebar } from "@infinitus/client-runtime/state/thread-sort";
-<<<<<<< HEAD
-=======
 
 const EMPTY_CONTENT_MATCH_KEYS: ReadonlySet<string> = new Set<string>();
->>>>>>> upstream-sync-b379b5b14-upstream-renamed
 
 /**
  * Search the already-ordered sidebar thread collection by title or linked PR,

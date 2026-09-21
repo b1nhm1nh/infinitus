@@ -8,15 +8,12 @@ import {
   thirdPartyLicenseEntryKey,
   type ThirdPartyLicenseEntry,
 } from "@infinitus/shared/thirdPartyLicenses";
-<<<<<<< HEAD
 import {
   PRODUCT_NAME,
   UPSTREAM_PRODUCT_NAME,
   UPSTREAM_PUBLISHER_NAME,
   UPSTREAM_REPOSITORY_URL,
 } from "@infinitus/shared/productName";
-=======
->>>>>>> upstream-sync-b379b5b14-upstream-renamed
 import { useCallback, useMemo, useState } from "react";
 import { Linking, Platform, Pressable, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -285,11 +282,7 @@ export function SettingsOpenSourceLicenseRouteScreen({ route }: LicenseDetailPro
               onPress={() => void Linking.openURL(sourceUrl)}
               className="min-h-12 flex-row items-center gap-2 self-start py-2 active:opacity-60"
             >
-<<<<<<< HEAD
-              <Text className="font-infinitus-medium text-primary">Project source</Text>
-=======
               <Text className="font-infinitus-medium text-primary-text">Project source</Text>
->>>>>>> upstream-sync-b379b5b14-upstream-renamed
               <SymbolView
                 name="arrow.up.right"
                 size={16}

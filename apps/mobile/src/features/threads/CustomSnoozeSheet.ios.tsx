@@ -27,17 +27,12 @@ import {
   resolveCustomSnooze,
   type CustomSnoozeInput,
 } from "@infinitus/client-runtime/state/thread-settled";
-<<<<<<< HEAD
-import { useState } from "react";
-import { useWindowDimensions } from "react-native";
-=======
 import { useState, type ReactNode } from "react";
 import { NavigationContainer, NavigationIndependentTree } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { ScrollView, useWindowDimensions, View } from "react-native";
 import { useMobileNavigationTheme } from "../../lib/useMobileNavigationTheme";
 import { NativeHeaderToolbar } from "../../native/StackHeader";
->>>>>>> upstream-sync-b379b5b14-upstream-renamed
 import { NATIVE_LIQUID_GLASS_SUPPORTED } from "../../native/native-glass";
 import { useAppearancePreferences } from "../settings/appearance/AppearancePreferencesProvider";
 

@@ -7,10 +7,6 @@
  * both themes) and the single `animate-skeleton` pulse, applied once on the container so any
  * number of bars costs one opacity animation.
  */
-<<<<<<< HEAD
-import type { PullRequestListEntry } from "@infinitus/contracts";
-import { ArrowLeftIcon } from "lucide-react";
-=======
 import type { PullRequestListEntry, PullRequestSummary } from "@infinitus/contracts";
 import {
   ArrowLeftIcon,
@@ -24,7 +20,6 @@ import {
   UsersIcon,
 } from "lucide-react";
 import type { ReactNode } from "react";
->>>>>>> upstream-sync-b379b5b14-upstream-renamed
 
 import { readLocalApi } from "~/localApi";
 import { cn } from "~/lib/utils";

@@ -4,10 +4,7 @@ import type {
   ClientOs,
   DesktopBridge,
 } from "@infinitus/contracts";
-<<<<<<< HEAD
 import { PRODUCT_NAME } from "@infinitus/shared/productName";
-=======
->>>>>>> upstream-sync-b379b5b14-upstream-renamed
 
 interface BrowserIdentity {
   readonly userAgent: string;

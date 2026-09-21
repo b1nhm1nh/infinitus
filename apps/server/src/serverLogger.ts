@@ -6,28 +6,12 @@ import * as References from "effect/References";
 import * as OtlpExporter from "effect/unstable/observability/OtlpExporter";
 import * as OtlpLogger from "effect/unstable/observability/OtlpLogger";
 
-<<<<<<< HEAD
-import { ServerConfig } from "./config.ts";
-import { makeServerLogFileLogger } from "./infinitus/serverLogFile.ts";
-=======
 import { otlpResource, ServerConfig } from "./config.ts";
->>>>>>> upstream-sync-b379b5b14-upstream-renamed
+import { makeServerLogFileLogger } from "./infinitus/serverLogFile.ts";
 
 export const ServerLoggerLive = Effect.gen(function* () {
   const config = yield* ServerConfig;
   const minimumLogLevelLayer = Layer.succeed(References.MinimumLogLevel, config.logLevel);
-<<<<<<< HEAD
-  const loggerLayer = Logger.layer(
-    [
-      Logger.consolePretty(),
-      Logger.tracerLogger,
-      // Fork (#1182): stdout is only kept by whoever started the server, and a
-      // packaged desktop backend has no one keeping it. `Logger.layer` takes
-      // the effect and owns its scope, so the batch flushes on shutdown.
-      makeServerLogFileLogger({ filePath: config.serverLogNdjsonPath }),
-    ],
-    { mergeWithExisting: false },
-=======
 
   const logs = config.otlpLogsExport;
   const otlpLogger =
@@ -39,6 +23,10 @@ export const ServerLoggerLive = Effect.gen(function* () {
           headers: logs.headers,
           resource: otlpResource(config),
         });
+  // Fork (#1182): stdout is only kept by whoever started the server, and a
+  // packaged desktop backend has no one keeping it. `Logger.layer` takes
+  // the effect and owns its scope, so the batch flushes on shutdown.
+  const fileLogger = makeServerLogFileLogger({ filePath: config.serverLogNdjsonPath });
 
   // `Logger.layer` writes the whole logger set rather than adding to it, so
   // every logger the server wants has to be named in this one call.
@@ -54,13 +42,12 @@ export const ServerLoggerLive = Effect.gen(function* () {
   // https://opentelemetry.io/blog/2026/deprecating-span-events/
   const loggerLayer = Logger.layer(
     otlpLogger === undefined
-      ? [Logger.consolePretty(), Logger.tracerLogger]
-      : [Logger.consolePretty(), otlpLogger],
+      ? [Logger.consolePretty(), Logger.tracerLogger, fileLogger]
+      : [Logger.consolePretty(), otlpLogger, fileLogger],
     { mergeWithExisting: false },
   ).pipe(
     Layer.provide(OtlpExporter.layerFlusher),
     Layer.provide(otlpSerializationLayer(logs.protocol)),
->>>>>>> upstream-sync-b379b5b14-upstream-renamed
   );
 
   return Layer.mergeAll(loggerLayer, minimumLogLevelLayer);

@@ -1,9 +1,3 @@
-<<<<<<< HEAD
-import type { EnvironmentId, SidebarThreadSortOrder } from "@infinitus/contracts";
-import type { MenuAction } from "@react-native-menu/menu";
-
-=======
->>>>>>> upstream-sync-b379b5b14-upstream-renamed
 import { NativeHeaderToolbar, NativeStackScreenOptions } from "../../native/StackHeader";
 import { useCallback, useRef } from "react";
 import type { SearchBarCommands } from "react-native-screens";

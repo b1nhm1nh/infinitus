@@ -3,10 +3,7 @@ import * as NodeSocket from "@effect/platform-node/NodeSocket";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as NodeCrypto from "node:crypto";
 import { HostProcessEnvironment, HostProcessPlatform } from "@infinitus/shared/hostProcess";
-<<<<<<< HEAD
 import { PRODUCT_NAME } from "@infinitus/shared/productName";
-=======
->>>>>>> upstream-sync-b379b5b14-upstream-renamed
 
 import {
   type DeviceServiceState,
@@ -234,11 +231,7 @@ import {
   transferBudgetViolations,
 } from "../integration/TransferBudgetReport.integration.ts";
 import { symlinksSupported } from "@infinitus/shared/testing/symlinks";
-<<<<<<< HEAD
-import { otlpSerializationLayer } from "@infinitus/shared/observability";
-=======
 import { DEFAULT_SIGNAL_EXPORT, otlpSerializationLayer } from "@infinitus/shared/observability";
->>>>>>> upstream-sync-b379b5b14-upstream-renamed
 
 const defaultProjectId = ProjectId.make("project-default");
 const defaultThreadId = ThreadId.make("thread-default");

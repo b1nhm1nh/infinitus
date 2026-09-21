@@ -30,10 +30,7 @@ import {
   createModelCapabilities,
   readCustomModelEntries,
 } from "@infinitus/shared/model";
-<<<<<<< HEAD
 import { PRODUCT_NAME } from "@infinitus/shared/productName";
-=======
->>>>>>> upstream-sync-b379b5b14-upstream-renamed
 import { resolveSpawnCommand } from "@infinitus/shared/shell";
 import { codexAppServerArgs, resolveCodexLaunchArgs } from "./codexLaunchArgs.ts";
 import {

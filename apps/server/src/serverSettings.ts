@@ -702,29 +702,6 @@ const make = Effect.gen(function* () {
           ),
         );
 
-  // The marker sent back means "keep what you have"; an empty string clears.
-  const persistInfinitusSlackToken = (
-    field: InfinitusSlackTokenField,
-    value: string,
-  ): Effect.Effect<string, ServerSettingsError> =>
-    value === USAGE_LIMIT_SOURCE_KEY_REDACTED
-      ? Effect.succeed(value)
-      : value.length === 0
-        ? secretStore.remove(INFINITUS_SLACK_SECRET_NAMES[field]).pipe(
-            Effect.mapError(
-              (cause) =>
-                new ServerSettingsError({ settingsPath, operation: "remove-secret", cause }),
-            ),
-            Effect.as(""),
-          )
-        : secretStore.set(INFINITUS_SLACK_SECRET_NAMES[field], textEncoder.encode(value)).pipe(
-            Effect.mapError(
-              (cause) =>
-                new ServerSettingsError({ settingsPath, operation: "write-secret", cause }),
-            ),
-            Effect.as(USAGE_LIMIT_SOURCE_KEY_REDACTED),
-          );
-
   const materializeProviderEnvironmentSecrets = (
     settings: ServerSettings,
   ): Effect.Effect<ServerSettings, ServerSettingsError> =>
@@ -820,6 +797,24 @@ const make = Effect.gen(function* () {
     | { readonly kind: "write"; readonly value: Uint8Array }
     | { readonly kind: "remove"; readonly operation: "remove-secret" | "remove-stale-secret" }
   );
+
+  // Fork (#574): the marker sent back means "keep what you have"; an empty
+  // string clears. The token rides the same change list as the provider
+  // secrets, so it is written, and rolled back, with them.
+  const planInfinitusSlackToken = (
+    field: InfinitusSlackTokenField,
+    value: string,
+    changes: Array<SecretChange>,
+  ): string => {
+    if (value === USAGE_LIMIT_SOURCE_KEY_REDACTED) return value;
+    const secretName = INFINITUS_SLACK_SECRET_NAMES[field];
+    if (value.length === 0) {
+      changes.push({ kind: "remove", secretName, operation: "remove-secret" });
+      return "";
+    }
+    changes.push({ kind: "write", secretName, value: textEncoder.encode(value) });
+    return USAGE_LIMIT_SOURCE_KEY_REDACTED;
+  };
 
   const persistProviderEnvironmentSecrets = (current: ServerSettings, next: ServerSettings) =>
     Effect.sync(() => {
@@ -935,23 +930,17 @@ const make = Effect.gen(function* () {
 
       const infinitusSlack = {
         ...next.infinitusSlack,
-        appToken: yield* persistInfinitusSlackToken("appToken", next.infinitusSlack.appToken),
-        botToken: yield* persistInfinitusSlackToken("botToken", next.infinitusSlack.botToken),
+        appToken: planInfinitusSlackToken("appToken", next.infinitusSlack.appToken, changes),
+        botToken: planInfinitusSlackToken("botToken", next.infinitusSlack.botToken, changes),
       };
       return {
-<<<<<<< HEAD
-        ...next,
-        providerInstances: providerInstances as ServerSettings["providerInstances"],
-        usageLimitSources: usageLimitSources as ServerSettings["usageLimitSources"],
-        infinitusSlack,
-=======
         settings: {
           ...next,
           providerInstances: providerInstances as ServerSettings["providerInstances"],
           usageLimitSources: usageLimitSources as ServerSettings["usageLimitSources"],
+          infinitusSlack,
         },
         changes,
->>>>>>> upstream-sync-b379b5b14-upstream-renamed
       };
     });
 

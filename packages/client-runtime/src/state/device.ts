@@ -1,8 +1,5 @@
-<<<<<<< HEAD
-import { WS_METHODS } from "@infinitus/contracts";
-=======
 import { type DeviceToolVersions, WS_METHODS } from "@infinitus/contracts";
->>>>>>> upstream-sync-b379b5b14-upstream-renamed
+import { PRODUCT_NAME } from "@infinitus/shared/productName";
 import { Atom } from "effect/unstable/reactivity";
 
 import type { EnvironmentRegistry } from "../connection/registry.ts";
@@ -99,5 +96,4 @@ export function deviceToolUpdatePolicy(tools: DeviceToolVersions | undefined) {
     ? "Update pending. Required tools will install automatically when next used. The host needs network access; an older install is not used as a fallback."
     : "Required tools are installed automatically when needed. Checking versions does not install or start anything.";
 }
-export const deviceToolUpdateOwnership =
-  "This environment's T3 server chooses device tool versions for itself and its SSH hosts. Update that server to receive newer tool versions; updating only your browser or mobile app does not update a remote server.";
+export const deviceToolUpdateOwnership = `This environment's ${PRODUCT_NAME} server chooses device tool versions for itself and its SSH hosts. Update that server to receive newer tool versions; updating only your browser or mobile app does not update a remote server.`;

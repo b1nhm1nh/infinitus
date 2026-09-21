@@ -73,11 +73,8 @@ import {
 } from "./ui/combobox";
 import { stackedThreadToast, toastManager } from "./ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
-<<<<<<< HEAD
 import { ThreadBabysitToggle } from "./ThreadBabysitToggle";
-=======
 import { MiddleTruncate } from "./ui/middle-truncate";
->>>>>>> upstream-sync-b379b5b14-upstream-renamed
 
 export interface BranchToolbarBranchSelectorHandle {
   open: () => void;
