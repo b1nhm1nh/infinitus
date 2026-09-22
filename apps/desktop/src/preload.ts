@@ -1,13 +1,13 @@
 import type {
   DesktopBridge,
-  DesktopCaptureGestureEvent,
   DesktopPreviewPointerEvent,
+  DesktopPreviewRecordingInputEvent,
   DesktopPreviewRecordingFrame,
   DesktopPreviewTabState,
   DesktopSnapShotEvent,
-} from "@t3tools/contracts";
+} from "@infinitus/contracts";
 import { exposeClerkBridge } from "@clerk/electron/preload";
-import { contextBridge, ipcRenderer } from "electron";
+import { contextBridge, ipcRenderer, webFrame, webUtils } from "electron";
 
 import * as IpcChannels from "./ipc/channels.ts";
 
@@ -28,25 +28,23 @@ function isSnapShotEvent(value: unknown): value is DesktopSnapShotEvent {
   );
 }
 
-const CAPTURE_GESTURE_FAILURES = new Set([
-  "accessibility",
-  "no-focus",
-  "unsupported",
-  "timeout",
-  "helper",
-]);
-function isCaptureGestureEvent(value: unknown): value is DesktopCaptureGestureEvent {
-  if (typeof value !== "object" || value === null) return false;
-  const { type, text, reason } = value as { type?: unknown; text?: unknown; reason?: unknown };
-  if (type === "captured") return typeof text === "string";
-  if (type === "empty") return true;
-  return type === "failed" && typeof reason === "string" && CAPTURE_GESTURE_FAILURES.has(reason);
-}
-
 exposeClerkBridge({ passkeys: true });
 
 // oxlint-disable-next-line t3code/no-global-process-runtime -- Electron exposes the client platform in its sandboxed preload process.
 const clientPlatform = process.platform;
+
+if (clientPlatform === "darwin") {
+  // Native window buttons do not scale with Chromium zoom. Keep their reserved
+  // space in native points, including when a zoomed page is reloaded.
+  const syncWindowControlInset = () => {
+    document.documentElement.style.setProperty(
+      "--desktop-window-controls-inset",
+      `${90 / webFrame.getZoomFactor()}px`,
+    );
+  };
+  window.addEventListener("DOMContentLoaded", syncWindowControlInset, { once: true });
+  window.addEventListener("resize", syncWindowControlInset);
+}
 
 function unwrapEnsureSshEnvironmentResult(result: unknown) {
   if (
@@ -72,7 +70,15 @@ contextBridge.exposeInMainWorld("desktopBridge", {
     }
     return result as ReturnType<DesktopBridge["getAppBranding"]>;
   },
+  getPathForFile: (file: File) => webUtils.getPathForFile(file),
   getClientPlatform: () => clientPlatform,
+  setNotificationBadge: (badge) =>
+    ipcRenderer.invoke(IpcChannels.SET_NOTIFICATION_BADGE_CHANNEL, badge),
+  onNotificationBadgeClear: (listener) => {
+    const handler = () => listener();
+    ipcRenderer.on(IpcChannels.SET_NOTIFICATION_BADGE_CHANNEL, handler);
+    return () => ipcRenderer.removeListener(IpcChannels.SET_NOTIFICATION_BADGE_CHANNEL, handler);
+  },
   getSystemLocale: () => {
     const result = ipcRenderer.sendSync(IpcChannels.GET_SYSTEM_LOCALE_CHANNEL);
     return typeof result === "string" ? result : null;
@@ -86,6 +92,10 @@ contextBridge.exposeInMainWorld("desktopBridge", {
   },
   getLocalEnvironmentBearerToken: () =>
     ipcRenderer.invoke(IpcChannels.GET_LOCAL_ENVIRONMENT_BEARER_TOKEN_CHANNEL),
+  getLocalEnvironmentEnabled: () =>
+    ipcRenderer.sendSync(IpcChannels.GET_LOCAL_ENVIRONMENT_ENABLED_CHANNEL) !== false,
+  setLocalEnvironmentEnabled: (enabled) =>
+    ipcRenderer.invoke(IpcChannels.SET_LOCAL_ENVIRONMENT_ENABLED_CHANNEL, enabled),
   getClientSettings: () => ipcRenderer.invoke(IpcChannels.GET_CLIENT_SETTINGS_CHANNEL),
   setClientSettings: (settings) =>
     ipcRenderer.invoke(IpcChannels.SET_CLIENT_SETTINGS_CHANNEL, settings),
@@ -171,6 +181,19 @@ contextBridge.exposeInMainWorld("desktopBridge", {
   setKeepAwake: (active) => ipcRenderer.invoke(IpcChannels.SET_KEEP_AWAKE_CHANNEL, active),
   submitInfinitusSignInCode: (input) =>
     ipcRenderer.invoke(IpcChannels.SUBMIT_INFINITUS_SIGN_IN_CODE_CHANNEL, input),
+  beginInfinitusOAuthSignIn: (input) =>
+    ipcRenderer.invoke(IpcChannels.BEGIN_INFINITUS_OAUTH_SIGN_IN_CHANNEL, input),
+  cancelInfinitusOAuthSignIn: (flowId) =>
+    ipcRenderer.invoke(IpcChannels.CANCEL_INFINITUS_OAUTH_SIGN_IN_CHANNEL, flowId),
+  listenInfinitusSignInRedirect: (input) =>
+    ipcRenderer.invoke(IpcChannels.LISTEN_INFINITUS_SIGN_IN_REDIRECT_CHANNEL, input),
+  stopInfinitusSignInRedirect: (flowId) =>
+    ipcRenderer.invoke(IpcChannels.STOP_INFINITUS_SIGN_IN_REDIRECT_CHANNEL, flowId),
+  getInfinitusEngines: () => ipcRenderer.invoke(IpcChannels.GET_INFINITUS_ENGINES_CHANNEL),
+  setInfinitusEngineSettings: (input) =>
+    ipcRenderer.invoke(IpcChannels.SET_INFINITUS_ENGINE_SETTINGS_CHANNEL, input),
+  controlInfinitusEngine: (input) =>
+    ipcRenderer.invoke(IpcChannels.CONTROL_INFINITUS_ENGINE_CHANNEL, input),
   consumePendingDeepLink: () =>
     ipcRenderer.invoke(IpcChannels.CONSUME_INFINITUS_DEEP_LINK_CHANNEL, undefined),
   onDeepLinkPending: (listener) => {
@@ -181,6 +204,17 @@ contextBridge.exposeInMainWorld("desktopBridge", {
     ipcRenderer.on(IpcChannels.INFINITUS_DEEP_LINK_PENDING_CHANNEL, wrappedListener);
     return () => {
       ipcRenderer.removeListener(IpcChannels.INFINITUS_DEEP_LINK_PENDING_CHANNEL, wrappedListener);
+    };
+  },
+  onHistoryGesture: (listener) => {
+    const wrappedListener = (_event: Electron.IpcRendererEvent, direction: unknown) => {
+      if (direction !== "left" && direction !== "right") return;
+      listener(direction);
+    };
+
+    ipcRenderer.on(IpcChannels.INFINITUS_HISTORY_GESTURE_CHANNEL, wrappedListener);
+    return () => {
+      ipcRenderer.removeListener(IpcChannels.INFINITUS_HISTORY_GESTURE_CHANNEL, wrappedListener);
     };
   },
   pickFolder: (options) => ipcRenderer.invoke(IpcChannels.PICK_FOLDER_CHANNEL, options),
@@ -222,15 +256,16 @@ contextBridge.exposeInMainWorld("desktopBridge", {
       ipcRenderer.removeListener(IpcChannels.SNAP_SHOT_EVENT_CHANNEL, wrappedListener);
     };
   },
-  onCaptureGestureEvent: (listener) => {
-    const wrappedListener = (_event: Electron.IpcRendererEvent, event: unknown) => {
-      if (!isCaptureGestureEvent(event)) return;
-      listener(event);
+  consumePendingCaptureGestures: () =>
+    ipcRenderer.invoke(IpcChannels.CONSUME_CAPTURE_GESTURES_CHANNEL, undefined),
+  onCaptureGesturePending: (listener) => {
+    const wrappedListener = () => {
+      listener();
     };
 
-    ipcRenderer.on(IpcChannels.CAPTURE_GESTURE_EVENT_CHANNEL, wrappedListener);
+    ipcRenderer.on(IpcChannels.CAPTURE_GESTURE_PENDING_CHANNEL, wrappedListener);
     return () => {
-      ipcRenderer.removeListener(IpcChannels.CAPTURE_GESTURE_EVENT_CHANNEL, wrappedListener);
+      ipcRenderer.removeListener(IpcChannels.CAPTURE_GESTURE_PENDING_CHANNEL, wrappedListener);
     };
   },
   onQuitShortcut: (listener) => {
@@ -355,6 +390,15 @@ contextBridge.exposeInMainWorld("desktopBridge", {
         ipcRenderer.invoke(IpcChannels.PREVIEW_PICTURE_IN_PICTURE_CLOSE_CHANNEL, { tabId }),
     },
     recording: {
+      onInput: (listener) => {
+        const wrappedListener = (_event: Electron.IpcRendererEvent, event: unknown) => {
+          if (typeof event !== "object" || event === null) return;
+          listener(event as DesktopPreviewRecordingInputEvent);
+        };
+        ipcRenderer.on(IpcChannels.PREVIEW_RECORDING_INPUT_CHANNEL, wrappedListener);
+        return () =>
+          ipcRenderer.removeListener(IpcChannels.PREVIEW_RECORDING_INPUT_CHANNEL, wrappedListener);
+      },
       startScreencast: (tabId) =>
         ipcRenderer.invoke(IpcChannels.PREVIEW_RECORDING_START_CHANNEL, { tabId }),
       stopScreencast: (tabId) =>

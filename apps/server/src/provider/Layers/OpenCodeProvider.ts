@@ -3,15 +3,16 @@ import {
   type OpenCodeSettings,
   type ServerProviderModel,
   type ServerProviderSkill,
-} from "@t3tools/contracts";
+  type ServerProviderSlashCommand,
+} from "@infinitus/contracts";
 import * as Cause from "effect/Cause";
 import * as Data from "effect/Data";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 
-import { createModelCapabilities } from "@t3tools/shared/model";
-import { PRODUCT_NAME } from "@t3tools/shared/productName";
-import { compareSemverVersions } from "@t3tools/shared/semver";
+import { createModelCapabilities } from "@infinitus/shared/model";
+import { PRODUCT_NAME } from "@infinitus/shared/productName";
+import { compareSemverVersions } from "@infinitus/shared/semver";
 import {
   buildServerProvider,
   COMPACT_SLASH_COMMAND,
@@ -316,6 +317,26 @@ export function openCodeSkillsToServerProviderSkills(
   return skills.toSorted((left, right) => left.name.localeCompare(right.name));
 }
 
+export function openCodeCommandsToServerProviderSlashCommands(
+  input: OpenCodeInventory["commands"],
+): ReadonlyArray<ServerProviderSlashCommand> {
+  const commands: ServerProviderSlashCommand[] = [COMPACT_SLASH_COMMAND];
+  const names = new Set([COMPACT_SLASH_COMMAND.name]);
+  for (const command of input ?? []) {
+    const name = trimOptional(command.name);
+    if (!name || names.has(name) || command.source === "skill") continue;
+    names.add(name);
+    const description = trimOptional(command.description);
+    const hint = trimOptional(command.hints.join(" "));
+    commands.push({
+      name,
+      ...(description ? { description } : {}),
+      ...(hint ? { input: { hint } } : {}),
+    });
+  }
+  return commands;
+}
+
 export const makePendingOpenCodeProvider = (
   openCodeSettings: OpenCodeSettings,
 ): Effect.Effect<ServerProviderDraft> =>
@@ -527,7 +548,9 @@ export const checkOpenCodeProviderStatus = Effect.fn("checkOpenCodeProviderStatu
     checkedAt,
     models,
     skills,
-    slashCommands: [COMPACT_SLASH_COMMAND],
+    slashCommands: openCodeCommandsToServerProviderSlashCommands(
+      inventoryExit.value.inventory.commands,
+    ),
     probe: {
       installed: true,
       version,

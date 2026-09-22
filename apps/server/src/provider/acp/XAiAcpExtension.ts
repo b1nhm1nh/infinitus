@@ -1,6 +1,6 @@
 import * as NodeOS from "node:os";
 
-import type { ProviderUserInputAnswers, UserInputQuestion } from "@t3tools/contracts";
+import type { ProviderUserInputAnswers, UserInputQuestion } from "@infinitus/contracts";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Ref from "effect/Ref";
@@ -109,10 +109,6 @@ interface XAiAskUserQuestionAcceptedResponse {
 interface XAiAskUserQuestionCancelledResponse {
   readonly outcome: "cancelled";
 }
-
-export type XAiAskUserQuestionResponse =
-  | XAiAskUserQuestionAcceptedResponse
-  | XAiAskUserQuestionCancelledResponse;
 
 interface NormalizedXAiAnswer {
   readonly questionText: string;

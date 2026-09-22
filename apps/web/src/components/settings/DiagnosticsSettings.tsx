@@ -1,3 +1,4 @@
+import { ProcessSignalActions } from "./ProcessSignalActions";
 import { RefreshIcon } from "~/components/ui/refresh-icon";
 import {
   AlertTriangleIcon,
@@ -10,13 +11,13 @@ import {
 import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
-} from "@t3tools/client-runtime/state/runtime";
+} from "@infinitus/client-runtime/state/runtime";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type {
   ServerProcessDiagnosticsEntry,
   ServerProcessResourceHistorySummary,
   ServerProcessSignal,
-} from "@t3tools/contracts";
+} from "@infinitus/contracts";
 import * as DateTime from "effect/DateTime";
 import * as Option from "effect/Option";
 
@@ -38,6 +39,7 @@ import { ResourceTelemetryDiagnostics } from "./ResourceTelemetryDiagnostics";
 import { SettingsPageContainer, SettingsSection, useRelativeTimeTick } from "./settingsLayout";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { useSettingsScope } from "./SettingsScopeContext";
+import { PRODUCT_NAME } from "@infinitus/shared/productName";
 
 const NUMBER_FORMAT = new Intl.NumberFormat();
 
@@ -309,51 +311,6 @@ function ProcessNameCell({
   );
 }
 
-function ProcessSignalActions({
-  process,
-  isSignaling,
-  onSignal,
-}: {
-  process: ServerProcessDiagnosticsEntry;
-  isSignaling: boolean;
-  onSignal: (pid: number, signal: ServerProcessSignal) => void;
-}) {
-  return (
-    <div className="flex items-center justify-end gap-1.5">
-      <Tooltip>
-        <TooltipTrigger
-          render={
-            <button
-              type="button"
-              disabled={isSignaling}
-              className="cursor-pointer text-[11px] font-medium text-muted-foreground underline-offset-2 hover:text-foreground hover:underline disabled:pointer-events-none disabled:opacity-50"
-              onClick={() => onSignal(process.pid, "SIGINT")}
-            >
-              INT
-            </button>
-          }
-        />
-        <TooltipPopup side="top">Send SIGINT</TooltipPopup>
-      </Tooltip>
-      <Tooltip>
-        <TooltipTrigger
-          render={
-            <button
-              type="button"
-              disabled={isSignaling}
-              className="cursor-pointer text-[11px] font-medium text-destructive underline-offset-2 hover:underline disabled:pointer-events-none disabled:opacity-50"
-              onClick={() => onSignal(process.pid, "SIGKILL")}
-            >
-              KILL
-            </button>
-          }
-        />
-        <TooltipPopup side="top">Send SIGKILL</TooltipPopup>
-      </Tooltip>
-    </div>
-  );
-}
-
 function ProcessDiagnosticsTable({
   processes,
   signalingPid,
@@ -469,9 +426,8 @@ function ProcessDiagnosticsTable({
               </td>
               <td className="p-2 align-middle sm:pr-4">
                 <ProcessSignalActions
-                  process={process}
-                  isSignaling={signalingPid === process.pid}
-                  onSignal={onSignal}
+                  disabled={signalingPid === process.pid}
+                  onSignal={(signal) => onSignal(process.pid, signal)}
                 />
               </td>
             </tr>
@@ -938,8 +894,7 @@ export function DiagnosticsSettingsPanel() {
             toastManager.add({
               type: "info",
               title: "Process already exited",
-              description:
-                "The process is not a child of the T3 Server. It might already have exited.",
+              description: `The process is not a child of the ${PRODUCT_NAME} Server. It might already have exited.`,
             });
             return;
           }
@@ -1052,7 +1007,7 @@ export function DiagnosticsSettingsPanel() {
           <StatBlock
             label="CPU Time"
             value={resourceData ? formatCpuTime(resourceData.totalCpuSecondsApprox) : "..."}
-            tooltip="Approximate active CPU time for the T3 server root process and its descendants during the selected window. It grows only while sampled processes use CPU and older samples leave as the window moves."
+            tooltip={`Approximate active CPU time for the ${PRODUCT_NAME} server root process and its descendants during the selected window. It grows only while sampled processes use CPU and older samples leave as the window moves.`}
           />
           <StatBlock
             label="Samples"

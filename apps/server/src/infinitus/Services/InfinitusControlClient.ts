@@ -2,13 +2,18 @@ import type {
   InfinitusCommandFailed,
   InfinitusProtocolError,
   InfinitusUnavailable,
-} from "@t3tools/contracts/infinitus";
+} from "@infinitus/contracts/infinitus";
 import * as Context from "effect/Context";
 import type * as Effect from "effect/Effect";
 
-import type { InfinitusControlRequestInput } from "@t3tools/shared/infinitusControlSocket";
+import type { InfinitusControlRequestInput } from "@infinitus/shared/infinitusControlSocket";
 
 export type { InfinitusControlRequestInput };
+
+export interface InfinitusControlRequestOptions {
+  /** Overrides the configured reply budget for this one request. */
+  readonly timeoutMs?: number;
+}
 
 export interface InfinitusControlClientShape {
   /** Resolved once at layer construction; null means Infinitus cannot run here. */
@@ -19,6 +24,7 @@ export interface InfinitusControlClientShape {
    */
   readonly request: (
     input: InfinitusControlRequestInput,
+    options?: InfinitusControlRequestOptions,
   ) => Effect.Effect<
     unknown,
     InfinitusUnavailable | InfinitusProtocolError | InfinitusCommandFailed

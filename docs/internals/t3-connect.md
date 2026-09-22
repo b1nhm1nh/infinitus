@@ -1,6 +1,6 @@
-# T3 Connect
+# Infinitus Connect
 
-T3 Connect uses Clerk for cloud identity. The relay manages environment links,
+Infinitus Connect uses Clerk for cloud identity. The relay manages environment links,
 credentials for reaching environments, and managed tunnel allocations. After
 bootstrap, clients send application traffic through the environment's tunnel
 hostname; the relay Worker does not proxy their HTTP or WebSocket sessions.
@@ -72,10 +72,15 @@ different credentials. The relay accepts both session-template JWTs and CLI
 OAuth tokens; requiring a JWT template for the CLI would reject valid logins.
 The CLI is a public OAuth client using PKCE and stores no client secret.
 
-CLI authorization starts on the hosted `/connect` page so sign-in completes
-before entering Clerk's authorize endpoint. Sending a signed-out browser
-straight to that endpoint loses the authorize parameters during the sign-in
-redirect. The [shared flow](../../packages/shared/src/connectAuth.ts) preserves
-PKCE and state for both loopback and pasted-code callbacks. SSH and headless
-sessions use the pasted-code flow because the browser cannot ordinarily reach a
-listener on the remote machine.
+Loopback CLI authorization starts on the hosted `/connect` page so sign-in
+completes before entering Clerk's authorize endpoint. Sending a signed-out
+browser straight to that endpoint loses the authorize parameters during the
+sign-in redirect. The [shared flow](../../packages/shared/src/connectAuth.ts)
+preserves PKCE and state for the loopback callback.
+
+SSH and headless sessions use Clerk's OAuth device authorization grant because
+the browser cannot ordinarily reach a listener on the remote machine. The CLI
+polls Clerk's token endpoint directly while the user approves a short code on
+Clerk's hosted device page; the hosted app plays no part and there is no
+redirect URI or PKCE. The grant must be enabled on the CLI OAuth application
+or the device endpoint returns an error before any prompt is shown.

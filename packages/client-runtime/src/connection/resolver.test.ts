@@ -1,5 +1,9 @@
-import { EnvironmentId, type DesktopSshEnvironmentTarget } from "@t3tools/contracts";
-import { RelayClientTracer } from "@t3tools/shared/relayTracing";
+import {
+  EnvironmentId,
+  ORCHESTRATION_PROTOCOL_VERSION,
+  type DesktopSshEnvironmentTarget,
+} from "@infinitus/contracts";
+import { RelayClientTracer } from "@infinitus/shared/relayTracing";
 import { describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -29,6 +33,7 @@ import {
   type ConnectionTarget,
 } from "./model.ts";
 import * as ConnectionProfileStore from "./profileStore.ts";
+import { remoteHttpClientLayer } from "../rpc/http.ts";
 import {
   GitHubRoutingPermissions,
   gitHubRoutingConnectionKey,
@@ -78,6 +83,7 @@ const makeDependencies = Effect.fn("TestConnectionResolver.makeDependencies")((o
   readonly prepareSsh?: ClientCapabilities.SshEnvironmentGateway["Service"]["prepare"];
   /** Fork (#663): every profile the broker writes back, in order. */
   readonly profilePuts?: Array<ConnectionProfile>;
+  readonly descriptorProtocolVersion?: number | null | undefined;
 }) => {
   const profiles = new Map(
     (options?.profiles ?? []).map((profile) => [profile.connectionId, profile]),
@@ -147,6 +153,21 @@ const makeDependencies = Effect.fn("TestConnectionResolver.makeDependencies")((o
   });
 
   const dependencies = Layer.mergeAll(
+    remoteHttpClientLayer((() =>
+      Promise.resolve(
+        Response.json({
+          environmentId: ENVIRONMENT_ID,
+          label: "Compatible environment",
+          platform: { os: "linux", arch: "x64" },
+          serverVersion: "0.0.0-test",
+          ...(options?.descriptorProtocolVersion === undefined
+            ? { orchestrationProtocolVersion: ORCHESTRATION_PROTOCOL_VERSION }
+            : options.descriptorProtocolVersion === null
+              ? {}
+              : { orchestrationProtocolVersion: options.descriptorProtocolVersion }),
+          capabilities: { repositoryIdentity: true },
+        }),
+      )) satisfies typeof fetch),
     Layer.succeed(
       ConnectionProfileStore.ConnectionProfileStore,
       options?.profileStore ?? profileStore,
@@ -173,6 +194,26 @@ const makeDependencies = Effect.fn("TestConnectionResolver.makeDependencies")((o
 });
 
 describe("ConnectionResolver", () => {
+  it.effect("blocks an incompatible host during discovery before opening orchestration RPC", () =>
+    Effect.gen(function* () {
+      const brokerLayer = yield* makeDependencies({
+        descriptorProtocolVersion: ORCHESTRATION_PROTOCOL_VERSION + 1,
+      });
+      const broker = yield* ConnectionResolver.ConnectionResolver.pipe(Effect.provide(brokerLayer));
+      const target = new PrimaryConnectionTarget({
+        environmentId: ENVIRONMENT_ID,
+        label: "Primary",
+        httpBaseUrl: "http://127.0.0.1:3777",
+        wsBaseUrl: "ws://127.0.0.1:3777",
+      });
+
+      const error = yield* Effect.flip(broker.prepare(catalogEntry(target)));
+
+      expect(error).toMatchObject({ reason: "unsupported" });
+      expect(error.message).toContain("This client is not supported");
+    }),
+  );
+
   it.effect("prepares a primary environment without remote capabilities", () =>
     Effect.gen(function* () {
       const brokerLayer = yield* makeDependencies();
@@ -189,7 +230,7 @@ describe("ConnectionResolver", () => {
         label: "Primary",
         httpBaseUrl: "http://127.0.0.1:3777",
         socketUrl:
-          "ws://127.0.0.1:3777/ws?clientSurface=web&clientDeviceType=desktop&connectionMethod=direct",
+          "ws://127.0.0.1:3777/ws?clientSurface=web&clientDeviceType=desktop&connectionMethod=direct&orchestrationProtocol=1",
         httpAuthorization: null,
         target,
       });
@@ -227,7 +268,7 @@ describe("ConnectionResolver", () => {
       });
 
       expect(yield* broker.prepare(catalogEntry(target))).toMatchObject({
-        socketUrl: "ws://127.0.0.1:3777/ws?wsTicket=desktop",
+        socketUrl: "ws://127.0.0.1:3777/ws?wsTicket=desktop&orchestrationProtocol=1",
         httpAuthorization: { _tag: "Bearer", token: "desktop-bearer" },
         target,
       });
@@ -314,7 +355,7 @@ describe("ConnectionResolver", () => {
     new BearerConnectionCredential({ token: "secret-bearer" }),
   ] as const;
 
-  it.effect("roams to the tunnel when the paired host is unreachable and remembers it", () =>
+  it.effect("dials the tunnel first, never the LAN address, and remembers it", () =>
     Effect.gen(function* () {
       const inputs = yield* Ref.make<ReadonlyArray<BearerInput>>([]);
       const profilePuts: Array<ConnectionProfile> = [];
@@ -323,13 +364,7 @@ describe("ConnectionResolver", () => {
         profilePuts,
         authorizeBearer: (input) =>
           Ref.update(inputs, (values) => [...values, input]).pipe(
-            Effect.flatMap(() =>
-              input.httpBaseUrl === LAN
-                ? Effect.fail(
-                    new ConnectionTransientError({ reason: "timeout", detail: "no route" }),
-                  )
-                : Effect.succeed(authorizedAt(input, [TUNNEL])),
-            ),
+            Effect.as(authorizedAt(input, [TUNNEL])),
           ),
       });
       const broker = yield* ConnectionResolver.ConnectionResolver.pipe(Effect.provide(brokerLayer));
@@ -342,10 +377,11 @@ describe("ConnectionResolver", () => {
       );
 
       expect(prepared.httpBaseUrl).toBe(TUNNEL);
-      expect(prepared.socketUrl).toBe("wss://code.infinitus.run/ws?wsTicket=ticket");
+      expect(prepared.socketUrl).toBe(
+        `wss://code.infinitus.run/ws?wsTicket=ticket&orchestrationProtocol=${ORCHESTRATION_PROTOCOL_VERSION}`,
+      );
       const tried = yield* Ref.get(inputs);
       expect(tried.map((input) => [input.httpBaseUrl, input.descriptorTimeoutMs])).toEqual([
-        [LAN, 3_000],
         [TUNNEL, undefined],
       ]);
       expect(profilePuts).toHaveLength(1);
@@ -355,6 +391,53 @@ describe("ConnectionResolver", () => {
         lastGoodHttpBaseUrl: TUNNEL,
       });
     }),
+  );
+
+  it.effect(
+    "falls back to the LAN address, with the short probe, when the tunnel is unreachable",
+    () =>
+      Effect.gen(function* () {
+        const inputs = yield* Ref.make<ReadonlyArray<BearerInput>>([]);
+        const profilePuts: Array<ConnectionProfile> = [];
+        const brokerLayer = yield* makeDependencies({
+          credentials: [roamingCredential],
+          profilePuts,
+          authorizeBearer: (input) =>
+            Ref.update(inputs, (values) => [...values, input]).pipe(
+              Effect.flatMap(() =>
+                input.httpBaseUrl === TUNNEL
+                  ? Effect.fail(
+                      new ConnectionTransientError({ reason: "timeout", detail: "no route" }),
+                    )
+                  : Effect.succeed(authorizedAt(input, [TUNNEL])),
+              ),
+            ),
+        });
+        const broker = yield* ConnectionResolver.ConnectionResolver.pipe(
+          Effect.provide(brokerLayer),
+        );
+
+        const prepared = yield* broker.prepare(
+          catalogEntry(
+            roamingTarget,
+            Option.some(
+              roamingProfile({ alternateHttpBaseUrls: [TUNNEL], lastGoodHttpBaseUrl: TUNNEL }),
+            ),
+          ),
+        );
+
+        expect(prepared.httpBaseUrl).toBe(LAN);
+        const tried = yield* Ref.get(inputs);
+        expect(tried.map((input) => [input.httpBaseUrl, input.descriptorTimeoutMs])).toEqual([
+          [TUNNEL, undefined],
+          [LAN, 3_000],
+        ]);
+        expect(profilePuts).toHaveLength(1);
+        expect(profilePuts[0]).toMatchObject({
+          alternateHttpBaseUrls: [TUNNEL],
+          lastGoodHttpBaseUrl: LAN,
+        });
+      }),
   );
 
   it.effect("stops at a host that answers and refuses instead of trying the tunnel", () =>
@@ -383,7 +466,7 @@ describe("ConnectionResolver", () => {
         .pipe(Effect.flip);
 
       expect(failure).toMatchObject({ _tag: "ConnectionBlockedError", reason: "authentication" });
-      expect(yield* Ref.get(tried)).toEqual([LAN]);
+      expect(yield* Ref.get(tried)).toEqual([TUNNEL]);
     }),
   );
 
@@ -405,7 +488,7 @@ describe("ConnectionResolver", () => {
 
       const tried = yield* Ref.get(inputs);
       expect(tried.map((input) => [input.httpBaseUrl, input.descriptorTimeoutMs])).toEqual([
-        [LAN, undefined],
+        [LAN, 3_000],
       ]);
       expect(profilePuts).toHaveLength(1);
       expect(profilePuts[0]).toMatchObject({
@@ -459,7 +542,7 @@ describe("ConnectionResolver", () => {
         environmentId: ENVIRONMENT_ID,
         label: "Authorized relay environment",
         httpBaseUrl: ENDPOINT.httpBaseUrl,
-        socketUrl: "wss://authorized.example.test/ws?wsTicket=dpop",
+        socketUrl: `wss://authorized.example.test/ws?wsTicket=dpop&orchestrationProtocol=${ORCHESTRATION_PROTOCOL_VERSION}`,
         httpAuthorization: {
           _tag: "Dpop",
           accessToken: "dpop-access-token",

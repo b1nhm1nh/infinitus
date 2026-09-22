@@ -1,4 +1,4 @@
-import type { RelayAgentActivityState, RelayDeliveryResult } from "@t3tools/contracts/relay";
+import type { RelayAgentActivityState, RelayDeliveryResult } from "@infinitus/contracts/relay";
 import { describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -84,7 +84,6 @@ function makeEnvironmentLinks(
 ): EnvironmentLinks.EnvironmentLinks["Service"] {
   return {
     upsert: () => Effect.void,
-    listUsersForEnvironment: () => Effect.succeed(["dev:julius"]),
     listDeliveryUsersForEnvironment: () =>
       Effect.succeed([
         {
@@ -93,7 +92,6 @@ function makeEnvironmentLinks(
           liveActivitiesEnabled: true,
         },
       ]),
-    listPublicKeysForEnvironment: () => Effect.succeed([]),
     listForUser: () => Effect.succeed([]),
     getForUser: () => Effect.succeed(null),
     revokeForUser: () => Effect.succeed(false),

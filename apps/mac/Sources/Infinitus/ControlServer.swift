@@ -18,7 +18,11 @@ final class ControlServer {
     /// The inode we bound — `heal()` checks the path still leads to it.
     private var boundInode: ino_t = 0
     private let queue = DispatchQueue(label: "infinitus.control")
-    private var busy = false
+    /// Writes run one at a time, in arrival order: the next press waits
+    /// for the one in flight instead of being refused (#1481: "busy" met
+    /// every second keep-warm press while the first was still on its
+    /// engine pass). Reads still run alongside.
+    private var writeTail: Task<ControlReply, Never>?
     private var task: Task<Void, Never>?
 
     init(model: AppModel) { self.model = model }
@@ -179,13 +183,27 @@ final class ControlServer {
         // status/fleets/events/sessions continuously, and a blanket guard
         // handed the CLI (and the phone) "busy" whenever a poll was in
         // flight — a `perf` probe hit it on the live bundle (#346).
-        if command.effect != .read {
-            guard !busy else { return .failure("busy: another control command is running") }
-            busy = true
+        guard command.effect != .read else { return await answer(request) }
+        let prior = writeTail
+        let mine = Task { @MainActor [self] in
+            _ = await prior?.value
+            return await answer(request)
         }
-        defer { if command.effect != .read { busy = false } }
+        writeTail = mine
+        let reply = await mine.value
+        if writeTail == mine { writeTail = nil }
+        return reply
+    }
+
+    private func answer(_ request: ControlRequest) async -> ControlReply {
         do { return try await dispatch(request) }
         catch { return .failure((error as? LocalizedError)?.errorDescription ?? "\(error)") }
+    }
+
+    /// After a flag edit: the refresh pass takes the snapshot the engine
+    /// answered with, and asks only an engine that answered nothing.
+    private func settle(_ edited: [EngineFleet]?, _ fleet: FleetState) async {
+        await model.refreshSnapshot(seeded: edited.map { [fleet.engineID: $0] } ?? [:])
     }
 
     // MARK: dispatch
@@ -195,14 +213,21 @@ final class ControlServer {
         init(_ m: String) { errorDescription = m }
     }
 
-    /// The lock's current state, for `lock-status`/`lock on|off|now|relock|unlock`.
-    private func lockReply() -> ControlReply {
-        let policy = model.lock.policy
-        return ControlReply(ok: true, result: .object([
-            "enabled": .bool(policy.enabled),
-            "locked": .bool(policy.locked),
-            "relock": .string(policy.relock.label),
-        ]))
+    /// The team snapshot after an action, or the action's error.
+    private func teamReply() throws -> ControlReply {
+        if let err = model.team.lastError { throw Fail(err) }
+        return ControlReply(ok: true, result: try model.team.snapshot.map { try JSONValue.of($0) } ?? .null)
+    }
+
+    /// A teammate by kid or roster name (spec §8: `team-grant`, `team-drive`).
+    private func teammate(_ word: String) throws -> String {
+        let everyone = model.team.roster?.doc.everyone ?? []
+        if everyone.contains(where: { $0.keys.kid == word }) { return word }
+        let named = everyone.filter { $0.name == word }
+        guard named.count == 1, let one = named.first else {
+            throw Fail(named.isEmpty ? "no teammate \(word)" : "several teammates named \(word); pass the kid")
+        }
+        return one.keys.kid
     }
 
     private func dispatch(_ r: ControlRequest) async throws -> ControlReply {
@@ -242,22 +267,10 @@ final class ControlServer {
 
         case "push":
             // #269 G: the desktop's thread phase changes ride the Mac's
-            // own pusher, so they get its gating and every channel on.
-            // #1047: its thread card state rides the same verb to the
-            // phone's lock screen — no Notification Center line for it.
-            if let payload = r.secret, let activity = ThreadActivityPush.parse(payload) {
-                switch activity {
-                case .show(let state):
-                    model.liveActivityPusher.pushAgentActivity(state)
-                    model.desktopActiveThreads = state.activeCount
-                case .end:
-                    model.liveActivityPusher.pushAgentActivity(nil)
-                    model.desktopActiveThreads = 0
-                }
-                return ControlReply(ok: true, result: .object(["pushed": .bool(true), "card": .bool(true)]))
-            }
+            // own channels, so they get its gating. (The phone's thread
+            // card rode this verb until #1375; the relay draws it now.)
             guard let payload = r.secret, let push = ThreadPhasePush.parse(payload) else {
-                throw Fail("push: {kind: \"thread.phase\", threadId, title, phase, detail?} or {kind: \"thread.activity\", state} is expected on stdin")
+                throw Fail("push: {kind: \"thread.phase\", threadId, title, phase, detail?} is expected on stdin")
             }
             model.push(push.line)
             return ControlReply(ok: true, result: .object(["pushed": .bool(true)]))
@@ -272,19 +285,20 @@ final class ControlServer {
             guard fleet.accounts.contains(where: { $0.number == n }) else {
                 throw Fail("no account #\(n) in \(fleet.id)")
             }
+            var edited: [EngineFleet]?
             switch r.command {
             case "switch": try await fleet.engine.switchTo(fleet: fleet.provider, number: n)
-            case "hold": try await fleet.engine.setHold(fleet: fleet.provider, number: n, held: true)
-            case "unhold": try await fleet.engine.setHold(fleet: fleet.provider, number: n, held: false)
+            case "hold": edited = try await fleet.engine.setHold(fleet: fleet.provider, number: n, held: true)
+            case "unhold": edited = try await fleet.engine.setHold(fleet: fleet.provider, number: n, held: false)
             case "rename":
                 guard r.args.count >= 3 else { throw Fail("usage: rename <fleet> <n> <alias>") }
-                try await fleet.engine.rename(fleet: fleet.provider, number: n, r.args[2])
+                edited = try await fleet.engine.rename(fleet: fleet.provider, number: n, r.args[2])
             case "remove":
                 guard r.options["yes"] != nil else { throw Fail("remove deletes the credential; pass --yes") }
                 try await fleet.engine.remove(fleet: fleet.provider, number: n)
             default: break
             }
-            await model.refreshSnapshot()
+            await settle(edited, fleet)
             return ControlReply(ok: true, result: try .of(["fleet": fleetPayload(fleet)]))
 
         case "randomize-names":
@@ -340,8 +354,7 @@ final class ControlServer {
             guard order.count == r.args.count - 1, order.count == have.count, Set(order) == Set(have) else {
                 throw Fail("reorder needs every account number exactly once, top first: \(have.sorted().map(String.init).joined(separator: " "))")
             }
-            try await fleet.engine.reorder(fleet: fleet.provider, order)
-            await model.refreshSnapshot()
+            await settle(try await fleet.engine.reorder(fleet: fleet.provider, order), fleet)
             return ControlReply(ok: true, result: try .of(["fleet": fleetPayload(fleet)]))
 
         case "prefer":
@@ -352,14 +365,30 @@ final class ControlServer {
             guard account.preferred != nil else {
                 throw Fail("the engine reports no pick-first flag for \(fleet.id)")
             }
-            try await fleet.engine.setPreferred(fleet: fleet.provider, number: n, r.args[2] == "on")
-            await model.refreshSnapshot()
+            await settle(try await fleet.engine.setPreferred(fleet: fleet.provider, number: n, r.args[2] == "on"), fleet)
+            return ControlReply(ok: true, result: try .of(["fleet": fleetPayload(fleet)]))
+
+        case "auto-ignite":
+            let (fleet, n) = try target(r)
+            guard fleet.capabilities.contains(.autoIgnite) else { throw Fail("\(fleet.id) cannot keep a window running") }
+            guard r.args.count >= 3, ["on", "off"].contains(r.args[2]) else { throw Fail("usage: auto-ignite <fleet> <n> on|off") }
+            guard let account = fleet.accounts.first(where: { $0.number == n }) else { throw Fail("no account #\(n) in \(fleet.id)") }
+            guard account.autoIgnite != nil else {
+                throw Fail("the engine reports no keep-warm flag for \(fleet.id); update swapd")
+            }
+            await settle(try await fleet.engine.setAutoIgnite(fleet: fleet.provider, number: n, r.args[2] == "on"), fleet)
             return ControlReply(ok: true, result: try .of(["fleet": fleetPayload(fleet)]))
 
         case "crashes":
-            return ControlReply(ok: true, result: try .of(["crashes": model.crashReports.map { r in
-                CrashListing(id: r.id, platform: r.platform, device: r.device, at: r.at, kind: r.kind,
-                             reason: r.reason, frames: r.frames) }]))
+            // `--id` is the desktop's Copy: one report with the transcript a
+            // session gets, raw diagnostic and all. The list stays without it —
+            // a raw body is up to 512 KB each.
+            let wanted = r.options["id"]
+            let reports = wanted.map { id in model.crashReports.filter { $0.id == id } } ?? model.crashReports
+            return ControlReply(ok: true, result: try .of(["crashes": reports.map { r in
+                CrashListing(id: r.id, platform: r.platform, device: r.device, appVersion: r.appVersion,
+                             osVersion: r.osVersion, at: r.at, kind: r.kind, reason: r.reason,
+                             frames: r.frames, transcript: wanted == nil ? nil : r.transcript) }]))
 
         case "aws-logins":
             return ControlReply(ok: true, result: try .of(["logins": model.awsLogins]))
@@ -370,7 +399,12 @@ final class ControlServer {
             // "application-default" for the library credentials.
             let provider: AwsLogin.Provider = r.command == "gcloud-login" ? .gcloud : .aws
             guard let profile = r.args.first, !profile.isEmpty else {
-                throw Fail("usage: \(r.command) <\(provider == .aws ? "profile" : "account|application-default")> [--local] [--remote] [--status]")
+                throw Fail("usage: \(r.command) <\(provider == .aws ? "profile" : "account|application-default")> [--local] [--remote] [--status] [--dismiss]")
+            }
+            // --dismiss: forget the login (stop it if running); the reply's state is what was dropped.
+            if r.options["dismiss"] == "true" {
+                let reply = await model.dismissAwsLogin(provider: provider, profile: profile)
+                return ControlReply(ok: true, result: try .of(["state": reply.state]))
             }
             // --status: the phone's flag-less poll — report, start nothing.
             let reply = await model.startAwsLogin(provider: provider, profile: profile, pid: nil, local: r.options["local"] == "true",
@@ -416,10 +450,13 @@ final class ControlServer {
             guard !TokenFlow.shared.running, !model.addingFirstAccount else {
                 throw Fail("a sign-in is already running")
             }
-            if fleet.capabilities.contains(.addOAuth) {
-                model.addOAuthAccount(engineID: fleet.engineID, provider: fleet.provider)
-            } else if fleet.capabilities.contains(.addCurrent) {
+            // A credential-swap engine captures the login its CLI already
+            // holds — the first-account onboarding this verb is for, with
+            // nothing to show; only an engine without that opens a sign-in.
+            if fleet.capabilities.contains(.addCurrent) {
                 model.addFirstAccount()
+            } else if fleet.capabilities.contains(.addOAuth) {
+                model.addOAuthAccount(engineID: fleet.engineID, provider: fleet.provider)
             } else {
                 throw Fail("\(key) has no sign-in flow")
             }
@@ -442,7 +479,7 @@ final class ControlServer {
         case "signin-begin":
             guard let key = r.args.first,
                   let fleet = model.fleets.first(where: { $0.id == key }) else {
-                throw Fail("usage: signin-begin <fleet> [--relogin <email>]; fleets: \(model.fleets.map(\.id).joined(separator: ", "))")
+                throw Fail("usage: signin-begin <fleet> [--relogin <email>] [--window]; fleets: \(model.fleets.map(\.id).joined(separator: ", "))")
             }
             let flow = TokenFlow.shared
             guard !flow.running, !model.addingFirstAccount else {
@@ -455,11 +492,24 @@ final class ControlServer {
                 }
                 relogin = account
             }
+            // `--window`: this Mac shows its own sign-in window — the
+            // ephemeral system sheet, passkeys and all — for a caller on
+            // the same machine whose browser has no private window to give
+            // (the desktop app beside Safari). Headless, the caller shows
+            // the page on ITS machine, which may not be this one: an
+            // engine's loopback redirect lands there with nothing
+            // listening, so the reply names the port (`redirectPort`) and
+            // the caller hands the address its browser ended on back
+            // through `signin-code`, replayed here (`OAuthRedirectRelay`).
+            // Either way an engine that takes the redirect itself gets the
+            // sign-in (the Mac's own Add / Re-login rule); only one without
+            // that runs the CLI's paste-back flow.
+            let headless = r.options["window"] == nil
             if fleet.capabilities.contains(.addOAuth) {
                 model.addOAuthAccount(engineID: fleet.engineID, provider: fleet.provider,
-                                      relogin: relogin, headless: true)
+                                      relogin: relogin, headless: headless)
             } else if fleet.capabilities.contains(.addCurrent) {
-                flow.start(model: model, relogin: relogin, headless: true)
+                flow.start(model: model, relogin: relogin, headless: headless)
             } else {
                 throw Fail("\(key) has no sign-in flow")
             }
@@ -477,12 +527,15 @@ final class ControlServer {
                 flow.cancel()
                 throw Fail("no sign-in URL within 30s")
             }
-            return ControlReply(ok: true, result: .object([
+            var begun: [String: JSONValue] = [
                 "flowId": .string(flowID),
                 "url": .string(url.absoluteString),
                 "pasteCode": .bool(flow.pasteCode),
+                "window": .bool(!headless),
                 "label": .string(flow.reloginTarget.map { "Sign in again \u{2014} \($0)" } ?? "Add account"),
-            ]))
+            ]
+            if let port = flow.redirectPort { begun["redirectPort"] = .number(Double(port)) }
+            return ControlReply(ok: true, result: .object(begun))
 
         case "signin-status":
             return ControlReply(ok: true, result: signinPayload(try signinFlow(r)))
@@ -492,9 +545,30 @@ final class ControlServer {
             guard let code = r.secret?.trimmingCharacters(in: .whitespacesAndNewlines), !code.isEmpty else {
                 throw Fail("signin-code: the code is expected on stdin")
             }
-            guard flow.pasteCode else { throw Fail("this sign-in takes no code — it finishes on its own") }
+            guard flow.pasteCode || flow.redirectPort != nil else {
+                throw Fail("this sign-in takes no code — it finishes on its own")
+            }
             guard case .awaitingLogin = flow.phase else {
                 throw Fail("not waiting for a code (\(signinPhase(flow).phase))")
+            }
+            if flow.redirectPort != nil {
+                // The address the caller's browser ended on, replayed against
+                // the engine's listener here. A refusal is immediate; an
+                // accepted one has the engine redeeming the code, and the
+                // phase leaves awaitingLogin once it stored the credential
+                // or gave up.
+                if let refusal = await flow.submitRedirect(code) {
+                    return ControlReply(ok: false, result: .object(["ok": .bool(false), "error": .string(refusal)]), error: refusal)
+                }
+                let deadline = Date().addingTimeInterval(15)
+                while Date() < deadline {
+                    guard case .awaitingLogin = flow.phase else { break }
+                    try await Task.sleep(nanoseconds: 200_000_000)
+                }
+                if case .failed(let why) = flow.phase {
+                    return ControlReply(ok: false, result: .object(["ok": .bool(false), "error": .string(why)]), error: why)
+                }
+                return ControlReply(ok: true, result: .object(["ok": .bool(true)]))
             }
             flow.code = code
             flow.submitCode()
@@ -612,49 +686,13 @@ final class ControlServer {
             malloc_zone_statistics(nil, &stats)
             return ControlReply(ok: true, result: .object([
                 "cpuSeconds": .number(cpu),
-                "leases": .number(Double(model.mirrorServer.leases.clientCount())),
-                "leaseScopes": .object(model.mirrorServer.leases.held().mapValues { .array($0.map { .string($0) }) }),
+                "leases": .number(Double(model.leases.clientCount())),
+                "leaseScopes": .object(model.leases.held().mapValues { .array($0.map { .string($0) }) }),
                 "rssBytes": .number(rss),
                 "heapBytes": .number(Double(stats.size_in_use)),
                 "threads": .number(Double(threadCount)),
                 "uptimeSeconds": .number(Date().timeIntervalSince(launchedAt)),
             ]))
-
-        case "lock-status":
-            return lockReply()
-
-        case "lock":
-            // #747: the fork's Lock pane drives the biometric lock through
-            // these; `on` and `unlock` run the prompt on this Mac.
-            switch r.args.first {
-            case "on":
-                if !model.lock.enabled {
-                    let on = await model.lock.turnOn()
-                    guard on else { throw Fail(model.lock.lastError ?? "the unlock prompt was cancelled") }
-                }
-            case "off":
-                model.lock.turnOff()
-            case "now":
-                model.lock.lockNow()
-            case "relock":
-                let choices: [String: LockPolicy.Relock] = ["immediately": .immediately, "5m": .fiveMinutes,
-                                                             "1h": .oneHour, "sleep": .onSleep]
-                guard r.args.count >= 2, let relock = choices[r.args[1]] else {
-                    throw Fail("usage: lock relock immediately|5m|1h|sleep")
-                }
-                model.lock.relock = relock
-            default:
-                throw Fail("usage: lock on|off|now|relock immediately|5m|1h|sleep")
-            }
-            return lockReply()
-
-        case "unlock":
-            guard model.lock.enabled else { throw Fail("the lock is off") }
-            guard model.lock.policy.locked else { return lockReply() }
-            await model.lock.unlock()
-            if let err = model.lock.lastError { throw Fail(err) }
-            guard !model.lock.policy.locked else { throw Fail("the unlock prompt was cancelled") }
-            return lockReply()
 
         case "show":
             guard let controller = AppDelegate.shared?.statusHolder?.controller else {
@@ -662,30 +700,17 @@ final class ControlServer {
             }
             switch r.args.first {
             case "popout": controller.showPinnedWindow()
-            case "settings": controller.showSettingsWindow()
+            case "settings":
+                throw Fail("retired: the Settings window is gone — every setting is in the Infinitus desktop app")
             case "wall", "workspace", "session":
                 throw Fail("retired: the wall, workspace and session windows moved to the Infinitus desktop app")
-            default: throw Fail("usage: show popout|settings")
+            default: throw Fail("usage: show popout")
             }
             return ControlReply(ok: true, result: .object(["shown": .string(r.args[0])]))
 
-        case "activities-token":
-            // `--forget <deviceId>/<kind>` withdraws one registration (#572
-            // G6); idempotent, so a phone that never registered here can
-            // still switch its alerts off.
-            if let slot = r.options["forget"] {
-                let forgotten = model.liveActivityPusher.forget(slot: slot)
-                return ControlReply(ok: true, result: .object(["slot": .string(slot), "forgotten": .bool(forgotten)]))
-            }
-            // The mirror's `POST /activities/token`, for a client on the
-            // socket (#572 N1): the same decode, the same registration.
-            let registration = try ControlBody.decode(ActivityPushRegistration.self, from: r)
-            model.liveActivityPusher.register(registration)
-            return ControlReply(ok: true, result: .object(["slot": .string(registration.slot)]))
-
         case "client-activity":
             let report = try ControlBody.decode(ClientActivity.Report.self, from: r)
-            model.mirrorServer.leases.report(report)
+            model.leases.report(report)
             return ControlReply(ok: true, result: .object(["clientId": .string(report.clientId)]))
 
         case "crash-report":
@@ -731,10 +756,11 @@ final class ControlServer {
             }
             switch r.args.first {
             case "popout": controller.hidePinnedWindow()
-            case "settings": controller.hideSettingsWindow()
+            case "settings":
+                throw Fail("retired: the Settings window is gone — every setting is in the Infinitus desktop app")
             case "workspace":
                 throw Fail("retired: the workspace window moved to the Infinitus desktop app")
-            default: throw Fail("usage: hide popout|settings")
+            default: throw Fail("usage: hide popout")
             }
             return ControlReply(ok: true, result: .object(["hidden": .string(r.args[0])]))
 
@@ -750,12 +776,18 @@ final class ControlServer {
             return ControlReply(ok: true, result: .object(["restarting": .bool(true)]), restarting: true)
 
         case "proxy":
+            // The proxy serves its own management panel at /management.html
+            // (its own docs); a build with the control panel disabled answers
+            // 404 there, which is the proxy's to say, not ours to guess.
             var out: [String: JSONValue] = [
                 "baseURL": .string(model.cliproxyBaseURL),
+                "dashboardURL": .string(model.cliproxyBaseURL + "/management.html"),
                 "keyPresent": .bool(model.cliproxyKeyPresent),
                 "enabled": .bool(model.cliproxyEnabled),
             ]
             if let s = model.proxyRoutingStrategy { out["routingStrategy"] = .string(s) }
+            if let a = model.proxySessionAffinity { out["sessionAffinity"] = .bool(a) }
+            if let c = model.fleetCaveats[CLIProxyEngine.engineID] { out["caveat"] = .string(c) }
             if let e = model.engineErrors[CLIProxyEngine.engineID] { out["error"] = .string(e) }
             return ControlReply(ok: true, result: .object(out))
 
@@ -766,6 +798,7 @@ final class ControlServer {
             // from the CLI, the phone or the desktop app at all.
             var out: [String: JSONValue] = [
                 "baseURL": .string(model.nineRouterBaseURL),
+                "dashboardURL": .string(model.nineRouterBaseURL + "/dashboard"),
                 "passwordPresent": .bool(model.nineRouterPasswordPresent),
                 "enabled": .bool(model.nineRouterEnabled),
             ]
@@ -792,6 +825,63 @@ final class ControlServer {
             try await proxy.setRoutingStrategy(strategy)
             await model.refreshSnapshot()
             return ControlReply(ok: true, result: .object(["routingStrategy": .string(strategy)]))
+
+        case "proxy-affinity":
+            // #1177: the pane's session-affinity toggle as a verb, so the
+            // desktop's Engines page can draw it before the pane goes.
+            guard let word = r.args.first, ["on", "off"].contains(word) else {
+                throw Fail("usage: proxy-affinity on|off")
+            }
+            guard let proxy = model.registry.engine(id: CLIProxyEngine.engineID) as? CLIProxyEngine else {
+                throw Fail("the CLIProxyAPI engine is off")
+            }
+            guard await proxy.sessionAffinity != nil else {
+                throw Fail("this proxy has no session-affinity route; set it in the proxy's config")
+            }
+            try await proxy.setSessionAffinity(word == "on")
+            await model.refreshSnapshot()
+            return ControlReply(ok: true, result: .object(["sessionAffinity": .bool(word == "on")]))
+
+        case "test-connection":
+            // #1177: the fork's Engines page probes with the keychain
+            // credential; the reply never carries it, only the engine's words.
+            guard r.args.count == 1, ConnectionTest.targets.contains(r.args[0]) else {
+                throw Fail("usage: test-connection cliproxy|9router [--url <base URL>]")
+            }
+            let target = r.args[0]
+            let stored = target == "cliproxy" ? model.cliproxyBaseURL : model.nineRouterBaseURL
+            let urlString = r.options["url"] ?? stored
+            guard let url = URL(string: urlString), url.scheme != nil, url.host != nil else {
+                return ControlReply(ok: true, result: .object(
+                    ConnectionTest.Reply.failed("That isn't a valid address \u{2014} it should look like "
+                        + (target == "cliproxy" ? CLIProxyEngine.defaultBaseURL : NineRouterEngine.defaultBaseURL).absoluteString
+                        + ".").fields))
+            }
+            let credential = target == "cliproxy"
+                ? Keychain.read(account: stored)
+                : Keychain.read(account: stored, service: Keychain.nineRouterService)
+            guard let credential, !credential.isEmpty else {
+                return ControlReply(ok: true, result: .object(ConnectionTest.Reply.failed(
+                    target == "cliproxy" ? "No management key is stored. Save one first, then test."
+                                         : "No dashboard password is stored. Save one first, then test.").fields))
+            }
+            let started = Date()
+            let reply: ConnectionTest.Reply
+            do {
+                if target == "cliproxy" {
+                    let engine = CLIProxyEngine(baseURL: url, managementKey: credential)
+                    _ = try await ConnectionTest.withDeadline { try await engine.probe() }
+                } else {
+                    let engine = NineRouterEngine(baseURL: url, password: credential)
+                    _ = try await ConnectionTest.withDeadline { try await engine.probe() }
+                }
+                reply = .reached(latencyMs: Int(Date().timeIntervalSince(started) * 1000))
+            } catch is ConnectionTest.TimedOut {
+                reply = .failed("The engine didn't answer within \(Int(ConnectionTest.timeoutSeconds)) s. Check it is running and its address is right, then try again.")
+            } catch {
+                reply = .failed(EngineFailure.sentence(error))
+            }
+            return ControlReply(ok: true, result: .object(reply.fields))
 
         case "desktop-credential":
             // #822: the desktop's own push at port publish (or a hand-fed
@@ -831,6 +921,205 @@ final class ControlServer {
                 "expiresAt": credential.expiresAt.map(JSONValue.string) ?? .null,
                 "stale": .bool(stale),
             ]))
+
+        // MARK: team (#1313)
+
+        case "team-status":
+            return ControlReply(ok: true, result: try model.team.snapshot.map { try JSONValue.of($0) } ?? .null)
+
+        case "team-create":
+            // infinitusctl's arg parser treats `--remote` as a bare flag (it
+            // has no way to know team-create wants a value), so the URL
+            // lands as the second positional instead of options["remote"].
+            let remote = r.options["remote"].flatMap { $0 == "true" ? nil : $0 } ?? r.args.dropFirst().first
+            guard let name = r.args.first, !name.isEmpty, let remote, !remote.isEmpty else {
+                throw Fail("usage: team-create <name> --remote <url> [--as <your name>]")
+            }
+            // The remote's write token rides stdin (#747, `stdin: "secret"`);
+            // empty stdin is the credential-less create it always was.
+            if let failure = await model.team.create(name: name, remote: remote, token: r.secret, leaderName: r.options["as"] ?? "Leader") {
+                throw Fail(failure)
+            }
+            return try teamReply()
+
+        case "team-join":
+            guard let name = r.args.first, !name.isEmpty else { throw Fail("usage: team-join <your name>  (the team code or invite link on stdin)") }
+            guard let code = r.secret?.trimmingCharacters(in: .whitespacesAndNewlines), !code.isEmpty else {
+                throw Fail("team-join needs the team code or invite link on stdin")
+            }
+            if let failure = await model.team.join(code: code, name: name) { throw Fail(failure) }
+            return try teamReply()
+
+        case "team-code":
+            let days = min(max(r.options["days"].flatMap(Int.init) ?? 7, 1), 3650)
+            let minted = r.options["invite"] != nil ? await model.team.mintInvite(days: days) : await model.team.mintCode(days: days)
+            guard let minted else { throw Fail(model.team.lastError ?? "no code") }
+            return ControlReply(ok: true, result: .object([
+                "code": .string(minted),
+                "expires": .number(Double(Int(Date().timeIntervalSince1970) + days * 86_400)),
+            ]))
+
+        case "team-fetch":
+            await model.team.fetchNow()
+            return try teamReply()
+
+        case "team-publish":
+            let report = await model.team.publishNow()
+            if let err = model.team.lastError { throw Fail(err) }
+            return ControlReply(ok: true, result: try JSONValue.of(report ?? TeamPublisher.Report()))
+
+        case "team-approve", "team-decline", "team-remove", "team-promote":
+            guard let kid = r.args.first, !kid.isEmpty else { throw Fail("usage: \(r.command) <kid>") }
+            let failure: String?
+            switch r.command {
+            case "team-approve": failure = await model.team.approve(kid: kid)
+            case "team-decline": failure = await model.team.decline(kid: kid)
+            case "team-remove": failure = await model.team.remove(kid: kid)
+            default: failure = await model.team.promote(kid: kid)
+            }
+            if let failure { throw Fail(failure) }
+            return try teamReply()
+
+        case "team-leave":
+            guard r.options["yes"] != nil else { throw Fail("team-leave deletes this Mac's files on the store and forgets the team: pass --yes") }
+            guard model.team.inTeam else { throw Fail("not in a team") }
+            if let failure = await model.team.leave() { throw Fail(failure) }
+            return ControlReply(ok: true, result: .object(["left": .bool(true)]))
+
+        case "team-share":
+            let targets: [String: TeamRoster.ShareTarget] = ["off": .off, "leaders": .leaders, "team": .team]
+            guard r.args.count == 2, TeamKinds.memberKinds.contains(r.args[0]), let target = targets[r.args[1]] else {
+                throw Fail("usage: team-share \(TeamKinds.memberKinds.joined(separator: "|")) off|leaders|team")
+            }
+            if let failure = await model.team.setShare(kind: r.args[0], target: target) { throw Fail(failure) }
+            return try teamReply()
+
+        case "team-exclude":
+            guard r.args.count == 2, ["add", "remove"].contains(r.args[0]), !r.args[1].isEmpty else {
+                throw Fail("usage: team-exclude add|remove <project slug>")
+            }
+            if let failure = await model.team.setExclusion(slug: r.args[1], on: r.args[0] == "add") { throw Fail(failure) }
+            return try teamReply()
+
+        case "team-policy":
+            guard r.args.count == 2, r.args[0] == "requests", ["code", "off"].contains(r.args[1]) else {
+                throw Fail("usage: team-policy requests code|off")
+            }
+            if let failure = await model.team.setPolicy(requests: r.args[1]) { throw Fail(failure) }
+            return try teamReply()
+
+        case "team-insights":
+            guard let period = Stats.Period(rawValue: r.options["period"] ?? "week") else { throw Fail("--period is day, week, month or year") }
+            guard model.team.inTeam else { throw Fail("not in a team") }
+            guard let insights = model.team.insights(period: period) else { throw Fail("insights are the leaders' view") }
+            struct Blocker: Encodable { var kid, name, kind, text: String }
+            struct Headroom: Encodable { var kid, name, engine: String; var active: String?; var headroom: Int?; var spare, dead: Int }
+            struct Repo: Encodable { var project: String; var usd: Double; var turns: Int; var members: [String] }
+            struct Money: Encodable { var kid, name: String; var usd: Double }
+            struct Costs: Encodable { var total: Double; var byMember: [Money]; var byModel: [String: Double]; var byRepo: [String: Double] }
+            struct Reply: Encodable {
+                var period: String; var blockers: [Blocker]; var headroom: [Headroom]; var onNow: [String]
+                var cost: Costs; var repos: [Repo]; var hours: [Int]
+            }
+            let reply = Reply(period: period.rawValue,
+                              blockers: insights.blockers.map { Blocker(kid: $0.kid, name: $0.name, kind: $0.kind, text: $0.text) },
+                              headroom: insights.headroom.map { Headroom(kid: $0.kid, name: $0.name, engine: $0.engine, active: $0.active,
+                                                                          headroom: $0.headroom, spare: $0.spare, dead: $0.dead) },
+                              onNow: insights.onNow,
+                              cost: Costs(total: insights.cost.total,
+                                          byMember: insights.cost.byMember.map { Money(kid: $0.kid, name: $0.name, usd: $0.usd) },
+                                          byModel: insights.cost.byModel, byRepo: insights.cost.byRepo),
+                              repos: insights.repos.map { Repo(project: $0.project, usd: $0.usd, turns: $0.turns, members: $0.members.map(\.name)) },
+                              hours: insights.hours)
+            return ControlReply(ok: true, result: try JSONValue.of(reply))
+
+        case "team-identity":
+            var out: [String: JSONValue] = ["kid": model.team.kid.map(JSONValue.string) ?? .null]
+            if r.options["export"] != nil {
+                guard let passphrase = r.secret, !passphrase.isEmpty else { throw Fail("team-identity --export needs the passphrase on stdin") }
+                guard let sealed = await model.team.exportIdentity(passphrase: passphrase) else { throw Fail(model.team.lastError ?? "export failed") }
+                out["exported"] = .string(sealed.base64EncodedString())
+            }
+            return ControlReply(ok: true, result: .object(out))
+
+        // MARK: delegated control (#1313, spec §8)
+
+        case "team-inbox":
+            // Never `Fail`: an unverifiable envelope answers `{ack: null}` so
+            // the desktop's unauthenticated route tells a stranger nothing.
+            guard let file = r.secret.flatMap({ Data(base64Encoded: $0) }), !file.isEmpty else {
+                return ControlReply(ok: true, result: .object(["ack": .null]))
+            }
+            let ack = await model.team.inbox(file)
+            return ControlReply(ok: true, result: .object(["ack": ack.map { .string($0.base64EncodedString()) } ?? .null]))
+
+        case "team-grants":
+            guard model.team.inTeam else { throw Fail("not in a team") }
+            return ControlReply(ok: true, result: try JSONValue.of(model.team.grants))
+
+        case "team-grant":
+            let usage = "usage: team-grant <leaders|team|kid,…> --cap <view,send,interrupt,new> [--threads <id,id>] [--pre <interrupt,new>] [--expires <seconds>]"
+            guard let first = r.args.first, let target = TeamShares.parseTarget([first]), target != .off else { throw Fail(usage) }
+            let audience: TeamRoster.ShareTarget
+            switch target {
+            case .members(let names): audience = .members(try names.map { try teammate($0) })
+            default: audience = target
+            }
+            let caps = (r.options["cap"] ?? "").split(separator: ",").map(String.init).filter { !$0.isEmpty }
+            guard !caps.isEmpty, caps.allSatisfy({ TeamGrants.capabilities.contains($0) }) else {
+                throw Fail("--cap takes a comma list of \(TeamGrants.capabilities.joined(separator: ", "))")
+            }
+            let threads: TeamGrants.Threads
+            if let t = r.options["threads"], t != "true", t != "*" {
+                threads = .some(t.split(separator: ",").map(String.init).filter { !$0.isEmpty })
+            } else {
+                threads = .all
+            }
+            let preauthorized = Set((r.options["pre"] ?? "").split(separator: ",").map(String.init).filter { !$0.isEmpty })
+            var expires: Int?
+            if let e = r.options["expires"] {
+                guard let seconds = Int(e), seconds > 0 else { throw Fail("--expires takes seconds from now") }
+                expires = Int(Date().timeIntervalSince1970) + seconds
+            }
+            let grant = await model.team.addGrant(audience: audience, threads: threads, capabilities: Set(caps),
+                                                   preauthorized: preauthorized, expires: expires)
+            if let err = model.team.lastError { throw Fail(err) }
+            guard let grant else { throw Fail("grant not saved") }
+            return ControlReply(ok: true, result: try JSONValue.of(grant))
+
+        case "team-revoke":
+            guard let id = r.args.first, !id.isEmpty else { throw Fail("usage: team-revoke <id>") }
+            let removed = await model.team.revokeGrant(id: id)
+            if let err = model.team.lastError { throw Fail(err) }
+            return ControlReply(ok: true, result: .object(["removed": .bool(removed)]))
+
+        case "team-pending":
+            guard model.team.inTeam else { throw Fail("not in a team") }
+            return ControlReply(ok: true, result: try JSONValue.of(model.team.pendingCommands))
+
+        case "team-allow", "team-deny":
+            guard let id = r.args.first, !id.isEmpty else { throw Fail("usage: \(r.command) <command id>") }
+            guard let ack = await model.team.decide(id, allow: r.command == "team-allow") else {
+                throw Fail("no waiting command \(id); see team-pending")
+            }
+            return ControlReply(ok: true, result: try JSONValue.of(ack))
+
+        case "team-drive":
+            let usage = "usage: team-drive <kid|name> <thread|-> <view|send|interrupt|new> [text…] [--project <title|id>]"
+            guard r.args.count >= 3 else { throw Fail(usage) }
+            let kid = try teammate(r.args[0])
+            let action = r.args[2]
+            guard TeamGrants.capabilities.contains(action) else { throw Fail(usage) }
+            let text = r.args.dropFirst(3).joined(separator: " ")
+            guard let delivery = await model.team.drive(kid: kid, thread: r.args[1], action: action, text: text.isEmpty ? nil : text,
+                                                        project: r.options["project"].flatMap { $0 == "true" ? nil : $0 }) else {
+                throw Fail(model.team.lastError ?? "team-drive: not delivered")
+            }
+            return ControlReply(ok: true, result: try JSONValue.of(delivery))
+
+        case "team-acks":
+            guard model.team.inTeam else { throw Fail("not in a team") }
+            return ControlReply(ok: true, result: try JSONValue.of(model.team.acks))
 
         case "desktop-token":
             // The dispatcher has one entry, the Unix socket (the phone goes
@@ -906,6 +1195,7 @@ final class ControlServer {
         ]
         if let error { d["error"] = .string(error) }
         if let url = flow.authURL { d["url"] = .string(url.absoluteString) }
+        if let port = flow.redirectPort { d["redirectPort"] = .number(Double(port)) }
         if let email = flow.completedEmail { d["account"] = .string(email) }
         return .object(d)
     }
@@ -924,6 +1214,22 @@ final class ControlServer {
 
     private struct EngineStatus: Encodable {
         let enabled: Bool, registered: Bool, keyPresent: Bool?
+        /// #1177: what the swapd pane showed under "Binary" — the located
+        /// binary and its `auto` daemon's state (while the engine is on) —
+        /// and each engine's last error, so the desktop's Engines page can
+        /// draw them.
+        let binaryPath: String?, daemon: String?, error: String?
+    }
+
+    /// `EngineSupervisor.State` as one stable word for `status`.
+    static func daemonWord(_ state: EngineSupervisor.State) -> String {
+        switch state {
+        case .stopped: return "stopped"
+        case .running: return "running"
+        case .backingOff: return "backingOff"
+        case .refused: return "refused"
+        case .schemaMismatch: return "schemaMismatch"
+        }
     }
     private struct Status: Encodable {
         let version: String, sha: String
@@ -932,7 +1238,6 @@ final class ControlServer {
         let signInRunning: Bool
         let playground: Bool
         let socket: String
-        let forkTunnel: ForkTunnelStatus
         /// #777: where this process runs from, and whether that is inside
         /// the desktop bundle — the desktop's reconcile quits only its own.
         let bundlePath: String
@@ -946,19 +1251,22 @@ final class ControlServer {
             sha: info["InfinitusGitSHA"] as? String ?? info["CFBundleVersion"] as? String ?? "dev",
             engines: [
                 "swapd": EngineStatus(enabled: model.swapdEnabled, registered: model.swapdRegistered,
-                                      keyPresent: nil),
+                                      keyPresent: nil, binaryPath: model.swapd?.binaryPath,
+                                      daemon: model.swapdEnabled ? Self.daemonWord(model.swapdState) : nil,
+                                      error: model.engineErrors[SwapdEngine.engineID]),
                 "cliproxy": EngineStatus(enabled: model.cliproxyEnabled,
                                          registered: model.registry.engine(id: CLIProxyEngine.engineID) != nil,
-                                         keyPresent: model.cliproxyKeyPresent),
+                                         keyPresent: model.cliproxyKeyPresent, binaryPath: nil, daemon: nil,
+                                         error: model.engineErrors[CLIProxyEngine.engineID]),
                 "9router": EngineStatus(enabled: model.nineRouterEnabled,
                                         registered: model.registry.engine(id: NineRouterEngine.engineID) != nil,
-                                        keyPresent: model.nineRouterPasswordPresent),
+                                        keyPresent: model.nineRouterPasswordPresent, binaryPath: nil, daemon: nil,
+                                        error: model.engineErrors[NineRouterEngine.engineID]),
             ],
             badge: model.engineBadge.map { "\($0)" } ?? "none",
             signInRunning: TokenFlow.shared.running || model.addingFirstAccount,
             playground: model.isPlayground,
             socket: ControlProtocol.socketURL().path,
-            forkTunnel: model.forkTunnelStatus,
             bundlePath: Nesting.bundlePath,
             nested: Nesting.isNested)
     }
@@ -969,14 +1277,17 @@ final class ControlServer {
             (.rename, "rename"), (.remove, "remove"), (.addCurrent, "addCurrent"),
             (.addToken, "addToken"), (.addOAuth, "addOAuth"), (.autoSwitch, "autoSwitch"),
             (.costReport, "costReport"), (.history, "history"), (.settings, "settings"),
-            (.prefer, "prefer"), (.ignite, "ignite"), (.backup, "backup"),
-            (.refreshAccount, "refreshAccount"),
+            (.prefer, "prefer"), (.ignite, "ignite"),
+            (.refreshAccount, "refreshAccount"), (.autoIgnite, "autoIgnite"),
         ]
         return table.filter { caps.contains($0.0) }.map(\.1)
     }
 }
 
-/// `crashes`: the reports without their raw diagnostic.
+/// `crashes`: the reports without their raw diagnostic, except the one a
+/// `--id` read names, which carries the whole transcript.
 private struct CrashListing: Encodable {
-    let id: String, platform: String, device: String, at: Date, kind: String, reason: String, frames: [String]
+    let id: String, platform: String, device: String, appVersion: String, osVersion: String
+    let at: Date, kind: String, reason: String, frames: [String]
+    let transcript: String?
 }

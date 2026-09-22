@@ -2,19 +2,20 @@ import { useAuth } from "@clerk/react";
 import { useAtomValue } from "@effect/atom-react";
 import type {
   AgentSessionProjectCandidate,
+  AgentSessionSource,
   EnvironmentId,
   ProjectId,
   ScopedProjectRef,
   ServerConfig,
   ServerProvider,
-} from "@t3tools/contracts";
-import { scopeProjectRef, scopeThreadRef } from "@t3tools/client-runtime/environment";
+} from "@infinitus/contracts";
+import { scopeProjectRef, scopeThreadRef } from "@infinitus/client-runtime/environment";
 import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
-} from "@t3tools/client-runtime/state/runtime";
-import { CommandId, ProviderDriverKind, ThreadId } from "@t3tools/contracts";
-import { PRODUCT_NAME } from "@t3tools/shared/productName";
+} from "@infinitus/client-runtime/state/runtime";
+import { CommandId, ProviderDriverKind, ThreadId } from "@infinitus/contracts";
+import { CONNECT_NAME, PRODUCT_NAME } from "@infinitus/shared/productName";
 import * as Schema from "effect/Schema";
 import {
   ArrowRightIcon,
@@ -31,7 +32,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { TYPOGRAPHY_ADVANCED_STORAGE_KEY } from "../../appearanceFonts";
 import { useLocalStorage } from "../../hooks/useLocalStorage";
 import { hasCloudPublicConfig } from "../../cloud/publicConfig";
-import { useT3ConnectAuthPrompt } from "../clerk/useT3ConnectAuthPrompt";
+import { useInfinitusConnectAuthPrompt } from "../clerk/useInfinitusConnectAuthPrompt";
 import { useCompleteOnboarding } from "../../onboarding/firstRun";
 import {
   groupOnboardingProjects,
@@ -63,7 +64,7 @@ import { getProviderSummary } from "../settings/providerStatus";
 import { getDriverOption } from "../settings/providerDriverMeta";
 import { TerminalViewport } from "../ThreadTerminalDrawer";
 import { CloudEnvironmentConnectRows } from "../cloud/CloudEnvironmentConnectList";
-import { ClaudeAI, OpenAI } from "../Icons";
+import { ClaudeAI, OmpIcon, OpenAI, PiIcon } from "../Icons";
 import { Button } from "../ui/button";
 import { Checkbox } from "../ui/checkbox";
 import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "../ui/collapsible";
@@ -410,7 +411,7 @@ function ConnectAccountOption({
 }) {
   const { environments } = useEnvironments();
   const { isLoaded, isSignedIn } = useAuth({ treatPendingAsSignedOut: false });
-  const { openAuthPrompt } = useT3ConnectAuthPrompt();
+  const { openAuthPrompt } = useInfinitusConnectAuthPrompt();
   const [expanded, setExpanded] = useState(true);
   const [discoveryReady, setDiscoveryReady] = useState(false);
   const onDiscoveryReady = useCallback(() => setDiscoveryReady(true), []);
@@ -438,7 +439,7 @@ function ConnectAccountOption({
         }
       >
         <CloudIcon className="size-4 text-muted-foreground" />
-        <span className="flex-1">T3 Connect</span>
+        <span className="flex-1">{CONNECT_NAME}</span>
         <span className="text-xs text-muted-foreground">
           {!isLoaded
             ? "Loading sign-in…"
@@ -1477,7 +1478,7 @@ function ImportRowMeta({
   threadCount,
   lastActiveAt,
 }: {
-  readonly sources: ReadonlyArray<"claudeAgent" | "codex"> | null;
+  readonly sources: ReadonlyArray<AgentSessionSource> | null;
   readonly threadCount: number;
   readonly lastActiveAt: string | null;
 }) {
@@ -1485,7 +1486,7 @@ function ImportRowMeta({
   // "just now" does not fit the fixed column, so collapse it.
   const age = relative === null ? "" : relative.suffix === null ? "now" : relative.value;
   return (
-    <span className="ml-auto grid shrink-0 grid-cols-[1rem_1rem_2.5rem_2.25rem] items-center gap-x-1 text-xs text-muted-foreground tabular-nums">
+    <span className="ml-auto grid shrink-0 grid-cols-[1rem_1rem_1rem_1rem_2.5rem_2.25rem] items-center gap-x-1 text-xs text-muted-foreground tabular-nums">
       <span className="flex size-4 items-center justify-center">
         {sources?.includes("claudeAgent") ? (
           <ClaudeAI className="size-3" aria-label="Claude Code" />
@@ -1493,6 +1494,12 @@ function ImportRowMeta({
       </span>
       <span className="flex size-4 items-center justify-center">
         {sources?.includes("codex") ? <OpenAI className="size-3" aria-label="Codex" /> : null}
+      </span>
+      <span className="flex size-4 items-center justify-center">
+        {sources?.includes("omp") ? <OmpIcon className="size-3" aria-label="Oh My Pi" /> : null}
+      </span>
+      <span className="flex size-4 items-center justify-center">
+        {sources?.includes("pi") ? <PiIcon className="size-3" aria-label="Pi" /> : null}
       </span>
       <span className="text-right">{threadCount}</span>
       <span className="text-right whitespace-nowrap">{age}</span>

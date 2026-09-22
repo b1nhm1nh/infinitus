@@ -1,6 +1,9 @@
-import type { AccountRowModel } from "@t3tools/client-runtime/state/infinitusAccounts";
-import { EnvironmentId } from "@t3tools/contracts";
-import type { InfinitusSnapshot } from "@t3tools/contracts/infinitus";
+import {
+  type AccountRowModel,
+  INFINITUS_COMMAND_TIMEOUT_MESSAGE,
+} from "@infinitus/client-runtime/state/infinitusAccounts";
+import { EnvironmentId } from "@infinitus/contracts";
+import type { InfinitusSnapshot } from "@infinitus/contracts/infinitus";
 import * as Cause from "effect/Cause";
 import { describe, expect, it } from "vite-plus/test";
 
@@ -11,6 +14,7 @@ import {
   macAccountsModel,
   rowBadges,
   rowMenuActions,
+  removeConfirmation,
   switchConfirmation,
   windowTone,
 } from "./accountsRoute.logic";
@@ -52,6 +56,7 @@ const row: AccountRowModel = {
   active: false,
   next: true,
   preferred: false,
+  autoIgnite: false,
   held: false,
   windows: [],
   scoped: [],
@@ -162,11 +167,28 @@ describe("rowMenuActions", () => {
 });
 
 describe("row presentation", () => {
+  it("names the remove confirmation after the account and the fleet", () => {
+    const copy = removeConfirmation({ ...row, label: "spare", email: "two@example.com" }, "Claude");
+    expect(copy.title).toBe("Remove spare from Claude?");
+    expect(copy.message).toContain("two@example.com");
+  });
+
   it("names the switch confirmation after the fleet and the account", () => {
     expect(switchConfirmation(row, "claude").title).toBe("Switch claude to death4?");
   });
 
-  it("orders badges active, next, held, starred", () => {
+  it("words keep-warm by its current side", () => {
+    expect(rowMenuActions({ ...row, actions: ["autoIgnite"] }, { canPrompt: true })[0]?.title).toBe(
+      "Keep warm (restart 5h window)",
+    );
+    expect(
+      rowMenuActions({ ...row, autoIgnite: true, actions: ["autoIgnite"] }, { canPrompt: true })[0]
+        ?.title,
+    ).toBe("Stop keeping warm");
+  });
+
+  it("orders badges active, next, held, starred, warm", () => {
+    expect(rowBadges({ ...row, autoIgnite: true })).toEqual(["next", "warm"]);
     expect(rowBadges({ ...row, active: true, held: true, preferred: true })).toEqual([
       "active",
       "next",
@@ -201,6 +223,11 @@ describe("commandFailureMessage", () => {
     expect(
       commandFailureMessage(Cause.fail({ _tag: "InfinitusUnavailable", path: "/x", cause: "y" })),
     ).toBe("Infinitus is not running on this Mac.");
+    expect(
+      commandFailureMessage(
+        Cause.fail({ _tag: "InfinitusUnavailable", path: "/x", cause: "timeout" }),
+      ),
+    ).toBe(INFINITUS_COMMAND_TIMEOUT_MESSAGE);
     expect(commandFailureMessage(Cause.fail(new Error("socket hung up")))).toBe("socket hung up");
     expect(commandFailureMessage(Cause.fail(new Error("   ")))).toBe(
       "The command did not reach the Mac.",
@@ -212,24 +239,36 @@ describe("exhausted band (#706)", () => {
   it("the model carries a band only for a fleet whose every account is at a limit", () => {
     expect(macAccountsModel(readySnapshot, NOW).bands.size).toBe(0);
     const bands = macAccountsModel(exhaustedSnapshot, NOW).bands;
-    expect(bands.get("swapd/claude")).toEqual({ revivalAt: RESET, revivesFirst: "death1" });
+    expect(bands.get("swapd/claude")).toEqual({
+      revivalAt: RESET,
+      revivesFirst: "death1",
+      model: null,
+    });
     // Past the reset the reading belongs to a window that rolled: no band.
     expect(macAccountsModel(exhaustedSnapshot, Date.parse(RESET) + 1).bands.size).toBe(0);
   });
 
   it("the copy names the revival and who comes back first", () => {
     const time = new Date(RESET).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
-    expect(exhaustedCopy({ revivalAt: RESET, revivesFirst: "death1" }, NOW)).toBe(
+    const plan = { model: null };
+    expect(exhaustedCopy({ revivalAt: RESET, revivesFirst: "death1", ...plan }, NOW)).toBe(
       `All accounts exhausted · next revival ${time} (death1)`,
     );
-    expect(exhaustedCopy({ revivalAt: RESET, revivesFirst: null }, NOW)).toBe(
+    expect(exhaustedCopy({ revivalAt: RESET, revivesFirst: null, ...plan }, NOW)).toBe(
       `All accounts exhausted · next revival ${time}`,
     );
-    expect(exhaustedCopy({ revivalAt: RESET, revivesFirst: null }, NOW - 86_400_000)).toBe(
+    expect(exhaustedCopy({ revivalAt: RESET, revivesFirst: null, ...plan }, NOW - 86_400_000)).toBe(
       `All accounts exhausted · next revival tomorrow at ${time}`,
     );
-    expect(exhaustedCopy({ revivalAt: null, revivesFirst: null }, NOW)).toBe(
+    expect(exhaustedCopy({ revivalAt: null, revivesFirst: null, ...plan }, NOW)).toBe(
       "All accounts exhausted",
+    );
+    // One model alone ran out: the band says which, not "exhausted".
+    expect(exhaustedCopy({ revivalAt: RESET, revivesFirst: "death1", model: "Fable" }, NOW)).toBe(
+      `All accounts out of Fable · next revival ${time} (death1)`,
+    );
+    expect(exhaustedCopy({ revivalAt: null, revivesFirst: null, model: "Fable" }, NOW)).toBe(
+      "All accounts out of Fable",
     );
   });
 });

@@ -1,9 +1,9 @@
-import type { EnvironmentId, OrchestrationThreadShell } from "@t3tools/contracts";
+import type { EnvironmentId, OrchestrationThreadShell } from "@infinitus/contracts";
 import { Pressable, View } from "react-native";
 
 import { SymbolView } from "../../components/AppSymbol";
 import { AppText as Text } from "../../components/AppText";
-import { queuedTurnSnippet, queuedTurnsTitle } from "./queuedTurns.logic";
+import { queuedTurnSnippet, queuedTurnTiming, queuedTurnsTitle } from "./queuedTurns.logic";
 import { useQueuedTurnActions } from "./useQueuedTurnActions";
 
 /**
@@ -26,7 +26,7 @@ export function InfinitusQueuedTurns(props: {
 
   return (
     <View className="gap-2.5 rounded-[20px] border border-adaptive-neutral-200-white-a6 bg-adaptive-neutral-100-900 p-4">
-      <Text className="font-t3-bold text-2xs uppercase tracking-[1.1px] text-adaptive-neutral-600-400">
+      <Text className="font-infinitus-bold text-2xs uppercase tracking-[1.1px] text-adaptive-neutral-600-400">
         {queuedTurnsTitle(actions.rows.length, threadRunning)}
       </Text>
       {actions.rows.map((row, index) => (
@@ -37,6 +37,11 @@ export function InfinitusQueuedTurns(props: {
           >
             {queuedTurnSnippet(row)}
           </Text>
+          {queuedTurnTiming(row) ? (
+            <Text className="font-sans text-xs text-adaptive-neutral-600-400">
+              {queuedTurnTiming(row)}
+            </Text>
+          ) : null}
           {canMove ? (
             <>
               <IconButton

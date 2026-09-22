@@ -1,6 +1,6 @@
 import { type CSSProperties, memo } from "react";
-import { type ProviderDriverKind } from "@t3tools/contracts";
-import { providerInstanceInitials } from "@t3tools/client-runtime/state/provider-instance-display";
+import { type ProviderDriverKind } from "@infinitus/contracts";
+import { providerInstanceInitials } from "@infinitus/client-runtime/state/provider-instance-display";
 
 import { PROVIDER_ICON_BY_PROVIDER } from "./providerIconUtils";
 import { cn } from "~/lib/utils";
@@ -29,7 +29,7 @@ export const ProviderInstanceIcon = memo(function ProviderInstanceIcon(props: {
   return (
     <span
       className={cn(
-        "relative isolate inline-flex shrink-0 items-center justify-center overflow-visible",
+        "relative isolate z-30 inline-flex shrink-0 items-center justify-center overflow-visible",
         props.className,
       )}
       style={accentStyle}

@@ -1,13 +1,13 @@
 import type {
   RelayClientEnvironmentRecord,
   RelayEnvironmentStatusResponse,
-} from "@t3tools/contracts/relay";
-import type { EnvironmentId } from "@t3tools/contracts";
+} from "@infinitus/contracts/relay";
+import type { EnvironmentId } from "@infinitus/contracts";
 import {
   RelayEnvironmentConnectScope,
   RelayEnvironmentStatusScope,
-} from "@t3tools/contracts/relay";
-import { decodeRelayJwt } from "@t3tools/shared/relayJwt";
+} from "@infinitus/contracts/relay";
+import { decodeRelayJwt } from "@infinitus/shared/relayJwt";
 import * as Cause from "effect/Cause";
 import * as Clock from "effect/Clock";
 import * as Data from "effect/Data";
@@ -20,6 +20,7 @@ import { AsyncResult, Atom, AtomRegistry } from "effect/unstable/reactivity";
 import { findErrorTraceId } from "../errors/errorTrace.ts";
 import * as ManagedRelay from "./managedRelay.ts";
 import { relayProtectedErrorMessage } from "./errorPresentation.ts";
+import { CONNECT_NAME } from "@infinitus/shared/productName";
 
 const DEFAULT_STALE_TIME_MS = 15_000;
 const DEFAULT_IDLE_TTL_MS = 5 * 60_000;
@@ -125,11 +126,17 @@ export function createManagedRelaySession(input: ManagedRelaySessionInput): Mana
       const nowMillis = yield* Clock.currentTimeMillis;
       return yield* Effect.tryPromise({
         try: () => readCachedClerkToken(nowMillis),
-        catch: (cause) =>
-          new ManagedRelaySessionError({
-            message: "Could not obtain the T3 Connect session token.",
+        // The provider is the auth SDK's token mint. Its own reason (template
+        // missing, session not active, network) is the only lead a user has.
+        catch: (cause) => {
+          const reason = cause instanceof Error ? cause.message.trim() : "";
+          return new ManagedRelaySessionError({
+            message: reason
+              ? `Could not obtain the ${CONNECT_NAME} session token: ${reason}`
+              : `Could not obtain the ${CONNECT_NAME} session token.`,
             cause,
-          }),
+          });
+        },
       });
     }),
   };
@@ -185,7 +192,7 @@ function readSessionClerkToken(
         ? Effect.succeed(token)
         : Effect.fail(
             new ManagedRelaySessionError({
-              message: "The T3 Connect session token is unavailable.",
+              message: `The ${CONNECT_NAME} session token is unavailable.`,
             }),
           ),
     ),
@@ -202,7 +209,7 @@ export const deregisterManagedRelayEnvironment = Effect.fn(
   const session = registry.get(managedRelaySessionAtom);
   if (!session || session.accountId !== input.accountId) {
     return yield* new ManagedRelaySessionError({
-      message: "Sign in to T3 Connect before deregistering an environment.",
+      message: `Sign in to ${CONNECT_NAME} before deregistering an environment.`,
     });
   }
   const clerkToken = yield* readSessionClerkToken(session);
@@ -218,7 +225,7 @@ function requireClerkToken(
   if (!session || session.accountId !== accountId) {
     return Effect.fail(
       new ManagedRelaySessionError({
-        message: "Sign in to T3 Connect before loading relay data.",
+        message: `Sign in to ${CONNECT_NAME} before loading relay data.`,
       }),
     );
   }
@@ -293,7 +300,7 @@ export function readManagedRelaySnapshotState<A>(
         ? relayProtectedErrorMessage(cause.relayError)
         : cause instanceof Error
           ? cause.message
-          : "Could not load T3 Connect data.";
+          : `Could not load ${CONNECT_NAME} data.`;
     errorTraceId = findErrorTraceId(cause);
   }
   return {

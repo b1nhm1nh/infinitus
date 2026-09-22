@@ -22,10 +22,10 @@ import {
   EnvironmentThemeFile,
   EnvironmentThemeId,
   environmentThemeFileHasColors,
-} from "@t3tools/contracts";
-import { fromJsonStringPretty, fromLenientJson } from "@t3tools/shared/schemaJson";
-import { PRODUCT_NAME } from "@t3tools/shared/productName";
-import { BUILT_IN_THEME_IDS, UNPUBLISHABLE_THEME_IDS } from "@t3tools/shared/themePalettes";
+} from "@infinitus/contracts";
+import { fromJsonStringPretty, fromLenientJson } from "@infinitus/shared/schemaJson";
+import { PRODUCT_NAME } from "@infinitus/shared/productName";
+import { BUILT_IN_THEME_IDS, UNPUBLISHABLE_THEME_IDS } from "@infinitus/shared/themePalettes";
 import * as Config from "effect/Config";
 import * as Console from "effect/Console";
 import * as DateTime from "effect/DateTime";
@@ -179,7 +179,7 @@ export class ThemeTargetMissingError extends Schema.TaggedError<ThemeTargetMissi
   }
 }
 
-const envT3Home = Config.string("T3CODE_HOME").pipe(Config.option);
+const envT3Home = Config.String("T3CODE_HOME").pipe(Config.option);
 
 const resolveThemePaths = Effect.fn(function* (explicitBaseDir: Option.Option<string>) {
   // Same precedence as the rest of the CLI: --base-dir, then T3CODE_HOME,
@@ -464,11 +464,11 @@ const resolvableThemeIds = Effect.fn(function* (themesDir: string) {
 
 const themeSetCommand = Command.make("set", {
   baseDir: baseDirFlag,
-  id: Flag.string("id").pipe(
+  id: Flag.String("id").pipe(
     Flag.withDescription("Theme id to publish a file under, instead of its filename."),
     Flag.optional,
   ),
-  theme: Argument.string("theme").pipe(
+  theme: Argument.String("theme").pipe(
     Argument.withDescription(
       'A theme id (a built-in, or one this machine publishes — themes/nightfall.json is "nightfall"), or a path to a theme JSON file to publish and set in one step.',
     ),

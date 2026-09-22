@@ -4,8 +4,8 @@ import {
   ProviderDriverKind,
   ProviderInstanceId,
   type ProviderInstanceConfig,
-} from "@t3tools/contracts";
-import { getBackgroundActivityPresetSettings } from "@t3tools/shared/backgroundActivitySettings";
+} from "@infinitus/contracts";
+import { getBackgroundActivityPresetSettings } from "@infinitus/shared/backgroundActivitySettings";
 import * as Duration from "effect/Duration";
 import { describe, expect, it } from "vite-plus/test";
 import {
@@ -269,6 +269,8 @@ describe("getChangedBrowserSettingLabels", () => {
         browserDefaultZoomFactor: 1.5,
         browserDefaultAppearance: "dark",
         browserRecordingFrameRate: 60,
+        browserRecordingShowKeyPresses: true,
+        browserRecordingShowMousePresses: true,
         browserLinkTarget: "app",
         browserAutoShowFloatingPreview: !DEFAULT_UNIFIED_SETTINGS.browserAutoShowFloatingPreview,
       }),
@@ -277,6 +279,8 @@ describe("getChangedBrowserSettingLabels", () => {
       "Browser zoom",
       "Browser appearance",
       "Recording frame rate",
+      "Recording key presses",
+      "Recording mouse presses",
       "Open links in",
       "Floating preview",
     ]);

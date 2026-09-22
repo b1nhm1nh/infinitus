@@ -14,8 +14,8 @@
         "effect": "read",
         "name": "status",
         "options": [],
-        "replyShape": "{version, sha, engines:{swapd:{enabled,registered}, cliproxy:{enabled,registered,keyPresent}, 9router:{enabled,registered,keyPresent}}, badge, signInRunning, playground, forkTunnel:{enabled, port, state, url?, hostname?}}",
-        "summary": "App version, which engines are on, engine badge, whether a sign-in is running, the fork server's tunnel (Mac only; state off|invalidPort|blocked|unavailable|starting|up|stopped, url while up — the stable fork_tunnel_hostname on the named tunnel when set, else a quick tunnel)."
+        "replyShape": "{version, sha, engines:{swapd:{enabled,registered}, cliproxy:{enabled,registered,keyPresent}, 9router:{enabled,registered,keyPresent}}, badge, signInRunning, playground}",
+        "summary": "App version, which engines are on, engine badge, whether a sign-in is running."
       },
       {
         "args": [],
@@ -298,36 +298,12 @@
         "summary": "Process cost: CPU seconds so far, RSS + live heap bytes, thread count — sample twice for an idle % and a heap growth rate (perf gate)."
       },
       {
-        "args": [],
-        "effect": "read",
-        "name": "lock-status",
-        "options": [],
-        "replyShape": "{enabled, locked, relock: immediately|5 min|1 h|on sleep}",
-        "summary": "Biometric lock (Settings › Lock): whether the setting is on, whether the pop-out and Settings are locked right now, and the re-lock choice. Off by default."
-      },
-      {
-        "args": ["on|off|now|relock", "[immediately|5m|1h|sleep]"],
-        "effect": "write",
-        "name": "lock",
-        "options": ["--yes"],
-        "replyShape": "lock-status",
-        "summary": "Biometric lock: `on` runs the unlock prompt on the Mac once and turns the setting on; `off` turns it off (--yes while in a team); `now` locks the pop-out and Settings; `relock <choice>` sets the re-lock delay."
-      },
-      {
-        "args": [],
-        "effect": "write",
-        "name": "unlock",
-        "options": [],
-        "replyShape": "lock-status",
-        "summary": "Run the unlock prompt on the Mac (Touch ID or password) and unlock the pop-out and Settings; refused with the reason when it fails or is cancelled."
-      },
-      {
-        "args": ["popout|settings"],
+        "args": ["popout"],
         "effect": "write",
         "name": "show",
         "options": [],
         "replyShape": "{shown}",
-        "summary": "Open a window: the pinned pop-out or Settings. The wall, workspace and session windows are retired — the Infinitus desktop app is the client."
+        "summary": "Open the pinned pop-out. The Settings, wall, workspace and session windows are retired — the Infinitus desktop app is the client."
       },
       {
         "args": ["[get <key>...]"],
@@ -336,14 +312,6 @@
         "options": [],
         "replyShape": "{sections:[{slug,name}], prefs:[{key,type,default,value,section,effect,choices?,min?,max?}]}",
         "summary": "The preference catalog with current values: key, type, default, section (slug + name), live/restart effect, choices; `get` narrows it to the named keys."
-      },
-      {
-        "args": [],
-        "effect": "write",
-        "name": "activities-token",
-        "options": ["--body <json>", "--forget <deviceId>/<kind>"],
-        "replyShape": "{slot} | with --forget {slot, forgotten}",
-        "summary": "Register a phone's push token — the body `POST /activities/token` takes: {kind, token, deviceId, deviceName, environment, themeID?, macId?}. Without --body the CLI reads the JSON from stdin. `--forget <deviceId>/<kind>` withdraws that one registration instead (the phone's alerts switched off); forgotten is false when none was held."
       },
       {
         "args": [],
@@ -370,12 +338,12 @@
         "summary": "Set one preference (`prefs set <key> <value>` is the same): the value is JSON, or a bare word for a string; refused when it is the wrong type or off the pref's choices. A `restart` pref relaunches the app after the reply, as `engine` does."
       },
       {
-        "args": ["popout|settings"],
+        "args": ["popout"],
         "effect": "write",
         "name": "hide",
         "options": [],
         "replyShape": "{hidden}",
-        "summary": "Close the pinned pop-out (the e2e no-lease window) or Settings."
+        "summary": "Close the pinned pop-out (the e2e no-lease window)."
       },
       {
         "args": ["swapd|cliproxy|9router", "on|off"],
@@ -390,8 +358,8 @@
         "effect": "read",
         "name": "proxy",
         "options": [],
-        "replyShape": "{baseURL, keyPresent, routingStrategy?, error?}",
-        "summary": "CLIProxyAPI settings: base URL, whether a key is stored, routing strategy."
+        "replyShape": "{baseURL, dashboardURL, keyPresent, enabled, routingStrategy?, sessionAffinity?, caveat?, error?}",
+        "summary": "CLIProxyAPI settings: base URL, its management panel's URL, whether a key is stored, whether the engine is on, routing strategy, session affinity (absent on a proxy without the route), the routing caveat and the last error."
       },
       {
         "args": [],
@@ -404,6 +372,14 @@
       },
       {
         "args": [],
+        "effect": "read",
+        "name": "9router",
+        "options": [],
+        "replyShape": "{baseURL, dashboardURL, passwordPresent, enabled, error?}",
+        "summary": "9Router settings: base URL, whether a password is stored, whether the engine is on, and the last error its refresh failed with."
+      },
+      {
+        "args": [],
         "effect": "restart",
         "name": "9router-password",
         "options": ["--url <base URL, default http://127.0.0.1:20128>"],
@@ -412,12 +388,36 @@
         "summary": "Store the 9Router dashboard password read from stdin in the keychain. Empty stdin clears it. The app relaunches."
       },
       {
+        "args": ["cliproxy|9router"],
+        "effect": "read",
+        "name": "test-connection",
+        "options": ["--url <base URL, this probe only; default the stored one>"],
+        "replyShape": "{ok, latencyMs?, version?, error?}",
+        "summary": "Probe an engine's management API with the credential in the keychain (the caller never holds it): ok with the round-trip time, or the engine's own words in error — never the credential. Answers within 5 s; a dead URL reads as a timeout. --url probes an address before it is saved."
+      },
+      {
         "args": ["fill-first|round-robin|weighted-round-robin"],
         "effect": "write",
         "name": "proxy-routing",
         "options": [],
         "replyShape": "{routingStrategy}",
         "summary": "PUT the proxy's routing strategy."
+      },
+      {
+        "args": ["on|off"],
+        "effect": "write",
+        "name": "proxy-affinity",
+        "options": [],
+        "replyShape": "{sessionAffinity}",
+        "summary": "PUT the proxy's session affinity (a conversation stays on one credential). Refused on a proxy without the route."
+      },
+      {
+        "args": [],
+        "effect": "read",
+        "name": "team-status",
+        "options": [],
+        "replyShape": "{id, name, remote (masked), kid, role: leader|member|pending, rev, members: [{kid, name, role, isMe, founder, since, lastPublished, kinds, threadsNow, blockers, crashes, todayUSD, todayMessages, todayCommits, fleet}], requests: [{kid, name, platform, devices, at}], policy: {requests}, shares: {kind: audience}, exclusions: [slug], lockEnabled, lastFetch, lastPublish, lastError} | null",
+        "summary": "Settings › Team: the team this Mac is in — members with what they last published, pending requests, shares, exclusions, the loop's last fetch/publish — or null when there is none."
       }
     ],
     "schemaVersion": 1
@@ -698,38 +698,6 @@
         "value": 10
       },
       {
-        "default": false,
-        "effect": "live",
-        "key": "mirror_lan_enabled",
-        "section": "devices",
-        "type": "bool",
-        "value": false
-      },
-      {
-        "default": false,
-        "effect": "live",
-        "key": "mirror_tunnel_enabled",
-        "section": "devices",
-        "type": "bool",
-        "value": false
-      },
-      {
-        "default": true,
-        "effect": "live",
-        "key": "mirror_rendezvous_enabled",
-        "section": "devices",
-        "type": "bool",
-        "value": true
-      },
-      {
-        "default": false,
-        "effect": "live",
-        "key": "fork_tunnel_enabled",
-        "section": "devices",
-        "type": "bool",
-        "value": false
-      },
-      {
         "default": 3773,
         "effect": "live",
         "key": "fork_server_port",
@@ -740,10 +708,18 @@
       {
         "default": "",
         "effect": "live",
-        "key": "fork_tunnel_hostname",
+        "key": "machine_name",
         "section": "devices",
         "type": "string",
         "value": ""
+      },
+      {
+        "default": false,
+        "effect": "live",
+        "key": "icloud_sync",
+        "section": "devices",
+        "type": "bool",
+        "value": true
       },
       {
         "default": true,
@@ -770,13 +746,12 @@
         "value": false
       },
       {
-        "choices": ["stable", "nightly"],
-        "default": "stable",
-        "effect": "live",
-        "key": "update_channel",
-        "section": "about",
-        "type": "string",
-        "value": "stable"
+        "default": false,
+        "effect": "restart",
+        "key": "mock_mode",
+        "section": "engines",
+        "type": "bool",
+        "value": false
       },
       {
         "choices": ["off", "hold", "interrupt"],

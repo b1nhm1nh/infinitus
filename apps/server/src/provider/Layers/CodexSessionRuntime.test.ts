@@ -4,8 +4,8 @@ import { it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import { describe } from "vite-plus/test";
-import { DEFAULT_MODEL, ThreadId } from "@t3tools/contracts";
-import { PRODUCT_NAME } from "@t3tools/shared/productName";
+import { DEFAULT_MODEL, ThreadId } from "@infinitus/contracts";
+import { PRODUCT_NAME } from "@infinitus/shared/productName";
 import * as CodexErrors from "effect-codex-app-server/errors";
 import * as CodexRpc from "effect-codex-app-server/rpc";
 import * as EffectCodexSchema from "effect-codex-app-server/schema";
@@ -156,6 +156,23 @@ function makeThreadOpenResponse(
 }
 
 describe("buildTurnStartParams", () => {
+  it.effect("sends currency skill aliases in Codex's canonical dollar form", () =>
+    Effect.gen(function* () {
+      for (const symbol of ["€", "£", "¥", "₹", "₩", "₿", "𑿝"]) {
+        const prose = `${symbol}20 ${symbol}20k ${symbol}100M ${symbol}1e6 5${symbol}review`;
+        const params = yield* buildTurnStartParams({
+          threadId: "provider-thread-1",
+          runtimeMode: "full-access",
+          prompt: `${symbol}review ${symbol}2spec $existing ${prose} ${symbol}last`,
+        });
+
+        NodeAssert.deepEqual(params.input, [
+          { type: "text", text: `$review $2spec $existing ${prose} $last` },
+        ]);
+      }
+    }),
+  );
+
   it("keeps invalid turn values only in the schema cause", () => {
     const secret = "codex-turn-input-secret-sentinel";
     const error = Effect.runSync(
@@ -164,8 +181,8 @@ describe("buildTurnStartParams", () => {
         runtimeMode: "full-access",
         attachments: [
           {
-            type: "image",
-            url: { secret } as unknown as string,
+            type: "localImage",
+            path: { secret } as unknown as string,
           },
         ],
       }).pipe(Effect.flip),
@@ -233,8 +250,8 @@ describe("buildTurnStartParams", () => {
         interactionMode: "default",
         attachments: [
           {
-            type: "image",
-            url: "data:image/png;base64,abc",
+            type: "localImage",
+            path: "/tmp/generated.png",
           },
         ],
       }),
@@ -253,8 +270,8 @@ describe("buildTurnStartParams", () => {
           text: "Implement it",
         },
         {
-          type: "image",
-          url: "data:image/png;base64,abc",
+          type: "localImage",
+          path: "/tmp/generated.png",
         },
       ],
       model: "gpt-5.3-codex",
@@ -607,7 +624,7 @@ describe("T3 browser developer instructions", () => {
   it("prefers the product-native preview tools in both collaboration modes", () => {
     for (const mode of ["default", "plan"] as const) {
       const instructions = buildCodexDeveloperInstructions(mode, runtime, true);
-      NodeAssert.match(instructions, /t3-code/);
+      NodeAssert.match(instructions, /`infinitus` MCP server/);
       NodeAssert.match(instructions, /preview_status/);
       NodeAssert.match(instructions, /preview_open/);
       NodeAssert.match(instructions, /Do not switch to global browser skills/);
@@ -643,7 +660,7 @@ describe("hasConfiguredMcpServer", () => {
     NodeAssert.equal(hasConfiguredMcpServer(undefined), false);
     NodeAssert.equal(hasConfiguredMcpServer(["--model", "gpt-5.4"]), false);
     NodeAssert.equal(
-      hasConfiguredMcpServer(["-c", 'mcp_servers.t3-code.url="http://127.0.0.1/mcp"']),
+      hasConfiguredMcpServer(["-c", 'mcp_servers.infinitus.url="http://127.0.0.1/mcp"']),
       true,
     );
   });
@@ -799,7 +816,7 @@ describe("codexSessionAppServerArgs", () => {
   it("keeps launch args when explicit app-server args are provided", () => {
     NodeAssert.deepStrictEqual(
       codexSessionAppServerArgs(
-        ["-c", "mcp_servers.t3-code.url=http://127.0.0.1/mcp"],
+        ["-c", "mcp_servers.infinitus.url=http://127.0.0.1/mcp"],
         "--strict-config --enable foo",
       ),
       [
@@ -808,7 +825,7 @@ describe("codexSessionAppServerArgs", () => {
         "--enable",
         "foo",
         "-c",
-        "mcp_servers.t3-code.url=http://127.0.0.1/mcp",
+        "mcp_servers.infinitus.url=http://127.0.0.1/mcp",
       ],
     );
   });

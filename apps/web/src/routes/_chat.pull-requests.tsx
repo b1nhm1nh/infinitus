@@ -1,6 +1,6 @@
 import { RefreshIcon } from "~/components/ui/refresh-icon";
 import { Spinner } from "~/components/ui/spinner";
-import { pullRequestHostOf, resolveEnvironmentMachineKind } from "@t3tools/contracts";
+import { pullRequestHostOf, resolveEnvironmentMachineKind } from "@infinitus/contracts";
 import type {
   EnvironmentId,
   ProjectId,
@@ -11,7 +11,7 @@ import type {
   PullRequestListResult,
   PullRequestListState,
   SourceControlProviderKind,
-} from "@t3tools/contracts";
+} from "@infinitus/contracts";
 import { useAtomValue } from "@effect/atom-react";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import {
@@ -21,15 +21,16 @@ import {
   ChevronDownIcon,
   ClockIcon,
   EyeIcon,
-  GitMergeIcon,
-  GitPullRequestClosedIcon,
-  GitPullRequestIcon,
   LayersIcon,
   ListChecksIcon,
   PenLineIcon,
+  UsersIcon,
+  Plug2Icon,
   Maximize2Icon,
   Minimize2Icon,
   SearchIcon,
+  UserLockIcon,
+  type LucideIcon,
 } from "lucide-react";
 import {
   useCallback,
@@ -147,9 +148,23 @@ import {
 } from "../state/pullRequests";
 import { useAtomCommand } from "../state/use-atom-command";
 import { cn } from "~/lib/utils";
+import { Separator } from "~/components/ui/separator";
 import { primaryServerKeybindingsAtom } from "~/state/server";
 import { getSourceControlPresentationForKind } from "~/sourceControlPresentation";
-import { PRODUCT_NAME } from "@t3tools/shared/productName";
+import { PRODUCT_NAME } from "@infinitus/shared/productName";
+import { PullRequestGlyph } from "~/components/pullRequest/pullRequestIcons";
+
+function getShortcutContext() {
+  return {
+    terminalFocus: isTerminalFocused(),
+    terminalOpen: false,
+    previewFocus: false,
+    previewOpen: false,
+    modelPickerOpen: false,
+    isWeb: !isElectron,
+    isDesktop: isElectron,
+  };
+}
 
 export interface PullRequestsSearch extends PullRequestListPreferences {
   /**
@@ -177,6 +192,32 @@ export interface PullRequestsSearch extends PullRequestListPreferences {
   readonly selectedEnvironmentId?: EnvironmentId;
 }
 
+/**
+ * A group reads like the sidebar's shelves: its glyph, its name, how many, then a rule out
+ * to the edge. The glyph is the one the involvement filter uses for the same idea.
+ */
+const GROUP_ICONS: Record<string, LucideIcon> = {
+  authored: PenLineIcon,
+  reviewRequested: EyeIcon,
+  others: UsersIcon,
+};
+
+function PullRequestGroupHeader({
+  group,
+}: {
+  group: { key: string; label: string; entries: ReadonlyArray<unknown> };
+}) {
+  const Icon = GROUP_ICONS[group.key] ?? LayersIcon;
+  return (
+    <div className="flex items-center gap-2 px-3 pb-1 text-xs font-medium text-muted-foreground/70">
+      <Icon aria-hidden className="size-3.5 shrink-0" />
+      <h2 className="shrink-0">{group.label}</h2>
+      <span className="shrink-0 tabular-nums text-muted-foreground/50">{group.entries.length}</span>
+      <Separator className="min-w-2 flex-1 bg-border/60" />
+    </div>
+  );
+}
+
 // The state filters wear the same glyphs the rows do, so the two read as one vocabulary.
 const INVOLVEMENT_TABS = [
   { value: "all", label: "All", Icon: LayersIcon },
@@ -186,13 +227,14 @@ const INVOLVEMENT_TABS = [
 
 const STATE_TABS = [
   { value: "all", label: "All", Icon: LayersIcon },
-  { value: "open", label: "Open", Icon: GitPullRequestIcon },
-  { value: "closed", label: "Closed", Icon: GitPullRequestClosedIcon },
-  { value: "merged", label: "Merged", Icon: GitMergeIcon },
+  { value: "open", label: "Open", Icon: PullRequestGlyph.pullRequest },
+  { value: "closed", label: "Closed", Icon: PullRequestGlyph.closed },
+  { value: "merged", label: "Merged", Icon: PullRequestGlyph.merged },
 ] as const satisfies ReadonlyArray<PullRequestFilterOption<PullRequestListState>>;
 
 const SORT_OPTIONS = [
   { value: "ready", label: "Merge readiness", Icon: ListChecksIcon },
+  { value: "blocked", label: "Blocked on me", Icon: UserLockIcon },
   { value: "updated", label: "Recently updated", Icon: ClockIcon },
   { value: "newest", label: "Newest shown", Icon: CalendarArrowDownIcon },
   { value: "oldest", label: "Oldest shown", Icon: CalendarArrowUpIcon },
@@ -1427,8 +1469,9 @@ function PullRequestsRouteView() {
       typedParsed.text,
       (entry) =>
         entry.additions + entry.deletions > 0 || statsByRow.has(pullRequestDiffStatKey(entry)),
+      search.involvement,
     );
-  }, [groups, sort, statsByRow, typedParsed.text]);
+  }, [groups, search.involvement, sort, statsByRow, typedParsed.text]);
   const listedPullRequestsBySurface = useMemo(
     () =>
       new Map(
@@ -1646,11 +1689,7 @@ function PullRequestsRouteView() {
         <div className="space-y-3">
           {displayGroups.map((group) => (
             <div key={group.key} className="space-y-0.5">
-              {group.label ? (
-                <h2 className="px-3 pb-0.5 text-xs font-medium text-muted-foreground/70">
-                  {group.label}
-                </h2>
-              ) : null}
+              {group.label ? <PullRequestGroupHeader group={group} /> : null}
               {group.entries.map((entry) => {
                 const entryKey = pullRequestEntryKey(entry);
                 return (
@@ -1722,7 +1761,7 @@ function PullRequestsRouteView() {
   // kind force the hostname to tell them apart.
   const hostEntries = hosts.length > 0 ? hosts : expectedHosts;
   const hostMenuOptions: ReadonlyArray<PullRequestFilterOption<string>> = [
-    { value: "", label: "All hosts", Icon: LayersIcon },
+    { value: "", label: "All", Icon: Plug2Icon },
     ...hostEntries.map((entry) => {
       // `expectedHosts` stands in before the server has answered, and nothing is known to be
       // unreadable yet; once the summaries arrive they carry whether each one could be read.
@@ -1925,7 +1964,7 @@ function PullRequestsRouteView() {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.defaultPrevented || isCommandPaletteOpen()) return;
       const command = resolveShortcutCommand(event, keybindings, {
-        context: { terminalFocus: isTerminalFocused() },
+        context: getShortcutContext(),
       });
       if (command === "rightPanel.close") closeActiveSurfaceFromShortcut(event);
       if (command === "rightPanel.toggle") toggleRightPanelFromShortcut(event);
@@ -1992,6 +2031,8 @@ function PullRequestsRouteView() {
             pullRequestStatusSeeds={listedPullRequestTabStatuses}
           >
             <PullRequestDetailPanel
+              getShortcutContext={getShortcutContext}
+              shortcutsEnabled={activePullRequestSurface?.id === renderedPullRequestSurface.id}
               key={renderedPullRequestSurface.id}
               environmentId={panelEnvironmentId}
               onSelectPullRequest={(reference) => {
@@ -2045,6 +2086,7 @@ function CompactFilterMenu<Value extends string>({
   triggerIcon,
   triggerLabel,
   outlined = false,
+  iconOnly = false,
   value,
   options,
   onChange,
@@ -2054,6 +2096,7 @@ function CompactFilterMenu<Value extends string>({
   triggerIcon?: ReactNode;
   triggerLabel?: string;
   outlined?: boolean;
+  iconOnly?: boolean;
   value: Value;
   options: ReadonlyArray<PullRequestFilterOption<Value>>;
   onChange: (value: Value) => void;
@@ -2064,8 +2107,11 @@ function CompactFilterMenu<Value extends string>({
   return (
     <Menu>
       <MenuTrigger
-        aria-label={triggerLabel ? `${label}: ${current.label}` : label}
-        render={outlined ? <Button variant="outline" /> : undefined}
+        aria-label={triggerLabel || iconOnly ? `${label}: ${current.label}` : label}
+        title={iconOnly ? `${label}: ${current.label}` : undefined}
+        render={
+          outlined ? <Button variant="outline" size={iconOnly ? "icon" : "default"} /> : undefined
+        }
         className={
           outlined
             ? className
@@ -2075,7 +2121,9 @@ function CompactFilterMenu<Value extends string>({
               )
         }
       >
-        {triggerLabel ? (
+        {iconOnly ? (
+          <current.Icon aria-hidden className="size-4" />
+        ) : triggerLabel ? (
           <>
             {triggerIcon}
             <span>{triggerLabel}</span>
@@ -2378,6 +2426,16 @@ function PullRequestsColumn({
               </div>
               {sortMenu}
               {filtersMenu}
+              <CompactFilterMenu
+                label="Filter by provider"
+                outlined
+                iconOnly={host !== undefined}
+                triggerIcon={<Plug2Icon aria-hidden className="size-4" />}
+                triggerLabel="All"
+                value={host ?? ""}
+                options={hostMenuOptions}
+                onChange={(next) => onHost(next === "" ? undefined : next)}
+              />
               {!condensed ? (
                 <PullRequestRefreshControl refreshing={refreshing} onRefresh={onRefresh} />
               ) : null}

@@ -1,4 +1,4 @@
-import type { InfinitusPref, InfinitusPrefs } from "@t3tools/contracts/infinitus";
+import type { InfinitusPref, InfinitusPrefs } from "@infinitus/contracts/infinitus";
 import * as Equal from "effect/Equal";
 import * as Schema from "effect/Schema";
 
@@ -162,34 +162,30 @@ export const PREF_COPY: Readonly<
   push_last_alive: { label: "The last alive account nears its limit" },
   push_revived: { label: "An account comes back" },
   revive_lead_minutes: { label: "Revive countdown lead (minutes)" },
-  // Devices.
-  mirror_lan_enabled: { label: "Serve the fleet to my phone" },
-  mirror_tunnel_enabled: { label: "Expose through a Cloudflare quick tunnel" },
-  mirror_rendezvous_enabled: { label: "Publish the current URL to infinitus.run" },
-  // Devices: the tunnel fronting this server's own port, which the "Pair a
-  // phone" card below hands the QR when the phone is off the Wi‑Fi. The keys
-  // are the Mac's (#572) and say "fork"; the screen never does (#823).
-  fork_tunnel_enabled: {
-    label: "Reach this server through a Cloudflare tunnel",
-    description: "Lets a phone pair and connect from outside your network.",
-  },
+  // Devices: where this server listens. The key is the Mac's (#572) and says
+  // "fork"; the screen never does (#823).
   fork_server_port: {
     label: "Server port",
     description: "The port this server listens on. Infinitus writes it at startup.",
   },
-  fork_tunnel_hostname: {
-    label: "Tunnel hostname",
+  // Devices: this Mac's name and iCloud sync (#1178).
+  machine_name: {
+    label: "This Mac's name",
+    description: "How the phone and this server name the Mac. Empty follows the computer name.",
+  },
+  icloud_sync: {
+    label: "Sync settings via iCloud Drive",
     description:
-      "A named tunnel's hostname, so the URL survives a restart. Empty takes a fresh quick-tunnel URL each time.",
+      "Display preferences, custom themes and engine settings travel through one file in your iCloud Drive. Never credentials.",
   },
   // Engines.
   engine_swapd_enabled: { label: "swapd engine on (swaps the login under each provider's CLI)" },
   engine_cliproxy_enabled: { label: "CLIProxyAPI engine on (rotates behind its own endpoint)" },
   engine_9router_enabled: { label: "9Router engine on (rotates behind its own endpoint)" },
-  // About.
-  update_channel: {
-    label: "Update channel",
-    choices: { stable: "Stable", nightly: "Nightly" },
+  mock_mode: {
+    label: "Demo fleet (fabricated accounts)",
+    description:
+      "Made-up accounts standing in for the engine. Nothing reads or touches your real accounts; flipping this restarts Infinitus.",
   },
   // Priority: thread priority mode (#616 hold, #743 interrupt). The verdict
   // itself is native's; these are the knobs it reads.

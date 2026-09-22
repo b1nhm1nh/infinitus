@@ -12,22 +12,21 @@ struct AccountGrid<M: FleetModel, U: UsageSource>: View {
     @ObservedObject var usage: U
 
     /// Usage-column count of the WIDEST row: 5h + 7d + spend + each
-    /// scoped window. Rows that span (dead/ready/sentinel) must cover
+    /// scoped window. Rows that span (compact/sentinel) must cover
     /// exactly this many columns or the cash column shifts left.
     private var usageColumns: Int {
         3 + (model.accounts.map { ($0.usage?.scoped ?? []).count }.max() ?? 0)
     }
 
     /// Does any row lay out per-column gauges? If so, the one-line rows
-    /// (dead/ready/sentinel) must not size their column — they start in the
+    /// (compact/sentinel) must not size their column — they start in the
     /// 5h column and run across the empty cells beside them. Spanning with
     /// gridCellColumns instead rendered the grid ~(span-1)*spacing wider
     /// than fixedSize measured, so the popup clipped both edges whenever a
     /// themed account was dead (2026-08-30, dev shim fleet).
     private var anyGauged: Bool {
         model.compactRows ? false : model.accounts.contains { a in
-            let c = AccountCells(model: model, usage: usage, account: a)
-            return SentinelNotes.note(for: a.usageStatus) == nil && !c.allFresh
+            SentinelNotes.note(for: a.usageStatus) == nil
         }
     }
 
@@ -65,6 +64,10 @@ struct AccountGrid<M: FleetModel, U: UsageSource>: View {
                     .anchorPreference(key: DeadRowBounds.self,
                                       value: .bounds) { [account.number: [$0]] }
                     HStack(spacing: 4) {
+                        // The pause mark leads: a long alias truncates the
+                        // tail, so a trailing marker vanished on real
+                        // fleets (user 2026-09-01).
+                        AccountPauseButton(model: model, account: account)
                         Button(action: {
                             // disabled rows stay clickable, like rumps; the
                             // popup-level alert asks before committing
@@ -81,7 +84,6 @@ struct AccountGrid<M: FleetModel, U: UsageSource>: View {
                         .help(cells.dead ? "Out of at least one limit — unusable until it resets"
                                          : "Switch to this account")
                         .lineLimit(1)
-                        AccountResumeButton(model: model, account: account)
                     }
                     // The one deliberately flexible column: emails truncate,
                     // usage numbers and reset times never do.
@@ -123,13 +125,6 @@ struct AccountGrid<M: FleetModel, U: UsageSource>: View {
                             .gridCellUnsizedAxes(anyGauged ? .horizontal : [])
                             .activeBand(account.active)
                         oneLineFillers
-                    } else if cells.allFresh {
-                        // A fully-available account carries no signal worth
-                        // five gauges — one "ready" line in every mode.
-                        cells.readyCell
-                            .gridCellUnsizedAxes(anyGauged ? .horizontal : [])
-                        oneLineFillers
-                        cells.cashCell.alignedColumn("cash")
                     } else if model.compactRows {
                         // Compact hides empty/exhausted cells, which makes
                         // per-cell grid columns meaningless — a row whose 5h
@@ -137,7 +132,7 @@ struct AccountGrid<M: FleetModel, U: UsageSource>: View {
                         // the wrong column. Pack the visible cells tight in
                         // ONE cell; only number/name/plan/cash stay columns.
                         // The packed cell sizes the 5h column like the
-                        // dead/ready one-liners do and fillers keep the
+                        // sentinel one-liners do and fillers keep the
                         // cash column in place: a spanning cell never fed
                         // its width to the columns, so a wide packed row
                         // ran under the cash figures (#100).
@@ -272,8 +267,8 @@ struct AccountStack<M: FleetModel, U: UsageSource>: View {
     var body: some View {
         if model.compactRows {
             // Compact stacked: a flat roster, one line per account — no
-            // cards, no per-window lines, just the BINDING window's pct
-            // (full mode and compact "looked the same", user 2026-08-30).
+            // cards or per-window lines. Used accounts show the binding
+            // percentage; fully available accounts keep their gauges.
             VStack(alignment: .leading, spacing: 5) {
                 ForEach(Array(model.displayAccounts.enumerated()),
                         id: \.element.number) { i, account in
@@ -290,6 +285,7 @@ struct AccountStack<M: FleetModel, U: UsageSource>: View {
 
     /// One roster line: marker, number, name, then the tightest limit
     /// (the one that will actually stop the account) or the dead verb.
+    /// Fully available accounts show each gauge on that same line.
     @ViewBuilder private func compactLine(_ account: Account) -> some View {
         let cells = AccountCells(model: model, usage: usage, account: account, banded: false)
         HStack(spacing: 4) {
@@ -298,6 +294,7 @@ struct AccountStack<M: FleetModel, U: UsageSource>: View {
                 .fontWeight(.bold)
                 .foregroundStyle(account.active ? Color.accentColor : Color.secondary)
                 .instantTip(cells.slotTip)
+            AccountPauseButton(model: model, account: account)
             Button(action: {
                 if !account.active, model.capabilities.contains(.switch) { model.pendingSwitch = account.number }
             }, label: { cells.nameLabel })
@@ -307,10 +304,15 @@ struct AccountStack<M: FleetModel, U: UsageSource>: View {
             .foregroundStyle((account.disabled ?? false) || cells.dead
                              ? .secondary : .primary)
             .lineLimit(1)
-            AccountResumeButton(model: model, account: account)
             Spacer(minLength: 8)
             if cells.showAsDead {
                 cells.deadCell
+            } else if cells.allFresh {
+                HStack(spacing: 8) {
+                    cells.windowCell(account.usage?.fiveHour, session: true, timer: false)
+                    cells.windowCell(account.usage?.sevenDay, session: false, timer: false)
+                    cells.scopedCells
+                }
             } else if let (label, pct) = bindingWindow(account) {
                 Text(label)
                     .font(PopupFont.caption).bold()
@@ -382,6 +384,7 @@ struct AccountStack<M: FleetModel, U: UsageSource>: View {
                             .fontWeight(.bold)
                             .foregroundStyle(account.active ? Color.accentColor : Color.secondary)
                             .instantTip(cells.slotTip)
+                        AccountPauseButton(model: model, account: account)
                         Button(action: {
                             if !account.active, model.capabilities.contains(.switch) { model.pendingSwitch = account.number }
                         }, label: { cells.nameLabel })
@@ -391,7 +394,6 @@ struct AccountStack<M: FleetModel, U: UsageSource>: View {
                             .foregroundStyle((account.disabled ?? false) || cells.dead
                                              ? .secondary : .primary)
                             .lineLimit(1)
-                        AccountResumeButton(model: model, account: account)
                         if let plan = cells.planText {
                             Text(plan).font(PopupFont.caption).foregroundStyle(.secondary)
                                 .instantTip("Subscription: \(account.plan ?? "?")")
@@ -407,8 +409,6 @@ struct AccountStack<M: FleetModel, U: UsageSource>: View {
                                         && !model.isPlayground
                                         ? "Re-login now — opens this account's private login window"
                                         : note)
-                    } else if cells.allFresh {
-                        cells.readyCell
                     } else {
                         // One attribute per line — the whole point of the
                         // stacked layout (user request 2026-08-30). A dead
@@ -582,7 +582,7 @@ extension View {
 /// on the row as buttons; that read as clutter (user 2026-09-06:
 /// "pause/resume, star on UI looks clunky -> make it right click action
 /// except for paused account -> press to resume"), so the row keeps only
-/// `AccountResumeButton`. Each item shows only when the engine has the
+/// `AccountPauseButton`. Each item shows only when the engine has the
 /// knob (nil `preferred` = no pick-first setting in this build).
 struct AccountRowMenu<M: FleetModel>: View {
     let model: M
@@ -604,13 +604,23 @@ struct AccountRowMenu<M: FleetModel>: View {
                 Label(paused ? "Resume" : "Pause", systemImage: paused ? "play.circle" : "pause.circle")
             }
         }
+        if model.capabilities.contains(.autoIgnite), let warm = account.autoIgnite {
+            Button {
+                model.setAutoIgnite(account.number, !warm)
+            } label: {
+                Label(warm ? "Stop keeping warm" : "Keep warm",
+                      systemImage: warm ? "flame.slash" : "flame")
+            }
+        }
     }
 }
 
-/// The one row-level control that survives: a paused account shows a
-/// play button, one press puts it back into rotation. Starred state
-/// needs no button — the name label already leads with ★.
-struct AccountResumeButton<M: FleetModel>: View {
+/// The one row-level control that survives, and the ONLY mark a paused
+/// account wears (user 2026-09-16 "too many disabled labels, just keep
+/// the pause icon is enough and pressing that icon resume the account"):
+/// the pause glyph says the account is held, one press puts it back into
+/// rotation. Starred state needs no button — the name label leads with ★.
+struct AccountPauseButton<M: FleetModel>: View {
     let model: M
     let account: Account
 
@@ -619,12 +629,12 @@ struct AccountResumeButton<M: FleetModel>: View {
             Button {
                 model.setRotation(account.number, enabled: true)
             } label: {
-                Image(systemName: "play.circle")
+                Image(systemName: "pause.circle.fill")
                     .font(PopupFont.caption)
                     .foregroundStyle(.secondary)
             }
             .buttonStyle(.plain)
-            .instantTip("Resume — back into rotation")
+            .instantTip("Paused — press to resume")
         }
     }
 }

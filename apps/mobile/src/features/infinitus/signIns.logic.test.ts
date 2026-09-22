@@ -1,7 +1,17 @@
-import type { InfinitusSnapshot } from "@t3tools/contracts/infinitus";
+import type { InfinitusSnapshot } from "@infinitus/contracts/infinitus";
 import { describe, expect, it } from "vite-plus/test";
 
-import { lapsedSignIns, signInHeadline, signInModel, startSignInCommand } from "./signIns.logic";
+import {
+  lapsedSignIns,
+  signInCallbackPort,
+  signInCallbackSecretArgs,
+  dismissSignInCommand,
+  signInCodeSecretArgs,
+  signInHeadline,
+  signInModel,
+  signInTakesCode,
+  startSignInCommand,
+} from "./signIns.logic";
 
 const base: InfinitusSnapshot = { available: true, fleets: [], commands: [] };
 
@@ -31,13 +41,51 @@ describe("signInModel / lapsedSignIns", () => {
       provider: "aws",
       providerLabel: "AWS",
       phase: "idle",
+      flow: "relay",
       url: null,
+      account: null,
     });
     expect(models[1]).toMatchObject({
       provider: "gcloud",
       phase: "waiting",
+      flow: "deviceCode",
       url: "https://accounts.example/device",
       userCode: "ABCD-EFGH",
+    });
+  });
+
+  it("reads the running login's flow over the item's, and the page's account", () => {
+    // The item says what the Mac would start; a login already running says
+    // what it did start — the phone asked for a code over the relay.
+    const model = signInModel({
+      profile: "papaya",
+      flow: "relay",
+      account: { accountId: "123456789012", userName: "deathemperor" },
+      state: { profile: "papaya", flow: "remote", phase: "waitingForCode", startedAt: 1 },
+    });
+    expect(model).toMatchObject({
+      flow: "remote",
+      phase: "waiting",
+      codeSubmitted: false,
+      account: { accountId: "123456789012", userName: "deathemperor" },
+    });
+    // The Mac's own marker once the pasted code is with the CLI.
+    expect(
+      signInModel({
+        profile: "papaya",
+        flow: "relay",
+        state: {
+          profile: "papaya",
+          flow: "remote",
+          phase: "waitingForBrowser",
+          message: "code submitted",
+          startedAt: 1,
+        },
+      }).codeSubmitted,
+    ).toBe(true);
+    expect(signInModel({ profile: "p", flow: "sso", account: { accountId: "1" } })).toMatchObject({
+      flow: "unknown",
+      account: { accountId: "1", userName: null },
     });
   });
 
@@ -115,16 +163,87 @@ describe("signInHeadline / startSignInCommand", () => {
     );
   });
 
-  it("starts the Mac's local flow, gcloud through its own verb, with no session scope", () => {
-    expect(startSignInCommand(item)).toEqual({
+  it("asks for the code flow by default: the page ends with a code pasted back here", () => {
+    expect(startSignInCommand(item, "code")).toEqual({
       command: "aws-login",
       args: ["papaya"],
-      options: { local: "true" },
+      options: { remote: "true" },
     });
-    expect(startSignInCommand({ ...item, provider: "gcloud" })).toEqual({
+    expect(startSignInCommand({ ...item, provider: "gcloud" }, "code")).toEqual({
       command: "gcloud-login",
       args: ["papaya"],
-      options: { local: "true" },
+      options: { remote: "true" },
+    });
+  });
+
+  it("leaves the Mac its own flow — the relay one — when the phone catches the redirect", () => {
+    expect(startSignInCommand(item, "catch")).toEqual({
+      command: "aws-login",
+      args: ["papaya"],
+      options: {},
+    });
+  });
+
+  it("offers the code flow to every row but an SSO profile's", () => {
+    expect(signInTakesCode(item)).toBe(true);
+    expect(signInTakesCode({ ...item, flow: "local" })).toBe(true);
+    expect(signInTakesCode({ ...item, flow: "remote" })).toBe(true);
+    expect(signInTakesCode({ ...item, flow: "deviceCode" })).toBe(false);
+  });
+});
+
+describe("dismissSignInCommand", () => {
+  it("forgets the login through the login verb's --dismiss", () => {
+    expect(dismissSignInCommand(signInModel({ profile: "papaya", flow: "remote" }))).toEqual({
+      command: "aws-login",
+      args: ["papaya"],
+      options: { dismiss: "true" },
+    });
+  });
+});
+
+describe("signInCodeSecretArgs", () => {
+  const item = signInModel({ profile: "papaya", flow: "relay" });
+
+  it("names the CLI's own code verb, with gcloud's positional as the manifest spells it", () => {
+    expect(signInCodeSecretArgs(item)).toEqual({
+      command: "aws-login-code",
+      args: { profile: "papaya" },
+    });
+    expect(
+      signInCodeSecretArgs({ ...item, provider: "gcloud", profile: "me@example.com" }),
+    ).toEqual({
+      command: "gcloud-login-code",
+      args: { account: "me@example.com" },
+    });
+  });
+});
+
+describe("signInCallbackPort / signInCallbackSecretArgs", () => {
+  const item = signInModel({ profile: "papaya", flow: "relay" });
+
+  it("takes the port the relay flow reported", () => {
+    expect(signInCallbackPort({ ...item, callbackPort: 8085 })).toBe(8085);
+    expect(signInCallbackPort({ ...item, callbackPort: 60861 })).toBe(60861);
+  });
+
+  it("answers null for a flow with no loopback redirect and for nonsense", () => {
+    // A device-code login, a login the Mac has not started, or an app too old
+    // to report the port: there is nothing for this phone to bind.
+    expect(signInCallbackPort(item)).toBeNull();
+    expect(signInCallbackPort({ ...item, callbackPort: 0 })).toBeNull();
+    expect(signInCallbackPort({ ...item, callbackPort: 70000 })).toBeNull();
+    expect(signInCallbackPort({ ...item, callbackPort: 8085.5 })).toBeNull();
+  });
+
+  it("hands the Mac one verb for both CLIs, the URL never an argument", () => {
+    expect(signInCallbackSecretArgs(item)).toEqual({
+      command: "aws-login-callback",
+      args: { profile: "papaya" },
+    });
+    expect(signInCallbackSecretArgs({ ...item, provider: "gcloud" })).toEqual({
+      command: "aws-login-callback",
+      args: { profile: "papaya" },
     });
   });
 });

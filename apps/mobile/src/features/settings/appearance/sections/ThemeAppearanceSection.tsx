@@ -1,9 +1,9 @@
 import { memo, useId } from "react";
-import { Platform, Pressable, View } from "react-native";
+import { Pressable, View } from "react-native";
 import Svg, { Circle, Defs, RadialGradient, Stop } from "react-native-svg";
 import { ScopedTheme, ScopedVariables } from "uniwind";
 
-import { mixThemePreviewBase, THEME_PREVIEW_RENDER_SPECS } from "@t3tools/shared/themePreview";
+import { mixThemePreviewBase, THEME_PREVIEW_RENDER_SPECS } from "@infinitus/shared/themePreview";
 
 import { SymbolView } from "../../../../components/AppSymbol";
 import { AppText as Text } from "../../../../components/AppText";
@@ -18,9 +18,6 @@ import {
 import { getMobileUniwindThemeName } from "../../../../lib/mobileThemeRuntime";
 import { cn } from "../../../../lib/cn";
 import { useAppearancePreferences } from "../AppearancePreferencesProvider";
-
-import { SettingsSection } from "../../components/SettingsSection";
-import { SettingsSwitchRow } from "../../components/SettingsSwitchRow";
 
 const APPEARANCE_MODES: ReadonlyArray<{
   readonly id: MobileThemeMode;
@@ -154,7 +151,7 @@ function ThemeCard(props: {
   );
 
   return (
-    <View className="min-w-36 flex-1 basis-[47%] gap-3 rounded-[24px] border border-border bg-card px-2 py-4">
+    <View className="min-w-36 flex-1 basis-[47%] gap-3 rounded-[24px] border border-border bg-grouped-card px-2 py-4">
       <Pressable
         accessibilityHint="Sets both light and dark appearances"
         accessibilityLabel={`${props.label} theme`}
@@ -172,7 +169,7 @@ function ThemeCard(props: {
         {choice("dark", props.darkSelected)}
       </View>
       <Text
-        className="min-w-0 flex-1 px-1 text-lg font-t3-medium"
+        className="min-w-0 flex-1 px-1 text-lg font-infinitus-medium"
         numberOfLines={1}
         pointerEvents="none"
       >
@@ -262,7 +259,9 @@ function ModeCard(props: {
       accessibilityState={{ checked: props.selected, disabled: props.disabled }}
       className={cn(
         "min-w-0 flex-1 gap-2 rounded-[24px] p-2 active:scale-[0.97]",
-        props.selected ? "border-2 border-primary bg-subtle" : "border border-border bg-card",
+        props.selected
+          ? "border-2 border-primary bg-subtle"
+          : "border border-border bg-grouped-card",
       )}
       disabled={props.disabled}
       onPress={props.onPress}
@@ -271,7 +270,7 @@ function ModeCard(props: {
       <Text
         className={
           props.selected
-            ? "text-center text-base font-t3-bold text-foreground"
+            ? "text-center text-base font-infinitus-bold text-foreground"
             : "text-center text-base text-foreground-muted"
         }
       >
@@ -282,7 +281,9 @@ function ModeCard(props: {
 }
 
 function SectionLabel({ children }: { readonly children: string }) {
-  return <Text className="px-2 text-sm font-t3-medium text-foreground-muted">{children}</Text>;
+  return (
+    <Text className="px-2 text-sm font-infinitus-medium text-foreground-muted">{children}</Text>
+  );
 }
 
 export function ThemeAppearanceSection() {
@@ -293,25 +294,11 @@ export function ThemeAppearanceSection() {
     setThemeMode,
     themeIds,
     themeMode,
-    materialYouStyleLayoutEnabled,
-    setMaterialYouStyleLayoutEnabled,
     systemColorsAvailable,
   } = useAppearancePreferences();
 
   return (
     <View className="gap-6">
-      {Platform.OS === "android" ? (
-        <SettingsSection card title="Android">
-          <SettingsSwitchRow
-            disabled={!isReady}
-            icon="square.grid.2x2"
-            label="Material You Layout"
-            onValueChange={setMaterialYouStyleLayoutEnabled}
-            subtitle="Use Material You surfaces, shapes, and component styling."
-            value={materialYouStyleLayoutEnabled}
-          />
-        </SettingsSection>
-      ) : null}
       <View className="gap-2">
         <SectionLabel>Color scheme</SectionLabel>
         <View accessibilityRole="radiogroup" className="flex-row gap-2">

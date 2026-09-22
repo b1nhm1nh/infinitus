@@ -1,5 +1,5 @@
 import * as NodeCrypto from "node:crypto";
-import { PRODUCT_NAME } from "@t3tools/shared/productName";
+import { PRODUCT_NAME } from "@infinitus/shared/productName";
 import * as Cause from "effect/Cause";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
@@ -94,7 +94,7 @@ const makeMcpAuthMiddleware = McpSessionRegistry.McpSessionRegistry.pipe(
       const invocation = yield* registry.resolve(token);
       if (!invocation) {
         // Without this the only symptom of a dead credential is the agent
-        // quietly losing the whole `t3-code` toolkit for the rest of its
+        // quietly losing the whole `infinitus` toolkit for the rest of its
         // session, with nothing on the server to explain why.
         yield* Effect.logWarning("rejected MCP request with an unusable credential", {
           reason: token.length === 0 ? "missing_bearer_token" : "unknown_or_expired_token",

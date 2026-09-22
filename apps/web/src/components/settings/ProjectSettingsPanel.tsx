@@ -4,10 +4,10 @@ import {
   settlePromise,
   squashAtomCommandFailure,
   type AtomCommandResult,
-} from "@t3tools/client-runtime/state/runtime";
-import { scopeProjectRef, scopeThreadRef } from "@t3tools/client-runtime/environment";
+} from "@infinitus/client-runtime/state/runtime";
+import { scopeProjectRef, scopeThreadRef } from "@infinitus/client-runtime/environment";
 import { AsyncResult } from "effect/unstable/reactivity";
-import { type EnvironmentId, type ProjectIconOverride } from "@t3tools/contracts";
+import { type EnvironmentId, type ProjectIconOverride } from "@infinitus/contracts";
 import { useLocation, useNavigate } from "@tanstack/react-router";
 import * as Cause from "effect/Cause";
 import { Trash2Icon } from "lucide-react";
@@ -455,9 +455,11 @@ function ProjectDetail({
             description={
               projectIcon?.kind === "lucide"
                 ? `${projectIcon.name} · ${projectIcon.color}`
-                : projectIcon?.kind === "emoji"
-                  ? projectIcon.emoji
-                  : (faviconPath ?? "Automatic")
+                : projectIcon?.kind === "monogram"
+                  ? `${projectIcon.text} · ${projectIcon.color}`
+                  : projectIcon?.kind === "emoji"
+                    ? projectIcon.emoji
+                    : (faviconPath ?? "Automatic")
             }
             resetAction={
               group.memberProjects.some(
@@ -556,6 +558,7 @@ function ProjectDetail({
         <Suspense fallback={null}>
           <ProjectIconPickerDialog
             current={projectIcon}
+            projectName={representative.title}
             open
             onOpenChange={setIconPickerOpen}
             onSelect={(icon) => void setProjectIcon({ faviconPath: null, projectIcon: icon })}

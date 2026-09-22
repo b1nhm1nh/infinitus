@@ -5,9 +5,9 @@ import {
   ThreadId,
   TurnId,
   type OrchestrationThreadActivity,
-} from "@t3tools/contracts";
+} from "@infinitus/contracts";
 import { describe, expect, it } from "vite-plus/test";
-import { resolveWorkEntryToolPresentation } from "@t3tools/client-runtime/work-log/presentation";
+import { resolveWorkEntryToolPresentation } from "@infinitus/client-runtime/work-log/presentation";
 
 import {
   createMessageAttachmentPreviewProjector,
@@ -813,6 +813,58 @@ describe("deriveWorkLogEntries", () => {
 
     const [entry] = deriveWorkLogEntries(activities);
     expect(entry?.command).toBe("bun run lint");
+  });
+
+  it("carries a Bash call's description onto the row and forward across its lifecycle (#1231)", () => {
+    const activities: OrchestrationThreadActivity[] = [
+      makeActivity({
+        id: "bash-started",
+        createdAt: "2026-02-23T00:00:01.000Z",
+        kind: "tool.started",
+        summary: "Command run started",
+        turnId: "turn-1",
+        payload: {
+          itemType: "command_execution",
+          toolCallId: "toolu_1",
+          status: "inProgress",
+          detail: "Bash: vp test run",
+          data: { toolName: "Bash", command: "vp test run" },
+        },
+      }),
+      makeActivity({
+        id: "bash-completed",
+        createdAt: "2026-02-23T00:00:02.000Z",
+        kind: "tool.completed",
+        summary: "Command run",
+        turnId: "turn-1",
+        payload: {
+          itemType: "command_execution",
+          toolCallId: "toolu_1",
+          status: "completed",
+          detail: "Bash: vp test run",
+          data: { toolName: "Bash", command: "vp test run", description: "Run the\n web tests" },
+        },
+      }),
+      makeActivity({
+        id: "plain-command",
+        createdAt: "2026-02-23T00:00:03.000Z",
+        kind: "tool.completed",
+        summary: "Command run",
+        turnId: "turn-1",
+        payload: {
+          itemType: "command_execution",
+          toolCallId: "toolu_2",
+          detail: "Bash: ls",
+          data: { toolName: "Bash", command: "ls" },
+        },
+      }),
+    ];
+
+    const entries = deriveWorkLogEntries(activities);
+    expect(entries.map((entry) => entry.id)).toEqual(["bash-completed", "plain-command"]);
+    expect(entries[0]?.command).toBe("vp test run");
+    expect(entries[0]?.commandDescription).toBe("Run the web tests");
+    expect(entries[1]?.commandDescription).toBeUndefined();
   });
 
   it("extracts failed tool lifecycle status from item payloads", () => {

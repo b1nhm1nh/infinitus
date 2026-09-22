@@ -2,9 +2,9 @@ import {
   type ModelSelection,
   type ProviderSetupError,
   TextGenerationError,
-} from "@t3tools/contracts";
-import { sanitizeBranchFragment, sanitizeFeatureBranchName } from "@t3tools/shared/git";
-import { extractJsonObject } from "@t3tools/shared/schemaJson";
+} from "@infinitus/contracts";
+import { sanitizeBranchFragment, sanitizeFeatureBranchName } from "@infinitus/shared/git";
+import { extractJsonObject } from "@infinitus/shared/schemaJson";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
@@ -394,11 +394,15 @@ export const makeAntigravityTextGeneration = Effect.fn("makeAntigravityTextGener
         ...buildThreadTitlePrompt({
           message: input.message,
           previousTitle: input.previousTitle,
+          linkedContext: input.linkedContext,
           attachments: input.attachments,
         }),
         modelSelection: input.modelSelection,
       });
-      return { title: sanitizeThreadTitle(generated.title) };
+      return {
+        title: sanitizeThreadTitle(generated.title),
+        ...(generated.needsRefinement ? { needsRefinement: true } : {}),
+      };
     });
 
   return {

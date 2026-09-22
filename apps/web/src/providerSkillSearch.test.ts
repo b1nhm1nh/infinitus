@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import type { ServerProviderSkill } from "@t3tools/contracts";
+import type { ServerProviderSkill } from "@infinitus/contracts";
 
 import { searchProviderSkills } from "./providerSkillSearch";
 
@@ -13,6 +13,14 @@ function makeSkill(input: Partial<ServerProviderSkill> & Pick<ServerProviderSkil
 }
 
 describe("searchProviderSkills", () => {
+  it.each(["$", "€", "£", "¥", "₹", "₩", "₿", "𑿝"])(
+    "searches skills with a %s prefix",
+    (prefix) => {
+      const skill = makeSkill({ name: "review" });
+      expect(searchProviderSkills([skill], `${prefix}review`)).toEqual([skill]);
+    },
+  );
+
   it("moves exact ui matches ahead of broader ui matches", () => {
     const skills = [
       makeSkill({

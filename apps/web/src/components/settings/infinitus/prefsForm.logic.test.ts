@@ -1,4 +1,4 @@
-import type { InfinitusPref, InfinitusPrefs } from "@t3tools/contracts/infinitus";
+import type { InfinitusPref, InfinitusPrefs } from "@infinitus/contracts/infinitus";
 import { describe, expect, it } from "vite-plus/test";
 
 import {
@@ -161,19 +161,11 @@ describe("buildPrefSections controls", () => {
       buildPrefSections(
         catalog(
           [devicesSection],
-          [
-            pref({ key: "fork_tunnel_enabled", type: "bool", default: false, section: "devices" }),
-            pref({ key: "fork_server_port", type: "int", default: 3773, section: "devices" }),
-            pref({ key: "fork_tunnel_hostname", type: "string", default: "", section: "devices" }),
-          ],
+          [pref({ key: "fork_server_port", type: "int", default: 3773, section: "devices" })],
         ),
       )[0]?.rows ?? [];
 
-    expect(rows.map((row) => row.label)).toEqual([
-      "Reach this server through a Cloudflare tunnel",
-      "Server port",
-      "Tunnel hostname",
-    ]);
+    expect(rows.map((row) => row.label)).toEqual(["Server port"]);
     for (const row of rows) {
       expect(`${row.label} ${row.description ?? ""}`.toLowerCase()).not.toContain("fork");
     }

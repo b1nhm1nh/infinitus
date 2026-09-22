@@ -1,4 +1,4 @@
-import { resolveEnvironmentMachineKind } from "@t3tools/contracts";
+import { resolveEnvironmentMachineKind } from "@infinitus/contracts";
 import { LayersIcon } from "lucide-react";
 import type { ReactNode } from "react";
 
@@ -37,6 +37,7 @@ const SETTINGS_BREADCRUMB_LABELS: Readonly<Record<string, string>> = {
   ...SETTINGS_SECTION_LABELS,
   "/settings/diagnostics": "Diagnostics",
   "/settings/open-source-licenses": "Open source licenses",
+  "/settings/engines/activity": "Activity",
 };
 
 function settingsBreadcrumbLabel(pathname: string): string | null {

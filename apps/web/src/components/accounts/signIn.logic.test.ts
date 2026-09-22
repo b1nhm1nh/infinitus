@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vite-plus/test";
 
 import {
+  fleetRunsShellOAuth,
+  fleetSignInGate,
+  oauthSignInBridge,
+  redirectSignInBridge,
   signInBeginCommandArgs,
   signInBeginReply,
   signInBridge,
@@ -8,6 +12,7 @@ import {
   signInCancelCommandArgs,
   signInCodeReply,
   signInCodeSecretArgs,
+  signInPasteField,
   signInStatusCommandArgs,
   signInStatusReply,
   signInStatusText,
@@ -16,11 +21,14 @@ import {
 } from "./signIn.logic";
 
 const flow = (over: Partial<SignInFlow>): SignInFlow => ({
+  kind: "app",
   fleetKey: "swapd/claude",
   target: null,
   flowId: "f1",
   url: null,
   pasteCode: true,
+  redirectPort: null,
+  redirectListening: false,
   phase: "starting",
   error: null,
   account: null,
@@ -41,6 +49,51 @@ describe("snapshotOffersSignIn / signInBridge", () => {
       submitInfinitusSignInCode: async () => ({ ok: true }),
     });
     expect(full).not.toBeNull();
+  });
+});
+
+describe("the shell's own sign-in (#1213)", () => {
+  it("needs both shell methods, and only the loopback engine takes the path", () => {
+    expect(oauthSignInBridge(undefined)).toBeNull();
+    expect(oauthSignInBridge({ beginInfinitusOAuthSignIn: async () => ({ ok: true }) })).toBeNull();
+    expect(oauthSignInBridge({ cancelInfinitusOAuthSignIn: async () => {} })).toBeNull();
+    expect(
+      oauthSignInBridge({
+        beginInfinitusOAuthSignIn: async () => ({ ok: true }),
+        cancelInfinitusOAuthSignIn: async () => {},
+      }),
+    ).not.toBeNull();
+    expect(fleetRunsShellOAuth("swapd")).toBe(true);
+    // The proxy engine declares addOAuth too; its sign-in is not this flow.
+    expect(fleetRunsShellOAuth("proxy")).toBe(false);
+  });
+
+  it("runs whatever the fleet advertises, since it asks the app for nothing", () => {
+    const gate = (over: Parameters<typeof fleetSignInGate>[0]) => fleetSignInGate(over);
+    // The bug this feature is for: the fleet advertises no `addOAuth`, so both
+    // of the app's paths are shut and the page drew no button at all.
+    const shut = { shellOAuth: false, offers: true, inApp: true, offersAdd: true, canAdd: false };
+    expect(gate(shut)).toEqual({ inApp: false, canAdd: false });
+    expect(gate({ ...shut, shellOAuth: true })).toEqual({ inApp: true, canAdd: false });
+    // With the capability the app's own flow runs, and the shell's still wins.
+    expect(gate({ ...shut, canAdd: true })).toEqual({ inApp: true, canAdd: false });
+    // No `signin-begin` in the manifest: the hand-off to the Mac (#672).
+    expect(gate({ ...shut, offers: false, canAdd: true })).toEqual({
+      inApp: false,
+      canAdd: true,
+    });
+    expect(gate({ ...shut, offers: false, canAdd: true, shellOAuth: true })).toEqual({
+      inApp: true,
+      canAdd: false,
+    });
+  });
+
+  it("sends the user to the browser, since there is no page link and no code", () => {
+    const shell = flow({ kind: "shell", url: null, pasteCode: false, phase: "waitingForToken" });
+    expect(signInStatusText(shell)).toBe("Sign in in the private window that opened.");
+    expect(signInStatusText({ ...shell, target: "two@example.com" })).toBe(
+      "Sign in as two@example.com in the private window that opened.",
+    );
   });
 });
 
@@ -75,13 +128,73 @@ describe("command args and replies", () => {
       phase: "waitingForCode",
       error: null,
       account: null,
+      redirectPort: null,
     });
     expect(
       signInStatusReply({ phase: "done", account: "two@example.com", pasteCode: true }),
-    ).toEqual({ phase: "done", error: null, account: "two@example.com" });
+    ).toEqual({ phase: "done", error: null, account: "two@example.com", redirectPort: null });
     expect(signInStatusReply({ phase: "failed", error: "cancelled" })?.error).toBe("cancelled");
     expect(signInStatusReply({ phase: "sideways" })).toBeNull();
     expect(signInStatusReply("nope")).toBeNull();
+  });
+
+  it("carries the loopback port of an engine that takes the redirect itself", () => {
+    expect(
+      signInBeginReply({
+        flowId: "f1",
+        url: "https://x",
+        pasteCode: false,
+        redirectPort: 54545,
+        label: "Add account",
+      })?.redirectPort,
+    ).toBe(54545);
+    expect(
+      signInStatusReply({ phase: "waitingForToken", pasteCode: false, redirectPort: 54545 }),
+    ).toEqual({ phase: "waitingForToken", error: null, account: null, redirectPort: 54545 });
+  });
+});
+
+describe("signInPasteField", () => {
+  it("asks for the code while the CLI waits for one (#747)", () => {
+    expect(signInPasteField(null)).toBeNull();
+    expect(signInPasteField(flow({ phase: "waitingForCode", pasteCode: true }))).toBe("code");
+    expect(signInPasteField(flow({ phase: "waitingForToken", pasteCode: true }))).toBeNull();
+  });
+
+  it("asks for the address only when this device opened the page of a loopback sign-in", () => {
+    const remote = flow({
+      phase: "waitingForToken",
+      pasteCode: false,
+      redirectPort: 54545,
+      url: "https://claude.ai/oauth",
+    });
+    expect(signInPasteField(remote)).toBe("address");
+    // The shell's window is on the Mac itself: the redirect reaches the listener.
+    expect(signInPasteField({ ...remote, url: null })).toBeNull();
+    // An older build never says, and a paste-code flow has no port.
+    expect(signInPasteField({ ...remote, redirectPort: null })).toBeNull();
+    expect(signInPasteField({ ...remote, phase: "registering" })).toBeNull();
+    expect(signInPasteField({ ...remote, phase: "done" })).toBeNull();
+    // The desktop shell stands in for the listener: nothing to paste, and
+    // the status reads as a plain sign-in.
+    const listening = { ...remote, redirectListening: true };
+    expect(signInPasteField(listening)).toBeNull();
+    expect(signInStatusText(listening)).toBe("Sign in on the sign-in page.");
+  });
+
+  it("finds the shell's stand-in only when both of its methods are there", () => {
+    expect(redirectSignInBridge(undefined)).toBeNull();
+    expect(
+      redirectSignInBridge({ listenInfinitusSignInRedirect: async () => ({ ok: true }) }),
+    ).toBeNull();
+    const listen = async () => ({ ok: true });
+    const stop = async () => {};
+    expect(
+      redirectSignInBridge({
+        listenInfinitusSignInRedirect: listen,
+        stopInfinitusSignInRedirect: stop,
+      }),
+    ).toEqual({ listen, stop });
   });
 });
 
@@ -124,11 +237,14 @@ describe("signInStatusText / signInBusy", () => {
 
   it("says where to sign in: the shell's window, or the page this device opened", () => {
     const flow = {
+      kind: "app" as const,
       fleetKey: "claude",
       target: null,
       flowId: "f1",
       url: null,
       pasteCode: true,
+      redirectPort: null,
+      redirectListening: false,
       phase: "waitingForCode" as const,
       error: null,
       account: null,
@@ -149,5 +265,18 @@ describe("signInStatusText / signInBusy", () => {
         phase: "waitingForToken",
       }),
     ).toBe("Sign in on the sign-in page.");
+    // A loopback sign-in shown from a link on this device: the redirect goes
+    // to this device's localhost, and its address is what the Mac needs.
+    expect(
+      signInStatusText({
+        ...flow,
+        url: "https://claude.ai/oauth",
+        pasteCode: false,
+        redirectPort: 54545,
+        phase: "waitingForToken",
+      }),
+    ).toBe(
+      "Sign in on the sign-in page. It ends on a page that will not load: copy that page's address and paste it here.",
+    );
   });
 });

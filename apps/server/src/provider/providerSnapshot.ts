@@ -9,13 +9,13 @@ import type {
   ServerProviderModel,
   ServerProviderState,
   ServerProviderUsageLimits,
-} from "@t3tools/contracts";
+} from "@infinitus/contracts";
 import * as Effect from "effect/Effect";
 import * as PlatformError from "effect/PlatformError";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
-import { readCustomModelEntries } from "@t3tools/shared/model";
+import { readCustomModelEntries } from "@infinitus/shared/model";
 import { isWindowsCommandNotFound } from "../processRunner.ts";
 import { createProviderVersionAdvisory } from "./providerMaintenance.ts";
 import { collectUint8StreamText } from "../stream/collectUint8StreamText.ts";
@@ -107,8 +107,14 @@ export const spawnAndCollect = (binaryPath: string, command: ChildProcess.Comman
     return result;
   }).pipe(Effect.scoped);
 
+/**
+ * Return the first semantic version found in CLI output, or null. Accepts a
+ * leading "v" (for example `opencode v2.0.3`).
+ */
 export function parseGenericCliVersion(output: string): string | null {
-  const match = output.match(/\b(\d+\.\d+\.\d+)\b/);
+  // "opencode v2.0.3"-style output: the optional "v" has to be consumed first,
+  // since "v2" itself contains no word boundary.
+  const match = output.match(/\bv?(\d+\.\d+\.\d+)\b/);
   return match?.[1] ?? null;
 }
 

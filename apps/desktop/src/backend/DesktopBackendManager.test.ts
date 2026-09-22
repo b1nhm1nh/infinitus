@@ -2,7 +2,7 @@ import {
   DesktopBackendBootstrap,
   type DesktopBackendBootstrap as DesktopBackendBootstrapValue,
   DesktopTelemetryControlMessage,
-} from "@t3tools/contracts";
+} from "@infinitus/contracts";
 import { assert, describe, it } from "@effect/vitest";
 import * as Deferred from "effect/Deferred";
 import * as Duration from "effect/Duration";
@@ -165,9 +165,7 @@ function makeTestInstance(input: MakeInstanceInput) {
       latest: Effect.succeed(Option.none()),
       changes: Stream.empty,
       encoded: input.desktopTelemetryStream ?? Stream.empty,
-      handleControl: () => Effect.void,
-      handleControlForSource: (_sourceId, message) =>
-        (input.desktopTelemetryPublisher?.handleControl ?? (() => Effect.void))(message),
+      handleControlForSource: () => Effect.void,
       removeControlSource: () => Effect.void,
       publishUpdateReport: () => Effect.void,
       updateRequests: Stream.empty,
@@ -596,7 +594,7 @@ describe("DesktopBackendManager", () => {
         const instance = yield* makeTestInstance({
           spawnerLayer,
           desktopTelemetryPublisher: {
-            handleControl: (message) =>
+            handleControlForSource: (_sourceId, message) =>
               message.type === "setDiagnosticsDemand"
                 ? Deferred.succeed(handled, message.enabled).pipe(Effect.asVoid)
                 : Effect.void,

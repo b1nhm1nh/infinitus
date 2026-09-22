@@ -1,7 +1,7 @@
 import * as NodeCrypto from "node:crypto";
 
-import { EnvironmentId, ThreadId } from "@t3tools/contracts";
-import type { RelayAgentActivityAggregateState } from "@t3tools/contracts/relay";
+import { EnvironmentId, ThreadId } from "@infinitus/contracts";
+import type { RelayAgentActivityAggregateState } from "@infinitus/contracts/relay";
 import { describe, expect, it } from "@effect/vitest";
 import * as DateTime from "effect/DateTime";
 import * as Deferred from "effect/Deferred";
@@ -191,6 +191,28 @@ describe("ApnsClient", () => {
         environmentId: "env",
         threadId: "thread",
         deepLink: "/threads/env/thread",
+      });
+    }).pipe(Effect.provide(TestLayer)),
+  );
+
+  // Fork (#1375): an Infinitus account alert names no thread.
+  it.effect("omits the thread key from a thread-less alert payload", () =>
+    Effect.gen(function* () {
+      const apns = yield* ApnsClient.ApnsClient;
+      const request = apns.makePushNotificationRequest({
+        token: "push-token",
+        notification: {
+          title: "Infinitus",
+          body: "switched to account 2 (work)",
+          environmentId: "env",
+          deepLink: "/settings/accounts",
+        },
+      });
+
+      expect(request.payload).not.toHaveProperty("threadId");
+      expect(request.payload).toMatchObject({
+        environmentId: "env",
+        deepLink: "/settings/accounts",
       });
     }).pipe(Effect.provide(TestLayer)),
   );

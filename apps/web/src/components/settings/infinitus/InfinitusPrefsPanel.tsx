@@ -6,8 +6,8 @@
  *
  * @module InfinitusPrefsPanel
  */
-import type { EnvironmentId } from "@t3tools/contracts";
-import type { InfinitusPref, InfinitusSnapshot } from "@t3tools/contracts/infinitus";
+import type { EnvironmentId } from "@infinitus/contracts";
+import type { InfinitusPref, InfinitusSnapshot } from "@infinitus/contracts/infinitus";
 import { useCallback, useEffect, useMemo, useReducer, useState, type ReactNode } from "react";
 
 import { usePrimaryEnvironment, type EnvironmentPresentation } from "~/state/environments";
@@ -58,22 +58,16 @@ export function useInfinitusEnvironment(targetEnvironment?: EnvironmentPresentat
   readonly environmentId: EnvironmentId | null;
   readonly capability: boolean | undefined;
   readonly snapshot: InfinitusSnapshot | null;
-  /** The server's own LAN base URLs (`lanHttpBaseUrls`, #651); empty when
-      it reports none or predates the field. */
-  readonly serverLanOrigins: ReadonlyArray<string>;
 } {
   const primary = usePrimaryEnvironment();
   const environment = targetEnvironment === undefined ? primary : targetEnvironment;
   const environmentId = environment?.environmentId ?? null;
   const capability = environment?.serverConfig?.environment.capabilities.infinitus;
-  const serverLanOrigins = environment?.serverConfig?.environment.lanHttpBaseUrls ?? EMPTY_ORIGINS;
   const query = useEnvironmentQuery(
     environmentId === null ? null : infinitusEnvironment.snapshot({ environmentId, input: {} }),
   );
-  return { environmentId, capability, snapshot: query.data, serverLanOrigins };
+  return { environmentId, capability, snapshot: query.data };
 }
-
-const EMPTY_ORIGINS: ReadonlyArray<string> = [];
 
 const NO_GROUPING: Intl.NumberFormatOptions = { useGrouping: false };
 

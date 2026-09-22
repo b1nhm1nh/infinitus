@@ -6,7 +6,7 @@
  *
  * @module ProjectionStateRepository
  */
-import { IsoDateTime, NonNegativeInt } from "@t3tools/contracts";
+import { IsoDateTime, NonNegativeInt } from "@infinitus/contracts";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import * as Context from "effect/Context";
@@ -53,13 +53,6 @@ export interface ProjectionStateRepositoryShape {
    * List all projector cursor rows.
    */
   readonly listAll: () => Effect.Effect<ReadonlyArray<ProjectionState>, ProjectionRepositoryError>;
-
-  /**
-   * Read the minimum applied sequence across all projectors.
-   *
-   * Returns `null` when no projector state rows exist.
-   */
-  readonly minLastAppliedSequence: () => Effect.Effect<number | null, ProjectionRepositoryError>;
 }
 
 /**

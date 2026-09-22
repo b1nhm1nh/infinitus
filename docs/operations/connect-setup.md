@@ -1,12 +1,12 @@
-# T3 Connect setup
+# Infinitus Connect setup
 
-Deployment and client configuration for T3 Connect. The [architecture note](../internals/t3-connect.md)
+Deployment and client configuration for Infinitus Connect. The [architecture note](../internals/t3-connect.md)
 explains the trust boundaries; the [relay README](../../infra/relay/README.md#deployment) owns relay
 provisioning instructions.
 
 ## Public application configuration
 
-T3 Connect is disabled in a fresh clone. To build against the production deployment, copy the
+Infinitus Connect is disabled in a fresh clone. To build against the production deployment, copy the
 repository-root example:
 
 ```sh
@@ -32,30 +32,32 @@ Bundled servers also accept runtime overrides for operator-managed deployments.
 
 Copy `infra/relay/.env.example` to `infra/relay/.env` for relay deployment settings.
 Deploy `prod` before personal stages because it owns the retained database that their branches
-depend on. The deploy wrapper writes the resulting relay URL back to the root `.env`.
+depend on. The stack's `PublishClientConfig` action writes the resulting relay URL back to the root `.env`.
 
 ## CLI OAuth application
 
 In Clerk's OAuth applications settings:
 
 1. Create a public OAuth application for the T3 CLI, using authorization-code exchange with PKCE.
-2. Allow both redirect URIs: `http://127.0.0.1:34338/callback` and
-   `https://app.t3.codes/connect/callback`. A custom `T3CODE_HOSTED_APP_URL` needs its own
-   `/connect/callback` URL. Headless and SSH authorization depend on the hosted redirect.
-3. Enable the `openid`, `profile`, and `email` scopes.
-4. Set `T3CODE_CLERK_CLI_OAUTH_CLIENT_ID` to the generated public client ID in local and release
+2. Allow the redirect URI `http://127.0.0.1:34338/callback`.
+3. Enable the `openid`, `profile`, `email`, and `offline_access` scopes.
+4. Enable **Device authorization grant** on the application. Headless and SSH authorization use
+   it, and Clerk only advertises the device endpoint once it is on. The feature is in beta and
+   Clerk enables it per account on request.
+5. Set `T3CODE_CLERK_CLI_OAUTH_CLIENT_ID` to the generated public client ID in local and release
    build environments.
 
 ## JWT template
 
-Create a Clerk JWT template named `t3-relay` with claims:
+Create a Clerk JWT template named `infinitus-relay` with claims:
 
 ```json
-{ "aud": "t3-code-relay" }
+{ "aud": "infinitus-relay" }
 ```
 
-Set `T3CODE_CLERK_JWT_TEMPLATE=t3-relay` for clients and
-`CLERK_JWT_AUDIENCE=t3-code-relay` for the relay. The production relay deployment environment
+Set `T3CODE_CLERK_JWT_TEMPLATE=infinitus-relay` for clients and
+`CLERK_JWT_AUDIENCE=infinitus-relay` for the relay (a comma-separated list keeps
+an earlier template's tokens valid while clients move over). The production relay deployment environment
 also defines `CLERK_JWT_TEMPLATE`. The audience stays the same across relay stages; the relay
 URL selects the deployment.
 

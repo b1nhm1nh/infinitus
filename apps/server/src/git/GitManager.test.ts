@@ -21,7 +21,7 @@ import type {
   GitActionProgressEvent,
   GitPreparePullRequestThreadInput,
   ThreadId,
-} from "@t3tools/contracts";
+} from "@infinitus/contracts";
 
 import {
   DEFAULT_SERVER_SETTINGS,
@@ -29,7 +29,7 @@ import {
   ProviderDriverKind,
   ProviderInstanceId,
   TextGenerationError,
-} from "@t3tools/contracts";
+} from "@infinitus/contracts";
 import * as GitHubCli from "../sourceControl/GitHubCli.ts";
 import * as GitLabCli from "../sourceControl/GitLabCli.ts";
 import * as TextGeneration from "../textGeneration/TextGeneration.ts";
@@ -677,6 +677,7 @@ function makeManager(input?: {
     ).pipe(
       Effect.map((provider) =>
         SourceControlProviderRegistry.SourceControlProviderRegistry.of({
+          resolveLink: (input) => provider.resolveLink?.(input),
           get: () => Effect.succeed(provider),
           resolveHandle: () => Effect.succeed({ provider, context: null }),
           resolve: () => Effect.succeed(provider),

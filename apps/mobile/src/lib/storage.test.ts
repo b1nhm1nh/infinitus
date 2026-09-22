@@ -1,4 +1,4 @@
-import { EnvironmentId } from "@t3tools/contracts";
+import { EnvironmentId } from "@infinitus/contracts";
 import { beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
 const mocks = vi.hoisted(() => {
@@ -204,21 +204,15 @@ describe("mobile connection storage", () => {
     await expect(loadPreferences()).resolves.toEqual({ ...themes, lightThemeId: "t3-chat" });
   });
 
-  it("persists the Material You layout independently of the selected theme", async () => {
-    await savePreferencesPatch({
-      lightThemeId: "material-you",
-      materialYouStyleLayoutEnabled: true,
-    });
-    await savePreferencesPatch({ lightThemeId: "t3-chat" });
-    await expect(loadPreferences()).resolves.toEqual({
-      lightThemeId: "t3-chat",
-      materialYouStyleLayoutEnabled: true,
-    });
-    await savePreferencesPatch({ materialYouStyleLayoutEnabled: false });
-    await expect(loadPreferences()).resolves.toEqual({
-      lightThemeId: "t3-chat",
-      materialYouStyleLayoutEnabled: false,
-    });
+  it.each([true, false])("drops the removed Android layout preference (%s)", async (enabled) => {
+    mocks.setPreferencesJson(
+      JSON.stringify({
+        materialYouStyleLayoutEnabled: enabled,
+        lightThemeId: "t3-chat",
+      }),
+      10,
+    );
+    await expect(loadPreferences()).resolves.toEqual({ lightThemeId: "t3-chat" });
   });
 
   it("drops the removed theme transition preference", async () => {

@@ -8,9 +8,9 @@ import {
   WsRpcGroup,
   type OrchestrationProjectShell,
   type OrchestrationThreadShell,
-} from "@t3tools/contracts";
-import type { RelayAgentActivityState } from "@t3tools/contracts/relay";
-import { projectThreadAwareness } from "@t3tools/shared/agentAwareness";
+} from "@infinitus/contracts";
+import type { RelayAgentActivityState } from "@infinitus/contracts/relay";
+import { projectThreadAwareness } from "@infinitus/shared/agentAwareness";
 import * as Cause from "effect/Cause";
 import * as Option from "effect/Option";
 import * as Clock from "effect/Clock";
@@ -88,8 +88,9 @@ const main = Effect.gen(function* () {
   );
   const socketConstructor = Layer.succeed(
     Socket.WebSocketConstructor,
+    // Socket.makeWebSocket only ever passes its `protocols` option here.
     (url, protocols) =>
-      new NodeSocket.NodeWS.WebSocket(url, protocols, {
+      new NodeSocket.NodeWS.WebSocket(url, protocols as string | string[] | undefined, {
         headers: { authorization: `Bearer ${connection.bearerToken}` },
       }) as unknown as globalThis.WebSocket,
   );

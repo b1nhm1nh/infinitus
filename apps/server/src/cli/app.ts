@@ -9,14 +9,14 @@ import {
   DesktopAppActivationResponse,
   type DesktopAppActivationPlatform,
   type DesktopAppActivationRequest,
-} from "@t3tools/contracts";
-import { resolveDesktopAppControlAddress } from "@t3tools/shared/desktopAppControl";
-import { PRODUCT_NAME } from "@t3tools/shared/productName";
+} from "@infinitus/contracts";
+import { resolveDesktopAppControlAddress } from "@infinitus/shared/desktopAppControl";
+import { PRODUCT_NAME } from "@infinitus/shared/productName";
 import {
   HostProcessPlatform,
   HostProcessUserId,
   HostProcessWorkingDirectory,
-} from "@t3tools/shared/hostProcess";
+} from "@infinitus/shared/hostProcess";
 import * as Config from "effect/Config";
 import * as Console from "effect/Console";
 import * as Effect from "effect/Effect";
@@ -179,9 +179,9 @@ function sendDesktopAppActivationRequest(input: {
 }
 
 const appEnvironment = Config.all({
-  t3Home: Config.string("T3CODE_HOME").pipe(Config.option, Config.map(Option.getOrUndefined)),
-  sshConnection: Config.string("SSH_CONNECTION").pipe(Config.option),
-  sshTty: Config.string("SSH_TTY").pipe(Config.option),
+  t3Home: Config.String("T3CODE_HOME").pipe(Config.option, Config.map(Option.getOrUndefined)),
+  sshConnection: Config.String("SSH_CONNECTION").pipe(Config.option),
+  sshTty: Config.String("SSH_TTY").pipe(Config.option),
 });
 
 const runAppCommand = Effect.fn("cli.app")(function* (flags: {
@@ -252,7 +252,7 @@ const runAppCommand = Effect.fn("cli.app")(function* (flags: {
 
 export const appCommand = Command.make("app", {
   baseDir: baseDirFlag,
-  workspaceRoot: Argument.string("path").pipe(
+  workspaceRoot: Argument.String("path").pipe(
     Argument.withDescription("Project directory. Default: current directory."),
     Argument.optional,
   ),

@@ -17,9 +17,10 @@ import {
   type EditorId,
   type FileManagerRevealKind,
   type LaunchEditorInput,
-} from "@t3tools/contracts";
-import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
-import { isCommandAvailable, resolveSpawnCommand } from "@t3tools/shared/shell";
+} from "@infinitus/contracts";
+import { resolveEditorCommand } from "@infinitus/shared/editor";
+import { HostProcessPlatform } from "@infinitus/shared/hostProcess";
+import { isCommandAvailable, resolveSpawnCommand } from "@infinitus/shared/shell";
 import * as Clock from "effect/Clock";
 import * as Config from "effect/Config";
 import * as Context from "effect/Context";
@@ -45,7 +46,7 @@ export {
   ExternalLauncherEditorSpawnError,
   ExternalLauncherUnknownEditorError,
   ExternalLauncherUnsupportedEditorError,
-} from "@t3tools/contracts";
+} from "@infinitus/contracts";
 export type { LaunchEditorInput };
 interface EditorLaunch {
   readonly editor: EditorId;
@@ -93,22 +94,28 @@ const compactEnv = (input: Record<string, Option.Option<string>>): NodeJS.Proces
   );
 
 const BrowserLaunchEnvConfig = Config.all({
-  SYSTEMROOT: Config.string("SYSTEMROOT").pipe(Config.option),
-  windir: Config.string("windir").pipe(Config.option),
-  WSL_DISTRO_NAME: Config.string("WSL_DISTRO_NAME").pipe(Config.option),
-  WSL_INTEROP: Config.string("WSL_INTEROP").pipe(Config.option),
-  SSH_CONNECTION: Config.string("SSH_CONNECTION").pipe(Config.option),
-  SSH_TTY: Config.string("SSH_TTY").pipe(Config.option),
-  container: Config.string("container").pipe(Config.option),
-  DISPLAY: Config.string("DISPLAY").pipe(Config.option),
-  WAYLAND_DISPLAY: Config.string("WAYLAND_DISPLAY").pipe(Config.option),
+  SYSTEMROOT: Config.String("SYSTEMROOT").pipe(Config.option),
+  windir: Config.String("windir").pipe(Config.option),
+  WSL_DISTRO_NAME: Config.String("WSL_DISTRO_NAME").pipe(Config.option),
+  WSL_INTEROP: Config.String("WSL_INTEROP").pipe(Config.option),
+  SSH_CONNECTION: Config.String("SSH_CONNECTION").pipe(Config.option),
+  SSH_TTY: Config.String("SSH_TTY").pipe(Config.option),
+  container: Config.String("container").pipe(Config.option),
+  DISPLAY: Config.String("DISPLAY").pipe(Config.option),
+  WAYLAND_DISPLAY: Config.String("WAYLAND_DISPLAY").pipe(Config.option),
 }).pipe(Config.map(compactEnv));
 
 const CommandLookupEnvConfig = Config.all({
-  PATH: Config.string("PATH").pipe(Config.option),
-  Path: Config.string("Path").pipe(Config.option),
-  path: Config.string("path").pipe(Config.option),
-  PATHEXT: Config.string("PATHEXT").pipe(Config.option),
+  PATH: Config.String("PATH").pipe(Config.option),
+  Path: Config.String("Path").pipe(Config.option),
+  path: Config.String("path").pipe(Config.option),
+  PATHEXT: Config.String("PATHEXT").pipe(Config.option),
+  HOME: Config.String("HOME").pipe(Config.option),
+  LOCALAPPDATA: Config.String("LOCALAPPDATA").pipe(Config.option),
+  ProgramFiles: Config.String("ProgramFiles").pipe(Config.option),
+  ProgramW6432: Config.String("ProgramW6432").pipe(Config.option),
+  XDG_DATA_HOME: Config.String("XDG_DATA_HOME").pipe(Config.option),
+  "ProgramFiles(x86)": Config.String("ProgramFiles(x86)").pipe(Config.option),
 }).pipe(Config.map(compactEnv));
 
 const readBrowserLaunchEnv = BrowserLaunchEnvConfig.pipe(Effect.orElseSucceed(() => ({})));
@@ -153,26 +160,6 @@ function resolveCommandEditorArgs(
       });
   }
 }
-
-function resolveEditorArgs(
-  editor: (typeof EDITORS)[number],
-  target: string,
-): ReadonlyArray<string> {
-  const baseArgs = "baseArgs" in editor ? editor.baseArgs : [];
-  return [...baseArgs, ...resolveCommandEditorArgs(editor, target)];
-}
-
-const resolveAvailableCommand = Effect.fn("externalLauncher.resolveAvailableCommand")(function* (
-  commands: ReadonlyArray<string>,
-  env: NodeJS.ProcessEnv,
-): Effect.fn.Return<Option.Option<string>, never, FileSystem.FileSystem | Path.Path> {
-  for (const command of commands) {
-    if (yield* isCommandAvailable(command, { env })) {
-      return Option.some(command);
-    }
-  }
-  return Option.none();
-});
 
 function encodeUtf16LeBase64(input: string): string {
   const bytes = new Uint8Array(input.length * 2);
@@ -435,7 +422,7 @@ const buildAvailableEditors = Effect.fn("externalLauncher.buildAvailableEditors"
       continue;
     }
 
-    const command = yield* resolveAvailableCommand(editor.commands, env);
+    const command = yield* resolveEditorCommand(editor, env);
     if (Option.isSome(command)) {
       available.push(editor.id);
     }
@@ -469,7 +456,7 @@ const resolveFileManagerRevealKind = Effect.fn("externalLauncher.resolveFileMana
 // Editor discovery walks PATH for every known editor and runs for every
 // client connect (the server config embeds the available editors). Memoize
 // the discovered set for a bounded window so repeat connects skip even the
-// per-command cache lookups in @t3tools/shared/shell.
+// per-command cache lookups in @infinitus/shared/shell.
 //
 // This deliberately does not use `Effect.cachedWithTTL`: that memoizes the
 // first caller's Exit whatever it is, including an interrupt. Callers run this
@@ -479,7 +466,7 @@ const resolveFileManagerRevealKind = Effect.fn("externalLauncher.resolveFileMana
 // permanently. Storing only on success means an interrupted scan leaves the
 // cache untouched and the next connect simply rescans.
 // Expiry uses the monotonic clock (Clock.currentTimeNanos), matching the
-// command-resolution cache in @t3tools/shared/shell, so a backward wall-clock
+// command-resolution cache in @infinitus/shared/shell, so a backward wall-clock
 // adjustment cannot keep an expired entry alive.
 const EDITOR_DISCOVERY_CACHE_TTL_NANOS = 60_000_000_000n;
 
@@ -538,15 +525,18 @@ const resolveEditorLaunch = Effect.fn("resolveEditorLaunch")(function* (
   }
 
   if (editorDef.commands) {
-    const command = Option.getOrElse(
-      yield* resolveAvailableCommand(editorDef.commands, env),
-      () => editorDef.commands[0],
+    const { command, baseArgs } = Option.getOrElse(
+      yield* resolveEditorCommand(editorDef, env),
+      () => ({
+        command: editorDef.commands[0],
+        baseArgs: "baseArgs" in editorDef ? editorDef.baseArgs : [],
+      }),
     );
     return {
       editor: editorDef.id,
       target: input.cwd,
       command,
-      args: resolveEditorArgs(editorDef, input.cwd),
+      args: [...baseArgs, ...resolveCommandEditorArgs(editorDef, input.cwd)],
     };
   }
 

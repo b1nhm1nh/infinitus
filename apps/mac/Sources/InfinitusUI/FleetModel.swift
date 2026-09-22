@@ -51,9 +51,8 @@ public protocol FleetModel: ObservableObject {
     /// Multi-engine (#8): the section header when several fleets stack;
     /// nil on a host that shows one fleet.
     var fleetLabel: FleetLabel? { get }
-    /// Update chips: a newer build on disk / a newer release upstream.
+    /// Update chip: a newer build on disk.
     var appUpdatePending: Bool { get }
-    var appUpdateVersion: String? { get }
     /// #7: the reset battle plan the planner proposes right now; nil when
     /// nothing is worth planning. The card rides the error slot.
     var battlePlan: WindowPlanner.Plan? { get }
@@ -104,12 +103,14 @@ public protocol FleetModel: ObservableObject {
     /// card hides the button.
     func addAccount()
     var canAddAccount: Bool { get }
-    /// A row's context menu: star/unstar (the engine's pick-first knob)
-    /// and pause/resume (hold out of rotation) — the Settings › Accounts
-    /// buttons, reachable from the popup. Mac-only; a mirroring host
-    /// leaves them no-ops.
+    /// A row's context menu: star/unstar (the engine's pick-first knob),
+    /// pause/resume (hold out of rotation) and keep-warm (the daemon
+    /// restarts the 5h window whenever it goes cold) — the Settings ›
+    /// Accounts buttons, reachable from the popup. Mac-only; a mirroring
+    /// host leaves them no-ops.
     func setPreferred(_ number: Int, _ on: Bool)
     func setRotation(_ number: Int, enabled: Bool)
+    func setAutoIgnite(_ number: Int, _ on: Bool)
 }
 
 // `FleetLabel` moved to InfinitusCore (FleetPanel.swift) so the Windows
@@ -131,7 +132,6 @@ public extension FleetModel {
     func openSettings() {}
     var engineBadge: EngineBadge? { nil }
     var appUpdatePending: Bool { false }
-    var appUpdateVersion: String? { nil }
     var battlePlan: WindowPlanner.Plan? { nil }
     var igniting: Int? { nil }
     var igniteResult: IgniteResult? { nil }
@@ -148,6 +148,7 @@ public extension FleetModel {
     var canAddAccount: Bool { false }
     func setPreferred(_ number: Int, _ on: Bool) {}
     func setRotation(_ number: Int, enabled: Bool) {}
+    func setAutoIgnite(_ number: Int, _ on: Bool) {}
 }
 
 /// The cash column's source — the estimated-spend report the mac app

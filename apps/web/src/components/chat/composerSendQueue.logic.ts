@@ -7,9 +7,9 @@ import {
   type ChatFileAttachment,
   type OrchestrationQueuedTurn,
   type UploadChatImageAttachment,
-} from "@t3tools/contracts";
-import { pinOrderKeyBetween } from "@t3tools/client-runtime/state/thread-sort";
-import { replaceComposerContextReferences } from "@t3tools/shared/composerContextReferences";
+} from "@infinitus/contracts";
+import { pinOrderKeyBetween } from "@infinitus/client-runtime/state/thread-sort";
+import { replaceComposerContextReferences } from "@infinitus/shared/composerContextReferences";
 
 import { formatInlineContextReference } from "../../lib/composerContextReferences";
 
@@ -62,6 +62,23 @@ export function restoredQueuedTurnText(
         })
       : reference.source;
   });
+}
+
+/** The row's moment when it is not the queue's own (#1318): a steer row
+    goes at the running turn's next finished tool call. */
+export function queuedTurnTiming(row: Pick<OrchestrationQueuedTurn, "sendAt">): string | null {
+  return row.sendAt === "tool-boundary" ? "at next step" : null;
+}
+
+/** The list's header: what the rows are waiting on. */
+export function queuedTurnsHeader(
+  rows: ReadonlyArray<Pick<OrchestrationQueuedTurn, "sendAt">>,
+  isRunning: boolean,
+): string {
+  if (!isRunning) return "Sending when the thread is idle";
+  return rows.every((row) => row.sendAt === "tool-boundary")
+    ? "Sends at this turn's next step"
+    : "Sends when this turn finishes";
 }
 
 /** One line of the row for the list; attachments alone read as "N attachments". */

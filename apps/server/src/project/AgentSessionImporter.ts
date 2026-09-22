@@ -16,8 +16,8 @@ import {
   type AgentSessionImportInput,
   type AgentSessionImportResult,
   type OrchestrationThread,
-} from "@t3tools/contracts";
-import { normalizeProjectPathForComparison } from "@t3tools/shared/path";
+} from "@infinitus/contracts";
+import { normalizeProjectPathForComparison } from "@infinitus/shared/path";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
@@ -230,10 +230,15 @@ export const importRecentAgentThreads = Effect.fn("importRecentAgentThreads")(fu
               providerInstanceId: thread.providerInstanceId,
               status: "stopped",
               runtimeMode: DEFAULT_RUNTIME_MODE,
+              // Each adapter parses only its own cursor shape; omp's is
+              // `parseOmpResume` in `provider/Layers/OmpAdapter.ts`, Pi's
+              // `PiResumeCursor` in `PiAdapter.ts`.
               resumeCursor:
                 thread.source === "codex"
                   ? { threadId: thread.providerSessionId }
-                  : { threadId, resume: thread.providerSessionId },
+                  : thread.source === "omp" || thread.source === "pi"
+                    ? { schemaVersion: 1, sessionId: thread.providerSessionId }
+                    : { threadId, resume: thread.providerSessionId },
               runtimePayload: { cwd: workspaceRoot },
             },
             { onConflict: "ignore" },

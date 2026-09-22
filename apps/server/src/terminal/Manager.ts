@@ -6,6 +6,7 @@
  *
  * @module TerminalManager
  */
+import { withWorkspaceLease } from "../workspace/workspaceLease.ts";
 import {
   DEFAULT_TERMINAL_ID,
   TerminalCwdError,
@@ -37,10 +38,10 @@ import {
   ClaudeSettings,
   CodexSettings,
   ProviderInstanceId,
-} from "@t3tools/contracts";
-import { makeKeyedCoalescingWorker } from "@t3tools/shared/KeyedCoalescingWorker";
-import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
-import { getTerminalLabel } from "@t3tools/shared/terminalLabels";
+} from "@infinitus/contracts";
+import { makeKeyedCoalescingWorker } from "@infinitus/shared/KeyedCoalescingWorker";
+import { HostProcessPlatform } from "@infinitus/shared/hostProcess";
+import { getTerminalLabel } from "@infinitus/shared/terminalLabels";
 import * as DateTime from "effect/DateTime";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -2525,7 +2526,9 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
     }).pipe(Effect.ignoreCause({ log: true })),
   );
 
-  const openLocked = Effect.fn("terminal.openLocked")(function* (input: TerminalOpenInput) {
+  const openWithWorkspaceLease = Effect.fn("terminal.openLocked")(function* (
+    input: TerminalOpenInput,
+  ) {
     const terminalId = input.terminalId;
     yield* assertValidCwd(input.cwd);
 
@@ -2647,6 +2650,12 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
 
     return snapshot(liveSession);
   });
+
+  const openLocked = (input: TerminalOpenInput) =>
+    withWorkspaceLease(
+      path.resolve(input.worktreePath ?? input.cwd),
+      openWithWorkspaceLease(input),
+    );
 
   const open: TerminalManager["Service"]["open"] = (input) =>
     withThreadLock(
@@ -3019,7 +3028,14 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
   const restart: TerminalManager["Service"]["restart"] = (input) =>
     withThreadLock(
       input.threadId,
-      resolveLaunchInputEnvironment(input).pipe(Effect.flatMap(restartResolved)),
+      resolveLaunchInputEnvironment(input).pipe(
+        Effect.flatMap((resolved) =>
+          withWorkspaceLease(
+            path.resolve(resolved.worktreePath ?? resolved.cwd),
+            restartResolved(resolved),
+          ),
+        ),
+      ),
     );
 
   const close: TerminalManager["Service"]["close"] = (input) =>

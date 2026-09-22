@@ -1,93 +1,15 @@
-import type {
-  VcsCreateRefInput,
-  VcsCreateRefResult,
-  VcsCreateWorktreeInput,
-  VcsCreateWorktreeResult,
-  VcsInitInput,
-  VcsListRefsInput,
-  VcsListRefsResult,
-  VcsPullInput,
-  VcsPullResult,
-  VcsRemoveWorktreeInput,
-  VcsRemoveWorktreeResult,
-  VcsSwitchRefInput,
-  VcsSwitchRefResult,
-  GitPreparePullRequestThreadInput,
-  GitPreparePullRequestThreadResult,
-  GitPullRequestRefInput,
-  GitResolvePullRequestResult,
-  VcsStatusInput,
-  VcsStatusResult,
-} from "./git.ts";
-import type {
-  ReviewDiffFileContentsInput,
-  ReviewDiffFileContentsResult,
-  ReviewDiffPreviewInput,
-  ReviewDiffPreviewResult,
-} from "./review.ts";
-import type { FilesystemBrowseInput, FilesystemBrowseResult } from "./filesystem.ts";
-import type { AssetCreateUrlInput, AssetCreateUrlResult } from "./assets.ts";
-import type {
-  ProjectListEntriesInput,
-  ProjectListEntriesResult,
-  ProjectReadFileInput,
-  ProjectReadFileResult,
-  ProjectSearchEntriesInput,
-  ProjectSearchEntriesResult,
-  ProjectWriteFileInput,
-  ProjectWriteFileResult,
-} from "./project.ts";
-import type {
-  TerminalAttachInput,
-  TerminalAttachStreamEvent,
-  TerminalClearInput,
-  TerminalCloseInput,
-  TerminalMetadataStreamEvent,
-  TerminalOpenInput,
-  TerminalResizeInput,
-  TerminalRestartInput,
-  TerminalSessionSnapshot,
-  TerminalWriteInput,
-} from "./terminal.ts";
 import * as Schema from "effect/Schema";
-import type {
-  DiscoveredLocalServerList,
-  PreviewCloseInput,
-  PreviewEvent,
-  PreviewListInput,
-  PreviewListResult,
-  PreviewNavigateInput,
-  PreviewOpenInput,
-  PreviewRefreshInput,
-  PreviewReportStatusInput,
-  PreviewResizeInput,
-  PreviewSessionSnapshot,
-} from "./preview.ts";
+
 import {
   PreviewAutomationClickInput,
   PreviewAutomationEvaluateInput,
-  PreviewAutomationHost,
-  PreviewAutomationHostFocus,
   PreviewAutomationPressInput,
-  PreviewAutomationResponse,
   PreviewAutomationScrollInput,
   PreviewAutomationSnapshot,
   PreviewAutomationStatus,
-  PreviewAutomationStreamEvent,
   PreviewAutomationTypeInput,
   PreviewAutomationWaitForInput,
 } from "./previewAutomation.ts";
-import type {
-  ClientOrchestrationCommand,
-  OrchestrationGetFullThreadDiffInput,
-  OrchestrationGetFullThreadDiffResult,
-  OrchestrationGetTurnDiffInput,
-  OrchestrationGetTurnDiffResult,
-  OrchestrationShellSnapshot,
-  OrchestrationShellStreamItem,
-  OrchestrationSubscribeThreadInput,
-  OrchestrationThreadStreamItem,
-} from "./orchestration.ts";
 import { SnapShotSource } from "./orchestration.ts";
 import { EnvironmentId, TrimmedNonEmptyString } from "./baseSchemas.ts";
 import { BrowserProfileId } from "./browserProfile.ts";
@@ -101,20 +23,20 @@ import { AdvertisedEndpoint } from "./remoteAccess.ts";
 import { ExecutionEnvironmentDescriptor } from "./environment.ts";
 import type {
   InfinitusDesktopPrefs,
+  InfinitusEngineControlInput,
+  InfinitusEngineSettingsInput,
+  InfinitusEngines,
+  InfinitusOAuthSignInInput,
+  InfinitusOAuthSignInResult,
   InfinitusSignInCodeInput,
   InfinitusSignInCodeResult,
+  InfinitusSignInRedirectListenInput,
+  InfinitusSignInRedirectResult,
   InfinitusSignInWindowInput,
 } from "./infinitus.ts";
 import { type ClientSettings, type QuitConfirmationMode, SnapShotShortcut } from "./settings.ts";
 import type { EditorId } from "./editor.ts";
-import type {
-  SourceControlCloneRepositoryInput,
-  SourceControlCloneRepositoryResult,
-  SourceControlPublishRepositoryInput,
-  SourceControlPublishRepositoryResult,
-  SourceControlRepositoryInfo,
-  SourceControlRepositoryLookupInput,
-} from "./sourceControl.ts";
+
 import type {
   DesktopAppActivationRequest,
   DesktopAppActivationResponse,
@@ -357,6 +279,10 @@ export const DesktopDeepLink = Schema.Union([
     threadId: Schema.String,
   }),
   Schema.Struct({ kind: Schema.Literal("new"), project: Schema.String, prompt: Schema.String }),
+  /** `infinitus://join/<team code>` (#1313): the whole link text is the code (a secret). */
+  Schema.Struct({ kind: Schema.Literal("join"), link: Schema.String }),
+  /** `infinitus://settings/<page>`: a Settings route, `/settings/<page>` — the menu bar app's ⌘, lands on `/settings/menu-bar`. */
+  Schema.Struct({ kind: Schema.Literal("settings"), path: Schema.String }),
 ]);
 export type DesktopDeepLink = typeof DesktopDeepLink.Type;
 
@@ -741,19 +667,6 @@ export interface DesktopPreviewFavicon {
   capturedAt: number;
 }
 
-export const DesktopPreviewFaviconSchema: Schema.Codec<DesktopPreviewFavicon> = Schema.Struct({
-  dataUrl: Schema.String.check(
-    Schema.isMaxLength(FAVICON_DATA_URL_MAX_LENGTH),
-    Schema.isPattern(/^data:image\/png;base64,[a-z0-9+/]+={0,2}$/i),
-  ),
-  pageUrl: Schema.String.check(Schema.isMaxLength(2_048)),
-  capturedAt: Schema.Number.check(
-    Schema.isFinite(),
-    Schema.isGreaterThanOrEqualTo(0),
-    Schema.isLessThanOrEqualTo(FAVICON_CAPTURED_AT_MAX),
-  ),
-});
-
 export interface DesktopPreviewTabState {
   tabId: string;
   webContentsId: number | null;
@@ -793,27 +706,6 @@ export const DesktopPreviewAutomationStatusSchema = Schema.Struct({
 });
 export type DesktopPreviewAutomationStatus = typeof DesktopPreviewAutomationStatusSchema.Type;
 
-export const DesktopPreviewNavStatusSchema = Schema.Union([
-  Schema.Struct({ kind: Schema.Literal("Idle") }),
-  Schema.Struct({
-    kind: Schema.Literal("Loading"),
-    url: Schema.String,
-    title: Schema.String,
-  }),
-  Schema.Struct({
-    kind: Schema.Literal("Success"),
-    url: Schema.String,
-    title: Schema.String,
-  }),
-  Schema.Struct({
-    kind: Schema.Literal("LoadFailed"),
-    url: Schema.String,
-    title: Schema.String,
-    code: Schema.Number,
-    description: Schema.String,
-  }),
-]);
-
 export interface DesktopPreviewPointerEvent {
   tabId: string;
   phase: "move" | "click";
@@ -821,6 +713,30 @@ export interface DesktopPreviewPointerEvent {
   y: number;
   sequence: number;
   createdAt: string;
+}
+
+/** Recording decorations are forwarded separately from the captured page pixels. */
+export const DesktopPreviewRecordingInputSchema = Schema.Union([
+  Schema.Struct({
+    type: Schema.Literal("pointer"),
+    phase: Schema.Literals(["move", "down", "up", "click"]),
+    x: Schema.Finite,
+    y: Schema.Finite,
+    width: Schema.Finite.check(Schema.isGreaterThan(0)),
+    height: Schema.Finite.check(Schema.isGreaterThan(0)),
+  }),
+  Schema.Struct({
+    type: Schema.Literal("key"),
+    label: Schema.NullOr(Schema.String.check(Schema.isMaxLength(100))),
+    held: Schema.Boolean,
+    width: Schema.Finite.check(Schema.isGreaterThan(0)),
+  }),
+  Schema.Struct({ type: Schema.Literal("clear") }),
+]);
+export type DesktopPreviewRecordingInput = typeof DesktopPreviewRecordingInputSchema.Type;
+export interface DesktopPreviewRecordingInputEvent {
+  readonly tabId: string;
+  readonly input: DesktopPreviewRecordingInput;
 }
 
 /**
@@ -1260,8 +1176,12 @@ export type SystemSettingsPane = typeof SystemSettingsPaneSchema.Type;
 
 export interface DesktopBridge {
   getAppBranding: () => DesktopAppBranding | null;
+  /** Absolute path of a dropped or picked file; absent on desktop builds predating it. */
+  getPathForFile?: (file: File) => string;
   /** The desktop client's OS platform, read from Electron's preload process. */
   getClientPlatform?: () => string;
+  setNotificationBadge?: (badge: { count: number; image: string | null }) => Promise<void>;
+  onNotificationBadgeClear?: (listener: () => void) => () => void;
   /**
    * The OS locale as a BCP-47 tag, which the renderer cannot read for itself:
    * the packaged app ships only the `en-US` Chromium locale pak, so
@@ -1273,6 +1193,8 @@ export interface DesktopBridge {
   // info (omits instances whose backend hasn't produced a config yet).
   // The primary backend is identified by id === PRIMARY_LOCAL_ENVIRONMENT_ID.
   getLocalEnvironmentBootstraps: () => readonly DesktopEnvironmentBootstrap[];
+  getLocalEnvironmentEnabled?: () => boolean;
+  setLocalEnvironmentEnabled?: (enabled: boolean) => Promise<void>;
   getLocalEnvironmentBearerToken: () => Promise<string>;
   getClientSettings: () => Promise<ClientSettings | null>;
   setClientSettings: (settings: ClientSettings) => Promise<void>;
@@ -1360,6 +1282,35 @@ export interface DesktopBridge {
   submitInfinitusSignInCode?: (
     input: InfinitusSignInCodeInput,
   ) => Promise<InfinitusSignInCodeResult>;
+  /**
+   * Fork (#1213): a sign-in this shell runs itself, through the engine's
+   * `add-oauth`. One promise for the whole flow: it settles when the account
+   * is stored or the engine refused. Optional: without them the page falls
+   * back to the #677 flow, then to the sign-in on the Mac.
+   */
+  beginInfinitusOAuthSignIn?: (
+    input: InfinitusOAuthSignInInput,
+  ) => Promise<InfinitusOAuthSignInResult>;
+  cancelInfinitusOAuthSignIn?: (flowId: string) => Promise<void>;
+  /**
+   * Fork: the engine's loopback listener stood in for here, for a sign-in on
+   * another Mac's environment. Settles with the address the browser ended on,
+   * or `ok: false` when the port is held (the page falls back to a field) or
+   * the flow was stopped. Optional: without it the page asks for the address.
+   */
+  listenInfinitusSignInRedirect?: (
+    input: InfinitusSignInRedirectListenInput,
+  ) => Promise<InfinitusSignInRedirectResult>;
+  stopInfinitusSignInRedirect?: (flowId: string) => Promise<void>;
+  /**
+   * Fork: the proxy engines this shell runs. A thread on a proxied Claude
+   * instance dies with `ConnectionRefused` when its engine is down, so the
+   * Engines page can start one and the shell keeps it up while the app runs.
+   * Optional: a browser, the phone and an older shell simply have no controls.
+   */
+  getInfinitusEngines?: () => Promise<InfinitusEngines>;
+  setInfinitusEngineSettings?: (input: InfinitusEngineSettingsInput) => Promise<InfinitusEngines>;
+  controlInfinitusEngine?: (input: InfinitusEngineControlInput) => Promise<InfinitusEngines>;
   pickFolder: (options?: PickFolderOptions) => Promise<string | null>;
   /** Optional while older desktop shells can host a newer web client. */
   pickProjectFavicon?: (initialPath?: string) => Promise<string | null>;
@@ -1391,8 +1342,14 @@ export interface DesktopBridge {
   pasteAsText?: () => Promise<void>;
   onMenuAction: (listener: (action: string) => void) => () => void;
   onSnapShotEvent?: (listener: (event: DesktopSnapShotEvent) => void) => () => void;
-  /** Fork (#433 slice 2): the capture gesture's reads. Optional: older shells never emit them. */
-  onCaptureGestureEvent?: (listener: (event: DesktopCaptureGestureEvent) => void) => () => void;
+  /**
+   * Fork (#433 slices 2–3): the capture gesture's reads, queued by the shell
+   * until pulled, oldest first; the shell pings `onCaptureGesturePending`
+   * when one lands while the page is up. Optional: a browser or an older
+   * shell has neither.
+   */
+  consumePendingCaptureGestures?: () => Promise<ReadonlyArray<DesktopCaptureGestureEvent>>;
+  onCaptureGesturePending?: (listener: () => void) => () => void;
   /**
    * Fork (#270 D): the link the shell was opened with, cleared on read; the
    * shell pings `onDeepLinkPending` when a new one lands while the window is
@@ -1400,6 +1357,13 @@ export interface DesktopBridge {
    */
   consumePendingDeepLink?: () => Promise<DesktopDeepLink | null>;
   onDeepLinkPending?: (listener: () => void) => () => void;
+  /**
+   * Fork (#1250): macOS's navigate-back/forward gesture on the main window —
+   * what Logi Options+ sends for a mouse's back/forward buttons in place of
+   * Chromium buttons 3/4. Optional: a browser, another platform or an older
+   * shell never emits it.
+   */
+  onHistoryGesture?: (listener: (direction: "left" | "right") => void) => () => void;
   /**
    * Quit-confirmation hint pushes. Optional: older desktop builds never emit
    * them.
@@ -1495,6 +1459,7 @@ export interface DesktopPreviewBridge {
     close: (tabId: string) => Promise<void>;
   };
   recording: {
+    onInput: (listener: (event: DesktopPreviewRecordingInputEvent) => void) => () => void;
     startScreencast: (tabId: string) => Promise<void>;
     stopScreencast: (tabId: string) => Promise<void>;
     save: (
@@ -1554,137 +1519,5 @@ export interface LocalApi {
   persistence: {
     getClientSettings: () => Promise<ClientSettings | null>;
     setClientSettings: (settings: ClientSettings) => Promise<void>;
-  };
-}
-
-/**
- * APIs bound to a specific backend environment connection.
- *
- * These operations must always be routed with explicit environment context.
- * They represent remote stateful capabilities such as orchestration, terminal,
- * project, VCS, and provider operations. In multi-environment mode, each environment gets
- * its own instance of this surface, and callers should resolve it by
- * `environmentId` rather than reaching through the local desktop bridge.
- */
-export interface EnvironmentApi {
-  terminal: {
-    open: (input: typeof TerminalOpenInput.Encoded) => Promise<TerminalSessionSnapshot>;
-    attach: (
-      input: typeof TerminalAttachInput.Encoded,
-      callback: (event: TerminalAttachStreamEvent) => void,
-      options?: {
-        onResubscribe?: () => void;
-      },
-    ) => () => void;
-    write: (input: typeof TerminalWriteInput.Encoded) => Promise<void>;
-    resize: (input: typeof TerminalResizeInput.Encoded) => Promise<void>;
-    clear: (input: typeof TerminalClearInput.Encoded) => Promise<void>;
-    restart: (input: typeof TerminalRestartInput.Encoded) => Promise<TerminalSessionSnapshot>;
-    close: (input: typeof TerminalCloseInput.Encoded) => Promise<void>;
-    onMetadata: (
-      callback: (event: TerminalMetadataStreamEvent) => void,
-      options?: {
-        onResubscribe?: () => void;
-      },
-    ) => () => void;
-  };
-  projects: {
-    listEntries: (input: ProjectListEntriesInput) => Promise<ProjectListEntriesResult>;
-    readFile: (input: ProjectReadFileInput) => Promise<ProjectReadFileResult>;
-    searchEntries: (input: ProjectSearchEntriesInput) => Promise<ProjectSearchEntriesResult>;
-    writeFile: (input: ProjectWriteFileInput) => Promise<ProjectWriteFileResult>;
-  };
-  filesystem: {
-    browse: (input: FilesystemBrowseInput) => Promise<FilesystemBrowseResult>;
-  };
-  assets: {
-    createUrl: (input: AssetCreateUrlInput) => Promise<AssetCreateUrlResult>;
-  };
-  sourceControl: {
-    lookupRepository: (
-      input: SourceControlRepositoryLookupInput,
-    ) => Promise<SourceControlRepositoryInfo>;
-    cloneRepository: (
-      input: SourceControlCloneRepositoryInput,
-    ) => Promise<SourceControlCloneRepositoryResult>;
-    publishRepository: (
-      input: SourceControlPublishRepositoryInput,
-    ) => Promise<SourceControlPublishRepositoryResult>;
-  };
-  vcs: {
-    listRefs: (input: VcsListRefsInput) => Promise<VcsListRefsResult>;
-    createWorktree: (input: VcsCreateWorktreeInput) => Promise<VcsCreateWorktreeResult>;
-    removeWorktree: (input: VcsRemoveWorktreeInput) => Promise<VcsRemoveWorktreeResult>;
-    createRef: (input: VcsCreateRefInput) => Promise<VcsCreateRefResult>;
-    switchRef: (input: VcsSwitchRefInput) => Promise<VcsSwitchRefResult>;
-    init: (input: VcsInitInput) => Promise<void>;
-    pull: (input: VcsPullInput) => Promise<VcsPullResult>;
-    refreshStatus: (input: VcsStatusInput) => Promise<VcsStatusResult>;
-    onStatus: (
-      input: VcsStatusInput,
-      callback: (status: VcsStatusResult) => void,
-      options?: {
-        onResubscribe?: () => void;
-      },
-    ) => () => void;
-  };
-  git: {
-    resolvePullRequest: (input: GitPullRequestRefInput) => Promise<GitResolvePullRequestResult>;
-    preparePullRequestThread: (
-      input: GitPreparePullRequestThreadInput,
-    ) => Promise<GitPreparePullRequestThreadResult>;
-  };
-  review: {
-    getDiffPreview: (input: ReviewDiffPreviewInput) => Promise<ReviewDiffPreviewResult>;
-    getDiffFileContents: (
-      input: ReviewDiffFileContentsInput,
-    ) => Promise<ReviewDiffFileContentsResult>;
-  };
-  orchestration: {
-    dispatchCommand: (command: ClientOrchestrationCommand) => Promise<{ sequence: number }>;
-    getTurnDiff: (input: OrchestrationGetTurnDiffInput) => Promise<OrchestrationGetTurnDiffResult>;
-    getFullThreadDiff: (
-      input: OrchestrationGetFullThreadDiffInput,
-    ) => Promise<OrchestrationGetFullThreadDiffResult>;
-    getArchivedShellSnapshot: () => Promise<OrchestrationShellSnapshot>;
-    subscribeShell: (
-      callback: (event: OrchestrationShellStreamItem) => void,
-      options?: {
-        onResubscribe?: () => void;
-      },
-    ) => () => void;
-    subscribeThread: (
-      input: OrchestrationSubscribeThreadInput,
-      callback: (event: OrchestrationThreadStreamItem) => void,
-      options?: {
-        onResubscribe?: () => void;
-      },
-    ) => () => void;
-  };
-  preview: {
-    open: (input: typeof PreviewOpenInput.Encoded) => Promise<PreviewSessionSnapshot>;
-    navigate: (input: typeof PreviewNavigateInput.Encoded) => Promise<PreviewSessionSnapshot>;
-    resize: (input: typeof PreviewResizeInput.Encoded) => Promise<PreviewSessionSnapshot>;
-    refresh: (input: typeof PreviewRefreshInput.Encoded) => Promise<void>;
-    close: (input: typeof PreviewCloseInput.Encoded) => Promise<void>;
-    list: (input: typeof PreviewListInput.Encoded) => Promise<PreviewListResult>;
-    reportStatus: (input: typeof PreviewReportStatusInput.Encoded) => Promise<void>;
-    automation: {
-      connect: (
-        input: PreviewAutomationHost,
-        callback: (event: PreviewAutomationStreamEvent) => void,
-        options?: { onResubscribe?: () => void },
-      ) => () => void;
-      respond: (response: PreviewAutomationResponse) => Promise<void>;
-      focusHost: (input: PreviewAutomationHostFocus) => Promise<void>;
-    };
-    onEvent: (
-      callback: (event: PreviewEvent) => void,
-      options?: { onResubscribe?: () => void },
-    ) => () => void;
-    subscribePorts: (
-      callback: (servers: DiscoveredLocalServerList) => void,
-      options?: { onResubscribe?: () => void },
-    ) => () => void;
   };
 }

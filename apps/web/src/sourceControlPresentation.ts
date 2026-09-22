@@ -1,25 +1,25 @@
-import { GitPullRequestIcon } from "lucide-react";
 import type { ElementType } from "react";
-import type { SourceControlProviderInfo, SourceControlProviderKind } from "@t3tools/contracts";
+import type { SourceControlProviderInfo, SourceControlProviderKind } from "@infinitus/contracts";
 export {
   DEFAULT_CHANGE_REQUEST_TERMINOLOGY,
   getChangeRequestTerminology,
   resolveChangeRequestPresentation,
   type ChangeRequestPresentation,
   type ChangeRequestTerminology,
-} from "@t3tools/shared/sourceControl";
+} from "@infinitus/shared/sourceControl";
 import {
   getChangeRequestTerminology,
   resolveChangeRequestPresentation,
   type ChangeRequestTerminology,
-} from "@t3tools/shared/sourceControl";
+} from "@infinitus/shared/sourceControl";
 import {
   AzureDevOpsIcon,
   BitbucketIcon,
+  ForgejoIcon,
   GitHubIcon,
   GitLabIcon,
-  ForgejoIcon,
 } from "./components/Icons";
+import { PullRequestGlyph } from "~/components/pullRequest/pullRequestIcons";
 
 export interface SourceControlPresentation {
   readonly providerName: string;
@@ -66,7 +66,7 @@ export function getSourceControlPresentation(
       return {
         providerName: provider?.name || presentation.providerName,
         terminology: getChangeRequestTerminology(provider),
-        Icon: GitPullRequestIcon,
+        Icon: PullRequestGlyph.pullRequest,
       };
   }
 }

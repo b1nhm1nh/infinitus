@@ -1,6 +1,7 @@
 import { HStack, Image, Spacer, Text, VStack, ZStack } from "@expo/ui/swift-ui";
 import type { ComponentProps } from "react";
 import {
+  activityBackgroundTint,
   font,
   foregroundStyle,
   frame,
@@ -37,8 +38,6 @@ export interface AgentActivityRowProps {
   readonly status: string;
   readonly updatedAt: string;
   readonly deepLink: string;
-  /** The row's turn `startedAt`, carried while it is starting or running (#1047). */
-  readonly startedAt?: string;
 }
 
 export interface AgentActivityProps {
@@ -58,14 +57,13 @@ export function AgentActivity(
 ): LiveActivityLayout {
   "widget";
 
-  // Use SwiftUI's semantic label colors rather than fixed hex keyed off the
-  // device color scheme. A Live Activity banner always renders over a dark
-  // system material regardless of the device's light/dark setting, so
-  // scheme-derived dark text read as unreadable dark-on-dark on the lock
-  // screen. Semantic colors adapt to whatever material the OS places them on:
-  // the dark LA banner and the (light or dark) home-screen widget alike.
-  const primaryForeground = "primary";
-  const secondaryForeground = "secondary";
+  // Hierarchical styles inherit the system's foreground treatment, including
+  // tinted and vibrant presentations, rather than resolving to a label color.
+  type Foreground = Parameters<typeof foregroundStyle>[0];
+  const primaryForeground = { type: "hierarchical", style: "primary" } as const;
+  const secondaryForeground = { type: "hierarchical", style: "secondary" } as const;
+  const monochrome =
+    environment.widgetRenderingMode === "accented" || environment.widgetRenderingMode === "vibrant";
 
   // Status tints mirror the web sidebar's pills
   // (apps/web/src/components/Sidebar.logic.ts resolveThreadStatusPill): amber
@@ -74,9 +72,12 @@ export function AgentActivity(
   // Mac notification center) renders it on a light one — so pick the web
   // palette's light (-600) or dark (-300) variant off the color scheme.
   const isLightScheme = environment.colorScheme === "light";
-  const phaseTint = (phase: AgentActivityPhase | undefined): string => {
+  const phaseTint = (phase: AgentActivityPhase | undefined): Foreground => {
     if (environment.isLuminanceReduced) {
       return secondaryForeground;
+    }
+    if (monochrome) {
+      return primaryForeground;
     }
     switch (phase) {
       case "waiting_for_approval":
@@ -181,24 +182,11 @@ export function AgentActivity(
 
   // SF Symbols, like the logo, ignore frame/foregroundStyle applied directly to
   // the image; size + tint them through a container the resizable symbol fills.
-  const renderGlyph = (systemName: SFName, size: number, color: string) => (
+  const renderGlyph = (systemName: SFName, size: number, color: Foreground) => (
     <HStack modifiers={[frame({ width: size, height: size }), foregroundStyle(color)]}>
       <Image systemName={systemName} modifiers={[resizable()]} />
     </HStack>
   );
-
-  // A working row ticks its own elapsed time: `Text(timerInterval:)` is drawn by
-  // SwiftUI on the phone, so the card counts up between pushes instead of going
-  // stale. Both bounds come from the row's `startedAt` — the widget reads no
-  // clock of its own — and the upper one stops the display a day in, past which
-  // a running row is a stuck turn rather than a long one.
-  const elapsedCapMs = 24 * 60 * 60 * 1000;
-  const elapsedRange = (row: AgentActivityRowProps) => {
-    if (row.phase !== "starting" && row.phase !== "running") return null;
-    const startedMs = row.startedAt === undefined ? Number.NaN : Date.parse(row.startedAt);
-    if (!Number.isFinite(startedMs)) return null;
-    return { lower: new Date(startedMs), upper: new Date(startedMs + elapsedCapMs) };
-  };
 
   // Single-line row used by every presentation: glyph, title, inline project,
   // status. The project and status carry layoutPriority(1) so when space runs
@@ -226,21 +214,6 @@ export function AgentActivity(
         {row.projectTitle}
       </Text>
       <Spacer minLength={8} />
-      {(() => {
-        const elapsed = elapsedRange(row);
-        return elapsed === null ? null : (
-          <Text
-            timerInterval={elapsed}
-            countsDown={false}
-            modifiers={[
-              font({ size: 11 }),
-              foregroundStyle(secondaryForeground),
-              lineLimit(1),
-              layoutPriority(1),
-            ]}
-          />
-        );
-      })()}
       <Text
         modifiers={[
           font({ weight: "semibold", size: 11 }),
@@ -259,7 +232,7 @@ export function AgentActivity(
   // frame the resizable image fills and tint it through the container's
   // foreground style, which the template image inherits. The 3:2 frame matches
   // the glyph's aspect ratio so it never distorts.
-  const renderLogo = (height: number, color: string) => (
+  const renderLogo = (height: number, color: Foreground) => (
     <HStack modifiers={[frame({ width: height * 1.5, height }), foregroundStyle(color)]}>
       <Image assetName="T3Mark" modifiers={[resizable()]} />
     </HStack>
@@ -270,7 +243,12 @@ export function AgentActivity(
       <VStack
         alignment="leading"
         spacing={6}
-        modifiers={deepLink ? [padding({ all: 14 }), widgetURL(deepLink)] : [padding({ all: 14 })]}
+        modifiers={[
+          padding({ all: 14 }),
+          // A clear tint reveals iOS 26's glass material; older hosts keep the standard surface.
+          activityBackgroundTint(environment.isLiquidGlassAvailable ? "clear" : null),
+          ...(deepLink ? [widgetURL(deepLink)] : []),
+        ]}
       >
         {/* Logo pinned to the leading edge; the status texts centered across the
             full width (ZStack so the logo doesn't skew the centering). No footer —

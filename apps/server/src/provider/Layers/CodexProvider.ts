@@ -22,16 +22,16 @@ import type {
   ProviderOptionDescriptor,
   ServerProviderModel,
   ServerProviderSkill,
-} from "@t3tools/contracts";
-import { PREFERRED_DEFAULT_CODEX_MODELS, ServerSettingsError } from "@t3tools/contracts";
+} from "@infinitus/contracts";
+import { PREFERRED_DEFAULT_CODEX_MODELS, ServerSettingsError } from "@infinitus/contracts";
 
 import {
   codexModelFamily,
   createModelCapabilities,
   readCustomModelEntries,
-} from "@t3tools/shared/model";
-import { PRODUCT_NAME } from "@t3tools/shared/productName";
-import { resolveSpawnCommand } from "@t3tools/shared/shell";
+} from "@infinitus/shared/model";
+import { PRODUCT_NAME } from "@infinitus/shared/productName";
+import { resolveSpawnCommand } from "@infinitus/shared/shell";
 import { codexAppServerArgs, resolveCodexLaunchArgs } from "./codexLaunchArgs.ts";
 import {
   AUTH_PROBE_TIMEOUT_MS,
@@ -629,7 +629,10 @@ export const checkCodexProviderStatus = Effect.fn("checkCodexProviderStatus")(fu
         auth: { status: "unknown" },
         message: installed
           ? `Codex app-server provider probe failed: ${error.message}.`
-          : "Codex CLI (`codex`) was not found on PATH.",
+          : `Could not start Codex CLI (\`${codexSettings.binaryPath}\`). Check Settings → Providers → Codex → Binary path on the server.` +
+            (codexSettings.binaryPath === "codex"
+              ? " Installing ChatGPT or Codex desktop may not add codex to PATH."
+              : " Make sure the configured executable exists and can be run."),
       },
     });
   }

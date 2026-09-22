@@ -1,5 +1,5 @@
-import { EnvironmentId, ThreadId } from "@t3tools/contracts";
-import type { RelayAgentActivityState } from "@t3tools/contracts/relay";
+import { EnvironmentId, ThreadId } from "@infinitus/contracts";
+import type { RelayAgentActivityState } from "@infinitus/contracts/relay";
 import { describe, expect, it } from "@effect/vitest";
 import * as NodeCryptoLayer from "@effect/platform-node/NodeCrypto";
 import * as Effect from "effect/Effect";
@@ -162,7 +162,6 @@ function harness() {
     }),
     Layer.succeed(EnvironmentLinks, {
       upsert: () => Effect.void,
-      listUsersForEnvironment: () => Effect.succeed(["user"]),
       listDeliveryUsersForEnvironment: (input) =>
         Effect.sync(() =>
           current.linked && !current.revokedEnvironments.includes(input.environmentId)
@@ -177,7 +176,6 @@ function harness() {
               ]
             : [],
         ),
-      listPublicKeysForEnvironment: () => Effect.succeed([]),
       listForUser: () => Effect.succeed([]),
       revokeForUser: () => Effect.succeed(false),
       getForUser: (input) =>
@@ -323,6 +321,39 @@ describe("Android delivery routing", () => {
       }).pipe(Effect.provide(h.layer));
     });
   }
+
+  // Fork (#1375): an Infinitus account alert is a ready-made alert with no
+  // state; it rides over the card without acknowledging it.
+  it.effect("sends an Infinitus alert job over the current card without acknowledging it", () => {
+    const h = harness();
+    const alert = {
+      alert_id: "alert-jti",
+      alert_title: "Infinitus",
+      alert_body: "switched to account 2 (work)",
+      alert_path: "/settings/accounts",
+    };
+    return Effect.gen(function* () {
+      const delivery = yield* FcmDeliveries;
+      yield* delivery.process({ ...h.job, state: null, alert });
+      expect(h.sent).toHaveLength(1);
+      expect(h.sent[0]?.alert).toBe(true);
+      expect(h.sent[0]?.data).toMatchObject({
+        alert_title: "Infinitus",
+        alert_body: "switched to account 2 (work)",
+        alert_path: "/settings/accounts",
+        activity_active_count: "1",
+      });
+      expect(h.sent[0]?.data.alert_id).toMatch(/^[0-9a-f]{64}$/);
+      expect(h.marked).toHaveLength(0);
+      h.current.mutedEnvironments.push("env");
+      h.current.target.preferences_json = encodeJson({
+        ...preferences,
+        notificationsEnabled: false,
+      });
+      yield* delivery.process({ ...h.job, state: null, alert });
+      expect(h.sent).toHaveLength(1);
+    }).pipe(Effect.provide(h.layer));
+  });
 
   it.effect("registration replay establishes a baseline without alerting", () => {
     const h = harness();
@@ -616,6 +647,18 @@ describe("Android delivery routing", () => {
     ]);
     const data = androidActivityData(aggregate);
     expect(data.activity_title).toBe("3 active agents · 2 need attention");
+    expect(data.activity_chip).toBe("Review");
+    expect(data.activity_phase).toBe("waiting_for_approval");
+    expect(data.activity_active_count).toBe("3");
+    expect(data.activity_attention_count).toBe("2");
+    const input = androidActivityData(aggregateFor([{ ...state, phase: "waiting_for_input" }]));
+    expect(input.activity_phase).toBe("waiting_for_input");
+    expect(input.activity_active_count).toBe("1");
+    expect(androidActivityData(aggregateFor([state])).activity_chip).toBe("Active");
+    expect(
+      androidActivityData(aggregateFor([{ ...state, phase: "completed" }])).activity_chip,
+    ).toBe("");
+    expect(androidActivityData(null).activity_chip).toBe("");
     expect(
       Object.entries(data)
         .filter(([key]) => key.startsWith("activity_line_"))

@@ -11,7 +11,7 @@ import type {
   ProviderTurnStartResult,
   ProviderUploadFeedbackInput,
   ProviderUploadFeedbackResult,
-} from "@t3tools/contracts";
+} from "@infinitus/contracts";
 import {
   ASSISTANT_CITATION_MAX_TEXT_LENGTH,
   AssistantCitation,
@@ -27,12 +27,12 @@ import {
   ProviderSessionStartInput,
   ThreadId,
   TurnId,
-} from "@t3tools/contracts";
+} from "@infinitus/contracts";
 import {
   expandAssistantCitationsForProvider,
   serializeAssistantCitation,
-} from "@t3tools/shared/assistantCitations";
-import { createModelSelection } from "@t3tools/shared/model";
+} from "@infinitus/shared/assistantCitations";
+import { createModelSelection } from "@infinitus/shared/model";
 import { it, assert, describe, vi } from "@effect/vitest";
 import { afterAll } from "vite-plus/test";
 
@@ -5057,9 +5057,11 @@ describe("agent browser access", () => {
         getTurnStartMessage: () => Effect.die("unused"),
         getImportedAgentSessionSources: () => Effect.die("unused"),
         getUserInputActivity: () => Effect.die("unused"),
+        listActivitiesByKind: () => Effect.die("unused"),
         getCommandReadModel: () => Effect.die("unused"),
         getSnapshot: () => Effect.die("unused"),
         getShellSnapshot: () => Effect.die("unused"),
+        getDeletedWorktreeThreads: () => Effect.die("unused"),
         getArchivedShellSnapshot: () => Effect.die("unused"),
         getSnapshotSequence: () => Effect.die("unused"),
         getCounts: () => Effect.die("unused"),

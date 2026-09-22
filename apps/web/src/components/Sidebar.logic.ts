@@ -1,14 +1,22 @@
-import { threadPullRequestSearchTerms } from "@t3tools/shared/threadPullRequests";
+import { threadPullRequestSearchTerms } from "@infinitus/shared/threadPullRequests";
 import * as React from "react";
 import { defaultAnimateLayoutChanges, type AnimateLayoutChanges } from "@dnd-kit/sortable";
 import {
   isAtomCommandInterrupted,
   type AtomCommandResult,
-} from "@t3tools/client-runtime/state/runtime";
-import type { ContextMenuItem } from "@t3tools/contracts";
-import type { SidebarProjectSortOrder, SidebarThreadSortOrder } from "@t3tools/contracts/settings";
+} from "@infinitus/client-runtime/state/runtime";
+import { threadSearchMatchKey } from "@infinitus/client-runtime/state/thread-search";
+import type { ContextMenuItem, EnvironmentId, ThreadId } from "@infinitus/contracts";
+import type {
+  SidebarProjectSortOrder,
+  SidebarThreadSortOrder,
+} from "@infinitus/contracts/settings";
 import type { AsyncResult } from "effect/unstable/reactivity";
-import { planPinnedReorder } from "@t3tools/client-runtime/state/thread-sort";
+import { planPinnedReorder } from "@infinitus/client-runtime/state/thread-sort";
+import {
+  effectiveSnoozed,
+  type ThreadSnoozeShell,
+} from "@infinitus/client-runtime/state/thread-settled";
 import {
   getThreadSortTimestamp,
   resolveSettledThreadTimestamp,
@@ -20,6 +28,22 @@ import {
 import type { SidebarThreadSummary, Thread } from "../types";
 import { cn } from "../lib/utils";
 import { isLatestTurnSettled } from "../session-logic";
+
+export function shouldNavigateAfterThreadPark(input: {
+  readonly threadKey: string;
+  readonly currentThreadKey: string | null;
+  readonly action: "settle" | "snooze";
+  readonly now: string;
+  readonly thread: (ThreadSnoozeShell & Pick<SidebarThreadSummary, "settledOverride">) | null;
+}): boolean {
+  return (
+    input.threadKey === input.currentThreadKey &&
+    input.thread !== null &&
+    (input.action === "settle"
+      ? input.thread.settledOverride === "settled"
+      : effectiveSnoozed(input.thread, { now: input.now }))
+  );
+}
 
 const THREAD_SELECTION_SAFE_SELECTOR = "[data-thread-item], [data-thread-selection-safe]";
 export const THREAD_JUMP_HINT_SHOW_DELAY_MS = 200;
@@ -942,28 +966,52 @@ function firstValidTimestamp(
   return null;
 }
 
-export { sortActiveThreadsByOrderKey as sortThreadsForSidebar } from "@t3tools/client-runtime/state/thread-sort";
+export { sortActiveThreadsByOrderKey as sortThreadsForSidebar } from "@infinitus/client-runtime/state/thread-sort";
 
 // Pinned-reorder key math and the keyed sort live in client-runtime
 // (state/thread-sort) so web and mobile compute identical pinned orders.
-export { pinOrderKeyBetween, planPinnedReorder } from "@t3tools/client-runtime/state/thread-sort";
-export { sortPinnedThreadsByOrderKey as sortPinnedThreadsForSidebar } from "@t3tools/client-runtime/state/thread-sort";
+export { pinOrderKeyBetween, planPinnedReorder } from "@infinitus/client-runtime/state/thread-sort";
+export { sortPinnedThreadsByOrderKey as sortPinnedThreadsForSidebar } from "@infinitus/client-runtime/state/thread-sort";
+
+const EMPTY_CONTENT_MATCH_KEYS: ReadonlySet<string> = new Set<string>();
 
 /**
- * Search the already-ordered sidebar thread collection by title or linked PR.
- * Keeping the input order means lifecycle ordering (active, snoozed, settled)
- * remains stable while the user narrows the list.
+ * Search the already-ordered sidebar thread collection by title or linked PR,
+ * plus any thread whose messages the server matched (`contentMatchKeys`, keyed
+ * by `threadSearchMatchKey`). Keeping the input order means lifecycle ordering
+ * (active, snoozed, settled) remains stable while the user narrows the list.
  */
 export function searchSidebarThreads<
-  T extends { readonly title: string } & Parameters<typeof threadPullRequestSearchTerms>[0],
->(threads: readonly T[], query: string): T[] {
+  T extends {
+    readonly environmentId: EnvironmentId;
+    readonly id: ThreadId;
+    readonly title: string;
+  } & Parameters<typeof threadPullRequestSearchTerms>[0],
+>(
+  threads: readonly T[],
+  query: string,
+  contentMatchKeys: ReadonlySet<string> = EMPTY_CONTENT_MATCH_KEYS,
+): T[] {
   const normalizedQuery = query.trim().toLowerCase();
   if (normalizedQuery.length === 0) return [];
-  return threads.filter((thread) =>
-    [thread.title, ...threadPullRequestSearchTerms(thread)].some((term) =>
+  const titleMatches: T[] = [];
+  const contentMatches: T[] = [];
+  for (const thread of threads) {
+    const matchesTitle = [thread.title, ...threadPullRequestSearchTerms(thread)].some((term) =>
       term.toLowerCase().includes(normalizedQuery),
-    ),
-  );
+    );
+    if (matchesTitle) {
+      titleMatches.push(thread);
+    } else if (
+      contentMatchKeys.size > 0 &&
+      contentMatchKeys.has(
+        threadSearchMatchKey({ environmentId: thread.environmentId, threadId: thread.id }),
+      )
+    ) {
+      contentMatches.push(thread);
+    }
+  }
+  return [...titleMatches, ...contentMatches];
 }
 
 export function filterSidebarProjectScopeItems<TItem extends { readonly value: string }>(input: {

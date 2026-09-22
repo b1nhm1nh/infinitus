@@ -5,8 +5,8 @@ import * as Layer from "effect/Layer";
 import { Argument, Command } from "effect/unstable/cli";
 import * as CliError from "effect/unstable/cli/CliError";
 
-import * as NetService from "@t3tools/shared/Net";
-import { PRODUCT_NAME } from "@t3tools/shared/productName";
+import * as NetService from "@infinitus/shared/Net";
+import { CONNECT_NAME, PRODUCT_NAME } from "@infinitus/shared/productName";
 import packageJson from "../package.json" with { type: "json" };
 import { authCommand } from "./cli/auth.ts";
 import { appCommand } from "./cli/app.ts";
@@ -18,14 +18,18 @@ import { isEntrypoint } from "./entrypoint.ts";
 import { projectCommand } from "./cli/project.ts";
 import { runServerCommand, serveCommand, startCommand } from "./cli/server.ts";
 import { serviceCommand } from "./cli/service.ts";
+import { uninstallCommand } from "./cli/uninstall.ts";
+import { updateCommand } from "./cli/update.ts";
+import { claudeHistoryCommand } from "./cli/claudeHistory.ts";
+import { serviceLauncherCommand } from "./cli/serviceLauncher.ts";
 import { servicePreflightCommand } from "./cli/servicePreflight.ts";
+import { sshHelperCommand } from "./cli/sshHelper.ts";
 import { themeCommand } from "./cli/theme.ts";
 import { triageCommand } from "./cli/triage.ts";
 
 const CliRuntimeLayer = Layer.mergeAll(NodeServices.layer, NetService.layer);
 
-const connectPublicConfigMissingMessage =
-  "T3 Connect commands are unavailable: this build is missing T3 Connect public configuration.";
+const connectPublicConfigMissingMessage = `${CONNECT_NAME} commands are unavailable: this build is missing ${CONNECT_NAME} public configuration.`;
 
 class ConnectPublicConfigMissingError extends CliError.UserError {
   override get message() {
@@ -34,14 +38,14 @@ class ConnectPublicConfigMissingError extends CliError.UserError {
 }
 
 const connectUnavailableCommand = Command.make("connect", {
-  command: Argument.string("command").pipe(Argument.variadic),
+  command: Argument.String("command").pipe(Argument.variadic),
 }).pipe(
-  Command.withDescription("T3 Connect is unavailable in builds without public configuration."),
+  Command.withDescription(`${CONNECT_NAME} is unavailable in builds without public configuration.`),
   Command.unlisted,
   Command.withHandler(() =>
     Effect.fail(
       new CliError.ShowHelp({
-        commandPath: ["t3", "connect"],
+        commandPath: ["infinitus", "connect"],
         errors: [new ConnectPublicConfigMissingError({ cause: connectPublicConfigMissingMessage })],
       }),
     ),
@@ -49,7 +53,7 @@ const connectUnavailableCommand = Command.make("connect", {
 );
 
 export const makeCli = ({ cloudEnabled = hasCloudPublicConfig } = {}) =>
-  Command.make("t3", { ...sharedServerCommandFlags }).pipe(
+  Command.make("infinitus", { ...sharedServerCommandFlags }).pipe(
     Command.withDescription(`Run the ${PRODUCT_NAME} server.`),
     Command.withHandler((flags) => runServerCommand(flags)),
     Command.withSubcommands([
@@ -60,7 +64,12 @@ export const makeCli = ({ cloudEnabled = hasCloudPublicConfig } = {}) =>
       authCommand,
       projectCommand,
       serviceCommand,
+      updateCommand,
+      uninstallCommand,
+      serviceLauncherCommand,
+      claudeHistoryCommand,
       servicePreflightCommand,
+      sshHelperCommand,
       themeCommand,
       triageCommand,
       cloudEnabled ? connectCommand : connectUnavailableCommand,

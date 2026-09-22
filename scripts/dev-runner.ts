@@ -4,11 +4,11 @@ import * as NodeOS from "node:os";
 
 import * as NodeRuntime from "@effect/platform-node/NodeRuntime";
 import * as NodeServices from "@effect/platform-node/NodeServices";
-import * as NetService from "@t3tools/shared/Net";
-import { resolveGitWorktreePath, resolveWorktreeT3Home } from "@t3tools/shared/devHome";
-import { DEFAULT_HOME_DIR_NAME } from "@t3tools/shared/homeDir";
-import { HostProcessEnvironment, HostProcessWorkingDirectory } from "@t3tools/shared/hostProcess";
-import { resolveSpawnCommand } from "@t3tools/shared/shell";
+import * as NetService from "@infinitus/shared/Net";
+import { resolveGitWorktreePath, resolveWorktreeT3Home } from "@infinitus/shared/devHome";
+import { DEFAULT_HOME_DIR_NAME } from "@infinitus/shared/homeDir";
+import { HostProcessEnvironment, HostProcessWorkingDirectory } from "@infinitus/shared/hostProcess";
+import { resolveSpawnCommand } from "@infinitus/shared/shell";
 import * as Config from "effect/Config";
 import * as Effect from "effect/Effect";
 import * as Hash from "effect/Hash";
@@ -75,15 +75,15 @@ export const DEFAULT_T3_HOME = Effect.map(Effect.service(Path.Path), (path) =>
 const MODE_ARGS = {
   dev: [
     "run",
-    "--filter=@t3tools/contracts",
-    "--filter=@t3tools/web",
+    "--filter=@infinitus/contracts",
+    "--filter=@infinitus/web",
     "--filter=t3",
     "--parallel",
     "dev",
   ],
   "dev:server": ["run", "--filter=t3", "dev"],
-  "dev:web": ["run", "--filter=@t3tools/web", "dev"],
-  "dev:desktop": ["run", "--filter=@t3tools/desktop", "--filter=@t3tools/web", "dev"],
+  "dev:web": ["run", "--filter=@infinitus/web", "dev"],
+  "dev:desktop": ["run", "--filter=@infinitus/desktop", "--filter=@infinitus/web", "dev"],
 } as const satisfies Record<string, ReadonlyArray<string>>;
 
 type DevMode = keyof typeof MODE_ARGS;
@@ -191,34 +191,23 @@ export class DevRunnerHostNotProxiableError extends Schema.TaggedError<DevRunner
   }
 }
 
-export const DevRunnerError = Schema.Union([
-  DevRunnerConfigurationError,
-  DevRunnerHostNotProxiableError,
-  DevRunnerInvalidPortOffsetError,
-  DevRunnerPortExhaustedError,
-  DevRunnerProcessError,
-  DevRunnerProcessExitError,
-]);
-export type DevRunnerError = typeof DevRunnerError.Type;
-export const isDevRunnerError = Schema.is(DevRunnerError);
-
 const optionalStringConfig = (name: string): Config.Config<string | undefined> =>
-  Config.string(name).pipe(
+  Config.String(name).pipe(
     Config.option,
     Config.map((value) => Option.getOrUndefined(value)),
   );
 const optionalBooleanConfig = (name: string): Config.Config<boolean | undefined> =>
-  Config.boolean(name).pipe(
+  Config.Boolean(name).pipe(
     Config.option,
     Config.map((value) => Option.getOrUndefined(value)),
   );
 const optionalPortConfig = (name: string): Config.Config<number | undefined> =>
-  Config.port(name).pipe(
+  Config.Port(name).pipe(
     Config.option,
     Config.map((value) => Option.getOrUndefined(value)),
   );
 const optionalIntegerConfig = (name: string): Config.Config<number | undefined> =>
-  Config.int(name).pipe(
+  Config.Int(name).pipe(
     Config.option,
     Config.map((value) => Option.getOrUndefined(value)),
   );
@@ -389,6 +378,7 @@ export function createDevRunnerEnv({
       delete output.T3CODE_MODE;
       delete output.T3CODE_NO_BROWSER;
       delete output.T3CODE_HOST;
+      delete output.T3CODE_DEV_AUTH_TOKEN;
     }
 
     if (!isDesktopMode && host !== undefined) {
@@ -676,7 +666,7 @@ export function runDevRunnerWithInput(input: DevRunnerCliInput) {
 
     const hostEnvironment = yield* HostProcessEnvironment;
     // A dev server started inside a worktree defaults to that worktree's own
-    // (gitignored) `.t3` — see @t3tools/shared/devHome for why this must
+    // (gitignored) `.t3` — see @infinitus/shared/devHome for why this must
     // outrank an ambient T3CODE_HOME. `--home-dir` still wins.
     const worktreeHome = yield* resolveWorktreeT3Home(yield* HostProcessWorkingDirectory);
     // Trim before choosing: `--home-dir ""` is not a selection, and treating it
@@ -856,41 +846,41 @@ export function runDevRunnerWithInput(input: DevRunnerCliInput) {
 }
 
 const devRunnerCli = Command.make("dev-runner", {
-  mode: Argument.choice("mode", DEV_RUNNER_MODES).pipe(
+  mode: Argument.Literals("mode", DEV_RUNNER_MODES).pipe(
     Argument.withDescription("Development mode to run."),
   ),
-  t3Home: Flag.string("home-dir").pipe(
+  t3Home: Flag.String("home-dir").pipe(
     Flag.withDescription(
       "Explicit T3 Code data directory; runtime state is stored under userdata (equivalent to T3CODE_HOME). Inside a git worktree this defaults to that worktree's own .t3 so dev state stays off the shared home.",
     ),
     Flag.optional,
     Flag.map(Option.getOrUndefined),
   ),
-  browser: Flag.boolean("browser").pipe(
+  browser: Flag.Boolean("browser").pipe(
     Flag.withDescription("Open a browser automatically (disabled by default for web dev)."),
     Flag.withDefault(false),
   ),
-  autoBootstrapProjectFromCwd: Flag.boolean("auto-bootstrap-project-from-cwd").pipe(
+  autoBootstrapProjectFromCwd: Flag.Boolean("auto-bootstrap-project-from-cwd").pipe(
     Flag.withDescription(
       "Auto-bootstrap toggle (equivalent to T3CODE_AUTO_BOOTSTRAP_PROJECT_FROM_CWD).",
     ),
     Flag.withFallbackConfig(optionalBooleanConfig("T3CODE_AUTO_BOOTSTRAP_PROJECT_FROM_CWD")),
   ),
-  logWebSocketEvents: Flag.boolean("log-websocket-events").pipe(
+  logWebSocketEvents: Flag.Boolean("log-websocket-events").pipe(
     Flag.withDescription("WebSocket event logging toggle (equivalent to T3CODE_LOG_WS_EVENTS)."),
     Flag.withAlias("log-ws-events"),
     Flag.withFallbackConfig(optionalBooleanConfig("T3CODE_LOG_WS_EVENTS")),
   ),
-  host: Flag.string("host").pipe(
+  host: Flag.String("host").pipe(
     Flag.withDescription("Server host/interface override (forwards to T3CODE_HOST)."),
     Flag.withFallbackConfig(optionalStringConfig("T3CODE_HOST")),
   ),
-  port: Flag.integer("port").pipe(
+  port: Flag.Int("port").pipe(
     Flag.withSchema(Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 65535 }))),
     Flag.withDescription("Server port override (forwards to T3CODE_PORT)."),
     Flag.withFallbackConfig(optionalPortConfig("T3CODE_PORT")),
   ),
-  devUrl: Flag.string("dev-url").pipe(
+  devUrl: Flag.String("dev-url").pipe(
     Flag.withSchema(Schema.URLFromString),
     Flag.withDescription(
       "Explicit web dev URL override (forwards to VITE_DEV_SERVER_URL). Ambient VITE_DEV_SERVER_URL values are ignored so a parent dev app cannot redirect the child runner.",
@@ -898,17 +888,17 @@ const devRunnerCli = Command.make("dev-runner", {
     Flag.optional,
     Flag.map(Option.getOrUndefined),
   ),
-  dryRun: Flag.boolean("dry-run").pipe(
+  dryRun: Flag.Boolean("dry-run").pipe(
     Flag.withDescription("Resolve mode/ports/env and print, but do not spawn Vite+."),
     Flag.withDefault(false),
   ),
-  share: Flag.boolean("share").pipe(
+  share: Flag.Boolean("share").pipe(
     Flag.withDescription(
       "Publish the web dev server on this machine's tailnet over HTTPS (via `tailscale serve`) and print the pairing URL for it. Removed again on exit.",
     ),
     Flag.withDefault(false),
   ),
-  runArgs: Argument.string("run-arg").pipe(
+  runArgs: Argument.String("run-arg").pipe(
     Argument.withDescription("Additional Vite+ run args (pass after `--`)."),
     Argument.variadic(),
   ),

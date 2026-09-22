@@ -2,15 +2,16 @@ import * as NodeOS from "node:os";
 
 import {
   EnvironmentId,
+  ORCHESTRATION_PROTOCOL_VERSION,
   PROVIDER_SEND_TURN_MAX_FILE_BYTES,
   type ExecutionEnvironmentDescriptor,
-} from "@t3tools/contracts";
+} from "@infinitus/contracts";
 import {
   HostProcessArchitecture,
   HostProcessEnvironment,
   HostProcessPlatform,
-} from "@t3tools/shared/hostProcess";
-import { resolveInfinitusControlSocketPath } from "@t3tools/shared/infinitusControl";
+} from "@infinitus/shared/hostProcess";
+import { resolveInfinitusControlSocketPath } from "@infinitus/shared/infinitusControl";
 import { lanHttpBaseUrls } from "../infinitus/Layers/LanBaseUrls.ts";
 import * as Context from "effect/Context";
 import * as Crypto from "effect/Crypto";
@@ -233,6 +234,7 @@ export const make = Effect.gen(function* () {
       ...(machine === null ? {} : { machine }),
     },
     serverVersion: packageJson.version,
+    orchestrationProtocolVersion: ORCHESTRATION_PROTOCOL_VERSION,
     capabilities: {
       repositoryIdentity: true,
       connectionProbe: true,
@@ -241,8 +243,11 @@ export const make = Effect.gen(function* () {
       fileAttachments: { maxUploadBytes: PROVIDER_SEND_TURN_MAX_FILE_BYTES },
       pullRequests: true,
       inlineMessageContext: true,
+      requiredWorktreeBootstrap: true,
       threadSettlement: true,
       threadAutoSettlement: true,
+      storageCleanup: true,
+      projectWorktreeCleanup: true,
       threadRestartContinuation: true,
       projectSettingsOverrides: true,
       threadSnooze: true,
@@ -257,6 +262,7 @@ export const make = Effect.gen(function* () {
       pullRequestStackActions: true,
       threadPullRequestLinking: true,
       environmentIcon: true,
+      projectCloneTracking: true,
       ...(serverSelfUpdate === null ? {} : { serverSelfUpdate }),
       ...(serverSelfUpdate === "boot-service" || desktopAppUpdate
         ? {
@@ -267,6 +273,7 @@ export const make = Effect.gen(function* () {
       ...(desktopAppUpdate ? { desktopAppUpdate: true } : {}),
       infinitus: infinitusSocketPath !== null,
       turnQueue: true,
+      turnQueueSendAt: true,
     },
     ...(lanBaseUrls.length === 0 ? {} : { lanHttpBaseUrls: lanBaseUrls }),
   };

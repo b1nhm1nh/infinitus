@@ -1,14 +1,14 @@
 import {
   ConnectionPersistenceError,
   EnvironmentCacheStore,
-} from "@t3tools/client-runtime/platform";
+} from "@infinitus/client-runtime/platform";
 import {
   type EnvironmentId,
   OrchestrationShellSnapshot,
   OrchestrationThreadDetailSnapshot,
   ServerConfig,
   VcsListRefsResult,
-} from "@t3tools/contracts";
+} from "@infinitus/contracts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
@@ -21,7 +21,9 @@ const SHELL_SNAPSHOT_CACHE_SCHEMA_VERSION = 1;
 // v3 adds windowed (paginated) snapshots carrying `page` metadata; the bump
 // makes pre-pagination clients discard the record instead of decoding a
 // partial thread as complete (rollback safety).
-const THREAD_SNAPSHOT_CACHE_SCHEMA_VERSION = 3;
+// v4 reloads pre-thinking caches whose system-role fallback would otherwise
+// survive afterSequence resume and hide settled reasoning messages.
+const THREAD_SNAPSHOT_CACHE_SCHEMA_VERSION = 4;
 const SERVER_CONFIG_CACHE_SCHEMA_VERSION = 1;
 const VCS_REFS_CACHE_SCHEMA_VERSION = 1;
 

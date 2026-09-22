@@ -6,7 +6,7 @@ import {
   PrimaryEnvironmentAuth,
   RelayDeviceIdentity,
   SshEnvironmentGateway,
-} from "@t3tools/client-runtime/platform";
+} from "@infinitus/client-runtime/platform";
 import {
   BearerConnectionCredential,
   BearerConnectionProfile,
@@ -20,18 +20,21 @@ import {
   PrimaryConnectionRegistration,
   PrimaryConnectionTarget,
   Wakeups,
-} from "@t3tools/client-runtime/connection";
-import { bootstrapRemoteBearerSession } from "@t3tools/client-runtime/authorization";
-import { fetchRemoteEnvironmentDescriptor } from "@t3tools/client-runtime/environment";
-import { managedRelayAccountChanges, managedRelaySessionAtom } from "@t3tools/client-runtime/relay";
-import { EnvironmentRpcRequestObserver } from "@t3tools/client-runtime/rpc";
+} from "@infinitus/client-runtime/connection";
+import { bootstrapRemoteBearerSession } from "@infinitus/client-runtime/authorization";
+import { fetchRemoteEnvironmentDescriptor } from "@infinitus/client-runtime/environment";
+import {
+  managedRelayAccountChanges,
+  managedRelaySessionAtom,
+} from "@infinitus/client-runtime/relay";
+import { EnvironmentRpcRequestObserver } from "@infinitus/client-runtime/rpc";
 import {
   AuthStandardClientScopes,
   type DesktopBridge,
   type DesktopEnvironmentBootstrap,
   type DesktopSshEnvironmentTarget,
   PRIMARY_LOCAL_ENVIRONMENT_ID,
-} from "@t3tools/contracts";
+} from "@infinitus/contracts";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -51,6 +54,7 @@ import {
 } from "../environments/primary/target";
 import { clearComposerDraftsEnvironment } from "../composerDraftStore";
 import { isHostedStaticApp } from "../hostedPairing";
+import { isLocalEnvironmentDisabled } from "../localEnvironment";
 import { appAtomRegistry } from "../rpc/atomRegistry";
 import { acknowledgeRpcRequest, trackRpcRequestSent } from "../rpc/requestLatencyState";
 import {
@@ -60,6 +64,7 @@ import {
 } from "./desktopLocal";
 import { connectionStorageLayer } from "./storage";
 import { clientPresentationMetadata } from "./clientMetadata";
+import { CONNECT_NAME } from "@infinitus/shared/productName";
 
 let nextObservedRpcRequestId = 0;
 
@@ -190,7 +195,7 @@ const capabilitiesLayer = Layer.effectContext(
         if (session === null) {
           return yield* new ConnectionBlockedError({
             reason: "authentication",
-            detail: "Sign in to T3 Connect to connect this environment.",
+            detail: `Sign in to ${CONNECT_NAME} to connect this environment.`,
           });
         }
         const token = yield* session.readClerkToken().pipe(
@@ -205,7 +210,7 @@ const capabilitiesLayer = Layer.effectContext(
         if (token === null) {
           return yield* new ConnectionBlockedError({
             reason: "authentication",
-            detail: "The T3 Connect session is unavailable.",
+            detail: `The ${CONNECT_NAME} session is unavailable.`,
           });
         }
         return token;
@@ -464,7 +469,7 @@ export function secondaryRegistrationsToRetainAfterTopologyRead(
 const platformConnectionSourceLayer = Layer.effect(
   PlatformConnectionSource,
   Effect.gen(function* () {
-    if (isHostedStaticApp()) {
+    if (isHostedStaticApp() || isLocalEnvironmentDisabled()) {
       return PlatformConnectionSource.of({
         registrations: Stream.empty,
       });

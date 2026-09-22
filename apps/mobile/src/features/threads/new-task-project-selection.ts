@@ -1,5 +1,5 @@
-import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
-import type { EnvironmentId } from "@t3tools/contracts";
+import type { EnvironmentProject } from "@infinitus/client-runtime/state/shell";
+import type { EnvironmentId } from "@infinitus/contracts";
 
 import { scopedProjectKey } from "../../lib/scopedEntities";
 import type { HomeProjectScope } from "../home/homeThreadList";
@@ -16,6 +16,23 @@ export function getProjectScopeSelectionTarget(
   return (
     scope.projects.find((project) => project.environmentId === preferredEnvironmentId) ??
     scope.representative
+  );
+}
+
+export function filterProjectScopes(
+  scopes: ReadonlyArray<HomeProjectScope>,
+  searchText: string,
+): ReadonlyArray<HomeProjectScope> {
+  const query = searchText.trim().toLowerCase();
+  if (!query) return scopes;
+  return scopes.filter(
+    (scope) =>
+      scope.title.toLowerCase().includes(query) ||
+      scope.projects.some(
+        (project) =>
+          project.title.toLowerCase().includes(query) ||
+          project.workspaceRoot.toLowerCase().includes(query),
+      ),
   );
 }
 

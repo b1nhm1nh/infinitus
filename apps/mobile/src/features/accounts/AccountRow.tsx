@@ -2,10 +2,13 @@ import {
   type AccountAction,
   type AccountRowModel,
   accountCommandArgs,
+  type RowFlip,
+  rowFlip,
   type UsageWindowBar,
-} from "@t3tools/client-runtime/state/infinitusAccounts";
-import type { EnvironmentId } from "@t3tools/contracts";
-import { useCallback, useState } from "react";
+  withFlip,
+} from "@infinitus/client-runtime/state/infinitusAccounts";
+import type { EnvironmentId } from "@infinitus/contracts";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Alert, Platform, Pressable, View } from "react-native";
 
 import { SymbolView } from "../../components/AppSymbol";
@@ -20,11 +23,15 @@ import {
   commandFailureMessage,
   rowBadges,
   rowMenuActions,
+  removeConfirmation,
   switchConfirmation,
   windowTone,
 } from "./accountsRoute.logic";
 
 const CAN_PROMPT = Platform.OS === "ios";
+
+/** How long a flipped flag stays drawn when no snapshot confirms it. */
+const FLIP_SETTLE_TIMEOUT_MS = 10_000;
 
 const BADGE_TONE = {
   active: {
@@ -35,6 +42,7 @@ const BADGE_TONE = {
   next: { label: "Next", pillClassName: "bg-subtle-strong", textClassName: "text-foreground" },
   held: { label: "Held", pillClassName: "bg-warning", textClassName: "text-warning-foreground" },
   starred: { label: "★ First", pillClassName: "bg-subtle", textClassName: "text-foreground-muted" },
+  warm: { label: "Warm", pillClassName: "bg-subtle", textClassName: "text-foreground-muted" },
 } as const;
 
 const TONE_CLASS = {
@@ -52,19 +60,44 @@ export function AccountRow(props: {
   readonly row: AccountRowModel;
   readonly last: boolean;
 }) {
-  const { environmentId, fleetKey, fleetTitle, row } = props;
+  const { environmentId, fleetKey, fleetTitle } = props;
   const run = useAtomCommand(infinitusEnvironment.command, { reportFailure: false });
   const [busy, setBusy] = useState<AccountAction | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // A toggle is drawn the moment it is pressed (#1481). It draws nothing
+  // once a snapshot agrees, and retires when the command fails or after the
+  // settle timeout.
+  const [flip, setFlip] = useState<RowFlip | null>(null);
+  const settle = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const row = withFlip(props.row, flip);
+  useEffect(
+    () => () => {
+      if (settle.current !== null) clearTimeout(settle.current);
+    },
+    [],
+  );
 
   const perform = useCallback(
     async (action: AccountAction, alias?: string) => {
-      const { command, args } = accountCommandArgs(fleetKey, row, action, alias);
+      const { command, args, options } = accountCommandArgs(fleetKey, row, action, alias);
+      const next = rowFlip(row, action);
       setBusy(action);
       setError(null);
-      const result = await run({ environmentId, input: { command, args: [...args], options: {} } });
+      if (next !== null) {
+        setFlip(next);
+        if (settle.current !== null) clearTimeout(settle.current);
+        settle.current = setTimeout(() => setFlip(null), FLIP_SETTLE_TIMEOUT_MS);
+      }
+      const result = await run({
+        environmentId,
+        input: { command, args: [...args], options: options ?? {} },
+      });
       setBusy(null);
-      if (result._tag !== "Success") setError(commandFailureMessage(result.cause));
+      if (result._tag !== "Success") {
+        // Only this press's flip: a later press may have drawn its own.
+        if (next !== null) setFlip((current) => (current === next ? null : current));
+        setError(commandFailureMessage(result.cause));
+      }
     },
     [environmentId, fleetKey, row, run],
   );
@@ -85,6 +118,23 @@ export function AccountRow(props: {
         Alert.alert(copy.title, copy.message, [
           { text: "Cancel", style: "cancel" },
           { text: "Switch", onPress: () => void perform("switch") },
+        ]);
+        return;
+      }
+      if (action === "remove") {
+        const copy = removeConfirmation(row, fleetTitle);
+        if (Platform.OS === "android") {
+          showConfirmDialog({
+            title: copy.title,
+            message: copy.message,
+            confirmText: "Remove",
+            onConfirm: () => void perform("remove"),
+          });
+          return;
+        }
+        Alert.alert(copy.title, copy.message, [
+          { text: "Cancel", style: "cancel" },
+          { text: "Remove", style: "destructive", onPress: () => void perform("remove") },
         ]);
         return;
       }
@@ -111,7 +161,7 @@ export function AccountRow(props: {
   const content = (
     <View className={cn("gap-2 px-4 py-3", props.last ? null : "border-b border-separator")}>
       <View className="flex-row items-center gap-2">
-        <Text className="shrink text-base font-t3-medium text-foreground" numberOfLines={1}>
+        <Text className="shrink text-base font-infinitus-medium text-foreground" numberOfLines={1}>
           {row.label}
         </Text>
         {badges.map((badge) => (
@@ -161,7 +211,7 @@ function WindowBar(props: { readonly window: UsageWindowBar }) {
   const { window } = props;
   return (
     <View className="flex-row items-center gap-2">
-      <Text className="w-8 text-2xs font-t3-medium text-foreground-muted" numberOfLines={1}>
+      <Text className="w-8 text-2xs font-infinitus-medium text-foreground-muted" numberOfLines={1}>
         {window.name}
       </Text>
       <View className="h-1.5 flex-1 overflow-hidden rounded-full bg-subtle">

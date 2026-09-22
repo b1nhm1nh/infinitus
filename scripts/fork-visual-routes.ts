@@ -31,6 +31,8 @@ export const ALWAYS_ABSENT: ReadonlyArray<string> = [
   "not answering",
   // #823: the product is Infinitus on every screen; the upstream name never shows.
   "T3 Code",
+  // #1368: the relay feature is Infinitus Connect on every screen.
+  "T3 Connect",
   // #823 too: a Mac pref key starting `fork_` humanises to "Fork …" when the
   // web has no copy for it, which puts the contributor's word on screen.
   "Fork ",
@@ -40,10 +42,15 @@ export const ALWAYS_ABSENT: ReadonlyArray<string> = [
 ];
 
 export const FORK_VISUAL_ROUTES: ReadonlyArray<ForkVisualRoute> = [
-  { route: "/settings/infinitus", label: "Menu bar", marker: "Show the account name" },
-  { route: "/settings/infinitus/themes", label: "Themes", marker: "Off — plain numbers" },
   {
-    route: "/settings/infinitus/animations",
+    route: "/settings/menu-bar",
+    label: "Menu bar",
+    marker: "Show the account name",
+    // The theme picker's selected value, on this page since the Themes page folded in.
+    shows: ["Off — plain numbers"],
+  },
+  {
+    route: "/settings/animations",
     label: "Animations",
     // A select's value, not its label: a label renders whether or not the
     // choice names arrived, so the value is the part that proves they did.
@@ -53,27 +60,46 @@ export const FORK_VISUAL_ROUTES: ReadonlyArray<ForkVisualRoute> = [
     // failure `Fork ` guards above.
     absent: ["Intro style", "Intro title", "Intro speed", "Burn style"],
   },
-  { route: "/settings/infinitus/sessions", label: "Priority", marker: "Thread priority" },
-  { route: "/settings/infinitus/lock", label: "Lock", marker: "Re-lock" },
+  { route: "/settings/priority", label: "Priority", marker: "Thread priority" },
+  { route: "/settings/team", label: "Team", marker: "Whole team" },
   {
-    route: "/settings/infinitus/notifications",
+    route: "/settings/notifications",
     label: "Notifications",
     marker: "All accounts are exhausted",
   },
   {
-    route: "/settings/infinitus/devices",
+    route: "/settings/devices",
     label: "Devices",
-    // A switch's state, which the fixture sets on where its two neighbours are
-    // off. A label renders whether or not its control took the pref, so the
-    // value is the only part of this page that proves one arrived — and a
-    // switch state is the same string whatever the number formatting.
-    marker: "[Publish the current URL to infinitus.run: on]",
+    // A switch's state, which the fixture sets on where the page's other
+    // switch is off. A label renders whether or not its control took the pref,
+    // so the value is the only part of this page that proves one arrived — and
+    // a switch state is the same string whatever the number formatting.
+    marker: "[Sync settings via iCloud Drive: on]",
     // The port the fixture sets, unformatted. #1110 shipped a port that read
     // "3,773" — the label and the description were on screen, so nothing here
     // saw it. It is a number field's value, so this is the check that would.
     shows: ["[Server port: 3773]"],
   },
-  { route: "/settings/infinitus/engines", label: "Engines", marker: "swapd engine on" },
+  {
+    route: "/settings/engines",
+    label: "Engines",
+    marker: "swapd engine on",
+    shows: [
+      "Management key",
+      "Dashboard password",
+      "[CLIProxyAPI base URL: http://127.0.0.1:8317]",
+      "nothing is saved",
+      // The routing rows (#1235): the fixture's proxy rotates with affinity on.
+      "Routing strategy",
+      "Round robin",
+      "Session affinity",
+      "Open CLIProxyAPI dashboard",
+      "Open 9Router dashboard",
+      "Daemon running",
+      // The About section's version line, drawn once `status` answered.
+      "Menu bar app 0.0.0-fixture",
+    ],
+  },
   {
     route: "/accounts",
     label: "Accounts",
@@ -86,7 +112,8 @@ export const FORK_VISUAL_ROUTES: ReadonlyArray<ForkVisualRoute> = [
     // its own row's text — the capture joins a row's spans with a space — so
     // a kind that lost its chip fails here, on the exact row, instead of
     // reaching a screen unlabelled (#1111).
-    route: "/activity",
+    // Moved under Engines in #1446; the standalone /activity route is gone.
+    route: "/settings/engines/activity",
     label: "Activity",
     marker: "all out all exhausted",
     shows: [
@@ -144,8 +171,8 @@ export const FORK_VISUAL_ROUTES: ReadonlyArray<ForkVisualRoute> = [
   },
 ];
 
-/** The file stem `fork-visual-pass.mjs` gives a route: `/settings/infinitus`
-    → `settings-infinitus`, `/` → `home`. Kept in step with the harness. */
+/** The file stem `fork-visual-pass.mjs` gives a route: `/settings/menu-bar`
+    → `settings-menu-bar`, `/` → `home`. Kept in step with the harness. */
 export function captureName(route: string): string {
   return route.replace(/^\//, "").replace(/\//g, "-") || "home";
 }

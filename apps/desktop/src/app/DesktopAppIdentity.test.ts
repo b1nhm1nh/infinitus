@@ -12,7 +12,7 @@ import type * as Electron from "electron";
 import * as ElectronApp from "../electron/ElectronApp.ts";
 import * as DesktopAppIdentity from "./DesktopAppIdentity.ts";
 import * as DesktopAssets from "./DesktopAssets.ts";
-import { PRODUCT_NAME } from "@t3tools/shared/productName";
+import { PRODUCT_NAME } from "@infinitus/shared/productName";
 import * as DesktopConfig from "./DesktopConfig.ts";
 import * as DesktopEnvironment from "./DesktopEnvironment.ts";
 
@@ -58,7 +58,6 @@ const makeElectronAppLayer = (calls: ElectronAppCalls) =>
       }),
     setAppUserModelId: () => Effect.void,
     getAppMetrics: Effect.succeed([]),
-    isDefaultProtocolClient: () => Effect.succeed(false),
     setAsDefaultProtocolClient: () => Effect.succeed(true),
     setDesktopName: () => Effect.void,
     setDockIcon: (iconPath) =>

@@ -2,9 +2,7 @@
 
 For a coding agent (Claude Code, Codex, an SSH'd assistant) asked to
 "set up Infinitus" on a Mac. Every step is idempotent; run them in
-order and skip the ones already done. The in-app equivalent is the
-first-run card's **Copy for an AI agent** button, which fills in what
-it already found on the machine.
+order and skip the ones already done.
 
 **Two rules.** A human signs into every account — you never type or
 paste credentials, and you never read `~/.swapd/` (the engine's own
@@ -39,7 +37,7 @@ Nightly track: `deathemperor/tap/infinitus@nightly`.
 Put the control CLI on PATH (optional, used by the rest of this guide):
 
 ```sh
-ln -sf /Applications/Infinitus.app/Contents/MacOS/infinitusctl /usr/local/bin/infinitusctl
+ln -sf "/Applications/Infinitus.app/Contents/Library/LoginItems/Infinitus Menu Bar.app/Contents/MacOS/infinitusctl" /usr/local/bin/infinitusctl
 infinitusctl status        # exit 3 = app not running
 ```
 
@@ -80,8 +78,9 @@ reads a setup token / API key from stdin.
 
 ## 4. Auto-switching
 
-Infinitus runs `swapd auto` itself while it is open (Settings → Engines
-shows the supervisor); nothing to start. The knobs are the engine's,
+Infinitus starts a background account service that keeps running when you quit
+the menu bar and starts again at login. Settings → Engines shows its status;
+turn off the swapd engine there to stop it. The knobs are the engine's,
 one set per provider (never re-implement them app-side):
 
 ```sh

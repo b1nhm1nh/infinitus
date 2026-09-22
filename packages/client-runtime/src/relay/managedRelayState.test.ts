@@ -1,10 +1,10 @@
-import { EnvironmentId } from "@t3tools/contracts";
+import { EnvironmentId } from "@infinitus/contracts";
 import {
   RelayAuthInvalidError,
   type RelayClientDeviceRecord,
   type RelayClientEnvironmentRecord,
   type RelayEnvironmentStatusResponse,
-} from "@t3tools/contracts/relay";
+} from "@infinitus/contracts/relay";
 import { describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
@@ -179,6 +179,32 @@ describe("createManagedRelayQueryManager", () => {
       expect(yield* Fiber.join(readsFiber)).toEqual([token, token]);
       expect(yield* session.readClerkToken()).toBe(token);
       expect(readClerkToken).toHaveBeenCalledTimes(1);
+    }),
+  );
+
+  it.effect("says why the token provider failed, not only that it did", () =>
+    Effect.gen(function* () {
+      const session = createManagedRelaySession({
+        accountId: "account-1",
+        readClerkToken: () => Promise.reject(new Error("JWT template not found")),
+      });
+
+      const error = yield* Effect.flip(session.readClerkToken());
+      expect(error.message).toBe(
+        "Could not obtain the Infinitus Connect session token: JWT template not found",
+      );
+    }),
+  );
+
+  it.effect("keeps the plain sentence when the token provider fails without a reason", () =>
+    Effect.gen(function* () {
+      const session = createManagedRelaySession({
+        accountId: "account-1",
+        readClerkToken: () => Promise.reject(undefined),
+      });
+
+      const error = yield* Effect.flip(session.readClerkToken());
+      expect(error.message).toBe("Could not obtain the Infinitus Connect session token.");
     }),
   );
 

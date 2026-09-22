@@ -356,6 +356,10 @@ public enum StatsScanner {
         /// call, before this call's budget spent any of it — the
         /// denominator for a "scanned X of Y" readout.
         public var bytesTotal = 0
+        /// Every file the scan folded, keyed by path — cwd, engine, the
+        /// per-day tallies and the session span — so a caller can fold
+        /// its own subset (the team publisher drops excluded projects).
+        public var entries: [String: FileEntry] = [:]
     }
 
     struct Cache: Codable {
@@ -720,6 +724,7 @@ public enum StatsScanner {
             due = true
         }
         if let cacheURL, !unchanged, due { write(cache, to: cacheURL) }
+        result.entries = live
         return result
     }
 
@@ -794,7 +799,11 @@ public enum StatsScanner {
         // One pass over the raw bytes: lines split by memchr, the type
         // pre-filter a first-byte/memcmp search. `Data.range(of:)` on a
         // slice per line ran the whole corpus at ~15 MB/s (2026-09-05).
-        complete.withUnsafeBytes { (buf: UnsafeRawBufferPointer) in
+        // Inside its own autorelease pool (#1204): the scan runs in a
+        // detached task, where the pool drains only when the task ends,
+        // so every line's `JSONSerialization` objects stayed alive across
+        // the whole corpus.
+        TokenRateScanner.drainingPool { complete.withUnsafeBytes { (buf: UnsafeRawBufferPointer) in
             guard let base = buf.baseAddress else { return }
             var lineStart = 0
             while lineStart < buf.count {
@@ -826,7 +835,7 @@ public enum StatsScanner {
                 guard let obj else { continue }
                 ingest(obj, sessionID: sessionID, into: &entry, calendar: calendar)
             }
-        }
+        } }
         entry.offset += complete.count
         return complete.count
     }

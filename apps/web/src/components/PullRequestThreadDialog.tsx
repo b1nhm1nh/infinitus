@@ -1,5 +1,5 @@
-import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
-import { isAtomCommandInterrupted } from "@t3tools/client-runtime/state/runtime";
+import type { EnvironmentId, ThreadId } from "@infinitus/contracts";
+import { isAtomCommandInterrupted } from "@infinitus/client-runtime/state/runtime";
 import { useDebouncedValue } from "@tanstack/react-pacer";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
@@ -222,9 +222,12 @@ export function PullRequestThreadDialog({
                 if (event.key !== "Enter") {
                   return;
                 }
+                if (event.nativeEvent.isComposing || event.keyCode === 229) {
+                  return;
+                }
                 event.preventDefault();
                 if (!isResolving && !preparePullRequestThreadAction.isPending) {
-                  void handleConfirm("local");
+                  void handleConfirm("worktree");
                 }
               }}
             />

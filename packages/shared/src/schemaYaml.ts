@@ -34,7 +34,7 @@ function formatYamlParseError(error: unknown): string {
 
 /** Parses YAML during decoding, reporting parse failures as InvalidValue issues. */
 function parseYaml<E extends string>(options?: YamlParseOptions): SchemaGetter.Getter<unknown, E> {
-  return SchemaGetter.transformOrFail((input: E) =>
+  return SchemaGetter.transformEffect((input: E) =>
     Effect.try({
       try: () => parseYamlString(input, options) as unknown,
       catch: (error) => new SchemaIssue.InvalidValue({ message: formatYamlParseError(error) }),
@@ -44,7 +44,7 @@ function parseYaml<E extends string>(options?: YamlParseOptions): SchemaGetter.G
 
 /** Serializes YAML during encoding, reporting stringify failures as InvalidValue issues. */
 function stringifyYaml(options?: YamlStringifyOptions): SchemaGetter.Getter<string, unknown> {
-  return SchemaGetter.transformOrFail((input: unknown) =>
+  return SchemaGetter.transformEffect((input: unknown) =>
     Effect.try({
       try: () => stringifyYamlValue(input, options),
       catch: () => new SchemaIssue.InvalidValue({ message: "Failed to stringify YAML." }),
@@ -68,7 +68,7 @@ function stringifyYaml(options?: YamlStringifyOptions): SchemaGetter.Getter<stri
  *
  * ```ts
  * import * as Schema from "effect/Schema"
- * import { fromYamlString } from "@t3tools/shared/schemaYaml"
+ * import { fromYamlString } from "@infinitus/shared/schemaYaml"
  *
  * const schema = Schema.String.pipe(Schema.decodeTo(Schema.Unknown, fromYamlString))
  * ```

@@ -2,12 +2,12 @@ import { HStack, ProgressView, Spacer, Text, VStack } from "@expo/ui/swift-ui";
 import {
   accessibilityElement,
   accessibilityLabel,
+  fixedSize,
   font,
   foregroundStyle,
   frame,
   layoutPriority,
   lineLimit,
-  minimumScaleFactor,
   progressViewStyle,
   tint,
   widgetURL,
@@ -33,12 +33,14 @@ function SubscriptionUsage(
   const accessory = family === "accessoryRectangular";
   const compact =
     family === "systemSmall" || accessory || environment.levelOfDetail === "simplified";
+  // Budget short cards for two quotas per provider, including their secondary text.
+  const dense = family === "systemSmall" || family === "systemMedium";
   const limit = family === "systemExtraLarge" ? 6 : family === "systemLarge" ? 4 : 2;
   const monochrome =
     environment.widgetRenderingMode !== "fullColor" || environment.isLuminanceReduced;
   const providers = props.providers ?? [
-    { name: "Codex", detail: "Open T3 to connect", windows: [], expiresAt: 0 },
-    { name: "Claude", detail: "Open T3 to connect", windows: [], expiresAt: 0 },
+    { name: "Codex", detail: "Open Infinitus to connect", windows: [], expiresAt: 0 },
+    { name: "Claude", detail: "Open Infinitus to connect", windows: [], expiresAt: 0 },
   ];
   const columns = providers.map((provider) => {
     const stale = provider.windows.length > 0 && now >= provider.expiresAt;
@@ -71,12 +73,13 @@ function SubscriptionUsage(
               ].slice(0, limit)
             : windows.slice(0, limit);
     const detail = stale
-      ? "Open T3 to refresh"
+      ? "Open Infinitus to refresh"
       : period !== "auto" && windows.length === 0 && provider.windows.length > 0
         ? `No ${period} limit reported`
         : provider.detail;
     const barModifiers = [
       progressViewStyle("linear"),
+      frame({ height: 4 }),
       ...(monochrome ? [] : [tint(provider.name === "Claude" ? "#d97757" : "#8e8e93")]),
     ];
     if (accessory) {
@@ -99,7 +102,6 @@ function SubscriptionUsage(
               modifiers={[
                 font({ textStyle: "caption", weight: "semibold" }),
                 lineLimit(1),
-                minimumScaleFactor(0.75),
                 foregroundStyle("primary"),
               ]}
             >
@@ -119,7 +121,7 @@ function SubscriptionUsage(
                 ? `${tightest.remaining}% left`
                 : period !== "auto" && !stale && provider.windows.length > 0
                   ? "N/A"
-                  : "Open T3"}
+                  : "Open Infinitus"}
             </Text>
           </HStack>
           {tightest ? (
@@ -132,35 +134,37 @@ function SubscriptionUsage(
       <VStack
         key={provider.name}
         alignment="leading"
-        spacing={compact ? 2 : 4}
-        modifiers={[frame({ maxWidth: Infinity, alignment: "leading" })]}
+        spacing={dense ? 1 : compact ? 2 : 4}
+        modifiers={[
+          frame({ maxWidth: Infinity, alignment: "leading" }),
+          fixedSize({ horizontal: false, vertical: true }),
+        ]}
       >
         <Text
           modifiers={[
             font({ textStyle: compact ? "caption" : "headline", weight: "bold" }),
             lineLimit(1),
-            minimumScaleFactor(0.75),
             foregroundStyle("primary"),
           ]}
         >
           {provider.name}
         </Text>
-        {(!compact || shown.length === 0) && detail !== "Subscription remaining" ? (
+        {!compact || shown.length === 0 ? (
           <Text
             modifiers={[
               font({ textStyle: "caption2" }),
               foregroundStyle("secondary"),
-              lineLimit(compact ? 1 : 2),
+              lineLimit(1),
             ]}
           >
-            {detail}
+            {detail === "Subscription remaining" ? " " : detail}
           </Text>
         ) : null}
         {shown.map((window) => (
           <VStack
             key={window.label}
             alignment="leading"
-            spacing={2}
+            spacing={dense ? 1 : 2}
             modifiers={[
               accessibilityElement("ignore"),
               accessibilityLabel(
@@ -171,10 +175,9 @@ function SubscriptionUsage(
             <HStack spacing={4}>
               <Text
                 modifiers={[
-                  font({ textStyle: compact ? "caption2" : "caption" }),
+                  font({ textStyle: compact || dense ? "caption2" : "caption" }),
                   foregroundStyle("secondary"),
                   lineLimit(1),
-                  minimumScaleFactor(0.75),
                 ]}
               >
                 {window.label}
@@ -182,9 +185,11 @@ function SubscriptionUsage(
               <Spacer />
               <Text
                 modifiers={[
-                  font({ textStyle: compact ? "caption2" : "caption", weight: "semibold" }),
+                  font({
+                    textStyle: compact || dense ? "caption2" : "caption",
+                    weight: "semibold",
+                  }),
                   lineLimit(1),
-                  minimumScaleFactor(0.75),
                   layoutPriority(1),
                   foregroundStyle(
                     window.remaining <= 10 && !monochrome
@@ -200,14 +205,7 @@ function SubscriptionUsage(
             </HStack>
             <ProgressView value={window.remaining / 100} modifiers={barModifiers} />
             {!compact ? (
-              <Text
-                modifiers={[
-                  font({ textStyle: "caption2" }),
-                  foregroundStyle("secondary"),
-                  lineLimit(1),
-                  minimumScaleFactor(0.75),
-                ]}
-              >
+              <Text modifiers={[font({ size: 10 }), foregroundStyle("secondary"), lineLimit(1)]}>
                 {window.reset}
               </Text>
             ) : null}
@@ -216,10 +214,16 @@ function SubscriptionUsage(
         {!compact &&
         !stale &&
         (period === "auto" ? (provider.totalWindows ?? windows.length) : windows.length) > limit ? (
-          <Text modifiers={[font({ textStyle: "caption2" }), foregroundStyle("secondary")]}>
+          <Text
+            modifiers={[
+              font({ textStyle: "caption2" }),
+              foregroundStyle("secondary"),
+              lineLimit(1),
+            ]}
+          >
             {(period === "auto" ? (provider.totalWindows ?? windows.length) : windows.length) -
               limit}{" "}
-            more in T3
+            more in Infinitus
           </Text>
         ) : null}
       </VStack>
@@ -228,11 +232,11 @@ function SubscriptionUsage(
   return (
     <VStack
       alignment="leading"
-      spacing={accessory ? 2 : 6}
+      spacing={accessory || dense ? 2 : 6}
       modifiers={props.url ? [widgetURL(props.url)] : []}
     >
       {compact ? (
-        <VStack alignment="leading" spacing={accessory ? 4 : 8}>
+        <VStack alignment="leading" spacing={accessory || dense ? 4 : 8}>
           {columns}
         </VStack>
       ) : (
@@ -243,16 +247,11 @@ function SubscriptionUsage(
       {!accessory ? <Spacer /> : null}
       {!accessory ? (
         <Text
-          modifiers={[
-            font({ textStyle: "caption2" }),
-            foregroundStyle("secondary"),
-            lineLimit(1),
-            minimumScaleFactor(0.75),
-          ]}
+          modifiers={[font({ textStyle: "caption2" }), foregroundStyle("secondary"), lineLimit(1)]}
         >
           {props.checkedAt
             ? `As of ${new Date(props.checkedAt).toLocaleString(undefined, { hour: "numeric", minute: "2-digit", month: "short", day: "numeric" })}`
-            : "Tap to connect in T3"}
+            : "Tap to connect in Infinitus"}
         </Text>
       ) : null}
     </VStack>

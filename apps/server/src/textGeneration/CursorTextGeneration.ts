@@ -5,11 +5,11 @@ import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
 import { ChildProcessSpawner } from "effect/unstable/process";
 
-import { type CursorSettings, type ModelSelection } from "@t3tools/contracts";
-import { sanitizeBranchFragment, sanitizeFeatureBranchName } from "@t3tools/shared/git";
-import { extractJsonObject } from "@t3tools/shared/schemaJson";
+import { type CursorSettings, type ModelSelection } from "@infinitus/contracts";
+import { sanitizeBranchFragment, sanitizeFeatureBranchName } from "@infinitus/shared/git";
+import { extractJsonObject } from "@infinitus/shared/schemaJson";
 
-import { TextGenerationError } from "@t3tools/contracts";
+import { TextGenerationError } from "@infinitus/contracts";
 import * as TextGeneration from "./TextGeneration.ts";
 import {
   buildBranchNamePrompt,
@@ -67,7 +67,7 @@ export const makeCursorTextGeneration = Effect.fn("makeCursorTextGeneration")(fu
         environment: resolvedEnvironment,
         childProcessSpawner: commandSpawner,
         cwd,
-        clientInfo: { name: "t3-code-git-text", version: "0.0.0" },
+        clientInfo: { name: "infinitus-git-text", version: "0.0.0" },
       }).pipe(Effect.provideService(Crypto.Crypto, crypto));
 
       yield* runtime.handleSessionUpdate((notification) => {
@@ -243,6 +243,7 @@ export const makeCursorTextGeneration = Effect.fn("makeCursorTextGeneration")(fu
       const { prompt, outputSchema } = buildThreadTitlePrompt({
         message: input.message,
         previousTitle: input.previousTitle,
+        linkedContext: input.linkedContext,
         attachments: input.attachments,
       });
 
@@ -256,6 +257,7 @@ export const makeCursorTextGeneration = Effect.fn("makeCursorTextGeneration")(fu
 
       return {
         title: sanitizeThreadTitle(generated.title),
+        ...(generated.needsRefinement ? { needsRefinement: true } : {}),
       } satisfies TextGeneration.ThreadTitleGenerationResult;
     });
 

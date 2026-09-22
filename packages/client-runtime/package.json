@@ -1,8 +1,20 @@
 {
-  "name": "@t3tools/client-runtime",
+  "name": "@infinitus/client-runtime",
   "private": true,
   "type": "module",
   "exports": {
+    "./device/stream": {
+      "types": "./src/device/stream.ts",
+      "default": "./src/device/stream.ts"
+    },
+    "./device/hub-access": {
+      "types": "./src/device/hubAccess.ts",
+      "default": "./src/device/hubAccess.ts"
+    },
+    "./worktree-setup": {
+      "types": "./src/worktreeSetup.ts",
+      "default": "./src/worktreeSetup.ts"
+    },
     "./load-balancing": {
       "types": "./src/load-balancing.ts",
       "default": "./src/load-balancing.ts"
@@ -297,8 +309,8 @@
     "test": "vp test run"
   },
   "dependencies": {
-    "@t3tools/contracts": "workspace:*",
-    "@t3tools/shared": "workspace:*",
+    "@infinitus/contracts": "workspace:*",
+    "@infinitus/shared": "workspace:*",
     "effect": "catalog:",
     "mdast-util-directive": "^3.1.0",
     "micromark-extension-directive": "^4.0.0",

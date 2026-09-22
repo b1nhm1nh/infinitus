@@ -76,10 +76,11 @@ dependencies represented at their boundary rather than mocking internal behavior
 
 ## Deployment
 
-The relay deploys through Alchemy:
+The relay deploys with the Alchemy CLI (`vp run --filter t3code-relay deploy` is `alchemy deploy`
+in this directory):
 
 ```sh
-vp run --filter t3code-relay deploy
+vp run --filter infinitus-relay deploy
 ```
 
 The stack provisions the Cloudflare Worker and queues, managed endpoint resources, database
@@ -90,14 +91,14 @@ file from the relay directory. Runtime secrets include Clerk, APNs, and optional
 the configured API and tunnel DNS zones as retained Cloudflare resources. Personal stages reference
 the production-owned zones.
 
-The `prod` Alchemy stage owns the retained PlanetScale database and is the shared hosted relay for
-stable and nightly clients. Every other stage references that database and provisions an isolated
-PlanetScale branch and runtime role for local development, so deploy `prod` before creating
-developer stages:
+The `prod` Alchemy stage owns the retained Neon project (Infinitus: upstream's PlanetScale
+database needs a card on file, Neon's free plan does not) and is the shared hosted relay for stable
+and nightly clients. Every other stage references that project and provisions an isolated Neon
+branch for local development, so deploy `prod` before creating developer stages:
 
 ```sh
-vp run --filter t3code-relay deploy -- --stage prod
-vp run --filter t3code-relay deploy -- --env-file .env.local
+vp run --filter infinitus-relay deploy -- --stage prod
+vp run --filter infinitus-relay deploy -- --env-file .env.local
 ```
 
 Alchemy defaults personal deployments to the `dev_$USER` stage. Relay custom domains apply the same
@@ -109,9 +110,10 @@ DNS-safe sanitization as Alchemy physical resource names, so `prod` uses
 `<stage>-<digest>.<RELAY_TUNNEL_ZONE_NAME>`. `RELAY_DOMAIN` remains available as an explicit API
 domain override.
 
-After a successful deploy, the wrapper updates the repository-root `.env` file with the derived relay
-URL. That makes subsequent source builds point at the relay that was just deployed without copying
-the URL manually.
+The stack's `PublishClientConfig` action ([`src/clientConfig.ts`](./src/clientConfig.ts)) writes the
+deployed relay URL and tracing configuration into the repository-root `.env`, so subsequent source
+builds point at the relay that was just deployed without copying values manually. It runs only when
+one of those outputs changed, and `T3CODE_RELAY_CLIENT_CONFIG_ENV` redirects it to another file.
 
 ### Deployment CI
 
@@ -124,14 +126,13 @@ deploy personal non-production stages locally with any stage name other than `pr
 The repository must define these Actions variables shared by relay deployments:
 
 - `CLOUDFLARE_ACCOUNT_ID`
-- `PLANETSCALE_ORGANIZATION`
+- `NEON_ORG_ID`
 - `AXIOM_ORG_ID`
 
 The repository must define these Actions secrets shared by relay deployments:
 
 - `CLOUDFLARE_API_TOKEN`
-- `PLANETSCALE_API_TOKEN_ID`
-- `PLANETSCALE_API_TOKEN`
+- `NEON_API_KEY`
 - `AXIOM_TOKEN`
 
 The `production` GitHub environment must define these Actions variables:

@@ -1,4 +1,4 @@
-import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
+import { HostProcessPlatform } from "@infinitus/shared/hostProcess";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
@@ -111,13 +111,11 @@ export class TailscaleCommandTimeoutError extends Schema.TaggedError<TailscaleCo
   }
 }
 
-export const TailscaleCommandError = Schema.Union([
-  TailscaleCommandSpawnError,
-  TailscaleCommandOutputError,
-  TailscaleCommandExitError,
-  TailscaleCommandTimeoutError,
-]);
-export type TailscaleCommandError = typeof TailscaleCommandError.Type;
+export type TailscaleCommandError =
+  | TailscaleCommandSpawnError
+  | TailscaleCommandOutputError
+  | TailscaleCommandExitError
+  | TailscaleCommandTimeoutError;
 
 export class TailscaleStatusParseError extends Schema.TaggedError<TailscaleStatusParseError>()(
   "TailscaleStatusParseError",

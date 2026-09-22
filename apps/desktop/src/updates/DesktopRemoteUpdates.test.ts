@@ -4,7 +4,7 @@ import type {
   DesktopTelemetryCommitDesktopUpdate,
   DesktopTelemetryCancelDesktopUpdate,
   DesktopUpdateStatusReport,
-} from "@t3tools/contracts";
+} from "@infinitus/contracts";
 import * as Deferred from "effect/Deferred";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
@@ -57,7 +57,6 @@ function runRemoteUpdatesTest(
         latest: Effect.succeedNone,
         changes: Stream.empty,
         encoded: Stream.empty,
-        handleControl: () => Effect.void,
         handleControlForSource: () => Effect.void,
         removeControlSource: () => Effect.void,
         publishUpdateReport: (report) =>

@@ -88,6 +88,17 @@ final class ForkServerProbeTests: XCTestCase {
         XCTAssertEqual(verdict, .refuse)
     }
 
+    /// #1199: an instance that never published sits on the default port; a
+    /// server answering there is another instance's (the installed app's
+    /// desktop on a dev Mac), not a target of its own to lose — and no probe
+    /// of that port is made at all.
+    func testAnInstanceThatNeverPublishedFollowsItsFirstPublish() async {
+        let asked = Asked()
+        let verdict = await ForkServerProbe.verdict(newPort: 70000, currentPort: nil, using: fleet([3773], asked: asked))
+        XCTAssertEqual(verdict, .accept)
+        XCTAssertEqual(asked.ports, [])
+    }
+
     func testWithNoWorkingTargetToLoseThePublishGoesThrough() async {
         // The app started before any backend, or the pref holds a stale
         // number: refusing here would wedge the pref and protect nothing.
@@ -96,9 +107,8 @@ final class ForkServerProbeTests: XCTestCase {
     }
 
     func testAnInvalidPortIsNotRefusedWhileNothingIsServing() async {
-        // `ForkTunnelStatus` reports an out-of-range port as invalidPort and
-        // runs no tunnel on it, so storing it costs nothing when there is no
-        // live target to displace.
+        // `url(port:)` refuses an out-of-range port before any socket, so
+        // storing it costs nothing when there is no live target to displace.
         let verdict = await ForkServerProbe.verdict(newPort: 70000, currentPort: 3773, using: fleet([]))
         XCTAssertEqual(verdict, .accept)
         // With a server actually up, swapping it for an unusable port is the

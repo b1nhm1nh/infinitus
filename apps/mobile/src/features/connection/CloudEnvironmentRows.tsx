@@ -1,14 +1,16 @@
+import { ConnectionTraceId } from "./ConnectionTraceId";
 import { useAuth } from "@clerk/expo";
 import { SymbolView } from "../../components/AppSymbol";
 import {
   connectionStatusText,
   type EnvironmentConnectionPhase,
-} from "@t3tools/client-runtime/connection";
+} from "@infinitus/client-runtime/connection";
 import {
   type EnvironmentId,
   type EnvironmentMachineKind,
+  type ExecutionEnvironmentDescriptor,
   resolveEnvironmentMachineKind,
-} from "@t3tools/contracts";
+} from "@infinitus/contracts";
 import { useAtomValue } from "@effect/atom-react";
 import { useCallback, useState } from "react";
 import {
@@ -30,6 +32,7 @@ import { availableCloudEnvironmentPresentation } from "../cloud/cloudEnvironment
 import { hasCloudPublicConfig } from "../cloud/publicConfig";
 import { ConnectionStatusDot } from "./ConnectionStatusDot";
 import { type RelayEnvironmentView, useConnectionController } from "./useConnectionController";
+import { CONNECT_NAME } from "@infinitus/shared/productName";
 
 interface CloudEnvironmentRowsProps {
   readonly connectedCloudEnvironments: ReadonlyArray<ConnectedEnvironmentSummary>;
@@ -39,16 +42,14 @@ interface CloudEnvironmentRowsProps {
   readonly showcaseAvailableEnvironments?: ReadonlyArray<RelayEnvironmentView>;
   readonly showcaseSignedIn?: boolean;
   /**
-   * Hide the "T3 Connect" section title + refresh button for hosts that
-   * provide their own chrome (the onboarding sheet's native header and
-   * pull-to-refresh).
+   * Hide the "T3 Connect" section title when the host provides its own header.
    */
   readonly showHeader?: boolean;
 }
 
 /**
  * "T3 Connect" section: every environment published to the signed-in account,
- * with connect switches, availability status, refresh, and loading/error
+ * with connect switches, availability status, and loading/error
  * states. Shared between the Settings environments screen and the T3 Connect
  * onboarding sheet.
  *
@@ -99,6 +100,16 @@ function CloudEnvironmentRowsContent(
     [controller],
   );
 
+  // The relay's health probe carries each server's descriptor, so a machine
+  // can wear its detected glyph before this device ever connects to it.
+  const discoveredDescriptors = new Map(
+    controller.relayEnvironments.flatMap((entry) =>
+      entry.status?.descriptor === undefined
+        ? []
+        : [[entry.environment.environmentId, entry.status.descriptor] as const],
+    ),
+  );
+
   const handleToggleCloudError = useCallback((environmentId: string) => {
     setExpandedErrorId((current) => (current === environmentId ? null : environmentId));
   }, []);
@@ -108,29 +119,10 @@ function CloudEnvironmentRowsContent(
   return (
     <View collapsable={false} className={cn("gap-3", showHeader && "mt-5")}>
       {showHeader ? (
-        <View className="flex-row items-center justify-between px-1">
-          <Text className="text-sm font-t3-bold uppercase text-foreground-muted">T3 Connect</Text>
-          {discoveryAvailable ? (
-            <Pressable
-              accessibilityRole="button"
-              disabled={controller.relayDiscovery.isRefreshing}
-              onPress={() => {
-                void controller.refreshRelayEnvironments();
-              }}
-              className="h-9 w-9 items-center justify-center rounded-full bg-subtle active:opacity-70 disabled:opacity-50"
-            >
-              {controller.relayDiscovery.isRefreshing ? (
-                <ActivityIndicator colorClassName={"accent-icon"} size="small" />
-              ) : (
-                <SymbolView
-                  name="arrow.clockwise"
-                  size={14}
-                  tintColorClassName={"accent-icon"}
-                  type="monochrome"
-                />
-              )}
-            </Pressable>
-          ) : null}
+        <View className="px-1">
+          <Text className="text-sm font-infinitus-bold uppercase text-foreground-muted">
+            {CONNECT_NAME}
+          </Text>
         </View>
       ) : null}
 
@@ -140,6 +132,7 @@ function CloudEnvironmentRowsContent(
             <ConnectedCloudEnvironmentRow
               key={environment.environmentId}
               environment={environment}
+              descriptor={discoveredDescriptors.get(environment.environmentId)}
               borderTop={index !== 0}
               onSetEnabled={(enabled) =>
                 props.onSetEnvironmentEnabled(environment.environmentId, enabled)
@@ -181,8 +174,8 @@ function CloudEnvironmentRowsContent(
       controller.relayDiscovery.error &&
       !controller.relayDiscovery.isRefreshing ? (
         <View collapsable={false} className="gap-3 rounded-[24px] bg-card p-5">
-          <Text className="text-base font-t3-bold text-foreground">
-            Could not load T3 Connect environments
+          <Text className="text-base font-infinitus-bold text-foreground">
+            Could not load {CONNECT_NAME} environments
           </Text>
           <Text className="text-sm text-foreground-muted">{controller.relayDiscovery.error}</Text>
           {controller.relayDiscovery.errorTraceId ? (
@@ -195,7 +188,7 @@ function CloudEnvironmentRowsContent(
             }}
             className="self-start rounded-full bg-subtle px-3.5 py-2 active:opacity-70"
           >
-            <Text className="text-xs font-t3-bold text-foreground">Try again</Text>
+            <Text className="text-xs font-infinitus-bold text-foreground">Try again</Text>
           </Pressable>
         </View>
       ) : null}
@@ -210,6 +203,8 @@ function CloudEnvironmentRowsContent(
  */
 function ConnectedCloudEnvironmentRow(props: {
   readonly environment: ConnectedEnvironmentSummary;
+  /** Discovery's view of the server, for the glyph before the first connection. */
+  readonly descriptor: ExecutionEnvironmentDescriptor | undefined;
   readonly borderTop: boolean;
   readonly errorExpanded: boolean;
   readonly onSetEnabled: (enabled: boolean) => void;
@@ -219,7 +214,14 @@ function ConnectedCloudEnvironmentRow(props: {
   const serverConfig = useAtomValue(
     serverEnvironment.configValueAtom(props.environment.environmentId),
   );
-  const enabled = props.environment.isEnabled;
+  const unsupported = props.environment.connectionState === "unsupported";
+  const enabled = props.environment.isEnabled && !unsupported;
+  // Discovery empties its map on every refresh; hold the last descriptor seen
+  // so the glyph does not blink back to the generic one each time.
+  const [lastDescriptor, setLastDescriptor] = useState(props.descriptor);
+  if (props.descriptor !== undefined && props.descriptor !== lastDescriptor) {
+    setLastDescriptor(props.descriptor);
+  }
   return (
     <Pressable
       accessibilityHint="Long press to remove from this device"
@@ -227,15 +229,18 @@ function ConnectedCloudEnvironmentRow(props: {
     >
       <CloudEnvironmentRowShell
         borderTop={props.borderTop}
-        connectionError={enabled ? props.environment.connectionError : null}
+        connectionError={enabled || unsupported ? props.environment.connectionError : null}
         connectionErrorTraceId={enabled ? props.environment.connectionErrorTraceId : null}
-        connectionState={enabled ? props.environment.connectionState : "available"}
+        connectionState={enabled || unsupported ? props.environment.connectionState : "available"}
         errorExpanded={props.errorExpanded}
         label={props.environment.environmentLabel}
-        machine={resolveEnvironmentMachineKind(serverConfig)}
+        machine={resolveEnvironmentMachineKind(
+          serverConfig ?? (lastDescriptor === undefined ? null : { environment: lastDescriptor }),
+        )}
         onValueChange={props.onSetEnabled}
         onToggleError={props.onToggleError}
-        {...(enabled ? {} : { statusText: "Off" })}
+        disabled={unsupported}
+        {...(enabled || unsupported ? {} : { statusText: "Off" })}
         value={enabled}
       />
     </Pressable>
@@ -264,12 +269,18 @@ function CloudEnvironmentRow(props: {
       connectionState={presentation.connectionState}
       errorExpanded={props.errorExpanded}
       label={props.environment.environment.label}
+      machine={resolveEnvironmentMachineKind(
+        props.environment.status?.descriptor === undefined
+          ? null
+          : { environment: props.environment.status.descriptor },
+      )}
       onValueChange={(enabled) => {
         if (enabled) {
           props.onConnect();
         }
       }}
       onToggleError={props.onToggleError}
+      disabled={presentation.connectionState === "unsupported"}
       statusText={presentation.statusText}
       value={false}
     />
@@ -284,8 +295,7 @@ function CloudEnvironmentRowShell(props: {
   readonly disabled?: boolean;
   readonly errorExpanded: boolean;
   readonly label: string;
-  /** Absent for environments the relay lists but this device has not connected to. */
-  readonly machine?: EnvironmentMachineKind;
+  readonly machine: EnvironmentMachineKind;
   readonly onToggleError: () => void;
   readonly onValueChange: (enabled: boolean) => void;
   readonly statusText?: string;
@@ -301,9 +311,11 @@ function CloudEnvironmentRowShell(props: {
       error: props.connectionError,
       traceId: props.connectionErrorTraceId,
     });
-  const statusClassName = props.connectionError
-    ? "text-danger-foreground"
-    : "text-foreground-muted";
+  // Unsupported is a compatibility note, not a failure, so it stays muted.
+  const statusClassName =
+    props.connectionError && props.connectionState !== "unsupported"
+      ? "text-danger-foreground"
+      : "text-foreground-muted";
   const [errorMeasurement, setErrorMeasurement] = useState<{
     readonly text: string;
     readonly lineCount: number;
@@ -341,15 +353,13 @@ function CloudEnvironmentRowShell(props: {
       <View className="min-w-0 flex-1 gap-0.5">
         <View className="min-w-0 flex-row items-center gap-2">
           <ConnectionStatusDot state={props.connectionState} pulse={shouldPulse} size={7} />
-          {props.machine ? (
-            <EnvironmentMachineSymbol
-              kind={props.machine}
-              size={14}
-              tintColorClassName="accent-foreground-muted"
-            />
-          ) : null}
+          <EnvironmentMachineSymbol
+            kind={props.machine}
+            size={14}
+            tintColorClassName="accent-foreground-muted"
+          />
           <Text
-            className="min-w-0 flex-shrink text-base font-t3-bold leading-snug text-foreground"
+            className="min-w-0 flex-shrink text-base font-infinitus-bold leading-snug text-foreground"
             numberOfLines={1}
           >
             {props.label}
@@ -376,23 +386,15 @@ function CloudEnvironmentRowShell(props: {
           >
             {statusText}
             {errorTraceId ? (
-              <>
-                {" Trace ID: "}
-                <Text
-                  accessibilityHint="Copies the trace ID"
-                  accessibilityRole="button"
-                  className={cn("text-xs underline decoration-dotted", statusClassName)}
-                  onLongPress={(event) => {
-                    event.stopPropagation();
-                    copyTextWithHaptic(errorTraceId, { target: "connection-trace-id" });
-                  }}
-                  onPress={(event) => {
-                    event.stopPropagation();
-                  }}
-                >
-                  {errorTraceId}
-                </Text>
-              </>
+              <ConnectionTraceId
+                traceId={errorTraceId}
+                tone={
+                  props.connectionError && props.connectionState !== "unsupported"
+                    ? "danger"
+                    : "muted"
+                }
+                activation="longPress"
+              />
             ) : null}
           </Text>
           {errorCanExpand ? (
@@ -433,7 +435,7 @@ function CopyTraceIdButton(props: { readonly traceId: string }) {
         tintColorClassName={"accent-icon"}
         type="monochrome"
       />
-      <Text className="text-xs font-t3-bold text-foreground">Copy trace ID</Text>
+      <Text className="text-xs font-infinitus-bold text-foreground">Copy trace ID</Text>
     </Pressable>
   );
 }

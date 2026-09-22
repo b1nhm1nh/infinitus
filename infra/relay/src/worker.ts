@@ -15,7 +15,7 @@ import * as HttpRouter from "effect/unstable/http/HttpRouter";
 import * as HttpApiBuilder from "effect/unstable/httpapi/HttpApiBuilder";
 import * as HttpApiScalar from "effect/unstable/httpapi/HttpApiScalar";
 
-import { RelayApi } from "@t3tools/contracts/relay";
+import { RelayApi } from "@infinitus/contracts/relay";
 
 import {
   clientApi,
@@ -23,6 +23,7 @@ import {
   healthApi,
   metadataApi,
   mobileApi,
+  RELAY_HTTP_ROUTER_CONFIG,
   relayClientAuthLayer,
   relayDpopClientAuthLayer,
   relayCors,
@@ -70,6 +71,9 @@ import * as EnvironmentPublishSignatures from "./environments/EnvironmentPublish
 import * as ManagedEndpointProvider from "./environments/ManagedEndpointProvider.ts";
 import * as ManagedTunnelLimits from "./environments/ManagedTunnelLimits.ts";
 import * as MobileRegistrations from "./agentActivity/MobileRegistrations.ts";
+// Fork (#1375): Infinitus account alerts, thread-less, on the relay's key.
+import { infinitusAlertApi } from "./infinitusAlerts/InfinitusAlertApi.ts";
+import * as InfinitusAlertPublisher from "./infinitusAlerts/InfinitusAlertPublisher.ts";
 
 const webcryptoLayer = Layer.succeed(
   Crypto.Crypto,
@@ -102,6 +106,7 @@ const relayApiLayer = Layer.mergeAll(
   tokenApi,
   dpopClientApi,
   serverApi,
+  infinitusAlertApi,
 );
 
 const CloudMintKeyPair = Alchemy.KeyPair("CloudMintKeyPair");
@@ -141,19 +146,19 @@ export const ApiLive = Api.make(
     //
     // 2. Create bindings
     //
-    const apnsEnabled = yield* Config.boolean("APNS_ENABLED").pipe(Config.withDefault(true));
+    const apnsEnabled = yield* Config.Boolean("APNS_ENABLED").pipe(Config.withDefault(true));
     const apnsCredentials = apnsEnabled
       ? {
           environment: yield* Config.schema(RelayConfiguration.ApnsEnvironment, "APNS_ENVIRONMENT"),
-          teamId: yield* Config.string("APNS_TEAM_ID"),
-          keyId: yield* Config.string("APNS_KEY_ID"),
-          bundleId: yield* Config.string("APNS_BUNDLE_ID"),
-          privateKey: yield* Config.redacted("APNS_PRIVATE_KEY"),
+          teamId: yield* Config.String("APNS_TEAM_ID"),
+          keyId: yield* Config.String("APNS_KEY_ID"),
+          bundleId: yield* Config.String("APNS_BUNDLE_ID"),
+          privateKey: yield* Config.Redacted("APNS_PRIVATE_KEY"),
         }
       : null;
     const fcmServiceAccount = Option.getOrUndefined(
       Option.filter(
-        yield* Config.option(Config.redacted("FCM_SERVICE_ACCOUNT")),
+        yield* Config.option(Config.Redacted("FCM_SERVICE_ACCOUNT")),
         (value) => Redacted.value(value).trim().length > 0,
       ),
     );
@@ -165,9 +170,9 @@ export const ApiLive = Api.make(
     const axiomIngestToken = yield* observability.workerIngestToken.token;
     const axiomTracesEndpoint = yield* observability.traces.otelTracesEndpoint;
 
-    const clerkSecretKey = yield* Config.redacted("CLERK_SECRET_KEY");
-    const clerkPublishableKey = yield* Config.string("CLERK_PUBLISHABLE_KEY");
-    const clerkJwtAudience = yield* Config.string("CLERK_JWT_AUDIENCE");
+    const clerkSecretKey = yield* Config.Redacted("CLERK_SECRET_KEY");
+    const clerkPublishableKey = yield* Config.String("CLERK_PUBLISHABLE_KEY");
+    const clerkJwtAudience = yield* Config.String("CLERK_JWT_AUDIENCE");
 
     const cloudMintPrivateKey = yield* cloudMintKeyPair.privateKey;
     const cloudMintPublicKey = yield* cloudMintKeyPair.publicKey;
@@ -209,9 +214,25 @@ export const ApiLive = Api.make(
       }).pipe(Effect.map(makeRelayTraceLayer)),
     );
 
+    // Fork (#1375): the alert publisher sends to the FCM queue itself, so it
+    // gets the same sender the FcmDeliveries layer below is given.
+    const fcmDeliveryQueueSenderLayer = Layer.succeed(
+      FcmDeliveryQueueSender.FcmDeliveryQueueSender,
+      {
+        send: (body) =>
+          fcmDeliveryQueueSender
+            .send(body)
+            .pipe(Effect.provideService(Alchemy.RuntimeContext, alchemyRuntimeContext)),
+      },
+    );
     const runtimeLayer = Layer.empty.pipe(
       Layer.provideMerge(MobileRegistrations.layer),
-      Layer.provideMerge(AgentActivityPublisher.layer),
+      Layer.provideMerge(
+        Layer.mergeAll(
+          AgentActivityPublisher.layer,
+          InfinitusAlertPublisher.layer.pipe(Layer.provide(fcmDeliveryQueueSenderLayer)),
+        ),
+      ),
       Layer.provideMerge(EnvironmentConnector.layer),
       Layer.provideMerge(EnvironmentLinker.layer),
       Layer.provideMerge(EnvironmentPublishSignatures.layer),
@@ -226,14 +247,7 @@ export const ApiLive = Api.make(
       Layer.provideMerge(ApnsDeliveries.layer),
       Layer.provideMerge(
         FcmDeliveries.layer.pipe(
-          Layer.provide(
-            Layer.succeed(FcmDeliveryQueueSender.FcmDeliveryQueueSender, {
-              send: (body) =>
-                fcmDeliveryQueueSender
-                  .send(body)
-                  .pipe(Effect.provideService(Alchemy.RuntimeContext, alchemyRuntimeContext)),
-            }),
-          ),
+          Layer.provide(fcmDeliveryQueueSenderLayer),
           Layer.provideMerge(
             FcmClient.layer.pipe(
               Layer.provide(FcmAssertionSigner.layer),
@@ -345,6 +359,7 @@ export const ApiLive = Api.make(
       relayNotFoundRoute,
     ).pipe(
       HttpRouter.toHttpEffect,
+      Effect.provideService(HttpRouter.RouterConfig, RELAY_HTTP_ROUTER_CONFIG),
       withoutCapturedParentSpan,
       Effect.flatMap((httpEffect) => traceRelayHttpRequestWith(httpEffect, relayTraceLayer)),
     );

@@ -13,7 +13,7 @@ import {
   ProjectionPendingApprovalStatus,
   ThreadId,
   TurnId,
-} from "@t3tools/contracts";
+} from "@infinitus/contracts";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import * as Context from "effect/Context";
@@ -41,11 +41,6 @@ export const GetProjectionPendingApprovalInput = Schema.Struct({
   requestId: ApprovalRequestId,
 });
 export type GetProjectionPendingApprovalInput = typeof GetProjectionPendingApprovalInput.Type;
-
-export const DeleteProjectionPendingApprovalInput = Schema.Struct({
-  requestId: ApprovalRequestId,
-});
-export type DeleteProjectionPendingApprovalInput = typeof DeleteProjectionPendingApprovalInput.Type;
 
 /**
  * ProjectionPendingApprovalRepositoryShape - Service API for pending approvals.
@@ -80,13 +75,6 @@ export interface ProjectionPendingApprovalRepositoryShape {
   readonly getByRequestId: (
     input: GetProjectionPendingApprovalInput,
   ) => Effect.Effect<Option.Option<ProjectionPendingApproval>, ProjectionRepositoryError>;
-
-  /**
-   * Delete a pending approval row by request id.
-   */
-  readonly deleteByRequestId: (
-    input: DeleteProjectionPendingApprovalInput,
-  ) => Effect.Effect<void, ProjectionRepositoryError>;
 
   /**
    * Delete every pending approval row for a thread.

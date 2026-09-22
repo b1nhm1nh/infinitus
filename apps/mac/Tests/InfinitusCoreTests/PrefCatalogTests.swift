@@ -2,16 +2,30 @@ import XCTest
 @testable import InfinitusCore
 
 final class PrefCatalogTests: XCTestCase {
-    private var suite = ""
+    /// One suite for the whole process, not one per test. `removePersistentDomain`
+    /// empties a domain but leaves its plist in ~/Library/Preferences, and
+    /// cfprefsd owns that file: it flushes its cached copy back seconds after
+    /// the test process exits, so unlinking in `tearDown` cannot win either
+    /// (`defaults delete` is no help — an empty domain reads as "does not
+    /// exist"). A fresh UUID per test therefore left a file per test behind,
+    /// 1133 of them on one dev Mac. Keyed by pid, the leftovers are a bounded
+    /// set instead, and concurrent `swift test` runs in sibling worktrees still
+    /// get a suite each.
+    private static let suite = "run.infinitus.prefs-test-\(ProcessInfo.processInfo.processIdentifier)"
+    private var suite: String { Self.suite }
     private var defaults: UserDefaults!
 
     override func setUp() {
-        suite = "run.infinitus.prefs-\(UUID().uuidString)"
         defaults = UserDefaults(suiteName: suite)
+        defaults.removePersistentDomain(forName: suite)
     }
 
     override func tearDown() {
         defaults.removePersistentDomain(forName: suite)
+        defaults = nil
+        let plist = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Preferences/\(suite).plist")
+        try? FileManager.default.removeItem(at: plist)
     }
 
     /// The table stays honest as it grows: every entry sits in a listed
@@ -42,24 +56,37 @@ final class PrefCatalogTests: XCTestCase {
         XCTAssertEqual(layout.effect, .live)
         XCTAssertEqual(layout.choices, [.string("wide"), .string("stacked"), .string("hstack")])
         XCTAssertEqual(reply.prefs.first { $0.key == "engine_swapd_enabled" }?.effect, .restart)
+        // #1177: the demo fleet is a restart-effect pref of the engines section.
+        let mock = reply.prefs.first { $0.key == "mock_mode" }
+        XCTAssertEqual(mock?.effect, .restart)
+        XCTAssertEqual(mock?.section, "engines")
     }
 
-    /// The fork server's tunnel (#572) is a Devices pref pair: off, on T3's port.
-    func testTheForkTunnelPrefsSitUnderDevicesWithT3sDefaultPort() throws {
-        let reply = try PrefCatalog.reply(from: defaults, keys: ["fork_tunnel_enabled", "fork_server_port"])
-        XCTAssertEqual(reply.prefs.map(\.section), ["devices", "devices"])
-        XCTAssertEqual(reply.prefs.map(\.effect), [.live, .live])
-        XCTAssertEqual(reply.prefs.map(\.value), [.bool(false), .number(3773)])
+    /// Where the desktop server bound is a Devices pref, defaulting to T3's
+    /// port; the tunnel prefs beside it left with the Cloudflare tunnels.
+    func testTheForkServerPortSitsUnderDevicesWithT3sDefaultPort() throws {
+        let reply = try PrefCatalog.reply(from: defaults, keys: ["fork_server_port"])
+        XCTAssertEqual(reply.prefs.map(\.section), ["devices"])
+        XCTAssertEqual(reply.prefs.map(\.effect), [.live])
+        XCTAssertEqual(reply.prefs.map(\.value), [.number(3773)])
         XCTAssertEqual(try PrefCatalog.write(.number(3774), key: "fork_server_port", to: defaults).value, .number(3774))
         XCTAssertEqual(defaults.object(forKey: "fork_server_port") as? Int, 3774)
-        // #650: the stable hostname on the named tunnel, empty = quick tunnel.
-        let host = try PrefCatalog.reply(from: defaults, keys: ["fork_tunnel_hostname"]).prefs[0]
-        XCTAssertEqual(host.section, "devices")
-        XCTAssertEqual(host.effect, .live)
-        XCTAssertEqual(host.value, .string(""))
-        XCTAssertEqual(try PrefCatalog.write(.string("code.example.com"), key: "fork_tunnel_hostname", to: defaults).value,
-                       .string("code.example.com"))
-        XCTAssertEqual(defaults.string(forKey: "fork_tunnel_hostname"), "code.example.com")
+        XCTAssertNil(PrefCatalog.entry("fork_tunnel_enabled"))
+        XCTAssertNil(PrefCatalog.entry("fork_tunnel_hostname"))
+    }
+
+    func testTheDevicesPagePrefsSitUnderDevices() throws {
+        // #1178: this Mac's name and the iCloud sync switch (the APNs ids
+        // left with #1375).
+        let keys = ["machine_name", "icloud_sync"]
+        let reply = try PrefCatalog.reply(from: defaults, keys: keys)
+        XCTAssertEqual(reply.prefs.map(\.section), Array(repeating: "devices", count: 2))
+        XCTAssertEqual(reply.prefs.map(\.effect), Array(repeating: .live, count: 2))
+        XCTAssertEqual(reply.prefs.map(\.value), [.string(""), .bool(false)])
+        XCTAssertEqual(try PrefCatalog.write(.string("Studio"), key: "machine_name", to: defaults).value, .string("Studio"))
+        XCTAssertEqual(defaults.string(forKey: "machine_name"), "Studio")
+        XCTAssertEqual(try PrefCatalog.write(.bool(true), key: "icloud_sync", to: defaults).value, .bool(true))
+        XCTAssertThrowsError(try PrefCatalog.write(.number(1), key: "machine_name", to: defaults))
     }
 
     func testStoredValuesReadBackTypedAndAnInvalidChoiceIsTheDefault() throws {
@@ -187,12 +214,12 @@ final class PrefCatalogTests: XCTestCase {
     }
 
     func testTheReplyEncodesDefaultAndValueAsPlainJSON() throws {
-        defaults.set("nightly", forKey: "update_channel")
-        let data = try JSONEncoder().encode(try PrefCatalog.reply(from: defaults, keys: ["update_channel"]))
+        defaults.set("hold", forKey: "priority_mode")
+        let data = try JSONEncoder().encode(try PrefCatalog.reply(from: defaults, keys: ["priority_mode"]))
         let text = String(decoding: data, as: UTF8.self)
-        XCTAssertTrue(text.contains(#""default":"stable""#), text)
-        XCTAssertTrue(text.contains(#""value":"nightly""#), text)
-        XCTAssertTrue(text.contains(#""choices":["stable","nightly"]"#), text)
-        XCTAssertEqual(try JSONDecoder().decode(PrefCatalog.Reply.self, from: data).prefs.first?.value, .string("nightly"))
+        XCTAssertTrue(text.contains(#""default":"off""#), text)
+        XCTAssertTrue(text.contains(#""value":"hold""#), text)
+        XCTAssertTrue(text.contains(#""choices":["off","hold","interrupt"]"#), text)
+        XCTAssertEqual(try JSONDecoder().decode(PrefCatalog.Reply.self, from: data).prefs.first?.value, .string("hold"))
     }
 }

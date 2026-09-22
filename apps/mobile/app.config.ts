@@ -6,6 +6,7 @@ import * as NodeURL from "node:url";
 import { BRAND_ASSET_PATHS } from "../../scripts/lib/brand-assets.ts";
 import { loadRepoEnv } from "../../scripts/lib/public-config.ts";
 import { PRODUCT_NAME } from "../../packages/shared/src/productName.ts";
+import { clerkFrontendApiHostnameFromPublishableKey } from "../../packages/shared/src/relayAuth.ts";
 
 type AppVariant = "development" | "preview" | "production" | "infinitus";
 
@@ -78,21 +79,32 @@ const RELEASE_ASSETS = {
 // The Infinitus phone (fork, #572): the native SwiftUI phone's bundle id, so
 // the Mac's Live Activity pushes (APNs topic keyed on it) reach this app and
 // installing it replaces the native phone on the device. Signed with the
-// Infinitus team; the icon is the native phone's.
+// Infinitus team; the icon is the native phone's. The splash images are
+// rendered from it by scripts/export-infinitus-splash.ts.
 const INFINITUS_ASSETS = {
   appIcon: "./assets/infinitus-ios-1024.png",
   iosIcon: "./assets/infinitus-ios-1024.png",
-  splashIcon: "./assets/infinitus-ios-1024.png",
+  splashIcon: "./assets/infinitus-splash-1024.png",
   androidAdaptiveForeground,
   androidAdaptiveBackgroundColor: "#000000",
   androidAdaptiveBackgroundImage: undefined,
-  androidSplashIcon: "./assets/android-splash-icon-prod.png",
+  androidSplashIcon: "./assets/android-splash-icon-infinitus.png",
   androidMonochromeIcon: "./assets/android-icon-mark.png",
   androidNotificationIcon: "./assets/android-notification-icon.png",
   androidNotificationColor: "#FFFFFF",
 } as const;
 
 const T3_APPLE_TEAM_ID = "ARK85ZXQ4Z";
+
+function infinitusRelyingParty(publishableKey: string | undefined): string {
+  const key = publishableKey?.trim();
+  if (!key) return "clerk.infinitus.run";
+  try {
+    return clerkFrontendApiHostnameFromPublishableKey(key);
+  } catch {
+    return "clerk.infinitus.run";
+  }
+}
 
 const VARIANT_CONFIG = {
   development: {
@@ -128,9 +140,12 @@ const VARIANT_CONFIG = {
     iosBundleIdentifier: "run.infinitus.mobile",
     androidPackage: "run.infinitus.mobile",
     appleTeamId: "Q783W6B4FA",
-    relyingParty: "clerk.t3.codes",
-    // Fork (#724): the Devices card's QR is `https://infinitus.run/pair#…`, so
-    // a Camera scan opens this app (AASA `applinks` + assetlinks on the site).
+    // Fork (#1322): the Infinitus Clerk instance's Frontend API host, which
+    // the publishable key encodes (upstream's variants pin clerk.t3.codes);
+    // a build without the key gets a placeholder that entitles nothing real.
+    relyingParty: infinitusRelyingParty(repoEnv.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY),
+    // Fork (#1313): a team invite is `https://infinitus.run/join#…`, so a
+    // Camera scan opens this app (AASA `applinks` + assetlinks on the site).
     universalLinkHost: "infinitus.run",
     assets: INFINITUS_ASSETS,
   },
@@ -258,7 +273,7 @@ const config: ExpoConfig = {
   slug: "t3-code",
   platforms: ["ios", "android"],
   scheme: variant.scheme,
-  version: "1.1.1",
+  version: "1.2.1",
   runtimeVersion: {
     // Development manifests resolve on every launch, so avoid fingerprint's
     // expensive native-project calculation there. Preview and production stay
@@ -337,13 +352,13 @@ const config: ExpoConfig = {
     predictiveBackGestureEnabled: true,
     ...("universalLinkHost" in variant
       ? {
-          // Fork (#724): the site's /pair opens the app; verified against
-          // `/.well-known/assetlinks.json` on that host.
+          // Fork (#1313): a team invite, infinitus.run/join#<code>, opens the
+          // app; verified against `/.well-known/assetlinks.json` on that host.
           intentFilters: [
             {
               action: "VIEW",
               autoVerify: true,
-              data: [{ scheme: "https", host: variant.universalLinkHost, pathPrefix: "/pair" }],
+              data: [{ scheme: "https", host: variant.universalLinkHost, pathPrefix: "/join" }],
               category: ["BROWSABLE", "DEFAULT"],
             },
           ],
@@ -480,6 +495,7 @@ const config: ExpoConfig = {
     "./plugins/withIosSceneLifecycle.cjs",
     "./plugins/withAndroidCleartextTraffic.cjs",
     "./plugins/withAndroidGradleHeap.cjs",
+    "./plugins/withAndroidInputBackground.cjs",
     "./plugins/withAndroidModernPopupMenu.cjs",
     "./plugins/withAndroidModernAlertDialog.cjs",
     "./plugins/withAndroidPredictiveBackCompat.cjs",
@@ -493,6 +509,11 @@ const config: ExpoConfig = {
     // version (EAS owns the build numbers, `appVersionSource: remote`).
     productVersion: PRODUCT_VERSION,
     iosPersonalTeamBuild: isIosPersonalTeamBuild,
+    // Fork: `sandbox` for a build Xcode signs onto a device (its APNs token
+    // is a sandbox one); unset everywhere else, where the variant decides.
+    ...(repoEnv.INFINITUS_APS_ENVIRONMENT
+      ? { apsEnvironment: repoEnv.INFINITUS_APS_ENVIRONMENT }
+      : {}),
     relay: {
       url: repoEnv.T3CODE_RELAY_URL ?? null,
     },

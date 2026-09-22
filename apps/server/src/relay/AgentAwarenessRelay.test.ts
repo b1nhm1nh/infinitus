@@ -11,14 +11,14 @@ import type {
   ProjectId,
   ThreadId,
   TurnId,
-} from "@t3tools/contracts";
+} from "@infinitus/contracts";
 import type {
   RelayAgentActivityPublishProofPayload,
   RelayAgentActivityState,
-} from "@t3tools/contracts/relay";
-import { CommandId, ProviderInstanceId } from "@t3tools/contracts";
-import { RelayClientTracer } from "@t3tools/shared/relayTracing";
-import { RELAY_ACTIVITY_PUBLISH_TYP, verifyRelayJwt } from "@t3tools/shared/relayJwt";
+} from "@infinitus/contracts/relay";
+import { CommandId, ProviderInstanceId } from "@infinitus/contracts";
+import { RelayClientTracer } from "@infinitus/shared/relayTracing";
+import { RELAY_ACTIVITY_PUBLISH_TYP, verifyRelayJwt } from "@infinitus/shared/relayJwt";
 import { describe, expect, it } from "@effect/vitest";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
@@ -184,6 +184,20 @@ describe.sequential("signRelayAgentActivityPublishProof", () => {
         },
       } as unknown as OrchestrationEvent),
     ).toBe(true);
+    // A background task starting or ending flips the shell's background
+    // liveness, which the card's phase now follows.
+    for (const kind of ["task.started", "task.updated", "task.completed"]) {
+      expect(
+        AgentAwarenessRelay.shouldPublishAgentAwarenessEvent({
+          ...base,
+          type: "thread.activity-appended",
+          payload: {
+            threadId: "thread-1" as ThreadId,
+            activity: { kind },
+          },
+        } as unknown as OrchestrationEvent),
+      ).toBe(true);
+    }
     expect(
       AgentAwarenessRelay.shouldPublishAgentAwarenessEvent({
         ...base,

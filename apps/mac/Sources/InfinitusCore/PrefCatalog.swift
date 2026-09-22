@@ -5,7 +5,7 @@ import Foundation
 /// key, type, default, the Settings section it lives under (a stable
 /// slug plus a display name), whether a change takes effect live or
 /// after a relaunch, and the accepted values where the set is closed.
-/// `infinitusctl prefs` and the mirror's `GET /prefs` answer
+/// `infinitusctl prefs` answers
 /// `reply(from:)`, the table with each pref's current value folded in
 /// the way `AppModel` reads it (a stored value outside the choices is
 /// the default; the two legacy seeds are honoured). Read-only: the
@@ -115,20 +115,21 @@ public enum PrefCatalog {
         Entry("push_last_alive", .bool, .bool(true), push),
         Entry("push_revived", .bool, .bool(true), push),
         Entry("revive_lead_minutes", .int, .number(10), push),
-        // Devices: the phone mirror.
-        Entry("mirror_lan_enabled", .bool, .bool(false), devices),
-        Entry("mirror_tunnel_enabled", .bool, .bool(false), devices),
-        Entry("mirror_rendezvous_enabled", .bool, .bool(true), devices),
-        // Devices: the tunnel fronting the T3 Code fork server's port (#572).
-        Entry("fork_tunnel_enabled", .bool, .bool(false), devices),
-        Entry("fork_server_port", .int, .number(Double(ForkTunnelStatus.defaultPort)), devices),
-        Entry("fork_tunnel_hostname", .string, .string(""), devices),
+        // Devices: where the T3 Code fork server bound, which the server
+        // publishes on startup.
+        Entry("fork_server_port", .int, .number(Double(ForkServerProbe.defaultPort)), devices),
+        // Devices: this Mac's name and iCloud sync (#1178).
+        Entry("machine_name", .string, .string(""), devices),
+        Entry("icloud_sync", .bool, .bool(false), devices),
         // Engines: the `engine` command relaunches the app for these.
         Entry("engine_swapd_enabled", .bool, .bool(true), engines, effect: .restart),
         Entry("engine_cliproxy_enabled", .bool, .bool(false), engines, effect: .restart),
         Entry("engine_9router_enabled", .bool, .bool(false), engines, effect: .restart),
-        // About: updates.
-        Entry("update_channel", .string, .string("stable"), about, choices: strings(["stable", "nightly"])),
+        // The demo fleet (fabricated accounts, #1177): relaunches like an
+        // engine toggle — the registry is built once at init.
+        Entry("mock_mode", .bool, .bool(false), engines, effect: .restart),
+        // About: empty since #1238 (`update_channel` was the Homebrew
+        // updater's track; the desktop's Updates page owns the track now).
         // Priority: the headroom mode (#616) — `hold` publishes a per-fleet
         // verdict on `fleets` that holds background threads while low.
         Entry("priority_mode", .string, .string("off"), priority, choices: strings(priorityModes)),

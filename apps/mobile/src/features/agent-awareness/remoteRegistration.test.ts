@@ -15,10 +15,10 @@ import {
   HttpClientRequest,
   HttpClientResponse,
 } from "effect/unstable/http";
-import { ManagedRelay } from "@t3tools/client-runtime/relay";
+import { ManagedRelay } from "@infinitus/client-runtime/relay";
 
-import type { EnvironmentId } from "@t3tools/contracts";
-import { verifyDpopProof } from "@t3tools/shared/dpop";
+import type { EnvironmentId } from "@infinitus/contracts";
+import { verifyDpopProof } from "@infinitus/shared/dpop";
 import type { SavedRemoteConnection } from "../../lib/connection";
 import { cryptoLayer } from "../cloud/dpop";
 import { managedRelayClientLayer } from "../cloud/managedRelayLayer";
@@ -101,11 +101,9 @@ vi.mock("expo-widgets", () => ({
   addPushToStartTokenListener: vi.fn(() => ({ remove: vi.fn() })),
 }));
 
-vi.mock("../../widgets/AgentActivity", () => ({
-  default: {
-    getInstances: widgetMocks.getInstances,
-    start: widgetMocks.start,
-  },
+vi.mock("./agentLiveActivity", () => ({
+  getAgentLiveActivities: widgetMocks.getInstances,
+  startAgentLiveActivity: widgetMocks.start,
 }));
 
 // The state modules pull the whole connection stack (and native expo modules)
@@ -336,6 +334,9 @@ describe("makeRelayDeviceRegistrationRequest", () => {
     expect(resolveApsEnvironment("preview")).toBe("production");
     expect(resolveApsEnvironment("production")).toBe("production");
     expect(resolveApsEnvironment(undefined)).toBe("production");
+    expect(resolveApsEnvironment("infinitus", "sandbox")).toBe("sandbox");
+    expect(resolveApsEnvironment("development", "production")).toBe("production");
+    expect(resolveApsEnvironment("infinitus", "staging")).toBe("production");
   });
 
   it("disables push features in Personal Team relay registrations", () => {

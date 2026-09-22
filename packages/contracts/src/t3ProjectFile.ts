@@ -39,7 +39,7 @@ export const T3ProjectFileScript = Schema.Struct({
     description: `Display name for the script, shown in the ${PRODUCT_NAME} scripts menu.`,
   }),
   command: trimmedNonEmpty({
-    description: `Shell command executed in a ${PRODUCT_NAME} terminal at the project root. The environment carries T3CODE_PROJECT_ROOT, T3CODE_WORKTREE_PATH (worktree threads) and T3CODE_PORT…T3CODE_PORT_END, ten ports derived from the checkout.`,
+    description: `Shell command executed in an ${PRODUCT_NAME} terminal at the project root. The environment carries T3CODE_PROJECT_ROOT, T3CODE_WORKTREE_PATH (worktree threads) and T3CODE_PORT…T3CODE_PORT_END, ten ports derived from the checkout.`,
   }),
   icon: Schema.optionalKey(
     ProjectScriptIcon.annotate({
@@ -50,6 +50,12 @@ export const T3ProjectFileScript = Schema.Struct({
     Schema.Boolean.annotate({
       description:
         "When true, the script runs automatically after a worktree is created for a new thread.",
+    }),
+  ),
+  async: Schema.optionalKey(
+    Schema.Boolean.annotate({
+      description:
+        "Only for runOnWorktreeCreate scripts. When true (the default), the agent starts while the script is still running. Set false to hold the agent until the script exits.",
     }),
   ),
   previewUrl: Schema.optionalKey(

@@ -13,7 +13,7 @@ import {
   ProjectId,
   ProjectScript,
   ThreadEnvMode,
-} from "@t3tools/contracts";
+} from "@infinitus/contracts";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import * as Context from "effect/Context";
@@ -42,11 +42,6 @@ export const GetProjectionProjectInput = Schema.Struct({
 });
 export type GetProjectionProjectInput = typeof GetProjectionProjectInput.Type;
 
-export const DeleteProjectionProjectInput = Schema.Struct({
-  projectId: ProjectId,
-});
-export type DeleteProjectionProjectInput = typeof DeleteProjectionProjectInput.Type;
-
 /**
  * ProjectionProjectRepositoryShape - Service API for projected project records.
  */
@@ -64,23 +59,6 @@ export interface ProjectionProjectRepositoryShape {
   readonly getById: (
     input: GetProjectionProjectInput,
   ) => Effect.Effect<Option.Option<ProjectionProject>, ProjectionRepositoryError>;
-
-  /**
-   * List all projected project rows.
-   *
-   * Returned in deterministic creation order.
-   */
-  readonly listAll: () => Effect.Effect<
-    ReadonlyArray<ProjectionProject>,
-    ProjectionRepositoryError
-  >;
-
-  /**
-   * Soft-delete a projected project row by id.
-   */
-  readonly deleteById: (
-    input: DeleteProjectionProjectInput,
-  ) => Effect.Effect<void, ProjectionRepositoryError>;
 }
 
 /**

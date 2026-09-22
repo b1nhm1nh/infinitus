@@ -1,9 +1,10 @@
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import * as Result from "effect/Result";
-import type { PullRequestCapabilities, PullRequestViewerPermissions } from "@t3tools/contracts";
-import { decodeJsonResult } from "@t3tools/shared/schemaJson";
+import type { PullRequestCapabilities, PullRequestViewerPermissions } from "@infinitus/contracts";
+import { decodeJsonResult } from "@infinitus/shared/schemaJson";
 import { ForgejoCli, type ForgejoApiInput } from "../sourceControl/ForgejoCli.ts";
+import { parseDiffFileRevisions } from "./bitbucketDiffRevisions.ts";
 import {
   PullRequestProviderError,
   type ProviderChangeRequestDetail,
@@ -34,6 +35,7 @@ import {
 
 const CAPABILITIES: PullRequestCapabilities = {
   diff: true,
+  viewedFiles: "environment",
   comment: true,
   actions: ["merge", "close", "reopen", "update-branch"],
   mergeMethods: ["merge", "squash", "rebase"],
@@ -347,6 +349,17 @@ export const make = Effect.gen(function* () {
         };
       },
     ),
+    getFileRevisions: Effect.fn("ForgejoPullRequestProvider.getFileRevisions")(function* (input) {
+      const result = yield* request({ ...input, path: `${pullPath(input)}.diff` });
+      if (result.stdoutTruncated) {
+        return yield* failure("getFileRevisions", "Forgejo diff exceeded the output limit.");
+      }
+      const revisions = new Map(parseDiffFileRevisions(result.stdout));
+      for (const path of input.paths) {
+        if (!revisions.has(path)) revisions.set(path, "");
+      }
+      return { revisions, complete: true };
+    }),
     getDiff: (input) =>
       request({
         ...input,

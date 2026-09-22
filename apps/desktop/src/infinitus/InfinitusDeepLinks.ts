@@ -1,10 +1,12 @@
 /**
  * Deep links (#270 D): `<scheme>://thread/<environmentId>/<threadId>` routes
  * to a thread, `<scheme>://new?project=<id|title|folder>&prompt=<text>` opens
- * the composer on that project with the prompt prefilled, never sent. The
- * scheme is the renderer's own (`infinitus` / `infinitus-dev`), so the `app`
- * host stays the renderer origin and the Clerk bridge's OAuth callback; only
- * the `thread` and `new` hosts are claimed here.
+ * the composer on that project with the prompt prefilled, never sent,
+ * `<scheme>://settings/<page>` opens a Settings page (the menu bar app's ⌘,).
+ * The scheme is the renderer's own (`infinitus` / `infinitus-dev`), so the
+ * `app` host stays the renderer origin and the Clerk bridge's OAuth callback;
+ * the `thread`, `new`, `join` (#1313: a team invite, the whole link is the
+ * code) and `settings` hosts are claimed here.
  *
  * Two halves: an intake attached before Electron is ready (macOS delivers a
  * cold launch's `open-url` before `ready`, Windows and Linux put the URL in
@@ -13,7 +15,7 @@
  * the link over IPC once its environment is connected, so a link that lands
  * during startup is never lost to a page that has not mounted yet.
  */
-import type { DesktopDeepLink } from "@t3tools/contracts";
+import type { DesktopDeepLink } from "@infinitus/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -64,6 +66,21 @@ export function parseDesktopDeepLink(url: string, scheme: string): DesktopDeepLi
     if (project.length === 0) return null;
     const prompt = (parsed.searchParams.get("prompt") ?? "").slice(0, MAX_DEEP_LINK_PROMPT_LENGTH);
     return { kind: "new", project, prompt };
+  }
+  // A team invite (#1313). The whole link text is the code (the Mac's
+  // TeamModel takes it verbatim), so it travels untouched and is never
+  // logged: only its kind is.
+  if (parsed.host === "join") {
+    const segments = parsed.pathname.split("/").filter((segment) => segment.length > 0);
+    if (segments.length === 0) return null;
+    return { kind: "join", link: url };
+  }
+  // A Settings route. The renderer checks the path against its section
+  // table before navigating; this only keeps it a plain route path.
+  if (parsed.host === "settings") {
+    const segments = parsed.pathname.split("/").filter((segment) => segment.length > 0);
+    if (!segments.every((segment) => /^[a-z0-9-]+$/.test(segment))) return null;
+    return { kind: "settings", path: ["/settings", ...segments].join("/") };
   }
   return null;
 }
@@ -143,7 +160,7 @@ export class InfinitusDeepLinksService extends Context.Service<
     /** The latest link, cleared on read. */
     readonly consume: Effect.Effect<DesktopDeepLink | null>;
   }
->()("@t3tools/desktop/infinitus/InfinitusDeepLinks/InfinitusDeepLinksService") {}
+>()("@infinitus/desktop/infinitus/InfinitusDeepLinks/InfinitusDeepLinksService") {}
 
 const { logInfo } = makeComponentLogger("infinitus-deep-links");
 

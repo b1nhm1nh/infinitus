@@ -3,7 +3,7 @@
  * can be opened from a phone, another laptop, or by whoever is reviewing the
  * work.
  *
- * Thin wrapper over `@t3tools/tailscale` (the same client the server's own
+ * Thin wrapper over `@infinitus/tailscale` (the same client the server's own
  * `--tailscale-serve` uses). What it adds is dev-share semantics: replacing a
  * stale mapping left by a killed run, and refusing to serve over routes it
  * could not remove.
@@ -20,7 +20,7 @@ import {
   readTailscaleStatus,
   type TailscaleCommandError,
   type TailscaleStderrDiagnostic,
-} from "@t3tools/tailscale";
+} from "@infinitus/tailscale";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import type { ChildProcessSpawner } from "effect/unstable/process";
@@ -110,13 +110,10 @@ export class DevServeFailedError extends Schema.TaggedError<DevServeFailedError>
   }
 }
 
-export const DevShareError = Schema.Union([
-  TailscaleUnavailableError,
-  TailnetNameMissingError,
-  DevServeFailedError,
-]);
-export type DevShareError = typeof DevShareError.Type;
-export const isDevShareError = Schema.is(DevShareError);
+export type DevShareError =
+  | TailscaleUnavailableError
+  | TailnetNameMissingError
+  | DevServeFailedError;
 
 /**
  * Removes any mapping for `webPort`, reporting whether the port is now clear.

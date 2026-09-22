@@ -1,14 +1,16 @@
 import { useAtomValue } from "@effect/atom-react";
+
+import { appAtomRegistry } from "./atom-registry";
 import type {
   EnvironmentProject,
   EnvironmentThreadShell,
-} from "@t3tools/client-runtime/state/shell";
+} from "@infinitus/client-runtime/state/shell";
 import type {
   EnvironmentId,
   ScopedProjectRef,
   ScopedThreadRef,
   ServerConfig,
-} from "@t3tools/contracts";
+} from "@infinitus/contracts";
 import { Atom } from "effect/unstable/reactivity";
 import { useMemo } from "react";
 
@@ -26,6 +28,31 @@ const EMPTY_THREAD_SHELL_ATOM = Atom.make<EnvironmentThreadShell | null>(null).p
 const EMPTY_SERVER_CONFIG_ATOM = Atom.make<ServerConfig | null>(null).pipe(
   Atom.withLabel("mobile-server-config:empty"),
 );
+
+/** Resolves when the project event reaches the live client store. */
+export function waitForProject(
+  ref: ScopedProjectRef,
+  timeoutMs = 10_000,
+): Promise<EnvironmentProject | null> {
+  const atom = environmentProjects.projectAtom(ref);
+  const current = appAtomRegistry.get(atom);
+  if (current !== null) return Promise.resolve(current);
+  return new Promise((resolve) => {
+    let unsubscribe: (() => void) | null = null;
+    const timeout = setTimeout(() => {
+      unsubscribe?.();
+      resolve(null);
+    }, timeoutMs);
+    const finish = (project: EnvironmentProject | null) => {
+      if (project === null) return;
+      clearTimeout(timeout);
+      unsubscribe?.();
+      resolve(project);
+    };
+    unsubscribe = appAtomRegistry.subscribe(atom, finish);
+    finish(appAtomRegistry.get(atom));
+  });
+}
 
 export function useProjects(): ReadonlyArray<EnvironmentProject> {
   return useAtomValue(environmentProjects.projectsAtom);

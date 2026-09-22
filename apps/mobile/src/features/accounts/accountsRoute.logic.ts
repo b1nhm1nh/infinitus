@@ -8,13 +8,14 @@ import {
   buildForecast,
   type FleetSectionModel,
   type ForecastModel,
-} from "@t3tools/client-runtime/state/infinitusAccounts";
+  INFINITUS_COMMAND_TIMEOUT_MESSAGE,
+} from "@infinitus/client-runtime/state/infinitusAccounts";
 import {
   exhaustedBand,
   type ExhaustedBandModel,
-} from "@t3tools/client-runtime/state/infinitusExhausted";
-import type { EnvironmentId } from "@t3tools/contracts";
-import type { InfinitusSnapshot } from "@t3tools/contracts/infinitus";
+} from "@infinitus/client-runtime/state/infinitusExhausted";
+import type { EnvironmentId } from "@infinitus/contracts";
+import type { InfinitusSnapshot } from "@infinitus/contracts/infinitus";
 import * as Cause from "effect/Cause";
 
 /** One paired Mac that runs Infinitus: an environment advertising the
@@ -93,14 +94,16 @@ export function macAccountsModel(
   };
 }
 
-/** The band's one line: the revival as a clock time, "tomorrow at …" or a
-    date when further out, and who comes back first when known. The phone has
+/** The band's one line: what ran out (every plan window, or one model only),
+    the revival as a clock time, "tomorrow at …" or a date when further out,
+    and who comes back first when known. The phone has
     no timestamp-format setting, so the device locale formats it. */
 export function exhaustedCopy(band: ExhaustedBandModel, nowMs: number): string {
+  const what = band.model === null ? "All accounts exhausted" : `All accounts out of ${band.model}`;
   const when = band.revivalAt === null ? "" : upcoming(band.revivalAt, nowMs);
-  if (when === "") return "All accounts exhausted";
+  if (when === "") return what;
   const who = band.revivesFirst === null ? "" : ` (${band.revivesFirst})`;
-  return `All accounts exhausted · next revival ${when}${who}`;
+  return `${what} · next revival ${when}${who}`;
 }
 
 function upcoming(iso: string, nowMs: number): string {
@@ -137,7 +140,9 @@ const ACTION_SYMBOL: Record<AccountAction, string> = {
   hold: "pause.circle",
   unhold: "play.circle",
   prefer: "star",
+  autoIgnite: "flame",
   rename: "pencil",
+  remove: "trash",
 };
 
 function actionTitle(action: AccountAction, row: AccountRowModel): string {
@@ -150,9 +155,24 @@ function actionTitle(action: AccountAction, row: AccountRowModel): string {
       return "Release hold";
     case "prefer":
       return row.preferred ? "Unstar" : "Star (pick first)";
+    case "autoIgnite":
+      return row.autoIgnite ? "Stop keeping warm" : "Keep warm (restart 5h window)";
     case "rename":
       return "Rename…";
+    case "remove":
+      return "Remove…";
   }
+}
+
+/** The confirmation a remove shows: the credential leaves the engine for good. */
+export function removeConfirmation(
+  row: AccountRowModel,
+  fleetTitle: string,
+): { readonly title: string; readonly message: string } {
+  return {
+    title: `Remove ${row.label} from ${fleetTitle}?`,
+    message: `Deletes ${row.email}'s credential from the engine. Signing in again adds it back.`,
+  };
 }
 
 /** The confirmation a switch shows before it runs: the Mac's live sessions
@@ -170,12 +190,13 @@ export function switchConfirmation(
 /** Pills after the label, in a fixed order so rows stay comparable. */
 export function rowBadges(
   row: AccountRowModel,
-): ReadonlyArray<"active" | "next" | "held" | "starred"> {
-  const badges: Array<"active" | "next" | "held" | "starred"> = [];
+): ReadonlyArray<"active" | "next" | "held" | "starred" | "warm"> {
+  const badges: Array<"active" | "next" | "held" | "starred" | "warm"> = [];
   if (row.active) badges.push("active");
   if (row.next) badges.push("next");
   if (row.held) badges.push("held");
   if (row.preferred) badges.push("starred");
+  if (row.autoIgnite) badges.push("warm");
   return badges;
 }
 
@@ -194,6 +215,7 @@ export function commandFailureMessage(cause: Cause.Cause<unknown>): string {
     readonly error?: string;
     readonly restarting?: boolean;
     readonly message?: string;
+    readonly cause?: unknown;
   } | null;
   if (error && error._tag === "InfinitusCommandFailed") {
     if (error.restarting === true)
@@ -202,8 +224,11 @@ export function commandFailureMessage(cause: Cause.Cause<unknown>): string {
       ? error.error
       : "Infinitus refused the command.";
   }
-  if (error && error._tag === "InfinitusUnavailable")
+  if (error && error._tag === "InfinitusUnavailable") {
+    // A reply that outlived the socket's budget is late, not absent (#1481).
+    if (error.cause === "timeout") return INFINITUS_COMMAND_TIMEOUT_MESSAGE;
     return "Infinitus is not running on this Mac.";
+  }
   return error && typeof error.message === "string" && error.message.trim().length > 0
     ? error.message
     : "The command did not reach the Mac.";

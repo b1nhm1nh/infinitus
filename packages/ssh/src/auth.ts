@@ -1,5 +1,5 @@
-import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
-import { PRODUCT_NAME } from "@t3tools/shared/productName";
+import { HostProcessPlatform } from "@infinitus/shared/hostProcess";
+import { PRODUCT_NAME } from "@infinitus/shared/productName";
 import * as Config from "effect/Config";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -43,7 +43,7 @@ export interface SshPasswordPromptShape {
 }
 
 export class SshPasswordPrompt extends Context.Service<SshPasswordPrompt, SshPasswordPromptShape>()(
-  "@t3tools/ssh/auth/SshPasswordPrompt",
+  "@infinitus/ssh/auth/SshPasswordPrompt",
 ) {
   static readonly disabledLayer = Layer.succeed(
     SshPasswordPrompt,
@@ -73,7 +73,7 @@ function joinSshAskpassPath(
 }
 
 const ASKPASS_POSIX_SCRIPT = `#!/bin/sh
-# Invoked by ssh via SSH_ASKPASS when T3 Code re-runs ssh with a cached password
+# Invoked by ssh via SSH_ASKPASS when ${PRODUCT_NAME} re-runs ssh with a cached password
 # from the renderer's in-app prompt. We never expose a native dialog here - if
 # T3_SSH_AUTH_SECRET is missing, that's a caller bug and we fail loudly.
 if [ "\${T3_SSH_AUTH_SECRET+x}" = "x" ]; then
@@ -88,7 +88,7 @@ const ASKPASS_WINDOWS_LAUNCHER_SCRIPT = `@echo off\r
 powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0ssh-askpass.ps1" %*\r
 `;
 
-const ASKPASS_WINDOWS_SCRIPT = `# Invoked by ssh via SSH_ASKPASS (through ssh-askpass.cmd) when T3 Code re-runs\r
+const ASKPASS_WINDOWS_SCRIPT = `# Invoked by ssh via SSH_ASKPASS (through ssh-askpass.cmd) when ${PRODUCT_NAME} re-runs\r
 # ssh with a cached password from the renderer's in-app prompt. We never expose\r
 # a native dialog here - if T3_SSH_AUTH_SECRET is missing, that's a caller bug\r
 # and we fail loudly.\r
@@ -186,7 +186,7 @@ export const buildSshChildEnvironment = Effect.fn("ssh/auth.buildSshChildEnviron
   const platform = yield* HostProcessPlatform;
   const hostDisplay = input.baseEnv
     ? input.baseEnv.DISPLAY
-    : yield* Config.string("DISPLAY").pipe(
+    : yield* Config.String("DISPLAY").pipe(
         Config.option,
         Effect.orElseSucceed(() => Option.none<string>()),
         Effect.map(Option.getOrUndefined),

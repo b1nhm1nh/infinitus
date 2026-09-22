@@ -1,12 +1,12 @@
 import { SourceFileSurface } from "../features/files/SourceFileSurface";
-import { filePreviewKind } from "@t3tools/shared/filePreview";
+import { filePreviewKind } from "@infinitus/shared/filePreview";
 import type {
   ComposerContextRecord,
   ElementContextSource,
   EnvironmentId,
-} from "@t3tools/contracts";
-import { formatAttachmentSize } from "@t3tools/client-runtime/state/attachments";
-import { videoMimeType } from "@t3tools/shared/video";
+} from "@infinitus/contracts";
+import { formatAttachmentSize } from "@infinitus/client-runtime/state/attachments";
+import { videoMimeType } from "@infinitus/shared/video";
 import { useState } from "react";
 import {
   Alert,
@@ -187,11 +187,9 @@ export function ComposerContextSheet(props: {
       onRequestClose={props.onClose}
     >
       <View
-        style={{
-          flex: 1,
-          justifyContent: "flex-end",
-          backgroundColor: Platform.OS === "android" ? "#00000066" : undefined,
-        }}
+        className={
+          Platform.OS === "android" ? "flex-1 justify-end bg-backdrop" : "flex-1 justify-end"
+        }
       >
         {Platform.OS === "android" ? (
           <Pressable
@@ -223,7 +221,7 @@ export function ComposerContextSheet(props: {
               <SymbolView name="terminal" size={20} tintColor={terminalTheme.palette[2]} />
             ) : null}
             <View className="min-w-0 flex-1">
-              <Text className="text-base font-t3-semibold text-foreground" numberOfLines={2}>
+              <Text className="text-base font-infinitus-semibold text-foreground" numberOfLines={2}>
                 {terminal?.terminalLabel ?? props.label}
               </Text>
               {terminal ? (

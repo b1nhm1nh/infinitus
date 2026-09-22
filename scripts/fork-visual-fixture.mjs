@@ -417,11 +417,15 @@ function answer(request, socketPath) {
         playground: false,
         signInRunning: false,
         engines: {
-          swapd: { enabled: true, registered: true },
+          swapd: {
+            enabled: true,
+            registered: true,
+            binaryPath: "/opt/homebrew/bin/swapd",
+            daemon: "running",
+          },
           cliproxy: { enabled: false, registered: false, keyPresent: false },
           "9router": { enabled: false, registered: false, keyPresent: false },
         },
-        forkTunnel: { enabled: false, port: 3773, state: "off" },
       };
     case "fleets":
     case "refresh":
@@ -443,8 +447,82 @@ function answer(request, socketPath) {
       return { logins: [] };
     case "client-activity":
       return { clientId: "fixture" };
-    case "lock-status":
-      return { enabled: true, locked: false, relock: "5 min" };
+    case "team-status":
+      return {
+        id: "papaya",
+        name: "Papaya",
+        remote: "https://github.com/papaya/team.git",
+        kid: "k-fixture-ann",
+        role: "leader",
+        rev: 4,
+        members: [
+          {
+            kid: "k-fixture-ann",
+            name: "Ann",
+            role: "leader",
+            isMe: true,
+            founder: true,
+            since: 1757900000,
+            lastPublished: 1757950000,
+            kinds: ["stats", "now", "threads"],
+            threadsNow: 2,
+            blockers: [],
+            crashes: 0,
+            todayUSD: 3.5,
+            todayMessages: 40,
+            todayCommits: 3,
+          },
+          {
+            kid: "k-fixture-bo",
+            name: "Bo",
+            role: "member",
+            isMe: false,
+            founder: false,
+            since: 1757910000,
+            lastPublished: 1757940000,
+            kinds: ["stats"],
+            threadsNow: 0,
+            blockers: ["aws: papaya"],
+            crashes: 1,
+            todayUSD: 0.2,
+            todayMessages: 5,
+            todayCommits: 0,
+          },
+        ],
+        requests: [],
+        policy: { requests: "code" },
+        shares: {
+          stats: "team",
+          now: "team",
+          threads: "leaders",
+          transcripts: "leaders",
+          crashes: "leaders",
+          fleet: "off",
+        },
+        exclusions: [],
+        lockEnabled: true,
+        lastFetch: 1757960100,
+        lastPublish: 1757950000,
+        lastError: null,
+      };
+    case "proxy":
+      return {
+        baseURL: "http://127.0.0.1:8317",
+        dashboardURL: "http://127.0.0.1:8317/management.html",
+        keyPresent: false,
+        enabled: false,
+        routingStrategy: "round-robin",
+        sessionAffinity: true,
+      };
+    case "9router":
+      return {
+        baseURL: "http://127.0.0.1:20128",
+        dashboardURL: "http://127.0.0.1:20128/dashboard",
+        passwordPresent: false,
+        enabled: false,
+      };
+    case "test-connection":
+      return { ok: true, latencyMs: 12 };
     default:
       return undefined;
   }

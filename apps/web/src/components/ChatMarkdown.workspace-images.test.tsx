@@ -1,4 +1,4 @@
-import { EnvironmentId, ThreadId } from "@t3tools/contracts";
+import { EnvironmentId, ThreadId } from "@infinitus/contracts";
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
@@ -44,6 +44,7 @@ vi.mock("../editorPreferences", () => ({
 vi.mock("~/lib/openPullRequestLink", () => ({
   findProjectOnChangeRequestHost: () => undefined,
   parseChangeRequestUrl: () => null,
+  resolvePullRequestPreviewTarget: () => null,
   useOpenChangeRequestLink: () => vi.fn(),
 }));
 

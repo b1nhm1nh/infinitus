@@ -24,13 +24,13 @@ import {
   type ProviderDriverKind,
   type ServerProvider,
   type ServerProviderModel,
-} from "@t3tools/contracts";
+} from "@infinitus/contracts";
 
 import {
   type CustomModelDefinition,
   readCustomModelEntries,
   toCustomModelSetting,
-} from "@t3tools/shared/model";
+} from "@infinitus/shared/model";
 import { cn } from "../../lib/utils";
 import { useCopyToClipboard } from "../../hooks/useCopyToClipboard";
 import { normalizeProviderAccentColor } from "../../providerInstances";
@@ -48,6 +48,7 @@ import { ProviderInstanceIcon, providerInstanceInitials } from "../chat/Provider
 import { ProviderAccentColorPicker } from "./ProviderAccentColorPicker";
 import { RedactedSensitiveText } from "./RedactedSensitiveText";
 import { SettingsRow, SettingsSection } from "./settingsLayout";
+import { hasAnthropicBaseUrl, PROXY_ADVISOR_NOTE } from "./proxyProvider";
 import {
   getProviderVersionAdvisoryPresentation,
   PROVIDER_STATUS_STYLES,
@@ -817,7 +818,7 @@ export function ProviderInstanceCard({
               inert={readOnly}
               aria-disabled={readOnly || undefined}
               className={cn(
-                "flex w-full items-center justify-end gap-2 sm:w-auto",
+                "flex w-full min-w-0 items-center justify-end gap-2 @min-[32rem]/settings-row:w-auto",
                 readOnly && "opacity-50 select-none",
               )}
             >
@@ -831,7 +832,7 @@ export function ProviderInstanceCard({
               <DraftInput
                 id={`provider-instance-${instanceId}-display-name`}
                 size="sm"
-                className="min-w-0 flex-1 sm:w-56 sm:flex-none"
+                className="min-w-0 flex-1 @min-[32rem]/settings-row:w-56"
                 value={instance.displayName ?? ""}
                 onCommit={updateDisplayName}
                 placeholder={driverOption?.label ?? "Instance label"}
@@ -851,13 +852,18 @@ export function ProviderInstanceCard({
         className={readOnly ? "opacity-50 select-none" : undefined}
       >
         {driverOption ? (
-          <ProviderSettingsForm
-            definition={driverOption}
-            value={instance.config}
-            idPrefix={`provider-instance-${instanceId}`}
-            variant="settings"
-            onChange={updateConfig}
-          />
+          <>
+            <ProviderSettingsForm
+              definition={driverOption}
+              value={instance.config}
+              idPrefix={`provider-instance-${instanceId}`}
+              variant="settings"
+              onChange={updateConfig}
+            />
+            {instance.driver === "claudeAgent" && hasAnthropicBaseUrl(instance.environment) ? (
+              <p className="text-xs text-muted-foreground">{PROXY_ADVISOR_NOTE}</p>
+            ) : null}
+          </>
         ) : (
           <SettingsRow
             title="Driver"

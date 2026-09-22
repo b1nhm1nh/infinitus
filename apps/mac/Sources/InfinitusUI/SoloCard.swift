@@ -21,6 +21,7 @@ struct SoloCard<M: FleetModel, U: UsageSource>: View {
                     .fontWeight(.bold)
                     .foregroundStyle(Color.accentColor)
                     .instantTip(cells.slotTip)
+                AccountPauseButton(model: model, account: account)
                 cells.nameLabel
                     .font(PopupFont.body.weight(.bold))
                     .foregroundStyle(cells.showAsDead ? AnyShapeStyle(.secondary)
@@ -44,8 +45,6 @@ struct SoloCard<M: FleetModel, U: UsageSource>: View {
                     .instantTip(account.usageStatus == "relogin_required" && !model.isPlayground
                                 ? "Re-login now — opens this account's private login window"
                                 : note)
-            } else if cells.allFresh {
-                cells.readyCell
             } else {
                 // Dead rows keep their windows: the reset time is the
                 // whole point when there is no other account to use. The

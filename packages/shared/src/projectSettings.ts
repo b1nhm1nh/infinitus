@@ -6,7 +6,8 @@ import {
   type ProjectSettingsOverrides,
   type ServerSettings,
   type ThreadEnvMode,
-} from "@t3tools/contracts";
+  type WorktreeCleanupRules,
+} from "@infinitus/contracts";
 import { isModelSelectionProviderEnabled } from "./serverSettings.ts";
 
 export type ProjectSettingSource = "environment" | "project";
@@ -123,4 +124,23 @@ export function clearProjectSettingsOverrides(
   const next = { ...current };
   for (const key of keys) delete next[key];
   return Object.keys(next).length === 0 ? null : next;
+}
+
+/** Worktree rules are project-scoped; artifact and log retention stays environment-wide. */
+export function resolveWorktreeCleanup(
+  settings: ServerSettings,
+  projectId: ProjectId | null,
+): WorktreeCleanupRules {
+  const policy = resolveProjectSettings(settings, projectId).settings.worktreeCleanup;
+  if (policy?.mode === "custom") return policy.rules;
+  if (policy?.mode === "off")
+    return {
+      worktreeAfterDays: null,
+      worktreeOnMerge: false,
+      worktreeOnDelete: false,
+      worktreeUnchanged: false,
+    };
+  const { worktreeAfterDays, worktreeOnMerge, worktreeOnDelete, worktreeUnchanged } =
+    settings.storageCleanup;
+  return { worktreeAfterDays, worktreeOnMerge, worktreeOnDelete, worktreeUnchanged };
 }

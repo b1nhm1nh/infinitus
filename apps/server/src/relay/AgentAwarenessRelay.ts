@@ -4,20 +4,20 @@ import type {
   OrchestrationProjectShell,
   OrchestrationThreadShell,
   ThreadId,
-} from "@t3tools/contracts";
+} from "@infinitus/contracts";
 import {
   RelayApi,
   type RelayAgentActivityPublishProofPayload,
   type RelayAgentActivityState,
-} from "@t3tools/contracts/relay";
-import { projectThreadAwareness } from "@t3tools/shared/agentAwareness";
-import { makeDrainableWorker } from "@t3tools/shared/DrainableWorker";
-import { withRelayClientTracing } from "@t3tools/shared/relayTracing";
+} from "@infinitus/contracts/relay";
+import { projectThreadAwareness } from "@infinitus/shared/agentAwareness";
+import { makeDrainableWorker } from "@infinitus/shared/DrainableWorker";
+import { withRelayClientTracing } from "@infinitus/shared/relayTracing";
 import {
   normalizeRelayIssuer,
   RELAY_ACTIVITY_PUBLISH_TYP,
   signRelayJwt,
-} from "@t3tools/shared/relayJwt";
+} from "@infinitus/shared/relayJwt";
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
 import * as Crypto from "effect/Crypto";
@@ -46,6 +46,7 @@ import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
 import * as OrchestrationEngine from "../orchestration/Services/OrchestrationEngine.ts";
 import * as ProjectionSnapshotQuery from "../orchestration/Services/ProjectionSnapshotQuery.ts";
 import { forkParked } from "../serverActivation.ts";
+import { CONNECT_NAME } from "@infinitus/shared/productName";
 
 export class AgentAwarenessRelay extends Context.Service<
   AgentAwarenessRelay,
@@ -90,7 +91,13 @@ export function shouldPublishAgentAwarenessEvent(event: OrchestrationEvent): boo
         event.payload.activity.kind === "provider.approval.respond.failed" ||
         event.payload.activity.kind === "user-input.requested" ||
         event.payload.activity.kind === "user-input.resolved" ||
-        event.payload.activity.kind === "runtime.error"
+        event.payload.activity.kind === "runtime.error" ||
+        // Fork: a background task starting or ending flips the shell's
+        // `backgroundLiveness`, which the phase follows. `task.progress` is
+        // left out: it never changes liveness and fires constantly.
+        event.payload.activity.kind === "task.started" ||
+        event.payload.activity.kind === "task.updated" ||
+        event.payload.activity.kind === "task.completed"
       );
     default:
       return true;
@@ -589,11 +596,13 @@ export const make = Effect.gen(function* () {
       switch (startupState) {
         case "waiting-for-link":
           yield* Effect.logInfo(
-            "agent activity publishing standby; waiting for T3 Connect link reconciliation",
+            `agent activity publishing standby; waiting for ${CONNECT_NAME} link reconciliation`,
           );
           break;
         case "disabled":
-          yield* Effect.logInfo("agent activity publishing disabled by T3 Connect configuration");
+          yield* Effect.logInfo(
+            `agent activity publishing disabled by ${CONNECT_NAME} configuration`,
+          );
           break;
         case "enabled":
           yield* Effect.logInfo("agent activity publishing enabled", {
