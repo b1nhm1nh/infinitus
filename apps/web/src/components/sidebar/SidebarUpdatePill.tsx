@@ -1,7 +1,4 @@
-<<<<<<< HEAD
 import { useAtomSet, useAtomValue } from "@effect/atom-react";
-=======
->>>>>>> upstream-sync-1de563c14-upstream-renamed
 import type { DesktopUpdateState } from "@infinitus/contracts";
 import { TriangleAlertIcon } from "lucide-react";
 import {
