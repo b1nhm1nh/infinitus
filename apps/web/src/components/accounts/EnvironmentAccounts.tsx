@@ -42,6 +42,7 @@ import { ForecastStrip } from "./ForecastStrip";
 import {
   fleetRunsShellOAuth,
   oauthSignInBridge,
+  redirectSignInBridge,
   SIGN_IN_POLL_MS,
   signInBeginCommandArgs,
   signInBeginReply,
@@ -139,6 +140,10 @@ export function EnvironmentAccounts({
     () => oauthSignInBridge(typeof window === "undefined" ? undefined : window.desktopBridge),
     [],
   );
+  const redirectBridge = useMemo(
+    () => redirectSignInBridge(typeof window === "undefined" ? undefined : window.desktopBridge),
+    [],
+  );
   // Each add/re-login gets a run number; a newer run or an unmount retires
   // the polling loop of the one before it.
   const addRunRef = useRef(0);
@@ -146,16 +151,25 @@ export function EnvironmentAccounts({
       keeps listening until something ends it, and once the page is gone
       nothing here can (#1213). Leaving it retires the flow. */
   const shellFlowIdRef = useRef<string | null>(null);
+  /** The shell's stand-in listener outlives this page the same way: it holds
+      the port until stopped, and an address it caught after the page is gone
+      has nobody to send it. Leaving frees the port. */
+  const redirectFlowIdRef = useRef<string | null>(null);
   useEffect(
     () => () => {
       addRunRef.current += 1;
       signInRunRef.current += 1;
+      const listening = redirectFlowIdRef.current;
+      if (listening !== null) {
+        redirectFlowIdRef.current = null;
+        void redirectBridge?.stop(listening).catch(() => {});
+      }
       const flowId = shellFlowIdRef.current;
       if (flowId === null) return;
       shellFlowIdRef.current = null;
       void oauthBridge?.cancel(flowId).catch(() => {});
     },
-    [oauthBridge],
+    [oauthBridge, redirectBridge],
   );
 
   // No subscription against a machine the client cannot reach; its group
@@ -282,6 +296,13 @@ export function EnvironmentAccounts({
   // `infinitus.secret` (#747).
   const shellSignIn = bridge !== null && primary ? bridge : null;
 
+  // The engine's loopback listener stood in for on this machine: for another
+  // Mac's environment the page opens in this machine's browser, so the
+  // redirect comes here, and the shell takes the port, catches it and hands
+  // the address on — nothing to paste. Never on the primary environment,
+  // where the engine itself holds that port.
+  const redirectSignIn = redirectBridge !== null && !primary ? redirectBridge : null;
+
   // The sign-in this shell runs itself (#1213): the engine's own `add-oauth`,
   // spawned here, its loopback listener catching the redirect. It needs the
   // engine binary on this machine, so it exists only where the shell path
@@ -298,6 +319,8 @@ export function EnvironmentAccounts({
       flowId: null,
       url: null,
       pasteCode: false,
+      redirectPort: null,
+      redirectListening: false,
       phase: "starting",
       error: null,
       account: null,
@@ -327,11 +350,41 @@ export function EnvironmentAccounts({
       flowId: reply.flowId,
       url: shellSignIn === null ? reply.url : null,
       pasteCode: reply.pasteCode,
+      redirectPort: reply.redirectPort ?? null,
+      redirectListening: reply.redirectPort !== undefined && redirectSignIn !== null,
     };
     setSignInFlow(begunFlow);
     await shellSignIn
       ?.open({ flowId: reply.flowId, url: reply.url, label: reply.label })
       .catch(() => {});
+    if (redirectSignIn !== null && reply.redirectPort !== undefined) {
+      // The shell opens the page and settles once the browser's redirect
+      // lands on it — or says the port is held, and the field takes over.
+      const port = reply.redirectPort;
+      const flowId = reply.flowId;
+      const fallBack = (error: string | null) =>
+        setSignInFlow((current) =>
+          current === null || current.flowId !== flowId
+            ? current
+            : { ...current, redirectListening: false, codeError: error },
+        );
+      redirectFlowIdRef.current = flowId;
+      void redirectSignIn
+        .listen({ flowId, port, url: reply.url })
+        .then(async (caught) => {
+          if (redirectFlowIdRef.current === flowId) redirectFlowIdRef.current = null;
+          if (!live()) return;
+          if (!caught.ok || caught.redirect === undefined) {
+            if (caught.error !== undefined) fallBack(caught.error);
+            return;
+          }
+          const result = await submitCodeOverRpc(flowId, caught.redirect);
+          if (live() && !result.ok) fallBack(result.error ?? "The address was not accepted.");
+        })
+        .catch((cause: unknown) => {
+          if (live()) fallBack(cause instanceof Error ? cause.message : String(cause));
+        });
+    }
     while (live()) {
       await new Promise((resolve) => setTimeout(resolve, SIGN_IN_POLL_MS));
       if (!live()) return;
@@ -353,14 +406,26 @@ export function EnvironmentAccounts({
                   ? commandErrorMessage(answer.cause)
                   : "Infinitus answered unexpectedly.",
             }
-          : { ...begunFlow, phase: status.phase, error: status.error, account: status.account };
+          : {
+              ...begunFlow,
+              phase: status.phase,
+              error: status.error,
+              account: status.account,
+              redirectPort: status.redirectPort ?? begunFlow.redirectPort,
+            };
       setSignInFlow((current) =>
         current === null
           ? current
-          : { ...flow, codeError: current.codeError, codeBusy: current.codeBusy },
+          : {
+              ...flow,
+              codeError: current.codeError,
+              codeBusy: current.codeBusy,
+              redirectListening: current.redirectListening,
+            },
       );
       if (signInEnded(flow.phase)) {
         await shellSignIn?.close(reply.flowId).catch(() => {});
+        await redirectSignIn?.stop(reply.flowId).catch(() => {});
         if (flow.phase === "done") {
           await runCommand({ environmentId, input: { command: "refresh", args: [], options: {} } });
         }
@@ -391,6 +456,8 @@ export function EnvironmentAccounts({
       flowId,
       url: null,
       pasteCode: false,
+      redirectPort: null,
+      redirectListening: false,
       phase: "waitingForToken",
       error: null,
       account: null,
@@ -439,6 +506,7 @@ export function EnvironmentAccounts({
     }
     if (signInFlow.flowId !== null) {
       await shellSignIn?.close(signInFlow.flowId).catch(() => {});
+      await redirectSignIn?.stop(signInFlow.flowId).catch(() => {});
       await runCommand({ environmentId, input: signInCancelCommandArgs(signInFlow.flowId) });
     }
     setSignInFlow(null);
