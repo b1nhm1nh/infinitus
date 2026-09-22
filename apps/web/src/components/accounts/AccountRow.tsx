@@ -5,8 +5,6 @@ import type {
 } from "@infinitus/client-runtime/state/infinitusAccounts";
 import {
   ArrowLeftRightIcon,
-  ChevronDownIcon,
-  ChevronRightIcon,
   FlameIcon,
   PauseIcon,
   PencilIcon,
@@ -140,7 +138,6 @@ export function AccountRow({
 }) {
   const [renaming, setRenaming] = useState(false);
   const [alias, setAlias] = useState(row.label);
-  const [scopedOpen, setScopedOpen] = useState(false);
   /** `remove` deletes the credential from the engine, so it asks first. */
   const [confirmRemove, setConfirmRemove] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -266,25 +263,7 @@ export function AccountRow({
 
       {row.windows.length > 0 ? <WindowGrid windows={row.windows} /> : null}
 
-      {row.scoped.length > 0 ? (
-        <div className="flex flex-col gap-1">
-          <Button
-            size="xs"
-            variant="ghost"
-            className="self-start text-muted-foreground"
-            aria-expanded={scopedOpen}
-            onClick={() => setScopedOpen((open) => !open)}
-          >
-            {scopedOpen ? (
-              <ChevronDownIcon className="size-3" aria-hidden />
-            ) : (
-              <ChevronRightIcon className="size-3" aria-hidden />
-            )}
-            {row.scoped.length} model {row.scoped.length === 1 ? "window" : "windows"}
-          </Button>
-          {scopedOpen ? <WindowGrid windows={row.scoped} /> : null}
-        </div>
-      ) : null}
+      {row.scoped.length > 0 ? <WindowGrid windows={row.scoped} /> : null}
 
       {failure === null ? null : <p className="text-destructive text-xs">{failure}</p>}
 
