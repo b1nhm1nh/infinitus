@@ -260,7 +260,8 @@ pages under `docs/internals/` keep taking narratives out of these bullets.
   process's own, so a `.zshrc` slower than the 5 s probe timeout, or a probe
   PATH with no `claude`, still reaches the usual install dirs.
 - `apps/web/src/routes/__root.tsx` — `DeepLinkCoordinator` mounted beside
-  `DesktopAppActivationCoordinator` (#270 D).
+  `DesktopAppActivationCoordinator` (#270 D); `InfinitusPeerFleets` mounted
+  beside `InfinitusEventToasts`, Electron only (#1545).
 - `apps/server/src/server.test.ts` — a `Layer.mock(InfinitusService)` in the
   harness's stub stack, since the routes layer now needs the service; a
   `Layer.mock(InfinitusPairing)` and a `Layer.mock(CaptureStore)` beside it.
@@ -419,6 +420,7 @@ pages under `docs/internals/` keep taking narratives out of these bullets.
   `stageDesktopDmgBackground` rasterizes a per-channel SVG, so the `infinitus`
   channel has artwork of its own (#601, #732; the file is in `fork-only-files.md`).
 - `infra/relay/src/db.ts`, `infra/relay/alchemy.run.ts`, `.github/workflows/deploy-relay.yml` — the relay's Postgres is a Neon project in place of upstream's PlanetScale database (#1322, #1366). Rules and traps: `docs/internals/release-and-updates.md`.
+- `docs/operations/connect-setup.md` — the "Sign in with Apple (phone)" section: the Apple Services ID, key and Clerk connection App Review's guideline 4.8 requires next to Google (#10, 2026-09-22).
 - `infra/relay/package.json`, `infra/relay/README.md`, `infra/relay/.env.example`, the root `.env.example`, every `infra/relay/src` service tag, `infra/relay/src/http/Api.ts` (`expectedClerkAudiences`), `docs/operations/connect-setup.md` — the relay's fork-owned names are `infinitus-relay` (#1368 B, #1322); the Alchemy stack and the Axiom names stay. Rules and traps: `docs/internals/infinitus-rename.md`.
 - `packages/contracts/src/relay.ts`, `infra/relay/src/worker.ts` — the
   `infinitusAlert` group (`POST /v1/environments/:environmentId/alerts`,
@@ -593,7 +595,7 @@ pages under `docs/internals/` keep taking narratives out of these bullets.
   — `contentIntent` takes `/settings/accounts` beside `/threads/…` for the
   same alert (#1375).
 - `apps/mobile/src/features/threads/ThreadDetailScreen.tsx` — the fork's slots (`infinitusReconnectingNotice` #832, `infinitusHoldBanner` #742, `infinitusQueuedTurns` #806, `infinitusBestOfCard` #269 B, `infinitusTurnFooters` #952) and the thread header menu (`useThreadHeaderMenu`, #941; `usePullRequestHeaderItem`, #269 F), built in `ThreadRouteScreen.tsx`. `ThreadRouteScreen.tsx`'s `ThreadHeader` takes it as `infinitusMenu` (the Android action ahead of the git controls, its `version` in `optionsVersion`) and `apps/mobile/src/features/threads/useThreadHeaderOptions.tsx` takes the iOS item as `infinitusHeaderItem`, ahead of the git items in both header layouts. Rules and traps: `docs/internals/phone-thread-screen.md`.
-- `apps/mobile/src/components/FilePreviewModal.tsx` — the optional `cachedUrl` on an environment-hosted source, and the one retry with a fresh URL when a reused one is refused (`previewUrlReuse.logic.ts`). Why: `docs/internals/mobile-navigation.md`.
+- `apps/mobile/src/components/FilePreviewModal.tsx` (+ `FilePreviewModal.types.ts`, where the source types moved) — the optional `cachedUrl` on an environment-hosted source, and the one retry with a fresh URL when a reused one is refused (`previewUrlReuse.logic.ts`). Why: `docs/internals/mobile-navigation.md`.
 - `packages/client-runtime/src/state/assets.ts` — `expiresAt` on the `Success` asset URL state, so a client can tell how long the URL it is showing stays valid.
 - `apps/mobile/src/features/threads/ThreadFeed.tsx` — the optional `infinitusMessageMenu` prop (revert to a message the user sent; `useRevertMessageMenu` + `revertMessage.logic.ts`, `restoreAttachments.ts`). Rules and traps: `docs/internals/phone-thread-screen.md`. Also `MessageAttachmentImage`: a haptic on press, and the thumbnail's URL handed to the preview as `cachedUrl`.
 - `apps/mobile/src/features/threads/thread-list-v2-items.tsx` — an idle
@@ -701,7 +703,7 @@ pages under `docs/internals/` keep taking narratives out of these bullets.
   alerts ride Infinitus Connect's Device Notifications and open Settings ›
   Accounts; the Devices page names the Mac and pairs a phone. Upstream's
   text above it says Infinitus Connect (#1368) and is otherwise untouched.
-- **The project file is `infinitus.json`** (#823 layer 1): `packages/contracts/src/t3ProjectFile.ts` (`T3_PROJECT_FILE_NAME`, `LEGACY_T3_PROJECT_FILE_NAME`, `T3_PROJECT_FILE_NAMES`, `T3_PROJECT_FILE_SCHEMA_URL`), the four read sites (`T3ProjectFileLoader.ts`, `useT3ProjectFileScripts.ts`, `t3ProjectFileDefaults.ts`, `new-task-flow-provider.tsx`), the copy, `scripts/build-project-file-schema.ts` → `apps/mac/site/public/schema/infinitus.json`, the repository's own `infinitus.json`. Rules and traps: `docs/internals/project-file.md`.
+- **The project file is `infinitus.json`** (#823 layer 1): `packages/contracts/src/t3ProjectFile.ts` (`T3_PROJECT_FILE_NAME`, `LEGACY_T3_PROJECT_FILE_NAME`, `T3_PROJECT_FILE_NAMES`, `T3_PROJECT_FILE_SCHEMA_URL`), the read sites (`T3ProjectFileLoader.ts`, `GitVcsDriverCore.ts`'s submodule read, `useT3ProjectFileScripts.ts`, `SettingsScopeContext.tsx`, `t3ProjectFileDefaults.ts`, `new-task-flow-provider.tsx`), the copy, `scripts/build-project-file-schema.ts` → `apps/mac/site/public/schema/infinitus.json`, the repository's own `infinitus.json`. Rules and traps: `docs/internals/project-file.md`.
 - `.github/workflows/ci.yml` — `runs-on` swapped from Blacksmith runners to
   GitHub-hosted ones, timeouts widened, `workflow_dispatch:` added so the
   upstream-sync workflow can start CI on its branch, and the Check job
@@ -714,5 +716,7 @@ pages under `docs/internals/` keep taking narratives out of these bullets.
   workflows, pull requests — write), since the default token cannot push a
   branch that touches `.github/workflows` (#658); without it such a sync
   is done by hand.
+- `apps/mobile/src/dependency-graph.test.ts` — the upward-import ceilings (`state`/`components` → `features`) are the fork's counts: `features/infinitus` (side questions, pin-at-creation) is reached from `state/`, so upstream's numbers fail here. On a sync keep the fork's ceilings, and when the test prints a higher count set it to that.
+- `scripts/lint-restyle-ceiling.ts` — `RESTYLE_CEILING` is the fork's count of `shadcn(no-restyle)` findings under `apps/web/src`, not upstream's: the fork's own web surfaces carry className overrides of their own, so upstream's number fails CI here. On a sync take upstream's other changes to the file and keep the fork's ceiling; re-run `vp run lint:restyle-ceiling` and set it to the printed count when the sync or a fork change moves it.
 - **Oh My Pi as a provider driver.** `omp` speaks ACP natively (`omp acp`), so the driver is one more tenant of the existing ACP runtime; its own files are in `fork-only-files.md`. The registration points are the ones every driver has: `packages/contracts/src/settings.ts` (`OmpSettings` / `OmpSettingsPatch`, the `omp` key of `providers` and its patch, `enabled` false by default), `packages/contracts/src/model.ts` (`DEFAULT_MODEL_BY_PROVIDER.omp`, `PROVIDER_DISPLAY_NAMES.omp`), `apps/server/src/provider/builtInDrivers.ts`, `providerStatusCache.ts`, `apps/server/src/serverSettings.ts`, `textGeneration/TextGeneration.ts`, `apps/server/scripts/acp-mock-agent.ts` (`T3_ACP_OMP=1`), `packages/contracts/src/agentSessions.ts` (`"omp"` on `AgentSessionSource`) `apps/server/src/project/AgentSessionScanner.ts` and `AgentSessionImporter.ts` (the omp resume cursor, plus its test); web `Icons.tsx`, `chat/providerIconUtils.ts`, `settings/providerDriverMeta.ts`, `settings/customModelEditor.logic.ts`, `settings/settingsSearch.ts` and `onboarding/WelcomeWizard.tsx`; mobile `ProviderIcon.tsx`; docs `README.md`, `docs/user/install.md`, `docs/user/permission-modes.md`. Upstream's own unmerged omp PRs add an `omp` arm at every one of these points; on the sync that brings one, ours stays and theirs goes — a second `omp` key or `case` is a type error at best. Rules and traps: `docs/internals/omp-driver.md`.
 - Upstream's deploy and publish workflows — disabled in the repository's Actions settings, never deleted; `deploy-relay.yml` is the one enabled (#1322). Rules and traps: `docs/internals/release-and-updates.md`.
