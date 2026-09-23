@@ -20,7 +20,7 @@ import { type InfinitusMac, infinitusMacs, macAccountsModel } from "./accountsRo
 import { ExhaustedBand } from "./ExhaustedBand";
 import { ForecastStrip } from "./ForecastStrip";
 import { useNowMinute } from "./useNowMinute";
-import { PRODUCT_NAME } from "@t3tools/shared/productName";
+import { PRODUCT_NAME } from "@infinitus/shared/productName";
 
 /** Settings › Accounts (#572): every paired Mac that runs Infinitus, its fleets
     and their accounts, read and driven through the T3 server's adapter. */
@@ -75,7 +75,7 @@ function MacAccounts(props: { readonly mac: InfinitusMac; readonly titled: boole
   return (
     <View className="gap-3">
       {props.titled ? (
-        <Text className="px-2 text-sm font-t3-medium text-foreground-muted">
+        <Text className="px-2 text-sm font-infinitus-medium text-foreground-muted">
           {mac.connected ? mac.label : `${mac.label} · disconnected`}
         </Text>
       ) : null}
@@ -97,7 +97,7 @@ function MacAccounts(props: { readonly mac: InfinitusMac; readonly titled: boole
         // the desktop app's.
         <EmptyState
           title="Infinitus is running, but no engine reports accounts"
-          detail="Install and configure an engine (swapd) for Infinitus to manage them. Engines are set up on the Mac, under Settings › Infinitus › Engines in the desktop app."
+          detail="swapd ships with Infinitus: turn it on in the desktop app on that Mac, under Settings › Engines, then add the first account from its Accounts page."
           actionLabel="Read the accounts setup guide"
           onAction={() =>
             void Linking.openURL(
@@ -107,7 +107,7 @@ function MacAccounts(props: { readonly mac: InfinitusMac; readonly titled: boole
         />
       ) : null}
       {model.sections.map((section) => (
-        <SettingsSection key={section.key} title={section.title} card>
+        <SettingsSection key={section.key} title={section.title}>
           {model.bands.has(section.key) ? (
             <ExhaustedBand band={model.bands.get(section.key)!} nowMs={now} />
           ) : null}

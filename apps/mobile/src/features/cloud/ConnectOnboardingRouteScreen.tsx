@@ -1,11 +1,12 @@
+import { ScreenScrollView as ScrollView } from "../../components/ScreenScrollView";
 import { NativeHeaderToolbar } from "../../native/StackHeader";
 import { useAuth } from "@clerk/expo";
 import { StackActions, useNavigation } from "@react-navigation/native";
 import { useCallback, useEffect, useState } from "react";
-import { Platform, Pressable, RefreshControl, ScrollView, View } from "react-native";
+import { Platform, Pressable, RefreshControl, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { reportAtomCommandResult, settlePromise } from "@t3tools/client-runtime/state/runtime";
+import { reportAtomCommandResult, settlePromise } from "@infinitus/client-runtime/state/runtime";
 import { AndroidSheetHeader } from "../../components/AndroidScreenHeader";
 import { AppText as Text } from "../../components/AppText";
 import { useRemoteConnections } from "../../state/use-remote-environment-registry";
@@ -14,6 +15,7 @@ import { splitEnvironmentSections } from "../connection/environmentSections";
 import { useConnectionController } from "../connection/useConnectionController";
 import { optOutOfConnectOnboarding } from "./connectOnboardingOptOut";
 import { hasCloudPublicConfig } from "./publicConfig";
+import { CONNECT_NAME, PRODUCT_NAME } from "@infinitus/shared/productName";
 
 /**
  * Post-sign-in onboarding sheet for T3 Connect. Mobile never publishes
@@ -85,7 +87,7 @@ function ConfiguredConnectOnboardingRouteScreen() {
     <View collapsable={false} className="flex-1 bg-sheet">
       {Platform.OS === "android" ? (
         <AndroidSheetHeader
-          title="Set up T3 Connect"
+          title={`Set up ${CONNECT_NAME}`}
           actions={[{ accessibilityLabel: "Close", icon: "xmark", onPress: handleClose }]}
         />
       ) : (
@@ -118,7 +120,7 @@ function ConfiguredConnectOnboardingRouteScreen() {
         ) : (
           <View collapsable={false} className="rounded-[24px] bg-card p-5">
             <Text className="text-sm leading-normal text-foreground-muted">
-              Sign in to your T3 account to set up T3 Connect.
+              Sign in to your {PRODUCT_NAME} account to set up {CONNECT_NAME}.
             </Text>
           </View>
         )}

@@ -1,12 +1,12 @@
-# T3 Connect setup
+# Infinitus Connect setup
 
-Deployment and client configuration for T3 Connect. The [architecture note](../internals/t3-connect.md)
+Deployment and client configuration for Infinitus Connect. The [architecture note](../internals/t3-connect.md)
 explains the trust boundaries; the [relay README](../../infra/relay/README.md#deployment) owns relay
 provisioning instructions.
 
 ## Public application configuration
 
-T3 Connect is disabled in a fresh clone. To build against the production deployment, copy the
+Infinitus Connect is disabled in a fresh clone. To build against the production deployment, copy the
 repository-root example:
 
 ```sh
@@ -32,30 +32,32 @@ Bundled servers also accept runtime overrides for operator-managed deployments.
 
 Copy `infra/relay/.env.example` to `infra/relay/.env` for relay deployment settings.
 Deploy `prod` before personal stages because it owns the retained database that their branches
-depend on. The deploy wrapper writes the resulting relay URL back to the root `.env`.
+depend on. The stack's `PublishClientConfig` action writes the resulting relay URL back to the root `.env`.
 
 ## CLI OAuth application
 
 In Clerk's OAuth applications settings:
 
 1. Create a public OAuth application for the T3 CLI, using authorization-code exchange with PKCE.
-2. Allow both redirect URIs: `http://127.0.0.1:34338/callback` and
-   `https://app.t3.codes/connect/callback`. A custom `T3CODE_HOSTED_APP_URL` needs its own
-   `/connect/callback` URL. Headless and SSH authorization depend on the hosted redirect.
-3. Enable the `openid`, `profile`, and `email` scopes.
-4. Set `T3CODE_CLERK_CLI_OAUTH_CLIENT_ID` to the generated public client ID in local and release
+2. Allow the redirect URI `http://127.0.0.1:34338/callback`.
+3. Enable the `openid`, `profile`, `email`, and `offline_access` scopes.
+4. Enable **Device authorization grant** on the application. Headless and SSH authorization use
+   it, and Clerk only advertises the device endpoint once it is on. The feature is in beta and
+   Clerk enables it per account on request.
+5. Set `T3CODE_CLERK_CLI_OAUTH_CLIENT_ID` to the generated public client ID in local and release
    build environments.
 
 ## JWT template
 
-Create a Clerk JWT template named `t3-relay` with claims:
+Create a Clerk JWT template named `infinitus-relay` with claims:
 
 ```json
-{ "aud": "t3-code-relay" }
+{ "aud": "infinitus-relay" }
 ```
 
-Set `T3CODE_CLERK_JWT_TEMPLATE=t3-relay` for clients and
-`CLERK_JWT_AUDIENCE=t3-code-relay` for the relay. The production relay deployment environment
+Set `T3CODE_CLERK_JWT_TEMPLATE=infinitus-relay` for clients and
+`CLERK_JWT_AUDIENCE=infinitus-relay` for the relay (a comma-separated list keeps
+an earlier template's tokens valid while clients move over). The production relay deployment environment
 also defines `CLERK_JWT_TEMPLATE`. The audience stays the same across relay stages; the relay
 URL selects the deployment.
 
@@ -128,6 +130,36 @@ or signing changes. Renderer edits can reuse it. Verify the installed bundle bef
 codesign --verify --deep --strict "/Applications/T3 Code (Alpha).app"
 codesign -d --entitlements :- "/Applications/T3 Code (Alpha).app"
 ```
+
+## Sign in with Apple (phone)
+
+The phone signs in through Clerk's native `AuthView`, which shows every social connection the
+instance enables. App Review (guideline 4.8) requires Sign in with Apple next to any other social
+login, so the production instance carries an Apple connection with custom credentials. The build
+already holds the entitlement: the `@clerk/expo` plugin in `apps/mobile/app.config.ts` adds
+`com.apple.developer.applesignin` to every non-personal-team build, and the App ID
+`run.infinitus.mobile` has the capability. Enabling or repairing the connection is configuration
+only, no new binary.
+
+In the Apple Developer portal (team `Q783W6B4FA`):
+
+1. A Services ID (`run.infinitus.mobile.web`) with Sign in with Apple enabled, primary App ID
+   `run.infinitus.mobile`, domain `clerk.infinitus.run`, return URL
+   `https://clerk.infinitus.run/v1/oauth_callback` (read the exact URL off Clerk's Apple
+   connection page before registering).
+2. A key with Sign in with Apple enabled for that primary App ID. Apple serves the `.p8` once;
+   keep it beside the notarization key and note its Key ID in `~/.config/infinitus/signing.env`
+   (`SIWA_KEY_ID`, `SIWA_KEY_PATH`, `SIWA_SERVICES_ID`).
+
+In the Clerk Dashboard, **SSO connections** › Apple: Services ID, Team ID, Key ID and the key's
+PEM, with "Enable for sign-up and sign-in" on. The iOS app must already be listed under
+**Native applications** with the App ID prefix and bundle ID. Verify with
+`https://clerk.infinitus.run/v1/environment`: `user_settings.social.oauth_apple.enabled` is the
+proof, not the dashboard.
+
+Users who hide their email get an Apple relay address. Register Clerk's sender (the "Email
+Source for Apple Private Email Relay" value) under Sign in with Apple › Email Communication in
+the portal, or those users never receive Clerk's codes.
 
 ## Restricting sign-ups
 

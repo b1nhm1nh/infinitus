@@ -3,7 +3,7 @@ import {
   InfinitusUnavailable,
   type InfinitusSnapshot,
   type InfinitusSubscribeInput,
-} from "@t3tools/contracts/infinitus";
+} from "@infinitus/contracts/infinitus";
 import { it as effectIt } from "@effect/vitest";
 import * as Context from "effect/Context";
 import * as Duration from "effect/Duration";
@@ -107,9 +107,14 @@ interface ControlStubShape {
   readonly request: InfinitusControlClientShape["request"];
   /** Every command the service asked for, in order. */
   readonly calls: Effect.Effect<ReadonlyArray<string>>;
-  /** The same, with the options each carried (the lease body rides `--body`). */
+  /** The same, with the options each carried (the lease body rides `--body`)
+      and the reply budget the service asked for, when it asked. */
   readonly requests: Effect.Effect<
-    ReadonlyArray<{ readonly command: string; readonly options: Readonly<Record<string, string>> }>
+    ReadonlyArray<{
+      readonly command: string;
+      readonly options: Readonly<Record<string, string>>;
+      readonly timeoutMs?: number;
+    }>
   >;
   readonly resetCalls: Effect.Effect<void>;
   readonly setResult: (command: string, result: unknown) => Effect.Effect<void>;
@@ -131,15 +136,22 @@ const ControlStubLive = Layer.effect(
       ReadonlyArray<{
         readonly command: string;
         readonly options: Readonly<Record<string, string>>;
+        readonly timeoutMs?: number;
       }>
     >([]);
 
-    const request: InfinitusControlClientShape["request"] = (input) =>
+    const request: InfinitusControlClientShape["request"] = (input, requestOptions) =>
       Effect.gen(function* () {
         yield* Ref.update(calls, (previous) => [...previous, input.command]);
         yield* Ref.update(requests, (previous) => [
           ...previous,
-          { command: input.command, options: input.options ?? {} },
+          {
+            command: input.command,
+            options: input.options ?? {},
+            ...(requestOptions?.timeoutMs === undefined
+              ? {}
+              : { timeoutMs: requestOptions.timeoutMs }),
+          },
         ]);
         const cause = yield* Ref.get(unavailable);
         if (cause !== null) {
@@ -262,24 +274,21 @@ describe("InfinitusService", () => {
     }).pipe(Effect.provide(TestLayer)),
   );
 
-  effectIt.effect("carries the status reply's fork tunnel into the snapshot", () =>
+  effectIt.effect("keeps a key the status schema does not know out of the snapshot", () =>
     Effect.gen(function* () {
       const stub = yield* ControlStub;
       const infinitus = yield* InfinitusService;
+      // The Cloudflare tunnels retired; an older Mac still reports one, and
+      // the snapshot takes the rest of its status all the same.
       yield* stub.setResult("status", {
         ...status,
-        forkTunnel: {
-          enabled: true,
-          port: 3773,
-          state: "up",
-          url: "https://example-words.trycloudflare.com",
-        },
+        forkTunnel: { enabled: true, port: 3773, state: "up" },
       });
 
       const { fiber, first } = yield* subscribe(infinitus);
 
-      expect(first.status?.forkTunnel?.state).toBe("up");
-      expect(first.status?.forkTunnel?.url).toBe("https://example-words.trycloudflare.com");
+      expect(first.status?.version).toBe(status.version);
+      expect(first.status).not.toHaveProperty("forkTunnel");
 
       yield* Fiber.interrupt(fiber);
     }).pipe(Effect.provide(TestLayer)),
@@ -369,6 +378,27 @@ describe("InfinitusService", () => {
       const up = yield* Queue.take(queue);
       expect(up.available).toBe(true);
       expect(yield* stub.calls).toContain("manifest");
+
+      yield* Fiber.interrupt(fiber);
+    }).pipe(Effect.provide(TestLayer)),
+  );
+
+  effectIt.effect("gives a write the write budget and leaves a read on the default (#1481)", () =>
+    Effect.gen(function* () {
+      const stub = yield* ControlStub;
+      const infinitus = yield* InfinitusService;
+      const { fiber } = yield* subscribe(infinitus);
+      yield* stub.resetCalls;
+
+      yield* infinitus.command({ command: "switch", args: ["swapd/claude", "2"], options: {} });
+      yield* infinitus.command({ command: "status", args: [], options: {} });
+
+      // The write also kicks a poll cycle, so `status` is asked more than once.
+      const asked = yield* stub.requests;
+      expect(asked.find((request) => request.command === "switch")?.timeoutMs).toBe(30_000);
+      const reads = asked.filter((request) => request.command === "status");
+      expect(reads.length).toBeGreaterThan(0);
+      expect(reads.every((request) => request.timeoutMs === undefined)).toBe(true);
 
       yield* Fiber.interrupt(fiber);
     }).pipe(Effect.provide(TestLayer)),

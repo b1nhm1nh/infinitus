@@ -9,8 +9,8 @@ import * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
 import * as ChildProcess from "effect/unstable/process/ChildProcess";
 import * as ChildProcessSpawner from "effect/unstable/process/ChildProcessSpawner";
-import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
-import { resolveSpawnCommand } from "@t3tools/shared/shell";
+import { HostProcessPlatform } from "@infinitus/shared/hostProcess";
+import { resolveSpawnCommand } from "@infinitus/shared/shell";
 import {
   collectUint8StreamText,
   decodeUtf8,
@@ -25,6 +25,8 @@ export interface ProcessRunInput {
   readonly timeout?: Duration.Input | undefined;
   readonly env?: NodeJS.ProcessEnv | undefined;
   readonly stdin?: string | undefined;
+  /** Receives every stdout chunk, including bytes beyond the buffered output limit. */
+  readonly onStdoutChunk?: ((chunk: Uint8Array) => void) | undefined;
   readonly maxOutputBytes?: number | undefined;
   readonly outputMode?: "error" | "truncate" | undefined;
   readonly truncatedMarker?: string | undefined;
@@ -327,6 +329,7 @@ const runProcessCore = Effect.fn("processRunner.runProcessCore")(function* (
     );
 
   const stdin = input.stdin;
+  const onStdoutChunk = input.onStdoutChunk;
   const writeStdin =
     stdin === undefined
       ? Effect.void
@@ -352,7 +355,9 @@ const runProcessCore = Effect.fn("processRunner.runProcessCore")(function* (
         cwd: input.cwd,
         spawnCwd: input.spawnCwd,
         streamName: "stdout",
-        stream: child.stdout,
+        stream: onStdoutChunk
+          ? child.stdout.pipe(Stream.tap((chunk) => Effect.sync(() => onStdoutChunk(chunk))))
+          : child.stdout,
         maxOutputBytes,
         outputMode,
         truncatedMarker,

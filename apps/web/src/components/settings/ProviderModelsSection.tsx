@@ -6,8 +6,8 @@ import {
   ProviderDriverKind,
   type ProviderInstanceId,
   type ServerProviderModel,
-} from "@t3tools/contracts";
-import { type CustomModelDefinition, normalizeCustomModelSlug } from "@t3tools/shared/model";
+} from "@infinitus/contracts";
+import { type CustomModelDefinition, normalizeCustomModelSlug } from "@infinitus/shared/model";
 
 import { cn } from "../../lib/utils";
 import { sortModelsForProviderInstance } from "../../modelOrdering";
@@ -312,13 +312,7 @@ export function ProviderModelsSection({
         render={
           <Button
             size="icon-micro"
-            variant="ghost"
-            className={cn(
-              "[--control-icon-color:currentColor]",
-              isFavorite
-                ? "text-yellow-500 hover:text-yellow-600"
-                : "text-muted-foreground/40 hover:text-muted-foreground",
-            )}
+            variant="ghost-muted"
             onClick={() => handleToggleFavorite(model.slug)}
             aria-label={`${isFavorite ? "Remove" : "Add"} ${model.name} ${
               isFavorite ? "from" : "to"
@@ -326,7 +320,7 @@ export function ProviderModelsSection({
           />
         }
       >
-        <StarIcon className={cn("size-3", isFavorite && "fill-current")} />
+        <StarIcon className={cn("size-3", isFavorite && "fill-current text-warning")} />
       </TooltipTrigger>
       <TooltipPopup side="top">
         {isFavorite ? "Remove from favorites" : "Add to favorites"}

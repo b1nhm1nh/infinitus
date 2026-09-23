@@ -2,7 +2,7 @@ import {
   DEFAULT_CLIENT_SETTINGS,
   type ClientSettingsPatch,
   type DesktopSnapShotState,
-} from "@t3tools/contracts";
+} from "@infinitus/contracts";
 import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
 import { reactHookHarness as hooks } from "../../test/reactHookHarness";
 import { visitElements } from "../../test/reactElementTree";
@@ -27,6 +27,7 @@ vi.mock("react/compiler-runtime", async () => {
 vi.mock("@effect/atom-react", () => ({ useAtomValue: () => [] }));
 vi.mock("../../state/server", () => ({ primaryServerKeybindingsAtom: {} }));
 vi.mock("./SettingsScopeContext", () => ({ useOptionalSettingsScope: () => null }));
+vi.mock("./SettingsScopeSentence", () => ({ SettingsScopeSentence: () => null }));
 const bridge = vi.hoisted(() => ({
   getSnapShotState: vi.fn<() => Promise<DesktopSnapShotState>>(),
   setSnapShotShortcutSuppressed: vi.fn(),

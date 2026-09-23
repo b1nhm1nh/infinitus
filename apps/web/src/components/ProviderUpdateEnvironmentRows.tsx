@@ -1,11 +1,11 @@
 import { CheckIcon } from "lucide-react";
 import { type ReactNode, useCallback, useMemo, useRef, useState } from "react";
-import type { EnvironmentId, ServerProvider } from "@t3tools/contracts";
+import type { EnvironmentId, ServerProvider } from "@infinitus/contracts";
 import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
   type AtomCommandResult,
-} from "@t3tools/client-runtime/state/runtime";
+} from "@infinitus/client-runtime/state/runtime";
 
 import { cn } from "~/lib/utils";
 import { serverEnvironment } from "~/state/server";
@@ -118,7 +118,7 @@ function EnvironmentUpdateRow({
   let trailing: ReactNode;
   switch (status.kind) {
     case "loading":
-      trailing = <Spinner className="size-4 text-muted-foreground" />;
+      trailing = <Spinner size="md" tone="muted" />;
       break;
     case "success":
       trailing = <CheckIcon aria-hidden="true" className="size-4 text-success" />;

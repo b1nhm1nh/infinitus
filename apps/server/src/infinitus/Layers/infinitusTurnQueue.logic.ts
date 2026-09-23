@@ -3,8 +3,8 @@ import {
   QueueId,
   type OrchestrationQueuedTurn,
   type ThreadId,
-} from "@t3tools/contracts";
-import { orderKeyBetween } from "@t3tools/shared/orderKeys";
+} from "@infinitus/contracts";
+import { orderKeyBetween } from "@infinitus/shared/orderKeys";
 import * as Schema from "effect/Schema";
 
 import { OrchestrationCommandInvariantError } from "../../orchestration/Errors.ts";
@@ -14,9 +14,10 @@ import { OrchestrationCommandInvariantError } from "../../orchestration/Errors.t
  * queued rows are sent one at a time, oldest key first, and only while the
  * thread is idle by every gate the client drain used: no turn running or
  * starting, no turn start pending in the projection, not held by session
- * priority mode (#616), not paused by interrupt mode (#743), and no send of
- * ours still in flight. A session in `error` is never drained: a queue that
- * keeps sending into a broken session is the failure #832 (retry after a
+ * priority mode (#616), not paused by interrupt mode (#743), not mid-resume
+ * on a usage limit (#1509), and no send of ours still
+ * in flight. A session in `error` is never drained: a queue that keeps
+ * sending into a broken session is the failure #832 (retry after a
  * transport failure) owns, and the next manual send clears the state.
  *
  * Two failures of the send itself: a row the decider refused is skipped by
@@ -25,6 +26,12 @@ import { OrchestrationCommandInvariantError } from "../../orchestration/Errors.t
  * event; a row the provider failed to start after the send consumed it is
  * put back once, at the head, under `retryQueueId` — the marker that stops
  * a second round.
+ *
+ * A row queued with `sendAt: "tool-boundary"` (#1318, the composer's steer
+ * mode) is also due while the turn runs, at the moment one of its tool
+ * calls finishes (`toolBoundary`): the first such row in queue order goes,
+ * whatever idle rows sit ahead of it, so a steer typed behind an idle row
+ * is not held until the turn ends. At idle it is an ordinary row.
  */
 
 /** The thread fields the verdict reads; a shell or a detail both fit. */
@@ -45,6 +52,7 @@ export type QueueWaitReason =
   | "failed"
   | "held"
   | "paused"
+  | "resuming"
   | "busy"
   | "pending-start"
   | "error";
@@ -87,6 +95,9 @@ export function queueDrainVerdict(
   gates: {
     readonly held: boolean;
     readonly paused: boolean;
+    /** A resume-on-limit send is in flight (#1509): idle by every reading
+        below, though a turn is on its way. `docs/internals/turn-queue.md`. */
+    readonly resuming: boolean;
     readonly inFlight: boolean;
     /** A start requested and not yet running (the reactor is starting the
         session, or holding the start through compaction): upstream's
@@ -94,9 +105,12 @@ export function queueDrainVerdict(
     readonly pendingStart: boolean;
     /** Signatures (`queuedTurnSignature`) of rows the decider refused. */
     readonly failed?: ReadonlySet<string> | undefined;
+    /** A tool call of the running turn just finished (#1318). */
+    readonly toolBoundary?: boolean | undefined;
   },
 ): QueueDrainVerdict {
-  const row = orderedQueuedTurns(thread.queuedTurns)[0];
+  const rows = orderedQueuedTurns(thread.queuedTurns);
+  const row = rows[0];
   if (row === undefined) return { kind: "wait", reason: "empty" };
   if (thread.archivedAt !== null) return { kind: "wait", reason: "archived" };
   if (gates.inFlight) return { kind: "wait", reason: "in-flight" };
@@ -105,11 +119,21 @@ export function queueDrainVerdict(
   }
   if (gates.held) return { kind: "wait", reason: "held" };
   if (gates.paused) return { kind: "wait", reason: "paused" };
+  // Ahead of the session reads, and of the tool boundary with them: no turn
+  // is running to steer in that window.
+  if (gates.resuming) return { kind: "wait", reason: "resuming" };
   const session = thread.session;
   if (session !== null) {
     if (session.status === "error") return { kind: "wait", reason: "error" };
     if (session.activeTurnId !== null || !IDLE_SESSION_STATUSES.has(session.status)) {
-      return { kind: "wait", reason: "busy" };
+      const due = gates.toolBoundary
+        ? rows.find((entry) => entry.sendAt === "tool-boundary")
+        : undefined;
+      if (due === undefined) return { kind: "wait", reason: "busy" };
+      if (gates.failed?.has(queuedTurnSignature(thread.id, due)) === true) {
+        return { kind: "wait", reason: "failed" };
+      }
+      return { kind: "send", row: due };
     }
   }
   if (gates.pendingStart) return { kind: "wait", reason: "pending-start" };

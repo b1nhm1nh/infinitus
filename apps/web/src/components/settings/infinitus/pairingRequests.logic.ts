@@ -1,7 +1,7 @@
-import type { PairingApprovalRequest } from "@t3tools/contracts/infinitusPairing";
+import type { PairingApprovalRequest } from "@infinitus/contracts/infinitusPairing";
 
 /**
- * The "Pairing requests" card on Settings › Infinitus › Devices (#710), as pure
+ * The "Pairing requests" card on Settings › Devices (#710), as pure
  * state: one row per phone asking to be let in, with the code the user
  * matches against the phone's screen and how long the ask has left. The
  * stream carries metadata only — never the phone's secret or the credential —
@@ -46,6 +46,12 @@ export function decisionNotice(input: {
     return `Could not ${input.approve ? "approve" : "deny"} that request: ${input.outcome.message}`;
   }
   return input.outcome.decided ? null : "That request had already expired.";
+}
+
+/** `4:59` — the countdown on a row. */
+export function formatCountdown(secondsLeft: number): string {
+  const seconds = Math.max(0, secondsLeft);
+  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
 }
 
 /** The requests not toasted yet, in stream order. Every request the desktop

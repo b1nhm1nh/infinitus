@@ -1,4 +1,4 @@
-import { DEFAULT_CLIENT_SETTINGS } from "@t3tools/contracts";
+import { DEFAULT_CLIENT_SETTINGS } from "@infinitus/contracts";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
 function createLocalStorageStub(): Storage {
@@ -114,13 +114,13 @@ describe("clientPersistenceStorage", () => {
     expect(settings).not.toHaveProperty("diffWordWrap");
   });
 
-  it("keeps the default diff file state across reloads and defaults it to expanded", async () => {
+  it("keeps the default diff file state across reloads and defaults it to collapsed", async () => {
     const testWindow = getTestWindow();
     const { readBrowserClientSettings, writeBrowserClientSettings } =
       await import("./clientPersistenceStorage");
 
     testWindow.localStorage.setItem("t3code:client-settings:v1", JSON.stringify({}));
-    expect(readBrowserClientSettings()?.diffFilesCollapsed).toBe(false);
+    expect(readBrowserClientSettings()?.diffFilesCollapsed).toBe(true);
 
     writeBrowserClientSettings({ ...DEFAULT_CLIENT_SETTINGS, diffFilesCollapsed: true });
     expect(readBrowserClientSettings()?.diffFilesCollapsed).toBe(true);

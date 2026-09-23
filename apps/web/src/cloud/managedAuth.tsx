@@ -1,10 +1,10 @@
 import { useAuth } from "@clerk/react";
-import { ManagedRelay, setManagedRelaySession } from "@t3tools/client-runtime/relay";
+import { ManagedRelay, setManagedRelaySession } from "@infinitus/client-runtime/relay";
 import {
   reportAtomCommandResult,
   settleAsyncResult,
   settlePromise,
-} from "@t3tools/client-runtime/state/runtime";
+} from "@infinitus/client-runtime/state/runtime";
 import * as Effect from "effect/Effect";
 import { useEffect, useRef, type ReactNode } from "react";
 
@@ -14,14 +14,7 @@ import { appAtomRegistry } from "../rpc/atomRegistry";
 import { useAtomCommand } from "../state/use-atom-command";
 import { resolveRelayClerkTokenOptions } from "./publicConfig";
 
-let relayTokenProvider: (() => Promise<string | null>) | null = null;
-
-export async function readManagedRelayClerkToken(): Promise<string | null> {
-  return relayTokenProvider?.() ?? null;
-}
-
 export function deactivateManagedRelayAuthentication(): void {
-  relayTokenProvider = null;
   setManagedRelaySession(appAtomRegistry, null);
 }
 
@@ -29,7 +22,6 @@ export function activateManagedRelayAuthentication(
   accountId: string,
   readClerkToken: () => Promise<string | null>,
 ): void {
-  relayTokenProvider = readClerkToken;
   setManagedRelaySession(appAtomRegistry, {
     accountId,
     readClerkToken,

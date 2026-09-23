@@ -1,14 +1,14 @@
-import type { ServerProviderSkill } from "@t3tools/contracts";
+import type { ServerProviderSkill } from "@infinitus/contracts";
 import {
   dedupeProviderSkillsByName,
   formatProviderSkillDisplayName,
   isProviderSkillUserInvocable,
-} from "@t3tools/client-runtime/providerSkills";
+} from "@infinitus/client-runtime/providerSkills";
 import {
   insertRankedSearchResult,
   normalizeSearchQuery,
   scoreQueryMatch,
-} from "@t3tools/shared/searchRanking";
+} from "@infinitus/shared/searchRanking";
 
 export function scoreProviderSkill(skill: ServerProviderSkill, query: string): number | null {
   const normalizedName = skill.name.toLowerCase();
@@ -75,7 +75,7 @@ export function searchProviderSkills(
   limit = Number.POSITIVE_INFINITY,
 ): ServerProviderSkill[] {
   const enabledSkills = dedupeProviderSkillsByName(skills.filter(isProviderSkillUserInvocable));
-  const normalizedQuery = normalizeSearchQuery(query, { trimLeadingPattern: /^\$+/ });
+  const normalizedQuery = normalizeSearchQuery(query, { trimLeadingPattern: /^\p{Sc}+/u });
 
   if (!normalizedQuery) {
     return enabledSkills;

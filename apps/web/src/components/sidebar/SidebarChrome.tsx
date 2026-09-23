@@ -1,27 +1,25 @@
 import {
-  ActivityIcon,
   ArrowLeftIcon,
   ChartLineIcon,
   ChartNoAxesColumnIcon,
   GaugeIcon,
-  GitPullRequestIcon,
   SettingsIcon,
   UsersIcon,
 } from "lucide-react";
 import type { ReactNode } from "react";
 import { memo, useCallback } from "react";
 import { Link, useCanGoBack, useLocation, useNavigate } from "@tanstack/react-router";
-import { PRODUCT_NAME } from "@t3tools/shared/productName";
+import { PRODUCT_NAME } from "@infinitus/shared/productName";
 
 import { useEnvironmentIdentificationMode } from "../../hooks/useSettings";
 import { cn } from "../../lib/utils";
 import { useEnvironments } from "../../state/environments";
 import {
   resolveEnvironmentIdentificationPillLabel,
-  resolveSidebarStageBackdropVariant,
   resolveSidebarStageFocusRingOffsetClass,
   SidebarStageBackdrop,
   useEnvironmentStageLabel,
+  useSidebarStageBackdropVariant,
 } from "../SidebarStageBackdrop";
 import { Badge } from "../ui/badge";
 import {
@@ -35,8 +33,10 @@ import {
 } from "../ui/sidebar";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { readPullRequestListPreferences } from "../pullRequest/pullRequestListPreferences";
+import { SidebarThreadUndoNotice } from "./SidebarThreadUndoNotice";
 import { SidebarProviderUpdatePill } from "./SidebarProviderUpdatePill";
 import { SidebarUpdateArchitectureWarning, SidebarUpdatePill } from "./SidebarUpdatePill";
+import { PullRequestGlyph } from "~/components/pullRequest/pullRequestIcons";
 
 export const SidebarChromeHeader = memo(function SidebarChromeHeader({
   isElectron,
@@ -45,8 +45,8 @@ export const SidebarChromeHeader = memo(function SidebarChromeHeader({
 }) {
   const stageLabel = useEnvironmentStageLabel();
   const environmentIdentificationMode = useEnvironmentIdentificationMode();
-  const backdropVariant = resolveSidebarStageBackdropVariant(
-    stageLabel,
+  // Through the hook, not the resolver: the scene comes from the active theme.
+  const backdropVariant = useSidebarStageBackdropVariant(
     environmentIdentificationMode === "artwork",
   );
   const pillLabel =
@@ -73,7 +73,7 @@ export const SidebarChromeHeader = memo(function SidebarChromeHeader({
       <SidebarBrand onBackdrop={backdropVariant !== null} />
       {pillLabel ? (
         <Badge
-          className="relative z-10 ml-1 hidden rounded-full px-1.5 text-muted-foreground @[15rem]/sidebar-header:inline-flex"
+          className="relative z-10 ml-1 hidden @[15rem]/sidebar-header:inline-flex"
           data-environment-identification="pill"
           size="sm"
           variant="secondary"
@@ -143,11 +143,9 @@ export const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
                 ? "accounts"
                 : location.pathname === "/stats"
                   ? "stats"
-                  : location.pathname === "/activity"
-                    ? "activity"
-                    : location.pathname === "/utilization"
-                      ? "utilization"
-                      : null,
+                  : location.pathname === "/utilization"
+                    ? "utilization"
+                    : null,
   });
   const { environments } = useEnvironments();
   // The page reads every connected server, so one of them offering pull requests is enough for
@@ -185,11 +183,6 @@ export const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
   const handleStatsClick = useCallback(() => {
     closeMobileSidebar();
     void navigate({ to: "/stats" });
-  }, [closeMobileSidebar, navigate]);
-
-  const handleActivityClick = useCallback(() => {
-    closeMobileSidebar();
-    void navigate({ to: "/activity" });
   }, [closeMobileSidebar, navigate]);
 
   const handleUtilizationClick = useCallback(() => {
@@ -231,7 +224,7 @@ export const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
           />
           {pullRequestsSupported ? (
             <SidebarUtilityItem
-              icon={<GitPullRequestIcon />}
+              icon={<PullRequestGlyph.pullRequest />}
               label="Pull Requests"
               onClick={handlePullRequestsClick}
             />
@@ -245,13 +238,6 @@ export const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
           ) : null}
           {accountsSupported ? (
             <SidebarUtilityItem icon={<ChartLineIcon />} label="Stats" onClick={handleStatsClick} />
-          ) : null}
-          {accountsSupported ? (
-            <SidebarUtilityItem
-              icon={<ActivityIcon />}
-              label="Activity"
-              onClick={handleActivityClick}
-            />
           ) : null}
           {accountsSupported ? (
             <SidebarUtilityItem
@@ -274,7 +260,8 @@ export const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
 
 export const SidebarChromeFooter = memo(function SidebarChromeFooter() {
   return (
-    <SidebarFooter className="px-[var(--sidebar-content-inset)] py-1">
+    <SidebarFooter>
+      <SidebarThreadUndoNotice />
       <SidebarProviderUpdatePill />
       <SidebarUpdateArchitectureWarning />
       <SidebarUtilityMenu />

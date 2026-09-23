@@ -8,7 +8,7 @@ import {
   OrchestrationMessageContext,
   type OrchestrationQueuedTurn,
   type OrchestrationReadModel,
-} from "@t3tools/contracts";
+} from "@infinitus/contracts";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
@@ -110,6 +110,47 @@ it.layer(NodeServices.layer)("turn queue decider (#806)", (it) => {
       expect(queued.modelSelection).toEqual({ instanceId: "claude", model: "opus" });
       expect(queued.orderKey > "m").toBe(true);
       expect(queued.createdAt).toBe(LATER);
+    }),
+  );
+
+  it.effect("keeps a tool-boundary moment on the row and through an edit (#1318)", () =>
+    Effect.gen(function* () {
+      const queue = (queueId: string, sendAt: "idle" | "tool-boundary") =>
+        decideOrchestrationCommand({
+          command: {
+            type: "thread.turn.queue",
+            commandId: CommandId.make(`cmd-${queueId}`),
+            threadId,
+            queueId: QueueId.make(queueId),
+            message: message(`${queueId}-m`, queueId),
+            sendAt,
+            createdAt: LATER,
+          },
+          readModel: makeReadModel({ queuedTurns: [] }),
+        });
+      const steer = events(yield* queue("q-steer", "tool-boundary"))[0]?.payload
+        .queuedTurn as OrchestrationQueuedTurn;
+      expect(steer.sendAt).toBe("tool-boundary");
+      // The default is the absent field, so old clients and rows agree.
+      const idle = events(yield* queue("q-idle", "idle"))[0]?.payload
+        .queuedTurn as OrchestrationQueuedTurn;
+      expect(idle.sendAt).toBeUndefined();
+
+      const edited = events(
+        yield* decideOrchestrationCommand({
+          command: {
+            type: "thread.turn.queue.update",
+            commandId: CommandId.make("cmd-edit-steer"),
+            threadId,
+            queueId: steer.queueId,
+            message: message("q-steer-m2", "edited"),
+            createdAt: LATER,
+          },
+          readModel: makeReadModel({ queuedTurns: [steer] }),
+        }),
+      )[0]?.payload.queuedTurn as OrchestrationQueuedTurn;
+      expect(edited.text).toBe("edited");
+      expect(edited.sendAt).toBe("tool-boundary");
     }),
   );
 

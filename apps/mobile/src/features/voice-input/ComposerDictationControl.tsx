@@ -1,4 +1,4 @@
-import type { VoiceInputPhase, VoiceInputState } from "@t3tools/client-runtime/voice-input";
+import type { VoiceInputPhase, VoiceInputState } from "@infinitus/client-runtime/voice-input";
 import { memo, useCallback, useLayoutEffect, useState, type ReactNode } from "react";
 import {
   ActivityIndicator,
@@ -300,7 +300,7 @@ export function ComposerDictationStatus(props: {
     <View className="relative h-11 min-w-0 flex-1 justify-center">
       {isError ? (
         <View className="min-w-0 flex-row items-center gap-1.5 px-2">
-          <Text className="min-w-0 flex-1 text-sm text-red-400" numberOfLines={2}>
+          <Text className="min-w-0 flex-1 text-sm text-danger-foreground" numberOfLines={2}>
             {props.presentation.statusLabel}
           </Text>
           <Pressable

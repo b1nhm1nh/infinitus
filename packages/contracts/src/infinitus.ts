@@ -73,30 +73,22 @@ export const InfinitusManifest = Schema.Struct({
 export type InfinitusManifest = typeof InfinitusManifest.Type;
 
 /** One engine's line in the `status` reply. `keyPresent` only exists for the
-    engines that hold a key (cliproxy, 9router). */
+    engines that hold a key (cliproxy, 9router); `binaryPath` and `daemon`
+    (stopped | running | backingOff | refused | schemaMismatch, kept a string
+    so a word a newer build adds costs nothing) only for swapd; `error` is the
+    engine's own last error, verbatim (#1235). */
 export const InfinitusEngineState = Schema.Struct({
   enabled: Schema.Boolean,
   registered: Schema.Boolean,
   keyPresent: Schema.optionalKey(Schema.Boolean),
+  binaryPath: Schema.optionalKey(Schema.String),
+  daemon: Schema.optionalKey(Schema.String),
+  error: Schema.optionalKey(Schema.NullOr(Schema.String)),
 });
 export type InfinitusEngineState = typeof InfinitusEngineState.Type;
 
-/** The Cloudflare quick tunnel the Mac app can run in front of this server's
-    port, for pairing a phone off the LAN (#572). `state` is one of off,
-    invalidPort, blocked, unavailable, starting, up, stopped — kept a string so
-    a state a newer build adds does not cost the whole status; `url` only
-    while up. Absent from builds before the tunnel and from the Linux tray. */
-export const InfinitusForkTunnel = Schema.Struct({
-  enabled: Schema.Boolean,
-  port: Schema.Number,
-  state: Schema.String,
-  url: Schema.optionalKey(Schema.String),
-  hostname: Schema.optionalKey(Schema.String),
-});
-export type InfinitusForkTunnel = typeof InfinitusForkTunnel.Type;
-
 /** The `status` command's reply: app build, the socket it answers on, the menu
-    bar badge, which engines are on, and the fork tunnel where the build has one. */
+    bar badge, and which engines are on. */
 export const InfinitusStatus = Schema.Struct({
   version: Schema.String,
   sha: Schema.String,
@@ -105,12 +97,15 @@ export const InfinitusStatus = Schema.Struct({
   playground: Schema.Boolean,
   signInRunning: Schema.Boolean,
   engines: Schema.Record(Schema.String, InfinitusEngineState),
-  forkTunnel: Schema.optionalKey(InfinitusForkTunnel),
   /** The running app's own bundle path (#777): the fork's startup reconcile
       quits and reopens a stale helper only when this is its nested bundle.
       Absent from helpers that predate it; the struct drops unknown keys, so
       the two versions tolerate each other. */
   bundlePath: Schema.optionalKey(Schema.String),
+  /** Row actions the popup queued for other machines and nobody has answered
+      (`peer-sync`, #1545): the desktop pushes at once when this is above zero.
+      Absent from an older app. */
+  peerCommandsPending: Schema.optionalKey(Schema.Number),
 });
 export type InfinitusStatus = typeof InfinitusStatus.Type;
 
@@ -128,6 +123,10 @@ export const InfinitusAccount = Schema.Struct({
       `unhold` write it). Absent from engines that have no hold knob. */
   disabled: Schema.optionalKey(Schema.Boolean),
   preferred: Schema.optionalKey(Schema.Boolean),
+  /** Kept warm: the engine's daemon ignites the account whenever its 5h
+      window has gone cold (`auto-ignite` writes it). Absent from engines
+      without the knob and from a swapd older than 0.3. */
+  autoIgnite: Schema.optionalKey(Schema.Boolean),
   isOrganization: Schema.Boolean,
   organizationName: Schema.optionalKey(Schema.String),
   organizationUuid: Schema.optionalKey(Schema.String),
@@ -411,19 +410,28 @@ export const InfinitusAwsLoginState = Schema.Struct({
 });
 export type InfinitusAwsLoginState = typeof InfinitusAwsLoginState.Type;
 
+/** What the AWS sign-in page asks for and nobody remembers across accounts
+    (`AwsLogin.Account`): the account id and, for an IAM user, the user name,
+    both read off the profile's own `~/.aws/config`. Never a secret. */
+export const InfinitusAwsLoginAccount = Schema.Struct({
+  accountId: Schema.String,
+  userName: Schema.optionalKey(Schema.NullOr(Schema.String)),
+});
+export type InfinitusAwsLoginAccount = typeof InfinitusAwsLoginAccount.Type;
+
 /** One lapsed sign-in: the profile (an account for gcloud), which CLI
     (`provider` is `gcloud` for gcloud items and absent for AWS), and the login
-    running for it, if any. `account` is the engine's account record, opaque
-    here. The session that hit it — `pid` and `sessionLabel` — left with the
-    Mac's session tracker (#1041); the struct is open, so an older app still
-    sending them decodes unchanged. */
+    running for it, if any. `account` is the page's account id and user name
+    when the config names them. The session that hit it — `pid` and
+    `sessionLabel` — left with the Mac's session tracker (#1041); the struct is
+    open, so an older app still sending them decodes unchanged. */
 export const InfinitusAwsLogin = Schema.Struct({
   profile: Schema.String,
   provider: Schema.optionalKey(Schema.NullOr(Schema.String)),
   flow: Schema.String,
   state: Schema.optionalKey(Schema.NullOr(InfinitusAwsLoginState)),
   failedAt: Schema.optionalKey(Schema.NullOr(Schema.String)),
-  account: Schema.optionalKey(Schema.Unknown),
+  account: Schema.optionalKey(Schema.NullOr(InfinitusAwsLoginAccount)),
 });
 export type InfinitusAwsLogin = typeof InfinitusAwsLogin.Type;
 
@@ -433,13 +441,144 @@ export const InfinitusAwsLogins = Schema.Struct({
 });
 export type InfinitusAwsLogins = typeof InfinitusAwsLogins.Type;
 
+/** One member of the team as `team-status` lists it (#1313): the roster
+    row plus what the member last published — absent for one that has not
+    published yet. `fleet` is left opaque (the Mac's `fleet.json`). */
+export const InfinitusTeamMember = Schema.Struct({
+  kid: Schema.String,
+  name: Schema.String,
+  role: Schema.String,
+  isMe: Schema.Boolean,
+  founder: Schema.optionalKey(Schema.Boolean),
+  since: Schema.optionalKey(Schema.NullOr(Schema.Number)),
+  lastPublished: Schema.optionalKey(Schema.NullOr(Schema.Number)),
+  kinds: Schema.optionalKey(Schema.Array(Schema.String)),
+  threadsNow: Schema.optionalKey(Schema.Number),
+  blockers: Schema.optionalKey(Schema.Array(Schema.String)),
+  crashes: Schema.optionalKey(Schema.Number),
+  todayUSD: Schema.optionalKey(Schema.Number),
+  todayMessages: Schema.optionalKey(Schema.Number),
+  todayCommits: Schema.optionalKey(Schema.Number),
+  fleet: Schema.optionalKey(Schema.Unknown),
+  /** What this member lets ME do to their threads (spec §8), sorted; absent when nothing. */
+  controls: Schema.optionalKey(Schema.NullOr(Schema.Array(Schema.String))),
+});
+export type InfinitusTeamMember = typeof InfinitusTeamMember.Type;
+
+/** An audience as the Mac words it: `leaders`, `team`, or the kids named. */
+export const InfinitusTeamAudience = Schema.Union([Schema.String, Schema.Array(Schema.String)]);
+export type InfinitusTeamAudience = typeof InfinitusTeamAudience.Type;
+
+/** One of this Mac's grants (spec §8): who may do what to which threads
+    (`"all"` or the ids). `preauthorized` runs without the Mac's tap. */
+export const InfinitusTeamGrant = Schema.Struct({
+  id: Schema.String,
+  audience: InfinitusTeamAudience,
+  threads: Schema.Union([Schema.Literal("all"), Schema.Array(Schema.String)]),
+  capabilities: Schema.Array(Schema.String),
+  since: Schema.Number,
+  preauthorized: Schema.optionalKey(Schema.Array(Schema.String)),
+  expires: Schema.optionalKey(Schema.NullOr(Schema.Number)),
+});
+export type InfinitusTeamGrant = typeof InfinitusTeamGrant.Type;
+
+/** A driver's command waiting for this Mac's tap (`team-allow` / `team-deny`). */
+export const InfinitusTeamPending = Schema.Struct({
+  id: Schema.String,
+  kid: Schema.String,
+  name: Schema.String,
+  thread: Schema.String,
+  action: Schema.String,
+  text: Schema.optionalKey(Schema.NullOr(Schema.String)),
+  project: Schema.optionalKey(Schema.NullOr(Schema.String)),
+  expires: Schema.Number,
+});
+export type InfinitusTeamPending = typeof InfinitusTeamPending.Type;
+
+/** A pending join request (leaders see them). */
+export const InfinitusTeamRequest = Schema.Struct({
+  kid: Schema.String,
+  name: Schema.String,
+  platform: Schema.optionalKey(Schema.String),
+  devices: Schema.optionalKey(Schema.Array(Schema.String)),
+  at: Schema.optionalKey(Schema.Number),
+});
+export type InfinitusTeamRequest = typeof InfinitusTeamRequest.Type;
+
+/** The `team-status` reply: the team this Mac is in, or `null` when there is
+    none. `remote` is masked by the Mac. `shares` maps a kind (stats, now,
+    threads, transcripts, fleet; older Macs also send the retired crashes) to
+    its audience (off, leaders, team); `exclusions` are project slugs kept
+    private. */
+export const InfinitusTeamSnapshot = Schema.Struct({
+  id: Schema.String,
+  name: Schema.String,
+  remote: Schema.String,
+  kid: Schema.String,
+  role: Schema.String,
+  rev: Schema.optionalKey(Schema.NullOr(Schema.Number)),
+  members: Schema.Array(InfinitusTeamMember),
+  requests: Schema.optionalKey(Schema.Array(InfinitusTeamRequest)),
+  policy: Schema.optionalKey(Schema.NullOr(Schema.Struct({ requests: Schema.String }))),
+  shares: Schema.optionalKey(Schema.Record(Schema.String, Schema.String)),
+  exclusions: Schema.optionalKey(Schema.Array(Schema.String)),
+  lastFetch: Schema.optionalKey(Schema.NullOr(Schema.Number)),
+  lastPublish: Schema.optionalKey(Schema.NullOr(Schema.Number)),
+  lastError: Schema.optionalKey(Schema.NullOr(Schema.String)),
+  /** Delegated control (spec §8): this Mac's grants and the commands waiting
+      for its tap. Absent on a build without them. */
+  grants: Schema.optionalKey(Schema.NullOr(Schema.Array(InfinitusTeamGrant))),
+  pending: Schema.optionalKey(Schema.NullOr(Schema.Array(InfinitusTeamPending))),
+});
+export type InfinitusTeamSnapshot = typeof InfinitusTeamSnapshot.Type;
+
+/** The `team-code` reply: the code or invite link (shown once, never logged)
+    and when it expires (unix seconds). */
+export const InfinitusTeamCode = Schema.Struct({
+  code: Schema.String,
+  expires: Schema.optionalKey(Schema.Number),
+});
+export type InfinitusTeamCode = typeof InfinitusTeamCode.Type;
+
+/** The `team-insights` reply (leaders): blockers, headroom, who is on. Spend
+    figures are estimates. */
+export const InfinitusTeamInsights = Schema.Struct({
+  period: Schema.String,
+  blockers: Schema.Array(
+    Schema.Struct({
+      kid: Schema.String,
+      name: Schema.String,
+      kind: Schema.String,
+      text: Schema.String,
+    }),
+  ),
+  headroom: Schema.Array(
+    Schema.Struct({
+      kid: Schema.String,
+      name: Schema.String,
+      engine: Schema.String,
+      active: Schema.optionalKey(Schema.NullOr(Schema.String)),
+      headroom: Schema.optionalKey(Schema.NullOr(Schema.Number)),
+      spare: Schema.optionalKey(Schema.Number),
+      dead: Schema.optionalKey(Schema.Number),
+    }),
+  ),
+  onNow: Schema.Array(Schema.String),
+  cost: Schema.optionalKey(Schema.Unknown),
+  repos: Schema.optionalKey(Schema.Unknown),
+  hours: Schema.optionalKey(Schema.Array(Schema.Number)),
+});
+export type InfinitusTeamInsights = typeof InfinitusTeamInsights.Type;
+
 /** One row of the `events` reply — the app's event log as the Activity pane
     shows it: `at` ISO 8601, `icon` an SF Symbol name, `text` the line. Since
     native #630 (#615) a row also carries `id`, the app's own UUID for the
     entry (stable per app run), and `kind`, the durable log's vocabulary
     (switch, limit, revival, resume, nudge, team, team-control, hook, pairing,
-    other). Both are absent on older builds, where a client falls back to the
-    icon and text. */
+    alert, notice, other). Both are absent on older builds, where a client
+    falls back to the icon and text. `alert` and `notice` are the app's own
+    announcements: it logs the line instead of banner-ing it whenever a client
+    holds a `fleets` lease, so the row IS the notification. */
 export const InfinitusEventRow = Schema.Struct({
   id: Schema.optionalKey(Schema.String),
   at: Schema.String,
@@ -577,57 +716,168 @@ export const InfinitusSignInCodeResult = Schema.Struct({
 });
 export type InfinitusSignInCodeResult = typeof InfinitusSignInCodeResult.Type;
 
+/** Fork: the engine's loopback listener stood in for on this machine. A
+    sign-in the Mac's engine finishes itself ends on `http://localhost:<port>/
+    callback`, and when this desktop looks at another Mac's environment the
+    page opens in this machine's browser — so the shell binds `port` here,
+    opens `url`, answers the browser, and hands the address back for the page
+    to send over `signin-code`. */
+export const InfinitusSignInRedirectListenInput = Schema.Struct({
+  flowId: Schema.String,
+  port: Schema.Number,
+  url: Schema.String,
+});
+export type InfinitusSignInRedirectListenInput = typeof InfinitusSignInRedirectListenInput.Type;
+
+/** The address the browser ended on (it carries the code: a secret from here
+    on), or why none will come — the port is held, or the flow was stopped
+    (no `error`). */
+export const InfinitusSignInRedirectResult = Schema.Struct({
+  ok: Schema.Boolean,
+  redirect: Schema.optionalKey(Schema.String),
+  error: Schema.optionalKey(Schema.String),
+});
+export type InfinitusSignInRedirectResult = typeof InfinitusSignInRedirectResult.Type;
+
+/** Fork (#1213): a sign-in the desktop shell runs itself, through the engine's
+    own `add-oauth` verb — swapd is the OAuth client, so its loopback listener
+    catches the redirect and there is no code to paste. `provider` is the
+    engine's own provider name (`swapd --provider <p>`); the page opens in a
+    private window of the system browser. No slot: `add-oauth` resolves the
+    account from the sign-in itself and lands a known address back in its own
+    slot, so signing in again just works. `fleet` and `relogin` are the
+    fleet's id and the address being signed in again, for the shell to hand
+    the sign-in to the menu-bar app (`signin-begin --window`) when the
+    browser has no private window to give — the Mac's own sheet then shows
+    it, passkeys and all. */
+export const InfinitusOAuthSignInInput = Schema.Struct({
+  flowId: Schema.String,
+  provider: Schema.String,
+  fleet: Schema.optionalKey(Schema.String),
+  relogin: Schema.optionalKey(Schema.String),
+});
+export type InfinitusOAuthSignInInput = typeof InfinitusOAuthSignInInput.Type;
+
+/** What `add-oauth` stored, or why it did not. `error` is the engine's own
+    message; the shell never invents one. */
+export const InfinitusOAuthSignInResult = Schema.Struct({
+  ok: Schema.Boolean,
+  slot: Schema.optionalKey(Schema.Number),
+  email: Schema.optionalKey(Schema.String),
+  error: Schema.optionalKey(Schema.String),
+});
+export type InfinitusOAuthSignInResult = typeof InfinitusOAuthSignInResult.Type;
+
+/**
+ * Fork: the proxy engines the desktop shell can run for you. The keys are the
+ * Engines page's own (`ProxyEngineKey` in the web's `engines.logic.ts`); the
+ * shell knows nothing of the engines beyond how to start them.
+ */
+export const InfinitusEngineKey = Schema.Literals(["cliproxy", "9router"]);
+export type InfinitusEngineKey = typeof InfinitusEngineKey.Type;
+
+/**
+ * How an engine is run on this machine, which the shell detects rather than
+ * assumes:
+ *
+ * - `child` — the shell owns the process: it starts it, restarts it when it
+ *   exits unexpectedly, and takes it down with the app.
+ * - `service` — something else already owns it (CLIProxyAPI under Homebrew's
+ *   launchd job). The shell says so and stays out of the way; a second
+ *   supervisor on top of launchd would only fight it.
+ * - `unknown` — no command was detected and none was typed, so there is
+ *   nothing to run.
+ */
+export const InfinitusEngineMode = Schema.Literals(["child", "service", "unknown"]);
+export type InfinitusEngineMode = typeof InfinitusEngineMode.Type;
+
+/** What a `child` engine's process is doing. A `service` engine is always
+    `stopped` here: its state belongs to whoever supervises it. */
+export const InfinitusEngineRunState = Schema.Literals([
+  "running",
+  "starting",
+  "stopped",
+  "backing-off",
+  "failed",
+]);
+export type InfinitusEngineRunState = typeof InfinitusEngineRunState.Type;
+
+export const InfinitusEngineSupervision = Schema.Struct({
+  key: InfinitusEngineKey,
+  mode: InfinitusEngineMode,
+  /** Whether the shell should keep this engine running. Off by default: no
+      process starts until it is asked for. */
+  managed: Schema.Boolean,
+  /** The command in force — what was typed, else what was detected. Null when
+      neither found anything to run. */
+  command: Schema.NullOr(Schema.String),
+  /** What detection found, so the field can show what it would fall back to
+      and a typed command can be told apart from a found one. */
+  detectedCommand: Schema.NullOr(Schema.String),
+  state: InfinitusEngineRunState,
+  pid: Schema.NullOr(Schema.Number),
+  /** The last failure's own words — a spawn error, or the exit status. */
+  error: Schema.NullOr(Schema.String),
+});
+export type InfinitusEngineSupervision = typeof InfinitusEngineSupervision.Type;
+
+/** Every engine's supervision, the shape the Engines page renders. */
+export const InfinitusEngines = Schema.Struct({
+  engines: Schema.Array(InfinitusEngineSupervision),
+});
+export type InfinitusEngines = typeof InfinitusEngines.Type;
+
+/** A change to one engine's settings. An absent field is left alone; a
+    `command` of `""` clears the override and falls back to detection. */
+export const InfinitusEngineSettingsInput = Schema.Struct({
+  key: InfinitusEngineKey,
+  managed: Schema.optionalKey(Schema.Boolean),
+  command: Schema.optionalKey(Schema.String),
+});
+export type InfinitusEngineSettingsInput = typeof InfinitusEngineSettingsInput.Type;
+
+export const InfinitusEngineAction = Schema.Literals(["start", "stop", "restart"]);
+export type InfinitusEngineAction = typeof InfinitusEngineAction.Type;
+
+/** A button press on the Engines page. `start` on an unmanaged engine runs it
+    once without turning management on. */
+export const InfinitusEngineControlInput = Schema.Struct({
+  key: InfinitusEngineKey,
+  action: InfinitusEngineAction,
+});
+export type InfinitusEngineControlInput = typeof InfinitusEngineControlInput.Type;
+
+/** What the shell remembers about one engine. An array rather than a record so
+    an entry for an engine a later build drops still decodes. */
+export const InfinitusEngineSettings = Schema.Struct({
+  key: InfinitusEngineKey,
+  managed: Schema.Boolean,
+  /** The typed command, or null to follow detection. */
+  command: Schema.NullOr(Schema.String),
+});
+export type InfinitusEngineSettings = typeof InfinitusEngineSettings.Type;
+
 export const InfinitusDesktopPrefs = Schema.Struct({
   quitInfinitusWithApp: Schema.Boolean,
   /** #433 slice 2: a double tap of Shift in any app captures its selected text
       into the active project. macOS only; off by default. */
   captureGestureEnabled: Schema.Boolean,
+  /** Engines the shell runs. Absent for every engine never configured, which
+      is the default: nothing is started until it is asked for. */
+  engines: Schema.Array(InfinitusEngineSettings),
 });
 export type InfinitusDesktopPrefs = typeof InfinitusDesktopPrefs.Type;
 
 /*
- * Phone-only writes (#572). The native mirror's `POST /activities/token`,
- * `POST /client-activity` and `POST /crashes` bodies, carried unchanged as the
- * `--body` option of the `activities-token`, `client-activity` and
- * `crash-report` control commands so a paired phone reaches them through
- * `infinitus.command`. Every schema mirrors the Swift struct the native decoder
- * reads (LiveActivityPush.swift, LeaseTable.swift, CrashReport.swift); dates are
- * ISO 8601 strings because those decoders use `.iso8601`.
+ * Phone-only writes (#572). The native mirror's `POST /client-activity` and
+ * `POST /crashes` bodies, carried unchanged as the `--body` option of the
+ * `client-activity` and `crash-report` control commands so a paired phone
+ * reaches them through `infinitus.command`. Every schema mirrors the Swift
+ * struct the native decoder reads (LeaseTable.swift, CrashReport.swift);
+ * dates are ISO 8601 strings because those decoders use `.iso8601`. The
+ * `activities-token` registration left with #1375: the phone's alerts and
+ * thread card ride Infinitus Connect.
  */
-
-/** Which push a token takes: `alert` is an ordinary notification token;
-    `agent-activity-start` lets the Mac start the phone's lock-screen thread
-    card while the app is closed (iOS 17.2 push-to-start) and `agent-activity`
-    is a running card's own token (#1047). The Mac-driven session cards'
-    `working` / `revival` kinds retired with #1041. */
-export const InfinitusActivityPushKind = Schema.Literals([
-  "alert",
-  "agent-activity-start",
-  "agent-activity",
-]);
-export type InfinitusActivityPushKind = typeof InfinitusActivityPushKind.Type;
-
-/** One token registration: the Mac keeps one slot per device and kind, a new
-    token for the same pair replaces it. `environment` is `sandbox` for
-    development-signed builds, `production` otherwise (Apple routes them to
-    different gateways). `macId` is the key the phone files this Mac under — the
-    fork uses the environment id — echoed into a push-to-start's attributes so
-    the phone adopts the card into the right Mac's slot. `registeredAt` may be
-    left to the Mac, which stamps it. `layout` names the push envelope the
-    phone's activity host expects: absent or `native` for the SwiftUI phone,
-    `expo` for this app (expo-widgets' `{name, props}` content state). */
-export const InfinitusActivityPushRegistration = Schema.Struct({
-  kind: InfinitusActivityPushKind,
-  token: Schema.String,
-  deviceId: Schema.String,
-  deviceName: Schema.String,
-  environment: Schema.String,
-  themeID: Schema.optionalKey(Schema.NullOr(Schema.String)),
-  registeredAt: Schema.optionalKey(Schema.String),
-  macId: Schema.optionalKey(Schema.NullOr(Schema.String)),
-  layout: Schema.optionalKey(Schema.NullOr(Schema.String)),
-});
-export type InfinitusActivityPushRegistration = typeof InfinitusActivityPushRegistration.Type;
 
 /** What a client is looking at: the fleet, or the stats. The Mac only does
     that work while some client holds a lease on the scope. The two session
@@ -684,6 +934,50 @@ export type InfinitusSubscribeInput = typeof InfinitusSubscribeInput.Type;
 /** One command call a client asks the server to forward. The same triple the
     control request carries, minus `secret`: material read from stdin never
     crosses the RPC boundary. */
+/** One other machine as the desktop pushes it to the menu bar app over
+    `peer-sync` (#1545): its snapshot's fleets, or null before the first one
+    arrived, and whether the desktop can reach it right now. */
+export const InfinitusPeerSyncMachine = Schema.Struct({
+  id: Schema.String,
+  label: Schema.String,
+  connected: Schema.Boolean,
+  fleets: Schema.NullOr(Schema.Array(InfinitusFleet)),
+});
+export type InfinitusPeerSyncMachine = typeof InfinitusPeerSyncMachine.Type;
+
+/** What one forwarded peer command came to, in that machine's own words. */
+export const InfinitusPeerSyncResult = Schema.Struct({
+  id: Schema.String,
+  ok: Schema.Boolean,
+  error: Schema.optionalKey(Schema.String),
+});
+export type InfinitusPeerSyncResult = typeof InfinitusPeerSyncResult.Type;
+
+/** The `peer-sync` body: every other environment that runs Infinitus, and the
+    outcome of each command run since the last push. */
+export const InfinitusPeerSyncBody = Schema.Struct({
+  machines: Schema.Array(InfinitusPeerSyncMachine),
+  results: Schema.Array(InfinitusPeerSyncResult),
+});
+export type InfinitusPeerSyncBody = typeof InfinitusPeerSyncBody.Type;
+
+/** One row action the popup queued for another machine: a control command in
+    that machine's own words, which the desktop forwards verbatim. */
+export const InfinitusPeerSyncCommand = Schema.Struct({
+  id: Schema.String,
+  machine: Schema.String,
+  command: Schema.String,
+  args: Schema.Array(Schema.String),
+  options: Schema.Record(Schema.String, Schema.String),
+});
+export type InfinitusPeerSyncCommand = typeof InfinitusPeerSyncCommand.Type;
+
+/** The `peer-sync` reply, hand-written from the manifest's prose. */
+export const InfinitusPeerSyncReply = Schema.Struct({
+  commands: Schema.Array(InfinitusPeerSyncCommand),
+});
+export type InfinitusPeerSyncReply = typeof InfinitusPeerSyncReply.Type;
+
 export const InfinitusCommandInput = Schema.Struct({
   command: Schema.String,
   args: Schema.Array(Schema.String),
@@ -728,12 +1022,16 @@ export type InfinitusSecretResult = typeof InfinitusSecretResult.Type;
 
 /** Why a secret call never reached the socket: the manifest has not been
     read, the verb takes no secret, an argument the verb does not name (or one
-    it needs is missing), or this session asked too often. */
+    it needs is missing), this session asked too often, or the session's scopes
+    do not reach the verb (`scope`: a standard client — a phone, a `t3 pair`
+    browser — may feed a sign-in code or callback, or a team invite code;
+    every other secret verb needs `access:write`). */
 export const InfinitusSecretRefusal = Schema.Literals([
   "no_manifest",
   "no_secret",
   "bad_args",
   "too_many_attempts",
+  "scope",
 ]);
 export class InfinitusSecretRefused extends Schema.TaggedError<InfinitusSecretRefused>()(
   "InfinitusSecretRefused",

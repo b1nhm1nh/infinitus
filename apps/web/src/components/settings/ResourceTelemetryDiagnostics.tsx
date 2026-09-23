@@ -1,3 +1,4 @@
+import { ProcessSignalActions } from "./ProcessSignalActions";
 import { RefreshIcon } from "~/components/ui/refresh-icon";
 import {
   ActivityIcon,
@@ -24,14 +25,14 @@ import type {
   ResourceTelemetrySourceHealth,
   ResourceTelemetrySourceStatus,
   ServerProcessSignal,
-} from "@t3tools/contracts";
+} from "@infinitus/contracts";
 import * as DateTime from "effect/DateTime";
 import * as Option from "effect/Option";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
-} from "@t3tools/client-runtime/state/runtime";
+} from "@infinitus/client-runtime/state/runtime";
 
 import {
   useResourceTelemetry,
@@ -54,6 +55,7 @@ import {
   visibleResourceTelemetryProcesses,
 } from "./ResourceTelemetryDiagnostics.logic";
 import { SettingsSection, useRelativeTimeTick } from "./settingsLayout";
+import { PRODUCT_NAME } from "@infinitus/shared/productName";
 
 const HISTORY_WINDOWS = [
   { label: "5m", windowMs: 5 * 60_000, bucketMs: 15_000 },
@@ -136,7 +138,7 @@ function categoryLabel(category: ResourceTelemetryProcessCategory): string {
     case "resource-monitor":
       return "Monitor";
     case "unknown-t3":
-      return "T3 process";
+      return `${PRODUCT_NAME} process`;
   }
 }
 
@@ -502,10 +504,7 @@ function ProcessTreeName({
         <TooltipTrigger
           render={<span className="min-w-0 truncate font-medium text-foreground">{name}</span>}
         />
-        <TooltipPopup
-          side="top"
-          className="max-w-[min(520px,calc(100vw-2rem))] whitespace-normal break-words text-left font-mono text-[11px]"
-        >
+        <TooltipPopup side="top" variant="code">
           {process.command || process.name}
         </TooltipPopup>
       </Tooltip>
@@ -535,24 +534,7 @@ function ProcessActions({
   }
   const isSignaling = signalingKeys.has(processIdentityKey(process));
   return (
-    <div className="flex items-center justify-end gap-1.5">
-      <button
-        type="button"
-        disabled={isSignaling}
-        className="cursor-pointer text-[10px] font-semibold text-muted-foreground hover:text-foreground disabled:opacity-50"
-        onClick={() => onSignal(process, "SIGINT")}
-      >
-        INT
-      </button>
-      <button
-        type="button"
-        disabled={isSignaling}
-        className="cursor-pointer text-[10px] font-semibold text-destructive hover:underline disabled:opacity-50"
-        onClick={() => onSignal(process, "SIGKILL")}
-      >
-        KILL
-      </button>
-    </div>
+    <ProcessSignalActions disabled={isSignaling} onSignal={(signal) => onSignal(process, signal)} />
   );
 }
 
@@ -737,10 +719,7 @@ function HistoryProcessTable({
                       </span>
                     }
                   />
-                  <TooltipPopup
-                    side="top"
-                    className="max-w-[min(520px,calc(100vw-2rem))] whitespace-normal break-words text-left font-mono text-[11px]"
-                  >
+                  <TooltipPopup side="top" variant="code">
                     {process.command || process.name}
                   </TooltipPopup>
                 </Tooltip>
@@ -992,7 +971,7 @@ export function ResourceTelemetryDiagnostics({
                     onClick={telemetry.refresh}
                     aria-label="Refresh resource telemetry"
                   >
-                    <RefreshIcon className="size-3" refreshing={telemetry.isPending} />
+                    <RefreshIcon size="xs" refreshing={telemetry.isPending} />
                   </Button>
                 }
               />
@@ -1005,7 +984,7 @@ export function ResourceTelemetryDiagnostics({
           <div className="flex flex-col gap-3 border-b border-border/60 bg-linear-to-r from-muted/45 via-muted/20 to-transparent px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-5">
             <div>
               <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground/70">
-                T3 system footprint
+                {PRODUCT_NAME} system footprint
               </div>
               <p className="mt-1 max-w-xl text-xs leading-relaxed text-muted-foreground">
                 Live native counters for the server, providers, terminals, desktop processes, and
@@ -1103,7 +1082,7 @@ export function ResourceTelemetryDiagnostics({
         headerAction={
           collectorNeedsRetry ? (
             <Button size="xs" variant="outline" disabled={isRetrying} onClick={retryCollector}>
-              <RefreshIcon className="size-3" refreshing={isRetrying} />
+              <RefreshIcon size="xs" refreshing={isRetrying} />
               Retry monitor
             </Button>
           ) : null
@@ -1241,7 +1220,7 @@ export function ResourceTelemetryDiagnostics({
               onClick={history.refresh}
               aria-label="Refresh resource history"
             >
-              <RefreshIcon className="size-3" refreshing={history.isPending} />
+              <RefreshIcon size="xs" refreshing={history.isPending} />
             </Button>
           </div>
         }
@@ -1288,8 +1267,8 @@ export function ResourceTelemetryDiagnostics({
         <div className="overflow-hidden rounded-2xl border border-border/70 bg-card shadow-[0_1px_1px_rgb(0_0_0/0.03)]">
           <div className="bg-muted/15 px-4 py-3 text-[11px] leading-relaxed text-muted-foreground sm:px-5">
             Native counters identify which process is reading or writing. These application-level
-            counters identify known T3 operations so process spikes can be correlated with specific
-            persistence and logging paths.
+            counters identify known {PRODUCT_NAME} operations so process spikes can be correlated
+            with specific persistence and logging paths.
           </div>
           <AttributionTable entries={snapshot?.attribution.entries ?? []} />
         </div>

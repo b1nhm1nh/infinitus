@@ -33,18 +33,6 @@ fi
 [ -f AppIcon.icns ] || ./make-icon.sh
 cp AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
 cp tools/demo-swapd "$APP/Contents/Resources/demo-swapd"
-# The infinitus:// scheme belongs to the Infinitus desktop app once this
-# bundle is nested inside it (#270, #777): a nested build (the bundle-name
-# knob set) declares no URL type, so LaunchServices has one claimant; the
-# standalone build keeps join/pair links as before.
-if [ -z "${INFINITUS_BUNDLE_NAME:-}" ]; then
-URL_TYPES='    <key>CFBundleURLTypes</key><array><dict>
-        <key>CFBundleURLName</key><string>run.infinitus.join</string>
-        <key>CFBundleURLSchemes</key><array><string>infinitus</string></array>
-    </dict></array>'
-else
-URL_TYPES=""
-fi
 cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -57,9 +45,9 @@ cat > "$APP/Contents/Info.plist" <<PLIST
          login-item grants key on the id — re-grant both after this;
          keychain items under the old id are not readable (re-enter).
          Prefs migrate in-app from com.huuloc.infinitus (2026-09-03 id)
-         ← com.huuloc.limitless (2026-08-30) ← io.github.claude-swap.CswapBar.g2,
-         a rename away from a persistent macOS 26 ControlCenter per-id
-         ban acquired in the 2026-08-29 MenuBarExtra insert/evict war.
+         ← com.huuloc.limitless (2026-08-30), itself a rename away from a
+         persistent macOS 26 ControlCenter per-id ban acquired in the
+         2026-08-29 MenuBarExtra insert/evict war.
          Never change casually. -->
     <key>CFBundleIdentifier</key><string>run.infinitus</string>
     <!-- INFINITUS_BUNDLE_NAME (#777): the desktop nests this app as its
@@ -73,7 +61,6 @@ cat > "$APP/Contents/Info.plist" <<PLIST
     <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
     <key>CFBundleIconFile</key><string>AppIcon</string>
     <key>LSMinimumSystemVersion</key><string>14.0</string>
-${URL_TYPES}
     <key>LSUIElement</key><true/>
     <key>NSLocalNetworkUsageDescription</key><string>Infinitus advertises the fleet snapshot to the Infinitus iPhone app on your local network (Sync → Phone companion).</string>
     <key>NSBonjourServices</key><array><string>_infinitus._tcp</string></array>

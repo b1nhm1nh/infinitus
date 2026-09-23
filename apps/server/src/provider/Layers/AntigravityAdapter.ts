@@ -15,7 +15,7 @@ import {
   type RuntimeTaskStatus,
   type ThreadId,
   type TurnCompletedPayload,
-} from "@t3tools/contracts";
+} from "@infinitus/contracts";
 import * as Cause from "effect/Cause";
 import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
@@ -796,7 +796,7 @@ export const makeAntigravityAdapter = Effect.fn("makeAntigravityAdapter")(functi
               // leaf directory holding only uploads.
               const runtime = yield* options.makeRuntime({
                 cwd,
-                clientInfo: { name: "t3-code", version: "0.0.0" },
+                clientInfo: { name: "infinitus", version: "0.0.0" },
                 clientFileSystem: true,
                 threadId: input.threadId,
                 ...(mcp
@@ -813,7 +813,7 @@ export const makeAntigravityAdapter = Effect.fn("makeAntigravityAdapter")(functi
                   ? [
                       {
                         type: "http",
-                        name: "t3-code",
+                        name: "infinitus",
                         url: mcp.endpoint,
                         headers: [{ name: "Authorization", value: mcp.authorizationHeader }],
                       },

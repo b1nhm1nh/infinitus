@@ -1,4 +1,4 @@
-import { DesktopSshEnvironmentTargetSchema, EnvironmentId } from "@t3tools/contracts";
+import { DesktopSshEnvironmentTargetSchema, EnvironmentId } from "@infinitus/contracts";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
@@ -49,6 +49,8 @@ export interface ConnectionCatalogEntry {
   readonly profile: Option.Option<ConnectionProfile>;
   /** False when the user switched the environment off: saved, but never connects. */
   readonly enabled: boolean;
+  /** Discovery rejection stays visible while the saved connection is switched off. */
+  readonly unsupportedReason?: string;
 }
 
 export class BearerConnectionCredential extends Schema.TaggedClass<BearerConnectionCredential>()(

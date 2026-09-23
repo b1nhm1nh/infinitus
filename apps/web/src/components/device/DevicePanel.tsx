@@ -1,9 +1,10 @@
+import { DeviceHostUpdates } from "./DeviceHostUpdates";
 import type {
   DevicePlatform,
   DeviceServiceState,
   DeviceSummary,
   ScopedThreadRef,
-} from "@t3tools/contracts";
+} from "@infinitus/contracts";
 import {
   ChevronLeft,
   Home,
@@ -253,6 +254,7 @@ export function DevicePanel(props: {
           {state.hostStatusDetail}
         </div>
       ) : null}
+      <DeviceHostUpdates state={state} environmentId={environmentId} />
       {bootingDevices.length > 0 ? (
         <div role="status" className="border-b px-3 py-2 text-xs text-muted-foreground">
           Starting {bootingDevices.map((device) => device.name).join(", ")}… This can take a minute.
@@ -319,7 +321,7 @@ export function DevicePanel(props: {
                   ? "Opening device…"
                   : "Starting device…"
                 : state.hostStatus === "installing"
-                  ? "Installing device support…"
+                  ? (state.hostStatusDetail ?? "Installing device support…")
                   : "Finding devices…"
             }
           />
@@ -365,7 +367,7 @@ export function DevicePanel(props: {
                             onClick={() => void selectDevice(deviceKey(device))}
                             action={
                               pendingDeviceKey === deviceKey(device) ? (
-                                <Spinner className="size-3" />
+                                <Spinner size="xs" />
                               ) : (
                                 <span className="text-xs text-muted-foreground">
                                   {device.booted ? "Open" : "Start"}
@@ -389,7 +391,7 @@ export function DevicePanel(props: {
               ) : null}
               {loaded && !hostBusy ? (
                 <Button
-                  className="self-start"
+                  className={grouped.length > 0 ? "self-start" : "self-center"}
                   variant={grouped.length > 0 ? "ghost" : "outline"}
                   size="sm"
                   onClick={() => void list({ environmentId, input: {} })}

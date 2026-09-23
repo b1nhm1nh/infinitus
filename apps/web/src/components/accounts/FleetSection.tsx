@@ -1,9 +1,11 @@
-import type {
-  AccountAction,
-  AccountRowModel,
-  FleetSectionModel,
-} from "@t3tools/client-runtime/state/infinitusAccounts";
-import type { ExhaustedBandModel } from "@t3tools/client-runtime/state/infinitusExhausted";
+import {
+  type AccountAction,
+  type AccountRowModel,
+  type FleetSectionModel,
+  type RowFlip,
+  withFlip,
+} from "@infinitus/client-runtime/state/infinitusAccounts";
+import type { ExhaustedBandModel } from "@infinitus/client-runtime/state/infinitusExhausted";
 
 import { Button } from "../ui/button";
 import { Spinner } from "../ui/spinner";
@@ -15,13 +17,23 @@ import {
   type AddAccountFlow,
 } from "./addAccount.logic";
 import { ExhaustedBand } from "./ExhaustedBand";
-import { signInBusy, signInEnded, signInStatusText, type SignInFlow } from "./signIn.logic";
+import {
+  fleetSignInGate,
+  signInBusy,
+  signInEnded,
+  signInPasteField,
+  signInStatusText,
+  type SignInFlow,
+} from "./signIn.logic";
 
 /** The in-app sign-in (#677) as the page hands it to a fleet: whether the
     build offers it, whether this client can show it, the flow on this fleet. */
 export interface FleetSignIn {
   readonly offers: boolean;
   readonly inApp: boolean;
+  /** This shell can run the fleet's own `add-oauth` itself (#1213). Decided
+      per fleet: it needs the engine whose sign-in is a loopback flow. */
+  readonly shellOAuth: boolean;
   readonly flow: SignInFlow | null;
   readonly onStart: (target: AccountRowModel | null) => void;
   readonly onCancel: () => void;
@@ -33,6 +45,7 @@ export function FleetSection({
   section,
   band,
   pending,
+  flips,
   failure,
   offersAdd,
   addFlow,
@@ -44,7 +57,9 @@ export function FleetSection({
   readonly section: FleetSectionModel;
   /** The all-exhausted band, when every unheld account is at a limit. */
   readonly band: ExhaustedBandModel | null;
-  readonly pending: { readonly number: number; readonly action: AccountAction } | null;
+  readonly pending: ReadonlyArray<{ readonly number: number; readonly action: AccountAction }>;
+  /** Toggles pressed and not yet confirmed, drawn on their rows (#1481). */
+  readonly flips: ReadonlyArray<RowFlip>;
   readonly failure: { readonly number: number; readonly message: string } | null;
   /** The running build lists the `add` verb at all. */
   readonly offersAdd: boolean;
@@ -57,17 +72,26 @@ export function FleetSection({
   /** Starts the fleet's sign-in: a new account, or the row to sign in again as. */
   readonly onAdd: (target: AccountRowModel | null) => void;
 }) {
-  // The in-app sign-in when the build has it (#677; every client since #747:
-  // the shell's window, or a link and the code over the secret RPC); an
-  // older build keeps the sign-in on the Mac (#672).
-  const inApp = signIn.offers && signIn.inApp && section.canAdd;
-  const canAdd = !signIn.offers && offersAdd && section.canAdd;
-  const busy = inApp
-    ? signInBusy(signIn.flow) || signInRunning
-    : addAccountBusy(addFlow, signInRunning);
+  // The sign-in this shell runs through the engine itself outranks them all
+  // (#1213: no code to paste, no app build to wait for, no capability to
+  // advertise). Then the in-app sign-in when the build has it (#677; every
+  // client since #747: the shell's window, or a link and the code over the
+  // secret RPC); an older build keeps the sign-in on the Mac (#672). The first
+  // two share this fleet's flow and render the same way, so they share the
+  // branch. `signInRunning` is the app's word about a flow of its own, so it
+  // does not bind the shell's either.
+  const { inApp, canAdd } = fleetSignInGate({
+    shellOAuth: signIn.shellOAuth,
+    offers: signIn.offers,
+    inApp: signIn.inApp,
+    offersAdd,
+    canAdd: section.canAdd,
+  });
+  const appBusy = !signIn.shellOAuth && signInRunning;
+  const busy = inApp ? signInBusy(signIn.flow) || appBusy : addAccountBusy(addFlow, signInRunning);
   const status = inApp
     ? signIn.flow === null
-      ? signInRunning
+      ? appBusy
         ? "A sign-in is already running in Infinitus."
         : null
       : signInStatusText(signIn.flow)
@@ -76,17 +100,15 @@ export function FleetSection({
       : null;
   const failed = inApp ? signIn.flow?.phase === "failed" : addFlow?.phase.kind === "failed";
   const onStart = inApp ? signIn.onStart : onAdd;
-  const codeField =
-    inApp && signIn.flow !== null && signIn.flow.phase === "waitingForCode" && signIn.flow.pasteCode
-      ? signIn.flow
-      : null;
+  const pasteField = inApp ? signInPasteField(signIn.flow) : null;
+  const codeField = pasteField === null ? null : signIn.flow;
   const cancellable = inApp && signIn.flow !== null && !signInEnded(signIn.flow.phase);
   /** The provider's page to open from this device, while the flow waits for it. */
   const signInUrl = cancellable && signIn.flow?.url != null ? signIn.flow.url : null;
   return (
     <section className="flex flex-col gap-1">
       <div className="flex flex-wrap items-center gap-2">
-        <h2 className="font-medium text-foreground text-sm">{section.title}</h2>
+        <h3 className="font-medium text-foreground text-sm">{section.title}</h3>
         {canAdd || inApp ? (
           <Button
             className="ms-auto"
@@ -136,7 +158,7 @@ export function FleetSection({
           {status}
         </p>
       )}
-      {codeField === null ? null : (
+      {codeField === null || pasteField === null ? null : (
         <form
           className="flex flex-wrap items-center gap-2"
           onSubmit={(event) => {
@@ -150,14 +172,18 @@ export function FleetSection({
             }
           }}
         >
-          {/* A secret (#747): masked, never remembered, cleared on submit. */}
+          {/* A secret (#747): masked, never remembered, cleared on submit. The
+              address the browser ended on carries the code in its query, so
+              it is one too. */}
           <input
             name="code"
             type="password"
             autoComplete="off"
             spellCheck={false}
-            aria-label={`Sign-in code: ${section.title}`}
-            placeholder="Paste the code"
+            aria-label={`Sign-in ${pasteField}: ${section.title}`}
+            placeholder={
+              pasteField === "code" ? "Paste the code" : "Paste the address the browser ended on"
+            }
             disabled={codeField.codeBusy}
             className="h-7 min-w-0 flex-1 rounded-md border bg-background px-2 font-mono text-xs"
           />
@@ -168,7 +194,7 @@ export function FleetSection({
             aria-busy={codeField.codeBusy}
           >
             {codeField.codeBusy ? <Spinner className="size-3" /> : null}
-            Submit code
+            {pasteField === "code" ? "Submit code" : "Submit address"}
           </Button>
           {codeField.codeError === null ? null : (
             <p role="alert" className="basis-full text-destructive text-xs">
@@ -177,20 +203,53 @@ export function FleetSection({
           )}
         </form>
       )}
+      {section.rows.length === 0 ? (
+        // A fleet the engine manages but holds nothing in: the day swapd is
+        // installed (#1319). The header alone reads as broken, so say what
+        // Add account does here — the shell's browser sign-in, the app's
+        // flow, or adopting the login the Mac's Claude Code holds.
+        <p className="text-muted-foreground text-xs">
+          {emptyFleetHint(inApp, canAdd, signIn.shellOAuth)}
+        </p>
+      ) : null}
       {band === null ? null : <ExhaustedBand band={band} />}
       <div className="flex flex-col">
-        {section.rows.map((row) => (
-          <AccountRow
-            key={row.number}
-            row={row}
-            pendingAction={pending?.number === row.number ? pending.action : null}
-            failure={failure?.number === row.number ? failure.message : null}
-            onAction={(action, alias) => onAction(row, action, alias)}
-            onRelogin={(canAdd || inApp) && row.reloginNeeded ? () => onStart(row) : undefined}
-            reloginBusy={busy}
-          />
-        ))}
+        {section.rows.map((source) => {
+          // A second press toggles from what the row shows, not from the
+          // snapshot it is still waiting on.
+          const row = withFlip(
+            source,
+            flips.find((flip) => flip.number === source.number),
+          );
+          // Hold and unhold are one button: the flip has already swapped which
+          // of the two the row offers, and the spinner belongs on that one.
+          const asked = pending.find((entry) => entry.number === row.number)?.action ?? null;
+          const pendingAction =
+            asked === "hold" || asked === "unhold"
+              ? (row.actions.find((action) => action === "hold" || action === "unhold") ?? asked)
+              : asked;
+          return (
+            <AccountRow
+              key={row.number}
+              row={row}
+              pendingAction={pendingAction}
+              failure={failure?.number === row.number ? failure.message : null}
+              onAction={(action, alias) => onAction(row, action, alias)}
+              onRelogin={(canAdd || inApp) && row.reloginNeeded ? () => onStart(row) : undefined}
+              reloginBusy={busy}
+            />
+          );
+        })}
       </div>
     </section>
   );
+}
+
+/** What "Add account" does on a fleet with no accounts, so the empty header
+    is a first step and not a dead end. */
+function emptyFleetHint(inApp: boolean, canAdd: boolean, shellOAuth: boolean): string {
+  if (inApp && shellOAuth) return "No accounts yet. Add account signs one in through your browser.";
+  if (inApp) return "No accounts yet. Add account starts the provider's sign-in.";
+  if (canAdd) return "No accounts yet. Add account adopts the login Claude Code on the Mac holds.";
+  return "No accounts yet. Add one from the Infinitus desktop app on the owning Mac.";
 }

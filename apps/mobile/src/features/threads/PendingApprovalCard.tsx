@@ -1,9 +1,10 @@
+import { RequestActionButton } from "./RequestActionButton";
 import type {
   ApprovalRequestId,
   ProviderApprovalDecision,
   ProviderApprovalOption,
-} from "@t3tools/contracts";
-import { Pressable, View } from "react-native";
+} from "@infinitus/contracts";
+import { View } from "react-native";
 
 import { AppText as Text } from "../../components/AppText";
 import type { PendingApproval } from "../../lib/threadActivity";
@@ -31,10 +32,10 @@ export function PendingApprovalCard(props: PendingApprovalCardProps) {
   // behind this card, so a translucent surface bleeds messages through it.
   return (
     <View className="gap-2.5 rounded-[20px] border border-border bg-card-alt p-4">
-      <Text className="font-t3-bold text-2xs uppercase tracking-[1.1px] text-foreground-secondary">
+      <Text className="font-infinitus-bold text-2xs uppercase tracking-[1.1px] text-foreground-secondary">
         Approval needed
       </Text>
-      <Text className="font-t3-bold text-lg text-foreground">
+      <Text className="font-infinitus-bold text-lg text-foreground">
         {props.approval.appName ?? props.approval.requestKind}
       </Text>
       {props.approval.detail ? (
@@ -47,30 +48,19 @@ export function PendingApprovalCard(props: PendingApprovalCardProps) {
       ) : null}
       <View className="flex-row flex-wrap gap-2.5">
         {options.map((option) => (
-          <Pressable
+          <RequestActionButton
             key={option.decision}
-            className={`items-center justify-center rounded-[14px] px-3.5 py-3 ${
+            label={option.label}
+            tone={
               option.decision === "accept"
-                ? "bg-primary"
+                ? "primary"
                 : option.decision === "decline"
-                  ? "bg-danger"
-                  : "bg-subtle-strong"
-            }`}
+                  ? "danger"
+                  : "secondary"
+            }
             disabled={props.respondingApprovalId === props.approval.requestId}
             onPress={() => void props.onRespond(props.approval.requestId, option.decision)}
-          >
-            <Text
-              className={`text-sm ${
-                option.decision === "accept"
-                  ? "font-t3-extrabold text-primary-foreground"
-                  : option.decision === "decline"
-                    ? "font-t3-bold text-danger-foreground"
-                    : "font-t3-bold text-foreground"
-              }`}
-            >
-              {option.label}
-            </Text>
-          </Pressable>
+          />
         ))}
       </View>
     </View>

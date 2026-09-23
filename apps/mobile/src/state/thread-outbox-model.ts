@@ -1,9 +1,9 @@
-import { isTransportConnectionErrorMessage } from "@t3tools/client-runtime/errors";
+import { isTransportConnectionErrorMessage } from "@infinitus/client-runtime/errors";
 import {
   clampFileAttachmentUploadBytes,
   fileAttachmentTooLargeMessage,
-} from "@t3tools/client-runtime/state/attachments";
-import type { EnvironmentShellStatus } from "@t3tools/client-runtime/state/shell";
+} from "@infinitus/client-runtime/state/attachments";
+import type { EnvironmentShellStatus } from "@infinitus/client-runtime/state/shell";
 import {
   CommandId,
   EnvironmentId,
@@ -20,13 +20,13 @@ import {
   type ProviderInteractionMode as ProviderInteractionModeType,
   type RuntimeMode as RuntimeModeType,
   type ServerProvider,
-} from "@t3tools/contracts";
+} from "@infinitus/contracts";
 import * as Schema from "effect/Schema";
 
 import { DraftComposerAttachmentSchema } from "../lib/composer-image-schema";
 import type { DraftComposerAttachment } from "../lib/composerImages";
 import { scopedThreadKey } from "../lib/scopedEntities";
-import { resolveProviderInteractionMode } from "../features/threads/legacy-plan-mode";
+import { resolveProviderInteractionMode } from "./legacy-plan-mode";
 
 // Keep current writes until a compatible native baseline includes the v4 reader.
 const THREAD_OUTBOX_SCHEMA_VERSION = 3;

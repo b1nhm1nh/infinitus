@@ -1,12 +1,16 @@
-import type { DesktopBridge } from "@t3tools/contracts";
+import type { DesktopBridge } from "@infinitus/contracts";
 import type {
   InfinitusCommandInput,
+  InfinitusOAuthSignInInput,
+  InfinitusOAuthSignInResult,
   InfinitusSecretInput,
   InfinitusSignInCodeInput,
   InfinitusSignInCodeResult,
+  InfinitusSignInRedirectListenInput,
+  InfinitusSignInRedirectResult,
   InfinitusSignInWindowInput,
   InfinitusSnapshot,
-} from "@t3tools/contracts/infinitus";
+} from "@infinitus/contracts/infinitus";
 import * as Schema from "effect/Schema";
 
 /**
@@ -38,9 +42,15 @@ export const SignInPhase = Schema.Literals([
 ]);
 export type SignInPhase = typeof SignInPhase.Type;
 
+/** Which half runs a flow: the menu-bar app's (#677, `signin-begin` polled
+    over the socket) or this shell's own, through the engine's `add-oauth`
+    (#1213). They start, cancel and end differently, so a flow says which. */
+export type SignInKind = "app" | "shell";
+
 /** One sign-in this page started: which fleet, who to sign in again as (or
     null for a new account), the app's flow and where it stands. */
 export interface SignInFlow {
+  readonly kind: SignInKind;
   readonly fleetKey: string;
   readonly target: string | null;
   readonly flowId: string | null;
@@ -48,12 +58,63 @@ export interface SignInFlow {
       it; null while the shell has it or before the app answered. */
   readonly url: string | null;
   readonly pasteCode: boolean;
+  /** The loopback port the engine on the Mac listens on for the OAuth
+      redirect, when the sign-in ends on one. A browser on this device is sent
+      to ITS localhost, where nothing listens: the page takes the address that
+      browser ended on and hands it to the Mac over `signin-code`, which
+      replays it against the listener. Null for a paste-code flow, and for a
+      build that never says. */
+  readonly redirectPort: number | null;
+  /** The desktop shell stands in for that listener on this machine: it took
+      the port, opened the page, and will hand the address on itself — nothing
+      to paste. Off again when the port was held or the hand-off was refused,
+      and the field takes over. */
+  readonly redirectListening: boolean;
   readonly phase: SignInPhase;
   readonly error: string | null;
   readonly account: string | null;
   /** The last `signin-code` refusal, shown under the code field. */
   readonly codeError: string | null;
   readonly codeBusy: boolean;
+}
+
+/** What the fleet's field takes while a flow waits on this device: the code
+    from the success page (#747), the loopback address the browser ended on
+    (a redirect the Mac's engine takes, shown from a link here), or nothing.
+    A flow the shell's window shows (`url` null) reaches the listener itself,
+    so it never asks for the address. */
+export type SignInPasteField = "code" | "address";
+
+export function signInPasteField(flow: SignInFlow | null): SignInPasteField | null {
+  if (flow === null) return null;
+  if (flow.phase === "waitingForCode" && flow.pasteCode) return "code";
+  if (
+    flow.phase === "waitingForToken" &&
+    flow.redirectPort !== null &&
+    flow.url !== null &&
+    !flow.redirectListening
+  ) {
+    return "address";
+  }
+  return null;
+}
+
+/** The desktop shell's stand-in for the engine's loopback listener, when this
+    is the desktop and it is new enough to carry it; anything else asks for
+    the address. */
+export interface RedirectSignInBridge {
+  readonly listen: (
+    input: InfinitusSignInRedirectListenInput,
+  ) => Promise<InfinitusSignInRedirectResult>;
+  readonly stop: (flowId: string) => Promise<void>;
+}
+
+export function redirectSignInBridge(
+  bridge: Partial<DesktopBridge> | undefined,
+): RedirectSignInBridge | null {
+  if (bridge?.listenInfinitusSignInRedirect === undefined) return null;
+  if (bridge.stopInfinitusSignInRedirect === undefined) return null;
+  return { listen: bridge.listenInfinitusSignInRedirect, stop: bridge.stopInfinitusSignInRedirect };
 }
 
 /** The in-app path exists on a build whose manifest lists `signin-begin`. */
@@ -77,6 +138,53 @@ export function signInBridge(bridge: Partial<DesktopBridge> | undefined): SignIn
     open: bridge.openInfinitusSignIn,
     close: bridge.closeInfinitusSignIn,
     submitCode: bridge.submitInfinitusSignInCode,
+  };
+}
+
+/** The engine whose own `add-oauth` the desktop shell can run (#1213). The
+    proxy engine declares `addOAuth` too, but its sign-in is not a loopback
+    OAuth flow the shell could catch, so only this one takes the path. */
+const SHELL_OAUTH_ENGINE_ID = "swapd";
+
+export function fleetRunsShellOAuth(engineID: string): boolean {
+  return engineID === SHELL_OAUTH_ENGINE_ID;
+}
+
+/** The desktop shell's own sign-in, when this is the desktop and it is new
+    enough to carry it (#1213); anything else has no shell path. */
+export interface OAuthSignInBridge {
+  readonly begin: (input: InfinitusOAuthSignInInput) => Promise<InfinitusOAuthSignInResult>;
+  readonly cancel: (flowId: string) => Promise<void>;
+}
+
+export function oauthSignInBridge(
+  bridge: Partial<DesktopBridge> | undefined,
+): OAuthSignInBridge | null {
+  if (bridge?.beginInfinitusOAuthSignIn === undefined) return null;
+  if (bridge.cancelInfinitusOAuthSignIn === undefined) return null;
+  return { begin: bridge.beginInfinitusOAuthSignIn, cancel: bridge.cancelInfinitusOAuthSignIn };
+}
+
+/** Which sign-in a fleet's section draws. `inApp` is a flow this client runs —
+    the shell's own `add-oauth` (#1213) or the app's in-app sign-in (#677) —
+    and `canAdd` the older hand-off to the Mac (#672). The shell's path asks the
+    app for nothing, so the `addOAuth` capability does not gate it: a fleet that
+    never advertised it is the case #1213 exists for. */
+export function fleetSignInGate(input: {
+  /** This shell can run this fleet's own `add-oauth`. */
+  readonly shellOAuth: boolean;
+  /** The running build lists `signin-begin`. */
+  readonly offers: boolean;
+  /** This client can show the app's flow itself. */
+  readonly inApp: boolean;
+  /** The running build lists `add`. */
+  readonly offersAdd: boolean;
+  /** The fleet advertises `addOAuth`. */
+  readonly canAdd: boolean;
+}): { readonly inApp: boolean; readonly canAdd: boolean } {
+  return {
+    inApp: input.shellOAuth || (input.offers && input.inApp && input.canAdd),
+    canAdd: !input.offers && !input.shellOAuth && input.offersAdd && input.canAdd,
   };
 }
 
@@ -127,6 +235,7 @@ const BeginReply = Schema.Struct({
   flowId: Schema.String,
   url: Schema.String,
   pasteCode: Schema.Boolean,
+  redirectPort: Schema.optionalKey(Schema.Number),
   label: Schema.String,
 });
 export type SignInBeginReply = typeof BeginReply.Type;
@@ -142,20 +251,25 @@ const StatusReply = Schema.Struct({
   phase: SignInPhase,
   error: Schema.optionalKey(Schema.String),
   account: Schema.optionalKey(Schema.String),
+  redirectPort: Schema.optionalKey(Schema.Number),
 });
 const decodeStatus = Schema.decodeUnknownOption(StatusReply);
 
 /** `signin-status`'s answer as the flow's next state, or null for anything
     else. */
-export function signInStatusReply(
-  result: unknown,
-): { phase: SignInPhase; error: string | null; account: string | null } | null {
+export function signInStatusReply(result: unknown): {
+  phase: SignInPhase;
+  error: string | null;
+  account: string | null;
+  redirectPort: number | null;
+} | null {
   const decoded = decodeStatus(result);
   if (decoded._tag === "None") return null;
   return {
     phase: decoded.value.phase,
     error: decoded.value.error ?? null,
     account: decoded.value.account ?? null,
+    redirectPort: decoded.value.redirectPort ?? null,
   };
 }
 
@@ -171,14 +285,29 @@ export function signInBusy(flow: SignInFlow | null): boolean {
 /** The line under the fleet's title while a flow runs or just ended. */
 export function signInStatusText(flow: SignInFlow): string {
   const who = flow.target === null ? "" : ` as ${flow.target}`;
-  const where = flow.url === null ? "in the window" : "on the sign-in page";
+  // A shell flow (#1213) runs in a private window of the browser, or of the
+  // shell's own where the browser has none; the app's own (#677) is the
+  // desktop's child window or a link on this page.
+  const where =
+    flow.kind === "shell"
+      ? "in the private window that opened"
+      : flow.url === null
+        ? "in the window"
+        : "on the sign-in page";
   switch (flow.phase) {
     case "starting":
       return "Starting the sign-in…";
     case "waitingForCode":
       return `Sign in${who} ${where}, then paste the code from the success page here.`;
     case "waitingForToken":
-      return flow.pasteCode ? "Checking the code…" : `Sign in${who} ${where}.`;
+      if (flow.pasteCode) return "Checking the code…";
+      // The redirect goes to this device's localhost, where nothing listens:
+      // the browser ends on a page that will not load, and its address is
+      // what the Mac needs.
+      if (signInPasteField(flow) === "address") {
+        return `Sign in${who} ${where}. It ends on a page that will not load: copy that page's address and paste it here.`;
+      }
+      return `Sign in${who} ${where}.`;
     case "registering":
       return "Adding the account…";
     case "done":

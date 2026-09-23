@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vite-plus/test";
-import type { OrchestrationThreadActivity } from "@t3tools/contracts";
+import type { OrchestrationThreadActivity } from "@infinitus/contracts";
 import { projectActivityPayload } from "./ActivityPayloadProjection.ts";
 
 function activity(payload: Record<string, unknown>): OrchestrationThreadActivity {
@@ -42,6 +42,31 @@ describe("projectActivityPayload", () => {
     // Slimming itself still applies to data.
     const data = payload.data as Record<string, unknown>;
     expect(data.somethingClientNeverReads).toBeUndefined();
+  });
+
+  it("carries a Bash call's description beside its command and drops the rest of the input (#1231)", () => {
+    const projected = projectActivityPayload(
+      activity({
+        itemType: "command_execution",
+        data: {
+          toolName: "Bash",
+          input: { command: "vp test run", description: "  Run the web tests  ", timeout: 5000 },
+        },
+      }),
+    );
+    const data = (projected.payload as Record<string, unknown>).data as Record<string, unknown>;
+    expect(data.command).toBe("vp test run");
+    expect(data.description).toBe("Run the web tests");
+    expect(data.input).toBeUndefined();
+
+    const other = projectActivityPayload(
+      activity({
+        itemType: "file_change",
+        data: { toolName: "Edit", input: { description: "not a command" } },
+      }),
+    );
+    const otherData = (other.payload as Record<string, unknown>).data as Record<string, unknown>;
+    expect(otherData.description).toBeUndefined();
   });
 
   it("keeps a bounded Codex command output summary", () => {
@@ -250,6 +275,14 @@ describe("projectActivityPayload", () => {
   });
 
   it.each([
+    {
+      item: {
+        server: "infinitus",
+        tool: "preview_open",
+        result: { structuredContent: { url: "https://example.com/" } },
+      },
+    },
+    // The id before #1368 E, as a thread's history still spells it.
     {
       item: {
         server: "t3-code",

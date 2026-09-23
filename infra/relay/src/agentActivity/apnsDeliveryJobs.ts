@@ -4,8 +4,8 @@ import {
   RelayAgentActivityAggregateState,
   RelayAgentAwarenessPhase,
   type RelayDeliveryKind,
-} from "@t3tools/contracts/relay";
-import { stableStringify } from "@t3tools/shared/relaySigning";
+} from "@infinitus/contracts/relay";
+import { stableStringify } from "@infinitus/shared/relaySigning";
 import * as DateTime from "effect/DateTime";
 import * as Option from "effect/Option";
 import * as Redacted from "effect/Redacted";
@@ -40,7 +40,8 @@ export const ApnsNotificationPayload = Schema.Struct({
   title: Schema.String,
   body: Schema.String,
   environmentId: Schema.String,
-  threadId: Schema.String,
+  // Fork (#1375): absent on an Infinitus account alert, which names no thread.
+  threadId: Schema.optional(Schema.String),
   deepLink: Schema.String,
   // Optional so delivery jobs queued by older relay builds still decode.
   // New jobs use these fields to avoid delivering a stale Done/attention

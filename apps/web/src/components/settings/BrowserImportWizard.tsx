@@ -1,7 +1,7 @@
 import { PermissionChecklist, PermissionContinueButton } from "../permissions/PermissionChecklist";
 import { usePermissionStatus } from "../permissions/usePermissionStatus";
-import type { BrowserImportSource } from "@t3tools/contracts";
-import { BROWSER_IMPORT_FAILURE_COPY } from "@t3tools/contracts";
+import type { BrowserImportSource } from "@infinitus/contracts";
+import { BROWSER_IMPORT_FAILURE_COPY } from "@infinitus/contracts";
 import { ArrowDownIcon, ArrowRightIcon, CheckIcon, HardDriveIcon } from "lucide-react";
 import { useRef, useState } from "react";
 
@@ -36,7 +36,7 @@ import {
   type WizardTargetSelection,
   type WizardStep,
 } from "./browserImportWizard.logic";
-import { PRODUCT_NAME } from "@t3tools/shared/productName";
+import { PRODUCT_NAME } from "@infinitus/shared/productName";
 
 export type { WizardTarget } from "./browserImportWizard.logic";
 
@@ -493,9 +493,11 @@ function ImportingStep() {
         <DialogTitle>Importing cookies</DialogTitle>
         <DialogDescription>This may take a moment.</DialogDescription>
       </DialogHeader>
-      <DialogPanel className="flex items-center gap-3 py-6">
-        <Spinner className="size-4 text-muted-foreground" />
-        <span className="text-sm text-muted-foreground">Importing…</span>
+      <DialogPanel>
+        <div className="flex items-center gap-3 py-2">
+          <Spinner size="md" tone="muted" />
+          <span className="text-sm text-muted-foreground">Importing…</span>
+        </div>
       </DialogPanel>
     </>
   );
@@ -518,11 +520,13 @@ function CheckingStep({
             : "Checking whether the browser has closed."}
         </DialogDescription>
       </DialogHeader>
-      <DialogPanel className="flex items-center gap-3 py-6">
-        <Spinner className="size-4 text-muted-foreground" />
-        <span className="text-sm text-muted-foreground">
-          {check === "fullDiskAccess" ? "Checking access…" : "Checking…"}
-        </span>
+      <DialogPanel>
+        <div className="flex items-center gap-3 py-2">
+          <Spinner size="md" tone="muted" />
+          <span className="text-sm text-muted-foreground">
+            {check === "fullDiskAccess" ? "Checking access…" : "Checking…"}
+          </span>
+        </div>
       </DialogPanel>
     </>
   );

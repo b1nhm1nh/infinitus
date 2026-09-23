@@ -2,8 +2,8 @@ import {
   type ProviderInstanceId,
   type ServerProvider,
   ServerProvider as ServerProviderSchema,
-} from "@t3tools/contracts";
-import { causeErrorTag } from "@t3tools/shared/observability";
+} from "@infinitus/contracts";
+import { causeErrorTag } from "@infinitus/shared/observability";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
@@ -38,8 +38,10 @@ const BUILT_IN_DRIVER_ORDER: ReadonlyArray<string> = [
   "claudeAgent",
   "cursor",
   "grok",
+  "omp",
   "opencode",
   "antigravity",
+  "pi",
 ];
 
 const driverRank = (driver: string): number => {

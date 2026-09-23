@@ -1,5 +1,5 @@
 import { useAtomValue } from "@effect/atom-react";
-import type { ServerUpdateState } from "@t3tools/client-runtime/state/server";
+import type { ServerUpdateState } from "@infinitus/client-runtime/state/server";
 import { Atom } from "effect/unstable/reactivity";
 import { useMemo, useState } from "react";
 
@@ -21,6 +21,7 @@ import {
   ServerUpdateProgress,
   ServerUpdatesAction,
 } from "../ServerUpdateAction";
+import { InlineButton } from "../ui/button";
 import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
 import type { ComposerBannerStackItem } from "./ComposerBannerStack";
 import { ComposerServerUpdateIcon } from "./ComposerServerUpdateStatus";
@@ -95,12 +96,13 @@ export function useAutoBalanceUpdateBanner(
     title: (
       <Popover>
         <PopoverTrigger
-          className="block max-w-full truncate rounded-sm text-left outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          render={<InlineButton />}
+          className="block max-w-full truncate"
           aria-label={`${title}. View machines`}
         >
           {title}
         </PopoverTrigger>
-        <PopoverPopup side="top" align="start" className="w-80 max-w-[calc(100vw-2rem)]">
+        <PopoverPopup side="top" align="start" width="md">
           <div className="space-y-3 text-xs">
             {machines.map((machine) => (
               <div key={machine.environmentId} className="space-y-1">

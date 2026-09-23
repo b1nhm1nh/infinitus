@@ -1,10 +1,11 @@
-import { EnvironmentId } from "@t3tools/contracts";
+import { EnvironmentId } from "@infinitus/contracts";
 import { describe, expect, it } from "@effect/vitest";
 import * as Option from "effect/Option";
 
 import { BearerConnectionProfile, type ConnectionCatalogEntry } from "./catalog.ts";
 import {
   BearerConnectionTarget,
+  ConnectionBlockedError,
   ConnectionTransientError,
   type SupervisorConnectionState,
 } from "./model.ts";
@@ -53,6 +54,21 @@ function supervisorState(overrides: Partial<SupervisorConnectionState>): Supervi
 }
 
 describe("connection presentation", () => {
+  it("labels a blocked protocol as unsupported", () => {
+    const connection = presentConnectionState(
+      supervisorState({
+        phase: "blocked",
+        lastFailure: new ConnectionBlockedError({
+          reason: "unsupported",
+          detail: "Update your app.",
+        }),
+      }),
+    );
+    expect(connection.phase).toBe("unsupported");
+    expect(connection.error).toBe("Update your app.");
+    expect(connectionStatusText(connection)).toBe("Client not supported");
+  });
+
   it("preserves profile display information without exposing credentials", () => {
     expect(connectionCatalogDisplayUrl(ENTRY)).toBe("https://environment.example.test");
   });

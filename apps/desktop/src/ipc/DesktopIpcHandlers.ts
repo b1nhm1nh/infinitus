@@ -1,12 +1,17 @@
 import * as Effect from "effect/Effect";
 
 import * as DesktopIpc from "./DesktopIpc.ts";
+import { installNotificationBadge } from "./methods/notificationBadge.ts";
 import { getClientSettings, setClientSettings } from "./methods/clientSettings.ts";
 import {
   clearConnectionCatalog,
   getConnectionCatalog,
   setConnectionCatalog,
 } from "./methods/connectionCatalog.ts";
+import {
+  getLocalEnvironmentEnabled,
+  setLocalEnvironmentEnabled,
+} from "./methods/localEnvironment.ts";
 import {
   getAdvertisedEndpoints,
   getServerExposureState,
@@ -66,19 +71,28 @@ import * as PreviewIpc from "./methods/preview.ts";
 import * as AppActivationIpc from "./methods/appActivation.ts";
 import { getWslState, setWslBackendEnabled, setWslDistro, setWslOnly } from "./methods/wsl.ts";
 import {
+  beginInfinitusOAuthSignIn,
+  cancelInfinitusOAuthSignIn,
   closeInfinitusSignIn,
   consumeInfinitusDeepLink,
+  consumePendingCaptureGestures,
+  controlInfinitusEngine,
   getInfinitusDesktopPrefs,
+  getInfinitusEngines,
+  listenInfinitusSignInRedirect,
   openInfinitusSignIn,
   setInfinitusCaptureGestureEnabled,
+  setInfinitusEngineSettings,
   setInfinitusQuitWithApp,
   setKeepAwake,
+  stopInfinitusSignInRedirect,
   submitInfinitusSignInCode,
 } from "./methods/infinitus.ts";
 import { setBadgeCount } from "./methods/notifications.ts";
 
 export const installDesktopIpcHandlers = Effect.fn("desktop.ipc.installHandlers")(function* () {
   const ipc = yield* DesktopIpc.DesktopIpc;
+  yield* installNotificationBadge();
   yield* PreviewIpc.installPreviewEventForwarding();
 
   yield* ipc.handle(AppActivationIpc.setReady);
@@ -88,6 +102,8 @@ export const installDesktopIpcHandlers = Effect.fn("desktop.ipc.installHandlers"
   yield* ipc.handleSync(getSystemLocale);
   yield* ipc.handleSync(getWindowFullscreenState);
   yield* ipc.handleSync(getLocalEnvironmentBootstraps);
+  yield* ipc.handleSync(getLocalEnvironmentEnabled);
+  yield* ipc.handle(setLocalEnvironmentEnabled);
   yield* ipc.handle(getLocalEnvironmentBearerToken);
 
   yield* ipc.handle(getClientSettings);
@@ -131,12 +147,20 @@ export const installDesktopIpcHandlers = Effect.fn("desktop.ipc.installHandlers"
   yield* ipc.handle(getInfinitusDesktopPrefs);
   yield* ipc.handle(setInfinitusQuitWithApp);
   yield* ipc.handle(setInfinitusCaptureGestureEnabled);
+  yield* ipc.handle(consumePendingCaptureGestures);
   yield* ipc.handle(openInfinitusSignIn);
   yield* ipc.handle(closeInfinitusSignIn);
   yield* ipc.handle(submitInfinitusSignInCode);
+  yield* ipc.handle(beginInfinitusOAuthSignIn);
+  yield* ipc.handle(cancelInfinitusOAuthSignIn);
+  yield* ipc.handle(listenInfinitusSignInRedirect);
+  yield* ipc.handle(stopInfinitusSignInRedirect);
   yield* ipc.handle(consumeInfinitusDeepLink);
   yield* ipc.handle(setBadgeCount);
   yield* ipc.handle(setKeepAwake);
+  yield* ipc.handle(getInfinitusEngines);
+  yield* ipc.handle(setInfinitusEngineSettings);
+  yield* ipc.handle(controlInfinitusEngine);
 
   yield* ipc.handle(pickFolder);
   yield* ipc.handle(pickProjectFavicon);

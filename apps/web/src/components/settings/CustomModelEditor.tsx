@@ -2,8 +2,8 @@
 
 import { PlusIcon, XIcon } from "lucide-react";
 import { useMemo, useState } from "react";
-import type { ProviderDriverKind, ServerProviderModel } from "@t3tools/contracts";
-import type { CustomModelDefinition } from "@t3tools/shared/model";
+import type { ProviderDriverKind, ServerProviderModel } from "@infinitus/contracts";
+import type { CustomModelDefinition } from "@infinitus/shared/model";
 
 import { cn } from "../../lib/utils";
 import { Button } from "../ui/button";
@@ -131,7 +131,7 @@ export function CustomModelEditor({
     setError(null);
     setDraft((current) => ({
       ...current,
-      descriptors: descriptorsFromCapabilities(model.capabilities, driverKind),
+      descriptors: descriptorsFromCapabilities(model.capabilities),
     }));
   };
 
@@ -154,7 +154,8 @@ export function CustomModelEditor({
         value={choice.id}
         onChange={(event) => updateChoice(descriptor.key, choice.key, { id: event.target.value })}
         placeholder="value"
-        className="w-28 font-mono"
+        font="mono"
+        className="w-28"
         spellCheck={false}
         aria-label="Choice value"
       />
@@ -230,7 +231,8 @@ export function CustomModelEditor({
             value={descriptor.id}
             onChange={(event) => updateDescriptor(descriptor.key, { id: event.target.value })}
             placeholder="optionId"
-            className="w-36 font-mono"
+            font="mono"
+            className="w-36"
             spellCheck={false}
             aria-label="Option id"
           />

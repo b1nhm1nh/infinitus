@@ -1,7 +1,7 @@
 import { Spinner } from "~/components/ui/spinner";
 import { useNavigate } from "@tanstack/react-router";
 import { useAtomValue } from "@effect/atom-react";
-import type { ServerProvider } from "@t3tools/contracts";
+import type { ServerProvider } from "@infinitus/contracts";
 import { CircleCheckIcon, DownloadIcon, TriangleAlertIcon, XIcon } from "lucide-react";
 import { useCallback, useEffect, useState, type CSSProperties } from "react";
 
@@ -174,7 +174,7 @@ export function SidebarProviderUpdatePill() {
               onClick={openProviderSettings}
             >
               {displayedView.tone === "loading" ? (
-                <Spinner className="size-3.5 shrink-0" />
+                <Spinner size="sm" className="shrink-0" />
               ) : displayedView.tone === "success" ? (
                 <CircleCheckIcon className="size-3.5 shrink-0" />
               ) : displayedView.tone === "error" ? (

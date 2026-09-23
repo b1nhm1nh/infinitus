@@ -11,8 +11,8 @@ import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/unstable/http";
 import { ChildProcessSpawner } from "effect/unstable/process";
-import { decodeJsonResult } from "@t3tools/shared/schemaJson";
-import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
+import { decodeJsonResult } from "@infinitus/shared/schemaJson";
+import { HostProcessPlatform } from "@infinitus/shared/hostProcess";
 import * as VcsProcess from "../vcs/VcsProcess.ts";
 import { collectUint8StreamText } from "../stream/collectUint8StreamText.ts";
 import type { SourceControlProviderContext } from "./SourceControlProvider.ts";
@@ -366,25 +366,6 @@ export const make = Effect.gen(function* () {
         .execute(request)
         .pipe(Effect.provideService(FetchHttpClient.RequestInit, { redirect: "manual" }));
       const status = response.status;
-      if (status < 200 || status >= 300)
-        return yield* new ForgejoCliError({
-          command: "fj",
-          cwd: input.cwd,
-          httpStatus: status,
-          ...(status === 401
-            ? { reason: "authentication" as const }
-            : status === 403
-              ? { reason: "forbidden" as const }
-              : status === 404
-                ? { reason: "not-found" as const }
-                : status === 429
-                  ? { reason: "rate-limit" as const }
-                  : {}),
-          detail:
-            status === 404
-              ? "Forgejo repository or pull request was not found."
-              : `Forgejo API request failed (HTTP ${status}). Check this server's fj credentials and permissions.`,
-        });
       const body =
         status === 204 || status === 205
           ? { text: "", truncated: false, invalidUtf8: false }
@@ -399,6 +380,29 @@ export const make = Effect.gen(function* () {
           reason: "invalid-response",
           detail: "Forgejo returned an oversized or invalid response.",
         });
+      if (status < 200 || status >= 300) {
+        const detail =
+          status === 404
+            ? "Forgejo repository or pull request was not found."
+            : body.text
+              ? `Forgejo API request failed (HTTP ${status}): ${body.text}`
+              : `Forgejo API request failed (HTTP ${status}). Check this server's fj credentials and permissions.`;
+        return yield* new ForgejoCliError({
+          command: "fj",
+          cwd: input.cwd,
+          httpStatus: status,
+          ...(status === 401
+            ? { reason: "authentication" as const }
+            : status === 403
+              ? { reason: "forbidden" as const }
+              : status === 404
+                ? { reason: "not-found" as const }
+                : status === 429
+                  ? { reason: "rate-limit" as const }
+                  : {}),
+          detail,
+        });
+      }
       return {
         exitCode: ChildProcessSpawner.ExitCode(0),
         stdout: body.text,

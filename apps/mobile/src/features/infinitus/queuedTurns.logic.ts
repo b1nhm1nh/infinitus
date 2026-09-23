@@ -2,8 +2,8 @@ import type {
   OrchestrationMessageContext,
   OrchestrationQueuedTurn,
   QueueId,
-} from "@t3tools/contracts";
-import { orderKeyBetween } from "@t3tools/shared/orderKeys";
+} from "@infinitus/contracts";
+import { orderKeyBetween } from "@infinitus/shared/orderKeys";
 
 import { reidentifyComposerContext, uploadedComposerContext } from "../../lib/composerContext";
 
@@ -12,7 +12,7 @@ import { reidentifyComposerContext, uploadedComposerContext } from "../../lib/co
  * the rows under the composer are the thread's server-side `queuedTurns`,
  * which start once the thread is idle whether or not this phone is still
  * open. Kept local so a mobile PR never edits the web's file; the two can be
- * lifted into `@t3tools/shared` together later.
+ * lifted into `@infinitus/shared` together later.
  */
 
 /** The thread's queued messages in send order. */
@@ -84,6 +84,12 @@ export function queuedTurnMoveKey(
   const after = rows[index + 1];
   if (!after) return null;
   return orderKeyBetween(after.orderKey, rows[index + 2]?.orderKey ?? null);
+}
+
+/** The row's moment when it is not the queue's own (#1318): a steer row
+    goes at the running turn's next finished tool call. */
+export function queuedTurnTiming(row: Pick<OrchestrationQueuedTurn, "sendAt">): string | null {
+  return row.sendAt === "tool-boundary" ? "at next step" : null;
 }
 
 /** The card's header: what the queue is waiting on. */

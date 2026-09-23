@@ -14,7 +14,7 @@ import {
   HttpClientResponse,
 } from "effect/unstable/http";
 
-import { GitCommandError } from "@t3tools/contracts";
+import { GitCommandError } from "@infinitus/contracts";
 import * as BitbucketApi from "./BitbucketApi.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import * as VcsDriverRegistry from "../vcs/VcsDriverRegistry.ts";
@@ -615,6 +615,30 @@ it.effect("preserves Bitbucket response body read failures as their immediate ca
       error.message,
       "Bitbucket API failed in getPullRequest: Bitbucket returned HTTP 502.",
     );
+  }).pipe(Effect.provide(layer));
+});
+
+it.effect("keeps the 429 retry time when the response body cannot be read", () => {
+  const { layer } = makeLayer({
+    response: () =>
+      new Response(
+        new ReadableStream<Uint8Array>({
+          start: (controller) => controller.error(new Error("response stream failed")),
+        }),
+        { status: 429, headers: { "Retry-After": "120" } },
+      ),
+  });
+
+  return Effect.gen(function* () {
+    yield* TestClock.setTime(1_000);
+    const bitbucket = yield* BitbucketApi.BitbucketApi;
+    const error = yield* bitbucket
+      .request({ method: "GET", url: "/repositories/acme/web" })
+      .pipe(Effect.flip);
+
+    assert.instanceOf(error, BitbucketApi.BitbucketResponseBodyReadError);
+    assert.strictEqual(error.status, 429);
+    assert.strictEqual(error.retryAt, 121_000);
   }).pipe(Effect.provide(layer));
 });
 

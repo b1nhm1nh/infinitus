@@ -4,7 +4,7 @@ import { Alert, View } from "react-native";
 import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
-} from "@t3tools/client-runtime/state/runtime";
+} from "@infinitus/client-runtime/state/runtime";
 import { AppText as Text } from "../../components/AppText";
 import { useProjects } from "../../state/entities";
 import { useAtomCommand } from "../../state/use-atom-command";
@@ -21,6 +21,8 @@ type NewTaskDraftRouteParams = {
   readonly branch?: string | null;
   readonly worktreePath?: string | null;
   readonly title?: string | string[];
+  /** Set by Add Project when this draft opens while the project's clone runs. */
+  readonly cloning?: string | string[];
   readonly pendingTaskId?: string | string[];
   readonly draftId?: string | string[];
   readonly incomingShareId?: string | string[];
@@ -48,6 +50,7 @@ export function NewTaskDraftRouteScreen({ route }: StaticScreenProps<NewTaskDraf
       projectId: Array.isArray(params.projectId) ? params.projectId[0] : params.projectId,
       branch: params.branch,
       worktreePath: params.worktreePath,
+      cloning: (Array.isArray(params.cloning) ? params.cloning[0] : params.cloning) === "1",
     }),
     [params],
   );

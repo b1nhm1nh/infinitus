@@ -1,6 +1,6 @@
 import { useAtomValue } from "@effect/atom-react";
 import { useNavigation, type StaticScreenProps } from "@react-navigation/native";
-import { EnvironmentId } from "@t3tools/contracts";
+import { EnvironmentId } from "@infinitus/contracts";
 import {
   collectLimitAccounts,
   collectLimitNotices,
@@ -10,17 +10,16 @@ import {
   remainingPercent,
   type LimitAccount,
   type LimitPoolWindow,
-} from "@t3tools/shared/usageLimits";
+} from "@infinitus/shared/usageLimits";
 import { useId, useState } from "react";
-import { Platform, Pressable, ScrollView, View } from "react-native";
+import { Pressable, ScrollView, View } from "react-native";
 import { Defs, Path, Pattern, Rect, Svg } from "react-native-svg";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { AndroidScreenHeader } from "../../components/AndroidScreenHeader";
 import { SymbolView } from "../../components/AppSymbol";
 import { AppText as Text } from "../../components/AppText";
 import { ProviderIcon } from "../../components/ProviderIcon";
-import { NativeStackScreenOptions } from "../../native/StackHeader";
+import { SettingsScreen } from "../settings/components/SettingsScreen";
 import { environmentPresentations } from "../../state/presentation";
 import { ResetCredits } from "./UsageLimitsSection";
 import { useProviderColors } from "./usageProviders";
@@ -97,9 +96,9 @@ function PoolWindowCard({
     <View className="gap-3 rounded-[24px] border-continuous bg-card p-4">
       <View className="flex-row items-start justify-between gap-3">
         <View className="gap-1">
-          <Text className="text-sm font-t3-medium text-foreground">{pool.label}</Text>
+          <Text className="text-sm font-infinitus-medium text-foreground">{pool.label}</Text>
           <View className="flex-row items-baseline gap-1.5">
-            <Text className="text-3xl font-t3-bold tabular-nums text-foreground">
+            <Text className="text-3xl font-infinitus-bold tabular-nums text-foreground">
               {pool.remainingPercent}%
             </Text>
             <Text className="text-sm text-foreground-muted">left</Text>
@@ -133,7 +132,7 @@ function PoolWindowCard({
                 pending={Boolean(window.resetsAt)}
               />
               <View pointerEvents="none" className="absolute inset-0 items-center justify-center">
-                <Text className="text-xs font-t3-medium tabular-nums text-foreground">
+                <Text className="text-xs font-infinitus-medium tabular-nums text-foreground">
                   {index + 1}
                 </Text>
               </View>
@@ -156,17 +155,17 @@ function PoolWindowCard({
               className="min-h-[44px] flex-row items-center gap-2 active:opacity-60"
             >
               <View className="size-5 items-center justify-center overflow-hidden rounded-md bg-subtle-strong">
-                <Text className="text-xs font-t3-medium tabular-nums text-foreground">
+                <Text className="text-xs font-infinitus-medium tabular-nums text-foreground">
                   {index + 1}
                 </Text>
               </View>
               <Text
                 numberOfLines={1}
-                className="min-w-0 flex-1 text-sm font-t3-medium text-foreground"
+                className="min-w-0 flex-1 text-sm font-infinitus-medium text-foreground"
               >
                 {accountName(account)}
               </Text>
-              <Text className="text-sm font-t3-medium tabular-nums text-foreground">
+              <Text className="text-sm font-infinitus-medium tabular-nums text-foreground">
                 {remainingPercent(window)}%
               </Text>
               <View className="flex-row items-center gap-1">
@@ -179,7 +178,7 @@ function PoolWindowCard({
                   <>
                     {resetsIn ? <Text className="text-xs text-foreground-tertiary">·</Text> : null}
                     <SymbolView name="ticket" size={13} tintColorClassName="accent-icon" />
-                    <Text className="text-xs font-t3-medium tabular-nums text-foreground">
+                    <Text className="text-xs font-infinitus-medium tabular-nums text-foreground">
                       {credits}
                     </Text>
                   </>
@@ -223,7 +222,7 @@ export function UsageLimitsSection({
         <View key={pool.driver} className="gap-3">
           <View className="flex-row items-center gap-2 px-1">
             <ProviderIcon provider={pool.driver} size={18} />
-            <Text className="text-base font-t3-medium text-foreground">
+            <Text className="text-base font-infinitus-medium text-foreground">
               {DRIVER_LABEL[pool.driver] ?? pool.driver}
             </Text>
           </View>
@@ -252,12 +251,12 @@ export function UsageLimitsSection({
           />
           <View className="min-w-0 flex-1 gap-0.5">
             {notices.map((notice) => (
-              <Text key={notice} className="text-sm font-t3-medium text-warning-foreground">
+              <Text key={notice} className="text-sm font-infinitus-medium text-warning-foreground">
                 {notice}
               </Text>
             ))}
             {failedLabels.length > 0 ? (
-              <Text className="text-sm font-t3-medium text-warning-foreground">
+              <Text className="text-sm font-infinitus-medium text-warning-foreground">
                 {failedLabels.join(", ")} could not refresh limits. Showing the last known values.
               </Text>
             ) : null}
@@ -278,7 +277,6 @@ type AccountScreenProps = StaticScreenProps<{
 
 /** Resolve the account again so live quota and credit updates reach the open detail screen. */
 export function UsageLimitAccountScreen({ route }: AccountScreenProps) {
-  const navigation = useNavigation();
   const insets = useSafeAreaInsets();
   const presentations = useAtomValue(environmentPresentations.presentationsAtom);
   const { accountKey, windowId, windowKind, environmentIds, now } = route.params;
@@ -297,13 +295,7 @@ export function UsageLimitAccountScreen({ route }: AccountScreenProps) {
   const reset = pool?.resets.find((candidate) => candidate.member.account.key === accountKey);
   const [revealed, setRevealed] = useState(false);
   return (
-    <View collapsable={false} className="flex-1 bg-sheet">
-      {Platform.OS === "android" ? (
-        <>
-          <NativeStackScreenOptions options={{ headerShown: false }} />
-          <AndroidScreenHeader title="Account" onBack={() => navigation.goBack()} />
-        </>
-      ) : null}
+    <SettingsScreen title="Account">
       <ScrollView
         contentInsetAdjustmentBehavior="automatic"
         contentContainerClassName="gap-5 p-5"
@@ -318,7 +310,7 @@ export function UsageLimitAccountScreen({ route }: AccountScreenProps) {
             <View className="gap-2">
               <View className="flex-row items-center gap-2">
                 <ProviderIcon provider={account.driver} size={24} />
-                <Text className="flex-1 text-xl font-t3-bold text-foreground">
+                <Text className="flex-1 text-xl font-infinitus-bold text-foreground">
                   {account.displayName ?? DRIVER_LABEL[account.driver] ?? account.driver}
                 </Text>
               </View>
@@ -341,8 +333,8 @@ export function UsageLimitAccountScreen({ route }: AccountScreenProps) {
               ) : null}
             </View>
             <View className="gap-3 rounded-[24px] border-continuous bg-card p-4">
-              <Text className="text-sm font-t3-medium text-foreground">{window.label}</Text>
-              <Text className="text-3xl font-t3-bold tabular-nums text-foreground">
+              <Text className="text-sm font-infinitus-medium text-foreground">{window.label}</Text>
+              <Text className="text-3xl font-infinitus-bold tabular-nums text-foreground">
                 {remainingPercent(window)}% left
               </Text>
               {window.resetsAt ? (
@@ -361,7 +353,7 @@ export function UsageLimitAccountScreen({ route }: AccountScreenProps) {
               ) : null}
             </View>
             <View className="gap-2 rounded-[24px] border-continuous bg-card p-4">
-              <Text className="text-sm font-t3-medium text-foreground">
+              <Text className="text-sm font-infinitus-medium text-foreground">
                 {account.environments.length ? "Signed in" : "Source"}
               </Text>
               {account.environments.length ? (
@@ -376,7 +368,7 @@ export function UsageLimitAccountScreen({ route }: AccountScreenProps) {
             </View>
             {account.redeem && account.limits.resetCredits ? (
               <View className="gap-3 rounded-[24px] border-continuous bg-card p-4">
-                <Text className="text-sm font-t3-medium text-foreground">Reset credits</Text>
+                <Text className="text-sm font-infinitus-medium text-foreground">Reset credits</Text>
                 <ResetCredits
                   key={account.key}
                   environmentId={account.redeem.environmentId}
@@ -389,6 +381,6 @@ export function UsageLimitAccountScreen({ route }: AccountScreenProps) {
           </>
         )}
       </ScrollView>
-    </View>
+    </SettingsScreen>
   );
 }

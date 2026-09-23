@@ -10,6 +10,376 @@ release cut folds the fragments and `## Unreleased` into the new section.
 ## Unreleased
 
 
+## 0.5.0-alpha.32
+
+### Mac
+- A sign-in the AWS CLI ended without completing, such as a declined account rebind, is no longer recorded as signed in.
+- The setup cards' "Copy for an AI agent" button is gone; the first account is one Add account click in the desktop app.
+- The "Add Claude account" companion window is gone; the sign-in sheet stands alone, closing it cancels the sign-in, and a second click on Add or Re-login brings it back.
+- The popup's first-account card offers Sign in…, which opens the desktop app for its Accounts page, beside the one-click adopt of a Claude Code login; a login made since launch is detected on the next open, no relaunch.
+
+### Desktop
+- Accounts shows the accounts on every connected machine that runs Infinitus at once, one group per machine, instead of one machine picked from a menu.
+- Add account and Sign in again work from another machine — the sign-in opens in your browser there and the owning Mac finishes it.
+- A thread stopped by a usage limit resumes on the same account once that account has room again, instead of waiting for a swap that never comes.
+- An empty fleet says what Add account does, and the no-engine page says to turn swapd on rather than install it.
+
+### Phone
+- Settings groups draw as cards again on the Grove, Ocean, Ember and Iris themes, where the card colour had collapsed into the sheet.
+- The no-engine page says to turn swapd on in the desktop app rather than install it.
+
+### Linux
+- The tray's empty-fleet tooltip names swapd add-oauth for a first sign-in.
+
+## 0.5.0-alpha.31
+
+### Mac
+- The menu bar app runs the account engine shipped inside it, not an older copy left on your PATH, so a fixed sign-in is fixed after the update.
+
+### Desktop
+- The desktop app's own sign-in runs the account engine shipped inside the app, not an older copy left on your PATH.
+
+## 0.5.0-alpha.30
+
+### Mac
+- `signin-begin --window` runs a sign-in with the Mac's own sheet for a caller on the same machine.
+- A sign-in routed to Chrome or Edge opens in a browser instance of its own on an empty profile, so the account already signed in there never gets in the way.
+- Signing an account in, or in again, works once more; claude.ai had started refusing the sign-in request on its first page with "Invalid request format".
+- A keep-warm account whose 5h window has stopped now says `cold` where its countdown would be, instead of a blank that looked identical to a running window, and one confirmed click starts it.
+- Keep-warm is on the account row's context menu, so the popup can turn it on and off.
+
+### Desktop
+- With Safari as the default browser, the desktop app's sign-in hands off to the menu bar app's private sign-in sheet, so passkeys work and no signed-in account gets in the way.
+- With Safari as the default browser, the desktop app's sign-in opens in a private window of its own instead of Safari's signed-in profile.
+- A thread stopped on a usage limit is no longer auto-settled, and its session stopped, in the seconds its turn is being resumed.
+- The desktop app's own sign-in, when routed to Chrome or Edge, opens in a browser instance of its own on an empty profile too.
+- Signing an account in from Settings › Accounts works once more; claude.ai had started refusing the request on its first page with "Invalid request format".
+
+## 0.5.0-alpha.29
+
+### Mac
+- An account the engine benched for a dead refresh token now says so and offers its re-login, instead of showing healthy usage the engine will never rotate onto.
+- Every spent window in a row reads "down", not only the one with the latest reset.
+- Adding or re-logging a swapd account finishes on its own through the OAuth redirect — no code to copy and paste, same private sign-in window.
+
+### Desktop
+- The maintainer docs say Infinitus too; a quoted or upstream-named T3 Code stays.
+- The user guides say Infinitus throughout.
+- Settings › Engines shows each engine once: its Start, Stop, Keep it running and Command rows now sit in the same card as its URL and key.
+- A usage limit hit right after an account swap is charged to the account that actually ran out; before, the account just swapped to could be marked spent for days and skipped by the rotation.
+- A thread resumed on a swapped-to account after a usage limit no longer ends up stuck on "Working" forever; a queued message could be sent into the same session as the resume, leaving a turn that never finished.
+- A CodeBuild check that fails on expired AWS credentials now raises the sign-in card straight away.
+
+### Phone
+- The lock-screen card counts a thread whose background agents are still running, so its number matches the thread list and Done waits for the work to end.
+- Tapping an image in a message opens it without first asking the Mac for a new link, and answers the tap with a haptic.
+- A large attachment that cannot finish uploading now comes back to the composer with an error instead of holding every other queued reply and new thread behind it.
+- A large screenshot picked from the photo library is downscaled before it is queued, so it uploads in seconds over the relay instead of timing out.
+
+## 0.5.0-alpha.28
+
+### Mac
+- The account engine reads its keychain items a few at a time, so every accounts refresh on a many-account fleet is about 2.5x faster.
+
+### Desktop
+- A thread stopped on a usage limit resumes as soon as the engine swaps accounts; before, one stopped a moment after the engine's last usage check could wait minutes beside threads that had already resumed.
+- An agent that runs `aws login` or `gcloud auth login` itself now raises the sign-in card and the phone alert, instead of waiting on a browser nobody was shown.
+
+### Phone
+- The launch screen shows the Infinitus icon as a rounded tile on iOS and as the Infinitus mark on Android.
+
+## 0.5.0-alpha.27
+
+### Mac
+- The Team publisher no longer shares this Mac's crash reports; a crashes.json published by an older build is removed from the team store on the next publish.
+- Hold and star in the menu bar panes answer in one engine pass instead of two.
+- The all-limited banner and push say which model ran out ("out of Fable") when only that model's window is spent.
+
+### Desktop
+- Keep-warm, star and hold flip on the row the moment they are pressed, several rows can be pressed in a row, and a slow reply reads as slow instead of as an error.
+- Keep-warm, star and hold presses answer in one engine pass, queue behind each other instead of failing as busy, and get a 30 s reply budget.
+- The accounts page's exhausted band names the model when one per-model window alone blocks every account.
+- A thread resumed after an account swap now always continues on the new account; before, its running Claude process could keep using the account that had just run out and stop on the same limit again.
+- A thread stopped on a usage limit still resumes on its own after sitting idle for half an hour; before, the idle cleanup made it forget the stop, so it waited for you even once an account came back.
+
+### Phone
+- The app no longer carries the rewrite for the retired infinitus.run/pair link; pairing links come from Settings › Connections.
+- The Warm, First and Held badges flip on press, and a reply that times out no longer says Infinitus is not running.
+- The accounts screen's exhausted band names the model when one per-model window alone blocks every account.
+- Settings draws its grouped cards again; an Android-only style had leaked onto iOS.
+- Sharing into Infinitus from another app can land in an existing thread instead of always starting a new task.
+
+### Linux
+- the tray's `--help` and the Omarchy panel plugin name the Infinitus fleet instead of the old engine project.
+
+## 0.5.0-alpha.26
+
+### Mac
+- The pop-out no longer locks; the `lock`, `lock-status` and `unlock` control commands are removed.
+
+### Desktop
+- 9Router started from Engines stays up — it was launched in its terminal-menu mode, which quits within seconds when there is no terminal.
+- The Pi status check runs offline, so it answers in well under a second and can no longer break a pending Pi extension install.
+- A Pi instance can route through 9Router or CLIProxyAPI from the add-instance wizard, like a Claude one.
+- Adding or re-signing a Claude account opens the sign-in page in a private window of Chrome, Brave, Edge, Vivaldi or Arc, so you no longer sign out of the browser's current account first.
+- Settings › Lock is gone, and with it the biometric lock over the menu bar pop-out.
+
+## 0.5.0-alpha.25
+
+### Mac
+- A full 9Router session gauge no longer stays on “respawning…” after its old reset time has passed.
+- Fully available accounts show their session, weekly and model gauges instead of a “full HP” summary, including in compact layouts.
+- Accounts show ahead/behind pace from one minute after a weekly reset across swapd, 9Router and CLIProxyAPI.
+- The menu bar app's Settings window is gone — every setting lives in the desktop app's Settings. Its last pane held settings export/import and account backup; both retire with it (`swapd export` / `swapd import` from a terminal remain the account backup path). The "Dock icon while Settings is open" preference went with the window.
+- ⌘, and the status menu's Settings… open Infinitus straight on its Menu bar settings page; the onboarding card's Engine settings lands on Engines.
+
+### Desktop
+- Activity moved from the sidebar to Settings › Engines, behind swapd's "View activity" button.
+- Each account on the Accounts page can be kept warm: with it on, swapd starts the account's 5h window whenever it has gone cold, so a switch onto it lands on a clock already running (needs swapd 0.3).
+- Add account signs in through your browser instead of a window inside the app, so passkeys work.
+- Settings has no "Infinitus" group any more; Menu bar, Animations, Priority, Lock, Team, Notifications, Devices and Engines are pages of their own, and the old links still land.
+- The theme picker now lives on the Menu bar settings page; the separate Themes page is gone.
+
+### Phone
+- The Accounts page offers the same keep-warm toggle per account.
+- Settings has no "Infinitus" section any more; Accounts, Team and the reset alarms sit under Configuration, the sending mode under General.
+
+## 0.5.0-alpha.24
+
+### Mac
+- Automatic account switching recovers after a temporary Keychain failure.
+- Automatic account switching keeps running when you quit the menu bar.
+
+### Desktop
+- Threads resume after an account switch even while the menu bar is closed.
+- Threads waiting to resume after a usage limit stay open when their pull request merges or they become inactive.
+- Pi (`pi`) is a provider you can turn on in Settings, with its models, its past sessions to import, and commit messages and thread titles generated by it.
+- The licenses screen credits the T3 Code project Infinitus is forked from.
+
+### Phone
+- Tapping a sign-in alert opens the home screen, where the sign-in card is, instead of the thread that hit the expired credentials.
+- Loading screens show the Infinitus mark instead of T3 Code's logo.
+- A connection that is retrying shows a spinner rather than a wifi-slash icon, so "Reconnecting to …" no longer reads as disconnected.
+- Settings › Legal shows Infinitus's own privacy, terms and security documents instead of T3 Code's.
+- The licenses screen credits the T3 Code project Infinitus is forked from.
+
+## 0.5.0-alpha.23
+
+### Desktop
+- Oh My Pi (`omp`) is a provider you can turn on in Settings, with its models, thinking levels and past sessions to import.
+- A provider card no longer asks you to sign in to Oh My Pi when its model listing merely failed to run.
+- When Infinitus Connect cannot get its session token, the error now says why instead of only that it failed.
+- The installer window wears the Infinitus palette and its drag arrow is the swap arrow from the mark.
+- Adding an account through Google or Apple sign-in works in the sign-in window.
+
+### Phone
+- When Infinitus Connect cannot get its session token, the error now says why instead of only that it failed.
+- A build signed by Xcode onto a device can register for Infinitus Connect pushes as a sandbox device (`INFINITUS_APS_ENVIRONMENT=sandbox`).
+
+## 0.5.0-alpha.22
+
+### Mac
+- The settings window stopped drawing crash reports — the desktop shows them, and `infinitusctl crashes --id <id>` answers one with its transcript.
+- The Cloudflare tunnels are gone — Infinitus Connect carries remote reach, and a phone off your Wi-Fi links through it.
+
+### Desktop
+- A rebase during a turn no longer shows the commits that landed on main as the thread's own changes in the turn cards and the diff panel.
+- Settings › Infinitus › Devices lists the Mac's crash reports, and Copy hands one to a session for triage.
+- Settings › Infinitus › Engines can start, stop and keep a proxy engine running.
+- Settings › Infinitus › Devices no longer draws its own "Pair a phone" QR; create the phone's pairing link under Settings › Connections, the one place every link comes from.
+- Settings › Infinitus › Devices drops the tunnel rows; the pairing QR is the Wi-Fi link, and points at Infinitus Connect for anywhere else.
+
+### Phone
+- The no-code sign-in ("Sign in here instead") opens in the system sign-in sheet, so passkeys work there too.
+- A lapsed AWS or gcloud sign-in in one of your threads now reaches the phone as a notification, opening that thread.
+
+## 0.5.0-alpha.21
+
+### Desktop
+- Releases no longer carry the server archive under its old `t3` name; an install older than 0.5.0-alpha.20 updates to that release first.
+
+### Phone
+- A failed sign-in card can be dismissed, and one left alone leaves by itself after ten minutes instead of staying until the Mac app relaunches.
+
+## 0.5.0-alpha.20
+
+### Mac
+- Phone alerts go out through Infinitus Connect with no push key of your own; the Mac no longer takes a Team ID, Key ID or .p8.
+- A sign-in for a profile that reads its credentials from a broker (`credential_process`) now runs for the login profile behind it instead of failing, and a failed sign-in shows its whole reason.
+
+### Desktop
+- The command-line server is `infinitus` now (`infinitus serve`, `infinitus update`, `infinitus service install`); the installer links that name, and a release still carries the archive under its old name for one version so an earlier install can update.
+- The Phone alerts card with its Team ID, Key ID and push key rows left Settings › Infinitus › Devices; alerts ride Infinitus Connect.
+
+## 0.5.0-alpha.19
+
+### Mac
+- Signing in to a gcloud account that still holds credentials no longer hangs at "starting"; gcloud's overwrite prompt is skipped.
+- A paused account wears one pause icon — press it to resume — and keeps its 5h, 7d and per-model limits.
+- Account alerts stop double-posting — the menu bar app stays quiet while the desktop app is open and shows them there instead.
+
+### Desktop
+- Account alerts land here now — a toast for every one, and a system notification when the fleet runs out while you are away.
+
+### Phone
+- Account alerts from a Mac now arrive through Infinitus Connect under the Device Notifications switch; the Alerts from Mac, Thread card and Card push registration rows left Settings › Infinitus.
+
+## 0.5.0-alpha.18
+
+### Mac
+- Team no longer involves the biometric lock — minting a code, approving a member and turning the lock off ask nothing extra.
+
+### Phone
+- Pasting a sign-in code back (and the no-code relay) now reaches the Mac; the server had refused every phone.
+- Joining a team with an invite code from the phone works; the server had refused it.
+
+## 0.5.0-alpha.17
+
+### Mac
+- Teammates you grant can send to, view, interrupt or start your threads (#1313).
+- Team publishes threads from Infinitus desktop and answers team-* over the control socket (#1313).
+
+### Desktop
+- A thread stopped on a usage limit now resumes on an account with headroom instead of the one that just ran out.
+- Builds and the phone take the Infinitus relay's public config, ready for a self-hosted T3 Connect (#1322).
+- Settings › Infinitus › Team is back — create or join a team, approve requests, mint invite links, choose what you share (#1313).
+
+### Phone
+- A paired phone dials your Mac's domain before its Wi-Fi address, so it connects off the LAN without the long wait.
+- A thread whose watch loops are still running shows Monitoring, as the desktop does.
+- An expired AWS or gcloud sign-in shows the account to copy and takes the code pasted back, as before.
+- Settings › Team joins a team from an invite link and approves requests on your Mac (#1313).
+
+## 0.5.0-alpha.16
+
+### Mac
+- a freshly installed engine now reports the provider it manages before its first account, so Accounts offers the first sign-in instead of telling you to install the engine you just installed.
+- A used-up model window (Fable) no longer repeats the reset time the weekly gauge beside it already counts down.
+- Infinitus stays out of the Dock by default — turn "Show a Dock icon while Settings is open" back on under Settings › Infinitus › Menu bar.
+- the Team crypto core, store and infinitusctl team CLI are back (#1313).
+
+### Desktop
+- A message sent while a turn runs in steer mode now waits for the agent's next tool call to finish instead of landing mid-tool.
+- ⌘[ / ⌘] and the mouse's back button move through history again.
+- A team invite link (infinitus.run/join, or infinitus://join on a Mac) opens the desktop app with the code ready for the Team page (#1313).
+
+### Phone
+- The queued messages card marks such a message "at next step".
+- With "Send into the running turn" on, a message sent during a turn now waits for the running tool call to finish before it goes in, on a Mac that supports it.
+- A working row on the lock-screen thread card shows its title again; the elapsed timer no longer takes the whole row.
+
+## 0.5.0-alpha.15
+
+### Mac
+- The `proxy` read answers CLIProxyAPI's management panel URL, so Settings › Infinitus › Engines links to it as it does 9Router's dashboard.
+- infinitusctl thread new starts a thread on the model the desktop would pick for the project — its Settings › General default at the project scope, else the environment's — instead of refusing a project without one, and --model <instance>/<model> (or a bare <model>) picks one outright; the refusal now says where to set a default.
+- The bundled swapd engine is 0.2.0, so Add account signs in through the browser and a thread that hits its limit switches accounts at once instead of a poll later.
+- The menu bar app no longer rewrites its snapshot cache to disk every minute when nothing changed.\n
+- Team rebuild spec and plan for the unified app (#1313).
+
+### Desktop
+- "Jump to next waiting thread" is now ⌘⌥N (Ctrl+Alt+N); ⌘⇧L now reuses the previous worktree, as upstream does.
+
+### Phone
+- Duplicate thread cards left on the lock screen are cleared the next time the app wakes; one card stays.
+- A message queued into a thread the Mac is holding waits from the first send after the app opens, instead of slipping past the hold once.
+- A thread card the Mac starts while the app is in the background asks the phone to reconnect at once, so its token reaches the Mac inside that window instead of when the app is next opened; the Card push registration row says how long it took.
+
+## 0.5.0-alpha.14
+
+### Mac
+- The menu bar app no longer crashes at every launch on a Mac that had signed in through the retired private window.
+- A thread card the phone dismissed no longer keeps its token on the Mac; the next card starts afresh instead of updating into nothing.
+- A thread card is started once and updated in place; a slow phone can no longer stack duplicate cards.
+- The phone list shows what the last push to each device did.
+- The event log records a thread card's start and end on the phone, and a failed push says what it was sending and why.
+
+### Desktop
+- Settings › Infinitus › Devices shows each phone's last push result.
+
+### Phone
+- A thread card's own token is withdrawn from the Mac once no card is live, so the next card starts fresh instead of updating an ended one.
+- A thread card the Mac starts while the app is in the background is updated in place instead of stacking a new card.
+
+## 0.5.0-alpha.13
+
+### Mac
+- `infinitusctl` can set the proxy's session affinity and the demo fleet, and `status` reports each engine's binary, daemon and last error.
+- The Devices pane keeps the tunnel, crash reports, settings file and account backup; this Mac's name, phone alerts and iCloud sync are set in Settings › Infinitus › Devices.
+- The Settings window's Accounts pane is retired; accounts are managed on the desktop app's Accounts page, and account backup and restore moved to Settings › Devices.
+- The standalone menu bar download and its Homebrew cask are retired; the menu bar app ships inside the desktop app.
+- The Settings window's About tab and its Homebrew updater are gone; the menu bar app ships inside the desktop app and updates with it.
+- The swapd, CLIProxyAPI and 9Router panes are gone from the Mac's Settings window; engine settings live in Settings › Infinitus › Engines in the desktop app.
+- 9Router and CLIProxyAPI weekly gauges show the ahead/behind pace signal swapd rows already had.
+- The sign-in flow's "Use private window (no passkeys)" button is gone, and the cookie jars it kept are removed at the next launch.
+- An account in two fleets shows the richer engine's usage reading instead of whichever engine answered first.
+
+### Desktop
+- The local environment can be turned off in Settings › Connections, so a computer only drives work running elsewhere; switch it back on in the same place.
+- A device host that resolves to this computer is skipped, and Test connection runs against the environments you selected.
+- Settings › Infinitus › Engines shows CLIProxyAPI's routing strategy and session affinity, a link to 9Router's dashboard, and swapd's daemon state and binary path.
+- Accounts offers Add account and Sign in again for swapd accounts.
+- A Bash call the agent described shows that description as the tool row, with the command folded beneath, as in Claude Code's terminal.
+- The mouse's back and forward buttons navigate the desktop app as they do a browser, on a Mac whose mouse driver sends them as the system's page-swipe gesture.
+- A web search the agent runs is titled "Web search" in the work log on web and phone, not "Tool call".
+- Settings › Infinitus › Engines ends with an About section showing the menu bar app's version and build, with a link to the releases.
+- A Claude instance can name an advisor model for the agent to consult mid-turn, in its Runtime settings.
+- A thread's advisor consults show their outcome as soon as the advisor answers instead of spinning until the turn ends.
+- A capture taken while the app has to open its window is no longer lost.
+- Web searches and fetches a thread runs show their result count or fetched page as soon as they answer instead of spinning until the turn ends.
+
+### Phone
+- A Bash call the agent described shows that description as the tool row, with the command folded beneath.
+- Long-press a message you sent to restore the files to that point, keeping the chat, or fork a new thread from there.
+- Long-press a message you sent to edit from here or rewind the chat only; the text, files and context come back to the composer.
+- An AWS or gcloud sign-in opened on the phone finishes on the phone; nothing is pasted anywhere.
+
+### Linux
+- `t3 update` points the background service at the new version even when you decline the restart, and `t3 service restart` picks it up later.
+
+## 0.5.0-alpha.12
+
+### Mac
+- A `test-connection` verb probes a proxy engine with the stored credential and answers within 5 s.
+- The Devices settings, the APNs key and the registered phones are reachable over the control socket (`devices` prefs, `apns`, `apns-key`).
+- A dev instance that never published a fork port no longer refuses its first publish because the installed app answers on the default port.
+- Reading Claude transcripts for stats streams each file instead of loading it whole.
+- A card or alert push reports how many phones it reached.
+- The mirror server and its pairing token are gone; the phone pairs through the desktop.
+- Your own Cloudflare tunnel no longer needs fleet serving on.
+
+### Desktop
+- The Engines page can test a proxy engine's connection before saving.
+- Settings › Infinitus › Engines sets each proxy engine's base URL and key or password itself; the Mac's engine panes are no longer needed for it.
+- Settings › Infinitus › Devices sets the machine name, the APNs key and iCloud sync, and lists the phones registered for pushes.
+- `t3 update` no longer replaces an Infinitus CLI with T3 Code, and a remote runtime is looked for under Infinitus rather than upstream.
+- SSH remote environments run the Infinitus runtime of the same version (release builds; a nightly ships no runtime archive).
+- The runtime SSH remotes install carries the Infinitus web assets.
+- The worktree limit no longer refuses a thread whose project has no repository.
+- The backend's log is kept on disk under the app's logs folder.
+- An account can be removed from the Accounts page.
+
+### Phone
+- An account can be removed from its row menu on the Accounts screen.
+
+### Linux
+- A headless server installs with one command from infinitus.run.
+- The tray's mirror server and pairing are gone; the phone pairs through the desktop.
+
+## 0.5.0-alpha.11
+
+### Desktop
+- Settings › Infinitus › Menu bar leads with "Show the icon in the menu bar", the switch every other row on the page depends on.
+- A thread that fails now raises a notification, like one waiting for input.
+- While the window has focus, an alert arrives as an in-app toast instead of a system banner, and the thread you are reading stays silent.
+- Starting a thread in a new worktree shows each setup step — fetch, checkout, submodules, setup script — and can be cancelled while it runs.
+- A thread whose project is not a git repository, or whose base branch has no commit, now runs in the project checkout instead of failing.
+
+### Phone
+- Settings shows whether the lock-screen thread card's push registration reached your Mac, and what stopped it if it did not.
+- The lock-screen card's push registration is retried once the Mac is reachable, so a card can start on its own.
+- The lock-screen card carries the Infinitus mark instead of the T3 one.
+
 ## 0.5.0-alpha.10
 
 ### Mac
@@ -641,7 +1011,7 @@ release cut folds the fragments and `## Unreleased` into the new section.
 - Phone dictation never sits on "Translating…": a missing language pack asks to download, and after ten seconds the take goes out as spoken.
 - A chat opens in well under a second on sessions with hundreds of sub-agents; the Mac read every sub-agent's log per request and the phone gave up after three ("the Mac didn't answer").
 - The phone's composer no longer floats mid-screen after the keyboard is dragged away.
-- Mac notifications are titled Infinitus, not claude-swap; engine update notices name the engine in the body.
+- Mac notifications are titled Infinitus, not the engine's name; engine update notices name the engine in the body.
 - A chat swipes back from anywhere on the screen, not only from the left edge.
 - The terminal's own "[Image: original …]" note after a screenshot is read no longer shows as a message you sent.
 

@@ -1,4 +1,5 @@
 export const PICK_FOLDER_CHANNEL = "desktop:pick-folder";
+export const SET_NOTIFICATION_BADGE_CHANNEL = "desktop:set-notification-badge";
 export const PICK_PROJECT_FAVICON_CHANNEL = "desktop:pick-project-favicon";
 export const PICK_THEME_FILES_CHANNEL = "desktop:pick-theme-files";
 export const SET_THEME_CHANNEL = "desktop:set-theme";
@@ -24,6 +25,8 @@ export const UPDATE_CHECK_CHANNEL = "desktop:update-check";
 export const GET_APP_BRANDING_CHANNEL = "desktop:get-app-branding";
 export const GET_SYSTEM_LOCALE_CHANNEL = "desktop:get-system-locale";
 export const GET_LOCAL_ENVIRONMENT_BOOTSTRAPS_CHANNEL = "desktop:get-local-environment-bootstraps";
+export const GET_LOCAL_ENVIRONMENT_ENABLED_CHANNEL = "desktop:get-local-environment-enabled";
+export const SET_LOCAL_ENVIRONMENT_ENABLED_CHANNEL = "desktop:set-local-environment-enabled";
 export const GET_LOCAL_ENVIRONMENT_BEARER_TOKEN_CHANNEL =
   "desktop:get-local-environment-bearer-token";
 export const GET_CLIENT_SETTINGS_CHANNEL = "desktop:get-client-settings";
@@ -112,7 +115,8 @@ export const SET_INFINITUS_QUIT_WITH_APP_CHANNEL = "desktop:infinitus-set-quit-w
 // Fork: the double-tap-Shift capture gesture (#433 slice 2).
 export const SET_INFINITUS_CAPTURE_GESTURE_ENABLED_CHANNEL =
   "desktop:infinitus-set-capture-gesture-enabled";
-export const CAPTURE_GESTURE_EVENT_CHANNEL = "desktop:infinitus-capture-gesture-event";
+export const CAPTURE_GESTURE_PENDING_CHANNEL = "desktop:infinitus-capture-gesture-pending";
+export const CONSUME_CAPTURE_GESTURES_CHANNEL = "desktop:infinitus-consume-capture-gestures";
 // Fork: the Dock badge for threads waiting on the user (#270 B).
 export const SET_BADGE_COUNT_CHANNEL = "desktop:infinitus-set-badge-count";
 // Fork: sleep held off while a local thread's turn runs (#1075).
@@ -121,10 +125,26 @@ export const SET_KEEP_AWAKE_CHANNEL = "desktop:infinitus-set-keep-awake";
 export const OPEN_INFINITUS_SIGN_IN_CHANNEL = "desktop:infinitus-open-sign-in";
 export const CLOSE_INFINITUS_SIGN_IN_CHANNEL = "desktop:infinitus-close-sign-in";
 export const SUBMIT_INFINITUS_SIGN_IN_CODE_CHANNEL = "desktop:infinitus-submit-sign-in-code";
+// Fork: a sign-in the shell runs through the account engine itself (#1213).
+export const BEGIN_INFINITUS_OAUTH_SIGN_IN_CHANNEL = "desktop:infinitus-begin-oauth-sign-in";
+export const CANCEL_INFINITUS_OAUTH_SIGN_IN_CHANNEL = "desktop:infinitus-cancel-oauth-sign-in";
+// Fork: the engine's loopback listener stood in for here, for a sign-in on
+// another Mac's environment.
+export const LISTEN_INFINITUS_SIGN_IN_REDIRECT_CHANNEL =
+  "desktop:infinitus-listen-sign-in-redirect";
+export const STOP_INFINITUS_SIGN_IN_REDIRECT_CHANNEL = "desktop:infinitus-stop-sign-in-redirect";
 // Fork: deep links (#270 D).
 export const CONSUME_INFINITUS_DEEP_LINK_CHANNEL = "desktop:infinitus-consume-deep-link";
 export const INFINITUS_DEEP_LINK_PENDING_CHANNEL = "desktop:infinitus-deep-link-pending";
+// Fork: macOS's navigate-back/forward gesture on the main window (#1250).
+export const INFINITUS_HISTORY_GESTURE_CHANNEL = "desktop:infinitus-history-gesture";
+// Fork: the proxy engines this shell runs.
+export const GET_INFINITUS_ENGINES_CHANNEL = "desktop:infinitus-get-engines";
+export const SET_INFINITUS_ENGINE_SETTINGS_CHANNEL = "desktop:infinitus-set-engine-settings";
+export const CONTROL_INFINITUS_ENGINE_CHANNEL = "desktop:infinitus-control-engine";
 
 export const MAC_PERMISSION_HELPER_CHANNEL = "desktop:mac-permission-helper";
 
 export const CHECK_SYSTEM_PERMISSION_CHANNEL = "desktop:check-system-permission";
+
+export const PREVIEW_RECORDING_INPUT_CHANNEL = "desktop:preview-recording-input";

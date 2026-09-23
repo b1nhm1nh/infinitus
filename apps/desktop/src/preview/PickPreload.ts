@@ -12,10 +12,12 @@ import type {
   PreviewAnnotationStrokeTarget,
   PreviewAnnotationStyleChange,
   PreviewAnnotationSubmission,
-} from "@t3tools/contracts";
+} from "@infinitus/contracts";
 
 import { resolveAnnotationSubmission } from "./AnnotationKeyboard.ts";
 import { previewAnnotationStyles } from "./AnnotationStyles.generated.ts";
+import { installRecordingCursor } from "./RecordingCursor.ts";
+import { DEFAULT_RECORDING_INPUT_OPTIONS } from "./RecordingInput.ts";
 import {
   ANNOTATION_CAPTURED_CHANNEL,
   ANNOTATION_THEME_CHANNEL,
@@ -23,17 +25,96 @@ import {
   ELEMENT_PICKED_CHANNEL,
   HUMAN_INPUT_CHANNEL,
   MOUSE_NAVIGATE_CHANNEL,
+  RECORDING_CURSOR_CHANNEL,
+  RECORDING_POINTER_CHANNEL,
+  RECORDING_KEY_CHANNEL,
+  RECORDING_INPUT_CHANNEL,
+  RECORDING_CONTROLLER_CHANNEL,
   START_PICK_CHANNEL,
 } from "./GuestProtocol.ts";
 const OVERLAY_ATTRIBUTE = "data-t3code-annotation-ui";
 const Z_INDEX_OVERLAY = 2147483646;
-const PRIMARY = "var(--t3-primary)";
-const PRIMARY_FILL = "color-mix(in srgb, var(--t3-primary) 10%, transparent)";
+const PRIMARY = "var(--infinitus-primary)";
+const PRIMARY_FILL = "color-mix(in srgb, var(--infinitus-primary) 10%, transparent)";
 const MAX_MARQUEE_ELEMENTS = 20;
 /** Upper bound on one element's React context lookup during submit. */
 const ELEMENT_CONTEXT_TIMEOUT_MS = 5_000;
 const CONTENT_LAYER_Z_INDEX = 1;
 const CHROME_LAYER_Z_INDEX = 10;
+
+let recordingCursor: ReturnType<typeof installRecordingCursor> | null = null;
+ipcRenderer.on(
+  RECORDING_CURSOR_CHANNEL,
+  (_event, active: unknown, inputOptions: unknown, controller: unknown) => {
+    if (active === true) {
+      const options =
+        typeof inputOptions === "object" && inputOptions !== null
+          ? {
+              showKeyPresses:
+                "showKeyPresses" in inputOptions && inputOptions.showKeyPresses === true,
+              showMousePresses:
+                "showMousePresses" in inputOptions && inputOptions.showMousePresses === true,
+            }
+          : DEFAULT_RECORDING_INPUT_OPTIONS;
+      recordingCursor ??= installRecordingCursor(document, window, options, (input) =>
+        ipcRenderer.send(RECORDING_INPUT_CHANNEL, input),
+      );
+      recordingCursor.setTheme(annotationTheme);
+      if (controller === "agent" || controller === "human" || controller === "none")
+        recordingCursor.setController(controller);
+    } else {
+      recordingCursor?.dispose();
+      recordingCursor = null;
+    }
+  },
+);
+ipcRenderer.on(RECORDING_CONTROLLER_CHANNEL, (_event, controller: unknown, point: unknown) => {
+  const humanPoint =
+    typeof point === "object" &&
+    point !== null &&
+    "x" in point &&
+    typeof point.x === "number" &&
+    Number.isFinite(point.x) &&
+    "y" in point &&
+    typeof point.y === "number" &&
+    Number.isFinite(point.y)
+      ? { x: point.x, y: point.y }
+      : undefined;
+  if (controller === "agent" || controller === "human" || controller === "none")
+    recordingCursor?.setController(controller, humanPoint);
+});
+ipcRenderer.on(RECORDING_KEY_CHANNEL, (_event, input: unknown) => {
+  if (
+    typeof input !== "object" ||
+    input === null ||
+    !("key" in input) ||
+    typeof input.key !== "string"
+  )
+    return;
+  recordingCursor?.keyPress({
+    key: input.key,
+    metaKey: "metaKey" in input && input.metaKey === true,
+    ctrlKey: "ctrlKey" in input && input.ctrlKey === true,
+    altKey: "altKey" in input && input.altKey === true,
+    shiftKey: "shiftKey" in input && input.shiftKey === true,
+  });
+});
+ipcRenderer.on(RECORDING_POINTER_CHANNEL, (_event, point: unknown) => {
+  if (
+    typeof point === "object" &&
+    point !== null &&
+    "x" in point &&
+    typeof point.x === "number" &&
+    Number.isFinite(point.x) &&
+    "y" in point &&
+    typeof point.y === "number" &&
+    Number.isFinite(point.y)
+  )
+    recordingCursor?.move(
+      { x: point.x, y: point.y },
+      "phase" in point && point.phase === "click" ? "click" : "move",
+    );
+});
 
 type AnnotationTool = "select" | "marquee" | "draw" | "erase";
 
@@ -61,22 +142,22 @@ const applyAnnotationTheme = (
   if (!theme) return;
   host.style.colorScheme = theme.colorScheme;
   const variables = {
-    "--t3-radius": theme.radius,
-    "--t3-background": theme.background,
-    "--t3-foreground": theme.foreground,
-    "--t3-popover": theme.popover,
-    "--t3-popover-foreground": theme.popoverForeground,
-    "--t3-primary": theme.primary,
-    "--t3-primary-foreground": theme.primaryForeground,
-    "--t3-muted": theme.muted,
-    "--t3-muted-foreground": theme.mutedForeground,
-    "--t3-accent": theme.accent,
-    "--t3-accent-foreground": theme.accentForeground,
-    "--t3-border": theme.border,
-    "--t3-input": theme.input,
-    "--t3-ring": theme.ring,
-    "--t3-font-sans": theme.fontSans,
-    "--t3-font-mono": theme.fontMono,
+    "--infinitus-radius": theme.radius,
+    "--infinitus-background": theme.background,
+    "--infinitus-foreground": theme.foreground,
+    "--infinitus-popover": theme.popover,
+    "--infinitus-popover-foreground": theme.popoverForeground,
+    "--infinitus-primary": theme.primary,
+    "--infinitus-primary-foreground": theme.primaryForeground,
+    "--infinitus-muted": theme.muted,
+    "--infinitus-muted-foreground": theme.mutedForeground,
+    "--infinitus-accent": theme.accent,
+    "--infinitus-accent-foreground": theme.accentForeground,
+    "--infinitus-border": theme.border,
+    "--infinitus-input": theme.input,
+    "--infinitus-ring": theme.ring,
+    "--infinitus-font-sans": theme.fontSans,
+    "--infinitus-font-mono": theme.fontMono,
   };
   for (const [name, value] of Object.entries(variables)) {
     host.style.setProperty(name, value);
@@ -1177,7 +1258,7 @@ function startAnnotation(): void {
           regions.push(region);
           const regionBox = createBox(
             PRIMARY,
-            "color-mix(in srgb, var(--t3-primary) 6%, transparent)",
+            "color-mix(in srgb, var(--infinitus-primary) 6%, transparent)",
           );
           regionBox.setAttribute("data-region-id", region.id);
           positionBox(regionBox, rect);
@@ -1361,6 +1442,7 @@ ipcRenderer.on(START_PICK_CHANNEL, (_event, theme: DesktopPreviewAnnotationTheme
 });
 ipcRenderer.on(ANNOTATION_THEME_CHANNEL, (_event, theme: DesktopPreviewAnnotationTheme) => {
   annotationTheme = theme;
+  recordingCursor?.setTheme(theme);
   activeSession?.applyTheme(theme);
 });
 ipcRenderer.on(CANCEL_PICK_CHANNEL, () => activeSession?.teardown(false));

@@ -69,6 +69,9 @@ public struct SwapdAccountView: Decodable, Sendable {
     public let active: Bool
     public let disabled: Bool
     public let preferred: Bool
+    /// The daemon keeps this account's 5h window running (swapd 0.3,
+    /// `auto-ignite`); absent from an older build.
+    public let autoIgnite: Bool?
     public let usageStatus: String
     public let fetchedAt: String?
     public let ageSeconds: Double?
@@ -132,15 +135,19 @@ public enum SwapdMapping {
         Provider(rawValue: raw.lowercased()) ?? .other
     }
 
-    /// One fleet per provider that HOLDS accounts. A provider swapd only
-    /// reports because its CLI is installed has nothing to render, and an
-    /// empty fleet would sit in the popup as an empty section.
+    /// One fleet per provider that holds accounts OR has its CLI
+    /// installed. The empty fleet has no rows, but it is what every
+    /// add-the-first-account path resolves against — the popup's card, the
+    /// socket's `add` / `signin-begin`, the fork's Accounts page — so
+    /// dropping it left a fresh swapd install with no way to add an
+    /// account from any surface (#1319). The popup filters it back out
+    /// (`accountArea`) rather than drawing an empty section.
     public static func fleets(from list: SwapdList, engineID: String = engineID,
                               now: Date = Date(),
                               carriedActive: (Provider) -> Int? = { _ in nil }) -> [EngineFleet] {
         var seen: Set<Provider> = []
         var fleets: [EngineFleet] = []
-        for view in list.providers where !view.accounts.isEmpty {
+        for view in list.providers where !view.accounts.isEmpty || view.installed {
             let provider = provider(for: view.provider)
             // Two unknown providers would both key on "swapd/other" and the
             // registry holds one state per key: the first one wins.
@@ -233,6 +240,7 @@ public enum SwapdMapping {
                            : shown.map { window($0, now: now, fallbackName: $0.kind) },
                        alias: view.alias, icon: view.icon, plan: view.plan,
                        disabled: view.disabled, preferred: view.preferred,
+                       autoIgnite: view.autoIgnite,
                        // A served measurement carries the age of the fetch
                        // it came from, not of the pass that served it.
                        usageFetchedAt: view.fetchedAt ?? view.lastGood?.fetchedAt,

@@ -18,17 +18,17 @@ import {
   createLucideIcon,
   GaugeIcon,
   GitBranchIcon,
+  HardDriveIcon,
   InfinityIcon,
   KeyboardIcon,
   Link2Icon,
-  LockIcon,
   PaletteIcon,
   PanelsTopLeftIcon,
   SearchIcon,
   Settings2Icon,
   SmartphoneIcon,
   SparklesIcon,
-  SwatchBookIcon,
+  UsersIcon,
   XIcon,
 } from "lucide-react";
 import { useLocation, useNavigate } from "@tanstack/react-router";
@@ -36,7 +36,6 @@ import { useLocation, useNavigate } from "@tanstack/react-router";
 import { useEnvironments } from "~/state/environments";
 
 import { Button } from "../ui/button";
-import { Input } from "../ui/input";
 import { Kbd } from "../ui/kbd";
 import {
   SidebarContent,
@@ -46,6 +45,7 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
   useSidebar,
+  SidebarInput,
 } from "../ui/sidebar";
 import { SidebarUtilityMenu } from "../sidebar/SidebarChrome";
 import { scrollToSettingsTarget } from "./settingsLayout";
@@ -72,14 +72,14 @@ const SnapShotIcon = createLucideIcon("snap-shot", [
   ["circle", { cx: "12", cy: "12", r: "1.5", key: "lens" }],
 ]);
 
-const T3ConnectSidebarSignIn = lazy(() =>
-  import("../clerk/T3ConnectSidebarSignIn").then((module) => ({
-    default: module.T3ConnectSidebarSignIn,
+const InfinitusConnectSidebarSignIn = lazy(() =>
+  import("../clerk/InfinitusConnectSidebarSignIn").then((module) => ({
+    default: module.InfinitusConnectSidebarSignIn,
   })),
 );
-const T3ConnectSidebarAvatar = lazy(() =>
-  import("../clerk/T3ConnectSidebarSignIn").then((module) => ({
-    default: module.T3ConnectSidebarAvatar,
+const InfinitusConnectSidebarAvatar = lazy(() =>
+  import("../clerk/InfinitusConnectSidebarSignIn").then((module) => ({
+    default: module.InfinitusConnectSidebarAvatar,
   })),
 );
 
@@ -94,28 +94,27 @@ const SETTINGS_SECTION_ICONS: Readonly<
   "/settings/providers": BotIcon,
   "/settings/integrations": BlocksIcon,
   "/settings/source-control": GitBranchIcon,
+  "/settings/storage": HardDriveIcon,
   "/settings/connections": Link2Icon,
-  "/settings/infinitus": InfinityIcon,
-  "/settings/infinitus/themes": SwatchBookIcon,
-  "/settings/infinitus/animations": SparklesIcon,
-  "/settings/infinitus/sessions": GaugeIcon,
-  "/settings/infinitus/lock": LockIcon,
-  "/settings/infinitus/notifications": BellIcon,
-  "/settings/infinitus/devices": SmartphoneIcon,
-  "/settings/infinitus/engines": CpuIcon,
+  "/settings/menu-bar": InfinityIcon,
+  "/settings/animations": SparklesIcon,
+  "/settings/priority": GaugeIcon,
+  "/settings/team": UsersIcon,
+  "/settings/notifications": BellIcon,
+  "/settings/devices": SmartphoneIcon,
+  "/settings/engines": CpuIcon,
   "/settings/archived": ArchiveIcon,
 };
 
 /** The pages that only exist where a connected server drives an Infinitus app. */
 const INFINITUS_SETTINGS_PATHS: ReadonlySet<SettingsPath> = new Set<SettingsPath>([
-  "/settings/infinitus",
-  "/settings/infinitus/themes",
-  "/settings/infinitus/animations",
-  "/settings/infinitus/sessions",
-  "/settings/infinitus/lock",
-  "/settings/infinitus/notifications",
-  "/settings/infinitus/devices",
-  "/settings/infinitus/engines",
+  "/settings/menu-bar",
+  "/settings/animations",
+  "/settings/priority",
+  "/settings/team",
+  "/settings/notifications",
+  "/settings/devices",
+  "/settings/engines",
 ]);
 
 const SETTINGS_NAV_ITEMS: ReadonlyArray<{
@@ -150,7 +149,7 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
     (environment) => environment.serverConfig?.environment.capabilities.infinitus === true,
   );
   // Upstream hides Projects outside the overview scope; the fork hides the
-  // Infinitus pages when no connected environment runs the menu bar app.
+  // menu bar app's pages when no connected environment runs it.
   const navItems = useMemo(
     () =>
       SETTINGS_NAV_ITEMS.filter(
@@ -277,13 +276,12 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
   return (
     <>
       <SidebarContent className="overflow-x-hidden">
-        <SidebarGroup className="gap-2 p-[var(--sidebar-content-inset)]">
+        <SidebarGroup className="gap-2">
           <div className="flex h-8 items-center gap-2 rounded-md px-2 py-1.5 text-sm font-medium text-sidebar-muted-foreground hover:bg-sidebar-row-hover hover:text-sidebar-foreground">
             <SearchIcon className="size-4 shrink-0 text-sidebar-muted-foreground/80" />
-            <Input
+            <SidebarInput
               ref={searchInputRef}
               nativeInput
-              unstyled
               type="search"
               value={query}
               onChange={(event) => {
@@ -302,7 +300,7 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
                   ? `settings-search-result-${results[activeResultIndex].id}`
                   : undefined
               }
-              className="min-w-0 flex-1 [&_[data-slot=input]]:h-auto [&_[data-slot=input]]:p-0 [&_[data-slot=input]]:leading-normal [&_[data-slot=input]]:text-sm [&_[data-slot=input]]:font-medium [&_[data-slot=input]]:text-sidebar-foreground [&_[data-slot=input]]:placeholder:text-sidebar-muted-foreground"
+              className="min-w-0 flex-1"
             />
             {isSearching ? (
               <Button
@@ -319,7 +317,7 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
                 <XIcon className="size-3" />
               </Button>
             ) : (
-              <Kbd className="h-4 min-w-0 rounded-sm px-1.5 text-[10px]">/</Kbd>
+              <Kbd>/</Kbd>
             )}
           </div>
           {isSearching && results.length === 0 ? (
@@ -386,16 +384,16 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
           )}
         </SidebarGroup>
       </SidebarContent>
-      <SidebarFooter className="px-[var(--sidebar-content-inset)] py-1">
+      <SidebarFooter>
         <Suspense fallback={null}>
-          <T3ConnectSidebarSignIn />
+          <InfinitusConnectSidebarSignIn />
         </Suspense>
         <div className="flex items-center gap-1">
           <div className="min-w-0 flex-1">
             <SidebarUtilityMenu />
           </div>
           <Suspense fallback={null}>
-            <T3ConnectSidebarAvatar />
+            <InfinitusConnectSidebarAvatar />
           </Suspense>
         </div>
       </SidebarFooter>

@@ -1,10 +1,10 @@
-import { changeRequestUrlFor as changeRequestWebUrl } from "@t3tools/shared/changeRequestUrl";
-export { changeRequestUrlFor as changeRequestWebUrl } from "@t3tools/shared/changeRequestUrl";
+import { changeRequestUrlFor as changeRequestWebUrl } from "@infinitus/shared/changeRequestUrl";
+export { changeRequestUrlFor as changeRequestWebUrl } from "@infinitus/shared/changeRequestUrl";
 import {
   pullRequestHostOf,
   type ScopedThreadRef,
   type SourceControlProviderKind,
-} from "@t3tools/contracts";
+} from "@infinitus/contracts";
 import { useAtomValue } from "@effect/atom-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
@@ -208,7 +208,7 @@ function LinkPullRequestDialog({
             this environment has a project for.
           </DialogDescription>
         </DialogHeader>
-        <DialogPanel className="space-y-3">
+        <DialogPanel>
           <Input
             ref={inputRef}
             placeholder="Pull request URL or #42"

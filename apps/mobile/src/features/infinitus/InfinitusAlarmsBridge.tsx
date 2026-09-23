@@ -1,5 +1,5 @@
 import { useAtomValue } from "@effect/atom-react";
-import type { InfinitusSnapshot } from "@t3tools/contracts/infinitus";
+import type { InfinitusSnapshot } from "@infinitus/contracts/infinitus";
 import { AsyncResult } from "effect/unstable/reactivity";
 import * as Notifications from "expo-notifications";
 import { useEffect, useMemo, useRef } from "react";
@@ -11,15 +11,21 @@ import { environmentPresentations } from "../../state/presentation";
 import { useEnvironmentQuery } from "../../state/query";
 import { environmentServerConfigsAtom } from "../../state/server";
 import { type InfinitusMac, infinitusMacs } from "../accounts/accountsRoute.logic";
-import { alarmIsScheduled, type FleetAlarm, isInfinitusAlarmId, planAlarms } from "./alarms.logic";
+import {
+  alarmIsScheduled,
+  alarmPlanKey,
+  isInfinitusAlarmId,
+  planAlarms,
+  type FleetAlarm,
+} from "./alarms.logic";
 
 export const INFINITUS_ALARM_DEEP_LINK = "t3code://settings/accounts";
 
 /** Headless. Re-plans the phone's reset and swap alarms from every paired
     Mac's snapshot (#572 task 5) and schedules them as local notifications;
     a tap opens Settings › Accounts. Off until preferences load, when the
-    toggle is off, or when notifications are not granted — the switch in
-    Settings › Infinitus asks for the permission. */
+    toggle is off, or when notifications are not granted — the Reset alarms
+    switch in Settings › Configuration asks for the permission. */
 export function InfinitusAlarmsBridge() {
   const preferences = useAtomValue(mobilePreferencesAtom);
   const configs = useAtomValue(environmentServerConfigsAtom);
@@ -57,11 +63,19 @@ function MacAlarms(props: { readonly mac: InfinitusMac }) {
     infinitusEnvironment.snapshot({ environmentId: props.mac.environmentId, input: {} }),
   );
   const previous = useRef<InfinitusSnapshot | null>(null);
+  /** The plan last handed to the notification center; an identical one is
+      not handed over again (#1278 finding 8 — the center was asked twice per
+      push to learn nothing had moved). Reset with the bridge, so turning the
+      switch back on, which asks for the permission, schedules afresh. */
+  const scheduledPlan = useRef<string | null>(null);
   const snapshot = view.data;
   useEffect(() => {
     if (snapshot === null) return;
     const alarms = planAlarms(snapshot, previous.current, Date.now());
     previous.current = snapshot;
+    const key = alarmPlanKey(alarms);
+    if (key === scheduledPlan.current) return;
+    scheduledPlan.current = key;
     void scheduleInfinitusAlarms(props.mac.environmentId, alarms);
   }, [props.mac.environmentId, snapshot]);
   return null;

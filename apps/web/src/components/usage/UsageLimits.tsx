@@ -6,7 +6,7 @@ import {
   ServerProviderResetCredits,
   ServerProviderUsageWindow,
   UsageProviderKind,
-} from "@t3tools/contracts";
+} from "@infinitus/contracts";
 import { useAtomValue } from "@effect/atom-react";
 import {
   elapsedShare,
@@ -15,7 +15,7 @@ import {
   type LimitPace,
   paceOf,
   remainingPercent,
-} from "@t3tools/shared/usageLimits";
+} from "@infinitus/shared/usageLimits";
 import { GaugeIcon, TrendingDownIcon, TrendingUpIcon } from "lucide-react";
 import { Fragment, useState } from "react";
 
@@ -127,7 +127,7 @@ function WindowBar({
           />
         ) : null}
       </TooltipTrigger>
-      <TooltipPopup side="top" className="max-w-72 text-xs">
+      <TooltipPopup side="top">
         <div className="flex flex-col gap-0.5">
           <span className="text-foreground">
             {remaining}% left{timeLeft !== null ? ` · ${timeLeft}% of the window left` : ""}

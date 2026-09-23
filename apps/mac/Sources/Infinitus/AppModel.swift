@@ -8,7 +8,7 @@ import InfinitusUI
 
 /// Main-actor state the MenuBarExtra renders. Feeds per spec §2:
 /// snapshots from `swapd list --json` (timer + right after any switch
-/// event), events from the supervised `swapd auto --json`.
+/// event), events from the background `swapd auto --json` service.
 @MainActor
 final class AppModel: ObservableObject {
     // MARK: fleets (#8 multi-engine seam)
@@ -20,7 +20,12 @@ final class AppModel: ObservableObject {
     // title, resume nudges and push triggers keep reading `accounts`
     // exactly as before.
     private(set) lazy var registry = EngineRegistry(host: self)
-    var fleets: [FleetState] { registry.fleets }
+    /// This Mac's own fleets. Other machines' are `peerFleets`; only the
+    /// popup stacks both (#1545).
+    var fleets: [FleetState] { registry.localFleets }
+    var peerFleets: [FleetState] { registry.peerFleets }
+    /// Other machines' accounts, pushed by the desktop over `peer-sync`.
+    private(set) lazy var peers = PeerFleetsModel(host: self)
     var primary: FleetState? { registry.primary }
     /// Per-engine last error (the primary's also lands in lastError).
     @Published var engineErrors: [String: String] = [:]
@@ -37,10 +42,12 @@ final class AppModel: ObservableObject {
     var activeNumber: Int? { primary?.activeNumber }
     var nextCandidate: Int? { primary?.nextCandidate }
     var nextRecovery: NextRecovery? { primary?.nextRecovery }
-    /// The desktop's thread card's own count of active threads (#1047),
-    /// nil until a card has ever arrived — the busy signal `WindowPlanner`
-    /// reads now that the terminal session tracker is gone (#1041 d6).
+    /// The desktop's running provider turns, read over its HTTP API once a
+    /// minute (#1375; the thread-card push carried it before) — nil until
+    /// the first answer, the busy signal `WindowPlanner` reads now that
+    /// the terminal session tracker is gone (#1041 d6).
     @Published var desktopActiveThreads: Int?
+    private var desktopActiveThreadsReadAt: Date?
     /// Session-list popover (brain chip click) — popup-wide state so the
     /// wide chip and the rail badge share one popover.
     @Published var sessionsShown = false
@@ -75,9 +82,15 @@ final class AppModel: ObservableObject {
     }
     /// Click-to-switch staging: the row sets this, the popup's
     /// confirmation alert commits or clears it.
+    /// The fleet whose row staged a switch — any fleet, a peer's too, so
+    /// the one confirm alert serves every row the popup draws.
+    var pendingSwitchFleet: FleetState? { registry.fleets.first { $0.pendingSwitch != nil } }
     var pendingSwitch: Int? {
-        get { primary?.pendingSwitch }
-        set { primary?.pendingSwitch = newValue }
+        get { pendingSwitchFleet?.pendingSwitch }
+        set {
+            if let newValue { primary?.pendingSwitch = newValue }
+            else { for fleet in registry.fleets { fleet.pendingSwitch = nil } }
+        }
     }
     @Published var dataPulseTick = 0
 
@@ -118,7 +131,10 @@ final class AppModel: ObservableObject {
 
     /// Every event goes through here: the Activity pane's tail and the
     /// durable log Stats reads. `kind` is StatsEvents' vocabulary
-    /// (switch/death/limit/revival/ignite/resume/nudge/pairing/other).
+    /// (switch/death/limit/revival/ignite/resume/nudge/pairing/other),
+    /// plus `alert`/`notice` for the app's own announcements (`announce`),
+    /// deliberately outside that vocabulary so a said line never lands in
+    /// a tally.
     func logEvent(_ kind: String, icon: String, _ text: String) {
         eventLog.append(EventEntry(kind: kind, icon: icon, text: text))
         if eventLog.count > 100 { eventLog.removeFirst(eventLog.count - 100) }
@@ -219,9 +235,11 @@ final class AppModel: ObservableObject {
     /// snapshot cache, notifications, resume nudges, push, sync, power
     /// assertions, the engine supervisor — stay put until they are swept.
     let isPlayground = false
-    /// Set by StatusItemHolder — opens the controller-owned Settings window
-    /// (the SwiftUI Settings scene is unreachable from popover hosts).
-    var showSettings: (() -> Void)?
+    /// Set by StatusItemHolder — opens the Infinitus desktop app, where
+    /// every setting lives since the Mac's Settings window retired; with a
+    /// page (`infinitus`, `infinitus/engines`) it lands on that Settings
+    /// section through the desktop's `settings` deep link.
+    var openDesktop: ((_ settingsPage: String?) -> Void)?
     /// Set by StatusItemHolder — closes and re-shows an open popover.
     /// NSPopover keeps a stale fitting size when the content swaps shape
     /// wholesale (wide<->stacked left it clipped or oversized until a
@@ -234,17 +252,8 @@ final class AppModel: ObservableObject {
     // The bundle on disk was rebuilt since this instance launched (the
     // dev loop, or a manual make-app.sh) — surfaced as "restart to update".
     @Published var appUpdatePending = false
-    /// A newer Infinitus release than this build (About → Updates does
-    /// the check; the popup chip just points there).
-    @Published var appUpdateVersion: String?
-    /// Whatever About's release check last found, newer or not (#121) —
-    /// the phone mirrors this to know when a newer PHONE build is out.
-    @Published var appReleaseLatest: String?
-    /// The one BrewUpdater instance the About pane's button and the
-    /// phone's `POST /app/update` route both drive; set by InfinitusApp.
-    var brewUpdater: BrewUpdater?
     private let launchExecutableDate = AppModel.executableDate()
-    private var swapdSupervisor: EngineSupervisor?
+    private var swapdSupervisor: (any EngineLifecycle)?
     private var refreshTask: Task<Void, Never>?
     private var lastNotifiedActive: Int?
 
@@ -403,9 +412,11 @@ final class AppModel: ObservableObject {
     }()
 
     /// OAuth add / re-login for an engine that signs accounts in through
-    /// a browser (the proxy): the same in-app sign-in chooser as cswap
-    /// (system sheet or per-account private window — never the user's
-    /// default browser), polling the engine until the credential lands.
+    /// a browser and takes the redirect itself (swapd's `add-oauth`, the
+    /// proxy): the native sign-in flow (`TokenFlow`: the system sheet, or
+    /// the default browser's private window where the sheet cannot
+    /// present; the desktop's `signin-begin` path runs it headless),
+    /// waiting on the engine until the credential lands — no code to paste.
     func addOAuthAccount(engineID: String, provider: Provider, relogin: Account? = nil,
                          headless: Bool = false) {
         guard let engine = registry.engine(id: engineID),
@@ -500,7 +511,7 @@ final class AppModel: ObservableObject {
     /// "<name> is back" (and "all accounts are back — reset early") pushes (2026-09-05).
     @Published var pushRevived: Bool { didSet { defaults.set(pushRevived, forKey: "push_revived") } }
     /// Minutes before a reset that the row's countdown goes live and the
-    /// phone's reset alarm fires (#227); mirrored to the phone in FleetPrefs.
+    /// phone's reset alarm fires (#227).
     @Published var reviveLeadMinutes: Int { didSet { defaults.set(reviveLeadMinutes, forKey: "revive_lead_minutes") } }
     var reviveLead: TimeInterval { TimeInterval(reviveLeadMinutes * 60) }
     /// Headroom mode (#616): "off" or "hold"; the thresholds are the
@@ -514,10 +525,6 @@ final class AppModel: ObservableObject {
     @Published var machineNameOverride: String {
         didSet {
             defaults.set(machineNameOverride, forKey: MachineName.overrideKey)
-            guard machineNameOverride != oldValue else { return }
-            // The Bonjour service carries the name — re-advertise.
-            mirrorServer.stop()
-            applyMirrorLAN()
         }
     }
     var machineName: String { MachineName.current(defaults: defaults) }
@@ -525,88 +532,17 @@ final class AppModel: ObservableObject {
     /// and its effects (switch/death/revival flash, the burn breath).
     @Published var menuBarThemed: Bool { didSet { defaults.set(menuBarThemed, forKey: "menubar_themed") } }
     @Published var menuBarEffects: Bool { didSet { defaults.set(menuBarEffects, forKey: "menubar_effects") } }
-    // Phone companion (#9): serve the mirror snapshot over the LAN when
-    // the Sync pane's toggle is on. Off by default — it's an open port.
-    @Published var mirrorLANEnabled: Bool {
-        didSet {
-            defaults.set(mirrorLANEnabled, forKey: "mirror_lan_enabled")
-            applyMirrorLAN()
-        }
-    }
-    /// The pairing token every mirror request must carry (#9 remote
-    /// access). Not a credential to Anthropic — a read key for this
-    /// Mac's snapshot, which is why plain UserDefaults is its home.
-    @Published var mirrorPairToken: String {
-        didSet {
-            defaults.set(mirrorPairToken, forKey: "mirror_pair_token")
-            mirrorServer.token.set(mirrorPairToken)
-        }
-    }
-    /// Publish the quick tunnel's current URL to the infinitus.run
-    /// rendezvous (MirrorRendezvous) so a paired phone finds the new
-    /// address after a restart instead of rescanning. On by default: it
-    /// only ever runs while a tunnel does, and the URL is useless
-    /// without the token.
-    @Published var mirrorRendezvousEnabled: Bool {
-        didSet {
-            defaults.set(mirrorRendezvousEnabled, forKey: "mirror_rendezvous_enabled")
-            if mirrorRendezvousEnabled, let url = publicURL { publishRendezvous(url) }
-        }
-    }
-    /// "Expose through a Cloudflare quick tunnel" — off by default; a
-    /// public hostname, even a throwaway one, is never a default.
-    @Published var mirrorTunnelEnabled: Bool {
-        didSet {
-            defaults.set(mirrorTunnelEnabled, forKey: "mirror_tunnel_enabled")
-            applyQuickTunnel()
-        }
-    }
-    /// The named Cloudflare tunnel (#9, the restart-proof route): the
-    /// user's own hostname, the token in the keychain. Off by default.
-    @Published var mirrorNamedTunnelEnabled: Bool {
-        didSet {
-            defaults.set(mirrorNamedTunnelEnabled, forKey: NamedTunnel.enabledKey)
-            applyNamedTunnel()
-        }
-    }
-    @Published var mirrorNamedTunnelHost: String {
-        didSet {
-            defaults.set(mirrorNamedTunnelHost, forKey: NamedTunnel.hostnameKey)
-            applyNamedTunnel()
-        }
-    }
-    /// The quick tunnel fronting the T3 Code fork server's port (#572):
-    /// off by default like the mirror's. The port is where the fork's
-    /// server bound (it scans up from 3773 when that one is taken, so
-    /// the server sets this pref on startup).
-    @Published var forkTunnelEnabled: Bool {
-        didSet {
-            defaults.set(forkTunnelEnabled, forKey: "fork_tunnel_enabled")
-            applyForkTunnel()
-        }
-    }
+    /// Where the desktop server bound (it scans up from 3773 when that
+    /// one is taken, so the server sets this pref on startup): the CLI's
+    /// credential origin and the pairing QR's LAN link follow it.
     @Published var forkServerPort: Int {
-        didSet {
-            defaults.set(forkServerPort, forKey: "fork_server_port")
-            applyForkTunnel()
-        }
+        didSet { defaults.set(forkServerPort, forKey: "fork_server_port") }
     }
     /// How a fork-server publish is probed before it is followed (#1137);
     /// a stored property so a test can answer without a socket.
     var forkServerProbe: ForkServerProbe.Transport = ForkServerProbe.urlSession
-    /// The fork's stable hostname on the named tunnel (#650): when set
-    /// and the companion's named tunnel is running, the fork rides that
-    /// tunnel as a second ingress rule instead of minting a fresh
-    /// `*.trycloudflare.com` name every relaunch. Empty = quick tunnel.
-    @Published var forkTunnelHostname: String {
-        didSet {
-            defaults.set(forkTunnelHostname, forKey: "fork_tunnel_hostname")
-            applyForkTunnel()
-        }
-    }
     let sync = SettingsSyncModel()
     let historyRecorder = UsageHistoryRecorder()
-    let mirrorExporter = MirrorExporter()
 
     /// The Mac's own popup / pop-out / chat window is a client too (#223
     /// phase 5): while one is open, nothing the user sees here depends on
@@ -634,39 +570,78 @@ final class AppModel: ObservableObject {
             var scopes: [ClientActivity.Scope] = []
             if !visibleSurfaces.subtracting([Self.statsSurface]).isEmpty { scopes += [.sessions, .fleets] }
             if visibleSurfaces.contains(Self.statsSurface) { scopes.append(.stats) }
-            mirrorServer.leases.report(.init(clientId: ClientActivity.localClientId, visible: true, focused: true,
+            leases.report(.init(clientId: ClientActivity.localClientId, visible: true, focused: true,
                                              recentlyInteracted: true, scopes: scopes,
                                              ttlMs: ClientActivity.ttlCapMs))
         } else {
-            mirrorServer.leases.release(clientId: ClientActivity.localClientId)
+            leases.release(clientId: ClientActivity.localClientId)
         }
     }
     /// `uiSurface` id the Stats pane reports while it shows.
     static let statsSurface = "stats"
-    let mirrorServer = MirrorServer()
+    /// Who is watching what (ClientActivity): the local UI, the desktop
+    /// (`client-activity`) and the Stats pane hold scoped leases here.
+    let leases = LeaseTable()
     /// Agent CLI socket (ControlServer.swift); the real model only.
     private(set) lazy var controlServer = ControlServer(model: self)
-    /// The biometric lock (LockModel.swift); the surfaces and the Lock pane read it.
-    private(set) lazy var lock = LockModel(defaults: defaults)
     /// The desktop's CLI credential (#822): stored by `desktop-credential`, read by `desktop-token`.
     private(set) lazy var desktopCredential: DesktopCredential = {
         let credential = DesktopCredential(defaults: defaults)
         credential.log = { [weak self] text in self?.logEvent("desktop", icon: "key", text) }
         return credential
     }()
-    let quickTunnel = QuickTunnel()
-    let namedTunnel = NamedTunnel()
-    let forkTunnel = QuickTunnel(pidKey: "fork_tunnel_pid")
-    /// Live Activity pushes to the phone (APNs), LiveActivityPusher.swift.
-    let liveActivityPusher = LiveActivityPusher()
-
     /// Every app notification: Notification Center here, and the same
-    /// text to any phone that registered an alert token (issue #3).
-    /// Both push channels: the Mac notice (+ Live Activity alert) and the
-    /// phone (#756: the engine's own away-push channels went with cswap;
-    /// swapd's `notify` only reports).
+    /// text to the phones (issue #3; #756: the engine's own away-push
+    /// channels went with cswap; swapd's `notify` only reports).
     func push(_ msg: String) {
         notify(msg)
+    }
+
+    /// The desktop server's HTTP API with the credential it minted for
+    /// this Mac (#822), or nil while none is stored.
+    private var desktopAPI: DesktopAPI? {
+        guard let origin = desktopCredential.origin, let url = URL(string: origin),
+              let token = desktopCredential.token() else { return nil }
+        return DesktopAPI(origin: url, token: token)
+    }
+
+    /// The desktop calls run here, one at a time: `DesktopAPI` blocks a
+    /// thread per request (its transport is synchronous, like the CLI's),
+    /// so it stays off the cooperative pool, as TeamModel does.
+    private let desktopQueue = DispatchQueue(label: "run.infinitus.desktop-api", qos: .utility)
+
+    /// The busy-session count for the battle plan (#1375): the desktop's
+    /// running turns, asked at most once a minute, off the main actor. The
+    /// throttle runs before the keychain read the credential costs.
+    func refreshDesktopActiveThreads() {
+        guard !isPlayground else { return }
+        let now = Date()
+        if let last = desktopActiveThreadsReadAt, now.timeIntervalSince(last) < 60 { return }
+        guard let api = desktopAPI else { return }
+        desktopActiveThreadsReadAt = now
+        desktopQueue.async { [weak self] in
+            guard let count = try? api.runningTurns().count else { return }
+            Task { @MainActor in self?.desktopActiveThreads = count }
+        }
+    }
+
+    /// A line the app says out loud — the one call every banner site makes.
+    ///
+    /// It logs the line as its own event row before pushing it, so the
+    /// desktop shows the same news from `snapshot.events` wherever the
+    /// user actually is (#1032 finished: one notifier per machine). The
+    /// row's kind is the announcement itself, not the observation: `death`
+    /// / `revival` / `limit` rows keep meaning "this is what the fleet
+    /// did", `alert` and `notice` mean "this is what the app would have
+    /// said". Both are outside StatsEvents' vocabulary, so months of
+    /// tallies are untouched.
+    ///
+    /// `urgent` is the difference between a banner that interrupts (every
+    /// account dead, the last one nearly dead, a crash) and one that
+    /// informs (a switch, an account back).
+    func announce(_ body: String, icon: String, urgent: Bool = false) {
+        logEvent(urgent ? "alert" : "notice", icon: icon, body)
+        notify(body)
     }
 
     /// The alias every live session runs on right now — one active
@@ -704,12 +679,35 @@ final class AppModel: ObservableObject {
 
     /// The pass a freshly surfaced AWS-login need starts (rebuildAwsLogins).
     private var awsNeedRefresh: Task<Void, Never>?
-    /// That pass writes the mirror snapshot past the exporter's throttle.
-    private var mirrorExportDue = false
 
+    /// Notification Center — only while no desktop is watching (#1032
+    /// finished: a desktop holding a `fleets` lease shows this news itself
+    /// from `snapshot.events` through its own `notificationMode`, so a
+    /// banner here would be the second one for one event) — then the
+    /// phones through the desktop server and the Infinitus Connect relay
+    /// (#1375; the Mac's own APNs key left with it), best-effort, off the
+    /// main actor. A desktop on this Mac says nothing to a phone away from
+    /// it, so the alert always goes. A desktop without a relay link answers
+    /// 503 and that is silent; any other failure is one Activity-log line,
+    /// never a retry.
     func notify(_ body: String) {
-        Notifier.post(title: "Infinitus", body: body)
-        liveActivityPusher.pushAlert(title: "Infinitus", body: body)
+        if !desktopIsWatching { Notifier.post(title: "Infinitus", body: body) }
+        guard !isPlayground, let api = desktopAPI else { return }
+        desktopQueue.async { [weak self] in
+            do { _ = try api.alert(title: "Infinitus", body: body) } catch {
+                Task { @MainActor in
+                    self?.logEvent("other", icon: "exclamationmark.triangle", "phone alert not sent: \(error)")
+                }
+            }
+        }
+    }
+
+    /// Is some client other than this app's own UI holding a `fleets`
+    /// lease — i.e. a desktop that will show the account news itself?
+    /// The Mac's own popup reports `.fleets` too (`reportLocalActivity`)
+    /// and is not one, hence the exclusion.
+    var desktopIsWatching: Bool {
+        leases.holds(.fleets, excluding: ClientActivity.localClientId)
     }
     /// Seeded with what the triggers remembered before the last relaunch
     /// (#98, #231): the last-alive warning.
@@ -753,21 +751,19 @@ final class AppModel: ObservableObject {
             icon: "")  // the status button wears MenuBarGlyph instead
     }
 
-    /// One-time prefs adoption from the pre-2026-08-30 bundle id
-    /// (io.github.claude-swap.CswapBar.g2). Bundled runs only — the
-    /// unbundled domain is per-executable name and unaffected. Copies,
-    /// never moves: the old domain stays for rollback. Locally-set keys win.
-    /// First launch under a new bundle id copies the previous id's
-    /// prefs domain (the bundled app's UserDefaults.standard IS the
-    /// bundle id): com.huuloc.limitless (2026-08-30 → 2026-09-03), and
-    /// before it the CswapBar g2 domain. Each hop runs once; existing
-    /// keys are never overwritten.
+    /// One-time prefs adoption across the app's bundle-id renames.
+    /// Bundled runs only — the unbundled domain is per-executable name
+    /// and unaffected. Copies, never moves: the old domain stays for
+    /// rollback. Locally-set keys win. First launch under a new bundle
+    /// id copies the previous id's prefs domain (the bundled app's
+    /// UserDefaults.standard IS the bundle id): com.huuloc.limitless
+    /// (2026-08-30 → 2026-09-03), then com.huuloc.infinitus. Each hop
+    /// runs once; existing keys are never overwritten.
     private static func migrateLegacyDefaults() {
         guard AppDefaults.suite == nil else { return }   // a dev suite starts empty
         let std = AppDefaults.standard
         for (domain, marker) in [("com.huuloc.infinitus", "migrated_from_huuloc_id"),
-                                 ("com.huuloc.limitless", "migrated_from_limitless_id"),
-                                 ("io.github.claude-swap.CswapBar.g2", "migrated_from_g2")] {
+                                 ("com.huuloc.limitless", "migrated_from_limitless_id")] {
             guard !std.bool(forKey: marker), let legacy = std.persistentDomain(forName: domain) else { continue }
             for (key, value) in legacy where std.object(forKey: key) == nil {
                 std.set(value, forKey: key)
@@ -838,17 +834,7 @@ final class AppModel: ObservableObject {
         routedVia9Router = routed
         nineRouterEnabled = defaults.object(forKey: "engine_9router_enabled") as? Bool ?? false
         popupSort = Self.popupSort(defaults)
-        mirrorLANEnabled = defaults.object(forKey: "mirror_lan_enabled") as? Bool ?? false
-        mirrorTunnelEnabled = defaults.object(forKey: "mirror_tunnel_enabled") as? Bool ?? false
-        mirrorRendezvousEnabled = defaults.object(forKey: "mirror_rendezvous_enabled") as? Bool ?? true
-        mirrorNamedTunnelEnabled = defaults.bool(forKey: NamedTunnel.enabledKey)
-        mirrorNamedTunnelHost = defaults.string(forKey: NamedTunnel.hostnameKey) ?? ""
-        forkTunnelEnabled = defaults.object(forKey: "fork_tunnel_enabled") as? Bool ?? false
-        forkTunnelHostname = defaults.string(forKey: "fork_tunnel_hostname") ?? ""
-        forkServerPort = defaults.object(forKey: "fork_server_port") as? Int ?? ForkTunnelStatus.defaultPort
-        // One token per install, minted the first time anyone looks.
-        let storedToken = defaults.string(forKey: "mirror_pair_token") ?? ""
-        mirrorPairToken = storedToken.isEmpty ? MirrorPairing.generateToken() : storedToken
+        forkServerPort = defaults.object(forKey: "fork_server_port") as? Int ?? ForkServerProbe.defaultPort
         // Push triggers default ON — they exist because they were asked for.
         pushAllDead = defaults.object(forKey: "push_all_dead") as? Bool ?? true
         pushLastAlive = defaults.object(forKey: "push_last_alive") as? Bool ?? true
@@ -881,9 +867,6 @@ final class AppModel: ObservableObject {
             swapd = nil
             if swapdEnabled { lastError = "Account engine missing — install a current Infinitus release to restore bundled swapd, then relaunch." }
         }
-        // A freshly minted token has to survive the launch that made it:
-        // property initialisation doesn't run `didSet`.
-        if storedToken.isEmpty { defaults.set(mirrorPairToken, forKey: "mirror_pair_token") }
         if !playground { sync.attach(model: self) }
         if let swapd, swapdEnabled || playground { registry.register(SwapdEngine(cli: swapd)) }
         // The proxy is never part of the playground (isolation contract)
@@ -927,11 +910,60 @@ final class AppModel: ObservableObject {
         // backfill or write real App Support caches under
         // Infinitus/stats/ (matches the historyRecorder guard above).
         statsModel.enabled = !isPlayground && !mockMode
-        statsModel.leases = mirrorServer.leases
+        statsModel.leases = leases
+        // Settings › Team (#1313): the loop rides the refresh tick; the
+        // publisher works from StatsModel's scan (#251) and gives the
+        // table back once folded (#499).
+        statsModel.scanFeedsTeam = { [weak self] in self?.team.enabled == true }
+        team.sources = { [weak self] in self?.teamSources() ?? TeamPublisher.Sources(home: NSHomeDirectory(), machine: "Mac") }
+        team.ownsScan = { [weak self] in self?.statsModel.enabled == true }
+        team.scanEntries = { [weak self] in self?.statsModel.scanEntries }
+        team.scanGeneration = { [weak self] in self?.statsModel.scanGeneration ?? 0 }
+        team.scanConsumed = { [weak self] generation in self?.statsModel.dropScanEntries(generation: generation) }
+        team.scanRequested = { [weak self] in self?.statsModel.refresh() }
+        team.desktopCredential = { [weak self] in
+            guard let self, let origin = desktopCredential.origin, let url = URL(string: origin),
+                  let token = desktopCredential.token() else { return nil }
+            return (url, token)
+        }
+        team.onLog = { [weak self] text in self?.logEvent("team", icon: "person.2", text) }
+        team.load()
+    }
+
+    /// Settings › Team (spec §9). Secrets in the keychain, or files when
+    /// INFINITUS_TEAM_DIR redirects the team dir (e2e, a second instance).
+    private(set) lazy var team: TeamModel = {
+        let paths = TeamPaths.standard()
+        let model = TeamModel(paths: paths, makeSecrets: TeamSecretsFactory.make(paths: paths), defaults: defaults)
+        model.enabled = !isPlayground && (!mockMode || ProcessInfo.processInfo.environment["INFINITUS_TEAM_DIR"] != nil)
+        return model
+    }()
+
+    /// What this Mac publishes to its team (spec §7) besides the scan and
+    /// the desktop's threads: each engine's active account with its window
+    /// percentages, every account for the member fleet view (#221), and
+    /// the blockers the pop-out shows (lapsed AWS logins, an all-limited
+    /// fleet). Crash reports stay on this Mac (#1422).
+    func teamSources() -> TeamPublisher.Sources {
+        var s = TeamPublisher.Sources(home: NSHomeDirectory(), machine: machineName)
+        let lastFleets = fleets.compactMap(\.lastFleet)
+        s.fleets = lastFleets.map { fleet in
+            let active = fleet.accounts.first { $0.number == fleet.activeNumber }
+            var windows: [TeamDocs.Window] = []
+            if let w = active?.usage?.fiveHour { windows.append(TeamDocs.Window(label: "5h", pct: Int(w.pct.rounded()))) }
+            if let w = active?.usage?.sevenDay { windows.append(TeamDocs.Window(label: "7d", pct: Int(w.pct.rounded()))) }
+            return TeamDocs.Fleet(engine: fleet.engineID, account: active.map { $0.alias ?? $0.email }, windows: windows)
+        }
+        s.fleetRows = lastFleets.map { TeamDocs.FleetDoc.row($0) }
+        s.blockers = awsLogins.map { "\($0.providerOrAws.loginLabel): \($0.profile)" }
+            + lastFleets.filter { !$0.accounts.isEmpty && $0.activeNumber == nil && $0.nextCandidate == nil }
+                .map { "\($0.engineID): every account limited" }
+        return s
     }
 
     /// App-side cache of our own subprocess output (never an engine
     /// internal file).
+    private var snapshotCacheWrite = WriteIfChanged()
     static let snapshotCacheURL: URL = {
         return AppSupport.root().appendingPathComponent("snapshot-cache.json")
     }()
@@ -975,6 +1007,11 @@ final class AppModel: ObservableObject {
            let engine = Self.enginePrefs[key] {
             let changed = try setEngineEnabled(engine, on: on)
             return (PrefCatalog.pref(entry, in: defaults), changed)
+        }
+        if key == "mock_mode", case .bool(let on) = value {
+            guard mockMode != on else { return (PrefCatalog.pref(entry, in: defaults), false) }
+            mockMode = on   // didSet stores it and relaunches
+            return (PrefCatalog.pref(entry, in: defaults), true)
         }
         let pref = try PrefCatalog.write(value, key: key, to: defaults)
         reloadPrefs()
@@ -1053,12 +1090,10 @@ final class AppModel: ObservableObject {
         set(\.menuBarThemed, defaults.object(forKey: "menubar_themed") as? Bool ?? true)
         set(\.menuBarIconShown, defaults.object(forKey: "menu_bar_enabled") as? Bool ?? true)
         set(\.menuBarEffects, defaults.object(forKey: "menubar_effects") as? Bool ?? true)
-        set(\.mirrorLANEnabled, defaults.object(forKey: "mirror_lan_enabled") as? Bool ?? false)
-        set(\.mirrorTunnelEnabled, defaults.object(forKey: "mirror_tunnel_enabled") as? Bool ?? false)
-        set(\.mirrorRendezvousEnabled, defaults.object(forKey: "mirror_rendezvous_enabled") as? Bool ?? true)
-        set(\.forkTunnelEnabled, defaults.object(forKey: "fork_tunnel_enabled") as? Bool ?? false)
-        set(\.forkServerPort, defaults.object(forKey: "fork_server_port") as? Int ?? ForkTunnelStatus.defaultPort)
-        set(\.forkTunnelHostname, defaults.string(forKey: "fork_tunnel_hostname") ?? "")
+        set(\.forkServerPort, defaults.object(forKey: "fork_server_port") as? Int ?? ForkServerProbe.defaultPort)
+        // #1178: the Devices page's prefs land on their owners; each didSet
+        // writes the same key back.
+        set(\.sync.enabled, defaults.object(forKey: "icloud_sync") as? Bool ?? false)
     }
 
     // MARK: battle plan (#7)
@@ -1092,8 +1127,9 @@ final class AppModel: ObservableObject {
         // fetches and snapped back on each new sample.
         let measuredAt = fresh.map(\.t).max() ?? now
         // The terminal session count is gone (#1041 d6); the desktop's
-        // thread card says whether threads are running, and before any
-        // card has ever arrived the plan is drawn as if busy.
+        // running turns (#1375, refreshDesktopActiveThreads) say whether
+        // threads are running, and before the first answer the plan is
+        // drawn as if busy.
         let plan = WindowPlanner.plan(accounts: states, burnPctPerHour: rates["5h"],
                                       busySessions: desktopActiveThreads ?? 1, now: now,
                                       measuredAt: measuredAt)
@@ -1230,11 +1266,17 @@ final class AppModel: ObservableObject {
     /// (`AccountEngine.ignite`, capability-gated): one tiny request as
     /// account n so its 5h clock starts now; the fleet stays put. Outcome
     /// in the event log; ~1K weekly tokens on n.
-    func ignite(_ number: Int) {
-        guard let primary, canIgnite, !isPlayground, igniting == nil else { return }
+    func ignite(_ number: Int) { ignite(number, on: primary) }
+
+    /// The same ignition on a NAMED fleet: a row's cold chip fires on the
+    /// fleet that row belongs to, which is not always the primary one.
+    func ignite(_ number: Int, on fleet: FleetState?) {
+        guard let fleet, fleet.capabilities.contains(.ignite),
+              !isPlayground, igniting == nil else { return }
         igniting = number
-        let fleet = primary
-        let name = accountName(number)
+        let name = fleet.accounts.first { $0.number == number }
+            .map { $0.alias ?? String($0.email.prefix(while: { $0 != "@" })) }
+            ?? accountName(number)
         logEvent("ignite", icon: "flag.checkered", "igniting \(name)'s 5h window")
         Task { [weak self] in
             var result: IgniteResult?
@@ -1276,61 +1318,8 @@ final class AppModel: ObservableObject {
         if !isPlayground, !mockMode {
             Task.detached(priority: .utility) { [eventStore] in await eventStore.prune() }
         }
-        mirrorServer.log = { [weak self] icon, text in
-            self?.logEvent("other", icon: icon, text)
-        }
-        quickTunnel.log = { [weak self] icon, text in
-            self?.logEvent("other", icon: icon, text)
-        }
-        namedTunnel.log = quickTunnel.log
-        forkTunnel.log = { [weak self] icon, text in
-            self?.logEvent("other", icon: icon, "fork server: " + text)
-        }
-        liveActivityPusher.log = quickTunnel.log
-        mirrorServer.activityTokens.set { [weak self] registration in
-            Task { @MainActor in self?.liveActivityPusher.register(registration) }
-        }
-        mirrorServer.crashes.set { [weak self] report in
-            Task { @MainActor in self?.ingestCrash(report, announce: true) }
-        }
-        mirrorServer.appUpdate.set { [weak self] in
-            guard let self else { return AppUpdate.Reply(outcome: "unavailable", detail: nil) }
-            return await self.triggerAppUpdate()
-        }
-        mirrorServer.accountAction.set { [weak self] request in
-            guard let self else { return AccountAction.Reply(outcome: "failed", detail: "app gone") }
-            return await self.performAccountAction(request)
-        }
-        // UserDefaults is thread-safe; the closure only reads it.
-        nonisolated(unsafe) let prefDefaults = defaults
-        mirrorServer.prefs.set { try PrefCatalog.reply(from: prefDefaults) }
-        mirrorServer.prefs.setWrite { [weak self] write in
-            // The box is synchronous and off-main; the write and its
-            // reload touch published state, so it hops to the main actor
-            // and waits (the session-start box does the same).
-            let done = DispatchSemaphore(value: 0)
-            nonisolated(unsafe) var outcome: Result<PrefCatalog.Pref, Error> =
-                .failure(PrefCatalog.Violation(key: write.key, message: "app gone"))
-            Task { @MainActor in
-                if let self { outcome = Result { try self.setPref(key: write.key, value: write.value).pref } }
-                done.signal()
-            }
-            done.wait()
-            return try outcome.get()
-        }
         crashReports = crashStore.list()
         scanMacCrashReports()
-        quickTunnel.onURL = { [weak self] url in self?.publishRendezvous(url) }
-        // Up or down, the named tunnel decides whether the quick one runs;
-        // its hostname is never published to the rendezvous (`publicURL`).
-        namedTunnel.onConnected = { [weak self] _ in self?.applyQuickTunnel() }
-        // The tunnels can only point at a bound port, which arrives later.
-        // Named first: it ends by applying the quick tunnel, which must see
-        // the named process already running to stay down (#697).
-        mirrorServer.onReady = { [weak self] _ in
-            self?.applyNamedTunnel()
-        }
-        applyMirrorLAN()
         _ = awsLoginRunner
         // The playground gets a socket only where INFINITUS_CONTROL_SOCKET
         // points — never the real app's path.
@@ -1342,6 +1331,7 @@ final class AppModel: ObservableObject {
         guard !registry.engines.isEmpty else { return }
         refreshTask = Task { [weak self] in
             while !Task.isCancelled {
+                await self?.peers.expireSilent()
                 await self?.refreshSnapshot()
                 // Read the pref each pass so an interval change applies on
                 // the next tick without restarting the task.
@@ -1349,73 +1339,6 @@ final class AppModel: ObservableObject {
                 try? await Task.sleep(nanoseconds: UInt64(seconds) * 1_000_000_000)
             }
         }
-    }
-
-    /// `POST /app/update` (#121): the phone's own trigger for this Mac's
-    /// update, reusing the same BrewUpdater the About pane's button
-    /// drives so the two never run two upgrades at once.
-    private func triggerAppUpdate() -> AppUpdate.Reply {
-        guard BrewUpdater.channel != .nested else {
-            return AppUpdate.Reply(outcome: "unavailable", detail: "updates arrive with Infinitus desktop")
-        }
-        guard BrewUpdater.channel != .source else {
-            return AppUpdate.Reply(outcome: "unavailable",
-                                   detail: "this Mac runs a source build — rebuild from the repo")
-        }
-        guard appUpdateVersion != nil else {
-            return AppUpdate.Reply(outcome: "upToDate", detail: nil)
-        }
-        brewUpdater?.upgrade()
-        return AppUpdate.Reply(outcome: "started",
-                               detail: "brew is upgrading Infinitus; the Mac relaunches when it's done")
-    }
-
-    /// Starts or stops the phone companion's LAN listener (#9). Never in
-    /// the playground: it seeds from the real defaults and would
-    /// advertise a second service with the same machine name.
-    private func applyMirrorLAN() {
-        let allowed = exposureAllowed
-        mirrorServer.phoneEnabled = mirrorLANEnabled
-        guard allowed, mirrorLANEnabled else {
-            mirrorServer.stop()
-            quickTunnel.stop()
-            namedTunnel.stop()
-            return
-        }
-        if !mirrorLANEnabled {
-            quickTunnel.stop()
-            namedTunnel.stop()
-        }
-        let payload = mirrorServer.payload
-        Task { [mirrorExporter] in await mirrorExporter.attach(payload: payload) }
-        mirrorServer.start(machineName: machineName,
-                           token: mirrorPairToken)
-        mirrorServer.awsLogin.set(
-            start: { [weak self] request in
-                guard let self else { return AwsLogin.Reply(ok: false, error: "app gone") }
-                let items = await MainActor.run { self.awsLogins }
-                let provider = request.provider ?? AwsLogin.inferProvider(profile: request.profile, items: items)
-                return await self.startAwsLogin(provider: provider, profile: request.profile, pid: request.pid,
-                                                local: request.local ?? false, remote: request.remote)
-            },
-            code: { [weak self] request in
-                guard let self else { return AwsLogin.Reply(ok: false, error: "app gone") }
-                let items = await MainActor.run { self.awsLogins }
-                let provider = request.provider ?? AwsLogin.inferProvider(profile: request.profile, items: items)
-                return await self.submitAwsLoginCode(provider: provider, profile: request.profile, code: request.code)
-            },
-            callback: { [weak self] request in
-                guard let self else { return AwsLogin.Reply(ok: false, error: "app gone") }
-                let items = await MainActor.run { self.awsLogins }
-                let provider = request.provider ?? AwsLogin.inferProvider(profile: request.profile, items: items)
-                return await self.awsLoginRunner.relay(provider: provider, profile: request.profile, url: request.url)
-            })
-        mirrorServer.descriptor.set {
-            MirrorDescriptor.current(machineId: MachineIdentity.current(), label: MachineName.current(),
-                                     appVersion: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "dev")
-        }
-        applyNamedTunnel()  // ends by applying the quick tunnel (#697)
-        applyForkTunnel()
     }
 
     /// Every phone-injected input is logged, per #17 — success or not.
@@ -1443,7 +1366,6 @@ final class AppModel: ObservableObject {
         let fresh = waiting.subtracting(awsAnnouncedRunKeys)
         awsAnnouncedRunKeys.formUnion(waiting)
         if !fresh.isEmpty, !isPlayground, awsNeedRefresh == nil {
-            mirrorExportDue = true
             awsNeedRefresh = Task { [weak self] in
                 await self?.refreshSnapshot()
                 self?.awsNeedRefresh = nil
@@ -1466,6 +1388,8 @@ final class AppModel: ObservableObject {
             return AwsLogin.Reply(ok: state != nil, state: state, error: state == nil ? "no login in flight for \(profile)" : nil)
         }
         let configText = (try? String(contentsOf: AwsLogin.defaultConfigURL(), encoding: .utf8)) ?? ""
+        // A credential_process profile signs in through the login profile it names.
+        let profile = provider == .aws ? AwsLogin.loginProfile(profile: profile, configText: configText) : profile
         var flow: AwsLogin.Flow = local ? .local : provider.flow(profile: profile, configText: configText)
         if remote == true, flow == .relay { flow = .remote }
         let reply = await awsLoginRunner.start(provider: provider, profile: profile, flow: flow)
@@ -1482,6 +1406,12 @@ final class AppModel: ObservableObject {
 
     func startLogin(provider: AwsLogin.Provider, profile: String, pid: Int?, local: Bool) {
         Task { _ = await startAwsLogin(provider: provider, profile: profile, pid: pid, local: local) }
+    }
+
+    func dismissAwsLogin(provider: AwsLogin.Provider = .aws, profile: String) async -> AwsLogin.Reply {
+        let reply = await awsLoginRunner.dismiss(provider: provider, profile: profile)
+        logMirrorInput("🔐", "\(provider.cliName) login for \(profile) dismissed")
+        return reply
     }
 
     func submitAwsLoginCode(provider: AwsLogin.Provider = .aws, profile: String, code: String) async -> AwsLogin.Reply {
@@ -1501,12 +1431,9 @@ final class AppModel: ObservableObject {
         try? crashStore.save(report)
         crashReports = crashStore.list()
         logEvent("other", icon: "💥", "\(report.summary)")
-        if announce, !isPlayground { notify("phone app crashed — \(report.reason)") }
-    }
-
-    func removeCrash(_ id: String) {
-        crashStore.remove(id)
-        crashReports = crashStore.list()
+        if announce, !isPlayground {
+            self.announce("phone app crashed — \(report.reason)", icon: "💥", urgent: true)
+        }
     }
 
     /// This Mac's own crashes: `~/Library/Logs/DiagnosticReports/
@@ -1537,257 +1464,36 @@ final class AppModel: ObservableObject {
     }
 
     /// Guards a fork-server publish that would move the target (#1137): the
-    /// quick tunnel and the CLI's credential origin only follow a port that
-    /// serves `/.well-known/t3/environment`, and only when the port they would
+    /// CLI's credential origin only follows a port that serves
+    /// `/.well-known/t3/environment`, and only when the port it would
     /// leave still does. `ForkServerProbe.verdict` holds the rule; this adds
     /// the work-log line, so a refusal is on the record rather than inferred.
     func acceptsForkServerPublish(port: Int) async -> Bool {
-        let verdict = await ForkServerProbe.verdict(newPort: port, currentPort: forkServerPort,
+        // Only a port a publish stored is a target of this instance's (#1199):
+        // on the default with no pref, what answers there is another
+        // instance's server — the installed app's desktop, on a dev Mac.
+        let published = defaults.object(forKey: "fork_server_port") as? Int
+        let verdict = await ForkServerProbe.verdict(newPort: port, currentPort: published,
                                                    using: forkServerProbe)
         if verdict == .accept { return true }
         logMirrorInput("⚠️", ForkServerProbe.refusalLine(port: port))
         return false
     }
 
-    /// Whether this instance may open a door onto this Mac at all — the
-    /// LAN listener and every tunnel. Mock mode only swaps the CLI —
-    /// sessions/usage in the snapshot are still this machine's real
-    /// ones, so a dev instance must never advertise them on the LAN.
-    /// `mirror_lan_allow_mock` lifts that for a dev COPY of the binary
-    /// only (the shipped process is named Infinitus), so the server can
-    /// be exercised end to end.
-    private var exposureAllowed: Bool {
-        let mockAllowed = mockMode
-            && ProcessInfo.processInfo.processName != "Infinitus"
-            && defaults.bool(forKey: "mirror_lan_allow_mock")
-        return !isPlayground && (!mockMode || mockAllowed)
-    }
-
-    /// Starts or stops the tunnel fronting the fork server's port (#572).
-    /// Independent of the mirror listener — the fork's server binds its
-    /// own port. With a stable hostname on the running named tunnel
-    /// (#650) nothing is started: the companion's connector carries the
-    /// fork as a second ingress rule. Otherwise a quick tunnel; a port
-    /// change restarts it, cloudflared is told the port on its command
-    /// line.
-    private func applyForkTunnel() {
-        let port = forkServerPort
-        if forkTunnel.isRunning, forkTunnel.port.map(Int.init) != port { forkTunnel.stop() }
-        guard forkTunnelEnabled, exposureAllowed, ForkTunnelStatus.isValidPort(port) else {
-            forkTunnel.stop()
-            return
-        }
-        if forkNamedHost != nil {
-            forkTunnel.stop()
-            return
-        }
-        forkTunnel.start(port: UInt16(port))
-    }
-
-    /// The fork's hostname on the named tunnel while that route applies:
-    /// a hostname is set and the companion's named tunnel is configured
-    /// (enabled, with a hostname). The route follows configuration, not
-    /// the connector's life: once chosen, the fork never falls back to a
-    /// quick tunnel — a dead named tunnel reports `stopped` (no throwaway
-    /// name under the phone), and it comes back with the connector. A
-    /// locally-managed tunnel (config.yml) is checked for the ingress
-    /// rule to the fork's port; a dashboard-managed one can't be, so the
-    /// pref is trusted. Logged once per change, not per refresh.
-    private var forkNamedHost: String? {
-        let host = NamedTunnel.normalizeHostname(forkTunnelHostname)
-        let companion = NamedTunnel.normalizeHostname(mirrorNamedTunnelHost)
-        guard !host.isEmpty, mirrorNamedTunnelEnabled, !companion.isEmpty else { return nil }
-        if NamedTunnel.localConfigCovers(companion), !NamedTunnel.localConfigRoutes(host, toPort: forkServerPort) {
-            if forkNamedHostWarned != host {
-                forkNamedHostWarned = host
-                logMirrorInput("⚠️", "~/.cloudflared/config.yml has no ingress for \(host) → :\(forkServerPort); the fork uses a quick tunnel")
-            }
-            return nil
-        }
-        return host
-    }
-    private var forkNamedHostWarned = ""
-
-    /// `status`'s `forkTunnel`.
-    var forkTunnelStatus: ForkTunnelStatus {
-        if let host = forkNamedHost {
-            return ForkTunnelStatus.derive(enabled: forkTunnelEnabled, port: forkServerPort, allowed: exposureAllowed,
-                                           available: forkTunnel.isAvailable, running: namedTunnel.isRunning,
-                                           url: namedTunnel.connected ? "https://\(host)" : nil)
-        }
-        return ForkTunnelStatus.derive(enabled: forkTunnelEnabled, port: forkServerPort, allowed: exposureAllowed,
-                                       available: forkTunnel.isAvailable, running: forkTunnel.isRunning,
-                                       url: forkTunnel.url)
-    }
-
-    /// Starts or stops the Cloudflare quick tunnel (#9). It only ever
-    /// fronts the listener, so it follows the LAN toggle too. While the
-    /// named tunnel's cloudflared runs it stands down (#697: one public
-    /// door is enough — gated on the process, not on `connected`, so a
-    /// relaunch never spawns a quick tunnel just to kill it seconds later
-    /// when the named one registers) and comes back as the fallback the
-    /// moment that process exits (`NamedTunnel.ended`).
-    private func applyQuickTunnel() {
-        if namedTunnel.isRunning {
-            if quickTunnel.isRunning { logEvent("other", icon: "🌐", "quick tunnel stood down: the named tunnel has the door") }
-            quickTunnel.stop()
-            return
-        }
-        guard mirrorTunnelEnabled, mirrorLANEnabled,
-              let port = mirrorServer.port else {
-            quickTunnel.stop()
-            return
-        }
-        quickTunnel.start(port: port)
-    }
-
-    /// Starts or stops the named tunnel (#9): needs the toggle, a
-    /// hostname, a token in the keychain and a bound port. A hostname
-    /// change while running restarts it — the token is per hostname.
-    private func applyNamedTunnel() {
-        let host = NamedTunnel.normalizeHostname(mirrorNamedTunnelHost)
-        if namedTunnel.isRunning, namedTunnel.hostname != host { namedTunnel.stop() }
-        guard mirrorNamedTunnelEnabled, mirrorLANEnabled, mirrorServer.port != nil,
-              !host.isEmpty else {
-            namedTunnel.stop()
-            applyForkTunnel()
-            applyQuickTunnel()
-            return
-        }
-        // A local cloudflared config for this hostname wins over a token:
-        // it was set up on this Mac and carries its own credentials file.
-        if NamedTunnel.localConfigCovers(host) {
-            namedTunnel.start(hostname: host, token: nil)
-        } else if let token = NamedTunnel.token(for: host) {
-            namedTunnel.start(hostname: host, token: token)
-        } else {
-            namedTunnel.stop()
-        }
-        applyForkTunnel()
-        applyQuickTunnel()
-    }
-
-    var namedTunnelTokenPresent: Bool {
-        let host = NamedTunnel.normalizeHostname(mirrorNamedTunnelHost)
-        return !host.isEmpty && NamedTunnel.token(for: host) != nil
-    }
-
-    /// The locally-managed setup is in place for the typed hostname.
-    var namedTunnelLocalConfig: Bool {
-        NamedTunnel.localConfigCovers(NamedTunnel.normalizeHostname(mirrorNamedTunnelHost))
-    }
-
-    /// Stores (or, when empty, forgets) the tunnel token for the current
-    /// hostname and applies it at once.
-    func saveNamedTunnelToken(_ token: String) {
-        let host = NamedTunnel.normalizeHostname(mirrorNamedTunnelHost)
-        guard !host.isEmpty else { return }
-        NamedTunnel.setToken(token, for: host)
-        namedTunnel.stop()
-        applyNamedTunnel()
-    }
-
-    /// A new pairing token: every phone must be re-paired, and the
-    /// running listener picks it up without a restart.
-    func regeneratePairToken() {
-        mirrorPairToken = MirrorPairing.generateToken()
-        logEvent("pairing", icon: "🔑", "phone pairing token regenerated")
-        // A new token is a new rendezvous key; the old entry just expires.
-        if let url = publicURL { publishRendezvous(url) }
-    }
-
-    /// The address the rendezvous carries: the quick tunnel's only. The
-    /// named hostname is stable, so nothing needs a lookup for it, and
-    /// infinitus.run's worker and the phone's `parseLookup` accept
-    /// `*.trycloudflare.com` alone — offering it answered HTTP 400 on
-    /// every named connect (#697).
-    private var publicURL: String? { quickTunnel.url }
-
-    /// PUTs the public tunnel URL under this token's rendezvous key
-    /// (MirrorRendezvous). Best effort: the QR still carries the URL, this
-    /// only spares the rescan after a restart.
-    func publishRendezvous(_ url: String) {
-        guard mirrorRendezvousEnabled else { return }
-        if let target = MirrorRendezvous.url(token: mirrorPairToken) { publish(url, at: target, label: "tunnel address") }
-    }
-
-    private func publish(_ url: String, at target: URL, label: String) {
-        var request = URLRequest(url: target, timeoutInterval: 10)
-        request.httpMethod = "PUT"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = MirrorRendezvous.publishBody(url: url)
-        URLSession.shared.dataTask(with: request) { [weak self] _, response, error in
-            let code = (response as? HTTPURLResponse)?.statusCode ?? 0
-            Task { @MainActor in
-                if code == 204 {
-                    self?.logEvent("other", icon: "mappin", "\(label) published to infinitus.run")
-                } else {
-                    let why = error?.localizedDescription ?? "HTTP \(code)"
-                    self?.logEvent("other", icon: "exclamationmark.triangle", "rendezvous publish failed (\(label)): \(why)")
-                }
-            }
-        }.resume()
-    }
-
-    /// Every way a phone can reach this Mac right now (#9 remote access):
-    /// lan, tailnet, named tunnel, quick tunnel, in that order — the order the single pair QR
-    /// lists them in, and the order the phone tries them in.
-    var pairRoutes: [PairRoute] {
-        guard let port = mirrorServer.port else { return [] }
-        var routes: [PairRoute] = []
-        let addresses = LocalAddresses.ipv4()
-        func route(id: String, title: String, detail: String, endpoint: String) {
-            routes.append(PairRoute(id: id, title: title, detail: detail, endpoint: endpoint))
-        }
-        if let lan = MirrorPairing.lanAddress(in: addresses) {
-            route(id: "lan", title: "On this Wi-Fi",
-                  detail: "Both devices on the same network.",
-                  endpoint: "http://\(lan):\(port)")
-        }
-        if let tailnet = MirrorPairing.tailnetAddress(in: addresses) {
-            route(id: "tailnet", title: "Anywhere via Tailscale",
-                  detail: "The phone needs Tailscale, signed into the same "
-                        + "tailnet. Nothing else to set up — this Mac already "
-                        + "listens on every interface.",
-                  endpoint: "http://\(tailnet):\(port)")
-        }
-        if let named = namedTunnel.endpoint {
-            route(id: "named", title: "Anywhere, your domain",
-                  detail: "Your Cloudflare tunnel hostname — the same every start.",
-                  endpoint: named)
-        }
-        if let tunnel = quickTunnel.url {
-            route(id: "tunnel", title: "Anywhere, no account",
-                  detail: "A random Cloudflare URL that changes every start; "
-                        + "the pairing token is the only lock.",
-                  endpoint: tunnel)
-        }
-        return routes
-    }
-
-    /// The one QR a phone ever needs to scan (#9 pair once, every route):
-    /// every current route's endpoint, in `pairRoutes` order, plus the
-    /// token. Empty until at least one route is up, so the pane can hide
-    /// the QR instead of encoding a useless link.
-    var pairURL: String {
-        let endpoints = pairRoutes.map(\.endpoint)
-        guard !endpoints.isEmpty else { return "" }
-        return MirrorPairing.pairURL(endpoints: endpoints, token: mirrorPairToken)
-    }
-
-    /// `swapd auto --json` under `SWAPD_SUPERVISED=1` (#475): the daemon's
-    /// NDJSON stream, restarted by the supervisor; its state feeds the
-    /// Engines pane and the badge.
+    /// launchd owns the production engine; fixture overrides stay process-local.
     private func startSwapd(binary: String) {
-        let supervisor = EngineSupervisor(
-            binaryPath: binary, arguments: ["auto", "--json"], environmentFlag: "SWAPD_SUPERVISED",
-            onLine: { [weak self] line in
-                Task { @MainActor in self?.consume(line) }
-            },
-            onState: { [weak self] state in
-                Task { @MainActor in self?.swapdState = state }
-            }
-        )
+        let onLine: @Sendable (EventLine) -> Void = { [weak self] line in
+            Task { @MainActor in self?.consume(line) }
+        }
+        let onState: @Sendable (EngineSupervisor.State) -> Void = { [weak self] state in
+            Task { @MainActor in self?.swapdState = state }
+        }
+        let supervisor: any EngineLifecycle
+        if mockMode || ProcessInfo.processInfo.environment["INFINITUS_SWAPD_CLI"] != nil {
+            supervisor = EngineSupervisor(binaryPath: binary, onLine: onLine, onState: onState)
+        } else {
+            supervisor = SwapdLaunchAgent(binaryPath: binary, onLine: onLine, onState: onState)
+        }
         swapdSupervisor = supervisor
         Task { await supervisor.start() }
     }
@@ -1808,6 +1514,12 @@ final class AppModel: ObservableObject {
     /// the durable log until the reason changes (Infi4, 2026-09-11).
     private var lastNoSwitch: String?
 
+    /// When the engine last logged a `switch` row of its own. The display
+    /// -feed diff below announces the switch the desktop shows, and that
+    /// row already is one — so the diff only carries the news when the
+    /// engine was parked (or a person swapped by hand) and logged nothing.
+    private var lastEngineSwitchLog: Date?
+
     private func consume(_ line: EventLine) {
         switch line {
         case .event(let event):
@@ -1821,6 +1533,7 @@ final class AppModel: ObservableObject {
             logEvent(Self.eventKind(event.kind), icon: event.icon, event.summary)
             switch event.kind {
             case "switch":
+                lastEngineSwitchLog = Date()
                 Task { await refreshSnapshot() }  // the snapshot diff posts the notification
             // Logged only (#231). "all-exhausted" arrives on every engine
             // re-probe (~10 min while dead): the latched PushTriggers message
@@ -1946,8 +1659,14 @@ final class AppModel: ObservableObject {
         let bundle = Bundle.main.bundleURL.path
         let oldSwapd = swapdSupervisor
         swapdSupervisor = nil
+        let team = team
+        let keepEngine = swapdEnabled && !mockMode
         Task {
-            await oldSwapd?.stop()
+            if keepEngine { await oldSwapd?.disconnect() }
+            else { await oldSwapd?.stop() }
+            // The team's now.json delete (bounded by TeamModel.quitBound), so
+            // teammates stop seeing this Mac "on" across the relaunch.
+            await team.quit()
             let p = Process()
             p.executableURL = URL(fileURLWithPath: "/bin/sh")
             // Unbundled dev runs are a bare executable — `open` on its
@@ -2004,14 +1723,29 @@ final class AppModel: ObservableObject {
               routed ? "routed via" : "no longer routed via")
     }
 
-    func refreshSnapshot() async {
+    /// One pass at a time (#1310): the timer, a control verb and the
+    /// revival probe all land here, and a request made mid-pass runs once
+    /// more after it instead of alongside it.
+    /// `seeded` is a snapshot an engine already handed over (a flag edit's
+    /// reply, #1481), by engine id: the pass takes it instead of asking
+    /// that engine again, and runs all of its bookkeeping over it. A pass
+    /// coalesced behind another drops nothing — every pass that is not
+    /// seeded asks the engine.
+    func refreshSnapshot(seeded: [String: [EngineFleet]] = [:]) async {
         refreshRouting()
+        await refreshFlight.run { [weak self] in await self?.refreshSnapshotPass(seeded: seeded) }
+    }
+
+    private let refreshFlight = SingleFlight()
+
+    private func refreshSnapshotPass(seeded: [String: [EngineFleet]] = [:]) async {
         let engines = registry.engines
         guard !engines.isEmpty else { return }
         var results: [(id: String, fleets: [EngineFleet]?, error: Error?)] = []
         await withTaskGroup(of: (String, [EngineFleet]?, Error?).self) { group in
             for engine in engines {
                 group.addTask {
+                    if let fleets = seeded[engine.id] { return (engine.id, fleets, nil) }
                     do { return (engine.id, try await engine.snapshot(), nil) }
                     catch { return (engine.id, nil, error) }
                 }
@@ -2041,6 +1775,10 @@ final class AppModel: ObservableObject {
             // observer's body, once per refresh, even for an identical value (#18).
             if engineErrors[r.id] != nil { engineErrors[r.id] = nil }
             engineLastGood[r.id] = Date()
+            // A peer the desktop dropped while this pass awaited its
+            // engines is gone from the registry; its fleets would trip
+            // `state(for:)`. Local engines are never removed.
+            guard registry.engine(id: r.id) != nil else { continue }
             for reported in fleets {
                 let state = registry.state(for: reported)
                 let fleet = reported
@@ -2070,11 +1808,12 @@ final class AppModel: ObservableObject {
                     }
                     if !change.firstLoad, !change.newlyAlive.isEmpty, pushRevived, !isPlayground {
                         if wasAllDead && noneDeadNow {
-                            push("all accounts are back" + (early ? " — Anthropic reset early" : ""))
+                            announce("all accounts are back" + (early ? " — Anthropic reset early" : ""),
+                                     icon: "heart.fill")
                         } else {
                             for n in change.newlyAlive {
                                 let name = fleet.accounts.first { $0.number == n }.map { $0.alias ?? $0.email } ?? "#\(n)"
-                                push("\(name) is back" + (early ? " — reset early" : ""))
+                                announce("\(name) is back" + (early ? " — reset early" : ""), icon: "heart.fill")
                             }
                         }
                     }
@@ -2087,15 +1826,20 @@ final class AppModel: ObservableObject {
         // not one per engine (user 2026-09-02: 429s). Claude fleets only:
         // the budget being spared is Anthropic's, and a Codex login with
         // the same email is a different account with its own window (#899).
+        // `results` fills in completion order, so when two engines hold one
+        // email the donation goes to the richest reading (`richest(with:)`),
+        // never to whichever engine happened to answer first.
         let stamp = Date()
         for engine in engines {
             var byEmail: [String: SharedUsage] = [:]
-            for r in results where r.id != engine.id {
+            // A peer's reading is as old as the desktop's last push and
+            // would only suppress the local engine's own poll.
+            for r in results where r.id != engine.id && !PeerFleets.isPeer(engineID: r.id) {
                 for fleet in r.fleets ?? [] where fleet.provider == .claude {
                     for a in fleet.accounts where a.usageStatus == "ok" {
-                        if let u = a.usage, byEmail[a.email] == nil {
-                            byEmail[a.email] = SharedUsage(usage: u, at: stamp)
-                        }
+                        guard let u = a.usage else { continue }
+                        let offered = SharedUsage(usage: u, at: stamp)
+                        byEmail[a.email] = byEmail[a.email]?.richest(with: offered) ?? offered
                     }
                 }
             }
@@ -2111,7 +1855,11 @@ final class AppModel: ObservableObject {
         }
         if !isPlayground {
             let cache = fleets.compactMap(\.lastFleet)
-            if let data = try? JSONEncoder().encode(cache) {
+            // Sorted keys so two passes over the same state are the same
+            // bytes, and the write is skipped when they are (#1310).
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = .sortedKeys
+            if let data = try? encoder.encode(cache), snapshotCacheWrite.take(data) {
                 try? FileManager.default.createDirectory(
                     at: Self.snapshotCacheURL.deletingLastPathComponent(),
                     withIntermediateDirectories: true)
@@ -2132,10 +1880,10 @@ final class AppModel: ObservableObject {
                                nextCandidate: fleet.nextCandidate,
                                candidateOrder: fleet.candidateOrder,
                                nextRecovery: fleet.nextRecovery)
-        let raw = fleet.raw ?? (try? JSONEncoder().encode(list)) ?? Data()
         let previous = change.previousActive
         let firstLoad = change.firstLoad
         if !isPlayground {
+            refreshDesktopActiveThreads()
             updateBattlePlan(list)
         }
         // Utilization history (todo 2026-09-01): every real snapshot
@@ -2148,53 +1896,10 @@ final class AppModel: ObservableObject {
             Task.detached(priority: .utility) { [historyRecorder] in
                 await historyRecorder.record(accounts: accts, syncEnabled: syncOn)
             }
-            // Fleet mirror (#9 phase 1): lets the mobile companion see
-            // this machine's last snapshot. Throttled inside the actor.
-            // Prefs (#9 phase C1: "Follow Mac") captured here on the
-            // main actor since AppModel's published properties aren't
-            // Sendable-safe to read from the detached task.
-            let prefs = FleetPrefs(
-                themeID: gamification, compactRows: compactRows,
-                popupLayout: popupLayout, burnStyle: burnStyle,
-                introStyle: introStyle, introTitle: introTitle,
-                introSpeed: introSpeed, customThemes: customThemes,
-                sortByHeadroom: popupSort != .engine, popupSort: popupSort.rawValue,
-                popupTextSize: popupTextSize, reviveLeadMinutes: reviveLeadMinutes)
-            // Footer-chip state (#9 phase D2), captured here for the
-            // same main-actor reason as the prefs above.
-            let serviceStatus = ServiceStatusSummary(
-                indicator: ServiceStatusModel.shared.indicator)
-            let engine = engineBadge ?? .stopped
-            let allFleets = fleets.compactMap { $0.lastFleet?.with(capabilities: $0.capabilities) }
-            let forecast = forecast
-            let plan = battlePlan
-            let awsLogins = awsLogins
             statsModel.refreshIfStale()
-            let stats = statsModel.bundle
-            // This Mac's own version, mirrored for the phone's Settings
-            // (#121) — same keys ControlServer.status reads.
-            let info = Bundle.main.infoDictionary ?? [:]
-            let appInfo = AppInfo(
-                version: info["CFBundleShortVersionString"] as? String ?? "dev",
-                sha: info["InfinitusGitSHA"] as? String ?? info["CFBundleVersion"] as? String ?? "dev",
-                updateVersion: appUpdateVersion,
-                updateChannel: BrewUpdater.channel.rawValue,
-                phoneLatest: appReleaseLatest)
-            let mirrorNow = mirrorExportDue
-            mirrorExportDue = false
+            team.refreshIfStale()
             // A living UI keeps its lease; the cap only catches one that died.
             if localUIVisible { reportLocalActivity(visible: true) }
-            Task.detached(priority: .utility) { [mirrorExporter] in
-                await mirrorExporter.record(listJSON: raw, prefs: prefs,
-                                            serviceStatus: serviceStatus,
-                                            engine: engine, fleets: allFleets,
-                                            forecast: forecast, plan: plan,
-                                            awsLogins: awsLogins,
-                                            stats: stats,
-                                            pushesAlerts: self.liveActivityPusher.configured,
-                                            app: appInfo,
-                                            now: mirrorNow)
-            }
         }
         // Death/revive ticks fired inside FleetState.apply.
         // Launch greeting: once the first snapshot renders, the
@@ -2225,7 +1930,16 @@ final class AppModel: ObservableObject {
             lastNotifiedActive = current
             let name = accounts.first(where: { $0.number == current })
                 .map { $0.alias ?? String($0.email.prefix(while: { $0 != "@" })) } ?? "#\(current)"
-            notify("switched to account \(current) (\(name))")
+            let line = "switched to account \(current) (\(name))"
+            // The engine's own `switch` row is already the switch the
+            // desktop shows; a second row here would toast one swap twice.
+            // A parked engine — or a manual swap — logs nothing, and then
+            // this diff is the only witness and carries the news itself.
+            if let logged = lastEngineSwitchLog, Date().timeIntervalSince(logged) < 30 {
+                notify(line)
+            } else {
+                announce(line, icon: "arrow.triangle.2.circlepath")
+            }
         }
         controlServer.heal()
         // Same display-feed vantage as the switch diff above: these
@@ -2236,7 +1950,8 @@ final class AppModel: ObservableObject {
                 number: a.number,
                 name: a.alias ?? String(a.email.prefix(while: { $0 != "@" })),
                 dead: AccountVitals.isDead(a.usage),
-                worstPct: PushTriggers.worstPlanPct(a.usage)) }
+                worstPct: PushTriggers.worstPlanPct(a.usage),
+                spentModel: AccountVitals.spentModel(a.usage)) }
         let pushes = pushTriggers.tick(
             accounts: health,
             flags: .init(allDead: pushAllDead, lastAlive: pushLastAlive),
@@ -2245,7 +1960,12 @@ final class AppModel: ObservableObject {
             persistedPushMemory = pushTriggers.memory
             if let data = try? JSONEncoder().encode(persistedPushMemory) { defaults.set(data, forKey: Self.pushMemoryKey) }
         }
-        for msg in pushes where !isPlayground { push(msg) }
+        // Both lines read "<headline> — <detail>", the shape Notifier splits
+        // into a banner subtitle and body — and the shape `eventToast` splits
+        // into a desktop notification's title and text.
+        for msg in pushes where !isPlayground {
+            announce(msg, icon: "exclamationmark.triangle", urgent: true)
+        }
         if !isPlayground { await sync.tick() }
     }
 
@@ -2274,24 +1994,24 @@ final class AppModel: ObservableObject {
     // Primary-fleet actions (the mac-only panes and the wall call these;
     // the shared rows act on their own FleetState).
     func switchTo(_ number: Int) { primary?.switchTo(number) }
+    /// The confirm alert's Switch: the fleet that staged it, a peer's too.
+    func commitPendingSwitch() {
+        guard let fleet = pendingSwitchFleet, let number = fleet.pendingSwitch else { return }
+        fleet.switchTo(number)
+        pendingSwitch = nil
+    }
     func rotate() { primary?.rotate() }
 
     @Published var reorderError: String?
 
-    /// Apply a drag-reorder: `order` is the account numbers in their new
-    /// top-to-bottom sequence. Optimistically re-sorts the local rows so the
-    /// row lands where it was dropped, then lets the snapshot confirm.
-    /// Quit path: stop the supervised engine BEFORE the process dies, so
-    /// the child never outlives the app holding the mutex (the engine also
-    /// watches its stdin pipe for EOF as the backstop against a hard kill).
+    /// Closing the UI leaves automatic switching with launchd. Only the
+    /// explicit engine toggle disables that service.
     func shutdown() {
-        // The tunnels are child processes: they must not outlive the app.
-        quickTunnel.stop()
-        namedTunnel.stop()
-        forkTunnel.stop()
         let swapdSupervisor = swapdSupervisor
+        let team = team
         Task {
-            await swapdSupervisor?.stop()
+            await swapdSupervisor?.disconnect()
+            await team.quit()
             await MainActor.run {
                 NSApplication.shared.terminate(nil)
             }
@@ -2304,6 +2024,7 @@ final class AppModel: ObservableObject {
         primary?.setRotation(number, enabled: enabled)
     }
     func setPreferred(_ number: Int, _ on: Bool) { primary?.setPreferred(number, on) }
+    func setAutoIgnite(_ number: Int, _ on: Bool) { primary?.setAutoIgnite(number, on) }
     func reorder(_ order: [Int], done: (() -> Void)? = nil) {
         guard let primary else { done?(); return }
         primary.reorder(order, done: done)
@@ -2322,11 +2043,21 @@ extension AppModel: FleetModel {
         guard !TokenFlow.shared.running, !addingFirstAccount else {
             TokenFlow.shared.reopenAuth(); return
         }
+        // The primary's own sign-in when it takes the OAuth redirect
+        // itself (FleetState.startRelogin's rule); the PTY flow otherwise.
+        if let primary, primary.capabilities.contains(.addOAuth) {
+            addOAuthAccount(engineID: primary.engineID, provider: primary.provider, relogin: account)
+            return
+        }
         TokenFlow.shared.start(model: self, relogin: account)
     }
     func addAccount() {
         guard !TokenFlow.shared.running, !addingFirstAccount else {
             TokenFlow.shared.reopenAuth(); return
+        }
+        if let primary, primary.capabilities.contains(.addOAuth) {
+            addOAuthAccount(engineID: primary.engineID, provider: primary.provider)
+            return
         }
         TokenFlow.shared.start(model: self)
     }
@@ -2347,15 +2078,22 @@ extension AppModel: FleetModel {
         }
     }
 
-    /// The footer's update chip opens Settings through the closure the
-    /// status item injects.
-    func openSettings() { showSettings?() }
+    /// The onboarding card's "Engine settings" button: Settings ›
+    /// Infinitus › Engines is the desktop app's (#1177).
+    func openSettings() { openDesktop?("engines") }
 
-    /// The "at this pace" line's click. The Utilization pane is the
-    /// desktop app's now (#654, #774); Settings is what the Mac still opens.
-    func openForecast() {
-        showSettings?()
+    /// The Infinitus desktop app, wherever LaunchServices knows it. Its
+    /// Accounts page runs the first sign-in itself (`swapd add-oauth`,
+    /// #1213), so the popup's setup card hands off to it instead of
+    /// asking for a Claude Code login and a relaunch.
+    static var desktopAppURL: URL? {
+        NSWorkspace.shared.urlForApplication(withBundleIdentifier: "run.infinitus.desktop")
     }
+    var desktopAppInstalled: Bool { Self.desktopAppURL != nil }
+
+    /// The "at this pace" line's click. The Utilization page is the
+    /// desktop app's (#654, #774).
+    func openForecast() { openDesktop?(nil) }
 
     /// The primary fleet's engine decides what the mac-only panes may do.
     var capabilities: EngineCapabilities { primary?.capabilities ?? .all }

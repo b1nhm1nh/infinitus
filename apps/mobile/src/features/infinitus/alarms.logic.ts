@@ -1,9 +1,9 @@
-import { infinitusAccountLabel } from "@t3tools/client-runtime/state/infinitus";
+import { infinitusAccountLabel } from "@infinitus/client-runtime/state/infinitus";
 import type {
   InfinitusAccount,
   InfinitusFleet,
   InfinitusSnapshot,
-} from "@t3tools/contracts/infinitus";
+} from "@infinitus/contracts/infinitus";
 import * as Schema from "effect/Schema";
 
 /** A port of native `FleetAlarms` (#86): the phone's own alarms, planned from
@@ -16,6 +16,16 @@ export interface FleetAlarm {
   readonly fireAt: string | null;
   readonly title: string;
   readonly body: string;
+}
+
+/** One plan as a string, so the bridge can tell an unchanged plan apart
+    before it asks the notification center anything (#1278 finding 8): a
+    snapshot arrives on every server push, and two native round trips per
+    push per Mac were spent to learn that nothing had moved. */
+export function alarmPlanKey(alarms: ReadonlyArray<FleetAlarm>): string {
+  return alarms
+    .map((alarm) => `${alarm.id}|${alarm.fireAt ?? ""}|${alarm.title}|${alarm.body}`)
+    .join("\n");
 }
 
 /** The Mac's revive lead (Settings › Notifications, `revive_lead_minutes`)

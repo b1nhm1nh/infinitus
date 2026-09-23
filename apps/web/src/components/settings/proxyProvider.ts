@@ -1,12 +1,24 @@
-import type { ProviderInstanceEnvironmentVariable } from "@t3tools/contracts";
+import type {
+  CustomModelSetting,
+  ProviderInstanceEnvironmentVariable,
+  ProviderOptionDescriptor,
+} from "@infinitus/contracts";
+import { createModelCapabilities } from "@infinitus/shared/model";
 
 /**
- * Fork: "Route through a proxy" on the Claude Config step of the add-instance
- * wizard. A proxy instance is an ordinary Claude instance whose environment
- * carries ANTHROPIC_BASE_URL / ANTHROPIC_AUTH_TOKEN and the
- * ANTHROPIC_DEFAULT_*_MODEL slots, with its own CLAUDE_CONFIG_DIR so the
- * subscription login in ~/.claude is left alone.
+ * Fork: "Route through a proxy" on the Config step of the add-instance wizard.
+ * A proxy instance is an ordinary instance of its driver:
+ *
+ * - Claude: the environment carries ANTHROPIC_BASE_URL / ANTHROPIC_AUTH_TOKEN
+ *   and the ANTHROPIC_DEFAULT_*_MODEL slots, with its own CLAUDE_CONFIG_DIR so
+ *   the subscription login in ~/.claude is left alone.
+ * - Pi: the environment carries PI_PROXY_BASE_URL / PI_PROXY_API_KEY and the
+ *   picked models are `proxy/<id>` custom models; the server writes the
+ *   `models.json` Pi reads into the instance's own config dir
+ *   (`apps/server/src/provider/Layers/piProxyHome.ts`).
  */
+export type ProxyDriver = "claude" | "pi";
+
 export const PROXY_PRESETS = [
   { id: "9router", label: "9Router", baseUrl: "http://127.0.0.1:20128" },
   { id: "cliproxyapi", label: "CLIProxyAPI", baseUrl: "http://127.0.0.1:8317" },
@@ -72,8 +84,16 @@ export function validateProxyDraft(draft: ProxyDraft): string | null {
   return null;
 }
 
-function defaultProxyHomePath(instanceId: string): string {
-  return `~/.claude-proxy/${instanceId}`;
+function defaultProxyHomePath(driver: ProxyDriver, instanceId: string): string {
+  return `~/.${driver}-proxy/${instanceId}`;
+}
+
+/** Pi's own provider id for the proxy; the server keys `models.json` on it. */
+const PI_PROXY_PROVIDER = "proxy";
+
+/** Pi reads `<base>/v1` from models.json, so the URL is stored as typed, minus trailing slashes. */
+function proxyPiBaseUrl(baseUrl: string): string {
+  return baseUrl.trim().replace(/\/+$/, "");
 }
 
 /** The slug of a `customModels` entry, which is a bare string or `{slug}`. */
@@ -87,43 +107,123 @@ function customModelSlug(entry: unknown): string | null {
 }
 
 /**
+ * The descriptors a picked proxy model is stored with. A custom model entry
+ * without capabilities gets the Claude driver's empty default, which leaves
+ * the composer with no reasoning control at all; writing Claude's own effort
+ * descriptor makes the control appear without editing every model by hand.
+ * Custom entries carry no runtime effort map, so the chosen value reaches the
+ * proxy verbatim as `output_config.effort`. Thinking is a Claude Code setting
+ * a proxy upstream need not honour, so it stays off the entry.
+ *
+ * Context window is here because a proxy is the one place the choice cannot be
+ * inferred: the `[1m]` suffix that buys the CLI its 1M window is Anthropic's
+ * wire syntax a proxy answers 400 to (#1088), so the adapter sends the
+ * long-context beta header instead — but only when the selection resolves 1M,
+ * which needs this descriptor to exist. It defaults to 200k: which upstream a
+ * proxy slug reaches is the router's business, and a model that cannot serve
+ * 1M should not be asked for it by default.
+ */
+const PROXY_MODEL_OPTION_DESCRIPTORS = [
+  {
+    id: "effort",
+    label: "Reasoning",
+    type: "select",
+    options: [
+      { id: "low", label: "Low" },
+      { id: "medium", label: "Medium" },
+      { id: "high", label: "High", isDefault: true },
+      { id: "xhigh", label: "Extra High" },
+      { id: "max", label: "Max" },
+    ],
+  },
+  { id: "fastMode", label: "Fast Mode", type: "boolean" },
+  {
+    id: "contextWindow",
+    label: "Context Window",
+    type: "select",
+    options: [
+      { id: "200k", label: "200k", isDefault: true },
+      { id: "1m", label: "1M" },
+    ],
+  },
+] as const satisfies ReadonlyArray<ProviderOptionDescriptor>;
+
+/**
  * Fold the draft into the instance being created: env vars for the proxy,
  * a dedicated CLAUDE_CONFIG_DIR unless one was typed, and the picker models
  * appended to `customModels`. A disabled draft leaves everything untouched.
  */
+/** Whether the instance routes Claude through a proxy, which the advisor tool does not cross (#1232). */
+export function hasAnthropicBaseUrl(
+  environment: ReadonlyArray<ProviderInstanceEnvironmentVariable> | undefined,
+): boolean {
+  return (environment ?? []).some(
+    (variable) => variable.name === "ANTHROPIC_BASE_URL" && variable.value.trim().length > 0,
+  );
+}
+
+export const PROXY_ADVISOR_NOTE =
+  "This instance routes through a proxy, which does not pass the advisor tool through.";
+
 export function applyProxyDraft(
   draft: ProxyDraft,
   instanceId: string,
   config: Readonly<Record<string, unknown>>,
+  driver: ProxyDriver = "claude",
 ): {
   readonly config: Record<string, unknown>;
   readonly environment: ReadonlyArray<ProviderInstanceEnvironmentVariable> | undefined;
 } {
   if (!draft.enabled) return { config: { ...config }, environment: undefined };
-  const environment: ProviderInstanceEnvironmentVariable[] = [
-    { name: "ANTHROPIC_BASE_URL", value: proxyAnthropicBaseUrl(draft.baseUrl), sensitive: false },
-    { name: "ANTHROPIC_AUTH_TOKEN", value: draft.apiKey.trim(), sensitive: true },
-  ];
-  for (const slot of PROXY_MODEL_SLOTS) {
-    const model = draft.slots[slot.key].trim();
-    if (model.length > 0) environment.push({ name: slot.variable, value: model, sensitive: false });
+  const environment: ProviderInstanceEnvironmentVariable[] =
+    driver === "pi"
+      ? [
+          { name: "PI_PROXY_BASE_URL", value: proxyPiBaseUrl(draft.baseUrl), sensitive: false },
+          { name: "PI_PROXY_API_KEY", value: draft.apiKey.trim(), sensitive: true },
+        ]
+      : [
+          {
+            name: "ANTHROPIC_BASE_URL",
+            value: proxyAnthropicBaseUrl(draft.baseUrl),
+            sensitive: false,
+          },
+          { name: "ANTHROPIC_AUTH_TOKEN", value: draft.apiKey.trim(), sensitive: true },
+        ];
+  if (driver === "claude") {
+    for (const slot of PROXY_MODEL_SLOTS) {
+      const model = draft.slots[slot.key].trim();
+      if (model.length > 0)
+        environment.push({ name: slot.variable, value: model, sensitive: false });
+    }
   }
   const typedHome = typeof config.homePath === "string" ? config.homePath.trim() : "";
   const existingModels = Array.isArray(config.customModels) ? config.customModels : [];
   const taken = new Set(
     existingModels.map((entry) => customModelSlug(entry)).filter((slug) => slug !== null),
   );
-  const added: string[] = [];
+  const added: CustomModelSetting[] = [];
   for (const model of draft.pickerModels) {
-    const slug = model.trim();
-    if (slug.length === 0 || taken.has(slug)) continue;
+    const trimmed = model.trim();
+    if (trimmed.length === 0) continue;
+    // Pi models are `provider/model`; the proxy is one provider in its models.json.
+    const slug = driver === "pi" ? `${PI_PROXY_PROVIDER}/${trimmed}` : trimmed;
+    if (taken.has(slug)) continue;
     taken.add(slug);
-    added.push(slug);
+    added.push(
+      driver === "pi"
+        ? slug
+        : {
+            slug,
+            capabilities: createModelCapabilities({
+              optionDescriptors: PROXY_MODEL_OPTION_DESCRIPTORS,
+            }),
+          },
+    );
   }
   return {
     config: {
       ...config,
-      homePath: typedHome.length > 0 ? typedHome : defaultProxyHomePath(instanceId),
+      homePath: typedHome.length > 0 ? typedHome : defaultProxyHomePath(driver, instanceId),
       ...(added.length > 0 ? { customModels: [...existingModels, ...added] } : {}),
     },
     environment,

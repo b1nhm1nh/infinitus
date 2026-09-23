@@ -1,5 +1,5 @@
-import type { InfinitusSnapshot } from "@t3tools/contracts/infinitus";
-import type { PairingApprovalRequest } from "@t3tools/contracts/infinitusPairing";
+import type { InfinitusSnapshot } from "@infinitus/contracts/infinitus";
+import type { PairingApprovalRequest } from "@infinitus/contracts/infinitusPairing";
 import * as DateTime from "effect/DateTime";
 import { act } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
@@ -212,7 +212,7 @@ describe("InfinitusEventToasts — pairing requests (#710)", () => {
     expect(`${toast.title} ${toast.description}`).not.toContain("AB12");
     expect(`${toast.title} ${toast.description}`).not.toContain("Approve");
     toast.actionProps.onClick();
-    expect(testState.navigate).toHaveBeenCalledWith({ to: "/settings/infinitus/devices" });
+    expect(testState.navigate).toHaveBeenCalledWith({ to: "/settings/devices" });
 
     await deliverPairing(renderer, pending(pairingRequest("req-1")));
     expect(testState.addToast).toHaveBeenCalledTimes(1);

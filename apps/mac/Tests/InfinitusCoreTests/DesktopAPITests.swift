@@ -122,6 +122,25 @@ final class DesktopAPITests: XCTestCase {
         XCTAssertEqual(log.calls[1].body, "{\"threadId\":\"t2\"}")
     }
 
+    func testRunningTurnsAndAlertRideTheInfinitusRoutes() throws {
+        // #1375: the busy-session count and the phone alert, both over the
+        // desktop credential; a desktop without a relay link answers 503
+        // to the alert and that reads as nothing to push.
+        let log = Log()
+        let a = api([(200, #"[{"threadId":"t1","turnId":"u1"},{"threadId":"t2","turnId":"u2"}]"#),
+                     (200, #"{"deliveries":2}"#),
+                     (503, #"{"_tag":"InfinitusAlertRelayUnlinked"}"#)], log: log)
+        XCTAssertEqual(try a.runningTurns().map(\.threadId), ["t1", "t2"])
+        XCTAssertEqual(try a.alert(title: "Infinitus", body: "switched to account 2 (work)"), DesktopAPI.AlertResult(deliveries: 2))
+        XCTAssertNil(try a.alert(title: "Infinitus", body: "all accounts are back"))
+        XCTAssertEqual(log.calls.map(\.url), ["http://127.0.0.1:3773/api/infinitus/running-turns",
+                                              "http://127.0.0.1:3773/api/infinitus/alert",
+                                              "http://127.0.0.1:3773/api/infinitus/alert"])
+        XCTAssertEqual(log.calls[1].method, "POST")
+        XCTAssertEqual(log.calls[1].body, #"{"body":"switched to account 2 (work)","title":"Infinitus"}"#)
+        XCTAssertEqual(log.calls[1].headers["Authorization"], "Bearer tok-secret-1234")
+    }
+
     func testRenameDispatchesTheSameMetadataCommandAsTheUI() throws {
         let log = Log()
         let a = api([(200, "{\"sequence\":43}")], log: log)
@@ -197,6 +216,44 @@ final class DesktopAPITests: XCTestCase {
         XCTAssertEqual(interrupt["type"], .string("thread.turn.interrupt"))
         XCTAssertEqual(interrupt["turnId"], .string("u1"))
         XCTAssertNil(DesktopRows.turnInterrupt(threadId: "t1", turnId: nil, now: now, id: ids)["turnId"])
+    }
+
+    /// #1315: the model `thread new` creates on — `--model` first, then what
+    /// the desktop resolved for the project, then the project row's own
+    /// default — and the read behind it.
+    func testModelSelectionTakesTheResolvedDefaultThenTheRowAndAnExplicitModel() throws {
+        let bare = DesktopAPI.Project(id: "p1", title: "Bare", workspaceRoot: "/w", defaultModelSelection: .null)
+        let legacy = DesktopAPI.Project(id: "p2", title: "Legacy", workspaceRoot: "/w",
+                                        defaultModelSelection: .object(["provider": .string("claude"), "model": .string("opus")]))
+        let resolved: JSONValue = .object(["instanceId": .string("claude"), "model": .string("sonnet"), "options": .object([:])])
+        let resolve = { (option: String?, project: DesktopAPI.Project, resolved: JSONValue?) in
+            try DesktopRows.modelSelection(option: option, project: project, resolved: resolved)
+        }
+        XCTAssertEqual(try resolve(nil, legacy, resolved), resolved, "the desktop's answer wins: its override outranks the row")
+        XCTAssertEqual(try resolve(nil, bare, resolved), resolved)
+        XCTAssertEqual(try resolve(nil, legacy, nil), legacy.defaultModelSelection, "an older desktop leaves the row")
+        XCTAssertEqual(try resolve("codex/gpt-5", bare, nil), .object(["instanceId": .string("codex"), "model": .string("gpt-5")]))
+        XCTAssertEqual(try resolve("haiku", legacy, nil), .object(["instanceId": .string("claude"), "model": .string("haiku")]),
+                       "a bare model takes the default's instance, a legacy provider slug included")
+        XCTAssertEqual(try resolve("haiku", bare, resolved), .object(["instanceId": .string("claude"), "model": .string("haiku")]),
+                       "without its options")
+        XCTAssertThrowsError(try resolve(nil, bare, nil)) { error in
+            XCTAssertEqual((error as? DesktopRows.NoModel)?.message,
+                           "no default model on project Bare or the environment; set one in Settings › General (scope: Bare or All projects), or pass --model")
+        }
+        XCTAssertThrowsError(try resolve("haiku", bare, nil)) { error in
+            XCTAssertEqual((error as? DesktopRows.NoModel)?.message,
+                           "no default model on project Bare or the environment names an instance for --model haiku; pass --model <instanceId>/haiku")
+        }
+        XCTAssertThrowsError(try resolve("/haiku", bare, resolved))
+
+        let log = Log()
+        let a = api([(404, "not found"), (200, "{\"defaultModelSelection\":null}"),
+                     (200, "{\"defaultModelSelection\":{\"instanceId\":\"claude\",\"model\":\"sonnet\"}}")], log: log)
+        XCTAssertNil(try a.threadDefaults(projectId: "p1"), "an older desktop has no route")
+        XCTAssertNil(try a.threadDefaults(projectId: "p1"), "nothing set anywhere")
+        XCTAssertEqual(try a.threadDefaults(projectId: "p 1"), .object(["instanceId": .string("claude"), "model": .string("sonnet")]))
+        XCTAssertEqual(log.calls.map(\.url).last, "http://127.0.0.1:3773/api/infinitus/thread-defaults?projectId=p%201")
     }
 
     func testTitleMaskAndStatusList() {

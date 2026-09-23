@@ -8,7 +8,7 @@ import {
   ProviderDriverKind,
   type EnvironmentId,
   type ProviderInstanceConfig,
-} from "@t3tools/contracts";
+} from "@infinitus/contracts";
 
 import { useEnvironmentSettings, useUpdateEnvironmentSettings } from "../../hooks/useSettings";
 import { cn } from "../../lib/utils";
@@ -21,6 +21,7 @@ import { Input } from "../ui/input";
 import { RadioGroup } from "../ui/radio-group";
 import { toastManager } from "../ui/toast";
 import { DRIVER_OPTION_BY_VALUE, DRIVER_OPTIONS } from "./providerDriverMeta";
+import { ProviderAccentColorPicker } from "./ProviderAccentColorPicker";
 import { ProviderSettingsForm, deriveProviderSettingsFields } from "./ProviderSettingsForm";
 import { WizardPanel, WizardPopup, WizardHeader, WizardFooter } from "../ui/wizard";
 import {
@@ -33,8 +34,10 @@ import { ProxyProviderFields } from "./ProxyProviderFields";
 import {
   applyProxyDraft,
   EMPTY_PROXY_DRAFT,
+  PROXY_ADVISOR_NOTE,
   validateProxyDraft,
   type ProxyDraft,
+  type ProxyDriver,
 } from "./proxyProvider";
 
 const PROVIDER_ACCENT_SWATCHES = [
@@ -51,7 +54,7 @@ const PROVIDER_ACCENT_SWATCHES = [
  * The full id is formed by prefixing the driver slug — e.g. label "Work" on
  * driver "codex" becomes `codex_work`. Output is trimmed to 48 chars so the
  * final composed id stays under the 64-char slug cap enforced by
- * `ProviderInstanceId` in `@t3tools/contracts`.
+ * `ProviderInstanceId` in `@infinitus/contracts`.
  */
 function slugifyLabel(value: string): string {
   return value
@@ -70,6 +73,7 @@ function deriveInstanceId(driver: ProviderDriverKind, label: string): string {
 const INSTANCE_ID_PATTERN = /^[a-zA-Z][a-zA-Z0-9_-]*$/;
 const DEFAULT_DRIVER_KIND = ProviderDriverKind.make("codex");
 const CLAUDE_DRIVER_KIND = ProviderDriverKind.make("claudeAgent");
+const PI_DRIVER_KIND = ProviderDriverKind.make("pi");
 const DEFAULT_DRIVER_OPTION = DRIVER_OPTIONS[0]!;
 const EMPTY_CONFIG_DRAFT: Record<string, unknown> = {};
 interface ComingSoonDriverOption {
@@ -140,7 +144,7 @@ export function AddProviderInstanceDialog({
   // Driver-specific config drafts keyed by driver so toggling between drivers
   // during the same dialog session does not lose in-progress input.
   const [configByDriver, setConfigByDriver] = useState<Record<string, Record<string, unknown>>>({});
-  // Fork: "Route through a proxy" on the Claude Config step.
+  // Fork: "Route through a proxy" on the Claude and Pi Config steps.
   const [proxyDraft, setProxyDraft] = useState<ProxyDraft>(EMPTY_PROXY_DRAFT);
   // Errors are suppressed until the user has tried to submit once. After that
   // they update live so fixing the problem clears the message in place.
@@ -159,7 +163,12 @@ export function AddProviderInstanceDialog({
   );
   const instanceIdError = validateInstanceId(instanceId, existingIds);
   const isClaude = driver === CLAUDE_DRIVER_KIND;
-  const proxyError = isClaude ? validateProxyDraft(proxyDraft) : null;
+  const proxyDriver: ProxyDriver | null = isClaude
+    ? "claude"
+    : driver === PI_DRIVER_KIND
+      ? "pi"
+      : null;
+  const proxyError = proxyDriver ? validateProxyDraft(proxyDraft) : null;
   const showInstanceIdError = hasAttemptedSubmit && instanceIdError !== null;
   const previewLabel = label.trim() || `${driverOption.label} Workspace`;
   const wizardStepSummaries = [driverOption.label, previewLabel, null] as const;
@@ -197,8 +206,8 @@ export function AddProviderInstanceDialog({
     if (instanceIdError !== null || proxyError !== null) return;
 
     const draftConfig = configByDriver[driver] ?? {};
-    const applied = isClaude
-      ? applyProxyDraft(proxyDraft, instanceId, draftConfig)
+    const applied = proxyDriver
+      ? applyProxyDraft(proxyDraft, instanceId, draftConfig, proxyDriver)
       : { config: draftConfig, environment: undefined };
     const config = applied.config;
     const hasConfig = Object.keys(config).length > 0;
@@ -355,12 +364,11 @@ export function AddProviderInstanceDialog({
           <div className={cn("grid gap-2", wizardStep !== 1 && "hidden")}>
             <span className="text-xs font-medium text-foreground">Accent color</span>
             <div className="flex min-w-0 flex-wrap items-center gap-2">
-              <input
-                type="color"
-                value={normalizeProviderAccentColor(accentColor) ?? PROVIDER_ACCENT_SWATCHES[0]}
-                onChange={(event) => setAccentColor(event.target.value)}
-                aria-label="Provider instance accent color"
-                className="h-8 w-10 cursor-pointer rounded-xl border border-input bg-background p-0.5"
+              <ProviderAccentColorPicker
+                displayName={label || driverOption.label}
+                value={accentColor || undefined}
+                onCommit={setAccentColor}
+                layout="inline"
               />
               <div className="flex flex-wrap gap-1.5">
                 {PROVIDER_ACCENT_SWATCHES.map((swatch) => {
@@ -386,8 +394,7 @@ export function AddProviderInstanceDialog({
                 <Button
                   type="button"
                   size="xs"
-                  variant="ghost"
-                  className="text-muted-foreground"
+                  variant="ghost-muted"
                   onClick={() => setAccentColor("")}
                 >
                   Clear
@@ -401,8 +408,9 @@ export function AddProviderInstanceDialog({
 
           {driverSettingsFields.length > 0 ? (
             <div className={cn("grid gap-4", wizardStep !== 2 && "hidden")}>
-              {isClaude ? (
+              {proxyDriver ? (
                 <ProxyProviderFields
+                  driver={proxyDriver}
                   environmentId={environmentId}
                   draft={proxyDraft}
                   error={hasAttemptedSubmit ? proxyError : null}
@@ -416,6 +424,9 @@ export function AddProviderInstanceDialog({
                 variant="dialog"
                 onChange={setConfigDraft}
               />
+              {isClaude && proxyDraft.enabled ? (
+                <p className="text-xs text-muted-foreground">{PROXY_ADVISOR_NOTE}</p>
+              ) : null}
             </div>
           ) : wizardStep === 2 ? (
             <div className="grid gap-2">

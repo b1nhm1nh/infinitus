@@ -1,10 +1,10 @@
-import type { AssistantCitation } from "@t3tools/contracts";
-import { collectAssistantCitations } from "@t3tools/shared/assistantCitations";
-import { collectComposerContextReferences } from "@t3tools/shared/composerContextReferences";
+import type { AssistantCitation } from "@infinitus/contracts";
+import { collectAssistantCitations } from "@infinitus/shared/assistantCitations";
+import { collectComposerContextReferences } from "@infinitus/shared/composerContextReferences";
 import {
   collectComposerInlineTokens,
   type ComposerInlineToken,
-} from "@t3tools/shared/composerInlineTokens";
+} from "@infinitus/shared/composerInlineTokens";
 
 export type ComposerPromptSegment =
   | {
@@ -19,6 +19,7 @@ export type ComposerPromptSegment =
   | {
       type: "skill";
       name: string;
+      source: string;
     }
   | {
       type: "citation";
@@ -127,7 +128,7 @@ function splitPromptTextIntoComposerSegments(text: string): ComposerPromptSegmen
         source: match.source,
       });
     } else {
-      segments.push({ type: "skill", name: match.value });
+      segments.push({ type: "skill", name: match.value, source: match.source });
     }
 
     cursor = match.end;

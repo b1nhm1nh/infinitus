@@ -7,11 +7,12 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
 import * as Electron from "electron";
-import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
+import { HostProcessPlatform } from "@infinitus/shared/hostProcess";
 
 import * as DesktopEarlyElectronStartup from "./DesktopEarlyElectronStartup.ts";
 import { resolveDesktopAppBranding } from "./DesktopEnvironment.ts";
 import { renderUrlHandlerDesktopEntry } from "./DesktopLinuxUrlHandler.ts";
+import { resolveEarlyWebAuthnKeychainAccessGroup } from "./DesktopWebAuthn.ts";
 import * as ElectronProtocol from "../electron/ElectronProtocol.ts";
 import { deepLinkIntake } from "../infinitus/InfinitusDeepLinks.ts";
 
@@ -47,7 +48,7 @@ export class DesktopPreReadyElectronOptions extends Context.Service<
     readonly linux: DesktopEarlyElectronStartup.EarlyLinuxElectronOptions | null;
     readonly linuxPasswordStoreCommandLine: string | null;
   }
->()("@t3tools/desktop/app/DesktopPreReadyPlatform/DesktopPreReadyElectronOptions") {}
+>()("@infinitus/desktop/app/DesktopPreReadyPlatform/DesktopPreReadyElectronOptions") {}
 
 /** @public Service construction is part of the canonical Effect module API. */
 export const make = Effect.gen(function* () {
@@ -90,6 +91,20 @@ export const make = Effect.gen(function* () {
       Electron.app.commandLine.appendSwitch("class", linux.linuxWmClass);
       if (linux.passwordStore !== null && linuxPasswordStoreCommandLine === null) {
         Electron.app.commandLine.appendSwitch("password-store", linux.passwordStore);
+      }
+    }
+
+    // Touch ID passkeys for the preview browser. Electron only accepts this
+    // before `ready`, and only with the group the bundle was signed for.
+    if (platform === "darwin") {
+      const keychainAccessGroup = resolveEarlyWebAuthnKeychainAccessGroup({
+        isPackaged: Electron.app.isPackaged,
+        appPath: Electron.app.getAppPath(),
+        joinPath: NodePath.join,
+        readFileString: (path) => NodeFS.readFileSync(path, "utf8"),
+      });
+      if (keychainAccessGroup !== null) {
+        Electron.app.configureWebAuthn({ touchID: { keychainAccessGroup } });
       }
     }
 

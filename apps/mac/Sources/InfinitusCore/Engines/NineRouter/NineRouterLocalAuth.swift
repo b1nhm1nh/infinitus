@@ -1,4 +1,5 @@
 import Foundation
+import Crypto
 
 /// Local authentication helper for 9Router (decolua/9router).
 /// On the local machine, 9Router generates a machine ID and a CLI secret under its data directory:
@@ -6,6 +7,20 @@ import Foundation
 ///   macOS/Linux: ~/.9router/ (machine-id, auth\cli-secret)
 /// The loopback CLI token is: SHA256(machineId + "9r-cli-auth" + cliSecret).prefix(16).
 /// Sending header `x-9r-cli-token: <token>` bypasses dashboard login prompts for local requests.
+
+/// SHA256 hex digest. `Crypto.SHA256` returns raw bytes; the loopback
+/// token wants the hex form (`SHA256(input).prefix(16)` of the hex).
+private enum SHA256 {
+    static func hex(_ bytes: [UInt8]) -> String {
+        let digits = Array("0123456789abcdef")
+        var out = ""
+        for byte in Crypto.SHA256.hash(data: bytes) {
+            out.append(digits[Int(byte >> 4)]); out.append(digits[Int(byte & 0x0f)])
+        }
+        return out
+    }
+}
+
 public enum NineRouterLocalAuth {
     public static func dataDir() -> URL {
         #if os(Windows)

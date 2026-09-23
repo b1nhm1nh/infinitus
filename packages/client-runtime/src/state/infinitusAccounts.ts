@@ -1,10 +1,10 @@
-import type { ExecutionEnvironmentCapabilities } from "@t3tools/contracts";
+import type { ExecutionEnvironmentCapabilities } from "@infinitus/contracts";
 import type {
   InfinitusAccount,
   InfinitusAwsLogin,
   InfinitusFleet,
   InfinitusSnapshot,
-} from "@t3tools/contracts/infinitus";
+} from "@infinitus/contracts/infinitus";
 import * as DateTime from "effect/DateTime";
 import * as Schema from "effect/Schema";
 
@@ -18,7 +18,14 @@ import { infinitusAccountLabel } from "./infinitus.ts";
  */
 
 /** What a row's buttons can ask the control socket to do. */
-export type AccountAction = "switch" | "hold" | "unhold" | "prefer" | "rename";
+export type AccountAction =
+  | "switch"
+  | "hold"
+  | "unhold"
+  | "prefer"
+  | "autoIgnite"
+  | "rename"
+  | "remove";
 
 /** One usage window drawn as a bar. `countdown` is the engine's own
     human string ("2h 14m"), absent on a window that has not started. */
@@ -42,13 +49,17 @@ export interface AccountRowModel {
   readonly active: boolean;
   readonly next: boolean;
   readonly preferred: boolean;
+  /** Kept warm: the engine restarts this account's 5h window whenever it
+      has gone cold, so a switch onto it lands on a running clock. */
+  readonly autoIgnite: boolean;
   readonly held: boolean;
   readonly windows: ReadonlyArray<UsageWindowBar>;
   readonly scoped: ReadonlyArray<UsageWindowBar>;
   readonly freshness: string | null;
   readonly actions: ReadonlyArray<AccountAction>;
-  /** The engine says the stored sign-in expired and the fleet can run a new
-      one: the row offers "Sign in again" (native's "Sign-In Needed" chip). */
+  /** The engine says the stored sign-in expired (native's "Sign-In Needed"
+      chip). Whether a new one can be *run* is the page's to decide: the app's
+      own flow needs the fleet's `addOAuth`, the shell's own does not (#1213). */
   readonly reloginNeeded: boolean;
 }
 
@@ -57,6 +68,11 @@ export interface AccountRowModel {
 export interface FleetSectionModel {
   readonly key: string;
   readonly title: string;
+  /** The fleet's own provider and engine names, as the app reports them. A
+      sign-in run outside the app needs both: the provider names the flow to
+      run, the engine says which engine would run it. */
+  readonly provider: string;
+  readonly engineID: string;
   readonly caveat: string | null;
   readonly rows: ReadonlyArray<AccountRowModel>;
   /** The fleet runs an in-app sign-in (`add <fleet>`), so the section offers
@@ -195,20 +211,28 @@ function rowActions(
   if (capabilities.has("switch") && !active) actions.push("switch");
   if (capabilities.has("hold")) actions.push(account.disabled === true ? "unhold" : "hold");
   if (capabilities.has("prefer") && account.preferred !== undefined) actions.push("prefer");
+  if (capabilities.has("autoIgnite") && account.autoIgnite !== undefined) {
+    actions.push("autoIgnite");
+  }
   if (capabilities.has("rename")) actions.push("rename");
+  if (capabilities.has("remove")) actions.push("remove");
   return actions;
 }
 
-/** The capability the native `add <fleet>` verb acts on: the in-app OAuth
-    sign-in (swapd declares every capability, the proxy this one). A fleet with
-    only `addToken` pastes a token in the Mac app and is not offered here. */
-const ADD_CAPABILITY = "addOAuth";
+/** The capabilities the native `add <fleet>` and `signin-begin` verbs act on
+    (#1213): `addOAuth` is the engine-driven OAuth sign-in (swapd's `add-oauth`
+    and the proxy; a headless run relays the redirect from another machine),
+    `addCurrent` the claude CLI's own flow whose code is pasted back (an
+    engine without `addOAuth`). Either way the Mac runs it and the page only
+    watches. A fleet with only `addToken`
+    pastes a token in the Mac app and is not offered here. */
+const ADD_CAPABILITIES: ReadonlySet<string> = new Set(["addOAuth", "addCurrent"]);
 
 /** The usage status the engines report for a stored sign-in that expired. */
 const RELOGIN_USAGE_STATUS = "relogin_required";
 
 function fleetCanAdd(fleet: InfinitusFleet): boolean {
-  return fleet.capabilities.includes(ADD_CAPABILITY);
+  return fleet.capabilities.some((capability) => ADD_CAPABILITIES.has(capability));
 }
 
 function buildRow(fleet: InfinitusFleet, account: InfinitusAccount): AccountRowModel {
@@ -221,12 +245,13 @@ function buildRow(fleet: InfinitusFleet, account: InfinitusAccount): AccountRowM
     active: account.active || fleet.activeNumber === account.number,
     next: fleet.nextCandidate === account.number,
     preferred: account.preferred === true,
+    autoIgnite: account.autoIgnite === true,
     held: account.disabled === true,
     windows,
     scoped,
     freshness: freshnessLabel(account),
     actions: rowActions(fleet, account),
-    reloginNeeded: fleetCanAdd(fleet) && account.usageStatus === RELOGIN_USAGE_STATUS,
+    reloginNeeded: account.usageStatus === RELOGIN_USAGE_STATUS,
   };
 }
 
@@ -287,6 +312,8 @@ export function buildFleetSection(fleet: InfinitusFleet): FleetSectionModel {
     key: fleet.key,
     title:
       fleet.provider === fleet.engineID ? fleet.provider : `${fleet.provider} (${fleet.engineID})`,
+    provider: fleet.provider,
+    engineID: fleet.engineID,
     caveat: fleet.caveat ?? null,
     rows: [...fleet.accounts]
       .sort((left, right) => left.number - right.number)
@@ -398,14 +425,20 @@ export function buildForecast(snapshot: InfinitusSnapshot): ForecastModel | null
 /**
  * The control-socket call a row's button makes. `prefer` is a toggle and takes
  * the side it is switching to, which is what the socket's
- * `prefer <fleet> <n> on|off` expects; the other four take the account alone.
+ * `prefer <fleet> <n> on|off` expects; `remove` carries the `--yes` the socket
+ * refuses it without (the row confirmed already); the others take the
+ * account alone.
  */
 export function accountCommandArgs(
   fleetKey: string,
   row: AccountRowModel,
   action: AccountAction,
   alias?: string,
-): { command: string; args: ReadonlyArray<string> } {
+): {
+  command: string;
+  args: ReadonlyArray<string>;
+  options?: Readonly<Record<string, string>>;
+} {
   const target = [fleetKey, String(row.number)];
   if (action === "rename") {
     if (alias === undefined) throw new Error("rename needs an alias");
@@ -414,8 +447,61 @@ export function accountCommandArgs(
   if (action === "prefer") {
     return { command: "prefer", args: [...target, row.preferred ? "off" : "on"] };
   }
+  if (action === "autoIgnite") {
+    return { command: "auto-ignite", args: [...target, row.autoIgnite ? "off" : "on"] };
+  }
+  if (action === "remove") {
+    return { command: "remove", args: target, options: { yes: "true" } };
+  }
   return { command: action, args: target };
 }
+
+/**
+ * The side a toggle press lands on, drawn on the row before the engine
+ * confirms it (#1481: the flame did not move for the seconds the engine took,
+ * then a timeout said the app was gone). `field` is the row flag the press
+ * sets and `to` its new value. A flip the snapshot has caught up with draws
+ * nothing, so the caller retires it on a timer or when the command fails.
+ */
+export interface RowFlip {
+  readonly number: number;
+  readonly field: "preferred" | "autoIgnite" | "held";
+  readonly to: boolean;
+}
+
+/** What `action` will make of `row`, or null for a press that flips no flag. */
+export function rowFlip(row: AccountRowModel, action: AccountAction): RowFlip | null {
+  switch (action) {
+    case "prefer":
+      return { number: row.number, field: "preferred", to: !row.preferred };
+    case "autoIgnite":
+      return { number: row.number, field: "autoIgnite", to: !row.autoIgnite };
+    case "hold":
+      return { number: row.number, field: "held", to: true };
+    case "unhold":
+      return { number: row.number, field: "held", to: false };
+    default:
+      return null;
+  }
+}
+
+/** `row` as it will read once `flip` lands: the flag, and the hold/unhold
+    action that follows it. Another row's flip leaves it alone. */
+export function withFlip(row: AccountRowModel, flip: RowFlip | null | undefined): AccountRowModel {
+  if (!flip || flip.number !== row.number || row[flip.field] === flip.to) return row;
+  const actions =
+    flip.field === "held"
+      ? row.actions.map((action) =>
+          action === "hold" || action === "unhold" ? (flip.to ? "unhold" : "hold") : action,
+        )
+      : row.actions;
+  return { ...row, [flip.field]: flip.to, actions };
+}
+
+/** A write's reply outlived the socket's budget: the app may still be at it,
+    which is not the same as the app being gone. */
+export const INFINITUS_COMMAND_TIMEOUT_MESSAGE =
+  "The Mac took too long to answer; the change may still land in a moment.";
 
 /*
  * Add account / re-login: the native `add <fleet>` verb opens the app's own
@@ -565,6 +651,29 @@ export function buildSignInRows(snapshot: InfinitusSnapshot): ReadonlyArray<Sign
  * flow takes `--local`, so the Mac opens its own browser — the relay and
  * `--remote` flows finish over stdin, which the fork's RPC never carries.
  */
+/** Whether the Mac's `aws-login` takes `--dismiss` (the failed card's
+    Dismiss); an older build would read the option as a plain start. */
+export function signInDismissSupported(snapshot: InfinitusSnapshot | null): boolean {
+  return (
+    snapshot?.commands.some(
+      (command) => command.name === "aws-login" && command.options.includes("--dismiss"),
+    ) ?? false
+  );
+}
+
+/** `aws-login <profile> --dismiss` (`gcloud-login` for gcloud): forget the
+    login, stopping it if it still runs, so the list drops the row. */
+export function signInDismissCommandArgs(
+  tool: SignInTool,
+  profile: string,
+): { command: string; args: ReadonlyArray<string>; options: Record<string, string> } {
+  return {
+    command: tool === "gcloud" ? "gcloud-login" : "aws-login",
+    args: [profile],
+    options: { dismiss: "true" },
+  };
+}
+
 export function signInCommandArgs(row: SignInRowModel): {
   command: string;
   args: ReadonlyArray<string>;

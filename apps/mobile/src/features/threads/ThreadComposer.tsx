@@ -1,8 +1,8 @@
 import type { ComposerTextPaste } from "../../native/T3ComposerEditor.types";
 import { useAppearancePreferences } from "../settings/appearance/AppearancePreferencesProvider";
 import { useAtomValue } from "@effect/atom-react";
-import { clampFileAttachmentUploadBytes } from "@t3tools/client-runtime/state/attachments";
-import { pastedTextDisposition, replaceTextSelection } from "@t3tools/client-runtime/text-paste";
+import { clampFileAttachmentUploadBytes } from "@infinitus/client-runtime/state/attachments";
+import { pastedTextDisposition, replaceTextSelection } from "@infinitus/client-runtime/text-paste";
 import {
   PROVIDER_SEND_TURN_MAX_ATTACHMENTS,
   PROVIDER_SEND_TURN_MAX_INPUT_CHARS,
@@ -14,13 +14,13 @@ import {
   type RuntimeMode,
   type ServerConfig as T3ServerConfig,
   type UsageLimitsReport,
-} from "@t3tools/contracts";
+} from "@infinitus/contracts";
 import {
   collectProviderUsageLimits,
   hasProviderUsageLimits,
   isUsageLimitsCommand,
-} from "@t3tools/shared/usageLimits";
-import { PRODUCT_NAME } from "@t3tools/shared/productName";
+} from "@infinitus/shared/usageLimits";
+import { PRODUCT_NAME } from "@infinitus/shared/productName";
 import { StackActions, useFocusEffect, useNavigation } from "@react-navigation/native";
 import type { ReactNode } from "react";
 import {
@@ -50,6 +50,7 @@ import Animated, {
   withTiming,
 } from "react-native-reanimated";
 import { useUniwindTheme } from "../../lib/useUniwindTheme";
+import { themeColorWithAlpha } from "../../lib/mobileTheme";
 import { armAgentAwarenessLiveActivityForLocalWork } from "../agent-awareness/remoteRegistration";
 import { scopedThreadKey } from "../../lib/scopedEntities";
 import {
@@ -58,7 +59,7 @@ import {
 } from "../../state/use-composer-drafts";
 import type { ComposerDocumentAttachment } from "../../lib/composerContext";
 import { useProject } from "../../state/entities";
-import { scopeProjectRef } from "@t3tools/client-runtime/environment";
+import { scopeProjectRef } from "@infinitus/client-runtime/environment";
 
 import { AppText as Text } from "../../components/AppText";
 import { ComposerAttachmentButton } from "../../components/ComposerAttachmentButton";
@@ -211,7 +212,6 @@ export function ComposerSurface(props: {
   /** Morphs between the compact and expanded composer layouts. */
   readonly animateLayout?: boolean;
 }) {
-  const { materialYouStyleLayoutActive } = useAppearancePreferences();
   const colors = useUniwindTheme();
   const targetBorderRadius =
     typeof props.style.borderRadius === "number" ? props.style.borderRadius : 0;
@@ -235,28 +235,20 @@ export function ComposerSurface(props: {
   return (
     <Animated.View
       className={
-        materialYouStyleLayoutActive
-          ? undefined
-          : "shadow-[0_6px_28px] shadow-adaptive-black-a15-a35"
+        Platform.OS === "android" ? undefined : "shadow-[0_6px_28px] shadow-adaptive-black-a15-a35"
       }
       layout={layoutTransition}
       style={[
         animatedShapeStyle,
         {
           overflow: "hidden",
-          // Android versions before 9 do not support outset box shadows.
-          elevation: Platform.OS === "android" && Platform.Version < 28 ? 10 : undefined,
         },
       ]}
     >
       <AnimatedGlassSurface
         chrome="none"
-        fallbackColor={
-          materialYouStyleLayoutActive ? colors["--color-composer-surface"] : colors["--color-card"]
-        }
-        fallbackClassName={
-          materialYouStyleLayoutActive ? "border border-composer-border" : "border border-border"
-        }
+        fallbackColor={colors["--color-composer-surface"]}
+        fallbackClassName="border border-composer-border"
         glassEffectStyle="regular"
         // The composer is a passive material containing interactive controls.
         // Keep native glass out of the interactive content's layout path.
@@ -280,8 +272,7 @@ export function ComposerSurface(props: {
 
 export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposerProps) {
   const project = useProject(scopeProjectRef(props.environmentId, props.selectedThread.projectId));
-  const { materialYouStyleLayoutActive, themeVariables: materialTheme } =
-    useAppearancePreferences();
+  const { themeVariables: materialTheme } = useAppearancePreferences();
   const composerPanel = materialTheme["--color-composer-panel"];
   const navigation = useNavigation();
   const foregroundColor = useUniwindTheme()["--color-foreground"];
@@ -637,7 +628,8 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
       style={{
         paddingTop: isExpanded ? 8 : 6,
         paddingBottom: (props.bottomInset ?? 0) + (isExpanded ? 8 : 6),
-        backgroundColor: materialYouStyleLayoutActive ? composerPanel : undefined,
+        backgroundColor:
+          Platform.OS === "android" ? themeColorWithAlpha(composerPanel, 1) : undefined,
       }}
     >
       {/* The backdrop gradient lives on a plain View: Reanimated's Animated.View
@@ -645,7 +637,7 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
           strip fully transparent and the feed text legible through the composer. */}
       <View
         className={
-          materialYouStyleLayoutActive
+          Platform.OS === "android"
             ? "hidden"
             : "absolute inset-0 bg-linear-to-b from-screen/0 via-screen/60 to-screen/90"
         }
@@ -876,7 +868,7 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
                 ))}
                 {stripAttachments.length > 3 ? (
                   <View className="size-[30px] items-center justify-center rounded-lg bg-subtle-strong">
-                    <Text className="text-foreground-muted text-2xs font-t3-bold">
+                    <Text className="text-foreground-muted text-2xs font-infinitus-bold">
                       +{stripAttachments.length - 3}
                     </Text>
                   </View>

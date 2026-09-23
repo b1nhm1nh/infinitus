@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { ThreadId } from "@t3tools/contracts";
+import { ThreadId } from "@infinitus/contracts";
 
 import {
   commandDetailRepeatsCommand,
@@ -207,6 +207,9 @@ describe("summarizeToolGroup", () => {
 
 describe("resolveWorkEntryToolPresentation", () => {
   it.each([
+    "mcp__infinitus__preview_click",
+    "infinitus · preview_click completed",
+    // The id before #1368 E, as a thread's history still spells it.
     "mcp__t3-code__preview_click",
     "mcp__t3_code__preview_click",
     "mcp__t3code__preview_click",
@@ -295,8 +298,8 @@ describe("resolveWorkEntryToolPresentation", () => {
       "Stopping recording the preview browser",
       "Stopped recording the preview browser",
     ],
-    ["t3_thread_read", "Reading a T3 thread", "Read a T3 thread"],
-    ["t3_thread_send", "Sending to a T3 thread", "Sent to a T3 thread"],
+    ["t3_thread_read", "Reading an Infinitus thread", "Read an Infinitus thread"],
+    ["t3_thread_send", "Sending to an Infinitus thread", "Sent to an Infinitus thread"],
     [
       "t3_worktree_handoff",
       "Handing off thread to a git worktree",

@@ -1,4 +1,4 @@
-import type { UserInputQuestion } from "@t3tools/contracts";
+import type { UserInputQuestion } from "@infinitus/contracts";
 
 export interface PendingUserInputDraftAnswer {
   selectedOptionValues?: string[];
@@ -80,6 +80,28 @@ export function setPendingUserInputCustomAnswer(
     customAnswer,
     ...(selectedOptionValues && selectedOptionValues.length > 0 ? { selectedOptionValues } : {}),
   };
+}
+
+const DISPLACED_ANSWER_SEPARATOR = "\n\n";
+
+/**
+ * Selecting an option replaces the custom answer, because a non-empty custom
+ * answer outranks selected options in `resolvePendingUserInputAnswer`. Text the
+ * user typed into the answer field must not vanish on that click: it moves back
+ * into the thread draft, after whatever was already waiting there.
+ */
+export function carryDisplacedCustomAnswerIntoPrompt(
+  prompt: string,
+  customAnswer: string | undefined,
+): string {
+  const displaced = customAnswer?.trim() ?? "";
+  if (displaced.length === 0) {
+    return prompt;
+  }
+  if (prompt.trim().length === 0) {
+    return displaced;
+  }
+  return `${prompt.trimEnd()}${DISPLACED_ANSWER_SEPARATOR}${displaced}`;
 }
 
 export function togglePendingUserInputOptionSelection(

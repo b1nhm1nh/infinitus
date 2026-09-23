@@ -195,18 +195,22 @@ public actor CLIProxyEngine: AccountEngine {
         routingStrategy = try? await fetchStrategy()
         sessionAffinity = try? await fetchSessionAffinity()
 
-        // Gauges: only Claude credentials expose oauth/usage; held ones
-        // are skipped (nothing routes to them). One Anthropic call per
-        // ACCOUNT per usageTTL, not per credential per refresh: a fresh
-        // cache entry, or usage another engine fetched for the same
-        // email, is reused, and two credentials with one email share a
-        // call — the 429 budget is per account (user 2026-09-02).
+        // Gauges: only Claude credentials expose oauth/usage. A HELD one
+        // is measured like any other — its windows are exactly what the
+        // user reads to decide when to resume it (user 2026-09-16
+        // "paused accounts must show session, 7d, fable limit"); the
+        // extra cost is one call per held account per usageTTL. One
+        // Anthropic call per ACCOUNT per usageTTL, not per credential per
+        // refresh: a fresh cache entry, or usage another engine fetched
+        // for the same email, is reused, and two credentials with one
+        // email share a call — the 429 budget is per account (user
+        // 2026-09-02).
         func fresh(_ at: Date) -> Bool { now.timeIntervalSince(at) < usageTTL }
         var usage: [String: Usage] = [:]
         var wanted: [ProxyAuthFile] = []
         var leaderByEmail: [String: String] = [:]
         var followers: [String: [String]] = [:]
-        for f in files where ProxyMapping.provider(for: f.provider ?? "") == .claude && f.disabled != true {
+        for f in files where ProxyMapping.provider(for: f.provider ?? "") == .claude {
             let email = f.email?.lowercased()
             if let email, let shared = sharedUsage[email], fresh(shared.at) {
                 usage[f.name] = shared.usage
@@ -375,12 +379,13 @@ public actor CLIProxyEngine: AccountEngine {
     /// credential before an unstarred one. A star joins the tier just
     /// above the floor — under anything switched to (top+1), so the active
     /// credential stays the top pick; unstarring drops to the floor.
-    public func setPreferred(fleet: Provider, number: Int, _ on: Bool) async throws {
+    public func setPreferred(fleet: Provider, number: Int, _ on: Bool) async throws -> [EngineFleet]? {
         let target = try name(fleet, number)
         let floor = (ordinals[fleet] ?? []).map { priorityByName[$0] ?? 0 }.min() ?? 0
         let current = priorityByName[target] ?? 0
-        if on ? current > floor : current == floor { return }
+        if on ? current > floor : current == floor { return nil }
         try await setPriority(fleet: fleet, number: number, on ? floor + 1 : floor)
+        return nil
     }
 
     /// Internal: the live switch test puts the priority back.
@@ -391,17 +396,19 @@ public actor CLIProxyEngine: AccountEngine {
         priorityByName[target] = priority
     }
 
-    public func setHold(fleet: Provider, number: Int, held: Bool) async throws {
+    public func setHold(fleet: Provider, number: Int, held: Bool) async throws -> [EngineFleet]? {
         let target = try name(fleet, number)
         _ = try await request("PATCH", "auth-files/status",
                               json: ["name": target, "disabled": held])
+        return nil
     }
 
-    public func rename(fleet: Provider, number: Int, _ alias: String) async throws {
+    public func rename(fleet: Provider, number: Int, _ alias: String) async throws -> [EngineFleet]? {
         let target = try name(fleet, number)
         _ = try await request("PATCH", "auth-files/fields",
                               json: ["name": target,
                                      "note": alias.trimmingCharacters(in: .whitespaces)])
+        return nil
     }
 
     public func remove(fleet: Provider, number: Int) async throws {

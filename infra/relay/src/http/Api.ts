@@ -19,8 +19,8 @@ import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 import * as HttpTraceContext from "effect/unstable/http/HttpTraceContext";
 import * as HttpApiBuilder from "effect/unstable/httpapi/HttpApiBuilder";
 import * as HttpApiError from "effect/unstable/httpapi/HttpApiError";
-import { encodeOAuthScope } from "@t3tools/shared/oauthScope";
-import { httpHeaderRedactionLayer } from "@t3tools/shared/httpObservability";
+import { encodeOAuthScope } from "@infinitus/shared/oauthScope";
+import { httpHeaderRedactionLayer } from "@infinitus/shared/httpObservability";
 
 import {
   RelayApi,
@@ -49,8 +49,8 @@ import {
   type RelayEnvironmentConnectRequest,
   type RelayDpopAccessTokenScope,
   RelayInternalError,
-} from "@t3tools/contracts/relay";
-import { normalizeRelayIssuer } from "@t3tools/shared/relayJwt";
+} from "@infinitus/contracts/relay";
+import { normalizeRelayIssuer } from "@infinitus/shared/relayJwt";
 
 import * as DeliveryAttempts from "../agentActivity/DeliveryAttempts.ts";
 import * as AgentActivityRows from "../agentActivity/AgentActivityRows.ts";
@@ -70,6 +70,12 @@ import * as EnvironmentPublishSignatures from "../environments/EnvironmentPublis
 import * as MobileRegistrations from "../agentActivity/MobileRegistrations.ts";
 import { withSpanAttributes } from "../observability.ts";
 import * as RelayDb from "../db.ts";
+
+// Delegated thread IDs carry escaped command provenance and exceed the router's
+// default 100-character path parameter limit. Match the environment server.
+export const RELAY_HTTP_ROUTER_CONFIG = {
+  maxParamLength: 512,
+} as const;
 
 const relayCorsAllowedMethods = ["GET", "POST", "DELETE", "OPTIONS"] as const;
 const relayCorsAllowedHeaders = [
@@ -1035,7 +1041,6 @@ const RelayCommonPersistenceError = Schema.Union([
   Devices.DeviceListPersistenceError,
   LiveActivities.LiveActivityRegistrationPersistenceError,
   EnvironmentLinks.EnvironmentLinkUserListPersistenceError,
-  EnvironmentLinks.EnvironmentPublicKeyListPersistenceError,
   EnvironmentLinks.EnvironmentLinkListPersistenceError,
   EnvironmentLinks.EnvironmentLinkLookupPersistenceError,
   EnvironmentLinks.EnvironmentLinkRevokePersistenceError,
@@ -1229,11 +1234,23 @@ function clerkVerificationFailureReason(cause: unknown): string {
   return "unknown";
 }
 
-function hasExpectedClerkAudience(audience: unknown, expectedAudience: string): boolean {
+/** Infinitus (#1368 B): `CLERK_JWT_AUDIENCE` may list several audiences,
+    comma-separated, so the relay keeps verifying tokens minted from the old
+    `t3-code-relay` template while phones and desktops move to the
+    `infinitus-relay` one. */
+export function expectedClerkAudiences(configured: string): ReadonlyArray<string> {
+  return configured
+    .split(",")
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0);
+}
+
+function hasExpectedClerkAudience(audience: unknown, configured: string): boolean {
+  const expected = expectedClerkAudiences(configured);
   return typeof audience === "string"
-    ? audience === expectedAudience
+    ? expected.includes(audience)
     : Array.isArray(audience) &&
-        audience.some((entry) => typeof entry === "string" && entry === expectedAudience);
+        audience.some((entry) => typeof entry === "string" && expected.includes(entry));
 }
 
 function verifyClerkBearerToken(
@@ -1244,7 +1261,7 @@ function verifyClerkBearerToken(
     try: () =>
       verifyToken(token, {
         secretKey: Redacted.value(config.clerkSecretKey),
-        audience: config.clerkJwtAudience,
+        audience: [...expectedClerkAudiences(config.clerkJwtAudience)],
       }),
     catch: (cause) => new ClerkTokenVerificationFailed({ cause }),
   }).pipe(

@@ -6,7 +6,7 @@ import {
   ProviderInstanceId,
   type ServerProvider,
   type UnifiedSettings,
-} from "@t3tools/contracts";
+} from "@infinitus/contracts";
 import { beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
 import { visitElements } from "../../test/reactElementTree";
@@ -58,6 +58,7 @@ vi.mock("./settingsLayout", async (importOriginal) => {
   };
 });
 
+vi.mock("./SettingsScopeSentence", () => ({ SettingsScopeSentence: () => null }));
 vi.mock("react/compiler-runtime", async () => {
   const { reactHookHarness } = await import("../../test/reactHookHarness");
   return { c: reactHookHarness.useMemoCache };

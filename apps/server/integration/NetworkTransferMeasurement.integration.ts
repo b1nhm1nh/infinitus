@@ -3,7 +3,7 @@ import * as NodeHttp from "node:http";
 import * as NodeZlib from "node:zlib";
 
 import * as NodeSocket from "@effect/platform-node/NodeSocket";
-import { WsRpcGroup } from "@t3tools/contracts";
+import { WsRpcGroup } from "@infinitus/contracts";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
@@ -181,8 +181,9 @@ function countingWsRpcProtocolLayer(input: {
   readonly cookie: string;
   readonly recorder: WebSocketTransferRecorder;
 }) {
+  // Socket.makeWebSocket only ever passes its `protocols` option here.
   const webSocketConstructorLayer = Layer.succeed(Socket.WebSocketConstructor, (url, protocols) =>
-    input.recorder.connect(url, protocols, input.cookie),
+    input.recorder.connect(url, protocols as string | string[] | undefined, input.cookie),
   );
   return RpcClient.layerProtocolSocket().pipe(
     Layer.provide(

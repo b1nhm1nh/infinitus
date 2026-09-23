@@ -52,19 +52,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// `open Infinitus.app` on an already-running instance lands here: show
     /// the pinned window. This is the guaranteed way into the UI when the
-    /// menu bar is too full to display the status item at all.
-    /// A Dock click lands here too — the icon exists only while Settings
-    /// is open (the app is `.regular` then) — and must raise Settings, not
-    /// the pop-out: returning false stops AppKit's own window-raising, so
-    /// a buried Settings never came back (user 2026-09-09).
+    /// menu bar is too full to display the status item at all. Returning
+    /// false stops AppKit's own window-raising.
     func applicationShouldHandleReopen(_ app: NSApplication,
                                        hasVisibleWindows: Bool) -> Bool {
         guard let controller = statusHolder?.controller else { return false }
-        if controller.settings?.isVisible == true {
-            controller.showSettingsWindow()
-        } else {
-            controller.showPinnedWindow()
-        }
+        controller.showPinnedWindow()
         return false
     }
 }
@@ -72,8 +65,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 @main
 struct InfinitusApp: App {
     @StateObject private var model: AppModel
-    @StateObject private var appRelease: AppReleaseModel
-    @StateObject private var brew: BrewUpdater
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
 
     init() {
@@ -91,29 +82,12 @@ struct InfinitusApp: App {
         }
         #endif
         RenameMigration.run()   // before anything reads App Support
+        PrivateWindowCleanup.run()
         let model = AppModel()
         _model = StateObject(wrappedValue: model)
-        let release = AppReleaseModel()
-        _appRelease = StateObject(wrappedValue: release)
-        release.onUpdate = { [weak model] in model?.appUpdateVersion = $0 }
-        release.onLatest = { [weak model] in model?.appReleaseLatest = $0 }
-        release.startAutoCheck()
-        // Hoisted out of AboutPane so the phone's `/app/update` route
-        // (#121) drives the SAME BrewUpdater as the About pane's button
-        // — never two upgrades in flight.
-        let brew = BrewUpdater()
-        _brew = StateObject(wrappedValue: brew)
-        model.brewUpdater = brew
-        brew.relaunch = { model.relaunchApp() }
         appDelegate.model = model
         appDelegate.makeStatusItem = { [weak appDelegate] in
-            appDelegate?.statusHolder = StatusItemHolder(
-                model: model,
-                settingsTabs: {
-                    settingsTabs(
-                        model: model,
-                        appRelease: release, brew: brew)
-                })
+            appDelegate?.statusHolder = StatusItemHolder(model: model)
         }
         model.startFeeds()
         // Deferred past didFinishLaunching: requesting in App.init — before
@@ -130,289 +104,21 @@ struct InfinitusApp: App {
         // by StatusItemController (see its header for why). Keep-alive with
         // zero windows comes from KeepAliveDelegate.
 
-        // macOS 26 puts this scene's window on screen by itself at launch
-        // — and SwiftUI keeps it non-resizable whatever .windowResizability
-        // says (it re-strips the .resizable bit on every update; probed
-        // 2026-09-02). StatusItemController hides it as it appears; the
-        // controller-owned window is the one Settings window.
-        // (.defaultLaunchBehavior(.suppressed) would be cleaner but is
-        // macOS 15+, and SceneBuilder takes no #available branch.)
-        Settings {
-            SettingsRoot(tabs: settingsTabs(
-                model: model,
-                appRelease: appRelease, brew: brew))
-        }
-        // ⌘, would raise that hidden scene window (and the controller
-        // would hide it again — "opened and closed immediately", user
-        // 2026-09-03). Route the standard Settings command to ours.
-        .commands {
-            CommandGroup(replacing: .appSettings) {
-                Button("Settings…") { model.showSettings?() }
-                    .keyboardShortcut(",", modifiers: .command)
-            }
-        }
-    }
-}
-
-/// The settings panes, declared once. The Settings scene (the standard
-/// app-menu path, unreachable for an accessory app with no app menu)
-/// renders them as a SwiftUI TabView; the controller-owned window the
-/// popup's Settings… button opens renders them as an AppKit
-/// NSTabViewController(tabStyle: .toolbar) — the REAL icon-toolbar
-/// Settings look, which no public SwiftUI TabViewStyle reproduces.
-@MainActor func settingsTabs(
-    model: AppModel,
-    appRelease: AppReleaseModel, brew: BrewUpdater
-) -> [SettingsTab] {
-    // Ordered by how often each pane is reached for (user 2026-08-30:
-    // "reorder the settings"): everyday looks first, plumbing after,
-    // About last; engines keep their own trailing section.
-    // Display, Push and Lock left on 2026-09-14 (#569): all three are
-    // Settings › Infinitus pages in the desktop app now, and the native
-    // window keeps only what cannot leave the Mac. The prefs themselves
-    // stay in PrefCatalog — that is what the fork's pages write — and
-    // the lock's biometric prompt stays native, driven by `lock` /
-    // `unlock` / `lock-status`.
-    [
-        SettingsTab(title: "Accounts", symbol: "person.2.badge.key", tint: .blue,
-                    keywords: ["account", "login", "relogin", "token",
-                               "add", "remove", "delete", "oauth",
-                               "order", "reorder", "alias", "rename"],
-                    view: AnyView(AccountsPane(model: model))),
-        // "Sync" until 2026-09-02: the pane grew the phone companion and
-        // its routes, and syncing settings is now the smaller half.
-        SettingsTab(title: "Devices", symbol: "iphone.and.arrow.right.inward", tint: .cyan,
-                    keywords: ["icloud", "sync", "settings", "drive", "devices",
-                               "phone", "iphone", "lan", "bonjour", "companion",
-                               "tailscale", "cloudflare", "tunnel", "pair", "qr"],
-                    view: AnyView(SyncPane(sync: model.sync, app: model))),
-    ]
-    + [
-        SettingsTab(title: "About", symbol: "info.circle", tint: .indigo,
-                    keywords: ["update", "version", "license", "links"],
-                    image: AboutPane.infinitusIcon,
-                    view: AnyView(AboutPane(appRelease: appRelease, brew: brew))),
-        // Providers under everything, CodexBar-style (user 2026-08-30).
-        // The engine is swapd; Claude is what it drives (user 2026-08-30:
-        // "claude is not an engine, cswap is").
-        SettingsTab(title: "swapd", symbol: "bolt.horizontal",
-                    keywords: ["swapd", "engine", "auto switch", "rotate", "provider",
-                               "claude", "codex", "kiro", "gemini", "rust",
-                               "nudge", "resume", "wake", "session", "demo", "mock"],
-                    // "on" = the engine is enabled and found; whether its
-                    // auto-switch daemon runs is the tab's own business.
-                    provider: ProviderBadge(live: model.swapdRegistered
-                                            && model.engineErrors[SwapdEngine.engineID] == nil),
-                    view: AnyView(SwapdEnginePane(model: model))),
-        SettingsTab(title: "CLIProxyAPI", symbol: "network",
-                    keywords: ["proxy", "cliproxy", "router", "management",
-                               "key", "engine", "provider", "claude"],
-                    provider: ProviderBadge(live: model.cliproxyEnabled
-                                            && model.engineErrors[CLIProxyEngine.engineID] == nil
-                                            && model.fleets.contains { $0.engineID == CLIProxyEngine.engineID }),
-                    view: AnyView(CLIProxyEnginePane(model: model))),
-        SettingsTab(title: "9Router", symbol: "arrow.triangle.branch",
-                    keywords: ["9router", "router", "engine", "provider",
-                               "claude", "password"],
-                    provider: ProviderBadge(live: model.nineRouterEnabled
-                                            && model.engineErrors[NineRouterEngine.engineID] == nil
-                                            && model.fleets.contains { $0.engineID == NineRouterEngine.engineID }),
-                    view: AnyView(NineRouterEnginePane(model: model))),
-    ]
-}
-
-/// The settings shell: a searchable, grouped sidebar on the left and
-/// the selected pane on the right. The sidebar is a `List(selection:)`
-/// (arrow keys, type-select, focus ring and accessible rows, all free)
-/// inside our own HStack — NOT a NavigationSplitView, whose
-/// List-selection → detail hop froze under synthetic clicks
-/// (2026-08-30). The plain-Button sidebar that replaced it back then
-/// had none of those affordances and announced every row as "button"
-/// (design critique 2026-09-06, P0); a bare List does not take the
-/// split view's hop and restores them.
-struct SettingsRoot: View {
-    let tabs: [SettingsTab]
-    @State private var selection: String?
-    /// The pane actually on screen. Usually the selection; a search hit
-    /// selects a ROW and opens the pane that row lives on.
-    @State private var pane: String?
-    @State private var query = ""
-    @State private var highlight: String?
-    @State private var clearHighlight: Task<Void, Never>?
-    @FocusState private var searchFocused: Bool
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-    private var index: SettingsSearchIndex { SettingsSearchCatalog.index(tabs: tabs) }
-    private var searching: Bool {
-        !query.trimmingCharacters(in: .whitespaces).isEmpty
-    }
-    private var results: [(pane: String, entries: [SettingsSearchEntry])] {
-        searching ? index.grouped(query) : []
-    }
-    private var current: SettingsTab? {
-        tabs.first { $0.title == pane } ?? tabs.first
-    }
-    private var group: SettingsGroup {
-        current.map { SettingsGroup.of($0) } ?? .general
-    }
-
-    var body: some View {
-        HStack(spacing: 0) {
-            VStack(alignment: .leading, spacing: 0) {
-                searchField
-                    .padding(.top, 14)
-                    .padding(.horizontal, 10)
-                    .padding(.bottom, 10)
-                SettingsSidebar(tabs: tabs, results: results,
-                                searching: searching, query: query,
-                                selection: $selection)
-            }
-            .frame(width: 215)
-            Divider()
-            detail
-        }
-        .frame(minWidth: 700, idealWidth: 960, minHeight: 480, idealHeight: 640)
-        .background(WindowTitler(title: "Settings", subtitle: current?.title ?? ""))
-        // ⌘F puts the caret in the field; an accessory app has no menu
-        // bar to hang the standard Find item off (critique: Alex "has
-        // no ⌘F").
-        .overlay {
-            Group {
-                Button("") { searchFocused = true }
-                    .keyboardShortcut("f", modifiers: .command)
-            }
-            .buttonStyle(.plain)
-            .opacity(0)
-            .frame(width: 0, height: 0)
-            .accessibilityHidden(true)
-        }
-        .onAppear {
-            if selection == nil {
-                selection = tabs.first?.title
-                pane = tabs.first?.title
-            }
-        }
-        .onChange(of: selection) { _, new in select(new) }
-        .onChange(of: query) { _, _ in retargetForQuery() }
-        // Dev harness: `playctl settings <Title>` lands on a named pane
-        // (pane screenshots without synthetic sidebar clicks).
-        .onReceive(NotificationCenter.default.publisher(
-            for: Notification.Name("infinitus.selectPane"))) { note in
-            if let title = note.object as? String,
-               tabs.contains(where: { $0.title == title }) {
-                query = ""
-                highlight = nil
-                selection = title
-                pane = title
-            }
-        }
-        .reloadOnInjection()
-    }
-
-    // MARK: detail
-
-    @ViewBuilder private var detail: some View {
-        ScrollViewReader { proxy in
-            Group {
-                if searching, results.isEmpty {
-                    // Nothing stale left on screen: the old shell blanked
-                    // the sidebar and kept the previous pane showing with
-                    // nothing selected (critique P1).
-                    ContentUnavailableView.search(text: query)
-                } else if let tab = current {
-                    tab.view
-                        .frame(maxWidth: group.contentWidth)
+        // An App needs one Scene, and this is the only one. It draws
+        // nothing: the Settings window retired (every setting is the
+        // desktop app's), and macOS 26 still puts this scene's window on
+        // screen by itself at launch, so StatusItemController hides it as
+        // it appears. (.defaultLaunchBehavior(.suppressed) would be
+        // cleaner but is macOS 15+, and SceneBuilder takes no #available
+        // branch.) ⌘, would raise it too; the command is replaced with
+        // one that opens the desktop app on its Menu bar settings page.
+        Settings { EmptyView() }
+            .commands {
+                CommandGroup(replacing: .appSettings) {
+                    Button("Settings…") { model.openDesktop?("menu-bar") }
+                        .keyboardShortcut(",", modifiers: .command)
                 }
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .environment(\.settingsHighlight, highlight)
-            .onChange(of: highlight) { _, anchor in
-                guard let anchor else { return }
-                // The pane has to render before its sections have ids.
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-                    if reduceMotion {
-                        proxy.scrollTo(anchor, anchor: .center)
-                    } else {
-                        withAnimation(.easeInOut(duration: 0.25)) {
-                            proxy.scrollTo(anchor, anchor: .center)
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    // MARK: search field
-
-    private var searchField: some View {
-        HStack(spacing: 5) {
-            Image(systemName: "magnifyingglass")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .accessibilityHidden(true)
-            TextField("Search settings", text: $query)
-                .textFieldStyle(.plain)
-                .font(.callout)
-                .focused($searchFocused)
-            if searching {
-                Button {
-                    query = ""
-                    searchFocused = true
-                } label: {
-                    Image(systemName: "xmark.circle.fill")
-                        .foregroundStyle(.secondary)
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Clear the search")
-                .help("Clear the search")
-            }
-        }
-        .padding(.horizontal, 7)
-        .padding(.vertical, 5)
-        .background(RoundedRectangle(cornerRadius: 7)
-            .fill(Color.primary.opacity(0.06)))
-        .overlay(RoundedRectangle(cornerRadius: 7)
-            .strokeBorder(Color.secondary.opacity(0.25)))
-    }
-
-    // MARK: selection
-
-    /// A sidebar selection is either a pane title or a search hit's id.
-    private func select(_ id: String?) {
-        guard let id else { return }
-        if tabs.contains(where: { $0.title == id }) {
-            pane = id
-            flash(nil)
-        } else if let hit = index.entry(id: id) {
-            pane = hit.pane
-            flash(hit.anchor)
-        }
-    }
-
-    /// Keeps the detail honest while the query changes: the selected
-    /// pane stays if it still has hits, otherwise the first hit wins.
-    private func retargetForQuery() {
-        // Clearing the field: the sidebar goes back to pane rows, so a
-        // selection still holding a search hit's id would highlight
-        // nothing. Hand it back the pane that is showing.
-        guard searching else { flash(nil); selection = pane; return }
-        let groups = results
-        guard !groups.isEmpty else { return }
-        if let pane, groups.contains(where: { $0.pane == pane }) { return }
-        if let first = groups.first?.entries.first {
-            selection = first.id
-        }
-    }
-
-    private func flash(_ anchor: String?) {
-        clearHighlight?.cancel()
-        highlight = anchor
-        guard anchor != nil else { return }
-        clearHighlight = Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 1_200_000_000)
-            guard !Task.isCancelled else { return }
-            highlight = nil
-        }
     }
 }
 
@@ -559,12 +265,6 @@ struct MenuContent: View {
                                 serviceChrome: StatusHoverCard(status: status))
                             if !model.footerActionsHidden {
                                 Button {
-                                    model.showSettings?()
-                                } label: {
-                                    Image(systemName: "gearshape")
-                                }
-                                .instantTip("Settings", edge: .above)
-                                Button {
                                     model.relaunchApp()
                                 } label: {
                                     Image(systemName: "arrow.trianglehead.clockwise")
@@ -609,13 +309,12 @@ struct MenuContent: View {
                 get: { model.pendingSwitch != nil },
                 set: { if !$0 { model.pendingSwitch = nil } })
         ) {
-            Button("Switch") {
-                if let n = model.pendingSwitch { model.switchTo(n) }
-                model.pendingSwitch = nil
-            }
+            Button("Switch") { model.commitPendingSwitch() }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("Every Claude Code session on this machine rides the "
+            // A peer row's switch lands on that machine (#1545).
+            let machine = (model.pendingSwitchFleet?.engine as? PeerEngine)?.machineLabel ?? "this machine"
+            Text("Every Claude Code session on \(machine) rides the "
                  + "active account. Switch to account "
                  + "\(model.pendingSwitch.map(String.init) ?? "?")?")
         }
@@ -645,6 +344,14 @@ struct MenuContent: View {
         return 700
     }
 
+    /// The fleets the stack draws. An engine that reports a provider it
+    /// manages but holds no account for is a real fleet (#1319 —
+    /// `SwapdMapping.fleets`, so the add-first-account paths can resolve
+    /// it), and here it would be a header with nothing under it.
+    private var populatedFleets: [FleetState] {
+        (model.fleets + model.peerFleets).filter { !$0.accounts.isEmpty }
+    }
+
     /// Fleets past the height threshold scroll instead of growing an off-screen popup.
     @ViewBuilder private var accountArea: some View {
         Group {
@@ -654,11 +361,11 @@ struct MenuContent: View {
                 FirstAccountCard(model: model)
             } else if shouldScrollAccounts {
                 ScrollView(showsIndicators: true) {
-                    FleetStack(fleets: model.fleets)
+                    FleetStack(fleets: populatedFleets)
                 }
                 .frame(maxHeight: accountScrollMaxHeight)
             } else {
-                FleetStack(fleets: model.fleets)
+                FleetStack(fleets: populatedFleets)
             }
         }
         .introContent(model)
@@ -669,10 +376,6 @@ struct MenuContent: View {
     /// the Compact (compress) toggle.
     @ViewBuilder private var stackedRail: some View {
         if !model.footerActionsHidden {
-        Button { model.showSettings?() } label: {
-            Image(systemName: "gearshape")
-        }
-        .instantTip("Settings")
         Button { model.popoverPinned.toggle() } label: {
             Image(systemName: model.popoverPinned ? "pin.fill" : "pin")
         }
@@ -698,13 +401,6 @@ struct MenuContent: View {
             }
             .instantTip("Restart to update")
         }
-        if let v = model.appUpdateVersion {
-            Button { model.showSettings?() } label: {
-                Image(systemName: "arrow.down.circle.fill")
-                    .foregroundStyle(.orange)
-            }
-            .instantTip("Infinitus \(v) is out — About → Updates")
-        }
         if model.engineBadgeShown { engineBadgeIcon }
         if !model.footerActionsHidden {
         Button { model.relaunchApp() } label: {
@@ -727,7 +423,6 @@ struct MenuContent: View {
             n += 7                                  // 5 actions + restart + quit
         }
         if model.appUpdatePending { n += 1 }
-        if model.appUpdateVersion != nil { n += 1 }
         return n
     }
 
@@ -735,10 +430,6 @@ struct MenuContent: View {
     /// rail grid vs horizontal strip.
     @ViewBuilder private var compactControls: some View {
         if !model.footerActionsHidden {
-        Button { model.showSettings?() } label: {
-            Image(systemName: "gearshape")
-        }
-        .instantTip("Settings")
         Button { model.popoverPinned.toggle() } label: {
             Image(systemName: model.popoverPinned ? "pin.fill" : "pin")
         }
@@ -759,13 +450,6 @@ struct MenuContent: View {
                     .foregroundStyle(.orange)
             }
             .instantTip("Restart to update")
-        }
-        if let v = model.appUpdateVersion {
-            Button { model.showSettings?() } label: {
-                Image(systemName: "arrow.down.circle.fill")
-                    .foregroundStyle(.orange)
-            }
-            .instantTip("Infinitus \(v) is out — About → Updates")
         }
         if model.engineBadgeShown { engineBadgeIcon }
         if !model.footerActionsHidden {
@@ -891,7 +575,6 @@ private struct PopupScale: ViewModifier {
 // ThemeColor moved to InfinitusUI/ThemeColor.swift (#9 phase A) — shared
 // with the iOS app.
 
-
 /// First-run card when no swapd binary exists (todo 2026-08-30):
 /// explains the engine and quotes its install line. The rest of the
 /// popup chrome stays functional.
@@ -941,102 +624,100 @@ struct OnboardingCard: View {
             .foregroundStyle(.secondary)
             .frame(width: onboardingTextWidth, alignment: .leading)
             .fixedSize(horizontal: false, vertical: true)
-        Text("For source builds:  \(OnboardingBrief.swapdInstallCommand)")
+        Text("For source builds:  \(Self.swapdInstallCommand)")
             .font(.caption).monospaced()
             .foregroundStyle(.tertiary)
             .textSelection(.enabled)
             .frame(width: onboardingTextWidth, alignment: .leading)
             .fixedSize(horizontal: false, vertical: true)
-        Text("Then sign in with Claude Code and add the detected login in Infinitus.")
-            .font(.caption).monospaced()
+        Text("Then add your first account from Accounts in the Infinitus desktop app.")
+            .font(.caption)
             .foregroundStyle(.tertiary)
-            .textSelection(.enabled)
         DetectionLines(model: model, afterInstall: true)
-        OnboardingBriefButton(model: model, engineInstalled: false)
     }
+
+    /// Source-build fallback; official Mac releases carry the engine in the bundle.
+    static let swapdInstallCommand = "cargo install --git https://github.com/deathemperor/swapd swapd"
 }
 
-/// "Copy for an AI agent" (user 2026-09-03): the whole first-run recipe,
-/// with what this Mac already has ticked, on the clipboard — paste it
-/// into Claude Code and let it do the typing.
-struct OnboardingBriefButton: View {
-    @ObservedObject var model: AppModel
-    let engineInstalled: Bool
-    @State private var copied = false
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 3) {
-            Button(copied ? "Copied" : "Copy for an AI agent") {
-                let text = OnboardingBrief.text(engineInstalled: engineInstalled,
-                                                claude: model.claudeCLI, proxy: model.cliProxy,
-                                                proxyLive: model.cliProxyLive)
-                NSPasteboard.general.clearContents()
-                NSPasteboard.general.setString(text, forType: .string)
-                copied = true
-                DispatchQueue.main.asyncAfter(deadline: .now() + 2) { copied = false }
-            }
-            .font(PopupFont.caption)
-            Text("Paste it into Claude Code and it does the steps for you.")
-                .font(.caption).foregroundStyle(.secondary)
-        }
-    }
-}
-
-/// Engine present, fleet empty: adopt whatever this machine already has
-/// (todo 2026-09-01). `swapd add` registers Claude Code's current login.
+/// Engine present, fleet empty (todo 2026-09-01, reworked 2026-09-22):
+/// the first account is a browser sign-in the desktop app's Accounts page
+/// runs through the engine itself (`swapd add-oauth`, #1213) — no prior
+/// Claude Code login, no relaunch. A login Claude Code already holds is
+/// the one-click shortcut (`swapd add`), gated on the engine's
+/// `.addCurrent`, never on its id.
 struct FirstAccountCard: View {
     @ObservedObject var model: AppModel
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Almost there")
+            Text("Add your first account")
                 .font(.headline)
             Text("The engine is running but manages no accounts yet.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .frame(width: onboardingTextWidth, alignment: .leading)
                 .fixedSize(horizontal: false, vertical: true)
-            if let claude = model.claudeCLI, let email = claude.email {
-                Button {
-                    model.addFirstAccount()
-                } label: {
-                    if model.addingFirstAccount {
-                        HStack(spacing: 5) {
-                            ProgressView().controlSize(.small)
-                            Text("Adding…")
-                        }
-                    } else {
-                        Label("Add \(email)", systemImage: "person.badge.plus")
+            HStack(spacing: 8) {
+                if model.desktopAppInstalled {
+                    Button {
+                        model.openDesktop?(nil)
+                    } label: {
+                        Label("Sign in…", systemImage: "person.crop.circle.badge.plus")
                     }
                 }
-                .disabled(model.addingFirstAccount)
-                // The button already names the account; this line says
-                // where it comes from. The org rides along only when it
-                // is a real one — "<email>'s Organization" is the default
-                // personal org and would print the address a third time.
-                Text(Self.signedInLine(email: email, organization: claude.organization))
-                    .font(.caption).foregroundStyle(.secondary)
-                    .frame(width: onboardingTextWidth, alignment: .leading)
-                    .fixedSize(horizontal: false, vertical: true)
-            } else {
-                Text("Sign in with Claude Code, then relaunch Infinitus to add the detected login.")
-                    .font(.caption).monospaced()
-                    .foregroundStyle(.tertiary)
-                    .textSelection(.enabled)
+                if let claude = model.claudeCLI, let email = claude.email,
+                   model.currentLoginEngine != nil {
+                    Button {
+                        model.addFirstAccount()
+                    } label: {
+                        if model.addingFirstAccount {
+                            HStack(spacing: 5) {
+                                ProgressView().controlSize(.small)
+                                Text("Adding…")
+                            }
+                        } else {
+                            Label("Add \(email)", systemImage: "person.badge.plus")
+                        }
+                    }
+                    .disabled(model.addingFirstAccount)
+                }
             }
+            Text(Self.hint(desktop: model.desktopAppInstalled,
+                           adoptable: model.currentLoginEngine != nil,
+                           email: model.claudeCLI?.email, organization: model.claudeCLI?.organization,
+                           binary: model.swapd?.binaryPath))
+                .font(.caption).foregroundStyle(.secondary)
+                .textSelection(.enabled)
+                .frame(width: onboardingTextWidth, alignment: .leading)
+                .fixedSize(horizontal: false, vertical: true)
             if let msg = model.firstAccountMessage {
                 Text(msg).font(.caption).foregroundStyle(.orange)
                     .frame(width: onboardingTextWidth, alignment: .leading)
                     .fixedSize(horizontal: false, vertical: true)
             }
             DetectionLines(model: model, afterInstall: false)
-            OnboardingBriefButton(model: model, engineInstalled: true)
         }
         .padding(6)
     }
 
+    /// The line under the buttons: where the sign-in happens, and what the
+    /// adopt button adopts. Without the desktop app the CLI line stands in,
+    /// with the located binary — the bundled engine is not on PATH.
+    static func hint(desktop: Bool, adoptable: Bool, email: String?, organization: String?,
+                     binary: String?) -> String {
+        var parts: [String] = []
+        parts.append(desktop
+            ? "Sign in opens the Infinitus app; in Accounts, choose Add account to sign in through your browser."
+            : "Sign in from a terminal: \(binary ?? "swapd") add-oauth")
+        if adoptable, let email {
+            parts.append(signedInLine(email: email, organization: organization))
+        }
+        return parts.joined(separator: " ")
+    }
+
     static func signedInLine(email: String, organization: String?) -> String {
-        let base = "That is the account Claude Code on this Mac is signed in to"
+        let base = "Add \(email) adopts the login Claude Code on this Mac already holds"
         guard let org = organization?.trimmingCharacters(in: .whitespaces), !org.isEmpty,
               org.lowercased() != "\(email.lowercased())'s organization" else { return base + "." }
         return base + " (\(org))."

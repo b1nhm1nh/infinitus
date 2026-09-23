@@ -2,14 +2,17 @@ import type {
   InfinitusAccount,
   InfinitusAwsLogin,
   InfinitusFleet,
+  InfinitusManifestCommand,
   InfinitusSnapshot,
-} from "@t3tools/contracts/infinitus";
+} from "@infinitus/contracts/infinitus";
 import { describe, expect, it } from "vite-plus/test";
 
 import {
   WAIT_ADD_STILL_RUNNING,
   accountCommandArgs,
   accountsPageState,
+  rowFlip,
+  withFlip,
   addAccountCommandArgs,
   buildFleetSection,
   buildForecast,
@@ -18,6 +21,8 @@ import {
   infinitusPageState,
   buildSignInRows,
   signInCommandArgs,
+  signInDismissCommandArgs,
+  signInDismissSupported,
   snapshotOffersAdd,
   snapshotSignInRunning,
   waitAddCommandArgs,
@@ -212,10 +217,21 @@ describe("row actions", () => {
     expect(actionsFor({ preferred: false }, ["switch"])).not.toContain("hold");
   });
 
+  it("offers remove only on a fleet whose capabilities carry it", () => {
+    expect(actionsFor({ preferred: false })).not.toContain("remove");
+    expect(actionsFor({ preferred: false }, ["switch", "remove"])).toContain("remove");
+  });
+
   it("hides the pick-first star on an engine whose accounts carry no preferred knob", () => {
     expect(actionsFor({})).not.toContain("prefer");
     expect(actionsFor({ preferred: false })).toContain("prefer");
     expect(actionsFor({ preferred: true })).toContain("prefer");
+  });
+
+  it("offers keep-warm only when the fleet can and the account carries the flag", () => {
+    expect(actionsFor({ autoIgnite: false })).not.toContain("autoIgnite");
+    expect(actionsFor({ autoIgnite: false }, ["autoIgnite"])).toContain("autoIgnite");
+    expect(actionsFor({}, ["autoIgnite"])).not.toContain("autoIgnite");
   });
 
   it("reports the held flag on the row", () => {
@@ -236,6 +252,11 @@ describe("command arguments", () => {
     expect(accountCommandArgs("claude", row, "hold")).toEqual({
       command: "hold",
       args: ["claude", "2"],
+    });
+    expect(accountCommandArgs("claude", row, "remove")).toEqual({
+      command: "remove",
+      args: ["claude", "2"],
+      options: { yes: "true" },
     });
     expect(accountCommandArgs("claude", row, "unhold")).toEqual({
       command: "unhold",
@@ -259,6 +280,48 @@ describe("command arguments", () => {
     const preferred = rowAt(fleet({ accounts: [account({ number: 3, preferred: true })] }));
     expect(accountCommandArgs("claude", preferred, "prefer").args).toEqual(["claude", "3", "off"]);
   });
+
+  it("toggles keep-warm through the engine's auto-ignite verb", () => {
+    expect(accountCommandArgs("claude", row, "autoIgnite")).toEqual({
+      command: "auto-ignite",
+      args: ["claude", "2", "on"],
+    });
+    const warm = rowAt(fleet({ accounts: [account({ number: 3, autoIgnite: true })] }));
+    expect(accountCommandArgs("claude", warm, "autoIgnite").args).toEqual(["claude", "3", "off"]);
+  });
+});
+
+describe("row flips (#1481)", () => {
+  const row = rowAt(twoAccounts, 1);
+
+  it("names the side each toggle lands on and nothing for the rest", () => {
+    expect(rowFlip(row, "autoIgnite")).toEqual({ number: 2, field: "autoIgnite", to: true });
+    expect(rowFlip(row, "prefer")).toEqual({ number: 2, field: "preferred", to: true });
+    expect(rowFlip(row, "hold")).toEqual({ number: 2, field: "held", to: true });
+    const held = rowAt(fleet({ accounts: [account({ number: 3, disabled: true })] }));
+    expect(rowFlip(held, "unhold")).toEqual({ number: 3, field: "held", to: false });
+    expect(rowFlip(row, "switch")).toBeNull();
+    expect(rowFlip(row, "rename")).toBeNull();
+  });
+
+  it("draws the flag and the hold action that follows it, on that row only", () => {
+    const warm = withFlip(row, rowFlip(row, "autoIgnite"));
+    expect(warm.autoIgnite).toBe(true);
+    expect(accountCommandArgs("claude", warm, "autoIgnite").args).toEqual(["claude", "2", "off"]);
+    const held = withFlip(row, rowFlip(row, "hold"));
+    expect(held.held).toBe(true);
+    expect(held.actions).toContain("unhold");
+    expect(held.actions).not.toContain("hold");
+    const other = rowAt(twoAccounts, 0);
+    expect(withFlip(other, rowFlip(row, "hold"))).toBe(other);
+    expect(withFlip(row, null)).toBe(row);
+  });
+
+  it("draws nothing once the snapshot has caught up", () => {
+    const flip = rowFlip(row, "autoIgnite");
+    const landed = rowAt(fleet({ accounts: [account({ number: 2, autoIgnite: true })] }));
+    expect(withFlip(landed, flip)).toBe(landed);
+  });
 });
 
 describe("add account and re-login", () => {
@@ -271,19 +334,38 @@ describe("add account and re-login", () => {
     replyShape: "",
   };
 
-  it("offers add on a fleet with the in-app sign-in, never off the engine's name", () => {
+  it("offers add on a fleet with either sign-in shape, never off the engine's name", () => {
     expect(buildFleetSection(fleet({ capabilities: ["addOAuth"] })).canAdd).toBe(true);
+    // swapd, live: the CLI's paste-code flow, and no addOAuth (#1213).
+    expect(
+      buildFleetSection(fleet({ engineID: "swapd", capabilities: ["addCurrent", "addToken"] }))
+        .canAdd,
+    ).toBe(true);
     expect(buildFleetSection(fleet({ engineID: "swapd", capabilities: [] })).canAdd).toBe(false);
     expect(buildFleetSection(fleet({ capabilities: ["addToken"] })).canAdd).toBe(false);
   });
 
-  it("marks a lapsed sign-in for re-login only where the fleet can run one", () => {
+  it("keeps the section of a fleet that holds no account yet", () => {
+    // A freshly installed engine reports its provider before its first
+    // account (#1319); the section is the header the Add button hangs on.
+    const fresh = buildFleetSection(fleet({ capabilities: ["addCurrent"], accounts: [] }));
+    expect(fresh.rows).toEqual([]);
+    expect(fresh.canAdd).toBe(true);
+  });
+
+  it("marks a lapsed sign-in whatever the fleet advertises (#1213)", () => {
     const lapsed = account({ usageStatus: "relogin_required" });
     expect(rowAt(fleet({ capabilities: ["addOAuth"], accounts: [lapsed] })).reloginNeeded).toBe(
       true,
     );
+    expect(rowAt(fleet({ capabilities: ["addCurrent"], accounts: [lapsed] })).reloginNeeded).toBe(
+      true,
+    );
     expect(rowAt(fleet({ capabilities: ["addOAuth"] })).reloginNeeded).toBe(false);
-    expect(rowAt(fleet({ capabilities: [], accounts: [lapsed] })).reloginNeeded).toBe(false);
+    // The capability decides who can RUN a sign-in, not whether this one
+    // lapsed: a fleet that advertises nothing is the case the shell's own
+    // `add-oauth` exists for, and the page still has to offer the row.
+    expect(rowAt(fleet({ capabilities: [], accounts: [lapsed] })).reloginNeeded).toBe(true);
   });
 
   it("gates on the manifest listing add and reads the app's sign-in flag", () => {
@@ -539,6 +621,14 @@ describe("page state", () => {
     expect(state({ capability: true, snapshot: snapshot({ fleets: [twoAccounts] }) })).toBe(
       "ready",
     );
+    // A freshly installed engine reports its provider with no account under
+    // it (#1319): that is a page to draw, not the install-an-engine copy.
+    expect(
+      state({
+        capability: true,
+        snapshot: snapshot({ fleets: [{ ...twoAccounts, accounts: [] }] }),
+      }),
+    ).toBe("ready");
   });
 
   it("gates every page the same way: false is unsupported, undefined waits", () => {
@@ -661,6 +751,30 @@ describe("sign-in rows", () => {
       phase: "failed",
       message: "token endpoint refused",
     });
+  });
+
+  it("dismisses through the login verb's --dismiss, only where the manifest lists it", () => {
+    expect(signInDismissCommandArgs("aws", "dev")).toEqual({
+      command: "aws-login",
+      args: ["dev"],
+      options: { dismiss: "true" },
+    });
+    expect(signInDismissCommandArgs("gcloud", "me@example.com").command).toBe("gcloud-login");
+    const verb: InfinitusManifestCommand = {
+      name: "aws-login",
+      args: ["<profile>"],
+      options: ["--local", "--remote"],
+      effect: "human",
+      summary: "",
+      replyShape: "",
+    };
+    expect(signInDismissSupported(snapshot({ commands: [verb] }))).toBe(false);
+    expect(
+      signInDismissSupported(
+        snapshot({ commands: [{ ...verb, options: [...verb.options, "--dismiss"] }] }),
+      ),
+    ).toBe(true);
+    expect(signInDismissSupported(null)).toBe(false);
   });
 
   it("starts a device-code profile flag-less and every other flow on the Mac's browser", () => {

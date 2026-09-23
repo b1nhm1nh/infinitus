@@ -2,8 +2,12 @@
 import * as NodeChildProcess from "node:child_process";
 
 import * as NodeServices from "@effect/platform-node/NodeServices";
-import { ProviderInstanceId } from "@t3tools/contracts";
-import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
+import { ProviderInstanceId } from "@infinitus/contracts";
+import {
+  HostProcessExecutablePath,
+  HostProcessIsExecutable,
+  HostProcessPlatform,
+} from "@infinitus/shared/hostProcess";
 import { describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -15,7 +19,7 @@ import * as Ndjson from "effect/unstable/encoding/Ndjson";
 import * as ChildProcess from "effect/unstable/process/ChildProcess";
 import * as ChildProcessSpawner from "effect/unstable/process/ChildProcessSpawner";
 import * as AcpErrors from "effect-acp/errors";
-import { symlinksSupported } from "@t3tools/shared/testing/symlinks";
+import { symlinksSupported } from "@infinitus/shared/testing/symlinks";
 
 import {
   ANTIGRAVITY_AUTH_BROWSER_MARKER,
@@ -51,6 +55,7 @@ describe("Antigravity process environment", () => {
     geminiHome: "/t3/userdata/providers/antigravity/profile",
     acpDirectory: "/t3/userdata/providers/antigravity/profile/antigravity-acp",
     tokenPath: "/t3/userdata/providers/antigravity/profile/antigravity-acp/acp_token.json",
+    tempDirectory: "/t3/userdata/providers/antigravity/profile/antigravity-acp/tmp",
     browserCommand: "managed-browser-helper",
   };
 
@@ -101,6 +106,7 @@ describe("Antigravity process environment", () => {
         BROWSER: profile.browserCommand,
         PYTHONUNBUFFERED: "1",
         ELECTRON_RUN_AS_NODE: "1",
+        TMPDIR: profile.tempDirectory,
       },
     });
   });
@@ -185,6 +191,47 @@ describe("Antigravity process environment", () => {
         gcpLocation: "us-central1",
       }),
     ).toBeNull();
+  });
+
+  it("isolates TEMP and TMP to the profile directory on Windows", () => {
+    const windowsProfile: AntigravityProfile = {
+      platform: "win32",
+      geminiHome: "C:\\state\\providers\\antigravity\\profile",
+      acpDirectory: "C:\\state\\providers\\antigravity\\profile\\antigravity-acp",
+      tokenPath: "C:\\state\\providers\\antigravity\\profile\\antigravity-acp\\acp_token.json",
+      tempDirectory: "C:\\state\\providers\\antigravity\\profile\\antigravity-acp\\tmp",
+      browserCommand: "managed-browser-helper",
+    };
+    const input = {
+      installation: {
+        executablePath: "C:\\release\\agy_acp_server.exe",
+        harnessPath: "C:\\release\\localharness_external.exe",
+      },
+      profile: windowsProfile,
+      cwd: "C:\\project",
+      baseEnv: { PATH: "C:\\Windows\\system32", TEMP: "C:\\Users\\user\\AppData\\Local\\Temp" },
+    };
+    const shared = buildAntigravityAcpSpawnInput(input);
+    expect(shared.env?.TEMP).toBe(windowsProfile.tempDirectory);
+    expect(shared.env?.TMP).toBe(windowsProfile.tempDirectory);
+    const perRun = buildAntigravityAcpSpawnInput({
+      ...input,
+      runtimeTempDirectory: `${windowsProfile.tempDirectory}\\run-1`,
+    });
+    expect(perRun.env?.TEMP).toBe(`${windowsProfile.tempDirectory}\\run-1`);
+    expect(perRun.env?.TMP).toBe(`${windowsProfile.tempDirectory}\\run-1`);
+  });
+
+  it("isolates TMPDIR to the profile directory on POSIX hosts", () => {
+    const spawn = buildAntigravityAcpSpawnInput({
+      installation: { executablePath: "/release/acp", harnessPath: "/release/harness" },
+      profile,
+      cwd: "/project",
+      baseEnv: { TMPDIR: "/tmp" },
+      runtimeTempDirectory: `${profile.tempDirectory}/run-1`,
+    });
+    expect(spawn.env?.TMPDIR).toBe(`${profile.tempDirectory}/run-1`);
+    expect(spawn.env?.TEMP).toBeUndefined();
   });
 
   it("uses the registry launch arguments for each supported host platform", () => {
@@ -488,6 +535,48 @@ describe("Antigravity stderr compatibility", () => {
 });
 
 it.layer(NodeServices.layer)("Antigravity profile preparation", (it) => {
+  it.effect("runs the browser helper with installed Node in standalone builds", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const directory = yield* fs.makeTempDirectoryScoped();
+      const profile = yield* prepareAntigravityProfile({
+        profileDirectory: path.join(directory, "profile"),
+        baseEnv: { PATH: path.dirname(process.execPath) },
+      });
+      expect(profile.browserCommand).not.toContain("/packaged/t3");
+      expect(yield* fs.exists(profile.acpDirectory)).toBe(true);
+    }).pipe(
+      Effect.provideService(HostProcessIsExecutable, true),
+      Effect.provideService(HostProcessExecutablePath, "/packaged/t3"),
+    ),
+  );
+
+  it.effect("reports missing Node before creating the standalone sign-in profile", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const directory = yield* fs.makeTempDirectoryScoped();
+      const profileDirectory = path.join(directory, "profile");
+      const result = yield* prepareAntigravityProfile({
+        profileDirectory,
+        baseEnv: { PATH: "" },
+      }).pipe(Effect.result);
+      expect(Result.isFailure(result)).toBe(true);
+      if (Result.isFailure(result)) {
+        expect(result.failure).toMatchObject({
+          _tag: "AcpTransportError",
+          detail: expect.stringContaining("Install Node.js"),
+          cause: {
+            _tag: "NodeRuntimeUnavailableError",
+            cause: { _tag: "CommandResolutionError" },
+          },
+        });
+      }
+      expect(yield* fs.exists(profileDirectory)).toBe(false);
+    }).pipe(Effect.provideService(HostProcessIsExecutable, true)),
+  );
+
   it.effect("preflights the no-browser helper and creates private directories only", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;

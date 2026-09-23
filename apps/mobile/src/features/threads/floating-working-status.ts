@@ -1,4 +1,4 @@
-import type { EnvironmentConnectionPhase } from "@t3tools/client-runtime/connection";
+import type { EnvironmentConnectionPhase } from "@infinitus/client-runtime/connection";
 
 /**
  * What the floating pill says. Connection, syncing, and working share one
@@ -51,6 +51,8 @@ export function connectionFloatingStatus(input: {
       };
     case "offline":
       return unavailable("You are offline");
+    case "unsupported":
+      return unavailable("Client not supported");
     case "error":
       return unavailable(
         input.connectionError

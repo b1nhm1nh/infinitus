@@ -119,7 +119,26 @@ actor AwsLoginRunner {
     }
 
     func states() -> [AwsLogin.State] {
-        Array(runs.values.map(\.state)) + finished.values.filter { s in runs[s.runKey] == nil }
+        Array(runs.values.map(\.state))
+            + finished.values.filter { s in runs[s.runKey] == nil && AwsLogin.Ledger.isCurrent(s) }
+    }
+
+    /// Forgets a profile's login (`--dismiss`, the phone card's Dismiss):
+    /// a run in flight is stopped, an outcome is dropped, and the list no
+    /// longer names the profile. The lapse that started it is not
+    /// re-raised until the next expired result.
+    func dismiss(provider: AwsLogin.Provider = .aws, profile: String) -> AwsLogin.Reply {
+        let key = AwsLogin.runKey(provider: provider, profile: profile)
+        let state = runs[key]?.state ?? finished[key]
+        if let run = runs[key] {
+            runs[key] = nil
+            run.process.terminationHandler = nil
+            run.process.terminate()
+            live.remove(run.process)
+        }
+        finished[key] = nil
+        publish()
+        return AwsLogin.Reply(ok: true, state: state)
     }
 
     func state(provider: AwsLogin.Provider = .aws, profile: String) -> AwsLogin.State? {
@@ -280,7 +299,11 @@ actor AwsLoginRunner {
         live.remove(process)
         guard var run = runs[key], run.process === process else { return }
         let prompt = run.state.providerOrAws.parseOutput(run.output)
-        if status == 0 || prompt.succeeded {
+        // The success line, never the exit code: `aws login` returns 0
+        // without "Updated profile" when the rebind question is declined
+        // (login.py returns early), so status alone took the "n" this
+        // runner answers for a sign-in and overrode the refusal above.
+        if prompt.succeeded {
             run.state.phase = .done
             run.state.message = "signed in"
         } else if run.state.phase == .failed, run.state.message != nil {
@@ -291,7 +314,7 @@ actor AwsLoginRunner {
             let last = run.output.replacingOccurrences(of: "\r", with: "\n")
                 .split(separator: "\n").map { $0.trimmingCharacters(in: .whitespaces) }
                 .last { !$0.isEmpty && !$0.hasPrefix("https://") && !$0.lowercased().hasPrefix("enter the authorization") }
-            run.state.message = last.map { String($0.prefix(160)) } ?? "\(run.state.providerOrAws.cliName) exited \(status)"
+            run.state.message = last.map { String($0.prefix(400)) } ?? "\(run.state.providerOrAws.cliName) exited \(status)"
         }
         try? run.stdin.fileHandleForWriting.close()
         runs[key] = nil

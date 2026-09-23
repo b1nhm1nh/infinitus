@@ -1,11 +1,15 @@
 {
-  "name": "@t3tools/shared",
+  "name": "@infinitus/shared",
   "private": true,
   "type": "module",
   "exports": {
     "./orderKeys": {
       "types": "./src/orderKeys.ts",
       "import": "./src/orderKeys.ts"
+    },
+    "./legacyCliLauncher": {
+      "types": "./src/legacyCliLauncher.ts",
+      "import": "./src/legacyCliLauncher.ts"
     },
     "./delimitedPreview": {
       "types": "./src/delimitedPreview.ts",
@@ -43,6 +47,10 @@
       "types": "./src/git.ts",
       "import": "./src/git.ts"
     },
+    "./githubMedia": {
+      "types": "./src/githubMedia.ts",
+      "import": "./src/githubMedia.ts"
+    },
     "./sourceControl": {
       "types": "./src/sourceControl.ts",
       "import": "./src/sourceControl.ts"
@@ -58,6 +66,10 @@
     "./httpObservability": {
       "types": "./src/httpObservability.ts",
       "import": "./src/httpObservability.ts"
+    },
+    "./editor": {
+      "types": "./src/editor.ts",
+      "import": "./src/editor.ts"
     },
     "./shell": {
       "types": "./src/shell.ts",
@@ -118,10 +130,6 @@
     "./projectSettings": {
       "types": "./src/projectSettings.ts",
       "import": "./src/projectSettings.ts"
-    },
-    "./threadEnvMode": {
-      "types": "./src/threadEnvMode.ts",
-      "import": "./src/threadEnvMode.ts"
     },
     "./t3ProjectFile": {
       "types": "./src/t3ProjectFile.ts",
@@ -271,6 +279,10 @@
       "types": "./src/chatList.ts",
       "import": "./src/chatList.ts"
     },
+    "./nodeRuntime": {
+      "types": "./src/nodeRuntime.ts",
+      "import": "./src/nodeRuntime.ts"
+    },
     "./hostProcess": {
       "types": "./src/hostProcess.ts",
       "import": "./src/hostProcess.ts"
@@ -350,6 +362,14 @@
     "./dateTime": {
       "types": "./src/dateTime.ts",
       "import": "./src/dateTime.ts"
+    },
+    "./cliRelease": {
+      "types": "./src/cliRelease.ts",
+      "import": "./src/cliRelease.ts"
+    },
+    "./gitPatchPath": {
+      "types": "./src/gitPatchPath.ts",
+      "import": "./src/gitPatchPath.ts"
     }
   },
   "scripts": {
@@ -357,9 +377,9 @@
     "test": "vp test run"
   },
   "dependencies": {
+    "@infinitus/contracts": "workspace:*",
     "@noble/curves": "catalog:",
     "@noble/hashes": "catalog:",
-    "@t3tools/contracts": "workspace:*",
     "effect": "catalog:",
     "jose": "catalog:",
     "yaml": "catalog:"

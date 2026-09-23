@@ -3,8 +3,10 @@ import Foundation
 /// Away-push triggers beyond account switches (user requests 2026-08-30):
 /// all accounts exhausted, and a warning when the last alive account is
 /// close to dying. Pure state machine — snapshot ticks in, message strings
-/// out — so the episode/dedup rules run under `swift test`; the app posts
-/// each message to Notification Center and through `cswap notify push`.
+/// out — so the episode/dedup rules run under `swift test`. The app
+/// `announce`s each message: a row in the event log the desktop turns into
+/// its own notification, a phone alert, and Notification Center here only
+/// when no desktop is watching (#1032 finished).
 ///
 /// Episode rules:
 ///  - the all-dead latch seeds silently on the first look instead, which
@@ -24,11 +26,16 @@ public struct PushTriggers: Sendable {
         /// Worst plan-window pct (5h/7d/scoped; spend excluded — a spent
         /// credit cap is a footnote, not a death; see AccountVitals).
         public let worstPct: Double?
-        public init(number: Int, name: String, dead: Bool, worstPct: Double?) {
+        /// The one per-model window this death is (`AccountVitals.spentModel`);
+        /// nil when a plan window is spent too, or the account is alive.
+        public let spentModel: String?
+        public init(number: Int, name: String, dead: Bool, worstPct: Double?,
+                    spentModel: String? = nil) {
             self.number = number
             self.name = name
             self.dead = dead
             self.worstPct = worstPct
+            self.spentModel = spentModel
         }
     }
 
@@ -84,7 +91,12 @@ public struct PushTriggers: Sendable {
             if !allDeadAnnounced {
                 allDeadAnnounced = true
                 if flags.allDead, seededAllDead {
-                    out.append("all \(accounts.count) accounts exhausted — \(Self.allDeadTail)")
+                    // Every death the same model window and nothing else:
+                    // name it, the plan windows still have room.
+                    let model = accounts.first?.spentModel
+                        .flatMap { m in accounts.allSatisfy { $0.spentModel == m } ? m : nil }
+                    let what = model.map { "out of \($0)" } ?? "exhausted"
+                    out.append("all \(accounts.count) accounts \(what) — \(Self.allDeadTail)")
                 }
             }
         } else if accounts.contains(where: { !$0.dead }) {

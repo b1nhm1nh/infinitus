@@ -5,13 +5,13 @@ import {
   AssetResource,
   EnvironmentId,
   WS_METHODS,
-} from "@t3tools/contracts";
-import { mediaMimeTypeFromExtension } from "@t3tools/shared/filePreview";
-import { isWindowsAbsolutePath } from "@t3tools/shared/path";
+} from "@infinitus/contracts";
+import { mediaMimeTypeFromExtension } from "@infinitus/shared/filePreview";
+import { isWindowsAbsolutePath } from "@infinitus/shared/path";
 import {
   getProjectFaviconResourceKey,
   isProjectFaviconFallbackUrl,
-} from "@t3tools/shared/projectFavicon";
+} from "@infinitus/shared/projectFavicon";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Result from "effect/Result";
@@ -72,6 +72,8 @@ export type AssetUrlState =
   | {
       readonly _tag: "Success";
       readonly url: string;
+      /** When the signed URL stops working, on the server's clock. */
+      readonly expiresAt: number;
       /** The host path the server chose to serve, when it differs from what was asked for. */
       readonly sourcePath?: string;
       /** Pixel size from the image header, when the server could read one. */
@@ -89,6 +91,7 @@ export function assetUrlStateFromResult(
   return {
     _tag: "Success",
     url,
+    expiresAt: result.value.expiresAt,
     ...(result.value.sourcePath !== undefined ? { sourcePath: result.value.sourcePath } : {}),
     ...(result.value.imageDimensions !== undefined
       ? { imageDimensions: result.value.imageDimensions }

@@ -1,9 +1,9 @@
-import { EnvironmentId, type T3ProjectFileScript } from "@t3tools/contracts";
+import { EnvironmentId, type T3ProjectFileScript } from "@infinitus/contracts";
 import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
-} from "@t3tools/client-runtime/state/runtime";
-import { DEFAULT_RESOLVED_KEYBINDINGS } from "@t3tools/shared/keybindings";
+} from "@infinitus/client-runtime/state/runtime";
+import { DEFAULT_RESOLVED_KEYBINDINGS } from "@infinitus/shared/keybindings";
 import { ChevronDownIcon, PlusIcon } from "lucide-react";
 import { useCallback, useMemo, useState } from "react";
 import { useT3ProjectFileState } from "../../hooks/useT3ProjectFileScripts";
@@ -111,6 +111,7 @@ export function ProjectActionsSettings() {
         command: fileScript.command,
         icon: fileScript.icon ?? "play",
         runOnWorktreeCreate: fileScript.runOnWorktreeCreate ?? false,
+        waitForSetup: fileScript.runOnWorktreeCreate === true && fileScript.async === false,
         keybinding: null,
         previewUrl: fileScript.previewUrl ?? null,
         autoOpenPreview: fileScript.previewUrl ? (fileScript.autoOpenPreview ?? false) : false,
@@ -155,7 +156,7 @@ export function ProjectActionsSettings() {
                   Import scripts
                   <ChevronDownIcon className="size-3.5" />
                 </MenuTrigger>
-                <MenuPopup align="end" className="w-72">
+                <MenuPopup align="end">
                   <MenuGroup>
                     <MenuGroupLabel>Import from infinitus.json</MenuGroupLabel>
                     <p className="px-2 pb-2 text-pretty text-sm text-muted-foreground">

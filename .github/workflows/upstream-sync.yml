@@ -9,6 +9,15 @@ on:
     # GitHub delays scheduled runs under load, and at :30 the fork's runs
     # landed ~5 h late two days running (2026-09-11/12) or not at all.
     - cron: "17 1 * * *"
+    # A backup slot, because an off-peak minute was not enough: on
+    # 2026-09-14 the 01:17 slot never ran at all (watched to +3 h 29 m),
+    # while the nightly's 17:17 slot that same day ran 2 h 09 m late. So
+    # GitHub here both delays and silently DROPS scheduled runs, and one
+    # slot a day is a single point of failure. Two independent chances is
+    # the cheap fix: the job is idempotent — it exits `uptodate` when
+    # upstream is already an ancestor or a branch for that upstream sha
+    # exists — so a day where both fire costs one no-op run.
+    - cron: "43 4 * * *"
   workflow_dispatch:
 permissions:
   contents: write
@@ -26,6 +35,11 @@ jobs:
           token: ${{ secrets.UPSTREAM_SYNC_TOKEN || github.token }}
           fetch-depth: 0
           ref: main
+      - name: Setup Vite+
+        uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version-file: package.json
+          cache: true
       - name: Merge upstream/main onto a sync branch
         id: merge
         env:
@@ -47,18 +61,49 @@ jobs:
             echo "branch $branch already exists; a sync for this upstream sha is pending"
             echo "state=uptodate" >> "$GITHUB_OUTPUT"; exit 0
           fi
+          # Every commit here is --no-verify: `vp config` (the root package's
+          # `prepare`) installs a pre-commit hook that lints the staged files,
+          # and a conflicted merge stages files full of conflict markers, so
+          # the hook can only fail. It killed the 2026-09-17 syncs.
           git checkout -b "$branch"
-          if git merge --no-edit upstream/main; then
+          # The identifier rename (#1368 C, docs/internals/infinitus-rename.md):
+          # once main carries no old identifier, upstream's tip is renamed on
+          # its own branch first, so the merge meets the same names on both
+          # sides. Before the rename lands, `--check` fails and this is skipped.
+          if git show main:scripts/infinitus-rename.ts > /tmp/infinitus-rename.ts 2>/dev/null \
+             && node scripts/infinitus-rename.ts --check 2>/dev/null | grep -q "no old identifier remains"; then
+            git checkout -q -b "$branch-upstream-renamed" upstream/main
+            node /tmp/infinitus-rename.ts
+            # The scope is in the lockfile's peer-set hashes too, and fmt wants node_modules.
+            vp i --no-frozen-lockfile
+            git diff --name-only | xargs vp fmt
+            git add -A
+            # The renamed commit's first parent is the previous renamed commit
+            # already in main, not upstream's tip alone: the merge base of the
+            # sync is then a renamed tree, so a fork edit next to a renamed line
+            # is no longer a conflict. Parented on upstream/main alone, the base
+            # was the unrenamed upstream commit and every such line conflicted,
+            # ~130 files a day (#1538, #1543; #1548 was the hand-made proof).
+            prev=$(git log main --format=%H --grep='^chore: upstream renamed by scripts/infinitus-rename.ts' -1)
+            renamed=$(git commit-tree "$(git write-tree)" ${prev:+-p "$prev"} -p upstream/main \
+              -m "chore: upstream renamed by scripts/infinitus-rename.ts")
+            git reset -q --hard "$renamed"
+            git checkout -q "$branch"
+            merge_from="$branch-upstream-renamed"
+          else
+            merge_from=upstream/main
+          fi
+          if git merge --no-edit --no-verify "$merge_from"; then
             echo "state=clean" >> "$GITHUB_OUTPUT"
           else
             git diff --name-only --diff-filter=U > /tmp/conflicts.txt
-            git add -A && git -c core.editor=true commit --no-edit
+            git add -A && git -c core.editor=true commit --no-edit --no-verify
             echo "state=conflict" >> "$GITHUB_OUTPUT"
           fi
           # Fork rule: GitHub-hosted runners, never Blacksmith (INFINITUS.md).
           if grep -rl "runs-on: blacksmith-" .github/workflows >/dev/null 2>&1; then
             sed -i -E 's/runs-on: blacksmith-[0-9]+vcpu-ubuntu-2404/runs-on: ubuntu-24.04/; s/runs-on: blacksmith-[0-9]+vcpu-macos-26/runs-on: macos-latest/; s/runs-on: blacksmith-[0-9]+vcpu-windows-2025/runs-on: windows-2025/' .github/workflows/*.yml
-            git commit -am "ci: GitHub-hosted runners after the upstream merge" || true
+            git commit -am "ci: GitHub-hosted runners after the upstream merge" --no-verify || true
           fi
           git push -u origin "$branch"
           echo "branch=$branch" >> "$GITHUB_OUTPUT"

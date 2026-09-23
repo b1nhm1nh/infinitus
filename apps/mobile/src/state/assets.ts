@@ -2,21 +2,21 @@ import { useAtomValue } from "@effect/atom-react";
 import {
   type EnvironmentConnectionPhase,
   presentConnectionState,
-} from "@t3tools/client-runtime/connection";
+} from "@infinitus/client-runtime/connection";
 import {
   assetUrlStateFromResult,
   createAssetEnvironmentAtoms,
   createProjectFaviconUrlAtomFamily,
   EMPTY_ASSET_URL_ATOM,
-} from "@t3tools/client-runtime/state/assets";
-import type { AssetResource, EnvironmentId } from "@t3tools/contracts";
+} from "@infinitus/client-runtime/state/assets";
+import type { AssetResource, EnvironmentId } from "@infinitus/contracts";
 import * as Option from "effect/Option";
 import { AsyncResult, Atom } from "effect/unstable/reactivity";
 import { useCallback } from "react";
 
 import { environmentCatalog } from "../connection/catalog";
 import { connectionAtomRuntime } from "../connection/runtime";
-import { projectFaviconCache } from "../lib/projectFaviconCache";
+import { projectFaviconDatabaseCache } from "../lib/projectFaviconDatabaseCache";
 import { type AssetUrlState, deriveAssetUrlState } from "./asset-url-state";
 import { environmentSession, usePreparedConnection } from "./session";
 import { useAtomQueryRunner } from "./use-atom-query-runner";
@@ -26,7 +26,7 @@ export type { AssetUrlFailureReason, AssetUrlState } from "./asset-url-state";
 export const assetEnvironment = createAssetEnvironmentAtoms(connectionAtomRuntime);
 
 export const projectFaviconUrlAtom = createProjectFaviconUrlAtomFamily({
-  imageCache: projectFaviconCache,
+  imageCache: projectFaviconDatabaseCache,
   createUrl: assetEnvironment.createUrl,
   preparedConnection: environmentSession.preparedConnectionValueAtom,
 });

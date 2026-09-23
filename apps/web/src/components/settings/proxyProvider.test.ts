@@ -1,3 +1,5 @@
+import type { CustomModelEntry } from "@infinitus/contracts";
+import { readCustomModelEntries } from "@infinitus/shared/model";
 import { describe, expect, it } from "vite-plus/test";
 
 import {
@@ -45,12 +47,36 @@ describe("proxyProvider", () => {
   it("lists the picker models after any custom models already typed", () => {
     expect(applyProxyDraft(filled, "id", { customModels: ["a"] }).config.customModels).toEqual([
       "a",
-      "kr/gpt-5.6-sol",
-      "kr/claude-opus-5",
+      { slug: "kr/gpt-5.6-sol", capabilities: expect.anything() },
+      { slug: "kr/claude-opus-5", capabilities: expect.anything() },
     ]);
     expect(applyProxyDraft({ ...filled, pickerModels: [] }, "id", {}).config).not.toHaveProperty(
       "customModels",
     );
+  });
+
+  it("gives every picked model the Claude effort descriptor, so the composer shows it", () => {
+    const [added] = applyProxyDraft({ ...filled, pickerModels: ["kr/x"] }, "id", {}).config
+      .customModels as ReadonlyArray<CustomModelEntry>;
+    const descriptors = readCustomModelEntries([added])[0]?.capabilities?.optionDescriptors ?? [];
+    const effort = descriptors.find((descriptor) => descriptor.id === "effort");
+    expect(effort?.type).toBe("select");
+    expect(effort?.type === "select" ? effort.options.map((option) => option.id) : []).toEqual([
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max",
+    ]);
+    expect(descriptors.find((descriptor) => descriptor.id === "fastMode")?.type).toBe("boolean");
+    // The context choice is the only route to 1M on a proxy: the adapter turns
+    // a 1M selection into the long-context beta header, since the `[1m]` suffix
+    // is what a proxy answers 400 to (#1088). It defaults to 200k.
+    const context = descriptors.find((descriptor) => descriptor.id === "contextWindow");
+    expect(context?.type === "select" ? context.options : []).toEqual([
+      { id: "200k", label: "200k", isDefault: true },
+      { id: "1m", label: "1M" },
+    ]);
   });
 
   it("skips picker models the instance already lists, as a slug or an object", () => {
@@ -61,6 +87,23 @@ describe("proxyProvider", () => {
       "kr/gpt-5.6-sol",
       { slug: "kr/claude-opus-5", name: "Opus" },
     ]);
+  });
+
+  it("for Pi: writes PI_PROXY_* vars, no slots, its own dir, and proxy/ picker slugs", () => {
+    const { config, environment } = applyProxyDraft(
+      { ...filled, baseUrl: "http://127.0.0.1:20128/" },
+      "pi_9router",
+      { customModels: ["proxy/kr/gpt-5.6-sol"] },
+      "pi",
+    );
+    expect(environment).toEqual([
+      { name: "PI_PROXY_BASE_URL", value: "http://127.0.0.1:20128", sensitive: false },
+      { name: "PI_PROXY_API_KEY", value: "sk-9r", sensitive: true },
+    ]);
+    expect(config.homePath).toBe("~/.pi-proxy/pi_9router");
+    // Pi custom models carry no Claude descriptors; the picker slug is Pi's
+    // `provider/model`, under the provider the server declares in models.json.
+    expect(config.customModels).toEqual(["proxy/kr/gpt-5.6-sol", "proxy/kr/claude-opus-5"]);
   });
 
   it("validates only when enabled: URL scheme, then key", () => {

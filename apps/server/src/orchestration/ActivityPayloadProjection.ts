@@ -1,11 +1,11 @@
-import { projectQuestionToolInput } from "@t3tools/shared/toolActivity";
+import { projectQuestionToolInput } from "@infinitus/shared/toolActivity";
 import type {
   OrchestrationEvent,
   OrchestrationThreadActivity,
   OrchestrationThreadDetailSnapshot,
-} from "@t3tools/contracts";
-import { isWorkspaceImagePreviewPath } from "@t3tools/shared/filePreview";
-import { extractJsonObject } from "@t3tools/shared/schemaJson";
+} from "@infinitus/contracts";
+import { isWorkspaceImagePreviewPath } from "@infinitus/shared/filePreview";
+import { extractJsonObject } from "@infinitus/shared/schemaJson";
 
 function asRecord(value: unknown): Record<string, unknown> | null {
   return value !== null && typeof value === "object" && !Array.isArray(value)
@@ -248,7 +248,7 @@ function projectPreviewToolMetadata(data: Record<string, unknown>, status: unkno
   const name = item ? `mcp__${item.server}__${item.tool}` : (data.toolName ?? data.tool);
   if (
     typeof name !== "string" ||
-    !/^(?:mcp__)?(?:t3-code|t3_code|t3code)_{1,2}preview_(?:open|navigate|status|snapshot|click|type|press|scroll|resize|set_appearance|evaluate|wait_for|recording_start|recording_stop)$/.test(
+    !/^(?:mcp__)?(?:infinitus|t3-code|t3_code|t3code)_{1,2}preview_(?:open|navigate|status|snapshot|click|type|press|scroll|resize|set_appearance|evaluate|wait_for|recording_start|recording_stop)$/.test(
       name,
     )
   )
@@ -461,6 +461,15 @@ export function projectActivityPayload(
   if (command !== undefined) {
     projectedData.command = command;
   }
+  // Claude's Bash input carries a one-line `description` of what the command
+  // is for; the web shows it as the row's headline (#1231).
+  const description =
+    payload.itemType === "command_execution"
+      ? asTrimmedString(asRecord(data.input)?.description)
+      : undefined;
+  if (description) {
+    projectedData.description = description;
+  }
   const imagePath = projectViewedImagePath(data);
   if (imagePath) {
     projectedData.imagePath = imagePath;
@@ -645,11 +654,17 @@ function dropSupersededToolUpdatedActivities(
 
 export function projectThreadDetailSnapshot(
   snapshot: OrchestrationThreadDetailSnapshot,
+  reasoningMessages = true,
 ): OrchestrationThreadDetailSnapshot {
   return {
     ...snapshot,
     thread: {
       ...snapshot.thread,
+      messages: reasoningMessages
+        ? snapshot.thread.messages
+        : snapshot.thread.messages.map((message) =>
+            message.role === "reasoning" ? { ...message, role: "system" as const } : message,
+          ),
       activities: dropSupersededToolUpdatedActivities(
         dropStaleContextWindowActivities(snapshot.thread.activities),
       ).map(projectActivityPayload),
@@ -657,7 +672,19 @@ export function projectThreadDetailSnapshot(
   };
 }
 
-export function projectActivityEvent(event: OrchestrationEvent): OrchestrationEvent {
+export function projectActivityEvent(
+  event: OrchestrationEvent,
+  reasoningMessages = true,
+): OrchestrationEvent {
+  // Preserve sequence watermarks and message identities for clients whose role
+  // decoder predates reasoning. Filtering would strand their history pages.
+  if (
+    !reasoningMessages &&
+    event.type === "thread.message-sent" &&
+    event.payload.role === "reasoning"
+  ) {
+    return { ...event, payload: { ...event.payload, role: "system" } };
+  }
   if (event.type !== "thread.activity-appended") {
     return event;
   }

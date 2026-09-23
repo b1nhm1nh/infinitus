@@ -180,7 +180,7 @@ public enum NineRouterUsage {
         }
         guard let quotas = wire.quotas else { return .ok(nil, plan: wire.plan) }
 
-        func window(_ q: Wire.Quota, name: String? = nil) -> UsageWindow? {
+        func window(_ q: Wire.Quota, name: String? = nil, session: Bool = false) -> UsageWindow? {
             guard q.unlimited != true else { return nil }
             let pct: Double
             if let rp = q.remainingPercentage {
@@ -192,12 +192,20 @@ public enum NineRouterUsage {
             } else {
                 return nil
             }
+            var resetsAt = q.resetAt
+            // 9Router can retain the previous session's reset after usage
+            // reaches zero. That session is over; keeping its timer makes
+            // a full gauge pulse "resetting…" indefinitely. Weekly windows
+            // retain their fixed reset schedule even when unused.
+            if session, pct == 0, let reset = WeeklyRoll.parse(resetsAt), reset <= now {
+                resetsAt = nil
+            }
             var countdown: String?, clock: String?
-            if let resetAt = q.resetAt, let date = WeeklyRoll.parse(resetAt) {
+            if let date = WeeklyRoll.parse(resetsAt) {
                 countdown = ResetFormat.countdown(until: date, now: now)
                 clock = ResetFormat.clock(date, now: now)
             }
-            return UsageWindow(pct: pct, resetsAt: q.resetAt, countdown: countdown,
+            return UsageWindow(pct: pct, resetsAt: resetsAt, countdown: countdown,
                                clock: clock, name: name)
         }
 
@@ -220,9 +228,12 @@ public enum NineRouterUsage {
                               currency: "credits", resetsAt: quota.resetAt,
                               countdown: countdown, clock: clock)
             } else if lower.hasPrefix("session") {
-                fiveHour = window(quota)
+                fiveHour = window(quota, session: true)
             } else if lower == "weekly (7d)" || lower == "weekly" {
-                sevenDay = window(quota)
+                // 9Router reports a bare percentage, so the ahead/behind
+                // signal is derived here (`Pace`) rather than forwarded.
+                // Weekly windows only — `fiveHour` above stays calm.
+                sevenDay = window(quota).map { Pace.applied(to: $0, fetchedAt: now) }
             } else if lower.hasPrefix("weekly ") {
                 // "weekly opus (7d)" → "Opus"
                 let model = key.dropFirst("weekly ".count)
@@ -251,16 +262,21 @@ public enum NineRouterUsage {
         var scoped: [UsageWindow] = []
         for item in modelQuotas {
             let displayName: String
+            let weekly: Bool
             if item.key.lowercased().hasPrefix("weekly ") {
+                weekly = true
                 displayName = item.key.dropFirst("weekly ".count)
                     .replacingOccurrences(of: "(7d)", with: "")
                     .trimmingCharacters(in: .whitespaces)
                     .capitalized
             } else {
+                weekly = false
                 displayName = Self.modelName(item.key)
             }
             guard let w = window(item.quota, name: displayName) else { continue }
-            scoped.append(w)
+            // Weekly windows get the ahead/behind signal (`Pace`); the
+            // per-model rows stay calm, like `fiveHour`.
+            scoped.append(weekly ? Pace.applied(to: w, fetchedAt: now) : w)
         }
         // Most-burned first — the order the binding-window logic and
         // the eye expect. Hidden rows were honored above; the cap is
@@ -469,10 +485,10 @@ public enum NineRouterMapping {
         return date > now
     }
 
-    /// disabled → relogin_required (a 401/403 last error) → error
-    /// (cooling down) → ok.
+    /// relogin_required (a 401/403 last error) → error (cooling down) → ok.
+    /// A held connection is policy, not a status — see `ProxyMapping`'s
+    /// note; `Account.disabled` carries it and the row draws its windows.
     static func usageStatus(for c: NineRouterConnection, now: Date) -> String {
-        if c.isActive == false { return "disabled" }
         if let status = c.lastError?.status, status == 401 || status == 403 { return "relogin_required" }
         if inCooldown(c, now: now) { return "error" }
         return "ok"

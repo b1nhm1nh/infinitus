@@ -15,7 +15,32 @@ function dataFromNotificationResponse(response: unknown): Record<string, unknown
     return null;
   }
   const data = (content as { readonly data?: unknown }).data;
-  return typeof data === "object" && data !== null ? (data as Record<string, unknown>) : null;
+  if (typeof data === "object" && data !== null) {
+    return data as Record<string, unknown>;
+  }
+  return pushPayloadFromRequest(request);
+}
+
+/** Infinitus (fork, #1375): expo-notifications on iOS fills `content.data`
+    for a remote push from the payload's `body` key alone, and the relay
+    sends its keys (`environmentId`, `threadId`, `deepLink`) at the top level
+    beside `aps` — so `data` is empty there. The push trigger carries the
+    whole `userInfo` as `payload`; that is the same keys, read second. */
+export function pushPayloadFromRequest(request: unknown): Record<string, unknown> | null {
+  if (typeof request !== "object" || request === null) {
+    return null;
+  }
+  const trigger = (request as { readonly trigger?: unknown }).trigger;
+  if (typeof trigger !== "object" || trigger === null) {
+    return null;
+  }
+  if ((trigger as { readonly type?: unknown }).type !== "push") {
+    return null;
+  }
+  const payload = (trigger as { readonly payload?: unknown }).payload;
+  return typeof payload === "object" && payload !== null
+    ? (payload as Record<string, unknown>)
+    : null;
 }
 
 function identifierFromNotificationResponse(response: unknown): string | null {
@@ -69,9 +94,20 @@ function normalizeThreadDeepLink(value: string): string | null {
   }
 }
 
+/** Infinitus (fork, #1375): where an environment's account alert (a limit,
+    a switch, a lapsed sign-in) lands — Settings › Accounts. The relay sends
+    it as an ordinary push with this deep link and no thread. */
+export const INFINITUS_ACCOUNTS_DEEP_LINK = "/settings/accounts";
+/** Infinitus (fork, #1076): a lapsed sign-in's alert lands on the home
+    screen, where the sign-in cards are. */
+export const INFINITUS_HOME_DEEP_LINK = "/";
+
 export function extractAgentNotificationDeepLink(response: unknown): string | null {
   const data = dataFromNotificationResponse(response);
   const deepLink = data?.deepLink;
+  if (deepLink === INFINITUS_ACCOUNTS_DEEP_LINK) {
+    return deepLink;
+  }
   if (typeof deepLink === "string") {
     const normalizedDeepLink = normalizeThreadDeepLink(deepLink);
     if (normalizedDeepLink) {
@@ -83,6 +119,10 @@ export function extractAgentNotificationDeepLink(response: unknown): string | nu
   const threadId = data?.threadId;
   if (typeof environmentId === "string" && typeof threadId === "string") {
     return encodeThreadDeepLink({ environmentId, threadId });
+  }
+  // After the thread fallback: a `/` beside thread ids still means the thread.
+  if (deepLink === INFINITUS_HOME_DEEP_LINK) {
+    return deepLink;
   }
   return null;
 }

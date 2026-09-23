@@ -1,4 +1,4 @@
-import { EnvironmentId } from "@t3tools/contracts";
+import { EnvironmentId } from "@infinitus/contracts";
 import * as Option from "effect/Option";
 import { beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
@@ -17,7 +17,7 @@ const mocks = vi.hoisted(() => ({
   readBase64: vi.fn(),
 }));
 
-vi.mock("@t3tools/client-runtime/state/runtime", () => ({
+vi.mock("@infinitus/client-runtime/state/runtime", () => ({
   // The client-runtime attachments module resolves the same file through its
   // relative import, so these fakes also feed runAttachmentUploadCycle and
   // verifyPersistedAttachmentUpload.
@@ -32,7 +32,7 @@ vi.mock("../state/atom-registry", () => ({
 }));
 
 // The real read lease and cleanup are covered by the composer ownership suite.
-vi.mock("../state/use-composer-drafts", () => ({
+vi.mock("./composerAttachmentPreviewRetention", () => ({
   retainComposerAttachmentFileForPreview: () => () => {},
 }));
 
@@ -92,6 +92,7 @@ vi.mock("expo-file-system", () => ({
 }));
 
 import {
+  ATTACHMENT_UPLOAD_TIMEOUT_MS,
   prepareTurnAttachments,
   releasePendingAttachmentUploads,
   withUploadedMobileAttachmentReferences,
@@ -306,6 +307,34 @@ describe("prepareTurnAttachments", () => {
       await expect(preparing).resolves.toEqual({ status: "abandoned" });
     },
   );
+
+  it("fails a transfer that never settles, so the outbox is not held behind it", async () => {
+    vi.useFakeTimers();
+    try {
+      let nativeSignal: AbortSignal | undefined;
+      mocks.upload.mockImplementation(
+        (_uri: string, _url: string, options: { readonly signal: AbortSignal }) => {
+          nativeSignal = options.signal;
+          // Rejects on the abort at once, as the native task may: the timeout
+          // must still be the error the caller sees.
+          return new Promise((_resolve, reject) => {
+            options.signal.addEventListener("abort", () => reject(new Error("Upload cancelled.")));
+          });
+        },
+      );
+      const preparing = prepareTurnAttachments({
+        environmentId,
+        attachments: [fileBackedImage],
+        supportsImageUploads: true,
+      });
+      const failure = expect(preparing).rejects.toThrow("'photo.png' took too long to upload.");
+      await vi.advanceTimersByTimeAsync(ATTACHMENT_UPLOAD_TIMEOUT_MS);
+      await failure;
+      expect(nativeSignal?.aborted).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 
   it("uploads a file-backed image from its owned copy without staging base64", async () => {
     const prepared = await prepareTurnAttachments({

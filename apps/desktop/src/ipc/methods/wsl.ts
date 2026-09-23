@@ -1,4 +1,4 @@
-import { DesktopWslStateSchema, type DesktopWslState } from "@t3tools/contracts";
+import { DesktopWslStateSchema, type DesktopWslState } from "@infinitus/contracts";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
@@ -21,7 +21,7 @@ const readWslState: Effect.Effect<
   const wslEnvironment = yield* DesktopWslEnvironment.DesktopWslEnvironment;
   const wslBackend = yield* DesktopWslBackend.DesktopWslBackend;
   const settings = yield* appSettings.get;
-  const available = yield* wslEnvironment.isAvailable;
+  const available = settings.localEnvironmentEnabled && (yield* wslEnvironment.isAvailable);
   // Only enumerate distros when WSL is actually available — listDistros on a
   // non-WSL host would spawn wsl.exe and hit the timeout for nothing.
   const distros = available ? yield* wslEnvironment.listDistros : [];

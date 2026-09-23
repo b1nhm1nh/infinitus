@@ -5,10 +5,14 @@ import {
   AuthRelayWriteScope,
   WS_METHODS,
   WsRpcGroup,
-} from "@t3tools/contracts";
+} from "@infinitus/contracts";
 import { describe, expect, it } from "@effect/vitest";
 
-import { RPC_REQUIRED_SCOPES, requiredScopeForRpcMethod } from "./RpcAuthorization.ts";
+import {
+  RPC_REQUIRED_SCOPES,
+  requiredScopeForRpcMethod,
+  requiredScopeForDeviceList,
+} from "./RpcAuthorization.ts";
 
 describe("RPC authorization scopes", () => {
   it("declares exactly one scope for every RPC in the server group", () => {
@@ -63,6 +67,14 @@ describe("RPC authorization scopes", () => {
     );
   });
 
+  it("lets a standard client feed a sign-in code over the secret channel", () => {
+    // A phone pairs with the standard scopes; the layer holds the other
+    // secret verbs to access:write per verb.
+    expect(requiredScopeForRpcMethod(WS_METHODS.infinitusSecret)).toBe(
+      AuthOrchestrationOperateScope,
+    );
+  });
+
   it("rejects unknown RPC method names", () => {
     for (const method of ["server.notRegistered", "toString", "constructor"]) {
       expect(() => requiredScopeForRpcMethod(method)).toThrow(
@@ -70,4 +82,18 @@ describe("RPC authorization scopes", () => {
       );
     }
   });
+});
+
+it("requires operate permission for host retry while preserving read-only listing", () => {
+  expect(requiredScopeForDeviceList({})).toBe(AuthOrchestrationReadScope);
+  expect(requiredScopeForDeviceList({ retryHostId: "remote-host" })).toBe(
+    AuthOrchestrationOperateScope,
+  );
+});
+
+it("requires operate permission for tool updates even alongside a read-only check", () => {
+  expect(requiredScopeForDeviceList({ updateTool: "agent", inspectOnly: true })).toBe(
+    AuthOrchestrationOperateScope,
+  );
+  expect(requiredScopeForDeviceList({ updateTool: "hub" })).toBe(AuthOrchestrationOperateScope);
 });

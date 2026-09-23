@@ -1,4 +1,4 @@
-import type { ClientSettings } from "@t3tools/contracts";
+import type { ClientSettings } from "@infinitus/contracts";
 
 import type { SidebarThreadStatus } from "../components/Sidebar.logic";
 
@@ -13,7 +13,10 @@ const ATTENTION_TITLES: Partial<Record<SidebarThreadStatus, string>> = {
   approval: "Approval needed",
   input: "Input needed",
   held: "Held for headroom",
-  failed: "Session failed",
+  // Upstream's word since #11372, adopted here so the fork carries no second
+  // vocabulary for the same banner: a thread is the product's noun, a session
+  // is the provider's. `held` and `limited` stay ours — upstream has neither.
+  failed: "Thread failed",
 };
 
 /** The banner title for a state that waits on the user, else null. */

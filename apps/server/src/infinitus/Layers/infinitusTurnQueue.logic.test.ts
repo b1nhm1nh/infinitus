@@ -1,5 +1,5 @@
-import { MessageId, QUEUED_TURN_GONE, QueueId, ThreadId } from "@t3tools/contracts";
-import { orderKeyBetween } from "@t3tools/shared/orderKeys";
+import { MessageId, QUEUED_TURN_GONE, QueueId, ThreadId } from "@infinitus/contracts";
+import { orderKeyBetween } from "@infinitus/shared/orderKeys";
 import { describe, expect, it } from "vite-plus/test";
 
 import { OrchestrationCommandInvariantError } from "../../orchestration/Errors.ts";
@@ -32,7 +32,17 @@ const thread = (input: Partial<QueueDrainThread> = {}): QueueDrainThread => ({
   queuedTurns: [row("q1", "m")],
   ...input,
 });
-const open = { held: false, paused: false, inFlight: false, pendingStart: false };
+const session = (status: string, activeTurnId: string | null = null) => ({
+  status,
+  activeTurnId,
+});
+const open = {
+  held: false,
+  paused: false,
+  resuming: false,
+  inFlight: false,
+  pendingStart: false,
+};
 
 describe("queueDrainVerdict (#806)", () => {
   it("sends the first row of an idle thread, by key then by age", () => {
@@ -51,10 +61,6 @@ describe("queueDrainVerdict (#806)", () => {
   });
 
   it("waits while the thread is busy, starting, pending a start, or in error", () => {
-    const session = (status: string, activeTurnId: string | null = null) => ({
-      status,
-      activeTurnId,
-    });
     expect(queueDrainVerdict(thread({ session: session("running", "turn-1") }), open)).toEqual({
       kind: "wait",
       reason: "busy",
@@ -90,6 +96,29 @@ describe("queueDrainVerdict (#806)", () => {
     });
   });
 
+  // #1509: the resume replaces the CLI and then sends, and the session it
+  // leaves in between reads idle. A row sent into that gap becomes a second
+  // turn in one session, and the one the CLI does not answer never completes.
+  it("waits while a limit resume is sending, even for a session that reads idle", () => {
+    expect(
+      queueDrainVerdict(thread({ session: session("ready") }), { ...open, resuming: true }),
+    ).toEqual({ kind: "wait", reason: "resuming" });
+  });
+
+  // No turn is running to steer during that window, so the boundary escape
+  // below must not let a steer row through it either.
+  it("holds a tool-boundary row back while a limit resume is sending", () => {
+    expect(
+      queueDrainVerdict(
+        thread({
+          session: session("running", "turn-1"),
+          queuedTurns: [{ ...row("q1", "m"), sendAt: "tool-boundary" }],
+        }),
+        { ...open, resuming: true, toolBoundary: true },
+      ),
+    ).toEqual({ kind: "wait", reason: "resuming" });
+  });
+
   it("never sends into an archived thread or an empty queue", () => {
     expect(queueDrainVerdict(thread({ archivedAt: "2026-01-01T00:00:00.000Z" }), open)).toEqual({
       kind: "wait",
@@ -100,6 +129,43 @@ describe("queueDrainVerdict (#806)", () => {
       reason: "empty",
     });
     expect(queueDrainVerdict(thread({ queuedTurns: undefined }), open).kind).toBe("wait");
+  });
+});
+
+describe("queueDrainVerdict: a tool boundary (#1318)", () => {
+  const busy = { session: { status: "running", activeTurnId: "turn-1" } };
+  const steer = { ...row("q2", "t"), sendAt: "tool-boundary" as const };
+
+  it("sends the first tool-boundary row while the turn runs, past idle rows ahead of it", () => {
+    const rows = [row("q1", "m"), steer, { ...row("q3", "z"), sendAt: "tool-boundary" as const }];
+    expect(queueDrainVerdict(thread({ ...busy, queuedTurns: rows }), open)).toEqual({
+      kind: "wait",
+      reason: "busy",
+    });
+    expect(
+      queueDrainVerdict(thread({ ...busy, queuedTurns: rows }), { ...open, toolBoundary: true }),
+    ).toEqual({ kind: "send", row: steer });
+    // No such row: a boundary is nothing to an idle-only queue.
+    expect(
+      queueDrainVerdict(thread({ ...busy, queuedTurns: [row("q1", "m")] }), {
+        ...open,
+        toolBoundary: true,
+      }),
+    ).toEqual({ kind: "wait", reason: "busy" });
+  });
+
+  it("treats the row as ordinary at idle and honours its refusal at a boundary", () => {
+    expect(queueDrainVerdict(thread({ queuedTurns: [steer, row("q3", "z")] }), open)).toEqual({
+      kind: "send",
+      row: steer,
+    });
+    expect(
+      queueDrainVerdict(thread({ ...busy, queuedTurns: [row("q1", "m"), steer] }), {
+        ...open,
+        toolBoundary: true,
+        failed: new Set([queuedTurnSignature(threadId, steer)]),
+      }),
+    ).toEqual({ kind: "wait", reason: "failed" });
   });
 });
 

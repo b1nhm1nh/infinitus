@@ -2,20 +2,29 @@ import type {
   AccountAction,
   AccountRowModel,
   UsageWindowBar,
-} from "@t3tools/client-runtime/state/infinitusAccounts";
+} from "@infinitus/client-runtime/state/infinitusAccounts";
 import {
   ArrowLeftRightIcon,
-  ChevronDownIcon,
-  ChevronRightIcon,
+  FlameIcon,
   PauseIcon,
   PencilIcon,
   PlayIcon,
   StarIcon,
+  Trash2Icon,
   TrendingUpIcon,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import { cn } from "../../lib/utils";
+import {
+  AlertDialog,
+  AlertDialogClose,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogPopup,
+  AlertDialogTitle,
+} from "../ui/alert-dialog";
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
@@ -79,10 +88,12 @@ const ACTION_ICON: Record<AccountAction, typeof StarIcon> = {
   hold: PauseIcon,
   unhold: PlayIcon,
   prefer: StarIcon,
+  autoIgnite: FlameIcon,
   rename: PencilIcon,
+  remove: Trash2Icon,
 };
 
-/** The tooltip an action's button carries; `prefer` names the side it toggles to. */
+/** The tooltip an action's button carries; `prefer` and `autoIgnite` name the side they toggle to. */
 function actionLabel(row: AccountRowModel, action: AccountAction): string {
   switch (action) {
     case "switch":
@@ -93,8 +104,12 @@ function actionLabel(row: AccountRowModel, action: AccountAction): string {
       return "Unhold";
     case "prefer":
       return row.preferred ? "Stop preferring" : "Prefer";
+    case "autoIgnite":
+      return row.autoIgnite ? "Stop keeping warm" : "Keep warm (restart its 5h window when cold)";
     case "rename":
       return "Rename";
+    case "remove":
+      return "Remove";
   }
 }
 
@@ -123,7 +138,8 @@ export function AccountRow({
 }) {
   const [renaming, setRenaming] = useState(false);
   const [alias, setAlias] = useState(row.label);
-  const [scopedOpen, setScopedOpen] = useState(false);
+  /** `remove` deletes the credential from the engine, so it asks first. */
+  const [confirmRemove, setConfirmRemove] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const busy = pendingAction !== null;
 
@@ -185,6 +201,9 @@ export function AccountRow({
         {row.preferred ? (
           <StarIcon className="size-3 fill-current text-yellow-500" aria-label="Preferred" />
         ) : null}
+        {row.autoIgnite ? (
+          <FlameIcon className="size-3 fill-current text-orange-500" aria-label="Kept warm" />
+        ) : null}
         {row.plan === null ? null : (
           <span className="text-muted-foreground text-xs">{row.plan}</span>
         )}
@@ -217,6 +236,7 @@ export function AccountRow({
                       aria-label={`${label} ${row.label}`}
                       onClick={() => {
                         if (action === "rename") startRename();
+                        else if (action === "remove") setConfirmRemove(true);
                         else onAction(action);
                       }}
                     />
@@ -229,6 +249,7 @@ export function AccountRow({
                       className={cn(
                         "size-3",
                         action === "prefer" && row.preferred && "fill-current",
+                        action === "autoIgnite" && row.autoIgnite && "fill-current text-orange-500",
                       )}
                     />
                   )}
@@ -242,27 +263,33 @@ export function AccountRow({
 
       {row.windows.length > 0 ? <WindowGrid windows={row.windows} /> : null}
 
-      {row.scoped.length > 0 ? (
-        <div className="flex flex-col gap-1">
-          <Button
-            size="xs"
-            variant="ghost"
-            className="self-start text-muted-foreground"
-            aria-expanded={scopedOpen}
-            onClick={() => setScopedOpen((open) => !open)}
-          >
-            {scopedOpen ? (
-              <ChevronDownIcon className="size-3" aria-hidden />
-            ) : (
-              <ChevronRightIcon className="size-3" aria-hidden />
-            )}
-            {row.scoped.length} model {row.scoped.length === 1 ? "window" : "windows"}
-          </Button>
-          {scopedOpen ? <WindowGrid windows={row.scoped} /> : null}
-        </div>
-      ) : null}
+      {row.scoped.length > 0 ? <WindowGrid windows={row.scoped} /> : null}
 
       {failure === null ? null : <p className="text-destructive text-xs">{failure}</p>}
+
+      <AlertDialog open={confirmRemove} onOpenChange={setConfirmRemove}>
+        <AlertDialogPopup>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Remove {row.label}?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Deletes {row.email}'s credential from the engine. Signing in again adds it back.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogClose render={<Button variant="outline" />}>Cancel</AlertDialogClose>
+            <Button
+              variant="destructive"
+              aria-label={`Confirm removing ${row.label}`}
+              onClick={() => {
+                setConfirmRemove(false);
+                onAction("remove");
+              }}
+            >
+              Remove
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogPopup>
+      </AlertDialog>
     </div>
   );
 }

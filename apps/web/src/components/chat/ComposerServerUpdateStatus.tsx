@@ -1,5 +1,5 @@
 import { Spinner } from "~/components/ui/spinner";
-import type { ServerUpdateState } from "@t3tools/client-runtime/state/server";
+import type { ServerUpdateState } from "@infinitus/client-runtime/state/server";
 import { CircleAlertIcon, DownloadIcon } from "lucide-react";
 import { useId, useState } from "react";
 
@@ -59,7 +59,7 @@ export function ComposerServerUpdateStatus({
             </button>
           }
         />
-        <TooltipPopup side="top" className="max-w-80">
+        <TooltipPopup side="top">
           {title}: {detail}
         </TooltipPopup>
       </Tooltip>

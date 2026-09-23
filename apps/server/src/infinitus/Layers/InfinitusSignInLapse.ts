@@ -4,19 +4,21 @@ import {
   type ProviderRuntimeEvent,
   type ThreadId,
   type TurnId,
-} from "@t3tools/contracts";
+} from "@infinitus/contracts";
 import * as Cause from "effect/Cause";
 import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Stream from "effect/Stream";
-import { makeDrainableWorker } from "@t3tools/shared/DrainableWorker";
+import { makeDrainableWorker } from "@infinitus/shared/DrainableWorker";
 
 import { OrchestrationEngineService } from "../../orchestration/Services/OrchestrationEngine.ts";
 import { ProviderService } from "../../provider/Services/ProviderService.ts";
 import { forkParked } from "../../serverActivation.ts";
 import { InfinitusService } from "../Services/Infinitus.ts";
+import { InfinitusAlertRelay } from "../Services/InfinitusAlertRelay.ts";
+import { INFINITUS_HOME_DEEP_LINK } from "./InfinitusAlertRelay.ts";
 import {
   hasLoginInFlight,
   manifestHasVerb,
@@ -37,7 +39,9 @@ const SEEN_LIMIT = 500;
  * the fork's counterpart to the Mac's transcript scan (retired with the
  * terminal-session features, #1041). Every tool result the Claude driver
  * relays (`item.updated` with the raw `tool_result` block) is read for the
- * CLIs' expired-credentials signatures; a hit leaves one
+ * CLIs' expired-credentials signatures, and every Bash command as it starts
+ * for a login the agent runs itself (`aws login`, `gcloud auth login`: it
+ * blocks on a browser no client shows); a hit leaves one
  * `infinitus.signin.needed` work-log row on the thread ("AWS sign-in needed
  * on <profile>") and, on an app whose manifest lists the verb, starts the
  * Mac's own `aws-login <profile>` / `gcloud-login <account>` flow — through
@@ -59,6 +63,7 @@ export const InfinitusSignInLapseLive = Layer.effectDiscard(
     const providerService = yield* ProviderService;
     const orchestrationEngine = yield* OrchestrationEngineService;
     const infinitus = yield* InfinitusService;
+    const alerts = yield* InfinitusAlertRelay;
     const crypto = yield* Crypto.Crypto;
     const commandId = crypto.randomUUIDv4.pipe(Effect.map(CommandId.make));
     const eventId = crypto.randomUUIDv4.pipe(Effect.map(EventId.make));
@@ -134,6 +139,30 @@ export const InfinitusSignInLapseLive = Layer.effectDiscard(
       });
     };
 
+    /** The phones hear about it (user 2026-09-17): one push through the
+        relay, deep-linked to the home screen's sign-in cards, whether or not
+        the Mac could start the login. An unlinked server or a refused relay is logged, never
+        retried; the row and the login above stand on their own. */
+    const notify = (threadId: ThreadId, lapse: SignInLapse) =>
+      alerts
+        .publish({
+          title: `${lapse.provider === "aws" ? "AWS" : "gcloud"} sign-in needed`,
+          body: `${lapse.profile} has expired credentials. Open Infinitus to sign in from this phone.`,
+          deepLink: INFINITUS_HOME_DEEP_LINK,
+        })
+        .pipe(
+          Effect.asVoid,
+          Effect.catchTags({
+            InfinitusAlertRelayUnlinked: () =>
+              Effect.logDebug("infinitus.signin-lapse.alert-unlinked", { threadId }),
+            InfinitusAlertRelayFailed: (error) =>
+              Effect.logWarning("infinitus.signin-lapse.alert-failed", {
+                threadId,
+                stage: error.stage,
+              }),
+          }),
+        );
+
     const onEvent = (event: ProviderRuntimeEvent) =>
       Effect.gen(function* () {
         const lapse = signInLapseFromEvent(event);
@@ -151,6 +180,7 @@ export const InfinitusSignInLapseLive = Layer.effectDiscard(
         seen.set(key, now);
         yield* mark(threadId, event.turnId ?? null, lapse);
         yield* login(threadId, lapse);
+        yield* notify(threadId, lapse);
       });
 
     const worker = yield* makeDrainableWorker((event: ProviderRuntimeEvent) =>
@@ -167,7 +197,7 @@ export const InfinitusSignInLapseLive = Layer.effectDiscard(
 
     yield* forkParked(
       providerService.streamEvents.pipe(
-        // Only the relayed tool results; the content stream stays out.
+        // Only the relayed tool starts and results; the content stream stays out.
         Stream.filter((event) => event.type === "item.updated"),
         Stream.runForEach((event) => worker.enqueue(event)),
       ),

@@ -1,4 +1,4 @@
-import type { ProjectEntry } from "@t3tools/contracts";
+import type { ProjectEntry } from "@infinitus/contracts";
 import { SymbolView } from "../../components/AppSymbol";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, FlatList, Pressable, RefreshControl, View } from "react-native";
@@ -88,17 +88,17 @@ const FileTreeRow = memo(function FileTreeRow(props: {
         className={cn(
           "min-w-0 flex-1 text-sm leading-normal",
           props.selected
-            ? "font-t3-bold text-foreground"
+            ? "font-infinitus-bold text-foreground"
             : node.ignored
-              ? "font-t3-medium text-foreground-tertiary"
-              : "font-t3-medium text-foreground-secondary",
+              ? "font-infinitus-medium text-foreground-tertiary"
+              : "font-infinitus-medium text-foreground-secondary",
         )}
         numberOfLines={1}
       >
         {node.name}
       </Text>
       {node.kind === "directory" && props.loaded ? (
-        <Text className="text-2xs font-t3-medium text-foreground-tertiary">
+        <Text className="text-2xs font-infinitus-medium text-foreground-tertiary">
           {node.children.length}
         </Text>
       ) : null}
@@ -234,15 +234,6 @@ export function FileTreeBrowser(props: {
     ],
   );
 
-  if (props.error && props.entries.length === 0) {
-    return (
-      <View className="flex-1 bg-sheet px-4 py-5">
-        <Text className="text-sm font-t3-bold text-foreground">Files unavailable</Text>
-        <Text className="mt-1 text-xs leading-normal text-foreground-muted">{props.error}</Text>
-      </View>
-    );
-  }
-
   // SPIKE: render the FlatList as the screen's DIRECT content (no wrapping View), and
   // mirror the Home ScrollView exactly — `contentInsetAdjustmentBehavior: "automatic"`
   // with NO manual contentInset. iOS only applies the nav-bar top inset + scroll-edge
@@ -250,6 +241,7 @@ export function FileTreeBrowser(props: {
   // flex-1 Views is ignored, which is why the tree rendered under the header with no blur.
   return (
     <FlatList
+      alwaysBounceVertical
       className="flex-1"
       data={visibleNodes}
       keyExtractor={(item) => item.node.path}
@@ -270,7 +262,7 @@ export function FileTreeBrowser(props: {
       renderItem={renderItem}
       ListHeaderComponent={
         <>
-          {props.error ? (
+          {props.error && props.entries.length > 0 ? (
             <Text accessibilityRole="alert" className="mx-4 my-2 text-xs text-foreground-muted">
               {props.error}
             </Text>
@@ -284,11 +276,29 @@ export function FileTreeBrowser(props: {
       }
       ListEmptyComponent={
         <View className="px-4 py-5">
-          {props.isPending ? (
+          {props.error && props.entries.length === 0 ? (
+            <>
+              <Text className="text-sm font-infinitus-bold text-foreground">Files unavailable</Text>
+              <Text
+                accessibilityRole="alert"
+                className="mt-1 text-xs leading-normal text-foreground-muted"
+              >
+                {props.error}
+              </Text>
+              <Pressable
+                accessibilityRole="button"
+                onPress={props.onRefresh}
+                disabled={props.isPending}
+                className="mt-3 min-h-11 self-start justify-center rounded-full bg-subtle px-4 active:opacity-70 disabled:opacity-50"
+              >
+                <Text className="text-sm font-infinitus-medium text-foreground">Try again</Text>
+              </Pressable>
+            </>
+          ) : props.isPending ? (
             <ActivityIndicator size="small" />
           ) : (
             <>
-              <Text className="text-sm font-t3-bold text-foreground">No files found</Text>
+              <Text className="text-sm font-infinitus-bold text-foreground">No files found</Text>
               <Text className="mt-1 text-xs leading-normal text-foreground-muted">
                 {props.searchQuery.trim().length > 0
                   ? "Try a different search."

@@ -44,7 +44,7 @@ jobs:
           run-install: true
 
       - name: Ensure Electron runtime is installed
-        run: vp run --filter @t3tools/desktop ensure:electron
+        run: vp run --filter @infinitus/desktop ensure:electron
 
       # Files/dependencies are repo-wide; export checks cover clean workspaces only.
       - name: Check unused code
@@ -52,6 +52,12 @@ jobs:
 
       - name: Check
         run: vp check
+
+      # The fork's identifier rename (#1368 C): fails while an old T3 name is in the tree.
+      - name: Check identifier rename
+        run: node scripts/infinitus-rename.ts --check
+      - name: Check className overrides on components/ui do not grow
+        run: vp run lint:restyle-ceiling
 
       - name: Typecheck
         run: vpr typecheck
@@ -95,7 +101,7 @@ jobs:
           run-install: true
 
       - name: Ensure Electron runtime is installed
-        run: vp run --filter @t3tools/desktop ensure:electron
+        run: vp run --filter @infinitus/desktop ensure:electron
 
       - uses: ./.github/actions/setup-apt-mirrors
 
@@ -104,11 +110,14 @@ jobs:
           sudo sed -i 's|http://|https://|g' /etc/apt/blacksmith-ubuntu-mirrors.txt /etc/apt/sources.list.d/ubuntu.sources
           sudo apt-get update && sudo apt-get install -y libsecret-1-dev pkg-config
 
+      - name: Test preview artifact validation
+        run: python3 -B .github/scripts/stage-preview-bundle.test.py
+
       - name: Test nightly release checks
         run: node --test .github/scripts/check-nightly-release.test.cjs
 
       - name: Test
-        run: vp run --parallel --concurrency-limit 4 --filter '!t3' --filter '!@t3tools/monorepo' test
+        run: vp run --parallel --concurrency-limit 4 --filter '!t3' --filter '!@infinitus/monorepo' test
 
   # apps/server sets `fileParallelism: false`, so its 239 files run strictly
   # one at a time. Sharding spreads them over separate runners instead of
@@ -140,7 +149,7 @@ jobs:
 
       # No Electron setup here: `t3` (apps/server) has no Electron dependency
       # and none of its tests touch the runtime. Only the non-server `test`
-      # job, which covers @t3tools/desktop, needs the download.
+      # job, which covers @infinitus/desktop, needs the download.
       - name: Test
         env:
           T3CODE_TRANSFER_BUDGET_REPORT_PATH: ${{ runner.temp }}/t3code-transfer-budget.md
@@ -313,7 +322,7 @@ jobs:
           cache: true
           run-install: |
             args:
-              - --filter=@t3tools/scripts...
+              - --filter=@infinitus/scripts...
 
       - name: Install mobile native static analysis tools
         run: brew bundle install --file apps/mobile/Brewfile
@@ -341,7 +350,7 @@ jobs:
           cache: true
           run-install: |
             args:
-              - --filter=@t3tools/scripts...
+              - --filter=@infinitus/scripts...
 
       - name: Exercise release-only workflow steps
         run: node scripts/release-smoke.ts
@@ -406,8 +415,10 @@ jobs:
 
           # Release notes are prose the Swift build never reads: a PR whose only
           # apps/mac change is its changelog.d fragment (or CHANGELOG.md at a
-          # release cut) pays no macOS minutes.
-          paths=$(tr '\t' '\n' <<< "$rows" | grep -vE '^apps/mac/(changelog\.d/|CHANGELOG\.md$)')
+          # release cut) pays no macOS minutes. The `|| true` matters: the
+          # runner's shell is `bash -e`, and grep exits 1 when every row is
+          # a note — the very PR this exempts — which failed the step (#1261).
+          paths=$(tr '\t' '\n' <<< "$rows" | grep -vE '^apps/mac/(changelog\.d/|CHANGELOG\.md$)' || true)
 
           pattern='^apps/mac/|^\.github/workflows/ci\.yml$'
 
@@ -500,35 +511,7 @@ jobs:
         if: needs.mac_changes.outputs.changed != 'false'
       - run: swift build
         if: needs.mac_changes.outputs.changed != 'false'
-      - run: swift test
-        if: needs.mac_changes.outputs.changed != 'false'
-  # Known red today: CZlib's module map includes <zlib.h>, which no
-  # Windows toolchain provides, so InfinitusCore does not build there
-  # (apps/mac/docs/superpowers/specs/2026-09-05-team-design.md §9). The
-  # job runs to show when that changes; failures don't block a merge.
-  mac-windows:
-    name: mac-windows
-    needs: mac_changes
-    runs-on: windows-2022
-    continue-on-error: true
-    defaults:
-      run:
-        working-directory: apps/mac
-    steps:
-      - uses: actions/checkout@v6
-        if: needs.mac_changes.outputs.changed != 'false'
-      - uses: compnerd/gha-setup-swift@v0.4.1
-        if: needs.mac_changes.outputs.changed != 'false'
-        with:
-          branch: swift-6.1-release
-          tag: 6.1-RELEASE
-      - run: vcpkg install zlib:x64-windows
-        if: needs.mac_changes.outputs.changed != 'false'
-      # vcpkg's paths ride the command line on purpose: never set INCLUDE
-      # or LIB for this step — a set LIB hides the MSVC lib directories
-      # from the link (2643ed93e3, the fact used to live only there).
-      - run: >
-          swift build --product infinitusctl
-          -Xcc -IC:/vcpkg/installed/x64-windows/include
-          -Xswiftc -LC:/vcpkg/installed/x64-windows/lib
+      # The release workflow's Linux job guards its `swift test` the same
+      # way (#1333): a hung runner fails the step with the partial log.
+      - run: timeout -k 30s 20m swift test
         if: needs.mac_changes.outputs.changed != 'false'

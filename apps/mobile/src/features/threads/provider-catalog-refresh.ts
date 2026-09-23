@@ -1,16 +1,16 @@
-import type { EnvironmentId } from "@t3tools/contracts";
-import type { AtomCommandResult } from "@t3tools/client-runtime/state/runtime";
+import type { EnvironmentId } from "@infinitus/contracts";
+import type { AtomCommandResult } from "@infinitus/client-runtime/state/runtime";
 import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
-} from "@t3tools/client-runtime/state/runtime";
+} from "@infinitus/client-runtime/state/runtime";
 
 type RefreshProvidersTarget = {
   readonly environmentId: EnvironmentId;
   readonly input: { readonly refreshModels: true };
 };
 
-/** Explicit model-picker refresh. Repeated taps share the pending discovery. */
+/** Pull-to-refresh in the model picker shares any pending discovery. */
 export function createProviderCatalogRefreshRunner<Result>(
   refreshProviders: (target: RefreshProvidersTarget) => Promise<Result>,
 ) {

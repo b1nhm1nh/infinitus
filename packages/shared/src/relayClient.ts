@@ -2,7 +2,7 @@ import * as Clock from "effect/Clock";
 import type {
   RelayClientInstallProgressEvent,
   RelayClientInstallProgressStage,
-} from "@t3tools/contracts";
+} from "@infinitus/contracts";
 import * as Config from "effect/Config";
 import * as Context from "effect/Context";
 import * as Crypto from "effect/Crypto";
@@ -104,7 +104,7 @@ const INSTALL_LOCK_RETRY_DELAY = "100 millis";
 const INSTALL_LOCK_STALE_MS = 5 * 60 * 1_000;
 
 const trimmedString = (name: string) =>
-  Config.string(name).pipe(
+  Config.String(name).pipe(
     Config.option,
     Config.map(
       Option.flatMap((value) => {
@@ -133,7 +133,7 @@ export interface RelayClientShape {
 }
 
 export class RelayClient extends Context.Service<RelayClient, RelayClientShape>()(
-  "@t3tools/shared/relayClient",
+  "@infinitus/shared/relayClient",
 ) {}
 
 function executableFileName(platform: NodeJS.Platform): string {

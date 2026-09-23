@@ -1,13 +1,13 @@
 import * as NodeOS from "node:os";
 
-import { HostProcessEnvironment, HostProcessPlatform } from "@t3tools/shared/hostProcess";
-import { resolveInfinitusControlSocketPath } from "@t3tools/shared/infinitusControl";
+import { HostProcessEnvironment, HostProcessPlatform } from "@infinitus/shared/hostProcess";
+import { resolveInfinitusControlSocketPath } from "@infinitus/shared/infinitusControl";
 import {
   INFINITUS_CONTROL_DEFAULT_MAX_REPLY_BYTES,
   INFINITUS_CONTROL_DEFAULT_TIMEOUT_MS,
   requestInfinitusControl,
-} from "@t3tools/shared/infinitusControlSocket";
-import { InfinitusUnavailable } from "@t3tools/contracts/infinitus";
+} from "@infinitus/shared/infinitusControlSocket";
+import { InfinitusUnavailable } from "@infinitus/contracts/infinitus";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
@@ -16,17 +16,18 @@ import {
   InfinitusControlClientConfig,
   type InfinitusControlClientShape,
   type InfinitusControlRequestInput,
+  type InfinitusControlRequestOptions,
 } from "../Services/InfinitusControlClient.ts";
 
 const makeInfinitusControlClient = Effect.gen(function* () {
   const config = yield* InfinitusControlClientConfig;
 
-  // The wire protocol itself lives in `@t3tools/shared/infinitusControlSocket`
+  // The wire protocol itself lives in `@infinitus/shared/infinitusControlSocket`
   // (the desktop shell speaks it too); this layer only adds the resolved path
   // and the configured limits.
   const request: InfinitusControlClientShape["request"] = Effect.fn(
     "InfinitusControlClient.request",
-  )(function* (input: InfinitusControlRequestInput) {
+  )(function* (input: InfinitusControlRequestInput, options?: InfinitusControlRequestOptions) {
     // The verb only (#676): args and options stay on the service span above.
     yield* Effect.annotateCurrentSpan({ "infinitus.command": input.command });
     const socketPath = config.socketPath;
@@ -36,7 +37,7 @@ const makeInfinitusControlClient = Effect.gen(function* () {
     return yield* requestInfinitusControl({
       socketPath,
       request: input,
-      timeoutMs: config.timeoutMs,
+      timeoutMs: options?.timeoutMs ?? config.timeoutMs,
       maxReplyBytes: config.maxReplyBytes,
     });
   });

@@ -1,6 +1,6 @@
 {
-  "name": "@t3tools/contracts",
-  "version": "0.0.40",
+  "name": "@infinitus/contracts",
+  "version": "0.0.42",
   "private": true,
   "files": [
     "dist"
@@ -19,6 +19,10 @@
       "types": "./src/relay.ts",
       "import": "./src/relay.ts"
     },
+    "./relayInfinitusAlert": {
+      "types": "./src/relayInfinitusAlert.ts",
+      "import": "./src/relayInfinitusAlert.ts"
+    },
     "./infinitus": {
       "types": "./src/infinitus.ts",
       "import": "./src/infinitus.ts"
@@ -26,6 +30,14 @@
     "./infinitusPairing": {
       "types": "./src/infinitusPairing.ts",
       "import": "./src/infinitusPairing.ts"
+    },
+    "./infinitusTeamControl": {
+      "types": "./src/infinitusTeamControl.ts",
+      "import": "./src/infinitusTeamControl.ts"
+    },
+    "./infinitusAlert": {
+      "types": "./src/infinitusAlert.ts",
+      "import": "./src/infinitusAlert.ts"
     },
     "./captures": {
       "types": "./src/captures.ts",

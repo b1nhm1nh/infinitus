@@ -1,6 +1,6 @@
 "use client";
 
-import type { DesktopPreviewColorScheme, EnvironmentId } from "@t3tools/contracts";
+import type { DesktopPreviewColorScheme, EnvironmentId } from "@infinitus/contracts";
 import { Minus, MoreVertical, Plus as PlusIcon, RotateCcw } from "lucide-react";
 
 import { Button } from "~/components/ui/button";
@@ -108,7 +108,7 @@ export function PreviewMoreMenu({
         </TooltipTrigger>
         <TooltipPopup>More</TooltipPopup>
       </Tooltip>
-      <MenuPopup align="end" sideOffset={6} className="min-w-56">
+      <MenuPopup align="end" sideOffset={6}>
         <MenuItem onClick={callTab(bridge.hardReload)} disabled={tabDisabled}>
           Hard reload
         </MenuItem>
@@ -125,7 +125,7 @@ export function PreviewMoreMenu({
         </MenuItem>
         <MenuSub>
           <MenuSubTrigger disabled={tabDisabled}>Appearance</MenuSubTrigger>
-          <MenuSubPopup className="min-w-32">
+          <MenuSubPopup>
             <MenuRadioGroup
               value={colorScheme}
               onValueChange={(value) => {

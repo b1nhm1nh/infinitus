@@ -170,7 +170,7 @@ public struct ProxyProfile: Sendable, Equatable {
 }
 
 /// `POST /api-call` → `https://api.anthropic.com/api/oauth/usage` — the raw
-/// body normalizer, port of `claude_swap.oauth.build_usage_result`.
+/// body normalizer, port of the engine's `build_usage_result`.
 public enum OAuthUsage {
     struct Wire: Decodable {
         struct Window: Decodable {
@@ -241,11 +241,16 @@ public enum OAuthUsage {
                                    countdown: countdown, clock: clock)
         }
 
+        // Anthropic's raw usage body carries no pace of its own (swapd
+        // computes and ships it; this endpoint does not), so the
+        // ahead/behind signal is derived here — weekly windows only,
+        // `fiveHour` above stays calm.
         var sevenDay: UsageWindow?
         if let w = wire.sevenDay {
             let (countdown, clock) = resetFields(w.resetsAt)
-            sevenDay = UsageWindow(pct: w.utilization, resetsAt: w.resetsAt,
-                                   countdown: countdown, clock: clock)
+            sevenDay = Pace.applied(to: UsageWindow(pct: w.utilization, resetsAt: w.resetsAt,
+                                                    countdown: countdown, clock: clock),
+                                    fetchedAt: now)
         }
 
         var spend: Spend?
@@ -262,8 +267,10 @@ public enum OAuthUsage {
             guard let name = lim.scope?.model?.displayName, !name.isEmpty,
                   let pct = lim.percent else { continue }
             let (countdown, clock) = resetFields(lim.resetsAt)
-            scoped.append(UsageWindow(pct: pct, resetsAt: lim.resetsAt,
-                                      countdown: countdown, clock: clock, name: name))
+            scoped.append(Pace.applied(to: UsageWindow(pct: pct, resetsAt: lim.resetsAt,
+                                                       countdown: countdown, clock: clock,
+                                                       name: name),
+                                       fetchedAt: now))
         }
 
         if fiveHour == nil, sevenDay == nil, spend == nil, scoped.isEmpty { return nil }
@@ -393,12 +400,17 @@ public enum ProxyMapping {
         return (fleets, ordinals)
     }
 
-    /// disabled → relogin_required (a specific, actionable diagnosis beats
+    /// relogin_required (a specific, actionable diagnosis beats
     /// the generic error branch — the popup's re-login row keys on this
     /// exact string) → error (unavailable, or a status the proxy itself
     /// flagged as non-"active"/"ok") → ok.
+    ///
+    /// A held credential is NOT a status: hold is policy (`Account.disabled`,
+    /// its own field), usageStatus says how readable the measurement is.
+    /// Saying "disabled" here replaced the whole usage strip with a sentinel
+    /// word, so a paused account showed no 5h, 7d or scoped limit at all
+    /// (user 2026-09-16 "paused accounts must show session, 7d, fable limit").
     static func usageStatus(for file: ProxyAuthFile) -> String {
-        if file.disabled == true { return "disabled" }
         if let message = file.statusMessage?.lowercased(),
            message.contains("refresh") || message.contains("token") {
             return "relogin_required"

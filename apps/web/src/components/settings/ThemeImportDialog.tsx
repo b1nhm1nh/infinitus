@@ -22,7 +22,7 @@ import { Alert } from "../ui/alert";
 import { Button } from "../ui/button";
 import { Dialog, DialogHeader, DialogPanel, DialogPopup, DialogTitle } from "../ui/dialog";
 import { ThemeSearchSection } from "./ThemeSearchSection";
-import { PRODUCT_NAME } from "@t3tools/shared/productName";
+import { PRODUCT_NAME } from "@infinitus/shared/productName";
 
 /**
  * A full theme export is a few KB, so anything past this is not a theme file.
@@ -428,7 +428,7 @@ export function ThemeImportDialog({
         <DialogHeader>
           <DialogTitle>Add a theme</DialogTitle>
         </DialogHeader>
-        <DialogPanel className="space-y-5">
+        <DialogPanel>
           <ThemeSearchSection
             onInstalled={(themes, context) => {
               onImportedMany(themes, context);

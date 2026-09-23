@@ -22,8 +22,8 @@ on:
         type: string
         required: true
 # The build jobs only upload artifacts (the runtime token, no scope needed);
-# `publish` alone talks to the repo (`gh release create`; the cask bump goes
-# over its deploy key) and holds `contents: write` itself (#1065). As a
+# `publish` alone talks to the repo (`gh release create`) and holds
+# `contents: write` itself (#1065). As a
 # workflow_call callee this is also the ceiling the nightly caller's build
 # jobs get.
 permissions:
@@ -77,12 +77,64 @@ jobs:
           fi
           { echo "Release notes for $version:"; cat notes.md; } >> "$GITHUB_STEP_SUMMARY"
 
-  # The Swift app on the macOS 26 image (the glass chrome needs its SDK).
-  # Two bundles from one sha: the standalone `Infinitus-<v>.zip` (the cask's)
-  # and `Infinitus-Menu-Bar-<v>.zip` (CFBundleName "Infinitus Menu Bar", no
+  # Fork (#1322): the T3 Connect public values baked into every build —
+  # the desktop, the CLI archive and, by hand, the phone. Upstream's
+  # `relay_public_config` fails the release when the `production`
+  # environment is not filled in; here an empty environment is a release
+  # without T3 Connect, exactly the release cut before the relay existed,
+  # so each value is passed through as it is (empty included) and the
+  # build scripts read an empty string as "disabled". The step summary
+  # says which it was. Values only, never a secret.
+  connect:
+    name: Resolve T3 Connect public config
+    needs: notes
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment:
+      name: production
+    outputs:
+      clerk_publishable_key: ${{ steps.config.outputs.clerk_publishable_key }}
+      clerk_jwt_template: ${{ steps.config.outputs.clerk_jwt_template }}
+      clerk_cli_oauth_client_id: ${{ steps.config.outputs.clerk_cli_oauth_client_id }}
+      relay_url: ${{ steps.config.outputs.relay_url }}
+    env:
+      RELAY_DOMAIN: ${{ vars.RELAY_DOMAIN }}
+      RELAY_API_ZONE_NAME: ${{ vars.RELAY_API_ZONE_NAME }}
+      CLERK_PUBLISHABLE_KEY: ${{ vars.CLERK_PUBLISHABLE_KEY }}
+      CLERK_JWT_TEMPLATE: ${{ vars.CLERK_JWT_TEMPLATE }}
+      CLERK_CLI_OAUTH_CLIENT_ID: ${{ vars.CLERK_CLI_OAUTH_CLIENT_ID }}
+    steps:
+      - id: config
+        shell: bash
+        run: |
+          set -euo pipefail
+          relay_domain="${RELAY_DOMAIN:-}"
+          if [[ -z "$relay_domain" && -n "${RELAY_API_ZONE_NAME:-}" ]]; then
+            relay_domain="relay.$RELAY_API_ZONE_NAME"
+          fi
+          relay_url=""
+          if [[ -n "$relay_domain" ]]; then
+            relay_url="https://$relay_domain"
+          fi
+          {
+            echo "clerk_publishable_key=${CLERK_PUBLISHABLE_KEY:-}"
+            echo "clerk_jwt_template=${CLERK_JWT_TEMPLATE:-}"
+            echo "clerk_cli_oauth_client_id=${CLERK_CLI_OAUTH_CLIENT_ID:-}"
+            echo "relay_url=$relay_url"
+          } >> "$GITHUB_OUTPUT"
+          if [[ -n "$relay_url" && -n "${CLERK_PUBLISHABLE_KEY:-}" && -n "${CLERK_JWT_TEMPLATE:-}" && -n "${CLERK_CLI_OAUTH_CLIENT_ID:-}" ]]; then
+            echo "T3 Connect: builds point at $relay_url." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "T3 Connect: off (the production environment carries no relay config)." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+  # The Swift app on the macOS 26 image (the glass chrome needs its SDK):
+  # `Infinitus-Menu-Bar-<v>.zip` (CFBundleName "Infinitus Menu Bar", no
   # infinitus:// URL type), which the desktop job nests as a login item.
   # Signed, notarized and stapled here so the nested copy carries its own
-  # ticket into the desktop bundle (#777).
+  # ticket into the desktop bundle (#777). The standalone `Infinitus-<v>.zip`
+  # and its Homebrew cask left with #1238: the menu bar app ships only
+  # inside the desktop app.
   mac:
     name: Build menu bar app
     needs: notes
@@ -146,22 +198,19 @@ jobs:
           IDENTITY=$(security find-identity -v -p codesigning "$KEYCHAIN" \
             | awk -F'"' '/Developer ID Application/ {print $2; exit}')
           echo "SIGN_IDENTITY=$IDENTITY" >> "$GITHUB_ENV"
-      # Two bundles from one build (#777): the standalone app, and the copy
-      # Infinitus desktop nests at Contents/Library/LoginItems — named
-      # "Infinitus Menu Bar", no infinitus:// URL type (the desktop owns
-      # the scheme). make-app.sh writes a fixed Infinitus.app, so each is
-      # moved into out/ before the next.
+      # The copy Infinitus desktop nests at Contents/Library/LoginItems —
+      # named "Infinitus Menu Bar", no infinitus:// URL type (the desktop
+      # owns the scheme). make-app.sh writes a fixed Infinitus.app, so it
+      # is moved into out/ under its own name.
       - name: Build bundled account engine
         env:
           INFINITUS_ENGINE_BUILD_ROOT: ${{ runner.temp }}/infinitus-engine
         run: |
           ./build-swapd.sh
           echo "INFINITUS_BUNDLED_SWAPD=$INFINITUS_ENGINE_BUILD_ROOT/bin/swapd" >> "$GITHUB_ENV"
-      - name: Build app bundles
+      - name: Build app bundle
         run: |
           mkdir out
-          ./make-app.sh
-          mv Infinitus.app out/
           INFINITUS_BUNDLE_NAME="Infinitus Menu Bar" ./make-app.sh
           mv Infinitus.app "out/Infinitus Menu Bar.app"
       - name: Notarize and staple
@@ -172,23 +221,21 @@ jobs:
           NOTARY_KEY_BASE64: ${{ secrets.NOTARY_KEY_BASE64 }}
         run: |
           echo "$NOTARY_KEY_BASE64" | base64 --decode > "$RUNNER_TEMP/AuthKey.p8"
-          for APP in out/Infinitus.app "out/Infinitus Menu Bar.app"; do
-            ditto -c -k --keepParent "$APP" notarize.zip
-            xcrun notarytool submit notarize.zip --wait \
-              --key "$RUNNER_TEMP/AuthKey.p8" --key-id "$NOTARY_KEY_ID" \
-              --issuer "$NOTARY_ISSUER_ID"
-            xcrun stapler staple "$APP"
-            spctl --assess --type execute -vv "$APP"
-            rm notarize.zip
-          done
+          APP="out/Infinitus Menu Bar.app"
+          ditto -c -k --keepParent "$APP" notarize.zip
+          xcrun notarytool submit notarize.zip --wait \
+            --key "$RUNNER_TEMP/AuthKey.p8" --key-id "$NOTARY_KEY_ID" \
+            --issuer "$NOTARY_ISSUER_ID"
+          xcrun stapler staple "$APP"
+          spctl --assess --type execute -vv "$APP"
+          rm notarize.zip
       - name: Zip
         env:
           VERSION: ${{ steps.version.outputs.version }}
         run: |
-          ditto -c -k --keepParent out/Infinitus.app "Infinitus-${VERSION}.zip"
           ditto -c -k --keepParent "out/Infinitus Menu Bar.app" "Infinitus-Menu-Bar-${VERSION}.zip"
-          shasum -a 256 "Infinitus-${VERSION}.zip" "Infinitus-Menu-Bar-${VERSION}.zip"
-      # The ditto zips travel as the run artifact (symlinks and the staple
+          shasum -a 256 "Infinitus-Menu-Bar-${VERSION}.zip"
+      # The ditto zip travels as the run artifact (symlinks and the staple
       # survive; the artifact wrapper is unpacked by the consumers).
       - uses: actions/upload-artifact@v4
         with:
@@ -199,7 +246,7 @@ jobs:
 
   desktop:
     name: Build desktop macOS arm64
-    needs: [notes, mac]
+    needs: [notes, mac, connect]
     runs-on: macos-latest
     timeout-minutes: 45
     outputs:
@@ -221,7 +268,7 @@ jobs:
           run-install: false
 
       - name: Install desktop dependencies
-        run: vp install --filter=@t3tools/desktop... --filter=t3... --filter=@t3tools/scripts...
+        run: vp install --filter=@infinitus/desktop... --filter=t3... --filter=@infinitus/scripts...
 
       - name: Cache resource monitor
         id: resource_monitor_cache
@@ -254,10 +301,8 @@ jobs:
         run: |
           set -euo pipefail
           dir="$RUNNER_TEMP/native-helper"
-          # The mac job uploads two bundles: the standalone `Infinitus-<v>.zip`
-          # (CFBundleName "Infinitus", the infinitus:// URL type) and the nested
-          # build `Infinitus-Menu-Bar-<v>.zip` ("Infinitus Menu Bar", no URL type).
-          # Only the second is nested.
+          # The mac job uploads the nested build `Infinitus-Menu-Bar-<v>.zip`
+          # ("Infinitus Menu Bar", no URL type).
           zip=$(ls "$dir"/Infinitus-Menu-Bar-*.zip)
           ditto -x -k "$zip" "$dir/unpacked"
           app=$(find "$dir/unpacked" -maxdepth 2 -name '*.app' -type d | head -n 1)
@@ -385,7 +430,18 @@ jobs:
           APPLE_API_KEY_ID: ${{ secrets.NOTARY_KEY_ID }}
           APPLE_API_ISSUER: ${{ secrets.NOTARY_ISSUER_ID }}
           APPLE_TEAM_ID: Q783W6B4FA
+          # Fork (#1322): T3 Connect's public values, empty when unset.
+          T3CODE_CLERK_PUBLISHABLE_KEY: ${{ needs.connect.outputs.clerk_publishable_key }}
+          T3CODE_CLERK_JWT_TEMPLATE: ${{ needs.connect.outputs.clerk_jwt_template }}
+          T3CODE_CLERK_CLI_OAUTH_CLIENT_ID: ${{ needs.connect.outputs.clerk_cli_oauth_client_id }}
+          T3CODE_RELAY_URL: ${{ needs.connect.outputs.relay_url }}
           T3CODE_DESKTOP_NATIVE_HELPER: ${{ steps.native_helper.outputs.path }}
+          # Fork (#1322): a signed build that carries the Clerk key must also
+          # carry an Associated Domains provisioning profile for
+          # run.infinitus.desktop (passkeys), or the build script refuses.
+          # Base64 of the .provisionprofile; absent = ship signed without
+          # T3 Connect rather than fail the release.
+          MACOS_PROVISIONING_PROFILE: ${{ secrets.MACOS_PROVISIONING_PROFILE }}
         run: |
           set -euo pipefail
           args=(
@@ -397,6 +453,17 @@ jobs:
           )
           if [[ "${{ steps.signing.outputs.signed }}" == "true" ]]; then
             args+=(--signed)
+            if [[ -n "${T3CODE_CLERK_PUBLISHABLE_KEY:-}" ]]; then
+              if [[ -n "${MACOS_PROVISIONING_PROFILE:-}" ]]; then
+                profile_path="$RUNNER_TEMP/infinitus.provisionprofile"
+                printf '%s' "$MACOS_PROVISIONING_PROFILE" | base64 -D > "$profile_path"
+                security cms -D -i "$profile_path" >/dev/null
+                export T3CODE_MACOS_PROVISIONING_PROFILE="$profile_path"
+              else
+                echo "Signed desktop without T3 Connect: MACOS_PROVISIONING_PROFILE is not set, so the Clerk key stays out of this build." >> "$GITHUB_STEP_SUMMARY"
+                unset T3CODE_CLERK_PUBLISHABLE_KEY T3CODE_CLERK_JWT_TEMPLATE T3CODE_CLERK_CLI_OAUTH_CLIENT_ID T3CODE_RELAY_URL
+              fi
+            fi
           else
             export CSC_IDENTITY_AUTO_DISCOVERY=false
           fi
@@ -494,6 +561,10 @@ jobs:
     name: Build Linux tray
     needs: notes
     runs-on: ${{ matrix.runner }}
+    # Both architectures finish in about 4 minutes; without this the job
+    # fell to GitHub's 6-hour default and alpha.15 sat 98 minutes on a
+    # hung `swift test` (#1333).
+    timeout-minutes: 20
     strategy:
       matrix:
         include:
@@ -522,7 +593,10 @@ jobs:
             grep -q "\"$V\"" Sources/InfinitusTray/BuiltVersion.swift
           fi
       - run: swift build -c release -Xswiftc -static-stdlib
-      - run: swift test
+      # A per-process guard (#1333): the aarch64 runner once hung at a
+      # suite's start with its output buffered, and a cancelled job keeps
+      # a truncated log where a failed step keeps the partial one.
+      - run: timeout -k 30s 15m swift test
       - name: Stage artifacts
         run: |
           mkdir -p dist
@@ -537,9 +611,159 @@ jobs:
           name: linux-${{ matrix.arch }}
           path: apps/mac/dist/
 
+  # The self-contained CLI archives every runtime installer downloads
+  # (#1192): `infinitus-<version>-linux-<arch>.tar.gz` plus the SHA256SUMS
+  # `pinnedRuntime` verifies against. Linux only — that is where SSH remote
+  # environments run; a Mac or Windows CLI has no archive here and the
+  # installers fail with the plain "no archive for this version" 404 rather
+  # than reaching for upstream's (`CLI_RELEASE_REPOSITORY`, #1193).
+  #
+  # Registration point: the build steps below are upstream's `cli_archive`
+  # steps from .github/workflows/release-desktop.yml, copied rather than
+  # called. That workflow's job downloads a `js-bundle` artifact only
+  # upstream's `build_bundle` produces, plus its relay tracing config and
+  # four required clerk/relay inputs this fork has no source for, so calling
+  # it would mean porting half of upstream's release pipeline. Re-diff these
+  # steps against that file on every sync, like the runner swap.
+  #
+  # Skipped for the nightly (`inputs.version` is set only by
+  # infinitus-nightly.yml's workflow_call): a nightly ships no archives, so
+  # a nightly desktop's SSH remotes fail cleanly. The dispatch dry run still
+  # builds them, so a tag is never the first time these steps run. `publish`
+  # needs this job and is tag-only, and a tag sets no inputs, so the skip
+  # never strands it.
+  cli:
+    name: Build CLI archive ${{ matrix.label }}
+    if: ${{ !inputs.version }}
+    needs: [notes, connect]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    strategy:
+      matrix:
+        include:
+          - label: linux-x64
+            runner: ubuntu-latest
+            arch: x64
+            rust_target: x86_64-unknown-linux-gnu
+          - label: linux-arm64
+            runner: ubuntu-24.04-arm
+            arch: arm64
+            rust_target: aarch64-unknown-linux-gnu
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          sparse-checkout: |
+            /*
+            !/.repos/
+          sparse-checkout-cone-mode: false
+
+      - name: Resolve release version
+        id: version
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          version="$(head -1 VERSION | tr -cd '0-9A-Za-z.-')"
+          case "$GITHUB_REF" in
+            refs/tags/*)
+              if [[ "$GITHUB_REF_NAME" != "v$version" ]]; then
+                echo "Tag $GITHUB_REF_NAME does not match VERSION ($version)." >&2
+                exit 1
+              fi;;
+          esac
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Setup Vite+
+        uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version-file: package.json
+          cache: true
+          run-install: false
+
+      # Upstream's three filters unchanged: build-cli-archive.ts imports the
+      # staging helpers from scripts/build-desktop-artifact.ts, so the
+      # desktop package's dependency closure has to be installed even though
+      # nothing Electron is built here.
+      - name: Install CLI dependencies
+        run: vp install --filter=@infinitus/desktop... --filter=t3... --filter=@infinitus/scripts...
+
+      - name: Cache resource monitor
+        id: resource_monitor_cache
+        uses: actions/cache@v6
+        with:
+          path: native/resource-monitor/target/${{ matrix.rust_target }}/release/t3-resource-monitor
+          key: resource-monitor-${{ matrix.rust_target }}-${{ hashFiles('native/resource-monitor/Cargo.lock', 'native/resource-monitor/Cargo.toml', 'native/resource-monitor/src/**') }}
+
+      - name: Setup Rust
+        if: steps.resource_monitor_cache.outputs.cache-hit != 'true'
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rust_target }}
+
+      # The desktop build script builds this for the DMG; a CLI-only job has
+      # to do it itself, with the flags that script uses.
+      - name: Build resource monitor
+        if: steps.resource_monitor_cache.outputs.cache-hit != 'true'
+        run: >-
+          cargo build --locked --release
+          --manifest-path native/resource-monitor/Cargo.toml
+          --target ${{ matrix.rust_target }}
+
+      - name: Align package versions to release version
+        run: node scripts/update-release-package-versions.ts "${{ steps.version.outputs.version }}"
+
+      # Before the single-executable: `build-exe` packs apps/server/dist-exe,
+      # but the archive also carries apps/server/dist/client, which t3#build
+      # emits. Not `build:desktop` — that adds the Electron main and needs
+      # libsecret headers on Linux for a bundle nothing here ships.
+      - name: Build server bundle and web client
+        env:
+          # Fork (#1322): T3 Connect's public values, empty when unset.
+          T3CODE_CLERK_PUBLISHABLE_KEY: ${{ needs.connect.outputs.clerk_publishable_key }}
+          T3CODE_CLERK_JWT_TEMPLATE: ${{ needs.connect.outputs.clerk_jwt_template }}
+          T3CODE_CLERK_CLI_OAUTH_CLIENT_ID: ${{ needs.connect.outputs.clerk_cli_oauth_client_id }}
+          T3CODE_RELAY_URL: ${{ needs.connect.outputs.relay_url }}
+        run: vp run --filter t3 build
+
+      # The single-executable needs a Node with --build-sea (25.7+) while the
+      # repo stays on engines.node; vp downloads this exact version. Keep in
+      # step with SEA_NODE_VERSION in apps/server/vite.config.ts.
+      - name: Build CLI single-executable
+        env:
+          VP_NODE_VERSION: "26.8.2"
+        run: node apps/server/scripts/cli.ts build-exe --verbose
+
+      - name: Stage resource monitor for the CLI archive
+        run: |
+          set -euo pipefail
+          target_dir="$RUNNER_TEMP/cli-resource-monitor/linux-${{ matrix.arch }}"
+          mkdir -p "$target_dir"
+          cp "native/resource-monitor/target/${{ matrix.rust_target }}/release/t3-resource-monitor" \
+             "$target_dir/t3-resource-monitor"
+
+      - name: Build CLI archive
+        run: >-
+          node scripts/build-cli-archive.ts
+          --platform linux
+          --arch ${{ matrix.arch }}
+          --version "${{ steps.version.outputs.version }}"
+          --resource-monitor-dir "$RUNNER_TEMP/cli-resource-monitor"
+          --output-dir release-cli
+
+      - name: Smoke-test CLI archive
+        run: >-
+          node scripts/smoke-cli-archive.ts --archive release-cli/*
+          --expect-version "${{ steps.version.outputs.version }}"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cli-linux-${{ matrix.arch }}
+          path: release-cli/*
+          if-no-files-found: error
+
   # One release for the tag: the DMG, its zip, blockmaps and the
   # `<prerelease id>-mac.yml` manifest electron-updater installs from
-  # (#924), both menu bar zips, the Linux binaries. A prerelease while the
+  # (#924), the menu bar zip, the Linux binaries. A prerelease while the
   # version carries a prerelease tag (`-alpha.N` or `-beta.N`; electron-updater
   # knows no other id, #924), a full
   # release otherwise, so `releases/latest` is the one-app release once a
@@ -548,8 +772,9 @@ jobs:
   publish:
     name: Publish release
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [mac, desktop, linux]
-    runs-on: macos-latest
+    needs: [mac, desktop, linux, cli]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
     permissions:
       contents: write
     env:
@@ -571,12 +796,27 @@ jobs:
           cp artifacts/linux-x86_64/infinitus-tray-linux-x86_64 \
              artifacts/linux-aarch64/infinitus-tray-linux-aarch64 \
              artifacts/linux-x86_64/infinitus-omarchy.tar.gz release-assets/
+          # The CLI archives every runtime installer downloads (#1192).
+          cp artifacts/cli-linux-x64/infinitus-*.tar.gz \
+             artifacts/cli-linux-arm64/infinitus-*.tar.gz release-assets/
           channel="${VERSION#*-}"
           [[ "$channel" == "$VERSION" ]] && channel=latest || channel="${channel%%.*}"
-          for want in "Infinitus-${VERSION}.zip" "Infinitus-Menu-Bar-${VERSION}.zip" \
-                      "Infinitus-${VERSION}-arm64.dmg" "Infinitus-${VERSION}-arm64.zip" "${channel}-mac.yml"; do
+          for want in "Infinitus-Menu-Bar-${VERSION}.zip" \
+                      "Infinitus-${VERSION}-arm64.dmg" "Infinitus-${VERSION}-arm64.zip" "${channel}-mac.yml" \
+                      "infinitus-${VERSION}-linux-x64.tar.gz" "infinitus-${VERSION}-linux-arm64.tar.gz"; do
             [[ -f "release-assets/$want" ]] || { echo "Missing release asset $want" >&2; ls -1 release-assets >&2; exit 1; }
           done
+          # `pinnedRuntime` verifies a downloaded archive against this file
+          # (`CLI_RELEASE_CHECKSUMS_FILE`), and `parseChecksums` keys on the
+          # name as written — so hash from inside the directory, with bare names.
+          (
+            cd release-assets
+            shopt -s nullglob
+            archives=(infinitus-*.tar.gz)
+            if [[ ${#archives[@]} -eq 0 ]]; then echo "No CLI archives were produced." >&2; exit 1; fi
+            shasum -a 256 "${archives[@]}" > SHA256SUMS
+            cat SHA256SUMS
+          )
           ls -l release-assets
       - name: Publish release
         env:
@@ -593,53 +833,5 @@ jobs:
             echo "apps/mac/CHANGELOG.md has no '## $VERSION' section; a release ships with notes." >&2
             exit 1
           fi
-          args=(--title "Infinitus $VERSION" --notes-file notes.md --target "$GITHUB_SHA")
-          if [[ "$VERSION" == *-* ]]; then
-            args+=(--prerelease)
-          fi
-          gh release create "$GITHUB_REF_NAME" "${args[@]}" release-assets/*
+          bash scripts/publish-infinitus-release.sh release-assets notes.md
           echo "Published $GITHUB_REF_NAME." >> "$GITHUB_STEP_SUMMARY"
-      # Auto-bump the tap cask (CodexBar-style release->tap dispatch, done
-      # here with a repo-scoped deploy key instead of a PAT).
-      - name: Bump Homebrew cask
-        env:
-          TAP_DEPLOY_KEY: ${{ secrets.TAP_DEPLOY_KEY }}
-          VERSION: ${{ needs.desktop.outputs.version }}
-        run: |
-          SHA=$(shasum -a 256 "release-assets/Infinitus-${VERSION}.zip" | cut -d' ' -f1)
-          mkdir -p ~/.ssh && ssh-keyscan github.com >> ~/.ssh/known_hosts
-          echo "$TAP_DEPLOY_KEY" > ~/.ssh/tap_key && chmod 600 ~/.ssh/tap_key
-          export GIT_SSH_COMMAND="ssh -i ~/.ssh/tap_key -o IdentitiesOnly=yes"
-          git clone git@github.com:deathemperor/homebrew-tap.git tap
-          cd tap
-          sed -i '' -e "s/^  version \".*\"/  version \"${VERSION}\"/" \
-                    -e "s/^  sha256 \".*\"/  sha256 \"${SHA}\"/" Casks/infinitus.rb
-          # infinitusctl (agent control CLI, bundled since 0.4) onto PATH —
-          # added once, on the first release that ships it; idempotent.
-          grep -q '^  binary ' Casks/infinitus.rb || perl -0pi -e \
-            's|^  app "Infinitus.app"\n|  app "Infinitus.app"\n  binary "#{appdir}/Infinitus.app/Contents/MacOS/infinitusctl"\n|m' \
-            Casks/infinitus.rb
-          # `ictl`, the short name for the same binary; same once-only rule.
-          grep -q 'MacOS/ictl"' Casks/infinitus.rb || perl -0pi -e \
-            's|^(  binary "#\{appdir\}/Infinitus.app/Contents/MacOS/infinitusctl"\n)|$1  binary "#{appdir}/Infinitus.app/Contents/MacOS/ictl"\n|m' \
-            Casks/infinitus.rb
-          grep -q 'Resources/bin/infinitus"' Casks/infinitus.rb || perl -0pi -e \
-            's|^(  binary "#\{appdir\}/Infinitus.app/Contents/MacOS/infinitusctl"\n)|$1  binary "#{appdir}/Infinitus.app/Contents/Resources/bin/infinitus"\n|m' \
-            Casks/infinitus.rb
-          # The caveats follow the build: a Developer ID + notarized
-          # release needs no Gatekeeper workaround, an ad-hoc one (no
-          # signing secrets) keeps it. Rewritten whole every release so
-          # the cask can't drift — 0.4.3 and 0.4.4-alpha.1 shipped
-          # notarized while the cask still said "ad-hoc, not notarized".
-          if [ "$HAS_DEVID" = "true" ]; then
-            GATE=""
-          else
-            GATE=$'Builds are ad-hoc signed, not notarized. If Gatekeeper refuses the\nfirst launch:\n  xattr -dr com.apple.quarantine "/Applications/Infinitus.app"\nor install with --no-quarantine.\n\n'
-          fi
-          CAVEATS="${GATE}The swapd account engine is bundled. Open Infinitus Settings > Engines to get started." \
-            perl -0pi -e 's|^  caveats <<~EOS\n.*?^  EOS\n|"  caveats <<~EOS\n" . join("", map { $_ eq "" ? "\n" : "    $_\n" } split(/\n/, $ENV{CAVEATS})) . "  EOS\n"|mse' \
-            Casks/infinitus.rb
-          git -c user.name="infinitus-release" \
-              -c user.email="actions@github.com" \
-              commit -am "infinitus ${VERSION}"
-          git push

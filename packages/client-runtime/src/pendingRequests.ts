@@ -4,7 +4,7 @@ import {
   ProviderApprovalOption,
   ProviderRequestKind,
   UserInputQuestion,
-} from "@t3tools/contracts";
+} from "@infinitus/contracts";
 import * as Option from "effect/Option";
 import * as Predicate from "effect/Predicate";
 import * as Schema from "effect/Schema";
@@ -59,6 +59,8 @@ export function requestKindFromRequestType(requestType: unknown): ProviderReques
       return "file-change";
     case "mcp_elicitation_approval":
       return "mcp-elicitation";
+    case "permission_approval":
+      return "permission";
     default:
       return null;
   }

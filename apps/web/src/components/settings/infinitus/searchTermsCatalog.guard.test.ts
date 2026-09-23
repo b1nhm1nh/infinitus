@@ -32,8 +32,8 @@ const CATALOG = NodeURL.fileURLToPath(
     built from bespoke cards rather than the catalog — Slack, Lock, the Dock
     badge, Engines' status list — are not grounded by this rule. */
 const CATALOG_PAGES: Readonly<Record<string, ReadonlyArray<string>>> = {
-  "infinitus-preferences": ["display", "about"],
-  "infinitus-themes": ["themes"],
+  "infinitus-preferences": ["display", "themes", "about"],
+  "infinitus-themes": ["display", "themes", "about"],
   "infinitus-animations": ["animations"],
   "infinitus-sessions": ["priority", "sessions"],
   "infinitus-push": ["push"],
@@ -61,8 +61,25 @@ const ALIASES: Readonly<Record<string, ReadonlyArray<string>>> = {
   // Where these notifications land: the Mac posts them to the phone (#702).
   // The rows name the account event, never the device.
   "infinitus-push": ["phone"],
-  // The route's "Pair a phone" card draws the code as a QR.
-  "infinitus-devices": ["qr"],
+  // The route's cards, which have no prefs behind them: "Pairing requests"
+  // lists the phones asking to be let in (the "Pair a phone" QR retired; a
+  // link is minted under Settings › Connections), and "Crash reports" lists
+  // the Mac's own crashes and hangs over the `crashes` verb.
+  "infinitus-devices": ["pair", "crash", "hang", "report"],
+  // The route's About section: the menu bar app's version and build, with a
+  // link to the releases (the Mac's About pane, folded in 2026-09-14).
+  "infinitus-engines": [
+    "about",
+    "version",
+    "build",
+    "release",
+    // The routing rows and the status list's daemon word (#1235).
+    "routing",
+    "strategy",
+    "session",
+    "affinity",
+    "daemon",
+  ],
 };
 
 /** Every `Entry("<key>", …, <section>)` the catalog declares, with its section. */

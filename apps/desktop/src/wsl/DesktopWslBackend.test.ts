@@ -4,7 +4,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 
-import * as NetService from "@t3tools/shared/Net";
+import * as NetService from "@infinitus/shared/Net";
 
 import * as DesktopBackendConfiguration from "../backend/DesktopBackendConfiguration.ts";
 import * as DesktopBackendPool from "../backend/DesktopBackendPool.ts";
@@ -83,6 +83,29 @@ const netLayer = Layer.succeed(NetService.NetService, {
 } satisfies NetService.NetService["Service"]);
 
 describe("DesktopWslBackend", () => {
+  it.effect("does not discover or start WSL when local execution is disabled", () =>
+    Effect.gen(function* () {
+      const backend = yield* DesktopWslBackend.DesktopWslBackend;
+      yield* backend.reconcile;
+    }).pipe(
+      Effect.provide(
+        DesktopWslBackend.layer.pipe(
+          Layer.provide(Layer.mock(DesktopBackendPool.DesktopBackendPool, {})),
+          Layer.provide(backendConfigurationLayer),
+          Layer.provide(serverExposureLayer),
+          Layer.provide(netLayer),
+          Layer.provide(Layer.mock(DesktopWslEnvironment.DesktopWslEnvironment, {})),
+          Layer.provide(
+            DesktopAppSettings.layerTest({
+              ...DesktopAppSettings.DEFAULT_DESKTOP_SETTINGS,
+              localEnvironmentEnabled: false,
+              wslBackendEnabled: true,
+            }),
+          ),
+        ),
+      ),
+    ),
+  );
   it.effect("clears the stored preflight error when a registered WSL backend becomes ready", () => {
     let registeredSpec: DesktopBackendPool.BackendInstanceSpec | undefined;
     const primary = makeStubInstance({

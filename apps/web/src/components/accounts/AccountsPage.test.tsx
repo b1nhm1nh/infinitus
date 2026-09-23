@@ -1,5 +1,5 @@
-import { EnvironmentId } from "@t3tools/contracts";
-import type { InfinitusSnapshot } from "@t3tools/contracts/infinitus";
+import { EnvironmentId } from "@infinitus/contracts";
+import type { InfinitusSnapshot } from "@infinitus/contracts/infinitus";
 import * as Cause from "effect/Cause";
 import type { ReactNode } from "react";
 import { act, cloneElement, isValidElement, type ComponentProps } from "react";
@@ -12,9 +12,24 @@ const environmentId = EnvironmentId.make("test-environment");
 
 const testState = vi.hoisted(() => ({
   snapshot: null as InfinitusSnapshot | null,
+  /** A second machine's snapshot, drawn only when `environments` lists it. */
+  remoteSnapshot: null as InfinitusSnapshot | null,
+  environments: [] as ReadonlyArray<ReturnType<typeof testEnvironment>>,
   command: vi.fn(),
   refresh: vi.fn(),
 }));
+
+const testEnvironment = (environmentId: string, label: string) => ({
+  environmentId,
+  label,
+  connection: { phase: "connected" as string },
+  serverConfig: {
+    environment: {
+      capabilities: { infinitus: true },
+      platform: { os: "darwin", arch: "arm64" },
+    },
+  },
+});
 
 vi.mock("../../env", () => ({ isElectron: false }));
 vi.mock("./signIn.logic", async (importOriginal) => ({
@@ -23,7 +38,12 @@ vi.mock("./signIn.logic", async (importOriginal) => ({
 }));
 vi.mock("@effect/atom-react", () => ({
   useAtomValue: () =>
-    new Map([["test-environment", { environment: { capabilities: { infinitus: true } } }]]),
+    new Map(
+      testState.environments.map((environment) => [
+        environment.environmentId,
+        { environment: { capabilities: { infinitus: true } } },
+      ]),
+    ),
 }));
 vi.mock("@tanstack/react-router", () => ({
   Link: ({
@@ -42,36 +62,38 @@ vi.mock("@tanstack/react-router", () => ({
   ),
 }));
 vi.mock("../../state/environments", () => ({
-  useEnvironments: () => ({
-    environments: [{ environmentId: "test-environment", label: "Test environment" }],
-  }),
+  useEnvironments: () => ({ environments: testState.environments }),
   usePrimaryEnvironmentId: () => "test-environment",
-  usePrimaryEnvironment: () => ({
-    environmentId: "test-environment",
-    serverConfig: {
-      environment: {
-        capabilities: { infinitus: true },
-        platform: { os: "darwin", arch: "arm64" },
-      },
-    },
-  }),
+  usePrimaryEnvironment: () => testState.environments[0] ?? null,
 }));
 vi.mock("../../state/infinitus", () => ({
   infinitusEnvironment: {
-    snapshot: () => ({ label: "snapshot-atom" }),
+    snapshot: ({ environmentId }: { environmentId: string }) => ({
+      label: "snapshot-atom",
+      environmentId,
+    }),
     command: { label: "command-atom" },
     launch: { label: "launch-atom" },
     secret: { label: "secret-atom" },
   },
 }));
 vi.mock("../../state/query", () => ({
-  useEnvironmentQuery: () => ({
-    data: testState.snapshot,
-    error: null,
-    isPending: testState.snapshot === null,
-    isSuccess: testState.snapshot !== null,
-    refresh: testState.refresh,
-  }),
+  useEnvironmentQuery: (atom: { environmentId: string } | null) => {
+    // A disconnected machine subscribes to nothing and reads as pending.
+    const snapshot =
+      atom === null
+        ? null
+        : atom.environmentId === "remote-environment"
+          ? testState.remoteSnapshot
+          : testState.snapshot;
+    return {
+      data: snapshot,
+      error: null,
+      isPending: atom !== null && snapshot === null,
+      isSuccess: snapshot !== null,
+      refresh: testState.refresh,
+    };
+  },
 }));
 vi.mock("../../state/server", () => ({ environmentServerConfigsAtom: { label: "configs-atom" } }));
 vi.mock("../../state/use-atom-command", () => ({ useAtomCommand: () => testState.command }));
@@ -84,13 +106,6 @@ vi.mock("../../hooks/useSettings", () => ({
 vi.mock("../ui/badge", () => ({ Badge: "span" }));
 vi.mock("../ui/button", () => ({ Button: "button" }));
 vi.mock("../ui/input", () => ({ Input: "input" }));
-vi.mock("../ui/menu", () => ({
-  Menu: "div",
-  MenuPopup: "div",
-  MenuRadioGroup: "div",
-  MenuRadioItem: "div",
-  MenuTrigger: "button",
-}));
 vi.mock("../ui/scroll-area", () => ({ ScrollArea: "div" }));
 vi.mock("../ui/sidebar", () => ({ SidebarInset: "div" }));
 vi.mock("../ui/skeleton", () => ({ Skeleton: "div" }));
@@ -103,6 +118,16 @@ vi.mock("../ui/tooltip", () => ({
   }: ComponentProps<typeof import("../ui/tooltip").TooltipTrigger>) =>
     isValidElement(render) ? cloneElement(render, undefined, children) : <>{children}</>,
   TooltipPopup: () => null,
+}));
+vi.mock("../ui/alert-dialog", () => ({
+  AlertDialog: ({ open, children }: { open: boolean; children: ReactNode }) =>
+    open ? children : null,
+  AlertDialogClose: "button",
+  AlertDialogDescription: "p",
+  AlertDialogFooter: "footer",
+  AlertDialogHeader: "header",
+  AlertDialogPopup: "section",
+  AlertDialogTitle: "h2",
 }));
 vi.mock("../WorkspaceBreadcrumb", () => ({
   WorkspaceBreadcrumb: "div",
@@ -130,7 +155,7 @@ const readySnapshot: InfinitusSnapshot = {
       key: "claude",
       engineID: "swapd",
       provider: "Claude",
-      capabilities: ["switch", "hold", "prefer", "rename"],
+      capabilities: ["switch", "hold", "prefer", "rename", "remove"],
       caveat: "Usage readings lag the engine by a minute.",
       activeNumber: 1,
       nextCandidate: 2,
@@ -179,11 +204,74 @@ const readySnapshot: InfinitusSnapshot = {
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   testState.snapshot = null;
+  testState.remoteSnapshot = null;
+  testState.environments = [testEnvironment("test-environment", "Test environment")];
   testState.command = vi.fn().mockResolvedValue({ _tag: "Success", value: {} });
   testState.refresh = vi.fn();
 });
 
 describe("AccountsPage", () => {
+  it("draws every machine that runs Infinitus, each with its own accounts", async () => {
+    testState.environments = [
+      testEnvironment("test-environment", "This Mac"),
+      testEnvironment("remote-environment", "Studio"),
+    ];
+    testState.snapshot = readySnapshot;
+    testState.remoteSnapshot = {
+      available: true,
+      fleets: [
+        {
+          key: "claude",
+          engineID: "swapd",
+          provider: "Claude",
+          capabilities: ["switch"],
+          activeNumber: 3,
+          accounts: [
+            account({ number: 3, email: "studio@example.com", active: true }),
+            account({ number: 4, email: "studio-spare@example.com", alias: "studio spare" }),
+          ],
+        },
+      ],
+      commands: [],
+    };
+    let renderer!: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(<AccountsPage />);
+    });
+
+    const markup = renderToStaticMarkup(<AccountsPage />);
+    expect(markup).toContain("This Mac");
+    expect(markup).toContain("Studio");
+    expect(markup).toContain("one@example.com");
+    expect(markup).toContain("studio@example.com");
+
+    // A button on the second machine's row goes to that machine's socket.
+    const button = renderer.root.findAll(
+      (node) => node.props["aria-label"] === "Switch studio spare",
+    )[0]!;
+    await act(async () => {
+      button.props.onClick();
+    });
+    expect(testState.command).toHaveBeenCalledWith({
+      environmentId: EnvironmentId.make("remote-environment"),
+      input: { command: "switch", args: ["claude", "4"], options: {} },
+    });
+    renderer.unmount();
+  });
+
+  it("says so when a listed machine is not connected", () => {
+    testState.environments = [
+      testEnvironment("test-environment", "This Mac"),
+      { ...testEnvironment("remote-environment", "Studio"), connection: { phase: "offline" } },
+    ];
+    testState.snapshot = readySnapshot;
+
+    const markup = renderToStaticMarkup(<AccountsPage />);
+
+    expect(markup).toContain("Studio");
+    expect(markup).toContain("Not connected.");
+  });
+
   it("names the socket and offers a retry when Infinitus is offline", () => {
     testState.snapshot = {
       available: false,
@@ -217,8 +305,42 @@ describe("AccountsPage", () => {
     const markup = renderToStaticMarkup(<AccountsPage />);
 
     expect(markup).toContain("Infinitus is running, but no engine reports accounts");
-    expect(markup).toContain('href="/settings/infinitus/engines"');
-    expect(markup).toContain("Open Settings › Infinitus › Engines");
+    expect(markup).toContain('href="/settings/engines"');
+    expect(markup).toContain("Open Settings › Engines");
+  });
+
+  it("draws the fleet of a freshly installed engine that holds no account yet", () => {
+    // What swapd prints the day it is installed: the provider it manages,
+    // no accounts. The page is the fleet's own Add account, never the copy
+    // telling the user to install the engine they just installed (#1319).
+    testState.snapshot = {
+      available: true,
+      fleets: [
+        {
+          key: "swapd/claude",
+          engineID: "swapd",
+          provider: "claude",
+          capabilities: ["switch", "hold", "rename", "remove", "addCurrent"],
+          accounts: [],
+        },
+      ],
+      commands: [
+        {
+          name: "add",
+          args: ["<fleet>"],
+          options: [],
+          effect: "human",
+          summary: "",
+          replyShape: "",
+        },
+      ],
+    };
+
+    const markup = renderToStaticMarkup(<AccountsPage />);
+
+    expect(markup).not.toContain("no engine reports accounts");
+    expect(markup).toContain("claude (swapd)");
+    expect(markup).toContain("Add account");
   });
 
   it("draws every fleet with its accounts, badges, windows and forecast", () => {
@@ -265,6 +387,34 @@ describe("AccountsPage", () => {
 
     expect(markup).toContain("All accounts exhausted · next revival ");
     expect(markup).toContain("(one@example.com)");
+  });
+
+  it("names the model when one per-model window alone blocks every account", () => {
+    const revivalAt = new Date(Date.parse(NOW_ISO) + 2 * 60 * 60 * 1000).toISOString();
+    testState.snapshot = {
+      ...readySnapshot,
+      fleets: [
+        {
+          ...readySnapshot.fleets[0]!,
+          accounts: [
+            account({
+              number: 1,
+              email: "one@example.com",
+              active: true,
+              usage: {
+                fiveHour: { pct: 30 },
+                scoped: [{ name: "Fable", pct: 100, resetsAt: revivalAt }],
+              },
+            }),
+          ],
+        },
+      ],
+    };
+
+    const markup = renderToStaticMarkup(<AccountsPage />);
+
+    expect(markup).toContain("All accounts out of Fable · next revival ");
+    expect(markup).not.toContain("All accounts exhausted ·");
   });
 
   it("shows no exhausted band while an account has room", () => {
@@ -317,6 +467,59 @@ describe("AccountsPage", () => {
     renderer.unmount();
   });
 
+  it("removes an account only after the confirm, with --yes", async () => {
+    testState.snapshot = readySnapshot;
+    let renderer!: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(<AccountsPage />);
+    });
+    const byLabel = (label: string) =>
+      renderer.root.findAll((node) => node.props["aria-label"] === label)[0]!;
+
+    await act(async () => {
+      byLabel("Remove spare").props.onClick();
+    });
+    expect(testState.command).not.toHaveBeenCalled();
+    const titles = renderer.root
+      .findAll((node) => node.type === "h2")
+      .map((node) => node.children.join(""));
+    expect(titles).toContain("Remove spare?");
+
+    await act(async () => {
+      byLabel("Confirm removing spare").props.onClick();
+    });
+    expect(testState.command).toHaveBeenCalledWith({
+      environmentId,
+      input: { command: "remove", args: ["claude", "2"], options: { yes: "true" } },
+    });
+    renderer.unmount();
+  });
+
+  it("shows the app's refusal of a remove verbatim", async () => {
+    testState.snapshot = readySnapshot;
+    testState.command.mockResolvedValueOnce({
+      _tag: "Failure",
+      cause: Cause.fail({ _tag: "InfinitusCommandFailed", error: "remove: swapd has no slot 2" }),
+    });
+    let renderer!: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(<AccountsPage />);
+    });
+    const byLabel = (label: string) =>
+      renderer.root.findAll((node) => node.props["aria-label"] === label)[0]!;
+    await act(async () => {
+      byLabel("Remove spare").props.onClick();
+    });
+    await act(async () => {
+      byLabel("Confirm removing spare").props.onClick();
+    });
+    const failure = renderer.root.findAll(
+      (node) => typeof node.type === "string" && node.props.className?.includes("text-destructive"),
+    )[0]!;
+    expect(failure.children.join("")).toBe("remove: swapd has no slot 2");
+    renderer.unmount();
+  });
+
   const addCommand: InfinitusSnapshot["commands"][number] = {
     name: "add",
     args: ["<fleet>"],
@@ -331,7 +534,8 @@ describe("AccountsPage", () => {
     fleets: [
       {
         ...readySnapshot.fleets[0]!,
-        capabilities: [...readySnapshot.fleets[0]!.capabilities, "addOAuth"],
+        // swapd's live shape (#1213): the CLI's paste-code flow, no addOAuth.
+        capabilities: [...readySnapshot.fleets[0]!.capabilities, "addCurrent", "addToken"],
         accounts: [
           readySnapshot.fleets[0]!.accounts[0]!,
           account({
@@ -352,6 +556,22 @@ describe("AccountsPage", () => {
     expect(markup).toContain("Add account: Claude (swapd)");
     expect(markup).not.toContain("Add account: OpenAI (cliproxy)");
     expect(markup).toContain("Sign in again as spare");
+
+    // The proxy's shape, the engine-driven OAuth sign-in, is offered the same.
+    const oauthFleet = addableSnapshot.fleets[0]!;
+    testState.snapshot = {
+      ...addableSnapshot,
+      fleets: [
+        {
+          ...oauthFleet,
+          capabilities: oauthFleet.capabilities
+            .filter((capability) => capability !== "addCurrent")
+            .concat("addOAuth"),
+        },
+        addableSnapshot.fleets[1]!,
+      ],
+    };
+    expect(renderToStaticMarkup(<AccountsPage />)).toContain("Add account: Claude (swapd)");
 
     // The same fleets on a build whose manifest has no `add` verb.
     testState.snapshot = { ...addableSnapshot, commands: [] };
@@ -500,12 +720,18 @@ describe("AccountsPage", () => {
     };
     // The poll keeps asking while the test looks at the page, so answer by verb:
     // waiting for the code until it is submitted over the secret RPC, then done.
+    // The waiting answer takes a moment (#1241): with the poll interval mocked
+    // to 0 an instant answer re-queues a state update inside every `act`, and
+    // on node 25, where that 0 ms timer is ready by the time `act` checks its
+    // queue, `act` flushes forever and the test times out (node 24 wins the
+    // race and CI is green). A pending reply is not act's to wait for.
     let codeSubmitted = false;
     testState.command = vi.fn().mockImplementation(async (call: { input: { command: string } }) => {
       switch (call.input.command) {
         case "signin-begin":
           return { _tag: "Success", value: { result: begun } };
         case "signin-status":
+          if (!codeSubmitted) await new Promise((resolve) => setTimeout(resolve, 20));
           return {
             _tag: "Success",
             value: {
@@ -531,19 +757,26 @@ describe("AccountsPage", () => {
     await act(async () => {
       button.props.onClick();
     });
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 5));
-    });
+    // The page moves on the poll's answers, so wait for what it shows rather
+    // than a fixed time.
+    const byLabel = (label: string) =>
+      renderer.root.findAll((node) => node.props["aria-label"] === label)[0];
+    const statusText = () =>
+      renderer.root.findAll((node) => node.props.role === "status")[0]?.children.join("") ?? "";
+    const settle = async (ready: () => boolean) => {
+      for (let tick = 0; tick < 100 && !ready(); tick += 1) {
+        await act(async () => {
+          await new Promise((resolve) => setTimeout(resolve, 10));
+        });
+      }
+    };
+    await settle(() => byLabel("Sign-in code: Claude (swapd)") !== undefined);
 
     // No shell: the page is a link for this device to open.
-    const link = renderer.root.findAll(
-      (node) => node.props["aria-label"] === "Open the sign-in page: Claude (swapd)",
-    )[0]!;
+    const link = byLabel("Open the sign-in page: Claude (swapd)")!;
     expect(link.props.href).toBe("https://claude.ai/oauth");
     expect(link.props.target).toBe("_blank");
-    const field = renderer.root.findAll(
-      (node) => node.props["aria-label"] === "Sign-in code: Claude (swapd)",
-    )[0]!;
+    const field = byLabel("Sign-in code: Claude (swapd)")!;
     expect(field.props.type).toBe("password");
     expect(field.props.autoComplete).toBe("off");
 
@@ -567,9 +800,7 @@ describe("AccountsPage", () => {
     const codeInput = { value: "the-code" };
     await submit(codeInput);
     expect(codeInput.value).toBe("");
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 10));
-    });
+    await settle(() => statusText() === "Signed in as two@example.com.");
     const codeCall = testState.command.mock.calls.find(
       (call) => (call[0] as { input: { command: string } }).input.command === "signin-code",
     )![0] as { environmentId: string; input: { args: unknown; secret: Redacted.Redacted<string> } };
@@ -578,8 +809,98 @@ describe("AccountsPage", () => {
     expect(Redacted.value(codeCall.input.secret)).toBe("the-code");
     // The value never lands in the rendered page.
     expect(JSON.stringify(renderer.toJSON())).not.toContain("the-code");
-    const status = renderer.root.findAll((node) => node.props.role === "status")[0]!;
-    expect(status.children.join("")).toBe("Signed in as two@example.com.");
+    expect(statusText()).toBe("Signed in as two@example.com.");
+    renderer.unmount();
+    restore();
+  });
+
+  it("from another machine, takes the address a loopback sign-in ended on and hands it over infinitus.secret", async () => {
+    const restore = installBridge(undefined);
+    testState.snapshot = signInSnapshot;
+    // The engine on the Mac takes the redirect itself and listens there; this
+    // device's browser is sent to its own localhost, so the page asks for the
+    // address it ended on instead of a code.
+    const begun = {
+      flowId: "f1",
+      url: "https://claude.ai/oauth",
+      pasteCode: false,
+      redirectPort: 54545,
+      label: "Add account",
+    };
+    let addressSubmitted = false;
+    testState.command = vi.fn().mockImplementation(async (call: { input: { command: string } }) => {
+      switch (call.input.command) {
+        case "signin-begin":
+          return { _tag: "Success", value: { result: begun } };
+        case "signin-status":
+          if (!addressSubmitted) await new Promise((resolve) => setTimeout(resolve, 20));
+          return {
+            _tag: "Success",
+            value: {
+              result: addressSubmitted
+                ? { flowId: "f1", phase: "done", pasteCode: false, account: "two@example.com" }
+                : { flowId: "f1", phase: "waitingForToken", pasteCode: false, redirectPort: 54545 },
+            },
+          };
+        case "signin-code":
+          addressSubmitted = true;
+          return { _tag: "Success", value: { result: { ok: true } } };
+        default:
+          return { _tag: "Success", value: {} };
+      }
+    });
+    let renderer!: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(<AccountsPage />);
+    });
+    const button = renderer.root.findAll(
+      (node) => node.props["aria-label"] === "Add account: Claude (swapd)",
+    )[0]!;
+    await act(async () => {
+      button.props.onClick();
+    });
+    const byLabel = (label: string) =>
+      renderer.root.findAll((node) => node.props["aria-label"] === label)[0];
+    const statusText = () =>
+      renderer.root.findAll((node) => node.props.role === "status")[0]?.children.join("") ?? "";
+    const settle = async (ready: () => boolean) => {
+      for (let tick = 0; tick < 100 && !ready(); tick += 1) {
+        await act(async () => {
+          await new Promise((resolve) => setTimeout(resolve, 10));
+        });
+      }
+    };
+    await settle(() => byLabel("Sign-in address: Claude (swapd)") !== undefined);
+
+    expect(byLabel("Open the sign-in page: Claude (swapd)")!.props.href).toBe(
+      "https://claude.ai/oauth",
+    );
+    expect(statusText()).toBe(
+      "Sign in on the sign-in page. It ends on a page that will not load: copy that page's address and paste it here.",
+    );
+    const field = byLabel("Sign-in address: Claude (swapd)")!;
+    expect(field.props.type).toBe("password");
+    expect(field.props.placeholder).toBe("Paste the address the browser ended on");
+
+    const form = renderer.root.findAll((node) => node.type === "form")[0]!;
+    const address = { value: "http://localhost:54545/callback?code=the-code&state=st" };
+    await act(async () => {
+      form.props.onSubmit({
+        preventDefault: () => {},
+        currentTarget: { elements: { namedItem: () => address } },
+      });
+    });
+    expect(address.value).toBe("");
+    await settle(() => statusText() === "Signed in as two@example.com.");
+    const codeCall = testState.command.mock.calls.find(
+      (call) => (call[0] as { input: { command: string } }).input.command === "signin-code",
+    )![0] as { input: { args: unknown; secret: Redacted.Redacted<string> } };
+    expect(codeCall.input.args).toEqual({ flowId: "f1" });
+    expect(Redacted.value(codeCall.input.secret)).toBe(
+      "http://localhost:54545/callback?code=the-code&state=st",
+    );
+    // The address carries the code: it never lands in the rendered page.
+    expect(JSON.stringify(renderer.toJSON())).not.toContain("the-code");
     renderer.unmount();
     restore();
   });

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vite-plus/test";
-import { EnvironmentId } from "@t3tools/contracts";
+import { EnvironmentId } from "@infinitus/contracts";
 
 import {
   filterAvailableSettingsSearchItems,
@@ -46,6 +46,10 @@ const ITEMS: ReadonlyArray<SettingsSearchItem> = [
 ];
 
 describe("searchSettings", () => {
+  it.each(["send shortcut", "multiline", "new line"])("finds Send shortcut for %s", (query) => {
+    expect(searchSettings(query).map((item) => item.id)).toContain("send-shortcut");
+  });
+
   it("matches titles, sections, and remembered setting details", () => {
     expect(searchSettings("word", ITEMS).map((item) => item.id)).toEqual(["word-wrap"]);
     expect(searchSettings("network", ITEMS).map((item) => item.id)).toEqual(["network-access"]);
@@ -175,12 +179,35 @@ describe("searchSettings", () => {
       "infinitus-themes",
       "infinitus-animations",
       "infinitus-sessions",
-      "infinitus-lock",
+      "infinitus-team",
       "infinitus-push",
       "infinitus-devices",
       "infinitus-engines",
     ]);
     expect(available.map((item) => item.id).filter((id) => gatedIds.has(id))).toEqual([]);
+  });
+
+  it("keeps the local toggle searchable without offering hidden host publishing controls", () => {
+    const availability = {
+      hasCloudPublicConfig: true,
+      hasEnvironment: true,
+      hasProviderSettingsEnvironment: true,
+      canManageLocalBackend: false,
+      isWslSettingsRowVisible: false,
+      hasThreadAutoSettlement: false,
+      hasInfinitusEnvironment: false,
+    };
+    const remoteOnly = filterAvailableSettingsSearchItems({
+      ...availability,
+      localEnvironmentDisabled: true,
+    }).map((item) => item.id);
+    expect(remoteOnly).toContain("local-environment");
+    expect(remoteOnly).not.toContain("t3-connect");
+    expect(remoteOnly).not.toContain("publish-agent-activity");
+    expect(remoteOnly).not.toContain("wsl-backend");
+    // Browsers without access:write still render CloudLinkRow for their host.
+    const browser = filterAvailableSettingsSearchItems(availability).map((item) => item.id);
+    expect(browser).toContain("publish-agent-activity");
   });
 
   it("shows automatic settlement settings when the server supports them", () => {
@@ -217,12 +244,14 @@ describe("searchSettings", () => {
       "infinitus-themes",
       "infinitus-animations",
       "infinitus-sessions",
-      "infinitus-lock",
+      "infinitus-team",
       "infinitus-push",
       "infinitus-devices",
       "infinitus-engines",
-      // Last, on no title match: the project file the Actions row imports from
-      // is named infinitus.json, and that is a name people search for.
+      // Last, on no title match: the project file the Submodules row reads and
+      // the Actions row imports from is named infinitus.json, and that is a
+      // name people search for.
+      "worktree-submodules",
       "project-actions",
     ]);
   });
@@ -266,23 +295,56 @@ describe("searchSettings", () => {
     expect(ids("waiting")).not.toContain("infinitus-push");
     expect(ids("aws sign-in")).not.toContain("infinitus-push");
     expect(ids("live activity")).not.toContain("infinitus-devices");
+    // The phone mirror and its rendezvous went with the mirror server, and
+    // the Cloudflare tunnel with Infinitus Connect.
+    expect(ids("mirror")).not.toContain("infinitus-devices");
+    expect(ids("rendezvous")).not.toContain("infinitus-devices");
+    expect(ids("cloudflare tunnel")).not.toContain("infinitus-devices");
 
     // What each page does still hold is still findable.
     expect(ids("account exhausted")).toContain("infinitus-push");
     expect(ids("revive countdown")).toContain("infinitus-push");
-    expect(ids("mirror tunnel")).toContain("infinitus-devices");
+    expect(ids("pair phone")).toContain("infinitus-devices");
+    // The "Pair a phone" QR retired; Settings › Connections mints every link.
+    expect(ids("qr")).not.toContain("infinitus-devices");
+    expect(ids("crash report")).toContain("infinitus-devices");
   });
 
   it("lights up the deepest Infinitus nav item only", () => {
-    expect(isSettingsSectionActive("/settings/infinitus", "/settings/infinitus")).toBe(true);
-    expect(isSettingsSectionActive("/settings/infinitus/devices", "/settings/infinitus")).toBe(
-      false,
-    );
-    expect(
-      isSettingsSectionActive("/settings/infinitus/devices", "/settings/infinitus/devices"),
-    ).toBe(true);
+    expect(isSettingsSectionActive("/settings/menu-bar", "/settings/menu-bar")).toBe(true);
+    expect(isSettingsSectionActive("/settings/devices", "/settings/menu-bar")).toBe(false);
+    expect(isSettingsSectionActive("/settings/devices", "/settings/devices")).toBe(true);
     // A path no nav item owns still belongs to its parent section.
     expect(isSettingsSectionActive("/settings/projects/acme", "/settings/projects")).toBe(true);
+    // ...the nearest one only: Engines' Activity sub screen lights Engines, not Infinitus.
+    expect(isSettingsSectionActive("/settings/engines/activity", "/settings/engines")).toBe(true);
+    expect(isSettingsSectionActive("/settings/engines/activity", "/settings/menu-bar")).toBe(false);
+  });
+
+  it("finds keybinding commands by label, command id, and default key", () => {
+    expect(searchSettings("toggle sidebar")[0]?.id).toBe("keybinding-sidebar.toggle");
+    expect(searchSettings("sidebar.toggle")[0]?.id).toBe("keybinding-sidebar.toggle");
+    expect(searchSettings("mod+b")[0]?.id).toBe("keybinding-sidebar.toggle");
+    expect(searchSettings("copy link")[0]).toMatchObject({
+      id: "keybinding-thread.copyReference",
+      to: "/settings/keybindings",
+    });
+  });
+
+  it("ranks keybinding commands after other settings", () => {
+    const ids = searchSettings("model").map((item) => item.id);
+    expect(ids[0]).toBe("default-model");
+    expect(ids.indexOf("keybinding-modelPicker.toggle")).toBeGreaterThan(
+      ids.indexOf("text-generation-model"),
+    );
+  });
+
+  it("sends commands without a default binding to the section", () => {
+    expect(searchSettings("thread.stop")[0]).toMatchObject({
+      id: "keybinding-thread.stop",
+      targetId: "keybindings",
+    });
+    expect(searchSettings("sidebar.toggle")[0]?.targetId).toBeUndefined();
   });
 
   it("keeps catalog result ids unique", () => {
@@ -435,7 +497,7 @@ describe("settings search targets", () => {
     expect(isSettingsSearchScopeAvailable(updates.scope, "environment")).toBe(true);
     expect(isSettingsSearchScopeAvailable(updates.scope, "all")).toBe(true);
     expect(isSettingsSearchScopeAvailable(updates.scope, "project")).toBe(false);
-    const streaming = getSettingsSearchTargetScope("legacy-token-streaming")!;
+    const streaming = getSettingsSearchTargetScope("response-streaming")!;
     expect(streaming.scope).toBe("project-defaults");
     expect(isSettingsSearchScopeAvailable(streaming.scope, "project")).toBe(true);
     for (const id of ["legacy-plan-mode", "legacy-context-window-indicator", "legacy-sidebar"]) {

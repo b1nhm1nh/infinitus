@@ -10,9 +10,10 @@ import {
   type OrchestrationEvent,
   type OrchestrationQueuedTurn,
   type OrchestrationThreadShell,
-} from "@t3tools/contracts";
-import type { InfinitusHeldThread } from "@t3tools/contracts/infinitus";
+} from "@infinitus/contracts";
+import type { InfinitusHeldThread } from "@infinitus/contracts/infinitus";
 import { it as effectIt } from "@effect/vitest";
+import * as Context from "effect/Context";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -22,12 +23,13 @@ import * as Queue from "effect/Queue";
 import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
-import { orderKeyBetween } from "@t3tools/shared/orderKeys";
+import { orderKeyBetween } from "@infinitus/shared/orderKeys";
 import { describe, expect } from "vite-plus/test";
 
 import { OrchestrationCommandInvariantError } from "../../orchestration/Errors.ts";
 import { OrchestrationEngineService } from "../../orchestration/Services/OrchestrationEngine.ts";
 import { ProjectionSnapshotQuery } from "../../orchestration/Services/ProjectionSnapshotQuery.ts";
+import { InfinitusLimitStops } from "../Services/InfinitusLimitStops.ts";
 import { InfinitusSessionHold } from "../Services/InfinitusSessionHold.ts";
 import { InfinitusSessionInterrupt } from "../Services/InfinitusSessionInterrupt.ts";
 import { InfinitusTurnQueueLive } from "./InfinitusTurnQueue.ts";
@@ -98,6 +100,12 @@ const startFailed = (threadId: ThreadId, requestId: string) =>
     activity: { kind: "provider.turn.start.failed", payload: { requestId } },
   });
 
+/** The ingestion's activity for a tool call of `turnId` that finished. */
+const toolCompleted = (threadId: ThreadId, turnId: string) =>
+  domainEvent("thread.activity-appended", threadId, {
+    activity: { kind: "tool.completed", turnId, payload: { itemType: "tool" } },
+  });
+
 const refusal = (detail: string) =>
   new OrchestrationCommandInvariantError({ commandType: "thread.turn.start", detail });
 
@@ -154,7 +162,10 @@ const makeHarness = (initial: ReadonlyArray<OrchestrationThreadShell>) =>
         ),
       ),
     );
-    yield* Layer.build(layer);
+    const built = yield* Layer.build(layer);
+    // The layer merges the real service out, the one the resume layer claims
+    // a thread on in the server (#1509).
+    const limitStops = Context.get(built, InfinitusLimitStops);
     // The forked streams subscribe on their first step; an event published
     // before that reaches nobody.
     for (let i = 0; i < 20; i += 1) yield* Effect.yieldNow;
@@ -168,6 +179,8 @@ const makeHarness = (initial: ReadonlyArray<OrchestrationThreadShell>) =>
         ).pipe(Effect.asVoid),
       setPaused: (threadIds: ReadonlyArray<ThreadId>) =>
         Queue.offer(paused, threadIds).pipe(Effect.asVoid),
+      setResuming: (threadId: ThreadId, resuming: boolean) =>
+        limitStops.setResuming(threadId, resuming),
       setShell: (shell: OrchestrationThreadShell) =>
         Ref.update(shells, (map) => new Map([...map, [shell.id, shell]])),
       refuseStarts: (error: OrchestrationCommandInvariantError | null) =>
@@ -274,6 +287,38 @@ describe("InfinitusTurnQueueLive (#806)", () => {
     ),
   );
 
+  effectIt.effect(
+    "sends a tool-boundary row into the running turn when one of its tools finishes (#1318)",
+    () =>
+      Effect.scoped(
+        Effect.gen(function* () {
+          const steer = { ...row("q2", "t"), sendAt: "tool-boundary" as const };
+          const h = yield* makeHarness([
+            shellFor(one, { ...running(one), queuedTurns: [row("q1", "m"), steer] }),
+          ]);
+          // A tool of some other turn (a stale event, or the next turn's)
+          // is not this turn's step; a tool with no turn is nobody's.
+          yield* h.emit(toolCompleted(one, "turn-0"));
+          yield* h.emit(
+            domainEvent("thread.activity-appended", one, {
+              activity: { kind: "tool.completed", turnId: null, payload: {} },
+            }),
+          );
+          yield* nothingYet(h.starts);
+
+          yield* h.emit(toolCompleted(one, "turn-1"));
+          yield* settle(h.starts, (list) => list.length === 1);
+          expect(yield* h.starts).toEqual([{ threadId: one, queuedFrom: "q2", text: "queued q2" }]);
+
+          // The idle row ahead of it still waits for the turn to end.
+          yield* h.setShell(shellFor(one, { ...running(one), queuedTurns: [row("q1", "m")] }));
+          yield* h.emit(domainEvent("thread.turn-queue-removed", one));
+          yield* h.emit(toolCompleted(one, "turn-1"));
+          yield* nothingYet(h.starts.pipe(Effect.map((list) => list.slice(1))));
+        }),
+      ),
+  );
+
   effectIt.effect("waits while the thread is held or paused, and sends when it is let go", () =>
     Effect.scoped(
       Effect.gen(function* () {
@@ -292,6 +337,24 @@ describe("InfinitusTurnQueueLive (#806)", () => {
         yield* h.setPaused([]);
         yield* settle(h.starts, (list) => list.length === 2);
         expect((yield* h.starts)[1]?.threadId).toBe(two);
+      }),
+    ),
+  );
+
+  // #1509: a row drained into the resume's replace-then-send window is a
+  // second send into one session. The release is its own wake — no session
+  // event need follow it — so the row goes on the claim being let go alone.
+  effectIt.effect("waits while a limit resume is sending, and the release wakes it", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const h = yield* makeHarness([idle(one)]);
+        yield* h.setResuming(one, true);
+        yield* h.emit(domainEvent("thread.turn-queued", one));
+        yield* nothingYet(h.starts);
+
+        yield* h.setResuming(one, false);
+        yield* settle(h.starts, (list) => list.length === 1);
+        expect((yield* h.starts)[0]?.threadId).toBe(one);
       }),
     ),
   );

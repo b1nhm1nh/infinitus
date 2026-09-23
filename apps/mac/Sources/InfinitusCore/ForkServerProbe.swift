@@ -7,10 +7,8 @@ import FoundationNetworking
 ///
 /// The desktop backend publishes its port over the control socket — `prefs
 /// set fork_server_port <n>`, then `desktop-credential --origin
-/// http://127.0.0.1:<n>` — and the app follows: the quick tunnel retargets
-/// and the CLI's bearer origin is replaced. A publish naming a port nothing
-/// serves takes both with it, and neither repairs itself: the tunnel forwards
-/// to a closed port (every remote client reads "reconnecting") and
+/// http://127.0.0.1:<n>` — and the app follows: the CLI's bearer origin is
+/// replaced. A publish naming a port nothing serves does not repair itself:
 /// `infinitusctl desktop status` reports `reachable: false` with every
 /// `thread …` verb refusing, until the app is relaunched.
 ///
@@ -28,6 +26,14 @@ import FoundationNetworking
 /// after its publish is the server heartbeat's job (#1146) — the live server
 /// re-publishes its own port within the minute and takes the target back. The
 /// two together are what make the pair robust.
+///
+/// The target guarded is one a publish stored (#1199): an instance that never
+/// had a publish sits on the default port with nothing of its own behind it,
+/// and a server answering there belongs to another instance — the installed
+/// app's desktop, on a dev Mac — so `currentPort` is nil until the first
+/// publish and such an instance follows its first one. Residual: on a fresh
+/// install, in the seconds before the desktop's first publish, a dead
+/// publisher could take the default port; the heartbeat corrects it.
 public enum ForkServerProbe {
     /// One probe exchange: the well-known URL in, the HTTP status out, or a
     /// throw for a connection that never got that far. A closure so tests
@@ -38,8 +44,12 @@ public enum ForkServerProbe {
     /// server that is up answers loopback in single-digit milliseconds.
     public static let timeoutSeconds: Double = 2
 
-    /// A port a publish may name at all. `ForkTunnelStatus` rejects the same
-    /// range, so a nonsense port is refused before any socket is opened.
+    /// The desktop server's starting port; it scans upward from here, and
+    /// `fork_server_port` holds wherever it landed.
+    public static let defaultPort = 3773
+
+    /// A port a publish may name at all — a nonsense port is refused before
+    /// any socket is opened.
     public static func url(port: Int) -> URL? {
         guard (1...65535).contains(port) else { return nil }
         return URL(string: "http://127.0.0.1:\(port)/.well-known/t3/environment")
@@ -66,8 +76,10 @@ public enum ForkServerProbe {
     /// The whole rule, in probe order so the common case costs one exchange:
     /// a publish onto the port already in use is never probed, one onto a port
     /// that answers is followed, and only a publish that would trade a working
-    /// target for a silent one is refused.
-    public static func verdict(newPort: Int, currentPort: Int, using transport: Transport) async -> Verdict {
+    /// target for a silent one is refused. `currentPort` nil: no publish ever
+    /// stored a port here, so there is no target of this instance's to lose.
+    public static func verdict(newPort: Int, currentPort: Int?, using transport: Transport) async -> Verdict {
+        guard let currentPort else { return .accept }
         if newPort == currentPort { return .accept }
         if await answers(port: newPort, using: transport) { return .accept }
         return await answers(port: currentPort, using: transport) ? .refuse : .accept

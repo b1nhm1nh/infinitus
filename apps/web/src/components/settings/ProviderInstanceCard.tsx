@@ -24,13 +24,13 @@ import {
   type ProviderDriverKind,
   type ServerProvider,
   type ServerProviderModel,
-} from "@t3tools/contracts";
+} from "@infinitus/contracts";
 
 import {
   type CustomModelDefinition,
   readCustomModelEntries,
   toCustomModelSetting,
-} from "@t3tools/shared/model";
+} from "@infinitus/shared/model";
 import { cn } from "../../lib/utils";
 import { useCopyToClipboard } from "../../hooks/useCopyToClipboard";
 import { normalizeProviderAccentColor } from "../../providerInstances";
@@ -48,6 +48,7 @@ import { ProviderInstanceIcon, providerInstanceInitials } from "../chat/Provider
 import { ProviderAccentColorPicker } from "./ProviderAccentColorPicker";
 import { RedactedSensitiveText } from "./RedactedSensitiveText";
 import { SettingsRow, SettingsSection } from "./settingsLayout";
+import { hasAnthropicBaseUrl, PROXY_ADVISOR_NOTE } from "./proxyProvider";
 import {
   getProviderVersionAdvisoryPresentation,
   PROVIDER_STATUS_STYLES,
@@ -268,7 +269,8 @@ function ProviderEnvironmentSection(props: {
             <div key={variable.id} className="flex min-w-0 flex-wrap items-center gap-1.5">
               <DraftInput
                 size="sm"
-                className="w-full min-w-0 font-mono sm:w-44 sm:shrink-0"
+                font="mono"
+                className="w-full min-w-0 sm:w-44 sm:shrink-0"
                 value={variable.name}
                 onCommit={(name) => updateVariable(variable.id, { name: name.trim() })}
                 placeholder="VARIABLE_NAME"
@@ -280,7 +282,8 @@ function ProviderEnvironmentSection(props: {
               </span>
               <DraftInput
                 size="sm"
-                className="min-w-0 flex-1 font-mono"
+                font="mono"
+                className="min-w-0 flex-1"
                 value={variable.valueRedacted ? "" : variable.value}
                 onCommit={(value) => updateVariable(variable.id, { value })}
                 type={variable.sensitive ? "password" : undefined}
@@ -298,10 +301,6 @@ function ProviderEnvironmentSection(props: {
                       type="button"
                       size="icon-micro"
                       variant="ghost-muted"
-                      className={cn(
-                        "[--control-icon-color:currentColor]",
-                        variable.sensitive && "text-foreground",
-                      )}
                       onClick={() => {
                         const sensitive = !variable.sensitive;
                         updateVariable(variable.id, {
@@ -329,8 +328,7 @@ function ProviderEnvironmentSection(props: {
               <Button
                 type="button"
                 size="icon-micro"
-                variant="ghost-muted"
-                className="[--control-icon-color:currentColor] hover:text-destructive"
+                variant="ghost-destructive"
                 onClick={() => removeVariable(variable.id)}
                 aria-label={`Remove environment variable ${variable.name || index + 1}`}
               >
@@ -702,24 +700,16 @@ export function ProviderInstanceCard({
                 <Button
                   type="button"
                   size="icon-xs"
-                  variant="ghost"
-                  className={cn(
-                    "[--control-icon-color:currentColor]",
-                    versionAdvisory.emphasis === "strong"
-                      ? "text-warning hover:text-warning"
-                      : "text-muted-foreground hover:text-foreground",
-                  )}
+                  variant="ghost-muted"
                   aria-label="Update available — view details"
                 >
-                  <ArrowUpCircleIcon />
+                  <ArrowUpCircleIcon
+                    className={cn(versionAdvisory.emphasis === "strong" && "text-warning")}
+                  />
                 </Button>
               }
             />
-            <PopoverPopup
-              side="bottom"
-              align="end"
-              className="w-[min(21rem,calc(100vw-1.5rem))] [--popup-width:min(21rem,calc(100vw-1.5rem))]"
-            >
+            <PopoverPopup side="bottom" align="end" width="md">
               <div className="grid min-w-0 gap-3">
                 <div className="grid gap-0.5">
                   <p className="text-[13px] font-semibold leading-tight text-foreground">
@@ -767,8 +757,8 @@ export function ProviderInstanceCard({
                           <Button
                             type="button"
                             size="icon-xs"
-                            variant="ghost"
-                            className="shrink-0 text-muted-foreground hover:text-foreground"
+                            variant="ghost-muted"
+                            className="shrink-0"
                             onClick={() =>
                               copyToClipboard(updateCommand, { providerName: displayName })
                             }
@@ -791,9 +781,8 @@ export function ProviderInstanceCard({
           <Button
             type="button"
             size="icon-xs"
-            variant="ghost-muted"
+            variant="ghost-destructive"
             disabled={readOnly}
-            className="[--control-icon-color:currentColor] hover:text-destructive"
             onClick={onDelete}
             aria-label={`Delete instance ${instanceId}`}
           >
@@ -817,7 +806,7 @@ export function ProviderInstanceCard({
               inert={readOnly}
               aria-disabled={readOnly || undefined}
               className={cn(
-                "flex w-full items-center justify-end gap-2 sm:w-auto",
+                "flex w-full min-w-0 items-center justify-end gap-2 @min-[32rem]/settings-row:w-auto",
                 readOnly && "opacity-50 select-none",
               )}
             >
@@ -831,7 +820,7 @@ export function ProviderInstanceCard({
               <DraftInput
                 id={`provider-instance-${instanceId}-display-name`}
                 size="sm"
-                className="min-w-0 flex-1 sm:w-56 sm:flex-none"
+                className="min-w-0 flex-1 @min-[32rem]/settings-row:w-56"
                 value={instance.displayName ?? ""}
                 onCommit={updateDisplayName}
                 placeholder={driverOption?.label ?? "Instance label"}
@@ -851,13 +840,18 @@ export function ProviderInstanceCard({
         className={readOnly ? "opacity-50 select-none" : undefined}
       >
         {driverOption ? (
-          <ProviderSettingsForm
-            definition={driverOption}
-            value={instance.config}
-            idPrefix={`provider-instance-${instanceId}`}
-            variant="settings"
-            onChange={updateConfig}
-          />
+          <>
+            <ProviderSettingsForm
+              definition={driverOption}
+              value={instance.config}
+              idPrefix={`provider-instance-${instanceId}`}
+              variant="settings"
+              onChange={updateConfig}
+            />
+            {instance.driver === "claudeAgent" && hasAnthropicBaseUrl(instance.environment) ? (
+              <p className="text-xs text-muted-foreground">{PROXY_ADVISOR_NOTE}</p>
+            ) : null}
+          </>
         ) : (
           <SettingsRow
             title="Driver"

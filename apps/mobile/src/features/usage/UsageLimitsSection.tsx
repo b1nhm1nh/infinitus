@@ -7,7 +7,7 @@ import type {
   ServerProviderResetCredits,
   ServerProviderUsageWindow,
   UsageProviderKind,
-} from "@t3tools/contracts";
+} from "@infinitus/contracts";
 import {
   elapsedShare,
   formatDuration,
@@ -15,8 +15,9 @@ import {
   limitsNotice,
   paceOf,
   remainingPercent,
-} from "@t3tools/shared/usageLimits";
-import { type ReactNode, useState } from "react";
+} from "@infinitus/shared/usageLimits";
+import { type ReactNode, useEffect, useEffectEvent, useRef, useState } from "react";
+import { refreshUsageLimits } from "@infinitus/client-runtime/state/usage";
 import { Alert, Pressable, View } from "react-native";
 
 import { AppText as Text } from "../../components/AppText";
@@ -59,7 +60,7 @@ function WindowRow(props: {
     <View className="gap-1">
       <View className="flex-row items-baseline justify-between gap-3">
         <Text className="text-sm text-foreground">{window.label}</Text>
-        <Text className="text-sm font-t3-medium tabular-nums text-foreground">
+        <Text className="text-sm font-infinitus-medium tabular-nums text-foreground">
           {remaining}% left
         </Text>
       </View>
@@ -149,7 +150,7 @@ export function AccountLimits(props: {
       <View className="flex-row items-center gap-2">
         <ProviderIcon provider={props.driver} size={16} />
         <View className="min-w-0 flex-1 flex-row items-baseline gap-2">
-          <Text className="text-base font-t3-medium text-foreground">{props.label}</Text>
+          <Text className="text-base font-infinitus-medium text-foreground">{props.label}</Text>
           {props.instanceLabel !== props.label ? (
             <AccountInstanceLabel key={props.instanceLabel} value={props.instanceLabel} />
           ) : null}
@@ -258,8 +259,8 @@ export function ResetCredits(props: {
           <Text
             className={
               dense
-                ? "text-xs font-t3-medium text-foreground"
-                : "text-sm font-t3-medium text-foreground"
+                ? "text-xs font-infinitus-medium text-foreground"
+                : "text-sm font-infinitus-medium text-foreground"
             }
           >
             {busy ? "Using…" : "Use reset"}
@@ -279,47 +280,79 @@ export function ResetCredits(props: {
  * Environments whose probe failed are named, since their rows keep showing
  * the previous quota with nothing else to say so.
  */
-export function useRefreshLimits(selectedEnvironmentIds: ReadonlySet<EnvironmentId> | null = null) {
+export function useRefreshLimits(
+  selectedEnvironmentIds: ReadonlySet<EnvironmentId> | null = null,
+  active = false,
+) {
   const presentations = useAtomValue(environmentPresentations.presentationsAtom);
   const refreshProviders = useAtomCommand(serverEnvironment.refreshProviders, {
     reportFailure: false,
   });
   const [now, setNow] = useState(() => Date.now());
   const [refreshing, setRefreshing] = useState(false);
+  const refreshingRef = useRef(false);
   const [failedEnvironments, setFailedEnvironments] = useState<
     readonly { environmentId: EnvironmentId; label: string }[]
   >([]);
-  // Always toggles `refreshing`, even with nothing to probe: Android's
-  // RefreshControl keeps its spinner up until it sees true then false.
-  const refresh = async () => {
+  const refresh = async (automatic = false) => {
     const connected = [...presentations].filter(
       ([environmentId, presentation]) =>
         presentation.connection.phase === "connected" &&
         (selectedEnvironmentIds === null || selectedEnvironmentIds.has(environmentId)),
     );
-    setRefreshing(true);
     try {
-      const results = await Promise.all(
-        connected.map(([environmentId]) => refreshProviders({ environmentId, input: {} })),
-      );
-      setFailedEnvironments(
-        connected
-          .filter((_, index) => results[index]?._tag === "Failure")
-          .map(([environmentId, presentation]) => ({
+      await Promise.all(
+        connected.map(async ([environmentId, presentation]) => {
+          const result = await refreshUsageLimits(
             environmentId,
-            label: presentation.entry.target.label,
-          })),
+            () => refreshProviders({ environmentId, input: {} }),
+            automatic,
+          );
+          if (result === undefined) return;
+          setFailedEnvironments((previous) => [
+            ...previous.filter((failed) => failed.environmentId !== environmentId),
+            ...(result._tag === "Failure"
+              ? [{ environmentId, label: presentation.entry.target.label }]
+              : []),
+          ]);
+        }),
       );
     } finally {
       setNow(Date.now());
+    }
+  };
+  // Always toggles `refreshing`, even with nothing to probe: Android's
+  // RefreshControl keeps its spinner up until it sees true then false.
+  const refreshManually = async () => {
+    if (refreshingRef.current) return;
+    refreshingRef.current = true;
+    setRefreshing(true);
+    try {
+      await refresh();
+    } finally {
+      refreshingRef.current = false;
       setRefreshing(false);
     }
   };
+  const connectedLimitsEnvironments = [...presentations]
+    .filter(
+      ([environmentId, presentation]) =>
+        presentation.connection.phase === "connected" &&
+        (selectedEnvironmentIds === null || selectedEnvironmentIds.has(environmentId)),
+    )
+    .map(([environmentId]) => environmentId)
+    .sort()
+    .join(",");
+  const autoRefreshLimits = useEffectEvent(() => refresh(true));
+  useEffect(() => {
+    if (active && connectedLimitsEnvironments) void autoRefreshLimits();
+  }, [active, connectedLimitsEnvironments]);
+
   const failedLabels = failedEnvironments
     .filter(
       ({ environmentId }) =>
         selectedEnvironmentIds === null || selectedEnvironmentIds.has(environmentId),
     )
     .map(({ label }) => label);
-  return { now, refreshing, failedLabels, refresh };
+  return { now, refreshing, failedLabels, refresh: refreshManually };
 }

@@ -5,14 +5,24 @@ import {
   type ThreadId,
   type ToolActivitySource,
   type ToolLifecycleItemType,
-} from "@t3tools/contracts";
-import { classifyMarkdownImageSource } from "@t3tools/client-runtime/markdown-images";
-import { resolveMediaSource } from "@t3tools/client-runtime/media-source";
-import { parseChangeRequestUrl } from "@t3tools/shared/changeRequestUrl";
-import { isWorkspaceImagePreviewPath } from "@t3tools/shared/filePreview";
+} from "@infinitus/contracts";
+import { classifyMarkdownImageSource } from "@infinitus/client-runtime/markdown-images";
+import { resolveMediaSource } from "@infinitus/client-runtime/media-source";
+import { parseChangeRequestUrl } from "@infinitus/shared/changeRequestUrl";
+import { isWorkspaceImagePreviewPath } from "@infinitus/shared/filePreview";
+import { PRODUCT_NAME } from "@infinitus/shared/productName";
 
+/**
+ * Activities the worktree setup card already represents. The settled record
+ * is rendered by the card on web and mobile, never as a
+ * worklog entry, so it is hidden from the activity feed even when it failed.
+ */
 export function isWorktreeSetupActivity(kind: string): boolean {
-  return kind === "setup-script.requested" || kind === "setup-script.started";
+  return (
+    kind === "setup-script.requested" ||
+    kind === "setup-script.started" ||
+    kind === "worktree-setup"
+  );
 }
 
 export type WorkLogToolLifecycleStatus = RuntimeItemStatus | "stopped";
@@ -77,13 +87,13 @@ const T3_MCP_TOOL_LABELS: Record<
   list_scheduled_tasks: ["List", "Listing", "Listed", "scheduled tasks"],
   update_scheduled_task: ["Update", "Updating", "Updated", "a scheduled task"],
   delete_scheduled_task: ["Delete", "Deleting", "Deleted", "a scheduled task"],
-  create_threads: ["Create", "Creating", "Created", "T3 threads"],
-  t3_thread_start: ["Start", "Starting", "Started", "a T3 thread"],
-  t3_thread_list: ["List", "Listing", "Listed", "T3 threads"],
-  t3_thread_read: ["Read", "Reading", "Read", "a T3 thread"],
-  t3_thread_send: ["Send", "Sending", "Sent", "to a T3 thread"],
-  t3_thread_wait: ["Wait", "Waiting", "Waited", "for a T3 thread"],
-  t3_thread_interrupt: ["Interrupt", "Interrupting", "Interrupted", "a T3 thread"],
+  create_threads: ["Create", "Creating", "Created", `${PRODUCT_NAME} threads`],
+  t3_thread_start: ["Start", "Starting", "Started", `an ${PRODUCT_NAME} thread`],
+  t3_thread_list: ["List", "Listing", "Listed", `${PRODUCT_NAME} threads`],
+  t3_thread_read: ["Read", "Reading", "Read", `an ${PRODUCT_NAME} thread`],
+  t3_thread_send: ["Send", "Sending", "Sent", `to an ${PRODUCT_NAME} thread`],
+  t3_thread_wait: ["Wait", "Waiting", "Waited", `for an ${PRODUCT_NAME} thread`],
+  t3_thread_interrupt: ["Interrupt", "Interrupting", "Interrupted", `an ${PRODUCT_NAME} thread`],
   t3_worktree_handoff: ["Hand off", "Handing off", "Handed off", "thread to a git worktree"],
   t3_worktree_status: ["Get", "Getting", "Got", "thread worktree status"],
   preview_status: ["Get", "Getting", "Got", "preview browser status"],
@@ -129,7 +139,7 @@ function resolveT3McpToolPresentation(
 ) {
   if (!value) return null;
   const name = normalizeCompactToolLabel(value).replace(
-    /^(?:mcp__(?:t3-code|t3_code|t3code)__|(?:t3-code|t3_code|t3code)(?:[.:/]|\s*·\s*))/i,
+    /^(?:mcp__(?:infinitus|t3-code|t3_code|t3code)__|(?:infinitus|t3-code|t3_code|t3code)(?:[.:/]|\s*·\s*))/i,
     "",
   );
   if (!Object.hasOwn(T3_MCP_TOOL_LABELS, name)) return null;

@@ -21,6 +21,38 @@ final class AwsLoginTests: XCTestCase {
         XCTAssertEqual(AwsLogin.flow(profile: "missing", configText: config), .relay)
     }
 
+    func testLedgerKeepsAFailureForTheLoginTimeoutAndASignInForADay() {
+        let now = Date()
+        func state(_ phase: AwsLogin.Phase, ago: TimeInterval) -> AwsLogin.State {
+            AwsLogin.State(profile: "p", flow: .remote, phase: phase, startedAt: now.timeIntervalSince1970 - ago)
+        }
+        XCTAssertTrue(AwsLogin.Ledger.isCurrent(state(.failed, ago: 500), now: now))
+        XCTAssertFalse(AwsLogin.Ledger.isCurrent(state(.failed, ago: 700), now: now))
+        XCTAssertTrue(AwsLogin.Ledger.isCurrent(state(.done, ago: 20 * 3600), now: now))
+        XCTAssertFalse(AwsLogin.Ledger.isCurrent(state(.done, ago: 25 * 3600), now: now))
+        XCTAssertFalse(AwsLogin.Ledger.isCurrent(state(.waitingForCode, ago: 1), now: now))
+    }
+
+    func testLoginProfileFollowsTheCredentialProcess() {
+        let config = """
+        [default]
+        credential_process = /x/aws-cred-broker.py  default-login
+        [profile papaya]
+        credential_process = /x/aws-cred-broker.py papaya-login --quiet
+        [profile static]
+        credential_process = /x/vault read
+        [profile default-login]
+        login_session = arn:aws:iam::089192911254:user/me
+        [profile papaya-login]
+        login_session = arn:aws:iam::089192911254:user/me
+        """
+        XCTAssertEqual(AwsLogin.loginProfile(profile: "default", configText: config), "default-login")
+        XCTAssertEqual(AwsLogin.loginProfile(profile: "papaya", configText: config), "papaya-login")
+        XCTAssertEqual(AwsLogin.loginProfile(profile: "static", configText: config), "static")
+        XCTAssertEqual(AwsLogin.loginProfile(profile: "papaya-login", configText: config), "papaya-login")
+        XCTAssertEqual(AwsLogin.loginProfile(profile: "missing", configText: config), "missing")
+    }
+
     func testAccountComesFromTheProfileConfig() {
         let config = """
             [default]
@@ -83,6 +115,8 @@ final class AwsLoginTests: XCTestCase {
         XCTAssertFalse(device.wantsCode)
 
         XCTAssertTrue(AwsLogin.parseOutput("Updated profile papaya-login to use arn:aws:sts::1:assumed-role/x credentials.").succeeded)
+        // The CLI exits 0 after this too; only the line above counts as signed in.
+        XCTAssertFalse(AwsLogin.parseOutput("https://x.signin.aws.amazon.com/v1/authorize?a=b\r\n\r\naws: [ERROR]: The pending authorization to retrieve an SSO token has expired. The login flow to retrieve an SSO token must be restarted.\r\n").succeeded)
         // The rebind question (browser signed into another account).
         let rebind = AwsLogin.parseOutput("https://x.signin.aws.amazon.com/v1/authorize?a=b\r\n\r\nProfile papaya-login is already configured to use session arn:aws:iam::089192911254:user/a@b.c. Do you want to overwrite it to use arn:aws:iam::812652266901:user/a@b.c instead? (y/n): ")
         XCTAssertEqual(rebind.rebindRefusal, "papaya-login is bound to account 089192911254 but you signed in to 812652266901 — not rebound; sign in to the right account and retry")

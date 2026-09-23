@@ -1,4 +1,4 @@
-import type { EnvironmentConnectionPresentation } from "@t3tools/client-runtime/connection";
+import type { EnvironmentConnectionPresentation } from "@infinitus/client-runtime/connection";
 import { describe, expect, it } from "vite-plus/test";
 
 import { presentSavedCloudEnvironmentConnection } from "./cloudEnvironmentConnectionPresentation";
@@ -40,6 +40,7 @@ describe("saved cloud environment connection presentation", () => {
 
   it.each([
     ["error", "Connection failed", "Connection failed. Reason: Access denied.", "error"],
+    ["unsupported", "Client not supported", "Client not supported", "idle"],
     ["offline", "Offline", "Offline", "idle"],
     ["available", "Not connected", "Available", "idle"],
   ] as const)(

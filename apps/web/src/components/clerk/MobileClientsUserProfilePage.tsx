@@ -1,4 +1,4 @@
-import type { RelayClientDeviceRecord } from "@t3tools/contracts/relay";
+import type { RelayClientDeviceRecord } from "@infinitus/contracts/relay";
 import { SmartphoneIcon } from "lucide-react";
 
 import { useManagedRelayDevices } from "../../cloud/managedRelayState";
@@ -16,7 +16,7 @@ import {
   ClerkUserProfileRefreshButton,
   ClerkUserProfileRow,
 } from "./ClerkUserProfilePage";
-import { PRODUCT_NAME } from "@t3tools/shared/productName";
+import { CONNECT_NAME, PRODUCT_NAME } from "@infinitus/shared/productName";
 
 const MOBILE_CLIENT_SKELETON_ROWS = ["primary", "secondary"] as const;
 
@@ -70,7 +70,7 @@ function MobileClientsSkeleton() {
       {MOBILE_CLIENT_SKELETON_ROWS.map((row) => (
         <div key={row} className="py-4">
           <div className="flex gap-3">
-            <Skeleton className="size-8 shrink-0 rounded-lg" />
+            <Skeleton shape="card" className="size-8 shrink-0" />
             <div className="flex-1 space-y-2">
               <Skeleton className="h-3.5 w-36" />
               <Skeleton className="h-3 w-28" />
@@ -88,13 +88,13 @@ function MobileClientsSkeleton() {
 
 function EmptyMobileClients() {
   return (
-    <Empty className="min-h-64 gap-4 border-t px-6 py-10 md:p-10">
-      <EmptyMedia className="mb-0" variant="icon">
+    <Empty size="compact">
+      <EmptyMedia variant="icon">
         <SmartphoneIcon />
       </EmptyMedia>
       <EmptyHeader>
-        <EmptyTitle className="text-[1.0625rem] leading-6">No mobile clients</EmptyTitle>
-        <EmptyDescription className="text-[0.8125rem] leading-[1.125rem]">
+        <EmptyTitle>No mobile clients</EmptyTitle>
+        <EmptyDescription>
           Sign in to {PRODUCT_NAME} on your iPhone to register it for push notifications and Live
           Activities.
         </EmptyDescription>
@@ -113,7 +113,7 @@ export function MobileClientsUserProfilePage() {
   return (
     <ClerkUserProfilePage
       title="Mobile clients"
-      description="Devices registered to receive T3 Connect activity from your environments."
+      description={`Devices registered to receive ${CONNECT_NAME} activity from your environments.`}
       action={
         <ClerkUserProfileRefreshButton
           isPending={devicesState.isPending}
@@ -148,7 +148,9 @@ export function MobileClientsUserProfilePage() {
             ))}
           </ul>
         ) : (
-          <EmptyMobileClients />
+          <div className="border-t">
+            <EmptyMobileClients />
+          </div>
         )}
       </div>
     </ClerkUserProfilePage>

@@ -1,5 +1,5 @@
 import type { FileDiffMetadata } from "@pierre/diffs";
-import { EnvironmentId, type ReviewDiffFileContentsResult } from "@t3tools/contracts";
+import { EnvironmentId, type ReviewDiffFileContentsResult } from "@infinitus/contracts";
 import * as Cause from "effect/Cause";
 import { AsyncResult } from "effect/unstable/reactivity";
 import { describe, expect, it, vi } from "vite-plus/test";
@@ -18,8 +18,8 @@ const SOURCE = {
 function fileDiff(type: FileDiffMetadata["type"] = "rename-changed"): FileDiffMetadata {
   return {
     type,
-    prevName: "a/src/old-name.ts",
-    name: "b/src/new-name.ts",
+    prevName: "src/old-name.ts",
+    name: "src/new-name.ts",
   } as FileDiffMetadata;
 }
 

@@ -1,7 +1,7 @@
 import {
   connectionStatusText,
   type EnvironmentConnectionPresentation,
-} from "@t3tools/client-runtime/connection";
+} from "@infinitus/client-runtime/connection";
 
 export interface SavedCloudEnvironmentConnectionPresentation {
   readonly buttonLabel: string;
@@ -35,6 +35,13 @@ export function presentSavedCloudEnvironmentConnection(
         buttonLabel: "Reconnecting…",
         statusText: connectionStatusText(connection),
         tone: "connecting",
+      };
+    // Not a failure: the machine is fine, this build just cannot talk to it.
+    case "unsupported":
+      return {
+        buttonLabel: "Client not supported",
+        statusText: connectionStatusText(connection),
+        tone: "idle",
       };
     case "error":
       return {

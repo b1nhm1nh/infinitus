@@ -3,13 +3,13 @@ import {
   TurnId,
   type OrchestrationCommand,
   type ProviderRuntimeEvent,
-} from "@t3tools/contracts";
+} from "@infinitus/contracts";
 import {
   InfinitusCommandFailed,
   type InfinitusCommandInput,
   type InfinitusManifestCommand,
   type InfinitusSnapshot,
-} from "@t3tools/contracts/infinitus";
+} from "@infinitus/contracts/infinitus";
 import { it as effectIt } from "@effect/vitest";
 import * as Crypto from "effect/Crypto";
 import * as Duration from "effect/Duration";
@@ -24,6 +24,7 @@ import { describe, expect } from "vite-plus/test";
 import { OrchestrationEngineService } from "../../orchestration/Services/OrchestrationEngine.ts";
 import { ProviderService } from "../../provider/Services/ProviderService.ts";
 import { InfinitusService } from "../Services/Infinitus.ts";
+import { InfinitusAlertRelay } from "../Services/InfinitusAlertRelay.ts";
 import { InfinitusSignInLapseLive } from "./InfinitusSignInLapse.ts";
 import { SIGN_IN_MARKER_KIND } from "./infinitusSignInLapse.logic.ts";
 
@@ -109,6 +110,9 @@ const makeHarness = (input: {
     const events = yield* PubSub.unbounded<ProviderRuntimeEvent>();
     const dispatched = yield* Ref.make<ReadonlyArray<OrchestrationCommand>>([]);
     const requests = yield* Ref.make<ReadonlyArray<InfinitusCommandInput>>([]);
+    const alerts = yield* Ref.make<
+      ReadonlyArray<{ title: string; body: string; deepLink?: string }>
+    >([]);
     const current = yield* Ref.make(input.snapshot ?? manifest("aws-login", "gcloud-login"));
     const layer = InfinitusSignInLapseLive.pipe(
       Layer.provide(
@@ -124,6 +128,10 @@ const makeHarness = (input: {
               Ref.update(dispatched, (previous) => [...previous, command]).pipe(
                 Effect.as({ sequence: 1 }),
               ),
+          }),
+          Layer.mock(InfinitusAlertRelay)({
+            publish: (alert) =>
+              Ref.update(alerts, (list) => [...list, alert]).pipe(Effect.as({ deliveries: 1 })),
           }),
           Layer.mock(InfinitusService)({
             snapshot: Ref.get(current),
@@ -167,6 +175,7 @@ const makeHarness = (input: {
       logins: Ref.get(requests).pipe(
         Effect.map((list) => list.map((request) => [request.command, ...request.args])),
       ),
+      alerts: Ref.get(alerts),
     };
   });
 
@@ -186,6 +195,14 @@ describe("InfinitusSignInLapseLive (#1076)", () => {
         },
       ]);
       expect(yield* h.logins).toEqual([["aws-login", "papaya"]]);
+      // The phones hear about it once, deep-linked to the home screen's cards.
+      expect(yield* h.alerts).toEqual([
+        {
+          title: "AWS sign-in needed",
+          body: "papaya has expired credentials. Open Infinitus to sign in from this phone.",
+          deepLink: "/",
+        },
+      ]);
     }),
   );
 

@@ -1,4 +1,4 @@
-import type { OrchestrationThreadShell } from "@t3tools/contracts";
+import type { OrchestrationThreadShell } from "@infinitus/contracts";
 
 /**
  * Best of N on the phone (#269 B), read-only: the web's `bestOf.logic.ts`
@@ -25,6 +25,24 @@ export function bestOfSiblings<
               ? 1
               : 0,
     );
+}
+
+/** What `bestOfSiblings` depends on, as one string: the group's members by
+    id, kept-away marker and creation time. The card keys its siblings memo on
+    it, so the shells array changing identity on every tick of an unrelated
+    thread rebuilds nothing (phone audit 2026-09-15). O(N) with no allocation
+    per shell that is not a member. */
+export function bestOfGroupKey<
+  T extends Pick<OrchestrationThreadShell, "id" | "groupId" | "archivedAt" | "createdAt"> & {
+    readonly environmentId: string;
+  },
+>(shells: ReadonlyArray<T>, environmentId: string, groupId: string): string {
+  let key = "";
+  for (const shell of shells) {
+    if (shell.environmentId !== environmentId || shell.groupId !== groupId) continue;
+    key += `${shell.id}|${shell.archivedAt ?? ""}|${shell.createdAt};`;
+  }
+  return key;
 }
 
 export type BestOfMemberStatus =
